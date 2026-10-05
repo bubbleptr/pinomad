@@ -1,4 +1,4 @@
-# ADR-0001：Durato 拥有 UI 契约，不做 Pi CLI 的兼容层
+# ADR-0001：PiNomad 拥有 UI 契约，不做 Pi CLI 的兼容层
 
 - 状态：Accepted
 - 日期：2026-10-04
@@ -16,9 +16,9 @@ Pace 至今没有接上 `uiContext`，Dock 也只有固定面板，这是定位�
 
 ## 决策
 
-1. Durato 是独立产品，定义并拥有自己的 UI 契约。插件和外部能力（MCP、Skills、工具）由 Durato 选择接入、规定接入方式。
+1. PiNomad 是独立产品，定义并拥有自己的 UI 契约。插件和外部能力（MCP、Skills、工具）由 PiNomad 选择接入、规定接入方式。
 2. 不兼容 Pi CLI 的扩展、配置和会话格式。旧 Pi JSONL 会话和 Pace 的会话数据不导入，也不保留只读入口。
-3. Durato 放在新仓库开发，使用新的 app ID、更新通道和数据目录。Pace 留在原仓库进入维护模式，只做 Pi 升级、bug 修复和安全修复。
+3. PiNomad 放在新仓库开发，使用新的 app ID、更新通道和数据目录。Pace 留在原仓库进入维护模式，只做 Pi 升级、bug 修复和安全修复。
 4. 从 Pace 按需复制代码（UI 组件、工作区能力、Electron 外壳、发布脚本），不整体 fork；复制时在提交信息里注明来源 commit。两个仓库之间暂不抽共享包。
 
 ## 考虑过的方案
@@ -29,6 +29,6 @@ Pace 至今没有接上 `uiContext`，Dock 也只有固定面板，这是定位�
 
 ## 后果
 
-- Pace 用户迁移到 Durato 时，历史会话无法带过去。
+- Pace 用户迁移到 PiNomad 时，历史会话无法带过去。
 - 第一方能力（grep/find/ls、读图片、MCP 桥接、子代理、diff 审阅等）都要自己实现或接入，没有现成生态可用。
 - 插件策略见 ADR-0004。

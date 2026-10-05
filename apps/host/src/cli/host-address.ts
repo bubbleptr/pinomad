@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 /** Holds `session.sqlite`, the token, and the lock; one host process per data dir. */
-export const DEFAULT_DATA_DIR = process.env.DURATO_DATA_DIR ?? join(homedir(), ".durato");
+export const DEFAULT_DATA_DIR = process.env.PINOMAD_DATA_DIR ?? join(homedir(), ".pinomad");
 
 /** A client's `--url`, and `--token` or the token file a host on the same machine left in `--data-dir`. */
 export async function hostAddress(argv: readonly string[]): Promise<{ url: string; token: string }> {

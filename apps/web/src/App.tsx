@@ -26,9 +26,9 @@ import { Token } from "@astryxdesign/core/Token";
 import type { AgentState } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
-import type { RemoteDurable, RemoteDurableOptions } from "@durato/protocol/remote-durable.ts";
-import { isBusy } from "@durato/protocol/transcript.ts";
-import type { DurableView } from "@durato/protocol/view.ts";
+import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
+import { isBusy } from "@pinomad/protocol/transcript.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { addressFromHash } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
@@ -216,7 +216,7 @@ function ConversationNav({ view, remote }: { view: DurableView; remote: RemoteDu
     );
   return (
     <SideNav
-      header={<SideNavHeading heading="Durato host" subheading={view.session.id} headerEndContent={connection} />}
+      header={<SideNavHeading heading="PiNomad host" subheading={view.session.id} headerEndContent={connection} />}
       footer={<Text type="supporting" maxLines={1}>{view.session.cwd}</Text>}
     >
       <ConversationItems view={view} remote={remote} />

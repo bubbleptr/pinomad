@@ -28,8 +28,8 @@ import {
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
-} from "@durato/protocol/frames.ts";
-import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@durato/protocol/view.ts";
+} from "@pinomad/protocol/frames.ts";
+import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 

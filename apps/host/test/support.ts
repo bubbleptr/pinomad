@@ -6,8 +6,8 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
-import { connectRemoteDurable, type RemoteDurable } from "@durato/protocol/remote-durable.ts";
-import type { DurableViewSource } from "@durato/protocol/view.ts";
+import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { DurableViewSource } from "@pinomad/protocol/view.ts";
 
 /** Cleanups registered during a test, run in reverse after it. */
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
@@ -76,7 +76,7 @@ export async function connectTo(
 }
 
 export async function tempDir(): Promise<{ path: string; remove(): Promise<void> }> {
-  const path = await mkdtemp(join(tmpdir(), "durato-"));
+  const path = await mkdtemp(join(tmpdir(), "pinomad-"));
   return { path, remove: () => rm(path, { recursive: true, force: true }) };
 }
 

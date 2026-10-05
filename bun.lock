@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "durato",
+      "name": "pinomad",
       "devDependencies": {
         "@types/node": "^26.0.0",
         "typescript": "^5.5.4",
@@ -11,14 +11,14 @@
       },
     },
     "apps/host": {
-      "name": "@durato/host",
+      "name": "@pinomad/host",
       "version": "0.0.0",
       "dependencies": {
-        "@durato/protocol": "workspace:*",
         "@earendil-works/chord": "1.0.0",
         "@earendil-works/pi-ai": "1.0.0",
         "@earendil-works/pi-coding-agent": "1.0.0",
         "@earendil-works/pi-durable": "1.0.0",
+        "@pinomad/protocol": "workspace:*",
         "proper-lockfile": "4.1.2",
         "undici": "8.10.2",
         "ws": "8.22.0",
@@ -29,21 +29,21 @@
       },
     },
     "apps/web": {
-      "name": "@durato/web",
+      "name": "@pinomad/web",
       "version": "0.0.0",
       "dependencies": {
         "@astryxdesign/core": "^0.3.0",
         "@astryxdesign/theme-neutral": "^0.3.0",
-        "@durato/protocol": "workspace:*",
         "@earendil-works/chord": "1.0.0",
         "@earendil-works/pi-ai": "1.0.0",
         "@earendil-works/pi-durable": "1.0.0",
+        "@pinomad/protocol": "workspace:*",
         "@stylexjs/stylex": "^0.19.0",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
       },
       "devDependencies": {
-        "@durato/host": "workspace:*",
+        "@pinomad/host": "workspace:*",
         "@playwright/test": "^1.61.1",
         "@types/react": "^19.2.17",
         "@types/react-dom": "^19.2.3",
@@ -52,7 +52,7 @@
       },
     },
     "packages/protocol": {
-      "name": "@durato/protocol",
+      "name": "@pinomad/protocol",
       "version": "0.0.0",
       "dependencies": {
         "@earendil-works/chord": "1.0.0",
@@ -145,12 +145,6 @@
 
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
-    "@durato/host": ["@durato/host@workspace:apps/host"],
-
-    "@durato/protocol": ["@durato/protocol@workspace:packages/protocol"],
-
-    "@durato/web": ["@durato/web@workspace:apps/web"],
-
     "@earendil-works/chord": ["@earendil-works/chord@1.0.0", "", { "dependencies": { "esbuild": "0.28.2" } }, "sha512-BIfWfrByM0pKq6tfKYXuwx0ed2CvaqIM3EDA7Dps+fP+d3CiPWdlHi1cDsJC05llqKJoRz5//G0hz0yQwwjISQ=="],
 
     "@earendil-works/pi-agent-core": ["@earendil-works/pi-agent-core@1.0.2", "", { "dependencies": { "@earendil-works/pi-ai": "^1.0.2", "typebox": "1.3.27" } }, "sha512-VRfewY1R5mbedJzlm01PxdCmqU8QrSXjXXhV50bp6rvVuT8YYQv1inTXRY4YzssmGAYpkC2rXipJKP5BpBFXew=="],
@@ -242,6 +236,12 @@
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.152.0", "", {}, "sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw=="],
+
+    "@pinomad/host": ["@pinomad/host@workspace:apps/host"],
+
+    "@pinomad/protocol": ["@pinomad/protocol@workspace:packages/protocol"],
+
+    "@pinomad/web": ["@pinomad/web@workspace:apps/web"],
 
     "@playwright/test": ["@playwright/test@1.63.0", "", { "dependencies": { "playwright": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ=="],
 

@@ -1,4 +1,4 @@
-# Durato
+# PiNomad
 
 以 coding 为核心的 agent 产品：自托管宿主负责可恢复的执行，桌面、Web、移动端作为客户端提供一致的界面。
 
@@ -17,11 +17,11 @@ _Avoid_: 前端、宿主界面、viewer
 ### 扩展与呈现
 
 **内置扩展（Built-in Extension）**:
-由 Durato 自己实现、按插件边界组织的功能单元。核心只通过扩展注册表认识它。
+由 PiNomad 自己实现、按插件边界组织的功能单元。核心只通过扩展注册表认识它。
 _Avoid_: 内置功能、模块、插件（未公开协议前）
 
 **展示类型（Presentation Type）**:
-Durato 定义、带运行时 schema 的结构化数据类型，符合时各客户端用设计系统统一渲染。
+PiNomad 定义、带运行时 schema 的结构化数据类型，符合时各客户端用设计系统统一渲染。
 _Avoid_: 组件、widget、UI 插件
 
 **兜底渲染（Fallback Rendering）**:

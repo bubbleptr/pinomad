@@ -1,9 +1,9 @@
-# Durato
+# PiNomad
 
 以 coding 为核心的 agent 产品，基于 [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable)。
 
 - 自托管宿主：在你自己的机器（Mac mini、Linux VPS）上运行，直接使用本机的 shell 和代码仓库；执行可在崩溃或重启后恢复。
-- 多端客户端：桌面、Web、移动端连接同一个宿主，界面由 Durato 统一定义。
+- 多端客户端：桌面、Web、移动端连接同一个宿主，界面由 PiNomad 统一定义。
 
 架构决策见 [`docs/adr/`](docs/adr/)，术语见 [`CONTEXT.md`](CONTEXT.md)。
 
@@ -23,7 +23,7 @@ bun run web
 bun run link
 ```
 
-默认数据目录是 `~/.durato`（session.sqlite、token、目录锁），可用 `--data-dir` 或 `DURATO_DATA_DIR` 覆盖；同一数据目录同时只能有一个宿主进程。
+默认数据目录是 `~/.pinomad`（session.sqlite、token、目录锁），可用 `--data-dir` 或 `PINOMAD_DATA_DIR` 覆盖；同一数据目录同时只能有一个宿主进程。
 
 ## 验证
 

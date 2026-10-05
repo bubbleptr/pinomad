@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { connectRemoteDurable } from "@durato/protocol/remote-durable.ts";
+import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();

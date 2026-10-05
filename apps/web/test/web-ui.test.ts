@@ -4,12 +4,12 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AssistantEntry } from "@earendil-works/pi-durable";
 import { chromium } from "@playwright/test";
-import { openHost, type OpenedHost } from "@durato/host/src/host.ts";
-import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "@durato/host/test/support.ts";
+import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
+import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
 import { chatItems } from "../src/presentation/chat.ts";
-import { isBusy, transcript } from "@durato/protocol/transcript.ts";
+import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();
 const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));

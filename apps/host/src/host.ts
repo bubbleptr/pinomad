@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
-import type { ModelSummary } from "@durato/protocol/view.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { type GatewayOptions, startGateway } from "./gateway.ts";
 
 const context = BACKGROUND_CONTEXT;

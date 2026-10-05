@@ -10,7 +10,7 @@ import { defineDoc, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { startGateway, type GatewayOptions } from "../src/gateway.ts";
-import type { ServerFrame } from "@durato/protocol/frames.ts";
+import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();

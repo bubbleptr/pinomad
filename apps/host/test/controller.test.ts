@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { isBusy, streamingText, transcript } from "@durato/protocol/transcript.ts";
+import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import { connectTo, LONG_ANSWER, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
