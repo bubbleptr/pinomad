@@ -5,7 +5,7 @@
 
 ## 背景
 
-Durato 需要两种 Pi Coding Agent 的 `AgentSession` 提供不了的能力：
+PiNomad 需要两种 Pi Coding Agent 的 `AgentSession` 提供不了的能力：
 
 - 执行可恢复：宿主进程崩溃或重启后，未完成的模型调用和工具任务能从检查点继续；
 - 多个客户端同时观察、操作同一个会话。

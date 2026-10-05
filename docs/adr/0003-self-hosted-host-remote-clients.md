@@ -5,7 +5,7 @@
 
 ## 背景
 
-Durato 是 coding 产品，agent 需要真实的 shell、文件系统和代码仓库。Cloudflare 的 PiHarness 能托管对话和任务，但 Workers 里没有可用的 `child_process`，文件系统也是虚拟的。要在云端执行代码，只能另外配沙箱或容器。实际上"serverless"最后也是落在某台具体的服务器上。
+PiNomad 是 coding 产品，agent 需要真实的 shell、文件系统和代码仓库。Cloudflare 的 PiHarness 能托管对话和任务，但 Workers 里没有可用的 `child_process`，文件系统也是虚拟的。要在云端执行代码，只能另外配沙箱或容器。实际上"serverless"最后也是落在某台具体的服务器上。
 
 ## 决策
 

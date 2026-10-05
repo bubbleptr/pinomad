@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RemoteDurable } from "@durato/protocol/remote-durable.ts";
-import { streamingText, transcript } from "@durato/protocol/transcript.ts";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import { connectTo, LONG_ANSWER, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();

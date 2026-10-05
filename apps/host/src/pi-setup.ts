@@ -3,7 +3,7 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { ModelRef, HarnessSettings } from "@earendil-works/pi-durable";
 import type { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { ModelSummary } from "@durato/protocol/view.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./http-dispatcher.ts";
 
 export function configureHarnessHttp(settingsManager: SettingsManager): void {

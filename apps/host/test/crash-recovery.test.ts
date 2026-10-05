@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { connectRemoteDurable, type RemoteDurable } from "@durato/protocol/remote-durable.ts";
-import { isBusy, streamingText, transcript } from "@durato/protocol/transcript.ts";
+import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import { freePort, LONG_ANSWER, tempDir, waitForView } from "./support.ts";
 
 const hostDir = fileURLToPath(new URL("..", import.meta.url));

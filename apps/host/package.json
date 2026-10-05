@@ -1,5 +1,5 @@
 {
-  "name": "@durato/host",
+  "name": "@pinomad/host",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "./test/*": "./test/*"
   },
   "dependencies": {
-    "@durato/protocol": "workspace:*",
+    "@pinomad/protocol": "workspace:*",
     "@earendil-works/chord": "1.0.0",
     "@earendil-works/pi-ai": "1.0.0",
     "@earendil-works/pi-coding-agent": "1.0.0",

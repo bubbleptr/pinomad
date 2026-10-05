@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { connectRemoteDurable, type RemoteDurable, type RemoteDurableOptions } from "@durato/protocol/remote-durable.ts";
-import type { DurableView } from "@durato/protocol/view.ts";
+import { connectRemoteDurable, type RemoteDurable, type RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 
 export type RemoteState =
   | { readonly status: "connecting" }
