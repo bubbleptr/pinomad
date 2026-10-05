@@ -1,5 +1,6 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
+import type { PresentationType } from "./presentation.ts";
 import type { ModelSummary, Notice, SessionInfo } from "./view.ts";
 
 /**
@@ -40,6 +41,11 @@ export interface CallMethods {
     args: { conversationId: ConversationId; entryId: string; removeTools?: readonly string[] };
     result: { conversationId: ConversationId };
   };
+  /** Answer a pending `pinomad.approval` request; `first` is true for the write that settled it. */
+  decide: {
+    args: { conversationId: ConversationId; kind: string; requestId: string; approved: boolean };
+    result: { outcome: "approved" | "rejected" | "cancelled"; first: boolean };
+  };
 }
 
 export type CallMethod = keyof CallMethods;
@@ -50,8 +56,8 @@ export type ServerFrame =
       readonly session: SessionInfo;
       readonly root: ConversationId;
       readonly models: readonly ModelSummary[];
-      /** Kinds of the conversation documents offered as `doc:` streams. */
-      readonly docs: readonly string[];
+      /** The conversation documents offered as `doc:` streams, in host order. */
+      readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
@@ -101,6 +107,8 @@ export function isClientFrame(value: unknown): value is ClientFrame {
         typeof args.entryId === "string" && /^[1-9]\d*$/.test(args.entryId)
         && (args.removeTools === undefined || (Array.isArray(args.removeTools) && args.removeTools.every(nonempty)))
       );
+    case "decide":
+      return nonempty(args.kind) && nonempty(args.requestId) && typeof args.approved === "boolean";
     default:
       return false;
   }

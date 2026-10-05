@@ -10,6 +10,8 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
+import { approval } from "./extensions/approval.ts";
+import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
 
@@ -31,6 +33,7 @@ const common = {
   dataDir,
   cwd,
   port: Number(values.port),
+  extensions: [todo, approval],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   ...(values["lock-stale-ms"] === undefined ? {} : { lockStaleMs: Number(values["lock-stale-ms"]) }),
 };

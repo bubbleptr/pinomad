@@ -8,18 +8,18 @@ import {
   AgentDoc,
   type AgentState,
   type Conversation,
-  type ConversationDocToken,
   type ConversationId,
   type ConversationRecord,
   type Cursor,
   type EntryId,
   type EntryRecord,
   type Harness,
-  type JsonObject,
   ROOT_CONVERSATION_ID,
   type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { WebSocket, WebSocketServer } from "ws";
+import { Value } from "typebox/value";
+import { ApprovalSchema } from "@pinomad/protocol/presentation.ts";
 import {
   type CallMethod,
   type CallMethods,
@@ -30,6 +30,7 @@ import {
   UNAUTHORIZED_CLOSE_CODE,
 } from "@pinomad/protocol/frames.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
+import type { ExtensionDoc } from "./builtin-extension.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
@@ -43,7 +44,7 @@ export interface GatewayOptions {
   /** Exact browser origins permitted to connect. Native clients send no Origin. */
   readonly browserOrigins?: readonly string[];
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
-  readonly docs?: readonly ConversationDocToken<JsonObject>[];
+  readonly docs?: readonly ExtensionDoc[];
 }
 
 export interface Gateway {
@@ -219,7 +220,10 @@ class GatewayClient {
       session: options.session,
       root: ROOT_CONVERSATION_ID,
       models: options.modelSummaries(),
-      docs: (options.docs ?? []).map((token) => token.definition.kind),
+      docs: (options.docs ?? []).map((doc) => ({
+        kind: doc.token.definition.kind,
+        ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
+      })),
     });
   }
 
@@ -278,8 +282,9 @@ class GatewayClient {
 
   /** A document that does not exist yet streams `null`, then its value from the commit that creates it. */
   async #openDoc(stream: StreamName, kind: string, id: ConversationId, send: SendFrame): Promise<Subscription> {
-    const token = this.#options.docs?.find((candidate) => candidate.definition.kind === kind);
-    if (token === undefined) throw new Error(`Unknown document ${kind}`);
+    const doc = this.#options.docs?.find((candidate) => candidate.token.definition.kind === kind);
+    if (doc === undefined) throw new Error(`Unknown document ${kind}`);
+    const token = doc.token;
     await this.#conversation(id);
     const { harness } = this.#options;
     let signalCreation!: () => void;
@@ -417,6 +422,27 @@ class GatewayClient {
           context,
         );
         return { conversationId: fork.id };
+      }
+      case "decide": {
+        const { kind, requestId, approved } = args as CallMethods["decide"]["args"];
+        // A PiNomad-owned interaction: core applies the client decision against
+        // the pinomad.approval presentation schema, not extension code.
+        const doc = this.#options.docs?.find(
+          (candidate) => candidate.token.definition.kind === kind && candidate.presentation === "pinomad.approval",
+        );
+        if (doc === undefined) throw new Error(`Document ${kind} does not accept decisions`);
+        const token = doc.token;
+        return await this.#options.harness.commit(async (tx) => {
+          const value = await tx.doc(token, conversation.id);
+          if (!Value.Check(ApprovalSchema, value)) throw new Error(`Document ${kind} does not hold approval requests`);
+          const request = value.requests.find((candidate) => candidate.id === requestId);
+          if (request === undefined) throw new Error(`Unknown approval request ${requestId}`);
+          if (request.decision === undefined) {
+            request.decision = { outcome: approved ? "approved" : "rejected", at: Date.now() };
+            return { outcome: request.decision.outcome, first: true };
+          }
+          return { outcome: request.decision.outcome, first: false };
+        }, context);
       }
     }
   }

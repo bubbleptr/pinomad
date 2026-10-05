@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -27,17 +27,18 @@ export async function startFauxHost(
     dataDir,
     port = 0,
     browserOrigins,
-    docs,
+    extensions,
   }: {
-    answers?: string[];
+    /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
+    answers?: readonly (string | FauxResponseStep)[];
     tokensPerSecond?: number;
     /** Reopen an earlier host's store. */
     dataDir?: string;
     /** Fixed, so clients reconnect to a restarted host. */
     port?: number;
     browserOrigins?: readonly string[];
-    /** Conversation documents offered as `doc:` streams. */
-    docs?: OpenHostOptions["docs"];
+    /** Built-in extensions installed on the host. */
+    extensions?: OpenHostOptions["extensions"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -45,7 +46,7 @@ export async function startFauxHost(
   const faux = fauxProvider({ tokensPerSecond, tokenSize: { min: 1, max: 1 } });
   const models = createModels();
   models.setProvider(faux.provider);
-  faux.setResponses(answers.map((answer) => fauxAssistantMessage(answer)));
+  faux.setResponses(answers.map((answer) => (typeof answer === "string" ? fauxAssistantMessage(answer) : answer)));
   const model = faux.getModel();
   const host = await openHost({
     dataDir: dir.path,
@@ -55,7 +56,7 @@ export async function startFauxHost(
     initialModel: { provider: model.provider, modelId: model.id },
     port,
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
-    ...(docs === undefined ? {} : { docs }),
+    ...(extensions === undefined ? {} : { extensions }),
   });
   defer(() => host.close());
   return host;
