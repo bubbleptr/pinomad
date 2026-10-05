@@ -26,6 +26,7 @@ import { Token } from "@astryxdesign/core/Token";
 import type { AgentState } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
+import { DocumentView } from "./presentation/documents.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
@@ -129,7 +130,7 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
         end={
           narrow ? undefined : (
             <LayoutPanel width={320} hasDivider padding={3} label="Live state">
-              <LiveState view={view} />
+              <LiveState view={view} remote={remote} />
             </LayoutPanel>
           )
         }
@@ -145,7 +146,7 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
             header={<DialogHeader title="Live state" onOpenChange={setPanelOpen} />}
             content={
               <LayoutContent>
-                <LiveState view={view} />
+                <LiveState view={view} remote={remote} />
               </LayoutContent>
             }
           />
@@ -382,13 +383,16 @@ function Composer({
   );
 }
 
-function LiveState({ view }: { view: DurableView }) {
+function LiveState({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
   const rows = view.tasks === undefined ? [] : taskRows(view.tasks);
   const queue = queueItems(view.conversation);
   const notices = [...view.notices].reverse().slice(0, 5);
   const usage = usageRows(view.conversation);
   return (
     <VStack gap={4}>
+      {view.docs.map((doc) => (
+        <DocumentView key={doc.kind} doc={doc} remote={remote} connected={view.connection === "connected"} />
+      ))}
       <List density="compact" header={<Text type="label" weight="semibold">Tasks</Text>}>
         {rows.length === 0 ? (
           <ListItem label="No live tasks" />

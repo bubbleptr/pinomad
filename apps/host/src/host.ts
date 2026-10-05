@@ -9,12 +9,12 @@ import {
   Harness,
   type HarnessSettings,
   type ModelRef,
-  type Registry,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { type GatewayOptions, startGateway } from "./gateway.ts";
+import type { BuiltinExtension } from "./builtin-extension.ts";
+import { startGateway } from "./gateway.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -24,7 +24,8 @@ export interface OpenHostOptions {
   readonly cwd: string;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
-  readonly registry?: Registry;
+  /** Built-in extensions installed before the Harness opens; their docs reach the gateway. */
+  readonly extensions?: readonly BuiltinExtension[];
   readonly settings?: HarnessSettings;
   /** Applied only when the root conversation is created. */
   readonly initialModel?: ModelRef & { readonly thinkingLevel?: ModelThinkingLevel };
@@ -34,8 +35,6 @@ export interface OpenHostOptions {
   readonly browserOrigins?: readonly string[];
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
-  /** Conversation documents clients may subscribe to besides the built-in ones. */
-  readonly docs?: GatewayOptions["docs"];
 }
 
 export interface OpenedHost {
@@ -76,11 +75,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const token = await hostToken(options.dataDir);
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
+    const registry = createRegistry();
+    for (const { extension } of options.extensions ?? []) registry.install(extension);
     harness = await Harness.open(
       await openNodeSqliteStorage(join(options.dataDir, "session.sqlite")),
       {
         models: options.models,
-        registry: options.registry ?? createRegistry(),
+        registry,
         ...(options.settings === undefined ? {} : { settings: options.settings }),
         onReport: (error) => report(error),
       },
@@ -102,7 +103,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       token,
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
-      ...(options.docs === undefined ? {} : { docs: options.docs }),
+      docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
     });
     report = (error) => gateway.broadcast("warning", error instanceof Error ? error.message : String(error));
     for (const error of reports.splice(0)) report(error);

@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { defineDoc, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { defineDoc, defineExtension, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { startGateway, type GatewayOptions } from "../src/gateway.ts";
@@ -126,7 +126,9 @@ describe("gateway boundaries", () => {
   });
 
   it("streams a document created while its initial absence is being read", async () => {
-    const host = await startFauxHost(defer, { docs: [TestDoc] });
+    const host = await startFauxHost(defer, {
+      extensions: [{ extension: defineExtension({ name: "test" }), docs: [{ token: TestDoc }] }],
+    });
     const absent = barrier();
     const release = barrier();
     const original = host.harness.watchDoc.bind(host.harness);

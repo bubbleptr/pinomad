@@ -2,6 +2,7 @@
 // pi's packages/coding-agent/src/experimental/durable/runtime.ts (MIT, Earendil Works).
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
+import type { PresentationType } from "./presentation.ts";
 
 export interface ModelSummary extends ModelRef {
   readonly name: string;
@@ -30,6 +31,15 @@ export interface SessionInfo {
 
 export type ConnectionState = "connected" | "reconnecting" | "closed";
 
+/** One extension document of the shown conversation, as the host declared it. */
+export interface ExtensionDocView {
+  readonly kind: string;
+  /** The host's rendering hint; absent means fallback rendering. */
+  readonly presentation?: PresentationType;
+  /** `null` while the document does not exist for this conversation. */
+  readonly value: JsonObject | null;
+}
+
 /** Everything a client renders. Plain values; no Harness objects cross this boundary. */
 export interface DurableView {
   readonly session: SessionInfo;
@@ -41,8 +51,8 @@ export interface DurableView {
   /** The live task graph while the task panel is open. */
   readonly tasks?: TaskGraph;
   readonly connection: ConnectionState;
-  /** The shown conversation's extension documents, by kind; `null` while one does not exist. */
-  readonly docs: Readonly<Record<string, JsonObject | null>>;
+  /** The shown conversation's extension documents, in the host's order. */
+  readonly docs: readonly ExtensionDocView[];
 }
 
 export interface DurableViewSource {
@@ -63,4 +73,6 @@ export interface DurableController {
   switchConversation(id: ConversationId): Promise<void>;
   /** Fork the shown conversation at an entry, switch to the fork, and send it `prompt`. */
   fork(entryId: string, prompt: string, removeTools?: readonly string[]): Promise<void>;
+  /** Answer a pending approval request of the document `kind`; failures surface as notices. */
+  decide(kind: string, requestId: string, approved: boolean): Promise<void>;
 }

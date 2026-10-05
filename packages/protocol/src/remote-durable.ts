@@ -1,5 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
+import type { PresentationType } from "./presentation.ts";
 import {
   type CallMethod,
   type CallMethods,
@@ -16,6 +17,7 @@ import type {
   DurableController,
   DurableView,
   DurableViewSource,
+  ExtensionDocView,
   Notice,
 } from "./view.ts";
 
@@ -53,7 +55,7 @@ class RemoteClient {
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
   readonly #wanted = new Set<StreamName>(["conversations"]);
-  #docKinds: readonly string[] = [];
+  #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
   readonly #pending = new Map<number, Pending>();
   readonly #transport: FrameTransport;
@@ -127,7 +129,7 @@ class RemoteClient {
       case "hello": {
         this.#attempt = 0;
         this.#current ??= frame.root;
-        this.#docKinds = frame.docs;
+        this.#docs = frame.docs;
         for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) this.#update({ session: frame.session, models: frame.models, connection: "connected" });
@@ -176,7 +178,7 @@ class RemoteClient {
         models: hello.models,
         notices: [],
         connection: "connected",
-        docs: {},
+        docs: [],
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -194,7 +196,7 @@ class RemoteClient {
 
   /** The streams that show one conversation: its view and its documents. */
   #conversationStreams(id: ConversationId): StreamName[] {
-    return [conversationStream(id), ...this.#docKinds.map((kind) => docStream(kind, id))];
+    return [conversationStream(id), ...this.#docs.map((doc) => docStream(doc.kind, id))];
   }
 
   #refresh(): void {
@@ -203,12 +205,13 @@ class RemoteClient {
     const conversation = this.#values.get(conversationStream(current)) as ConversationView | undefined;
     const conversations = this.#values.get("conversations") as ConversationSummary[] | undefined;
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
-    const docs = Object.fromEntries(
-      this.#docKinds.flatMap((kind) => {
-        const stream = docStream(kind, current);
-        return this.#values.has(stream) ? [[kind, this.#values.get(stream) as JsonObject | null]] : [];
-      }),
-    );
+    // In the host's order; a doc joins once its snapshot arrived.
+    const docs: ExtensionDocView[] = this.#docs.flatMap((doc) => {
+      const stream = docStream(doc.kind, current);
+      return this.#values.has(stream)
+        ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
+        : [];
+    });
     this.#update({
       ...(conversation === undefined ? {} : { conversation }),
       ...(conversations === undefined ? {} : { conversations }),
@@ -308,6 +311,8 @@ class RemoteClient {
           await this.#switch(forked);
           await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: crypto.randomUUID() });
         }),
+      decide: (kind, requestId, approved) =>
+        this.#command(() => this.#call("decide", { conversationId: conversationId(), kind, requestId, approved })),
     };
   }
 

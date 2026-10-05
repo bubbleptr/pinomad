@@ -13,6 +13,13 @@ export default defineConfig({
       {
         test: {
           ...shared,
+          name: "protocol",
+          include: ["packages/protocol/test/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...shared,
           name: "host",
           include: ["apps/host/test/**/*.test.ts"],
         },

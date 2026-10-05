@@ -2,8 +2,10 @@ import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { AssistantEntry } from "@earendil-works/pi-durable";
+import { AssistantEntry, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { chromium } from "@playwright/test";
+import { approval } from "@pinomad/host/src/extensions/approval.ts";
+import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { createServer } from "vite";
@@ -118,6 +120,58 @@ it.each([
   const entries = observer.view.current().conversation.entries;
   expect(entries.some((entry) => entry.id === source.id)).toBe(true);
   expect(transcript(observer.view.current().conversation).at(-2)).toMatchObject({ role: "user", text: "Continue from this evidence." });
+});
+
+it("renders todo and approval documents on every page and shares one decision", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    extensions: [todo, approval],
+    answers: [
+      fauxAssistantMessage(
+        fauxToolCall("todo_write", { items: [{ text: "Investigate the report", status: "in_progress" }] }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(fauxToolCall("request_approval", { title: "Deploy v2.3?" }), { stopReason: "toolUse" }),
+      "all approved",
+    ],
+  });
+  const a = await openPage(host, 1280, webOrigin);
+  const b = await openPage(host, 1280, webOrigin);
+
+  await a.getByRole("textbox").fill("plan and deploy");
+  await a.getByRole("textbox").press("Enter");
+
+  for (const page of [a, b]) {
+    const panel = page.getByLabel("Live state");
+    await panel.getByText("Investigate the report", { exact: true }).waitFor();
+    await panel.getByText("Deploy v2.3?", { exact: true }).waitFor();
+    await expect.poll(() => panel.getByRole("button", { name: "Approve", exact: true }).count()).toBe(1);
+  }
+
+  await a.getByLabel("Live state").getByRole("button", { name: "Approve", exact: true }).click();
+  await b.getByLabel("Live state").getByText("approved", { exact: true }).waitFor();
+  await expect.poll(() => b.getByLabel("Live state").getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
+  await a.getByText("all approved", { exact: true }).waitFor();
+});
+
+it("renders a document that fails its presentation schema as key-value fallback", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], extensions: [todo, approval] });
+  // Declared pinomad.todo but shaped wrong: the client must not lie about it.
+  const token = todo.docs![0]!.token;
+  await host.harness.commit(async (tx) => {
+    (await tx.doc(token, ROOT_CONVERSATION_ID))["items"] = "not-an-array";
+  }, BACKGROUND_CONTEXT);
+
+  const page = await openPage(host, 1280, webOrigin);
+  const panel = page.getByLabel("Live state");
+  await panel.getByText("todo.list", { exact: true }).waitFor();
+  await panel.getByText("items", { exact: true }).waitFor();
+  await panel.getByText('"not-an-array"', { exact: true }).waitFor();
+  // The rest of the workbench still works.
+  await page.getByRole("textbox").fill("still alive");
+  expect(await page.getByRole("textbox").textContent()).toBe("still alive");
 });
 
 it("shows interruption without a text bubble and never offers a fork for streaming or aborted thinking", async () => {
