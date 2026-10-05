@@ -1,0 +1,118 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import { afterEach } from "vitest";
+import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
+import { connectRemoteDurable, type RemoteDurable } from "@durato/protocol/remote-durable.ts";
+import type { DurableViewSource } from "@durato/protocol/view.ts";
+
+/** Cleanups registered during a test, run in reverse after it. */
+export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
+  const cleanups: (() => Promise<void> | void)[] = [];
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  });
+  return (cleanup) => void cleanups.push(cleanup);
+}
+
+/** An in-process host on a temporary store whose faux model gives `answers` in order. */
+export async function startFauxHost(
+  defer: (cleanup: () => Promise<void> | void) => void,
+  {
+    answers = [LONG_ANSWER],
+    tokensPerSecond = 200,
+    dataDir,
+    port = 0,
+    browserOrigins,
+    docs,
+  }: {
+    answers?: string[];
+    tokensPerSecond?: number;
+    /** Reopen an earlier host's store. */
+    dataDir?: string;
+    /** Fixed, so clients reconnect to a restarted host. */
+    port?: number;
+    browserOrigins?: readonly string[];
+    /** Conversation documents offered as `doc:` streams. */
+    docs?: OpenHostOptions["docs"];
+  } = {},
+): Promise<OpenedHost> {
+  const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
+  defer(dir.remove);
+  const faux = fauxProvider({ tokensPerSecond, tokenSize: { min: 1, max: 1 } });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  faux.setResponses(answers.map((answer) => fauxAssistantMessage(answer)));
+  const model = faux.getModel();
+  const host = await openHost({
+    dataDir: dir.path,
+    cwd: dir.path,
+    models,
+    modelSummaries: () => [{ provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow }],
+    initialModel: { provider: model.provider, modelId: model.id },
+    port,
+    ...(browserOrigins === undefined ? {} : { browserOrigins }),
+    ...(docs === undefined ? {} : { docs }),
+  });
+  defer(() => host.close());
+  return host;
+}
+
+export async function connectTo(
+  defer: (cleanup: () => Promise<void> | void) => void,
+  host: OpenedHost,
+  token = host.token,
+): Promise<RemoteDurable> {
+  const client = await connectRemoteDurable({
+    url: host.url,
+    token,
+    reconnectDelayMs: { min: 100, max: 500 },
+  });
+  defer(() => client.close());
+  return client;
+}
+
+export async function tempDir(): Promise<{ path: string; remove(): Promise<void> }> {
+  const path = await mkdtemp(join(tmpdir(), "durato-"));
+  return { path, remove: () => rm(path, { recursive: true, force: true }) };
+}
+
+/** Resolve once `predicate` holds for the source's view, checked on every update. */
+export function waitForView(
+  source: DurableViewSource,
+  predicate: (view: ReturnType<DurableViewSource["current"]>) => boolean,
+  timeoutMs = 20_000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const check = (): boolean => {
+      if (!predicate(source.current())) return false;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve();
+      return true;
+    };
+    const timer = setTimeout(() => {
+      unsubscribe();
+      reject(new Error(`view condition not met within ${timeoutMs} ms`));
+    }, timeoutMs);
+    const unsubscribe = source.subscribe(() => void check());
+    check();
+  });
+}
+
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => (typeof address === "object" && address ? resolve(address.port) : reject(new Error("no port"))));
+    });
+  });
+}
+
+/** A reply long enough at the faux provider's pace to leave a window mid-stream. */
+export const LONG_ANSWER = Array.from({ length: 40 }, (_, i) => `step-${i}`).join(" ");

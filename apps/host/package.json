@@ -1,0 +1,24 @@
+{
+  "name": "@durato/host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./src/*": "./src/*",
+    "./test/*": "./test/*"
+  },
+  "dependencies": {
+    "@durato/protocol": "workspace:*",
+    "@earendil-works/chord": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-durable": "1.0.0",
+    "proper-lockfile": "4.1.2",
+    "undici": "8.10.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/proper-lockfile": "4.1.4",
+    "@types/ws": "8.18.2"
+  }
+}
