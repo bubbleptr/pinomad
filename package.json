@@ -1,0 +1,23 @@
+{
+  "name": "durato",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web",
+    "test": "vitest run",
+    "build": "cd apps/web && bun run build",
+    "host": "node apps/host/src/main.ts",
+    "web": "cd apps/web && bun run dev",
+    "link": "node apps/host/src/cli/web-link.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.9"
+  }
+}
