@@ -25,6 +25,11 @@ bun run link
 
 默认数据目录是 `~/.pinomad`（session.sqlite、token、目录锁），可用 `--data-dir` 或 `PINOMAD_DATA_DIR` 覆盖；同一数据目录同时只能有一个宿主进程。
 
+agent 在 `--cwd`（默认是启动宿主时的当前目录）里工作，用 read / write / edit / bash 工具，执行前不需要审批。系统提示词会带上以下内容，每次请求都重新读取（ADR-0006）：
+
+- AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
+- Skills：`<cwd>/.agents/skills` 和 `~/.agents/skills`，同名时项目的生效。
+
 ## 验证
 
 ```sh
