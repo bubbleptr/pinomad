@@ -15,7 +15,7 @@
 4. **上下文**：由内置扩展 `context` 提供系统提示词的几个分段：PiNomad 自己的开场说明、工作目录、项目上下文、Skills。每次请求都重新从文件系统读取，修改 AGENTS.md 或 Skill 文件后不用重启。
    - AGENTS.md 读两类：`~/.agents/AGENTS.md`（全局），以及从文件系统根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md（项目，靠近 cwd 的排在后面）。
    - Skills 从 `<cwd>/.agents/skills` 和 `~/.agents/skills` 读取，同名时项目的生效。
-   - 不读 `~/.pi` 下的任何配置（ADR-0001）。模型认证仍然读 `~/.pi/agent`，这一点是 ADR-0002 允许复用的独立设施。
+   - AGENTS.md 和 Skills 不从 `~/.pi` 读（ADR-0001）。宿主仍然复用 pi 的两类设施（ADR-0002）：`~/.pi/agent` 下的模型认证，以及 pi 的 settings.json，用来读默认模型、思考等级、重试、压缩和代理配置（`SettingsManager.create(cwd)`，同时会读项目下的 `.pi/settings.json`）。PiNomad 要不要有自己的设置文件，等做设置界面时再决定。
    - 文件加载复用 `pi-coding-agent` 导出的 `loadProjectContextFiles`、`loadSkills`、`formatSkillsForPrompt`。
 
 ## 后果
