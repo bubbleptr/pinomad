@@ -10,6 +10,7 @@ import {
   type HarnessSettings,
   type ModelRef,
 } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -77,11 +78,22 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     let report = (error: unknown): void => void reports.push(error);
     const registry = createRegistry();
     for (const { extension } of options.extensions ?? []) registry.install(extension);
+    // One environment per working directory; conversations sharing a cwd share it.
+    const environments = new Map<string, NodeExecutionEnv>();
     harness = await Harness.open(
       await openNodeSqliteStorage(join(options.dataDir, "session.sqlite")),
       {
         models: options.models,
         registry,
+        env: (target) => {
+          const cwd = target.cwd ?? options.cwd;
+          let env = environments.get(cwd);
+          if (env === undefined) {
+            env = new NodeExecutionEnv({ cwd });
+            environments.set(cwd, env);
+          }
+          return env;
+        },
         ...(options.settings === undefined ? {} : { settings: options.settings }),
         onReport: (error) => report(error),
       },
@@ -122,6 +134,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
+            await Promise.all([...environments.values()].map((env) => env.cleanup(context)));
           } finally {
             await release();
           }
