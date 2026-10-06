@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server as HttpServer } from "n
 import type { AddressInfo } from "node:net";
 import { networkInterfaces } from "node:os";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, resolve, sep } from "node:path";
+import { extname, join, relative, resolve, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
@@ -12,6 +12,7 @@ import {
   type AgentState,
   type Conversation,
   type ConversationId,
+  type ConversationInit,
   type ConversationRecord,
   type Cursor,
   type EntryId,
@@ -42,10 +43,12 @@ import {
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
+import { branchSuffix, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreePath } from "./checkout.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import {
   addProject,
   archive,
+  cleanupArchivedWorktrees,
   type ConversationDefaults,
   createConversation,
   IndexDoc,
@@ -742,7 +745,12 @@ class GatewayClient {
         const conversationId = await createConversation(
           this.#options.harness,
           this.#options.dataDir,
-          create,
+          {
+            home: create.home,
+            text: create.text,
+            requestId: create.requestId,
+            ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
+          },
           this.#options.defaults,
           context,
         );
@@ -751,6 +759,14 @@ class GatewayClient {
       case "archive": {
         const input = args as CallMethods["archive"]["args"];
         await archive(this.#options.harness, input.conversationId, input.archived, context);
+        // Archiving cleans worktree directories of the subtree but keeps
+        // branches — they may hold unmerged work (ADR-0010 §7).
+        if (input.archived) {
+          const kept = await cleanupArchivedWorktrees(this.#options.harness, input.conversationId, context);
+          for (const { record, reason } of kept) {
+            await this.send({ type: "notice", level: "warning", message: `Kept worktree ${record.path} (branch ${record.branch}): ${reason}` });
+          }
+        }
         return null;
       }
       case "createPairing": {
@@ -813,10 +829,16 @@ class GatewayClient {
       case "fork": {
         const { entryId, removeTools = [] } = args as CallMethods["fork"]["args"];
         // Tools are stored by name; the fork's agent drops these from what its parent offered.
-        const remove = (await conversation.agent(context)).tools.filter((tool) => removeTools.includes(tool.name));
+        const agent = await conversation.agent(context);
+        const remove = agent.tools.filter((tool) => removeTools.includes(tool.name));
+        const init = await this.#forkCheckout(agent.cwd);
         const fork = await conversation.fork(
           Number(entryId) as EntryId,
-          { ownership: { kind: "ownerless" }, ...(remove.length === 0 ? {} : { agent: { tools: { remove } } }) },
+          {
+            ownership: { kind: "ownerless" },
+            ...(remove.length === 0 ? {} : { agent: { tools: { remove } } }),
+            ...(init === undefined ? {} : { init }),
+          },
           context,
         );
         return { conversationId: fork.id };
@@ -843,6 +865,48 @@ class GatewayClient {
         }, context);
       }
     }
+  }
+
+  /**
+   * The fork's worktree record and cwd, or undefined for Chat and non-git
+   * parents that keep sharing the parent's directory (ADR-0010 §4). The
+   * snapshot of the parent's checkout must be taken before the fork commit —
+   * it captures the files as of now, not as of the forked entry.
+   */
+  async #forkCheckout(cwd: string | undefined): Promise<ConversationInit | undefined> {
+    if (cwd === undefined) return undefined;
+    const index = await this.#options.harness.snapshot(IndexDoc, context);
+    const existing = checkoutAt(index?.checkouts, cwd);
+    let source: { readonly repo: string; readonly dir: string; readonly subdir: string } | undefined;
+    if (existing !== undefined) {
+      // The parent works in a worktree: snapshot that tree, keep its repo and
+      // position inside it (forks of forks and subagents resolve the same way).
+      source = { repo: existing.repo, dir: existing.path, subdir: relative(existing.path, cwd) };
+    } else {
+      const chats = join(this.#options.dataDir, "chats");
+      if (cwd === chats || cwd.startsWith(chats + sep)) return undefined;
+      const base = await gitBase(cwd);
+      if (base === undefined) return undefined;
+      source = { repo: base.repo, dir: base.repo, subdir: base.subdir };
+    }
+    const { base, snapshot } = await snapshotOf(source.dir);
+    const suffix = branchSuffix();
+    return async (tx, id) => {
+      const path = worktreePath(this.#options.dataDir, id);
+      const doc = await tx.doc(IndexDoc);
+      // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.
+      if (doc.checkouts === undefined) doc.checkouts = [];
+      doc.checkouts.push({
+        conversationId: id,
+        path,
+        repo: source.repo,
+        subdir: source.subdir,
+        branch: worktreeBranch(id, suffix),
+        base,
+        snapshot,
+      });
+      (await tx.doc(AgentDoc, id)).cwd = join(path, source.subdir);
+    };
   }
 
   async #agent(id: ConversationId): Promise<Readonly<AgentState>> {

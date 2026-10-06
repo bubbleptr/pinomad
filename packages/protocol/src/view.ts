@@ -3,7 +3,7 @@
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { DeviceEntry } from "./devices.ts";
-import type { Home, Organized } from "./organization.ts";
+import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 
 export interface ModelSummary extends ModelRef {
@@ -53,6 +53,8 @@ export interface DurableView {
   readonly organized: Organized;
   /** The shown conversation's home, inherited from its index ancestor. */
   readonly home?: Home;
+  /** The shown conversation's worktree checkout (ADR-0010); absent for project-dir and Chat checkouts. */
+  readonly checkout?: WorktreeCheckout;
   readonly models: readonly ModelSummary[];
   readonly notices: readonly Notice[];
   /** The live task graph while the task panel is open. */
@@ -75,8 +77,8 @@ export interface DurableController {
   addProject(path: string): Promise<void>;
   /** Unregister a project; its directory and conversations are kept. */
   removeProject(path: string): Promise<void>;
-  /** Create a conversation at a home, send `text`, and show it. */
-  createConversation(home: Home, text: string): Promise<void>;
+  /** Create a conversation at a home, send `text`, and show it. `checkout` selects project-dir over the worktree default. */
+  createConversation(home: Home, text: string, checkout?: "worktree" | "project"): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
   /** Prompt when idle; otherwise steer or queue a follow-up. */
