@@ -290,6 +290,9 @@ class RemoteClient {
   }
 
   #controller(): DurableController {
+    // crypto.randomUUID exists only in secure contexts; a phone on http://<lan-ip> has none.
+    const newRequestId = (): string =>
+      Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const conversationId = (): ConversationId => {
       if (this.#current === undefined) throw new Error("No conversation selected");
       return this.#current;
@@ -299,7 +302,7 @@ class RemoteClient {
       removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
       createConversation: (home, text) =>
         this.#command(async () => {
-          const { conversationId } = await this.#call("createConversation", { home, text, requestId: crypto.randomUUID() });
+          const { conversationId } = await this.#call("createConversation", { home, text, requestId: newRequestId() });
           await this.#switch(conversationId);
         }),
       archive: (id, archived) =>
@@ -308,7 +311,7 @@ class RemoteClient {
           if (archived && id === this.#current) this.#unshow();
         }),
       submit: (text, whenBusy) =>
-        this.#command(() => this.#call("submit", { conversationId: conversationId(), text, whenBusy, requestId: crypto.randomUUID() })),
+        this.#command(() => this.#call("submit", { conversationId: conversationId(), text, whenBusy, requestId: newRequestId() })),
       compact: (instructions) =>
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
@@ -349,7 +352,7 @@ class RemoteClient {
           });
           // The fork is listed once its creating commit reaches the conversation list; switching does not need that.
           await this.#switch(forked);
-          await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: crypto.randomUUID() });
+          await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: newRequestId() });
         }),
       decide: (kind, requestId, approved) =>
         this.#command(() => this.#call("decide", { conversationId: conversationId(), kind, requestId, approved })),

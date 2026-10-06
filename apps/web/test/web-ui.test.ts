@@ -314,6 +314,11 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   const browser = await chromium.launch();
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  // A phone on http://<lan-ip> is not a secure context: crypto.randomUUID is
+  // absent there, so every client code path must survive without it.
+  await page.addInitScript(() => {
+    Object.defineProperty(crypto, "randomUUID", { value: undefined });
+  });
   await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
 
   // Pairing completes: the composer is usable and the secret leaves the URL.
