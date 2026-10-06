@@ -5,7 +5,7 @@
 - 自托管宿主：在你自己的机器（Mac mini、Linux VPS）上运行，直接使用本机的 shell 和代码仓库；执行可在崩溃或重启后恢复。
 - 多端客户端：桌面、Web、移动端连接同一个宿主，界面由 PiNomad 统一定义。
 
-架构决策见 [`docs/adr/`](docs/adr/)，术语见 [`CONTEXT.md`](CONTEXT.md)。
+架构决策见 [`docs/adr/`](docs/adr/README.md)，路线图见 [`docs/roadmap.md`](docs/roadmap.md)，术语见 [`CONTEXT.md`](CONTEXT.md)。
 
 ## 运行
 
