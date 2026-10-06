@@ -18,6 +18,7 @@ import { coding } from "./extensions/coding.ts";
 import { createContext } from "./extensions/context.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
+import { checkoutInfo } from "./organization.ts";
 import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
 
 const { values } = parseArgs({
@@ -39,7 +40,7 @@ const common = {
   dataDir,
   projects: values.project ?? [],
   port: Number(values.port),
-  extensions: [createContext({ agentsHome: join(homedir(), ".agents") }), coding, todo, approval],
+  extensions: [createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }), coding, todo, approval],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   // Both gateway ports serve the built client; in service mode the loopback
   // port is the only web server around (ADR-0009 §7).

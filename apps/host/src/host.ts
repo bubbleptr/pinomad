@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -11,7 +11,8 @@ import {
   type ModelRef,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { addProject, type ConversationDefaults, ensureIndex } from "./organization.ts";
+import { addProject, type ConversationDefaults, ensureIndex, IndexDoc } from "./organization.ts";
+import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, pairingOffers } from "./devices.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
@@ -110,6 +111,20 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         env: async (target) => {
           const cwd = target.cwd;
           if (cwd === undefined) return undefined;
+          // The one place worktrees materialize (ADR-0010 §6): first use, a crash
+          // between commit and creation, a manual rm -rf, and reuse after unarchive
+          // all funnel here. A missing record means the path was never registered.
+          const worktrees = worktreeRoot(options.dataDir);
+          if (cwd === worktrees || cwd.startsWith(worktrees + sep)) {
+            const index = await target.read.snapshot(IndexDoc, context);
+            const record = checkoutAt(index?.checkouts, cwd);
+            if (record !== undefined) {
+              await ensureWorktree(record);
+              // The record's subdir is part of the checkout, but a defensive
+              // mkdir keeps a vanished one from failing the environment.
+              await mkdir(cwd, { recursive: true });
+            }
+          }
           // A crash between conversation creation and checkout creation leaves the
           // dir missing; the environment is the one place it is always needed.
           if (cwd.startsWith(`${chatsDir}/`)) await mkdir(cwd, { recursive: true });
