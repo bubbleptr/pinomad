@@ -61,6 +61,30 @@ bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 
 </details>
 
+## 常驻运行（ADR-0009）
+
+把宿主装成当前用户的系统服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起：
+
+```sh
+bun run service -- install [--data-dir DIR --port N --remote-port N --project DIR …]
+bun run service -- status [--data-dir D] [--url U]
+bun run service -- restart [--force] [--data-dir D] [--url U]
+bun run service -- logs [--follow] [-n N] [--data-dir D]
+bun run service -- uninstall
+bun run upgrade [--force]
+```
+
+- `install` 把宿主参数原样写进服务定义；`--data-dir`（或 `PINOMAD_DATA_DIR`，默认 `~/.pinomad`）展开成显式的绝对路径。改参数就是带新参数再跑一次 `install`。装好后用 `bun run link` 拿本机浏览器链接、`bun run pair` 发手机配对码。
+- **PATH 在安装时固定**：服务里 agent 的 bash 继承的是安装那一刻终端的 PATH（已经剥掉 `node_modules/.bin` 和 Bun 注入的临时目录）。后来装了新工具、PATH 变了，重新跑一次 `install` 刷新。
+- `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。`upgrade` 依次 `git pull --ff-only`、`bun install`、`bun run build`，全部成功后才执行同样的 restart；工作区有未提交改动时拒绝执行。
+- `uninstall` 只卸载服务，不动数据目录。
+- macOS：宿主以登录会话运行，机器重启后要能自动起来需在系统设置里打开自动登录，并为这台机器关掉睡眠。日志写到 `<数据目录>/logs/host.log`。
+- Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。
+- 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**（`apps/web/dist`）。`bun run link` 打印的链接按顺序探测：正在跑的 vite 开发服务器（5199）优先；否则宿主自己提供 Web 的端口；都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
+- 服务在跑时 `bun run start` 会因为目录锁拿不到而失败（同一数据目录只有一个宿主）；开发时用另一个 `--data-dir`，或先 `uninstall`。
+
+Windows 不在支持范围；其他平台跑 `service` 会直接报错退出。
+
 ## 验证
 
 ```sh
