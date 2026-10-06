@@ -1,5 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
+import type { HostDevices } from "./devices.ts";
 import { homeOf, type HostIndex, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
@@ -48,6 +49,18 @@ export function connectRemoteDurable(options: RemoteDurableOptions): Promise<Rem
   return new RemoteClient(options).ready;
 }
 
+/**
+ * The host closed with 4401: this client is not allowed (wrong token, or the
+ * device is not paired or was revoked). Typed so a client UI can tell "rejected"
+ * apart from "host unreachable" — conflating them would offer to wipe a good key.
+ */
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("Unauthorized: this client is not allowed (wrong token, or the device is not paired or was revoked)");
+    this.name = "UnauthorizedError";
+  }
+}
+
 type Pending = { resolve(value: unknown): void; reject(error: Error): void };
 
 class RemoteClient {
@@ -55,7 +68,7 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
-  readonly #wanted = new Set<StreamName>(["conversations", "index"]);
+  readonly #wanted = new Set<StreamName>(["conversations", "index", "devices"]);
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
   readonly #pending = new Map<number, Pending>();
@@ -100,9 +113,9 @@ class RemoteClient {
     if (this.#state === undefined) {
       this.#closed = true;
       this.#rejectReady(
-        new Error(
-          code === UNAUTHORIZED_CLOSE_CODE ? "Unauthorized: wrong host token" : (reason ?? `Could not connect to ${this.#transport.label}`),
-        ),
+        code === UNAUTHORIZED_CLOSE_CODE
+          ? new UnauthorizedError()
+          : new Error(reason ?? `Could not connect to ${this.#transport.label}`),
       );
       return;
     }
@@ -110,7 +123,7 @@ class RemoteClient {
     if (code === UNAUTHORIZED_CLOSE_CODE) {
       this.#closed = true;
       this.#update({ connection: "closed" });
-      this.#notice("error", "Host rejected the token.");
+      this.#notice("error", new UnauthorizedError().message);
       return;
     }
     this.#update({ connection: "reconnecting" });
@@ -169,7 +182,7 @@ class RemoteClient {
   }
 
   #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>): void {
-    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index")]).then(() => {
+    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index"), this.#snapshot("devices")]).then(() => {
       this.#state = {
         session: hello.session,
         organized: { chats: [], projects: [] },
@@ -177,6 +190,7 @@ class RemoteClient {
         notices: [],
         connection: "connected",
         docs: [],
+        devices: [],
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -204,6 +218,7 @@ class RemoteClient {
       current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
     const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
     const index = (this.#values.get("index") as HostIndex | undefined) ?? { projects: [], conversations: [] };
+    const devices = (this.#values.get("devices") as HostDevices | undefined)?.devices ?? [];
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
     // In the host's order; a doc joins once its snapshot arrived.
     const docs: ExtensionDocView[] =
@@ -221,6 +236,7 @@ class RemoteClient {
       home: current === undefined ? undefined : homeOf(index, summaries, current),
       tasks,
       docs,
+      devices,
     });
   }
 
@@ -337,6 +353,17 @@ class RemoteClient {
         }),
       decide: (kind, requestId, approved) =>
         this.#command(() => this.#call("decide", { conversationId: conversationId(), kind, requestId, approved })),
+      // Queued like other commands, but the caller owns the error: the dialog
+      // shows it, so no notice.
+      createPairing: () => {
+        const pairing = this.#commands.then(() => this.#call("createPairing", {}));
+        this.#commands = pairing.then(
+          () => {},
+          () => {},
+        );
+        return pairing;
+      },
+      revokeDevice: (publicKey) => this.#command(() => this.#call("revokeDevice", { publicKey })),
     };
   }
 

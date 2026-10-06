@@ -1,10 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { connectRemoteDurable, type RemoteDurable, type RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
+import { connectRemoteDurable, type RemoteDurable, type RemoteDurableOptions, UnauthorizedError } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 
 export type RemoteState =
   | { readonly status: "connecting" }
-  | { readonly status: "failed"; readonly error: string }
+  /** `unauthorized` = the host rejected us with 4401 (not just unreachable). */
+  | { readonly status: "failed"; readonly error: string; readonly unauthorized: boolean }
   | { readonly status: "ready"; readonly remote: RemoteDurable };
 
 /**
@@ -29,7 +30,12 @@ export function useRemoteDurable(options: RemoteDurableOptions, key: string): Re
         setState({ status: "ready", remote });
       },
       (error: unknown) => {
-        if (!cancelled) setState({ status: "failed", error: error instanceof Error ? error.message : String(error) });
+        if (!cancelled)
+          setState({
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+            unauthorized: error instanceof UnauthorizedError,
+          });
       },
     );
     return () => {

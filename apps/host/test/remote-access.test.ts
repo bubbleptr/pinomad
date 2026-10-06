@@ -2,10 +2,8 @@ import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import type { CallMethod, CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
-import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -15,51 +13,14 @@ import type { OpenedHost } from "../src/host.ts";
 import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
-let nextCall = 1;
 
-interface RawClient {
-  readonly socket: WebSocket;
-  readonly frames: ServerFrame[];
-  call<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<Extract<ServerFrame, { type: "result" }>>;
+/** The controller's pairing offer, unwrapped from its result frame. */
+async function createPairing(client: RemoteDurable): Promise<{ url: string; expiresAt: number }> {
+  return client.controller.createPairing();
 }
 
-async function socketTo(url: string, token?: string): Promise<RawClient> {
-  const address = new URL(url);
-  if (token !== undefined) address.searchParams.set("token", token);
-  const socket = new WebSocket(address);
-  const frames: ServerFrame[] = [];
-  socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
-  await once(socket, "open");
-  defer(() => socket.terminate());
-  return {
-    socket,
-    frames,
-    call(method, args) {
-      const id = nextCall++;
-      socket.send(JSON.stringify({ type: "call", id, method, args }));
-      return (async () => {
-        for (;;) {
-          const found = frames.find(
-            (frame): frame is Extract<ServerFrame, { type: "result" }> => frame.type === "result" && frame.id === id,
-          );
-          if (found !== undefined) return found;
-          await once(socket, "message");
-        }
-      })();
-    },
-  };
-}
-
-/** Wait for a `devices` snapshot matching `predicate`, over a raw token client. */
-async function subscribeDevices(client: RawClient): Promise<DeviceEntry[]> {
-  client.socket.send(JSON.stringify({ type: "subscribe", stream: "devices" }));
-  for (;;) {
-    const snapshot = client.frames.find(
-      (frame) => frame.type === "snapshot" && frame.stream === "devices",
-    ) as { value: { devices: DeviceEntry[] } } | undefined;
-    if (snapshot !== undefined) return snapshot.value.devices;
-    await once(client.socket, "message");
-  }
+function devicesOf(client: RemoteDurable) {
+  return client.view.current().devices;
 }
 
 function connectDevice(host: OpenedHost, device: KeyPair, pairing?: { secret: string; name: string }): Promise<RemoteDurable> {
@@ -92,19 +53,16 @@ describe("remote access", () => {
   it("is off by default: no remote listener and createPairing fails", async () => {
     const host = await startFauxHost(defer);
     expect(host.remote).toBeUndefined();
-    const client = await socketTo(host.url, host.token);
-    const reply = await client.call("createPairing", {});
-    expect(reply).toMatchObject({ ok: false, error: expect.stringContaining("--remote-port") });
+    const client = await connectTo(defer, host);
+    await expect(client.controller.createPairing()).rejects.toThrow("--remote-port");
   });
 
   it("pairs a device and the client can drive conversations", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() }, answers: ["paired hello"] });
     expect(host.remote).toBeDefined();
-    const tokenClient = await socketTo(host.url, host.token);
+    const tokenClient = await connectTo(defer, host);
 
-    const reply = await tokenClient.call("createPairing", {});
-    expect(reply).toMatchObject({ ok: true });
-    const { url, expiresAt } = (reply as { value: { url: string; expiresAt: number } }).value;
+    const { url, expiresAt } = await createPairing(tokenClient);
     expect(expiresAt).toBeGreaterThan(Date.now());
     const { hostKey, secret } = pairFrom(url);
     expect(hostKey).toEqual(host.remote!.hostKey);
@@ -116,16 +74,16 @@ describe("remote access", () => {
     await remote.controller.createConversation({ kind: "chat" }, "hello from phone");
     await waitForView(remote.view, (view) => transcript(view.conversation!).at(-1)?.text === "paired hello");
 
-    const devices = await subscribeDevices(tokenClient);
-    expect(devices).toHaveLength(1);
-    expect(devices[0]!.name).toBe("test phone");
-    expect(devices[0]!.publicKey).toBe(toBase64Url(device.publicKey));
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    const [entry] = devicesOf(tokenClient);
+    expect(entry!.name).toBe("test phone");
+    expect(entry!.publicKey).toBe(toBase64Url(device.publicKey));
   });
 
   it("reconnects a registered device without pairing", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
-    const tokenClient = await socketTo(host.url, host.token);
-    const { url } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
     const device = generateKeyPair();
     const first = await connectDevice(host, device, { secret, name: "phone" });
@@ -137,8 +95,8 @@ describe("remote access", () => {
 
   it("rejects wrong, reused, expired, and absent pairing secrets", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort(), pairingTtlMs: 60 } });
-    const tokenClient = await socketTo(host.url, host.token);
-    const { url } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
 
     const wrong = generateKeyPair();
@@ -151,19 +109,19 @@ describe("remote access", () => {
     await expect(connectDevice(host, generateKeyPair(), { secret, name: "other" })).rejects.toThrow();
 
     // Expired: a fresh offer past its TTL.
-    const { url: expiredUrl } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const { url: expiredUrl } = await createPairing(tokenClient);
     const { secret: expiredSecret } = pairFrom(expiredUrl);
     await new Promise((resolve) => setTimeout(resolve, 80));
     await expect(connectDevice(host, generateKeyPair(), { secret: expiredSecret, name: "late" })).rejects.toThrow();
 
-    const devices = await subscribeDevices(tokenClient);
-    expect(devices.map((entry) => entry.name)).toEqual(["phone"]);
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    expect(devicesOf(tokenClient).map((entry) => entry.name)).toEqual(["phone"]);
   });
 
   it("accepts a registered device resending its pair payload (lost reply retry)", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
-    const tokenClient = await socketTo(host.url, host.token);
-    const { url } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
     const device = generateKeyPair();
     const first = await connectDevice(host, device, { secret, name: "phone" });
@@ -175,20 +133,18 @@ describe("remote access", () => {
 
   it("revoking a device closes its live client and rejects reconnects", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
-    const tokenClient = await socketTo(host.url, host.token);
-    const { url } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
     const device = generateKeyPair();
     const remote = await connectDevice(host, device, { secret, name: "phone" });
     const key = toBase64Url(device.publicKey);
 
-    const reply = await tokenClient.call("revokeDevice", { publicKey: key });
-    expect(reply).toMatchObject({ ok: true, value: null });
+    await tokenClient.controller.revokeDevice(key);
     await waitForView(remote.view, (view) => view.connection === "closed");
     await expect(connectDevice(host, device)).rejects.toThrow();
 
-    const devices = await subscribeDevices(tokenClient);
-    expect(devices).toHaveLength(0);
+    await waitForView(tokenClient.view, (view) => view.devices.length === 0);
   });
 
   it("does not serve token auth or garbage on the remote port", async () => {
@@ -211,8 +167,8 @@ describe("remote access", () => {
     defer(dir.remove);
     const port = await freePort();
     const first = await startFauxHost(defer, { dataDir: dir.path, remote: { port } });
-    const tokenClient = await socketTo(first.url, first.token);
-    const { url } = (await tokenClient.call("createPairing", {}) as { value: { url: string } }).value;
+    const tokenClient = await connectTo(defer, first);
+    const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
     const device = generateKeyPair();
     const paired = await connectDevice(first, device, { secret, name: "phone" });

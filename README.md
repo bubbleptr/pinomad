@@ -44,7 +44,7 @@ bun run host -- --remote-port 7422
 bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 ```
 
-远程端口不接受 token：客户端要先做配对（由已连接的客户端发起，目前客户端的配对界面还没有，仅协议与宿主侧就绪），新设备凭一次性密钥完成 Noise 握手并登记公钥，之后只有已登记的设备能连。
+远程端口不接受 token：客户端要先做配对。`bun run pair` 会在终端打印一个二维码（也是侧栏 Devices → Pair a device 的同一种链接）；用手机扫它打开 Web 客户端即完成 Noise 握手并登记公钥，之后这台设备不带 token 也能重连。已登记的设备和吊销都在侧栏的 Devices 里管理。
 
 ## 验证
 

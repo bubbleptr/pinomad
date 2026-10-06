@@ -8,6 +8,9 @@ import { approval } from "@pinomad/host/src/extensions/approval.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
+import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { generateKeyPair } from "@pinomad/protocol/noise.ts";
+import { fromBase64Url, secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
@@ -295,4 +298,95 @@ it("organizes conversations under projects and chats", async () => {
     .organized.projects[0]!.conversations.find((node) => node.children.length > 0)!;
   expect(parentNode.children[0]!.summary.kind).toBe("fork");
   await page.getByText("fork answer", { exact: true }).waitFor();
+});
+
+it("pairs a phone client through the QR link and survives revoke", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["paired answer"],
+    remote: { port: await freePort() },
+  });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+
+  // Pairing completes: the composer is usable and the secret leaves the URL.
+  const composer = page.getByRole("textbox");
+  await composer.waitFor();
+  await composer.fill("hello from phone");
+  await composer.press("Enter");
+  await page.getByText("paired answer", { exact: true }).waitFor();
+  expect(page.url()).not.toContain("#pair=");
+
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+  expect(tokenClient.view.current().devices[0]!.name).toBe("Mac Chrome");
+
+  // The stored device reconnects without a fragment.
+  await page.goto(`${webOrigin}/`);
+  await page.getByRole("textbox").waitFor();
+
+  // Revocation drops the client into the rejected state; forgetting shows the entry screen.
+  await tokenClient.controller.revokeDevice(tokenClient.view.current().devices[0]!.publicKey);
+  await page.getByText("paired with the host, or was revoked", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Forget this host", exact: true }).click();
+  await page.getByText("No host link", { exact: true }).waitFor();
+});
+
+it("manages paired devices from the Devices dialog", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("No paired devices", { exact: false }).waitFor();
+  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await page.getByRole("img", { name: "Pairing QR code" }).waitFor();
+  await dialog.getByText("#pair=", { exact: false }).waitFor();
+  await dialog.getByText("Expires in", { exact: false }).waitFor();
+
+  // A device paired from another client appears in the list.
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const [hostKey, secret] = pairingUrl.split("#pair=")[1]!.split(".");
+  const phone = await connectRemoteDurable({
+    transport: secureWebSocketTransport({
+      url: host.remote!.url,
+      hostKey: fromBase64Url(hostKey!),
+      device: generateKeyPair(),
+      pairing: { secret: secret!, name: "QA phone" },
+    }),
+  });
+  defer(() => phone.close());
+  await dialog.getByText("QA phone", { exact: true }).waitFor();
+
+  await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
+  await dialog.getByText("No paired devices", { exact: false }).waitFor();
+});
+
+it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByRole("textbox").waitFor();
+
+  // Host dies; the stored device mode must not claim the pairing is bad.
+  await tokenClient.close();
+  await host.close();
+  await page.goto(`${webOrigin}/`);
+  await page.getByText("Could not connect to the host", { exact: true }).waitFor();
+  await expect.poll(() => page.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
 });
