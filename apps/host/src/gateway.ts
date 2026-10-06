@@ -27,6 +27,7 @@ import {
   type CallMethods,
   type ClientFrame,
   isClientFrame,
+  PROTOCOL_VERSION,
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
@@ -61,8 +62,6 @@ export interface RemoteGatewayOptions {
   readonly hostKey: KeyPair;
   /** Public address advertised in pairing URLs; defaults to the detected LAN IP. */
   readonly publicUrl?: string;
-  /** Built web client to serve over plain HTTP on the remote port. */
-  readonly webRoot?: string;
   readonly offers: PairingOffers;
   /** How long a new socket may sit before message 1 arrives; default 10 s. */
   readonly handshakeTimeoutMs?: number;
@@ -83,6 +82,8 @@ export interface GatewayOptions {
   readonly defaults: ConversationDefaults;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
+  /** Built web client served over plain HTTP on both listeners; absent → 503. */
+  readonly webRoot?: string;
   /** Set to also listen for secure-channel clients on all interfaces. */
   readonly remote?: RemoteGatewayOptions;
 }
@@ -98,11 +99,24 @@ export interface Gateway {
 
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const conversations = await ConversationList.open(options.harness);
-  const server = new WebSocketServer({ host: "127.0.0.1", port: options.port });
-  await new Promise<void>((resolve, reject) => {
-    server.once("listening", resolve);
-    server.once("error", reject);
+  // The loopback port also serves the built web client: in service mode there
+  // is no vite dev server to reach it through (ADR-0009 §7).
+  const http = createServer((request, response) => {
+    void serveWebClient(request, response, options.webRoot).catch(() => {
+      if (!response.headersSent) response.writeHead(500);
+      response.end();
+    });
   });
+  const server = new WebSocketServer({ server: http });
+  await new Promise<void>((resolve, reject) => {
+    http.once("listening", resolve);
+    http.once("error", reject);
+    http.listen(options.port, "127.0.0.1");
+  });
+  const { port } = http.address() as AddressInfo;
+  // A page this listener itself served is trusted by construction; the bound
+  // port can be ephemeral, so the origin is computed after listen.
+  const browserOrigins = [...(options.browserOrigins ?? []), `http://127.0.0.1:${port}`];
   const clients = new Set<GatewayClient>();
   let remote: { url: string; advertiseUrl: string; close(): Promise<void> } | undefined;
   const register = (connection: GatewayConnection, devicePublicKey?: string): void => {
@@ -130,13 +144,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     socket.on("error", () => socket.terminate());
     const token = new URL(request.url ?? "/", "ws://127.0.0.1").searchParams.get("token");
     const origin = request.headers.origin;
-    if (token !== options.token || (origin !== undefined && !options.browserOrigins?.includes(origin))) {
+    if (token !== options.token || (origin !== undefined && !browserOrigins.includes(origin))) {
       socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
       return;
     }
     register(tokenConnection(socket));
   });
-  const { port } = server.address() as AddressInfo;
 
   remote = await startRemote(options, register);
   return {
@@ -151,6 +164,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       for (const socket of server.clients) socket.terminate();
       await remote?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => http.close(() => resolve()));
     },
   };
 }
@@ -299,7 +313,11 @@ async function serveWebClient(request: IncomingMessage, response: import("node:h
     response.writeHead(404).end();
     return;
   }
-  response.writeHead(200, { "content-type": WEB_TYPES[extname(file)] ?? "application/octet-stream" });
+  // index.html must not be cached: after a host upgrade a reload has to fetch
+  // the bundle matching the new protocol. Hashed assets keep the default.
+  const headers: Record<string, string> = { "content-type": WEB_TYPES[extname(file)] ?? "application/octet-stream" };
+  if (file === index) headers["cache-control"] = "no-cache";
+  response.writeHead(200, headers);
   response.end(request.method === "HEAD" ? undefined : body);
 }
 
@@ -377,7 +395,7 @@ async function startRemote(
   const remote = options.remote;
   if (remote === undefined) return undefined;
   const http = createServer((request, response) => {
-    void serveWebClient(request, response, remote.webRoot).catch(() => {
+    void serveWebClient(request, response, options.webRoot).catch(() => {
       if (!response.headersSent) response.writeHead(500);
       response.end();
     });
@@ -549,6 +567,7 @@ class GatewayClient {
     });
     void this.send({
       type: "hello",
+      protocol: PROTOCOL_VERSION,
       session: options.session,
       models: options.modelSummaries(),
       docs: (options.docs ?? []).map((doc) => ({

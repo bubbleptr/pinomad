@@ -35,7 +35,7 @@ import { encode } from "uqr";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
-import { DEVICE_KEY, deviceName, resolveAddress, storedDevice, type ResolvedAddress } from "./address.ts";
+import { DEVICE_KEY, deviceName, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
 const page: CSSProperties = {
@@ -186,7 +186,9 @@ export function RemoteWorkbench({
     // host keeps the key and the banner.
     return (
       <Centered>
-        {rejected !== undefined && state.unauthorized ? (
+        {state.mismatch !== undefined ? (
+          <VersionMismatch wsUrl={label} host={state.mismatch.host} />
+        ) : rejected !== undefined && state.unauthorized ? (
           rejected
         ) : (
           <Banner status="error" title="Could not connect to the host" description={state.error} />
@@ -194,13 +196,40 @@ export function RemoteWorkbench({
       </Centered>
     );
   }
-  return <Workbench remote={state.remote} rejected={rejected} device={device} />;
+  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} />;
 }
 
 const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
   (conversation.docs["pi.agent"] ?? {}) as AgentState;
 
-function Workbench({ remote, rejected, device }: { remote: RemoteDurable; rejected?: ReactNode; device?: KeyPair }) {
+/**
+ * The host speaks a protocol this bundle doesn't. A page the host itself
+ * serves reloads once to fetch the matching bundle — the sessionStorage
+ * marker is the loop guard (a still-mismatching reload shows the banner);
+ * a successful connect clears it so the next upgrade reloads again.
+ */
+const RELOADED_KEY = "pinomad.reloadedForProtocol";
+
+function VersionMismatch({ wsUrl, host }: { wsUrl: string; host: number | string }) {
+  const [reloading] = useState(() => {
+    if (!servedByHost(wsUrl, window.location)) return false;
+    if (sessionStorage.getItem(RELOADED_KEY) === String(host)) return false;
+    sessionStorage.setItem(RELOADED_KEY, String(host));
+    window.location.reload();
+    return true;
+  });
+  if (reloading) return null;
+  return (
+    <Banner
+      status="error"
+      container="section"
+      title="Host version mismatch"
+      description="The host was upgraded past this client. Reload the page, or update the client you're using."
+    />
+  );
+}
+
+function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair }) {
   const view = useDurableView(remote);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
@@ -226,6 +255,11 @@ function Workbench({ remote, rejected, device }: { remote: RemoteDurable; reject
   const [navOpen, setNavOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [forkAt, setForkAt] = useState<string>();
+  // A successful connect clears the reload-once marker so the next host
+  // upgrade may auto-reload again.
+  useEffect(() => {
+    if (view.connection === "connected") sessionStorage.removeItem(RELOADED_KEY);
+  }, [view.connection]);
   // A revoked device is closed with 4401; hooks above stay mounted either way.
   if (view.connection === "closed" && rejected !== undefined) return <Centered>{rejected}</Centered>;
   return (
@@ -242,7 +276,7 @@ function Workbench({ remote, rejected, device }: { remote: RemoteDurable; reject
                   <Button label="Live state" variant="ghost" onClick={() => setPanelOpen(true)} />
                 </HStack>
               ) : null}
-              <ConnectionBanner view={view} />
+              <ConnectionBanner view={view} wsUrl={wsUrl} />
               {conversation === undefined ? (
                 <ChatLayout
                   style={chatColumn}
@@ -351,7 +385,8 @@ function ForkDialog({ entryId, remote, connected, onClose }: { entryId: string; 
   );
 }
 
-function ConnectionBanner({ view }: { view: DurableView }) {
+function ConnectionBanner({ view, wsUrl }: { view: DurableView; wsUrl: string }) {
+  if (view.connection === "outdated") return <VersionMismatch wsUrl={wsUrl} host="outdated" />;
   if (view.connection === "reconnecting") {
     return (
       <Banner

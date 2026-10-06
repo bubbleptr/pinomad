@@ -32,7 +32,8 @@ export interface SessionInfo {
   readonly directory: string;
 }
 
-export type ConnectionState = "connected" | "reconnecting" | "closed";
+/** `outdated`: the host's hello announced a newer protocol; terminal like `closed`, no reconnect. */
+export type ConnectionState = "connected" | "reconnecting" | "closed" | "outdated";
 
 /** One extension document of the shown conversation, as the host declared it. */
 export interface ExtensionDocView {

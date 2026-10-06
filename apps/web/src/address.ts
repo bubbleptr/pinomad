@@ -65,6 +65,11 @@ export function resolveAddress(
   return device === undefined ? undefined : { kind: "device", ...device };
 }
 
+/** Whether this page was served by the host it talks to — then a reload picks up a matching bundle. */
+export function servedByHost(wsUrl: string, location: { host: string }): boolean {
+  return new URL(wsUrl).host === location.host;
+}
+
 /** A human name for this browser, stored on the host as the device label. */
 export function deviceName(userAgent: string): string {
   const os = /iPhone/.test(userAgent)

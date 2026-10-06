@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 export const DEFAULT_DATA_DIR = process.env.PINOMAD_DATA_DIR ?? join(homedir(), ".pinomad");
 
 /** A client's `--url`, and `--token` or the token file a host on the same machine left in `--data-dir`. */
-export async function hostAddress(argv: readonly string[]): Promise<{ url: string; token: string }> {
+export async function hostAddress(argv: readonly string[]): Promise<{ url: string; token: string; dataDir: string }> {
   const { values } = parseArgs({
     args: [...argv],
     options: {
@@ -16,6 +16,7 @@ export async function hostAddress(argv: readonly string[]): Promise<{ url: strin
       token: { type: "string" },
     },
   });
-  const token = values.token ?? (await readFile(join(resolve(values["data-dir"] ?? DEFAULT_DATA_DIR), "token"), "utf8")).trim();
-  return { url: values.url, token };
+  const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+  const token = values.token ?? (await readFile(join(dataDir, "token"), "utf8")).trim();
+  return { url: values.url, token, dataDir };
 }

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -187,6 +187,29 @@ describe("gateway boundaries", () => {
       ]);
       expect(result).toBe(accepted ? "hello" : 4401);
     }
+  });
+
+  it("serves the web client on the loopback port and admits only its own origin", async () => {
+    const webRoot = await tempDir();
+    defer(webRoot.remove);
+    await writeFile(join(webRoot.path, "index.html"), "<html>pinomad</html>");
+    const { host, gateway } = await fixture({ webRoot: webRoot.path });
+    const port = new URL(gateway.url).port;
+
+    // index.html is never cached: a reload after an upgrade must see the new bundle.
+    const index = await fetch(`http://127.0.0.1:${port}/`);
+    expect(index.status).toBe(200);
+    expect(index.headers.get("cache-control")).toBe("no-cache");
+    expect(await index.text()).toContain("pinomad");
+
+    const own = await socketTo(gateway.url, host.token, `http://127.0.0.1:${port}`);
+    // The hello may already be collected; wait on the frames array, not a listener.
+    while (!own.frames.some((frame) => frame.type === "hello")) await once(own.socket, "message");
+
+    const foreign = await socketTo(gateway.url, host.token, "https://untrusted.example");
+    const [code] = await once(foreign.socket, "close");
+    expect(code).toBe(4401);
+    expect(foreign.frames).toEqual([]);
   });
 
   it("closes malformed clients while keeping the host available", async () => {
