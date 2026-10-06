@@ -1,6 +1,6 @@
 # PiNomad — Agent 说明
 
-架构决策和背景在 `docs/adr/`（0001-0008），领域术语在 `CONTEXT.md`，改动前先读。
+架构决策和背景在 `docs/adr/`（0001-0009），领域术语在 `CONTEXT.md`，改动前先读。
 
 ## 布局
 
