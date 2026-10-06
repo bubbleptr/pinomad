@@ -147,6 +147,34 @@ describe("remote access", () => {
     await waitForView(tokenClient.view, (view) => view.devices.length === 0);
   });
 
+  it("keeps an established session alive past the handshake timeout", async () => {
+    const host = await startFauxHost(defer, { remote: { port: await freePort(), handshakeTimeoutMs: 100 } });
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    const device = generateKeyPair();
+    const remote = await connectDevice(host, device, { secret, name: "phone" });
+
+    // The handshake deadline must not fire on a settled session: no reconnect
+    // dips within three timeouts, and calls still get results.
+    const dips: string[] = [];
+    const unsubscribe = remote.view.subscribe(() => {
+      const { connection } = remote.view.current();
+      if (connection !== "connected") dips.push(connection);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(dips).toHaveLength(0);
+    expect((await remote.controller.createPairing()).url).toContain("#pair=");
+    unsubscribe();
+  });
+
+  it("still closes a socket that never sends the handshake", async () => {
+    const host = await startFauxHost(defer, { remote: { port: await freePort(), handshakeTimeoutMs: 100 } });
+    const socket = new WebSocket(host.remote!.url);
+    const [code] = await once(socket, "close");
+    expect(code).toBe(1008);
+  });
+
   it("does not serve token auth or garbage on the remote port", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
     const socket = new WebSocket(`${host.remote!.url}?token=${host.token}`);

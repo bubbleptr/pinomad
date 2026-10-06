@@ -64,6 +64,8 @@ export interface RemoteGatewayOptions {
   /** Built web client to serve over plain HTTP on the remote port. */
   readonly webRoot?: string;
   readonly offers: PairingOffers;
+  /** How long a new socket may sit before message 1 arrives; default 10 s. */
+  readonly handshakeTimeoutMs?: number;
 }
 
 export interface GatewayOptions {
@@ -317,7 +319,7 @@ function secureHandshake(
   const responder = respondIK({ prologue: SECURE_PROLOGUE, static: remote.hostKey });
   let settled = false;
   let deciding = false;
-  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), 10_000);
+  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), remote.handshakeTimeoutMs ?? 10_000);
   socket.once("close", () => clearTimeout(timeout));
 
   socket.on("message", (data: Buffer, isBinary: boolean) => {
@@ -331,6 +333,9 @@ function secureHandshake(
       .then((admitted) => {
         if (admitted === undefined) return;
         settled = true;
+        // The deadline only governs the handshake; a settled session must not
+        // be killed ten seconds later.
+        clearTimeout(timeout);
         const session = new SecureSession(admitted.result);
         socket.send(admitted.message);
         register(secureConnection(socket, session), admitted.deviceKey);
