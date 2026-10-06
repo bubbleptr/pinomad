@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, type ConversationDefaults, ensureIndex } from "./organization.ts";
+import { ensureDevices, loadHostKey, pairingOffers } from "./devices.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -38,12 +39,28 @@ export interface OpenHostOptions {
   readonly browserOrigins?: readonly string[];
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
+  /**
+   * Listen on all interfaces for secure-channel clients. Off by default: tunnels
+   * forward to loopback, and remote access is the caller's explicit choice.
+   */
+  readonly remote?: {
+    /** 0 picks a free port. */
+    readonly port: number;
+    /** Address advertised in pairing links; defaults to the detected LAN IP. */
+    readonly publicUrl?: string;
+    /** Built web client served over plain HTTP on the remote port. */
+    readonly webRoot?: string;
+    /** One-time pairing offer lifetime; default five minutes. */
+    readonly pairingTtlMs?: number;
+  };
 }
 
 export interface OpenedHost {
   readonly url: string;
   readonly token: string;
   readonly harness: Harness;
+  /** Present when remote access is on. `hostKey` is the public half. */
+  readonly remote?: { readonly url: string; readonly advertiseUrl: string; readonly hostKey: Uint8Array };
   close(): Promise<void>;
 }
 
@@ -108,7 +125,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     );
     const { initialModel } = options;
     await ensureIndex(harness, context);
+    await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
+    // The host identity exists only while remote access is on.
+    const hostKey = options.remote === undefined ? undefined : await loadHostKey(options.dataDir);
+    const offers = options.remote === undefined ? undefined : pairingOffers(options.remote.pairingTtlMs);
     const defaults: ConversationDefaults =
       initialModel === undefined
         ? {}
@@ -127,6 +148,17 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
+      ...(hostKey === undefined || offers === undefined || options.remote === undefined
+        ? {}
+        : {
+            remote: {
+              port: options.remote.port,
+              hostKey,
+              offers,
+              ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
+              ...(options.remote.webRoot === undefined ? {} : { webRoot: options.remote.webRoot }),
+            },
+          }),
     });
     report = (error) => gateway.broadcast("warning", error instanceof Error ? error.message : String(error));
     for (const error of reports.splice(0)) report(error);
@@ -139,6 +171,9 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       url: gateway.url,
       token,
       harness,
+      ...(gateway.remote === undefined || hostKey === undefined
+        ? {}
+        : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),
       close() {
         closing ??= (async () => {
           try {

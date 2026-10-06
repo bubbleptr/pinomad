@@ -3,8 +3,10 @@
 // is a gateway client. Run on Node, not Bun (node:sqlite, pi-durable's engines).
 //
 //   node apps/host/src/main.ts [--data-dir DIR] [--port 7420] [--project DIR]...
+//   node apps/host/src/main.ts --remote-port 7422 [--public-url URL]      # remote access (ADR-0008)
 //   node apps/host/src/main.ts --faux "scripted answer" [--faux-tps 40]   # no real model, for tests
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -27,6 +29,8 @@ const { values } = parseArgs({
     "faux-tps": { type: "string", default: "40" },
     "lock-stale-ms": { type: "string" },
     "browser-origin": { type: "string", multiple: true },
+    "remote-port": { type: "string" },
+    "public-url": { type: "string" },
   },
 });
 
@@ -38,6 +42,15 @@ const common = {
   extensions: [createContext({ agentsHome: join(homedir(), ".agents") }), coding, todo, approval],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   ...(values["lock-stale-ms"] === undefined ? {} : { lockStaleMs: Number(values["lock-stale-ms"]) }),
+  ...(values["remote-port"] === undefined
+    ? {}
+    : {
+        remote: {
+          port: Number(values["remote-port"]),
+          webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
+          ...(values["public-url"] === undefined ? {} : { publicUrl: values["public-url"] }),
+        },
+      }),
 };
 
 function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {
@@ -75,7 +88,17 @@ const host = await openHost(options);
 const model = options.initialModel === undefined ? null : `${options.initialModel.provider}/${options.initialModel.modelId}`;
 // Credentials stay in the local token file; generating a browser link is an explicit CLI action.
 const web = "http://127.0.0.1:5199/";
-console.log(JSON.stringify({ event: "ready", url: host.url, tokenFile: join(dataDir, "token"), dataDir, model, web }));
+console.log(
+  JSON.stringify({
+    event: "ready",
+    url: host.url,
+    tokenFile: join(dataDir, "token"),
+    dataDir,
+    model,
+    web,
+    ...(host.remote === undefined ? {} : { remote: host.remote.advertiseUrl }),
+  }),
+);
 
 let stopping = false;
 const stop = (): void => {

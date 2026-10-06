@@ -1,5 +1,8 @@
-import type { IncomingMessage } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { networkInterfaces } from "node:os";
+import { readFile, stat } from "node:fs/promises";
+import { extname, join, resolve, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
@@ -29,7 +32,16 @@ import {
   UNAUTHORIZED_CLOSE_CODE,
 } from "@pinomad/protocol/frames.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
+import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
+import {
+  decodeClientHello,
+  encodeHostHello,
+  SecureSession,
+  SECURE_PROLOGUE,
+  toBase64Url,
+} from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
+import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import {
   addProject,
   archive,
@@ -40,6 +52,19 @@ import {
 } from "./organization.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
+
+/** The remote listener: encrypted WebSocket + HTTP file serving on all interfaces. */
+export interface RemoteGatewayOptions {
+  /** 0 picks a free port. */
+  readonly port: number;
+  /** The host's long-term X25519 identity (server side of the IK handshake). */
+  readonly hostKey: KeyPair;
+  /** Public address advertised in pairing URLs; defaults to the detected LAN IP. */
+  readonly publicUrl?: string;
+  /** Built web client to serve over plain HTTP on the remote port. */
+  readonly webRoot?: string;
+  readonly offers: PairingOffers;
+}
 
 export interface GatewayOptions {
   readonly harness: Harness;
@@ -56,10 +81,14 @@ export interface GatewayOptions {
   readonly defaults: ConversationDefaults;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
+  /** Set to also listen for secure-channel clients on all interfaces. */
+  readonly remote?: RemoteGatewayOptions;
 }
 
 export interface Gateway {
   readonly url: string;
+  /** Present when the remote listener is on. */
+  readonly remote?: { readonly url: string; readonly advertiseUrl: string };
   /** Tell every client, for example a Harness report. */
   broadcast(level: Notice["level"], message: string): void;
   close(): Promise<void>;
@@ -73,6 +102,28 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     server.once("error", reject);
   });
   const clients = new Set<GatewayClient>();
+  let remote: { url: string; advertiseUrl: string; close(): Promise<void> } | undefined;
+  const register = (connection: GatewayConnection, devicePublicKey?: string): void => {
+    const client = new GatewayClient(connection, options, conversations, {
+      devicePublicKey,
+      closed: (self) => {
+        clients.delete(self);
+        void self.dispose();
+      },
+      closeDevice: (publicKey) => {
+        for (const client of clients) {
+          if (client.devicePublicKey === publicKey) client.closeConnection(UNAUTHORIZED_CLOSE_CODE, "device revoked");
+        }
+      },
+      createPairing: () => {
+        const spec = options.remote;
+        if (remote === undefined || spec === undefined) return undefined;
+        const { secret, expiresAt } = spec.offers.create();
+        return { url: `${remote.advertiseUrl}/#pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`, expiresAt };
+      },
+    });
+    clients.add(client);
+  };
   server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     socket.on("error", () => socket.terminate());
     const token = new URL(request.url ?? "/", "ws://127.0.0.1").searchParams.get("token");
@@ -81,16 +132,14 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
       return;
     }
-    const client = new GatewayClient(socket, options, conversations);
-    clients.add(client);
-    socket.once("close", () => {
-      clients.delete(client);
-      void client.dispose();
-    });
+    register(tokenConnection(socket));
   });
   const { port } = server.address() as AddressInfo;
+
+  remote = await startRemote(options, register);
   return {
     url: `ws://127.0.0.1:${port}`,
+    ...(remote === undefined ? {} : { remote: { url: remote.url, advertiseUrl: remote.advertiseUrl } }),
     broadcast: (level, message) => {
       for (const client of clients) client.send({ type: "notice", level, message });
     },
@@ -98,7 +147,253 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
       for (const socket of server.clients) socket.terminate();
+      await remote?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/**
+ * One authenticated connection to a client, independent of carrier: the loopback
+ * token WebSocket or a secure-channel socket after its IK handshake.
+ */
+interface GatewayConnection {
+  /** True while the connection can still carry frames. */
+  readonly open: boolean;
+  /** A text frame to the client; resolves when the transport accepted it. */
+  send(text: string): Promise<void>;
+  close(code: number, reason?: string): void;
+  /** Wire inbound events; called once by GatewayClient. */
+  handle(handlers: { message(text: string): void; closed(): void }): void;
+}
+
+/** The loopback listener's connection: plain text frames, token-gated at upgrade. */
+function tokenConnection(socket: WebSocket): GatewayConnection {
+  return {
+    get open() {
+      return socket.readyState === WebSocket.OPEN;
+    },
+    send: (text) =>
+      socket.readyState === WebSocket.OPEN
+        ? new Promise((resolve) => socket.send(text, () => resolve()))
+        : Promise.resolve(),
+    close: (code, reason) => socket.close(code, reason),
+    handle(handlers) {
+      socket.on("message", (data) => handlers.message(String(data)));
+      socket.once("close", () => handlers.closed());
+    },
+  };
+}
+
+/** The remote listener's connection after IK: binary records sealed by the session. */
+function secureConnection(socket: WebSocket, session: SecureSession): GatewayConnection {
+  return {
+    get open() {
+      return socket.readyState === WebSocket.OPEN;
+    },
+    send: (text) =>
+      socket.readyState === WebSocket.OPEN
+        ? new Promise((resolve) => {
+            // Backpressure like the token connection: hold the next frame until
+            // the transport has accepted the last chunk of this one.
+            const chunks = session.seal(text);
+            chunks.forEach((chunk, index) =>
+              socket.send(chunk, index === chunks.length - 1 ? () => resolve() : undefined)
+            );
+          })
+        : Promise.resolve(),
+    close: (code, reason) => socket.close(code, reason),
+    handle(handlers) {
+      socket.on("message", (data: Buffer) => {
+        try {
+          const text = session.open(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+          if (text !== undefined) handlers.message(text);
+        } catch {
+          socket.close(1008, "corrupt secure record");
+        }
+      });
+      socket.once("close", () => handlers.closed());
+    },
+  };
+}
+
+const RFC1918 = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/;
+const PREFERRED_NAME = /^(?:en|eth|wlan|wl)/;
+// VPN tunnels and virtual bridges also carry RFC1918-looking addresses; a QR
+// code pointing at 198.18.x (fake-ip range) or an utun interface is unreachable.
+const VIRTUAL_NAME = /^(?:utun|tun|tap|wg|ppp|ipsec|bridge|docker|veth|vmnet|llw|awdl)/;
+
+/**
+ * The LAN IPv4 to advertise in pairing URLs: a real ethernet/wifi interface
+ * with a private address first, then any non-virtual interface with one.
+ * Link-local, fake-ip (198.18/15), and public addresses all fail the RFC1918
+ * test, so they can never win. Undefined → caller falls back to 127.0.0.1.
+ */
+export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>): string | undefined {
+  let fallback: string | undefined;
+  for (const [name, addresses] of Object.entries(interfaces)) {
+    const candidate = (addresses ?? []).find(
+      (address) => address.family === "IPv4" && !address.internal && RFC1918.test(address.address),
+    );
+    if (candidate === undefined) continue;
+    if (PREFERRED_NAME.test(name)) return candidate.address;
+    if (!VIRTUAL_NAME.test(name) && fallback === undefined) fallback = candidate.address;
+  }
+  return fallback;
+}
+
+const WEB_TYPES: Readonly<Record<string, string>> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".woff2": "font/woff2",
+};
+
+const NOT_BUILT = "Web client not built: run bun run build";
+
+/** The remote listener's HTTP side: the built web client, nothing else. */
+async function serveWebClient(request: IncomingMessage, response: import("node:http").ServerResponse, webRoot: string | undefined): Promise<void> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    response.writeHead(405).end();
+    return;
+  }
+  if (webRoot === undefined) {
+    response.writeHead(503, { "content-type": "text/plain" }).end(NOT_BUILT);
+    return;
+  }
+  const root = resolve(webRoot);
+  const index = join(root, "index.html");
+  if (!(await stat(index).catch(() => undefined))?.isFile()) {
+    response.writeHead(503, { "content-type": "text/plain" }).end(NOT_BUILT);
+    return;
+  }
+  // Reject traversal on the raw target — URL parsing already normalizes ".."
+  // away, so the check has to run on the undecoded segments.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
+  } catch {
+    response.writeHead(404).end();
+    return;
+  }
+  if (decoded.split("/").includes("..")) {
+    response.writeHead(404).end();
+    return;
+  }
+  const inside = resolve(join(root, decoded));
+  if (!inside.startsWith(root + sep) && inside !== root) {
+    response.writeHead(404).end();
+    return;
+  }
+  // Extensionless routes are the SPA's own paths → index.html.
+  const file = extname(inside) === "" ? index : inside;
+  const body = await readFile(file).catch(() => undefined);
+  if (body === undefined) {
+    response.writeHead(404).end();
+    return;
+  }
+  response.writeHead(200, { "content-type": WEB_TYPES[extname(file)] ?? "application/octet-stream" });
+  response.end(request.method === "HEAD" ? undefined : body);
+}
+
+/**
+ * The IK handshake gate on a fresh remote socket. Anything but one binary
+ * message 1 — text frames, a second message while admission is pending — is a
+ * protocol violation closed with 1008. Registered devices pass directly; new
+ * devices must present a live pairing offer.
+ */
+function secureHandshake(
+  socket: WebSocket,
+  remote: RemoteGatewayOptions,
+  harness: Harness,
+  register: (connection: GatewayConnection, devicePublicKey: string) => void,
+): void {
+  socket.on("error", () => socket.terminate());
+  const responder = respondIK({ prologue: SECURE_PROLOGUE, static: remote.hostKey });
+  let settled = false;
+  let deciding = false;
+  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), 10_000);
+  socket.once("close", () => clearTimeout(timeout));
+
+  socket.on("message", (data: Buffer, isBinary: boolean) => {
+    if (settled) return;
+    if (deciding || !isBinary) {
+      socket.close(1008, "expected handshake");
+      return;
+    }
+    deciding = true;
+    void admit()
+      .then((admitted) => {
+        if (admitted === undefined) return;
+        settled = true;
+        const session = new SecureSession(admitted.result);
+        socket.send(admitted.message);
+        register(secureConnection(socket, session), admitted.deviceKey);
+      })
+      .catch(() => socket.close(1011, "handshake failed"));
+    async function admit(): Promise<{ result: HandshakeResult; message: Uint8Array; deviceKey: string } | undefined> {
+      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      let hello;
+      let remoteStatic: Uint8Array;
+      try {
+        const opened = responder.readMessage1(bytes);
+        remoteStatic = opened.remoteStatic;
+        hello = decodeClientHello(opened.payload);
+      } catch {
+        socket.close(1008, "bad handshake");
+        return undefined;
+      }
+      const deviceKey = toBase64Url(remoteStatic);
+      if (!(await isRegistered(harness, deviceKey, context))) {
+        // A registered device with `pair` present still passes above — a retry
+        // after a lost message 2 must not spend another offer.
+        if (hello.pair === undefined || !remote.offers.consume(hello.pair.secret)) {
+          socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+          return undefined;
+        }
+        await registerDevice(harness, { publicKey: deviceKey, name: hello.pair.name }, context);
+      }
+      const { message, result } = responder.writeMessage2(encodeHostHello({ v: 1 }));
+      return { result, message, deviceKey };
+    }
+  });
+}
+
+/** The 0.0.0.0 listener: plain HTTP for the web client + secure WebSockets. */
+async function startRemote(
+  options: GatewayOptions,
+  register: (connection: GatewayConnection, devicePublicKey: string) => void,
+): Promise<{ url: string; advertiseUrl: string; close(): Promise<void> } | undefined> {
+  const remote = options.remote;
+  if (remote === undefined) return undefined;
+  const http = createServer((request, response) => {
+    void serveWebClient(request, response, remote.webRoot).catch(() => {
+      if (!response.headersSent) response.writeHead(500);
+      response.end();
+    });
+  });
+  const secure = new WebSocketServer({ server: http });
+  secure.on("connection", (socket) => secureHandshake(socket, remote, options.harness, register));
+  await new Promise<void>((resolveListen, reject) => {
+    http.once("listening", resolveListen);
+    http.once("error", reject);
+    http.listen(remote.port, "0.0.0.0");
+  });
+  const { port } = http.address() as AddressInfo;
+  const url = `ws://127.0.0.1:${port}`;
+  const advertiseUrl = remote.publicUrl?.replace(/\/+$/, "") ?? `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${port}`;
+  return {
+    url,
+    advertiseUrl,
+    async close() {
+      for (const socket of secure.clients) socket.terminate();
+      await new Promise<void>((resolve) => secure.close(() => resolve()));
+      await new Promise<void>((resolve) => http.close(() => resolve()));
     },
   };
 }
@@ -204,32 +499,50 @@ type Subscription = { stop(): Promise<unknown> | void };
 type SubscriptionState = { subscription?: Subscription };
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
+/** What the client is and how the gateway reaches back into its lifecycle. */
+interface ClientHooks {
+  /** The paired device's X25519 public key; undefined for loopback token clients. */
+  readonly devicePublicKey?: string;
+  closed(client: GatewayClient): void;
+  /** Close every live client of this device — used by `revokeDevice`. */
+  closeDevice(publicKey: string): void;
+  /** A fresh one-time pairing URL; undefined while remote access is off. */
+  createPairing(): { url: string; expiresAt: number } | undefined;
+}
+
 class GatewayClient {
-  readonly #socket: WebSocket;
+  readonly devicePublicKey: string | undefined;
+  readonly #connection: GatewayConnection;
+  readonly #hooks: ClientHooks;
   readonly #options: GatewayOptions;
   readonly #conversations: ConversationList;
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
-  constructor(socket: WebSocket, options: GatewayOptions, conversations: ConversationList) {
-    this.#socket = socket;
+  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, hooks: ClientHooks) {
+    this.#connection = connection;
     this.#options = options;
     this.#conversations = conversations;
-    socket.on("message", (data) => {
-      let frame: unknown;
-      try {
-        frame = JSON.parse(String(data));
-      } catch {
-        socket.close(1008, "Invalid client frame");
-        return;
-      }
-      if (!isClientFrame(frame)) {
-        socket.close(1008, "Invalid client frame");
-        return;
-      }
-      void this.#receive(frame).catch(() => socket.close(1011, "Gateway request failed"));
+    this.#hooks = hooks;
+    this.devicePublicKey = hooks.devicePublicKey;
+    connection.handle({
+      message: (text) => {
+        let frame: unknown;
+        try {
+          frame = JSON.parse(text);
+        } catch {
+          connection.close(1008, "Invalid client frame");
+          return;
+        }
+        if (!isClientFrame(frame)) {
+          connection.close(1008, "Invalid client frame");
+          return;
+        }
+        void this.#receive(frame).catch(() => connection.close(1011, "Gateway request failed"));
+      },
+      closed: () => hooks.closed(this),
     });
-    this.send({
+    void this.send({
       type: "hello",
       session: options.session,
       models: options.modelSummaries(),
@@ -240,10 +553,14 @@ class GatewayClient {
     });
   }
 
-  /** Resolves once the frame is handed to the socket, so a watch callback holds its next frame until then. */
+  /** Resolves once the frame is handed to the transport, so a watch callback holds its next frame until then. */
   send(frame: ServerFrame): Promise<void> {
-    if (this.#socket.readyState !== WebSocket.OPEN) return Promise.resolve();
-    return new Promise((resolve) => this.#socket.send(JSON.stringify(frame), () => resolve()));
+    if (!this.#connection.open) return Promise.resolve();
+    return this.#connection.send(JSON.stringify(frame));
+  }
+
+  closeConnection(code: number, reason: string): void {
+    this.#connection.close(code, reason);
   }
 
   async #receive(frame: ClientFrame): Promise<void> {
@@ -287,6 +604,11 @@ class GatewayClient {
     if (stream === "index") {
       const watch = await this.#options.harness.watchDoc(IndexDoc, context);
       if (watch === undefined) throw new Error("Index document is missing");
+      return this.#forward(stream, watch, send);
+    }
+    if (stream === "devices") {
+      const watch = await this.#options.harness.watchDoc(DevicesDoc, context);
+      if (watch === undefined) throw new Error("Devices document is missing");
       return this.#forward(stream, watch, send);
     }
     if (stream === "tasks") return this.#forward(stream, await this.#options.harness.watchTaskGraph(context), send);
@@ -405,6 +727,17 @@ class GatewayClient {
       case "archive": {
         const input = args as CallMethods["archive"]["args"];
         await archive(this.#options.harness, input.conversationId, input.archived, context);
+        return null;
+      }
+      case "createPairing": {
+        const pairing = this.#hooks.createPairing();
+        if (pairing === undefined) throw new Error("Remote access is off; start the host with --remote-port");
+        return pairing;
+      }
+      case "revokeDevice": {
+        const { publicKey } = args as CallMethods["revokeDevice"]["args"];
+        await revokeDevice(this.#options.harness, publicKey, context);
+        this.#hooks.closeDevice(publicKey);
         return null;
       }
     }
