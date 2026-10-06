@@ -5,25 +5,25 @@ import { renderUnicodeCompact } from "uqr";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { hostAddress } from "./host-address.ts";
 
-const { url, token } = await hostAddress(process.argv.slice(2));
-
-let remote;
-try {
-  remote = await connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+/** Fetch a one-time pairing offer from the host and print it as a QR + URL. */
+export async function printPairing({ url, token }: { url: string; token: string }): Promise<void> {
+  const remote = await connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
+  try {
+    const { url: pairing, expiresAt } = await remote.controller.createPairing();
+    console.log(renderUnicodeCompact(pairing));
+    console.log(pairing);
+    console.log(`Expires at ${new Date(expiresAt).toLocaleTimeString()}`);
+  } finally {
+    remote.close();
+  }
 }
 
-try {
-  const { url: pairing, expiresAt } = await remote.controller.createPairing();
-  console.log(renderUnicodeCompact(pairing));
-  console.log(pairing);
-  console.log(`Expires at ${new Date(expiresAt).toLocaleTimeString()}`);
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  remote.close();
-  process.exit(1);
+if (import.meta.main) {
+  const { url, token } = await hostAddress(process.argv.slice(2));
+  try {
+    await printPairing({ url, token });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
-remote.close();
-process.exit(0);

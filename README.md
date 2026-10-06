@@ -34,17 +34,32 @@ agent 用 read / write / edit / bash 工具，执行前不需要审批。系统�
 
 ## 远程访问（ADR-0008）
 
-默认只监听 `127.0.0.1`。加 `--remote-port N` 会另起一个监听所有网卡的安全通道端口（Noise IK 端到端加密 + 设备配对），并在同一端口用 HTTP 提供构建好的 Web 客户端——先 `bun run build` 产出 `apps/web/dist`，否则远程端口的页面是 503。
+一条命令起全部（构建 Web、起宿主、起 vite），并在终端打印电脑浏览器链接和手机配对二维码：
+
+```sh
+bun run start
+# 透传宿主参数：bun run start -- --faux "hi" --data-dir /tmp/demo
+```
+
+手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备和吊销在 Web 侧栏的 Devices 里管理；吊销设备也可以在那直接点 Revoke。
+
+<details><summary>手动/高级：分开跑各个进程</summary>
+
+默认只监听 `127.0.0.1`。`--remote-port N` 另起一个监听所有网卡的安全通道端口，同端口用 HTTP 提供构建好的 Web 客户端（`apps/web/dist`，缺失时页面是 503）：
 
 ```sh
 bun run build
 bun run host -- --remote-port 7422
-# 走隧道/自建入口时声明对外地址；或者 LAN 地址探测选错了网卡（比如 VPN 的
-# TUN 接口优先被选中）时用 `--public-url` 覆盖——配对链接里的地址由它生成：
+bun run web          # 电脑上的开发服务器 http://127.0.0.1:5199
+bun run link         # 打印带 token 的浏览器链接
+bun run pair         # 打印配对二维码（一次性，5 分钟过期）
+# 走隧道/自建入口，或 LAN 地址探测选错网卡时用 --public-url 覆盖：
 bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 ```
 
-远程端口不接受 token：客户端要先做配对。`bun run pair` 会在终端打印一个二维码（也是侧栏 Devices → Pair a device 的同一种链接）；用手机扫它打开 Web 客户端即完成 Noise 握手并登记公钥，之后这台设备不带 token 也能重连。已登记的设备和吊销都在侧栏的 Devices 里管理。
+远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。
+
+</details>
 
 ## 验证
 
