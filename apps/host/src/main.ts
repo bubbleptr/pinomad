@@ -2,7 +2,7 @@
 // The headless host: owns the Harness, its SQLite store, and the lock; every UI
 // is a gateway client. Run on Node, not Bun (node:sqlite, pi-durable's engines).
 //
-//   node apps/host/src/main.ts [--data-dir DIR] [--port 7420] [--cwd DIR]
+//   node apps/host/src/main.ts [--data-dir DIR] [--port 7420] [--project DIR]...
 //   node apps/host/src/main.ts --faux "scripted answer" [--faux-tps 40]   # no real model, for tests
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,7 +22,7 @@ const { values } = parseArgs({
   options: {
     "data-dir": { type: "string" },
     port: { type: "string", default: "7420" },
-    cwd: { type: "string" },
+    project: { type: "string", multiple: true },
     faux: { type: "string" },
     "faux-tps": { type: "string", default: "40" },
     "lock-stale-ms": { type: "string" },
@@ -30,11 +30,10 @@ const { values } = parseArgs({
   },
 });
 
-const cwd = resolve(values.cwd ?? process.cwd());
 const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
 const common = {
   dataDir,
-  cwd,
+  projects: values.project ?? [],
   port: Number(values.port),
   extensions: [createContext({ agentsHome: join(homedir(), ".agents") }), coding, todo, approval],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
@@ -59,7 +58,7 @@ function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {
 
 async function piOptions(): Promise<OpenHostOptions> {
   const modelRuntime = await ModelRuntime.create();
-  const settingsManager = SettingsManager.create(cwd);
+  const settingsManager = SettingsManager.create(process.cwd());
   configureHarnessHttp(settingsManager);
   const initialModel = defaultModel(settingsManager, modelRuntime);
   return {

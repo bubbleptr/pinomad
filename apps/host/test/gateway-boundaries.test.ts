@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { defineDoc, defineExtension, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { defineDoc, defineExtension } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { startGateway, type GatewayOptions } from "../src/gateway.ts";
@@ -48,7 +48,9 @@ async function fixture(options: Partial<GatewayOptions> = {}) {
     token: host.token,
     models: createModels(),
     modelSummaries: () => [],
-    session: { id: "boundary-test", directory: "", cwd: "" },
+    session: { id: "boundary-test", directory: "" },
+    dataDir: "",
+    defaults: {},
     port: 0,
     ...options,
   });
@@ -119,7 +121,8 @@ describe("gateway boundaries", () => {
     while (!client.frames.some((frame) => frame.type === "snapshot" && frame.stream === "conversations")) await once(client.socket, "message");
     release.resolve();
     await stopped.promise;
-    const stream = `conversation:${ROOT_CONVERSATION_ID}`;
+    const conversation = await host.harness.createConversation({ ownership: { kind: "ownerless" } }, BACKGROUND_CONTEXT);
+    const stream = `conversation:${conversation.id}`;
     client.socket.send(JSON.stringify({ type: "subscribe", stream }));
     while (!client.frames.some((frame) => frame.type === "snapshot" && frame.stream === stream)) await once(client.socket, "message");
     expect(client.frames.filter((frame) => "stream" in frame && frame.stream === "tasks")).toEqual([]);
@@ -141,11 +144,12 @@ describe("gateway boundaries", () => {
     });
     defer(() => watch.mockRestore());
     const client = await socketTo(host.url, host.token);
-    const stream = `doc:test.plan:${ROOT_CONVERSATION_ID}`;
+    const conversation = await host.harness.createConversation({ ownership: { kind: "ownerless" } }, BACKGROUND_CONTEXT);
+    const stream = `doc:test.plan:${conversation.id}`;
     client.socket.send(JSON.stringify({ type: "subscribe", stream }));
     await absent.promise;
     await host.harness.commit(async (tx) => {
-      (await tx.doc(TestDoc, ROOT_CONVERSATION_ID)).items = [{ text: "Investigate release", status: "doing" }];
+      (await tx.doc(TestDoc, conversation.id)).items = [{ text: "Investigate release", status: "doing" }];
     }, BACKGROUND_CONTEXT);
     release.resolve();
     const received = barrier();
@@ -188,7 +192,7 @@ describe("gateway boundaries", () => {
   it("closes malformed clients while keeping the host available", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const child = spawn(process.execPath, ["src/main.ts", "--data-dir", dir.path, "--cwd", dir.path, "--port", "0", "--faux", "done"], {
+    const child = spawn(process.execPath, ["src/main.ts", "--data-dir", dir.path, "--port", "0", "--faux", "done"], {
       cwd: hostDir,
       stdio: ["ignore", "pipe", "pipe"],
     });

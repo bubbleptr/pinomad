@@ -1,5 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
+import { homeOf, type HostIndex, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
   type CallMethod,
@@ -54,7 +55,7 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
-  readonly #wanted = new Set<StreamName>(["conversations"]);
+  readonly #wanted = new Set<StreamName>(["conversations", "index"]);
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
   readonly #pending = new Map<number, Pending>();
@@ -128,9 +129,8 @@ class RemoteClient {
     switch (frame.type) {
       case "hello": {
         this.#attempt = 0;
-        this.#current ??= frame.root;
         this.#docs = frame.docs;
-        for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
+        if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) this.#update({ session: frame.session, models: frame.models, connection: "connected" });
         else this.#awaitFirstView(frame);
@@ -169,12 +169,10 @@ class RemoteClient {
   }
 
   #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>): void {
-    const conversation = conversationStream(hello.root);
-    void Promise.all([this.#snapshot(conversation), this.#snapshot("conversations")]).then(() => {
+    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index")]).then(() => {
       this.#state = {
         session: hello.session,
-        conversation: this.#values.get(conversation) as ConversationView,
-        conversations: this.#values.get("conversations") as ConversationSummary[],
+        organized: { chats: [], projects: [] },
         models: hello.models,
         notices: [],
         connection: "connected",
@@ -200,21 +198,27 @@ class RemoteClient {
   }
 
   #refresh(): void {
-    if (this.#state === undefined || this.#current === undefined) return;
+    if (this.#state === undefined) return;
     const current = this.#current;
-    const conversation = this.#values.get(conversationStream(current)) as ConversationView | undefined;
-    const conversations = this.#values.get("conversations") as ConversationSummary[] | undefined;
+    const conversation =
+      current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
+    const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
+    const index = (this.#values.get("index") as HostIndex | undefined) ?? { projects: [], conversations: [] };
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
     // In the host's order; a doc joins once its snapshot arrived.
-    const docs: ExtensionDocView[] = this.#docs.flatMap((doc) => {
-      const stream = docStream(doc.kind, current);
-      return this.#values.has(stream)
-        ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
-        : [];
-    });
+    const docs: ExtensionDocView[] =
+      current === undefined
+        ? []
+        : this.#docs.flatMap((doc) => {
+            const stream = docStream(doc.kind, current);
+            return this.#values.has(stream)
+              ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
+              : [];
+          });
     this.#update({
-      ...(conversation === undefined ? {} : { conversation }),
-      ...(conversations === undefined ? {} : { conversations }),
+      conversation,
+      organized: organize(index, summaries),
+      home: current === undefined ? undefined : homeOf(index, summaries, current),
       tasks,
       docs,
     });
@@ -270,8 +274,23 @@ class RemoteClient {
   }
 
   #controller(): DurableController {
-    const conversationId = (): ConversationId => this.#current!;
+    const conversationId = (): ConversationId => {
+      if (this.#current === undefined) throw new Error("No conversation selected");
+      return this.#current;
+    };
     return {
+      addProject: (path) => this.#command(() => this.#call("addProject", { path })),
+      removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
+      createConversation: (home, text) =>
+        this.#command(async () => {
+          const { conversationId } = await this.#call("createConversation", { home, text, requestId: crypto.randomUUID() });
+          await this.#switch(conversationId);
+        }),
+      archive: (id, archived) =>
+        this.#command(async () => {
+          await this.#call("archive", { conversationId: id, archived });
+          if (archived && id === this.#current) this.#unshow();
+        }),
       submit: (text, whenBusy) =>
         this.#command(() => this.#call("submit", { conversationId: conversationId(), text, whenBusy, requestId: crypto.randomUUID() })),
       compact: (instructions) =>
@@ -279,11 +298,16 @@ class RemoteClient {
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
         ),
       // Not queued: it resolves once the conversation is idle.
-      abort: () =>
-        this.#call("abort", { conversationId: conversationId() }).then(
-          () => {},
-          (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
-        ),
+      abort: () => {
+        if (this.#current === undefined) {
+          this.#notice("error", "No conversation selected");
+          return Promise.resolve();
+        }
+        return this.#call("abort", { conversationId: conversationId() }).then(
+            () => {},
+            (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
+          );
+      },
       cycleThinking: () => this.#command(() => this.#call("cycleThinking", { conversationId: conversationId() })),
       setModel: (model) => this.#command(() => this.#call("setModel", { conversationId: conversationId(), model })),
       toggleTasks: () =>
@@ -317,7 +341,7 @@ class RemoteClient {
   }
 
   async #switch(id: ConversationId): Promise<void> {
-    const previous = this.#current!;
+    const previous = this.#current;
     if (id === previous) return;
     const next = this.#conversationStreams(id);
     for (const stream of next) this.#wanted.add(stream);
@@ -325,6 +349,19 @@ class RemoteClient {
     for (const stream of next) this.#send({ type: "subscribe", stream });
     await shown;
     this.#current = id;
+    for (const stream of previous === undefined ? [] : this.#conversationStreams(previous)) {
+      this.#wanted.delete(stream);
+      this.#values.delete(stream);
+      this.#send({ type: "unsubscribe", stream });
+    }
+    this.#refresh();
+  }
+
+  /** Stop showing the current conversation, for example after archiving it. */
+  #unshow(): void {
+    const previous = this.#current;
+    if (previous === undefined) return;
+    this.#current = undefined;
     for (const stream of this.#conversationStreams(previous)) {
       this.#wanted.delete(stream);
       this.#values.delete(stream);

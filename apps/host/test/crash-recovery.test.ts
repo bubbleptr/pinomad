@@ -23,7 +23,7 @@ interface HostProcess {
 async function spawnHost(dataDir: string, port: number, model: readonly string[] = ["--faux", LONG_ANSWER, "--faux-tps", "40"]): Promise<HostProcess> {
   const child = spawn(
     process.execPath,
-    ["src/main.ts", "--data-dir", dataDir, "--cwd", dataDir, "--port", String(port), ...model, "--lock-stale-ms", "2000"],
+    ["src/main.ts", "--data-dir", dataDir, "--port", String(port), ...model, "--lock-stale-ms", "2000"],
     { cwd: hostDir, stdio: ["ignore", "pipe", "inherit"] },
   );
   cleanups.push(() => {
@@ -51,10 +51,12 @@ it("resumes both clients after the host is killed mid-stream and restarted", asy
   const a = await connect();
   const b = await connect();
 
-  await a.controller.submit("investigate", "followUp");
+  await a.controller.createConversation({ kind: "chat" }, "investigate");
+  const conversationId = a.view.current().conversation!.conversation.id;
+  await b.controller.switchConversation(conversationId);
   // Kill while the answer is still streaming, partway through.
-  await waitForView(b.view, (view) => (streamingText(view.conversation)?.length ?? 0) > 20);
-  const seenBeforeKill = streamingText(b.view.current().conversation)!;
+  await waitForView(b.view, (view) => (streamingText(view.conversation!)?.length ?? 0) > 20);
+  const seenBeforeKill = streamingText(b.view.current().conversation!)!;
   expect(seenBeforeKill.length).toBeLessThan(LONG_ANSWER.length);
   first.child.kill("SIGKILL");
   await once(first.child, "exit");
@@ -66,13 +68,13 @@ it("resumes both clients after the host is killed mid-stream and restarted", asy
   const settled = (client: RemoteDurable) =>
     waitForView(
       client.view,
-      (view) => view.connection === "connected" && !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.role === "assistant",
+      (view) => view.connection === "connected" && !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.role === "assistant",
       30_000,
     );
   await Promise.all([settled(a), settled(b)]);
 
   // The committed partial survives the crash as an aborted entry; recovery then resends the request.
-  const [user, interrupted, answer, ...rest] = transcript(a.view.current().conversation);
+  const [user, interrupted, answer, ...rest] = transcript(a.view.current().conversation!);
   expect(user).toEqual({ role: "user", text: "investigate" });
   expect(interrupted).toMatchObject({ role: "assistant", stopReason: "aborted" });
   expect(LONG_ANSWER.startsWith(interrupted!.text)).toBe(true);

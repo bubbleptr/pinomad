@@ -2,12 +2,13 @@ import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { AssistantEntry, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
 import { chromium } from "@playwright/test";
 import { approval } from "@pinomad/host/src/extensions/approval.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
-import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
+import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
+import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
 import { chatItems } from "../src/presentation/chat.ts";
@@ -32,6 +33,13 @@ async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   return page;
 }
 
+/** Every node in an organized view, top-level and nested. */
+const allNodes = (view: { organized: { chats: readonly ConversationNode[]; projects: readonly { conversations: readonly ConversationNode[] }[] } }): ConversationNode[] => {
+  const flat = (nodes: readonly ConversationNode[]): ConversationNode[] =>
+    nodes.flatMap((node) => [node, ...flat(node.children)]);
+  return flat(view.organized.chats.concat(...view.organized.projects.map((entry) => entry.conversations)));
+};
+
 it("keeps the chat usable on a phone with navigation and live state still reachable", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
@@ -41,8 +49,13 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   expect((await composer.boundingBox())!.width).toBeGreaterThan(300);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
+  // The initial screen is a draft chat; the first message creates the conversation.
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+
   await page.getByRole("button", { name: "Conversations", exact: true }).click();
-  await page.getByRole("button", { name: "main", exact: true }).click();
+  await page.getByRole("button", { name: "hello", exact: true }).click();
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
   await page.getByRole("button", { name: "Live state", exact: true }).click();
   await page.getByRole("dialog").getByText("No live tasks").waitFor();
@@ -78,7 +91,8 @@ it("sends a typed steer from the button without stopping the run, and still stop
   const composer = page.getByRole("textbox");
   await composer.fill("look into it");
   await composer.press("Enter");
-  await waitForView(observer.view, (view) => isBusy(view.conversation));
+  await followFirst(observer);
+  await waitForView(observer.view, (view) => view.conversation !== undefined && isBusy(view.conversation));
   await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
 
   await composer.fill("focus on the logs");
@@ -86,14 +100,14 @@ it("sends a typed steer from the button without stopping the run, and still stop
   expect(await send.count()).toBe(1);
   await send.click();
   await waitForView(observer.view, (view) => {
-    const inbox = view.conversation.docs["pi.inbox"] as { items?: { mode: string }[] } | undefined;
+    const inbox = view.conversation?.docs["pi.inbox"] as { items?: { mode: string }[] } | undefined;
     return inbox?.items?.some((item) => item.mode === "steer") === true;
   });
-  expect(isBusy(observer.view.current().conversation)).toBe(true);
+  expect(isBusy(observer.view.current().conversation!)).toBe(true);
   await expect.poll(() => composer.textContent()).toBe("");
 
   await page.getByRole("button", { name: /stop/i, exact: true }).click();
-  await waitForView(observer.view, (view) => !isBusy(view.conversation));
+  await waitForView(observer.view, (view) => view.conversation !== undefined && !isBusy(view.conversation));
 });
 
 it.each([
@@ -101,25 +115,38 @@ it.each([
   ["tool-only", fauxAssistantMessage(fauxToolCall("search_logs", { release: "v2.3" }), { stopReason: "toolUse" })],
 ])("forks a persisted %s answer from its message action", async (_, message) => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["The fork continued."] });
-  const root = await host.harness.root(BACKGROUND_CONTEXT);
-  const source = await root.commit((tx) => tx.appendEntry(AssistantEntry, root.id, { model: [message] }), BACKGROUND_CONTEXT);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "The fork continued."] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  const conversationId = await followFirst(observer);
+  const source = await host.harness.commit(
+    (tx) => tx.appendEntry(AssistantEntry, conversationId, { model: [message] }),
+    BACKGROUND_CONTEXT,
+  );
 
   const fork = page.getByRole("button", { name: "Fork", exact: true });
-  await expect.poll(() => fork.count()).toBe(1);
-  await fork.click();
+  // The prompt's own answer and the appended entry both offer Fork; the latter is last.
+  await expect.poll(() => fork.count()).toBe(2);
+  await fork.last().click();
   await page.getByRole("textbox", { name: "First message", exact: true }).fill("Continue from this evidence.");
   await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
 
-  await waitForView(observer.view, (view) => view.conversations.some((conversation) => conversation.label.startsWith("fork ")));
-  const branch = observer.view.current().conversations.find((conversation) => conversation.label.startsWith("fork "))!;
-  await observer.controller.switchConversation(branch.id);
-  await waitForView(observer.view, (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "The fork continued.");
-  const entries = observer.view.current().conversation.entries;
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+  const branch = allNodes(observer.view.current()).find((node) => node.summary.kind === "fork")!;
+  await observer.controller.switchConversation(branch.summary.id);
+  await waitForView(
+    observer.view,
+    (view) => view.conversation !== undefined && !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "The fork continued.",
+  );
+  const entries = observer.view.current().conversation!.entries;
   expect(entries.some((entry) => entry.id === source.id)).toBe(true);
-  expect(transcript(observer.view.current().conversation).at(-2)).toMatchObject({ role: "user", text: "Continue from this evidence." });
+  expect(transcript(observer.view.current().conversation!).at(-2)).toMatchObject({
+    role: "user",
+    text: "Continue from this evidence.",
+  });
 });
 
 it("renders todo and approval documents on every page and shares one decision", async () => {
@@ -141,6 +168,8 @@ it("renders todo and approval documents on every page and shares one decision", 
 
   await a.getByRole("textbox").fill("plan and deploy");
   await a.getByRole("textbox").press("Enter");
+  // Page B joins the conversation from the navigation.
+  await b.getByRole("button", { name: "plan and deploy", exact: true }).click();
 
   for (const page of [a, b]) {
     const panel = page.getByLabel("Live state");
@@ -158,13 +187,16 @@ it("renders todo and approval documents on every page and shares one decision", 
 it("renders a document that fails its presentation schema as key-value fallback", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], extensions: [todo, approval] });
+  const owner = await connectTo(defer, host);
+  const conversationId = await startChat(owner, "has a bad doc");
   // Declared pinomad.todo but shaped wrong: the client must not lie about it.
   const token = todo.docs![0]!.token;
   await host.harness.commit(async (tx) => {
-    (await tx.doc(token, ROOT_CONVERSATION_ID))["items"] = "not-an-array";
+    (await tx.doc(token, conversationId))["items"] = "not-an-array";
   }, BACKGROUND_CONTEXT);
 
   const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("button", { name: "has a bad doc", exact: true }).click();
   const panel = page.getByLabel("Live state");
   await panel.getByText("todo.list", { exact: true }).waitFor();
   await panel.getByText("items", { exact: true }).waitFor();
@@ -185,7 +217,6 @@ it("shows interruption without a text bubble and never offers a fork for streami
   const model = faux.getModel();
   const host = await openHost({
     dataDir: directory.path,
-    cwd: directory.path,
     models,
     modelSummaries: () => [],
     initialModel: { provider: model.provider, modelId: model.id },
@@ -200,8 +231,68 @@ it("shows interruption without a text bubble and never offers a fork for streami
   await page.getByText("Thinking…", { exact: true }).waitFor();
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
+  await followFirst(observer);
   await observer.controller.abort();
-  await waitForView(observer.view, (view) => chatItems(view.conversation).some((item) => item.kind === "assistant" && item.stopReason === "aborted"));
+  await waitForView(
+    observer.view,
+    (view) =>
+      view.conversation !== undefined
+      && chatItems(view.conversation).some((item) => item.kind === "assistant" && item.stopReason === "aborted"),
+  );
   await expect.poll(() => page.getByText("interrupted", { exact: true }).count()).toBe(1);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
+});
+
+it("organizes conversations under projects and chats", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["project answer", "chat answer", "fork answer"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // Add the project through the dialog.
+  await page.getByRole("button", { name: "Add project", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill(project.path);
+  await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
+  await page.getByRole("group", { name: projectName }).waitFor();
+
+  // A new conversation in the project runs under it.
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByText(`New conversation in ${projectName}`, { exact: true }).waitFor();
+  await page.getByRole("textbox").fill("project work");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("project answer", { exact: true }).waitFor();
+  const projectSection = page.getByRole("group", { name: projectName });
+  await projectSection.getByRole("button", { name: "project work", exact: true }).waitFor();
+
+  // A new chat lands under Chats, then archives away.
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByText("New chat", { exact: true }).nth(1).waitFor();
+  await page.getByRole("textbox").fill("chat work");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("chat answer", { exact: true }).waitFor();
+  const chats = page.getByRole("group", { name: "Chats" });
+  await chats.getByRole("button", { name: "chat work", exact: true }).waitFor();
+  await chats.getByRole("button", { name: "Conversation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
+  await expect.poll(() => chats.getByRole("button", { name: "chat work", exact: true }).count()).toBe(0);
+
+  // A fork nests under its parent conversation.
+  await projectSection.getByRole("button", { name: "project work", exact: true }).click();
+  await page.getByRole("button", { name: "Fork", exact: true }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
+  await waitForView(observer.view, (view) =>
+    allNodes(view).some((node) => node.summary.kind === "fork" && node.summary.title === "Continue from here."),
+  );
+  const parentNode = observer.view
+    .current()
+    .organized.projects[0]!.conversations.find((node) => node.children.length > 0)!;
+  expect(parentNode.children[0]!.summary.kind).toBe("fork");
+  await page.getByText("fork answer", { exact: true }).waitFor();
 });

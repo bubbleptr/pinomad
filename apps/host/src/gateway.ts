@@ -14,7 +14,6 @@ import {
   type EntryId,
   type EntryRecord,
   type Harness,
-  ROOT_CONVERSATION_ID,
   type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { WebSocket, WebSocketServer } from "ws";
@@ -31,6 +30,14 @@ import {
 } from "@pinomad/protocol/frames.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
+import {
+  addProject,
+  archive,
+  type ConversationDefaults,
+  createConversation,
+  IndexDoc,
+  removeProject,
+} from "./organization.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
@@ -43,6 +50,10 @@ export interface GatewayOptions {
   readonly port: number;
   /** Exact browser origins permitted to connect. Native clients send no Origin. */
   readonly browserOrigins?: readonly string[];
+  /** Chat checkouts live under `<dataDir>/chats`. */
+  readonly dataDir: string;
+  /** Agent settings applied to conversations created through the gateway. */
+  readonly defaults: ConversationDefaults;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
 }
@@ -108,7 +119,7 @@ class ConversationList {
     let cursor: Cursor | undefined;
     do {
       const page = await harness.commit((tx) => tx.scanConversations({}, 256, cursor), context);
-      for (const record of page.items) summaries.push({ id: record.id, label: labelOf(record), ...(await firstInput(harness, record.id)) });
+      for (const record of page.items) summaries.push({ ...summaryOf(record), ...(await firstInput(harness, record.id)) });
       cursor = page.next;
     } while (cursor !== undefined);
     const list = new ConversationList(summaries);
@@ -117,7 +128,7 @@ class ConversationList {
       let next = list.#list;
       for (const change of publication.changes) {
         if (change.type === "conversation") {
-          next = [...next, { id: change.value.id, label: labelOf(change.value) }];
+          next = [...next, summaryOf(change.value)];
         } else if (change.type === "entry" && change.value.kind === "pi.user") {
           const id = change.value.conversationId;
           next = next.map((summary) => (summary.id === id && summary.title === undefined ? { ...summary, ...titleOf(change.value) } : summary));
@@ -153,10 +164,13 @@ class ConversationList {
   }
 }
 
-function labelOf(record: ConversationRecord): string {
-  if (record.id === ROOT_CONVERSATION_ID) return "main";
-  if (record.owner !== undefined) return `subagent ${record.id}`;
-  return record.parent === undefined ? `conversation ${record.id}` : `fork ${record.id}`;
+function summaryOf(record: ConversationRecord): ConversationSummary {
+  const parent = record.parent?.conversationId ?? record.owner?.conversationId;
+  return {
+    id: record.id,
+    kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
+    ...(parent === undefined ? {} : { parent }),
+  };
 }
 
 function titleOf(entry: EntryRecord | undefined): { title?: string } {
@@ -218,7 +232,6 @@ class GatewayClient {
     this.send({
       type: "hello",
       session: options.session,
-      root: ROOT_CONVERSATION_ID,
       models: options.modelSummaries(),
       docs: (options.docs ?? []).map((doc) => ({
         kind: doc.token.definition.kind,
@@ -270,6 +283,11 @@ class GatewayClient {
       void send({ type: "snapshot", stream, value: this.#conversations.value });
       const unsubscribe = this.#conversations.subscribe((value) => void send({ type: "snapshot", stream, value }));
       return { stop: unsubscribe };
+    }
+    if (stream === "index") {
+      const watch = await this.#options.harness.watchDoc(IndexDoc, context);
+      if (watch === undefined) throw new Error("Index document is missing");
+      return this.#forward(stream, watch, send);
     }
     if (stream === "tasks") return this.#forward(stream, await this.#options.harness.watchTaskGraph(context), send);
     if (stream.startsWith("doc:")) {
@@ -367,7 +385,30 @@ class GatewayClient {
   }
 
   async #call(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
-    const conversation = await this.#conversation(args.conversationId);
+    switch (method) {
+      case "addProject":
+        return addProject(this.#options.harness, (args as CallMethods["addProject"]["args"]).path, context);
+      case "removeProject":
+        await removeProject(this.#options.harness, (args as CallMethods["removeProject"]["args"]).path, context);
+        return null;
+      case "createConversation": {
+        const create = args as CallMethods["createConversation"]["args"];
+        const conversationId = await createConversation(
+          this.#options.harness,
+          this.#options.dataDir,
+          create,
+          this.#options.defaults,
+          context,
+        );
+        return { conversationId };
+      }
+      case "archive": {
+        const input = args as CallMethods["archive"]["args"];
+        await archive(this.#options.harness, input.conversationId, input.archived, context);
+        return null;
+      }
+    }
+    const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {
       case "submit": {
         const { text, whenBusy, requestId } = args as CallMethods["submit"]["args"];

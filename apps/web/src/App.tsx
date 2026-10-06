@@ -23,8 +23,9 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
-import type { AgentState } from "@earendil-works/pi-durable";
-import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
 import { DocumentView } from "./presentation/documents.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
@@ -85,12 +86,30 @@ export function RemoteWorkbench({ options, connectionKey, label }: { options: Re
   return <Workbench remote={state.remote} />;
 }
 
-const agentOf = (view: DurableView): AgentState => (view.conversation.docs["pi.agent"] ?? {}) as AgentState;
+const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
+  (conversation.docs["pi.agent"] ?? {}) as AgentState;
 
 function Workbench({ remote }: { remote: RemoteDurable }) {
   const view = useDurableView(remote);
-  const items = useMemo(() => chatItems(view.conversation), [view.conversation]);
-  const busy = isBusy(view.conversation);
+  // `drafting` starts true: after connect nothing is shown, and the composer
+  // creates a conversation at the draft's home instead of prompting it.
+  const [drafting, setDrafting] = useState(true);
+  const [draft, setDraft] = useState<Home>({ kind: "chat" });
+  // The shown conversation's identity decides drafting; creating or selecting one
+  // leaves it, archiving the shown one or "New chat" enters it.
+  useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
+  const conversation = drafting ? undefined : view.conversation;
+  const items = useMemo(() => (conversation === undefined ? [] : chatItems(conversation)), [conversation]);
+  const busy = conversation !== undefined && isBusy(conversation);
+  const home = view.home;
+  const homeLabel =
+    home === undefined ? undefined : home.kind === "chat" ? "Chat" : projectName(view.organized, home.path);
+  const checkout = conversation === undefined ? undefined : agentOf(conversation).cwd;
+  const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
+  const startDraft = (home: Home): void => {
+    setDraft(home);
+    setDrafting(true);
+  };
   // Below this the chat column would be squeezed; the live state moves into a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
   const [navOpen, setNavOpen] = useState(false);
@@ -100,7 +119,7 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
     <VStack style={page}>
       <Layout
         height="fill"
-        start={narrow ? undefined : <ConversationNav view={view} remote={remote} />}
+        start={narrow ? undefined : <ConversationNav view={view} remote={remote} onDraft={startDraft} />}
         content={
           <LayoutContent padding={0}>
             <VStack height="100%">
@@ -111,19 +130,45 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
                 </HStack>
               ) : null}
               <ConnectionBanner view={view} />
-              <ChatLayout
-                style={chatColumn}
-                composer={<Composer view={view} remote={remote} busy={busy} narrow={narrow} />}
-                emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
-              >
-                {items.length === 0 ? null : (
-                  <ChatMessageList isStreaming={busy}>
-                    {items.map((item) => (
-                      <ChatRow key={item.id} item={item} onFork={setForkAt} connected={view.connection === "connected"} />
-                    ))}
-                  </ChatMessageList>
-                )}
-              </ChatLayout>
+              {conversation === undefined ? (
+                <ChatLayout
+                  style={chatColumn}
+                  composer={<DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />}
+                  emptyState={
+                    <EmptyState title={draftLabel} description="The first message creates the conversation." />
+                  }
+                >
+                  {null}
+                </ChatLayout>
+              ) : (
+                <>
+                  {homeLabel === undefined ? null : (
+                    <HStack padding={2} gap={2} vAlign="center">
+                      <Text type="label" weight="semibold">
+                        {homeLabel}
+                      </Text>
+                      {checkout === undefined ? null : (
+                        <Text type="supporting" maxLines={1}>
+                          {checkout}
+                        </Text>
+                      )}
+                    </HStack>
+                  )}
+                  <ChatLayout
+                    style={chatColumn}
+                    composer={<Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />}
+                    emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
+                  >
+                    {items.length === 0 ? null : (
+                      <ChatMessageList isStreaming={busy}>
+                        {items.map((item) => (
+                          <ChatRow key={item.id} item={item} onFork={setForkAt} connected={view.connection === "connected"} />
+                        ))}
+                      </ChatMessageList>
+                    )}
+                  </ChatLayout>
+                </>
+              )}
             </VStack>
           </LayoutContent>
         }
@@ -137,7 +182,7 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
       />
       {narrow ? (
         <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="Conversations">
-          <ConversationItems view={view} remote={remote} onSelect={() => setNavOpen(false)} />
+          <ConversationItems view={view} remote={remote} onDraft={startDraft} onSelect={() => setNavOpen(false)} />
         </MobileNav>
       ) : null}
       {narrow ? (
@@ -208,7 +253,11 @@ function ConnectionBanner({ view }: { view: DurableView }) {
   return null;
 }
 
-function ConversationNav({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
+function projectName(organized: DurableView["organized"], path: string): string {
+  return organized.projects.find((entry) => entry.project.path === path)?.project.name ?? path.split("/").at(-1) ?? path;
+}
+
+function ConversationNav({ view, remote, onDraft }: { view: DurableView; remote: RemoteDurable; onDraft: (home: Home) => void }) {
   const connection =
     view.connection === "connected" ? (
       <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
@@ -218,30 +267,239 @@ function ConversationNav({ view, remote }: { view: DurableView; remote: RemoteDu
   return (
     <SideNav
       header={<SideNavHeading heading="PiNomad host" subheading={view.session.id} headerEndContent={connection} />}
-      footer={<Text type="supporting" maxLines={1}>{view.session.cwd}</Text>}
     >
-      <ConversationItems view={view} remote={remote} />
+      <ConversationItems view={view} remote={remote} onDraft={onDraft} />
     </SideNav>
   );
 }
 
-function ConversationItems({ view, remote, onSelect }: { view: DurableView; remote: RemoteDurable; onSelect?: () => void }) {
-  const shown = view.conversation.conversation.id;
+function ConversationItems({
+  view,
+  remote,
+  onSelect,
+  onDraft,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  onSelect?: () => void;
+  onDraft: (home: Home) => void;
+}) {
+  const disabled = view.connection !== "connected";
+  const [addOpen, setAddOpen] = useState(false);
+  const [removing, setRemoving] = useState<Project>();
+  const start = (home: Home): void => {
+    onDraft(home);
+    onSelect?.();
+  };
   return (
-    <SideNavSection title="Conversations">
-      {view.conversations.map((summary) => (
-        <SideNavItem
-          key={summary.id}
-          label={summary.title === undefined ? summary.label : `${summary.label} · ${summary.title}`}
-          isSelected={summary.id === shown}
-          isDisabled={view.connection !== "connected"}
-          onClick={() => {
-            void remote.controller.switchConversation(summary.id);
-            onSelect?.();
-          }}
-        />
+    <>
+      <SideNavSection
+        title="Chats"
+        endContent={
+          <Button label="New chat" variant="ghost" size="sm" isDisabled={disabled} onClick={() => start({ kind: "chat" })} />
+        }
+      >
+        {view.organized.chats.map((node) => (
+          <ConversationNodeItem
+            key={node.summary.id}
+            node={node}
+            depth={0}
+            shown={view.conversation?.conversation.id}
+            disabled={disabled}
+            remote={remote}
+            onSelect={onSelect}
+          />
+        ))}
+      </SideNavSection>
+      {view.organized.projects.map(({ project, conversations }) => (
+        <SideNavSection
+          key={project.path}
+          title={project.name}
+          endContent={
+            <DropdownMenu
+              button={{ label: "Actions", variant: "ghost", size: "sm", isDisabled: disabled }}
+              items={[
+                { label: "New conversation", onClick: () => start({ kind: "project", path: project.path }) },
+                { label: "Remove project", onClick: () => setRemoving(project) },
+              ]}
+            />
+          }
+        >
+          {conversations.map((node) => (
+            <ConversationNodeItem
+              key={node.summary.id}
+              node={node}
+              depth={0}
+              shown={view.conversation?.conversation.id}
+              disabled={disabled}
+              remote={remote}
+              onSelect={onSelect}
+            />
+          ))}
+        </SideNavSection>
       ))}
-    </SideNavSection>
+      <SideNavItem label="Add project" isDisabled={disabled} onClick={() => setAddOpen(true)} />
+      {addOpen ? (
+        <AddProjectDialog remote={remote} connected={!disabled} onClose={() => setAddOpen(false)} />
+      ) : null}
+      {removing === undefined ? null : (
+        <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
+      )}
+    </>
+  );
+}
+
+function ConversationNodeItem({
+  node,
+  depth,
+  shown,
+  disabled,
+  remote,
+  onSelect,
+}: {
+  node: ConversationNode;
+  depth: number;
+  shown: ConversationId | undefined;
+  disabled: boolean;
+  remote: RemoteDurable;
+  onSelect?: () => void;
+}) {
+  const { summary } = node;
+  // Archive sits beside the item, not in endContent: a <button> inside the item's
+  // own <button> is invalid HTML and pollutes the item's accessible name.
+  const item = (
+    <SideNavItem
+      label={summary.title ?? "New conversation"}
+      isSelected={summary.id === shown}
+      isDisabled={disabled}
+      style={depth === 0 ? { flex: 1, minWidth: 0 } : undefined}
+      onClick={() => {
+        void remote.controller.switchConversation(summary.id);
+        onSelect?.();
+      }}
+    >
+      {node.children.length === 0
+        ? undefined
+        : node.children.map((child) => (
+            <ConversationNodeItem
+              key={child.summary.id}
+              node={child}
+              depth={depth + 1}
+              shown={shown}
+              disabled={disabled}
+              remote={remote}
+              onSelect={onSelect}
+            />
+          ))}
+    </SideNavItem>
+  );
+  if (depth > 0) return item;
+  return (
+    // vAlign="start": the item's height grows with expanded children; the action
+    // must sit on the item's own row, not vertically centered over the block.
+    // The trigger is a sibling, not endContent: a <button> inside the item's own
+    // <button> is invalid HTML and pollutes the item's accessible name.
+    <HStack gap={0} vAlign="start">
+      {item}
+      <DropdownMenu
+        hasChevron={false}
+        button={{ label: "Conversation actions", children: "⋯", variant: "ghost", size: "sm", isDisabled: disabled }}
+        items={[
+          {
+            label: "Archive",
+            onClick: () => void remote.controller.archive(summary.id, true),
+          },
+        ]}
+      />
+    </HStack>
+  );
+}
+
+function AddProjectDialog({ remote, connected, onClose }: { remote: RemoteDurable; connected: boolean; onClose: () => void }) {
+  const [path, setPath] = useState("");
+  const add = (): void => {
+    void remote.controller.addProject(path.trim());
+    onClose();
+  };
+  return (
+    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
+      <Layout
+        header={
+          <DialogHeader
+            title="Add project"
+            subtitle="A local directory on the host that conversations can work in."
+            onOpenChange={() => onClose()}
+          />
+        }
+        content={
+          <LayoutContent>
+            <TextInput label="Path" value={path} onChange={setPath} />
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button label="Add project" variant="primary" isDisabled={!connected || path.trim() === ""} onClick={add} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
+  );
+}
+
+function RemoveProjectDialog({
+  project,
+  remote,
+  connected,
+  onClose,
+}: {
+  project: Project;
+  remote: RemoteDurable;
+  connected: boolean;
+  onClose: () => void;
+}) {
+  const remove = (): void => {
+    void remote.controller.removeProject(project.path);
+    onClose();
+  };
+  return (
+    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
+      <Layout
+        header={
+          <DialogHeader
+            title={`Remove project ${project.name}?`}
+            subtitle="The directory and its conversations are kept; only the registration is removed."
+            onOpenChange={() => onClose()}
+          />
+        }
+        content={<LayoutContent />}
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button label="Remove project" variant="primary" isDisabled={!connected} onClick={remove} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
+  );
+}
+
+function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; home: Home; connected: boolean }) {
+  const [value, setValue] = useState("");
+  return (
+    <ChatComposer
+      value={value}
+      onChange={setValue}
+      onSubmit={(text) => {
+        void remote.controller.createConversation(home, text);
+      }}
+      isDisabled={!connected}
+      placeholder="The first message creates the conversation…"
+    />
   );
 }
 
@@ -311,18 +569,20 @@ function ChatRow({ item, onFork, connected }: { item: ChatItem; onFork: (entryId
 function Composer({
   view,
   remote,
+  conversation,
   busy,
   narrow,
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  conversation: NonNullable<DurableView["conversation"]>;
   busy: boolean;
   narrow: boolean;
 }) {
   const [value, setValue] = useState("");
-  const agent = agentOf(view);
+  const agent = agentOf(conversation);
   const model = agent.model === undefined ? "No model" : `${agent.model.provider}/${agent.model.modelId}`;
-  const status = statusText(view.conversation);
+  const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
   const models = view.models.map((candidate) => ({
     label: `${candidate.provider}/${candidate.modelId}`,
@@ -385,9 +645,9 @@ function Composer({
 
 function LiveState({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
   const rows = view.tasks === undefined ? [] : taskRows(view.tasks);
-  const queue = queueItems(view.conversation);
+  const queue = view.conversation === undefined ? [] : queueItems(view.conversation);
   const notices = [...view.notices].reverse().slice(0, 5);
-  const usage = usageRows(view.conversation);
+  const usage = view.conversation === undefined ? [] : usageRows(view.conversation);
   return (
     <VStack gap={4}>
       {view.docs.map((doc) => (

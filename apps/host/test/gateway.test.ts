@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { streamingText, transcript } from "@pinomad/protocol/transcript.ts";
-import { connectTo, LONG_ANSWER, startFauxHost, useCleanups, waitForView } from "./support.ts";
+import { connectTo, LONG_ANSWER, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -10,21 +10,21 @@ describe("gateway", () => {
     const host = await startFauxHost(defer);
     const a = await connectTo(defer, host);
     const b = await connectTo(defer, host);
-    expect(b.view.current().conversation.conversation.id).toBe(a.view.current().conversation.conversation.id);
+    const id = await startChat(a, "investigate");
+    await b.controller.switchConversation(id);
+    expect(b.view.current().conversation!.conversation.id).toBe(id);
 
     const partialsSeenByB: string[] = [];
     b.view.subscribe(() => {
-      const text = streamingText(b.view.current().conversation);
+      const text = streamingText(b.view.current().conversation!);
       if (text !== undefined && text !== "") partialsSeenByB.push(text);
     });
 
-    await a.controller.submit("investigate", "followUp");
-
     const answered = (client: RemoteDurable) =>
-      waitForView(client.view, (view) => transcript(view.conversation).at(-1)?.text === LONG_ANSWER);
+      waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === LONG_ANSWER);
     await Promise.all([answered(a), answered(b)]);
 
-    expect(transcript(b.view.current().conversation)).toEqual([
+    expect(transcript(b.view.current().conversation!)).toEqual([
       { role: "user", text: "investigate" },
       { role: "assistant", text: LONG_ANSWER, stopReason: "stop" },
     ]);
@@ -42,23 +42,28 @@ describe("gateway", () => {
   it("lists the same conversation titles before and after the host restarts", async () => {
     const first = await startFauxHost(defer, { answers: ["done"] });
     const before = await connectTo(defer, first);
-    await before.controller.submit("what broke v2.3?", "followUp");
-    await waitForView(before.view, (view) => view.conversations[0]?.title === "what broke v2.3?");
+    await startChat(before, "what broke v2.3?");
+    await waitForView(before.view, (view) => view.organized.chats[0]?.summary.title === "what broke v2.3?");
     const dataDir = before.view.current().session.directory;
     before.close();
     await first.close();
 
     const second = await startFauxHost(defer, { dataDir });
     const after = await connectTo(defer, second);
-    expect(after.view.current().conversations).toEqual(before.view.current().conversations);
-    expect(after.view.current().conversations).toMatchObject([{ label: "main", title: "what broke v2.3?" }]);
+    expect(after.view.current().organized.chats.map((node) => node.summary)).toEqual(
+      before.view.current().organized.chats.map((node) => node.summary),
+    );
+    expect(after.view.current().organized.chats[0]?.summary).toMatchObject({
+      kind: "conversation",
+      title: "what broke v2.3?",
+    });
   });
 
   it("lists the conversations and opens the task graph on request", async () => {
     const host = await startFauxHost(defer);
     const client = await connectTo(defer, host);
-    const rootId = client.view.current().conversation.conversation.id;
-    expect(client.view.current().conversations.map((summary) => summary.id)).toEqual([rootId]);
+    const id = await startChat(client, "hello");
+    await waitForView(client.view, (view) => view.organized.chats.some((node) => node.summary.id === id));
 
     expect(client.view.current().tasks).toBeUndefined();
     await client.controller.toggleTasks();

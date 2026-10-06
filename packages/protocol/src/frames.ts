@@ -1,5 +1,6 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
+import type { Home, Project } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import type { ModelSummary, Notice, SessionInfo } from "./view.ts";
 
@@ -13,7 +14,8 @@ export type StreamName =
   | `conversation:${ConversationId}`
   | `doc:${string}:${ConversationId}`
   | "tasks"
-  | "conversations";
+  | "conversations"
+  | "index";
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
 export const docStream = (kind: string, id: ConversationId): StreamName => `doc:${kind}:${id}`;
@@ -22,6 +24,15 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
 export interface CallMethods {
+  /** Register a local directory as a project; normalized and deduplicated host-side. */
+  addProject: { args: { path: string }; result: Project };
+  removeProject: { args: { path: string }; result: null };
+  /** Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`. */
+  createConversation: {
+    args: { home: Home; text: string; requestId: string };
+    result: { conversationId: ConversationId };
+  };
+  archive: { args: { conversationId: ConversationId; archived: boolean }; result: null };
   submit: {
     args: {
       conversationId: ConversationId;
@@ -54,7 +65,6 @@ export type ServerFrame =
   | {
       readonly type: "hello";
       readonly session: SessionInfo;
-      readonly root: ConversationId;
       readonly models: readonly ModelSummary[];
       /** The conversation documents offered as `doc:` streams, in host order. */
       readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
@@ -86,29 +96,43 @@ export function isClientFrame(value: unknown): value is ClientFrame {
     const stream = value.stream;
     return (
       typeof stream === "string"
-      && (stream === "tasks" || stream === "conversations" || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream))
+      && (stream === "tasks" || stream === "conversations" || stream === "index" || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream))
     );
   }
   if (value.type !== "call" || !Number.isSafeInteger(value.id) || !record(value.args)) return false;
   const args = value.args;
-  if (typeof args.conversationId !== "number" || !Number.isSafeInteger(args.conversationId) || args.conversationId < 1) return false;
+  const conversationId = (): boolean =>
+    typeof args.conversationId === "number" && Number.isSafeInteger(args.conversationId) && args.conversationId >= 1;
   switch (value.method) {
     case "submit":
-      return typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp") && nonempty(args.requestId);
+      return (
+        conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
+        && nonempty(args.requestId)
+      );
     case "abort":
     case "cycleThinking":
-      return true;
+      return conversationId();
     case "compact":
-      return args.instructions === undefined || typeof args.instructions === "string";
+      return conversationId() && (args.instructions === undefined || typeof args.instructions === "string");
     case "setModel":
-      return record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId);
+      return conversationId() && record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId);
     case "fork":
       return (
-        typeof args.entryId === "string" && /^[1-9]\d*$/.test(args.entryId)
+        conversationId() && typeof args.entryId === "string" && /^[1-9]\d*$/.test(args.entryId)
         && (args.removeTools === undefined || (Array.isArray(args.removeTools) && args.removeTools.every(nonempty)))
       );
     case "decide":
-      return nonempty(args.kind) && nonempty(args.requestId) && typeof args.approved === "boolean";
+      return conversationId() && nonempty(args.kind) && nonempty(args.requestId) && typeof args.approved === "boolean";
+    case "addProject":
+    case "removeProject":
+      return nonempty(args.path);
+    case "createConversation":
+      return (
+        record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
+        && nonempty(args.text) && nonempty(args.requestId)
+      );
+    case "archive":
+      return conversationId() && typeof args.archived === "boolean";
     default:
       return false;
   }

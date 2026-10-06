@@ -2,6 +2,7 @@
 // pi's packages/coding-agent/src/experimental/durable/runtime.ts (MIT, Earendil Works).
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
+import type { Home, Organized } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 
 export interface ModelSummary extends ModelRef {
@@ -15,10 +16,12 @@ export interface Notice {
   readonly message: string;
 }
 
-/** A conversation the user can switch to: the main one, or a subagent's. */
+/** A stored conversation; `parent` nests it under the conversation it forked or the one owning its task. */
 export interface ConversationSummary {
   readonly id: ConversationId;
-  readonly label: string;
+  readonly kind: "conversation" | "fork" | "subagent";
+  /** Fork source conversation, or the conversation owning the subagent's task. */
+  readonly parent?: ConversationId;
   /** The first user message, for a subagent its task. */
   readonly title?: string;
 }
@@ -26,7 +29,6 @@ export interface ConversationSummary {
 export interface SessionInfo {
   readonly id: string;
   readonly directory: string;
-  readonly cwd: string;
 }
 
 export type ConnectionState = "connected" | "reconnecting" | "closed";
@@ -43,9 +45,12 @@ export interface ExtensionDocView {
 /** Everything a client renders. Plain values; no Harness objects cross this boundary. */
 export interface DurableView {
   readonly session: SessionInfo;
-  /** The conversation shown and talked to. */
-  readonly conversation: ConversationView;
-  readonly conversations: readonly ConversationSummary[];
+  /** The conversation shown and talked to; undefined until one is shown. */
+  readonly conversation?: ConversationView;
+  /** Chats and projects with their conversations, grouped for navigation. */
+  readonly organized: Organized;
+  /** The shown conversation's home, inherited from its index ancestor. */
+  readonly home?: Home;
   readonly models: readonly ModelSummary[];
   readonly notices: readonly Notice[];
   /** The live task graph while the task panel is open. */
@@ -62,6 +67,14 @@ export interface DurableViewSource {
 
 /** What a client may ask for. */
 export interface DurableController {
+  /** Register a local directory as a project; returns the stored (normalized) project. */
+  addProject(path: string): Promise<void>;
+  /** Unregister a project; its directory and conversations are kept. */
+  removeProject(path: string): Promise<void>;
+  /** Create a conversation at a home, send `text`, and show it. */
+  createConversation(home: Home, text: string): Promise<void>;
+  /** Hide or restore a top-level conversation in the index. */
+  archive(id: ConversationId, archived: boolean): Promise<void>;
   /** Prompt when idle; otherwise steer or queue a follow-up. */
   submit(text: string, whenBusy: "steer" | "followUp"): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
