@@ -395,3 +395,72 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
   await page.getByText("Could not connect to the host", { exact: true }).waitFor();
   await expect.poll(() => page.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
 });
+
+it("reuses the stored device key when a spent pairing link is opened again", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["paired answer", "second answer"],
+    remote: { port: await freePort() },
+  });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+  const pairLink = `${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  defer(() => context.close());
+  // Pair once in this context — the device identity lands in localStorage.
+  const first = await context.newPage();
+  await first.goto(pairLink);
+  await first.getByRole("textbox").waitFor();
+  await first.getByRole("textbox").fill("hello");
+  await first.getByRole("textbox").press("Enter");
+  await first.getByText("paired answer", { exact: true }).waitFor();
+  const savedKey = await first.evaluate(
+    () => (JSON.parse(localStorage.getItem("pinomad.device")!) as { privateKey: string }).privateKey,
+  );
+
+  // Same context, the now-spent link: a fresh load like scanning the QR again.
+  const again = await context.newPage();
+  await again.goto(pairLink);
+  await again.getByRole("textbox").waitFor();
+  expect(again.url()).not.toContain("#pair=");
+  const afterKey = await again.evaluate(
+    () => (JSON.parse(localStorage.getItem("pinomad.device")!) as { privateKey: string }).privateKey,
+  );
+  expect(afterKey).toBe(savedKey);
+
+  await again.getByRole("textbox").fill("hi again");
+  await again.getByRole("textbox").press("Enter");
+  await again.getByText("second answer", { exact: true }).waitFor();
+  // Still just the one registered device — no new identity was created.
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+});
+
+it("tells a fresh browser that a spent pairing code was used or expired", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  // Consume the offer with one pairing first.
+  const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await first.getByRole("textbox").waitFor();
+  await first.close();
+
+  // A context with no stored device sees the spent-code explanation, nothing destructive.
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  defer(() => context.close());
+  const fresh = await context.newPage();
+  await fresh.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await fresh.getByText("used or has expired", { exact: false }).waitFor();
+  expect(await fresh.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
+  expect(await fresh.getByRole("button", { name: "Use saved pairing" }).count()).toBe(0);
+});

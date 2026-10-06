@@ -5,6 +5,21 @@ export const DEFAULT_HOST_URL = "ws://127.0.0.1:7420";
 /** localStorage key holding this browser's paired device identity. */
 export const DEVICE_KEY = "pinomad.device";
 
+/** A validated stored device identity, or undefined. */
+export function storedDevice(stored: string | null): { url: string; hostKey: string; privateKey: string } | undefined {
+  if (stored === null) return undefined;
+  try {
+    const device = JSON.parse(stored) as { url?: unknown; hostKey?: unknown; privateKey?: unknown };
+    if (typeof device.url !== "string" || typeof device.hostKey !== "string" || typeof device.privateKey !== "string") {
+      return undefined;
+    }
+    if (fromBase64Url(device.hostKey).length !== 32 || fromBase64Url(device.privateKey).length !== 32) return undefined;
+    return { url: device.url, hostKey: device.hostKey, privateKey: device.privateKey };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * How this tab may reach the host:
  * - `token`: the loopback gateway's shared secret (the printed link);
@@ -46,17 +61,8 @@ export function resolveAddress(
     return { kind: "pair", url, hostKey, secret };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
-  if (stored === null) return undefined;
-  try {
-    const device = JSON.parse(stored) as { url?: unknown; hostKey?: unknown; privateKey?: unknown };
-    if (typeof device.url !== "string" || typeof device.hostKey !== "string" || typeof device.privateKey !== "string") {
-      return undefined;
-    }
-    if (fromBase64Url(device.hostKey).length !== 32 || fromBase64Url(device.privateKey).length !== 32) return undefined;
-    return { kind: "device", url: device.url, hostKey: device.hostKey, privateKey: device.privateKey };
-  } catch {
-    return undefined;
-  }
+  const device = storedDevice(stored);
+  return device === undefined ? undefined : { kind: "device", ...device };
 }
 
 /** A human name for this browser, stored on the host as the device label. */

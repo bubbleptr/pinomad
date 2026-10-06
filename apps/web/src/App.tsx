@@ -35,7 +35,7 @@ import { encode } from "uqr";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
-import { DEVICE_KEY, deviceName, resolveAddress, type ResolvedAddress } from "./address.ts";
+import { DEVICE_KEY, deviceName, resolveAddress, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
 const page: CSSProperties = {
@@ -81,11 +81,15 @@ function Connected({ address }: { address: ResolvedAddress }) {
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
 function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
-  // The device key is generated once per pairing; a stored one is restored.
-  const device = useMemo<KeyPair>(
-    () => (address.kind === "device" ? keyPairFromPrivate(fromBase64Url(address.privateKey)) : generateKeyPair()),
-    [address],
-  );
+  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
+  const device = useMemo<KeyPair>(() => {
+    // A stored key for the same host survives a spent pairing link: the host
+    // admits a registered device without consuming the offer.
+    if (address.kind === "pair" && stored !== undefined && stored.hostKey === address.hostKey) {
+      return keyPairFromPrivate(fromBase64Url(stored.privateKey));
+    }
+    return address.kind === "device" ? keyPairFromPrivate(fromBase64Url(address.privateKey)) : generateKeyPair();
+  }, [address, stored]);
   const options = useMemo<RemoteDurableOptions>(
     () => ({
       transport: secureWebSocketTransport({
@@ -109,19 +113,39 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
     }),
     [address, device],
   );
-  const rejected = (
-    <VStack gap={4} hAlign="center">
-      <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-      <Button
-        label="Forget this host"
-        variant="secondary"
-        onClick={() => {
-          localStorage.removeItem(DEVICE_KEY);
-          window.location.reload();
-        }}
-      />
-    </VStack>
-  );
+  const rejected =
+    address.kind === "pair" ? (
+      // A pairing offer is single-use; a rejected one is the offer's problem,
+      // not this device's — never offer to wipe a saved pairing from here.
+      <VStack gap={4} hAlign="center">
+        <EmptyState
+          title="This pairing code was used or has expired"
+          description="Generate a new QR on the host: run bun run pair, or open Devices → Pair a device."
+        />
+        {stored === undefined ? null : (
+          <Button
+            label="Use saved pairing"
+            variant="secondary"
+            onClick={() => {
+              history.replaceState(null, "", window.location.pathname + window.location.search);
+              window.location.reload();
+            }}
+          />
+        )}
+      </VStack>
+    ) : (
+      <VStack gap={4} hAlign="center">
+        <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
+        <Button
+          label="Forget this host"
+          variant="secondary"
+          onClick={() => {
+            localStorage.removeItem(DEVICE_KEY);
+            window.location.reload();
+          }}
+        />
+      </VStack>
+    );
   return (
     <RemoteWorkbench
       options={options}
