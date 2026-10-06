@@ -50,7 +50,7 @@ export interface OpenHostOptions {
     readonly publicUrl?: string;
     /** Built web client served over plain HTTP on the remote port. */
     readonly webRoot?: string;
-  /** One-time pairing offer lifetime; default five minutes. */
+    /** One-time pairing offer lifetime; default five minutes. */
     readonly pairingTtlMs?: number;
     /** How long a new socket may sit before handshake message 1; default 10 s. */
     readonly handshakeTimeoutMs?: number;
