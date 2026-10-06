@@ -24,6 +24,9 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 /** Close code for a rejected token; clients must not reconnect after it. */
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
+/** Bumped on breaking frame/stream changes; compared against the hello frame's `protocol`. */
+export const PROTOCOL_VERSION = 1;
+
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
   addProject: { args: { path: string }; result: Project };
@@ -69,6 +72,7 @@ export type CallMethod = keyof CallMethods;
 export type ServerFrame =
   | {
       readonly type: "hello";
+      readonly protocol: number;
       readonly session: SessionInfo;
       readonly models: readonly ModelSummary[];
       /** The conversation documents offered as `doc:` streams, in host order. */

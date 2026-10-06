@@ -9,6 +9,7 @@ import {
   type ClientFrame,
   conversationStream,
   docStream,
+  PROTOCOL_VERSION,
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
@@ -58,6 +59,22 @@ export class UnauthorizedError extends Error {
   constructor() {
     super("Unauthorized: this client is not allowed (wrong token, or the device is not paired or was revoked)");
     this.name = "UnauthorizedError";
+  }
+}
+
+/**
+ * The host's hello announced a protocol this client does not speak. Before the
+ * first view the ready promise rejects with it; after, the view's connection
+ * goes "outdated" and no calls are sent — a host-served page reloads instead.
+ */
+export class ProtocolMismatchError extends Error {
+  readonly host: number;
+  readonly client: number;
+  constructor(host: number, client: number) {
+    super(`Host protocol mismatch: host speaks ${host}, this client speaks ${client}`);
+    this.name = "ProtocolMismatchError";
+    this.host = host;
+    this.client = client;
   }
 }
 
@@ -141,6 +158,21 @@ class RemoteClient {
   #receive(frame: ServerFrame): void {
     switch (frame.type) {
       case "hello": {
+        if (frame.protocol !== PROTOCOL_VERSION) {
+          // Reconnecting would loop on the same mismatch; mark closed first so
+          // the close below stays terminal, then surface it the way the view
+          // can tell it from a lost connection.
+          const mismatch = new ProtocolMismatchError(frame.protocol, PROTOCOL_VERSION);
+          this.#closed = true;
+          if (this.#state === undefined) {
+            this.#rejectReady(mismatch);
+          } else {
+            this.#update({ connection: "outdated" });
+            this.#notice("error", mismatch.message);
+          }
+          this.#connection?.close();
+          return;
+        }
         this.#attempt = 0;
         this.#docs = frame.docs;
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
