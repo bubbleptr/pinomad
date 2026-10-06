@@ -1,7 +1,7 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import type { HostDevices } from "./devices.ts";
-import { homeOf, type HostIndex, organize } from "./organization.ts";
+import { checkoutOf, homeOf, type HostIndex, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
   type CallMethod,
@@ -266,6 +266,7 @@ class RemoteClient {
       conversation,
       organized: organize(index, summaries),
       home: current === undefined ? undefined : homeOf(index, summaries, current),
+      checkout: current === undefined ? undefined : checkoutOf(index, summaries, current),
       tasks,
       docs,
       devices,
@@ -332,9 +333,14 @@ class RemoteClient {
     return {
       addProject: (path) => this.#command(() => this.#call("addProject", { path })),
       removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
-      createConversation: (home, text) =>
+      createConversation: (home, text, checkout) =>
         this.#command(async () => {
-          const { conversationId } = await this.#call("createConversation", { home, text, requestId: newRequestId() });
+          const { conversationId } = await this.#call("createConversation", {
+            home,
+            text,
+            requestId: newRequestId(),
+            ...(checkout === undefined ? {} : { checkout }),
+          });
           await this.#switch(conversationId);
         }),
       archive: (id, archived) =>

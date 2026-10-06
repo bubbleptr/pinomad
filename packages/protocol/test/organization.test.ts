@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { homeOf, type HostIndex, organize, type Project } from "../src/organization.ts";
+import { checkoutOf, homeOf, type HostIndex, organize, type Project, type WorktreeCheckout } from "../src/organization.ts";
 import type { ConversationSummary } from "../src/view.ts";
 
 const project = (path: string, addedAt = 1): Project => ({ path, name: path.split("/").at(-1)!, addedAt });
@@ -88,5 +88,37 @@ describe("homeOf", () => {
     expect(homeOf(index, summaries, 21 as ConversationId)).toEqual({ kind: "project", path: "/work/a" });
     expect(homeOf(index, summaries, 42 as ConversationId)).toBeUndefined();
     expect(homeOf(index, summaries, 20 as ConversationId)).toEqual({ kind: "project", path: "/work/a" });
+  });
+});
+
+describe("checkoutOf", () => {
+  const record = (conversationId: number): WorktreeCheckout => ({
+    conversationId: conversationId as ConversationId,
+    path: `/data/worktrees/${conversationId}`,
+    repo: "/work/repo",
+    subdir: "",
+    branch: `pinomad/${conversationId}-abcd`,
+    base: "deadbeef",
+  });
+  const index: HostIndex = {
+    projects: [project("/work/repo")],
+    conversations: [inProject(10, "/work/repo", 1)],
+    checkouts: [record(10)],
+  };
+
+  it("returns the conversation's own record, and a child's nearest ancestor record", () => {
+    expect(checkoutOf(index, [summary(10)], 10 as ConversationId)).toEqual(record(10));
+    // A subagent carries no record of its own: it shares its owner's worktree.
+    const subagent = { ...summary(30, 10), kind: "subagent" as const };
+    expect(checkoutOf(index, [summary(10), subagent], 30 as ConversationId)).toEqual(record(10));
+    // A fork with its own record wins over the parent's.
+    const forked: HostIndex = { ...index, checkouts: [record(10), record(21)] };
+    expect(checkoutOf(forked, [summary(10), summary(21, 10)], 21 as ConversationId)).toEqual(record(21));
+  });
+
+  it("returns undefined without a matching record or ancestor, and tolerates missing checkouts", () => {
+    expect(checkoutOf(index, [summary(10)], 99 as ConversationId)).toBeUndefined();
+    const legacy: HostIndex = { projects: [], conversations: [chat(10, 1)] };
+    expect(checkoutOf(legacy, [summary(10)], 10 as ConversationId)).toBeUndefined();
   });
 });

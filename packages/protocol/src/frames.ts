@@ -31,9 +31,13 @@ export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
   addProject: { args: { path: string }; result: Project };
   removeProject: { args: { path: string }; result: null };
-  /** Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`. */
+  /**
+   * Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`.
+   * `checkout`: project conversations default to a git worktree when the project
+   * is in a repository; `"project"` works directly in the project directory.
+   */
   createConversation: {
-    args: { home: Home; text: string; requestId: string };
+    args: { home: Home; text: string; requestId: string; checkout?: "worktree" | "project" };
     result: { conversationId: ConversationId };
   };
   archive: { args: { conversationId: ConversationId; archived: boolean }; result: null };
@@ -145,6 +149,7 @@ export function isClientFrame(value: unknown): value is ClientFrame {
       return (
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
         && nonempty(args.text) && nonempty(args.requestId)
+        && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";

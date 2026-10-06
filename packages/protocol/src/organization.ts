@@ -23,10 +23,28 @@ export type IndexEntry = {
   readonly requestId?: string;
 };
 
+/** A per-conversation git worktree (ADR-0010). Absent for project-dir, non-git, and Chat checkouts. */
+export type WorktreeCheckout = {
+  readonly conversationId: ConversationId;
+  /** <dataDir>/worktrees/<conversationId> */
+  readonly path: string;
+  /** The project's repository top level (git -C target for worktree commands). */
+  readonly repo: string;
+  /** Project path relative to `repo` ("" when the project is the repo root); the agent cwd is join(path, subdir). */
+  readonly subdir: string;
+  readonly branch: string;
+  /** Full commit sha the branch starts at. */
+  readonly base: string;
+  /** Forks only: commit capturing the parent checkout's working tree at fork time. */
+  readonly snapshot?: string;
+};
+
 /** Shape of the host's session-scoped index document. Arrays are mutable: it is a Durable doc. */
 export type HostIndex = {
   readonly projects: Project[];
   readonly conversations: IndexEntry[];
+  /** Absent in documents stored before worktree checkouts existed. */
+  readonly checkouts?: WorktreeCheckout[];
 };
 
 export type ConversationNode = {
@@ -101,6 +119,29 @@ export function organize(index: HostIndex, summaries: readonly ConversationSumma
           .map(nodeList),
       })),
   };
+}
+
+/**
+ * The worktree a conversation works in: its own record, else the nearest
+ * ancestor's — a subagent shares the checkout of the conversation owning it.
+ */
+export function checkoutOf(
+  index: HostIndex,
+  summaries: readonly ConversationSummary[],
+  id: ConversationId,
+): WorktreeCheckout | undefined {
+  const record = index.checkouts?.find((checkout) => checkout.conversationId === id);
+  if (record !== undefined) return record;
+  const summaryById = new Map(summaries.map((summary) => [summary.id, summary]));
+  const seen = new Set<ConversationId>();
+  let current = summaryById.get(id);
+  while (current !== undefined && !seen.has(current.id)) {
+    seen.add(current.id);
+    const ancestor = index.checkouts?.find((checkout) => checkout.conversationId === current!.id);
+    if (ancestor !== undefined) return ancestor;
+    current = current.parent === undefined ? undefined : summaryById.get(current.parent);
+  }
+  return undefined;
 }
 
 /** The home a conversation belongs to, inherited from its top-level index ancestor. */
