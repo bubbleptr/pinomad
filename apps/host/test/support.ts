@@ -31,6 +31,7 @@ export async function startFauxHost(
     browserOrigins,
     extensions,
     projects,
+    webRoot,
     remote,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
@@ -45,6 +46,8 @@ export async function startFauxHost(
     extensions?: OpenHostOptions["extensions"];
     /** Directories registered as projects at open. */
     projects?: readonly string[];
+    /** Built web client served on the gateway ports. */
+    webRoot?: string;
     /** The 0.0.0.0 secure-channel listener; off by default. */
     remote?: OpenHostOptions["remote"];
   } = {},
@@ -65,6 +68,7 @@ export async function startFauxHost(
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
     ...(extensions === undefined ? {} : { extensions }),
     ...(projects === undefined ? {} : { projects }),
+    ...(webRoot === undefined ? {} : { webRoot }),
     ...(remote === undefined ? {} : { remote }),
   });
   defer(() => host.close());

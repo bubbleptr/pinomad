@@ -41,13 +41,15 @@ const common = {
   port: Number(values.port),
   extensions: [createContext({ agentsHome: join(homedir(), ".agents") }), coding, todo, approval],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
+  // Both gateway ports serve the built client; in service mode the loopback
+  // port is the only web server around (ADR-0009 §7).
+  webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
   ...(values["lock-stale-ms"] === undefined ? {} : { lockStaleMs: Number(values["lock-stale-ms"]) }),
   ...(values["remote-port"] === undefined
     ? {}
     : {
         remote: {
           port: Number(values["remote-port"]),
-          webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
           ...(values["public-url"] === undefined ? {} : { publicUrl: values["public-url"] }),
         },
       }),

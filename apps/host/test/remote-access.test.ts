@@ -217,7 +217,7 @@ describe("remote access", () => {
     await writeFile(join(webRoot.path, "index.html"), "<html>pinomad</html>");
     await writeFile(join(webRoot.path, "assets", "app.js"), "console.log(1)");
 
-    const host = await startFauxHost(defer, { remote: { port: await freePort(), webRoot: webRoot.path } });
+    const host = await startFauxHost(defer, { webRoot: webRoot.path, remote: { port: await freePort() } });
     const http = `http://127.0.0.1:${new URL(host.remote!.url).port}`;
 
     const index = await fetch(`${http}/`);

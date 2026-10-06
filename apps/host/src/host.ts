@@ -37,6 +37,8 @@ export interface OpenHostOptions {
   readonly port: number;
   /** Exact browser origins allowed to use the gateway; native clients send no Origin. */
   readonly browserOrigins?: readonly string[];
+  /** Built web client served over HTTP on the gateway ports (ADR-0009 §7). */
+  readonly webRoot?: string;
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
   /**
@@ -48,8 +50,6 @@ export interface OpenHostOptions {
     readonly port: number;
     /** Address advertised in pairing links; defaults to the detected LAN IP. */
     readonly publicUrl?: string;
-    /** Built web client served over plain HTTP on the remote port. */
-    readonly webRoot?: string;
     /** One-time pairing offer lifetime; default five minutes. */
     readonly pairingTtlMs?: number;
     /** How long a new socket may sit before handshake message 1; default 10 s. */
@@ -150,6 +150,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
+      ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
       ...(hostKey === undefined || offers === undefined || options.remote === undefined
         ? {}
         : {
@@ -158,7 +159,6 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               hostKey,
               offers,
               ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
-              ...(options.remote.webRoot === undefined ? {} : { webRoot: options.remote.webRoot }),
               ...(options.remote.handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs: options.remote.handshakeTimeoutMs }),
             },
           }),
