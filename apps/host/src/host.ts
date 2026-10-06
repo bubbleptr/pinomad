@@ -11,6 +11,7 @@ import {
   type ModelRef,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { addProject, type ConversationDefaults, ensureIndex } from "./organization.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -20,16 +21,17 @@ import { startGateway } from "./gateway.ts";
 const context = BACKGROUND_CONTEXT;
 
 export interface OpenHostOptions {
-  /** Holds `session.sqlite`, the token, and the lock; one host process at a time. */
+  /** Holds `session.sqlite`, the token, the lock, and Chat checkouts; one host process at a time. */
   readonly dataDir: string;
-  readonly cwd: string;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
   /** Built-in extensions installed before the Harness opens; their docs reach the gateway. */
   readonly extensions?: readonly BuiltinExtension[];
   readonly settings?: HarnessSettings;
-  /** Applied only when the root conversation is created. */
+  /** Defaults applied to every conversation created on this host. */
   readonly initialModel?: ModelRef & { readonly thinkingLevel?: ModelThinkingLevel };
+  /** Directories registered as projects at open; a bad path fails startup. */
+  readonly projects?: readonly string[];
   /** 0 picks a free port. A fixed port lets clients reconnect to a restarted host. */
   readonly port: number;
   /** Exact browser origins allowed to use the gateway; native clients send no Origin. */
@@ -80,13 +82,18 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const { extension } of options.extensions ?? []) registry.install(extension);
     // One environment per working directory; conversations sharing a cwd share it.
     const environments = new Map<string, NodeExecutionEnv>();
+    const chatsDir = join(options.dataDir, "chats");
     harness = await Harness.open(
       await openNodeSqliteStorage(join(options.dataDir, "session.sqlite")),
       {
         models: options.models,
         registry,
-        env: (target) => {
-          const cwd = target.cwd ?? options.cwd;
+        env: async (target) => {
+          const cwd = target.cwd;
+          if (cwd === undefined) return undefined;
+          // A crash between conversation creation and checkout creation leaves the
+          // dir missing; the environment is the one place it is always needed.
+          if (cwd.startsWith(`${chatsDir}/`)) await mkdir(cwd, { recursive: true });
           let env = environments.get(cwd);
           if (env === undefined) {
             env = new NodeExecutionEnv({ cwd });
@@ -100,18 +107,22 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       context,
     );
     const { initialModel } = options;
-    await harness.root(context, {
-      agent: {
-        cwd: options.cwd,
-        ...(initialModel === undefined ? {} : { model: { provider: initialModel.provider, modelId: initialModel.modelId } }),
-        ...(initialModel?.thinkingLevel === undefined ? {} : { thinkingLevel: initialModel.thinkingLevel }),
-      },
-    });
+    await ensureIndex(harness, context);
+    for (const path of options.projects ?? []) await addProject(harness, path, context);
+    const defaults: ConversationDefaults =
+      initialModel === undefined
+        ? {}
+        : {
+            model: { provider: initialModel.provider, modelId: initialModel.modelId },
+            ...(initialModel.thinkingLevel === undefined ? {} : { thinkingLevel: initialModel.thinkingLevel }),
+          };
     const gateway = await startGateway({
       harness,
       models: options.models,
       modelSummaries: options.modelSummaries,
-      session: { id: basename(options.dataDir), directory: options.dataDir, cwd: options.cwd },
+      session: { id: basename(options.dataDir), directory: options.dataDir },
+      dataDir: options.dataDir,
+      defaults,
       token,
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),

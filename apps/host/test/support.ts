@@ -6,6 +6,8 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import type { Home } from "@pinomad/protocol/organization.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableViewSource } from "@pinomad/protocol/view.ts";
 
@@ -28,6 +30,7 @@ export async function startFauxHost(
     port = 0,
     browserOrigins,
     extensions,
+    projects,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -39,6 +42,8 @@ export async function startFauxHost(
     browserOrigins?: readonly string[];
     /** Built-in extensions installed on the host. */
     extensions?: OpenHostOptions["extensions"];
+    /** Directories registered as projects at open. */
+    projects?: readonly string[];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -50,16 +55,39 @@ export async function startFauxHost(
   const model = faux.getModel();
   const host = await openHost({
     dataDir: dir.path,
-    cwd: dir.path,
     models,
     modelSummaries: () => [{ provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow }],
     initialModel: { provider: model.provider, modelId: model.id },
     port,
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
     ...(extensions === undefined ? {} : { extensions }),
+    ...(projects === undefined ? {} : { projects }),
   });
   defer(() => host.close());
   return host;
+}
+
+/** Create a conversation at `home`, send `text` as its first prompt, and show it. */
+export async function startConversation(client: RemoteDurable, home: Home, text: string): Promise<ConversationId> {
+  await client.controller.createConversation(home, text);
+  return client.view.current().conversation!.conversation.id;
+}
+
+/** The simplest conversation to drive: a Chat. */
+export const startChat = (client: RemoteDurable, text: string): Promise<ConversationId> =>
+  startConversation(client, { kind: "chat" }, text);
+
+/** Switch to the first top-level conversation once the index holds one. */
+export async function followFirst(client: RemoteDurable): Promise<ConversationId> {
+  await waitForView(
+    client.view,
+    (view) =>
+      view.organized.chats.length + view.organized.projects.flatMap((entry) => entry.conversations).length > 0,
+  );
+  const node =
+    client.view.current().organized.chats[0] ?? client.view.current().organized.projects[0]!.conversations[0]!;
+  await client.controller.switchConversation(node.summary.id);
+  return node.summary.id;
 }
 
 export async function connectTo(

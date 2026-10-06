@@ -2,13 +2,21 @@ import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { AgentState } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { coding } from "../src/extensions/coding.ts";
 import { createContext } from "../src/extensions/context.ts";
-import { connectTo, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
+
+/** The shown conversation's working directory, as the agent resolved it. */
+function cwdOf(client: RemoteDurable): string {
+  const agent = client.view.current().conversation!.docs["pi.agent"] as AgentState;
+  return agent.cwd!;
+}
 
 /** Records the effective system prompt of every model request, in order. */
 function capturePrompts(prompts: string[]): FauxResponseFactory {
@@ -22,8 +30,12 @@ const SKILL = (name: string, description: string) =>
   `---\nname: ${name}\ndescription: ${description}\n---\n\n${description}.\n`;
 
 describe("coding tools and context extension", () => {
-  it("runs bash and read tools in the conversation's working directory", async () => {
+  it("runs bash and read tools in the conversation's project directory", async () => {
+    const project = await tempDir();
+    defer(project.remove);
     const host = await startFauxHost(defer, {
+      dataDir: project.path,
+      projects: [project.path],
       extensions: [coding],
       answers: [
         fauxAssistantMessage(fauxToolCall("bash", { command: "printf hello > out.txt && cat out.txt" }), {
@@ -34,18 +46,17 @@ describe("coding tools and context extension", () => {
       ],
     });
     const client = await connectTo(defer, host);
-    const cwd = client.view.current().session.cwd;
 
-    await client.controller.submit("make a file", "followUp");
+    await startConversation(client, { kind: "project", path: project.path }, "make a file");
     await waitForView(
       client.view,
-      (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "tools worked",
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "tools worked",
     );
 
-    expect(await readFile(join(cwd, "out.txt"), "utf8")).toBe("hello");
+    expect(await readFile(join(cwdOf(client), "out.txt"), "utf8")).toBe("hello");
     const results = client
       .view.current()
-      .conversation.entries.filter((entry) => entry.kind === "pi.tool-result")
+      .conversation!.entries.filter((entry) => entry.kind === "pi.tool-result")
       .map((entry) => JSON.stringify(entry.model));
     expect(results).toHaveLength(2);
     for (const result of results) expect(result).toContain("hello");
@@ -69,21 +80,21 @@ describe("coding tools and context extension", () => {
     const prompts: string[] = [];
     const host = await startFauxHost(defer, {
       dataDir: project.path,
+      projects: [project.path],
       extensions: [createContext({ agentsHome: agentsHome.path }), coding],
       answers: [capturePrompts(prompts)],
     });
     const client = await connectTo(defer, host);
-    const cwd = client.view.current().session.cwd;
 
-    await client.controller.submit("hello", "followUp");
+    await startConversation(client, { kind: "project", path: project.path }, "hello");
     await waitForView(
       client.view,
-      (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "captured-1",
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "captured-1",
     );
 
     const prompt = prompts.at(-1)!;
     expect(prompt).toContain("You are PiNomad, a coding agent running on the user's own machine.");
-    expect(prompt).toContain(`Working directory: ${cwd}`);
+    expect(prompt).toContain(`Working directory: ${cwdOf(client)}`);
     const globalAt = prompt.indexOf("global rule: be brief");
     const projectAt = prompt.indexOf("project rule: use tabs");
     expect(globalAt).toBeGreaterThanOrEqual(0);
@@ -106,21 +117,22 @@ describe("coding tools and context extension", () => {
     const prompts: string[] = [];
     const host = await startFauxHost(defer, {
       dataDir: project.path,
+      projects: [project.path],
       extensions: [createContext({ agentsHome: agentsHome.path })],
       answers: [capturePrompts(prompts), capturePrompts(prompts)],
     });
     const client = await connectTo(defer, host);
 
-    await client.controller.submit("one", "followUp");
+    await startConversation(client, { kind: "project", path: project.path }, "one");
     await waitForView(
       client.view,
-      (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "captured-1",
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "captured-1",
     );
     await writeFile(file, "rule v2");
     await client.controller.submit("two", "followUp");
     await waitForView(
       client.view,
-      (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "captured-2",
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "captured-2",
     );
 
     expect(prompts).toHaveLength(2);
@@ -138,17 +150,16 @@ describe("coding tools and context extension", () => {
       answers: [capturePrompts(prompts)],
     });
     const client = await connectTo(defer, host);
-    const cwd = client.view.current().session.cwd;
 
-    await client.controller.submit("hello", "followUp");
+    await startChat(client, "hello");
     await waitForView(
       client.view,
-      (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "captured-1",
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "captured-1",
     );
 
     const prompt = prompts.at(-1)!;
     expect(prompt).toContain("You are PiNomad, a coding agent running on the user's own machine.");
-    expect(prompt).toContain(`Working directory: ${cwd}`);
+    expect(prompt).toContain(`Working directory: ${cwdOf(client)}`);
     expect(prompt).not.toContain("<project_context>");
     expect(prompt).not.toContain("available_skills");
   });

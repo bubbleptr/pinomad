@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import type { CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
@@ -10,7 +10,7 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { approval } from "../src/extensions/approval.ts";
 import { todo } from "../src/extensions/todo.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { connectTo, freePort, startFauxHost, useCleanups, waitForView } from "./support.ts";
+import { connectTo, freePort, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -42,8 +42,13 @@ function call<M extends keyof CallMethods>(
   })();
 }
 
-const decide = (client: { socket: WebSocket; frames: ServerFrame[] }, requestId: string, approved: boolean, kind = "approval.requests") =>
-  call(client, "decide", { conversationId: ROOT_CONVERSATION_ID, kind, requestId, approved });
+const decide = (
+  client: { socket: WebSocket; frames: ServerFrame[] },
+  conversationId: ConversationId,
+  requestId: string,
+  approved: boolean,
+  kind = "approval.requests",
+) => call(client, "decide", { conversationId, kind, requestId, approved });
 
 const docValue = <T>(view: DurableView, kind: string): T | null | undefined =>
   view.docs.find((doc) => doc.kind === kind)?.value as T | null | undefined;
@@ -69,9 +74,9 @@ describe("presentation types", () => {
     });
     const client = await connectTo(defer, host);
 
-    await client.controller.submit("plan it", "followUp");
+    await startChat(client, "plan it");
     await waitForView(client.view, (view) => (docValue<TodoState>(view, "todo.list")?.items.length ?? 0) === 2);
-    await waitForView(client.view, (view) => transcript(view.conversation).at(-1)?.text === "planned");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "planned");
 
     const doc = client.view.current().docs.find((each) => each.kind === "todo.list");
     expect(doc).toMatchObject({ kind: "todo.list", presentation: "pinomad.todo" });
@@ -92,7 +97,8 @@ describe("presentation types", () => {
     const a = await connectTo(defer, host);
     const b = await connectTo(defer, host);
 
-    await a.controller.submit("deploy", "followUp");
+    const conversationId = await startChat(a, "deploy");
+    await b.controller.switchConversation(conversationId);
     await waitForView(a.view, (view) => requestsOf(view).some((request) => request.decision === undefined));
     await waitForView(b.view, (view) => requestsOf(view).some((request) => request.decision === undefined));
     const requestId = requestsOf(a.view.current()).find((request) => request.decision === undefined)!.id;
@@ -101,8 +107,8 @@ describe("presentation types", () => {
     const sa = await socketTo(host);
     const sb = await socketTo(host);
     const [first, second] = await Promise.all([
-      decide(sa, requestId, true),
-      decide(sb, requestId, false),
+      decide(sa, conversationId, requestId, true),
+      decide(sb, conversationId, requestId, false),
     ]);
     expect(first.ok && second.ok).toBe(true);
     const outcomes = [first, second].map((frame) => (frame as { value: { outcome: string; first: boolean } }).value);
@@ -113,9 +119,9 @@ describe("presentation types", () => {
     for (const client of [a, b]) {
       await waitForView(client.view, (view) => requestsOf(view).find((request) => request.id === requestId)?.decision?.outcome === standing);
     }
-    await waitForView(a.view, (view) => transcript(view.conversation).at(-1)?.text === "continuing after the decision");
+    await waitForView(a.view, (view) => transcript(view.conversation!).at(-1)?.text === "continuing after the decision");
     // The tool result tells the model what was decided.
-    const resultEntry = a.view.current().conversation.entries.find((entry) => entry.kind === "pi.tool-result");
+    const resultEntry = a.view.current().conversation!.entries.find((entry) => entry.kind === "pi.tool-result");
     expect(JSON.stringify(resultEntry?.model)).toContain(`Approval ${standing}.`);
   });
 
@@ -129,15 +135,15 @@ describe("presentation types", () => {
     });
     const client = await connectTo(defer, host);
 
-    await client.controller.submit("deploy", "followUp");
+    const conversationId = await startChat(client, "deploy");
     await waitForView(client.view, (view) => requestsOf(view).some((request) => request.decision === undefined));
     const requestId = requestsOf(client.view.current()).find((request) => request.decision === undefined)!.id;
 
     await client.controller.abort();
-    await waitForView(client.view, (view) => !isBusy(view.conversation));
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
 
     expect(requestsOf(client.view.current()).find((request) => request.id === requestId)?.decision?.outcome).toBe("cancelled");
-    const later = await decide(await socketTo(host), requestId, true);
+    const later = await decide(await socketTo(host), conversationId, requestId, true);
     expect(later).toMatchObject({ ok: true, value: { outcome: "cancelled", first: false } });
   });
 
@@ -149,7 +155,7 @@ describe("presentation types", () => {
       answers: [fauxAssistantMessage(fauxToolCall("request_approval", { title: "Deploy v2.3?" }), { stopReason: "toolUse" })],
     });
     const client = await connectTo(defer, first);
-    await client.controller.submit("deploy", "followUp");
+    const conversationId = await startChat(client, "deploy");
     await waitForView(client.view, (view) => requestsOf(view).some((request) => request.decision === undefined));
     const dataDir = client.view.current().session.directory;
     await first.close();
@@ -170,9 +176,9 @@ describe("presentation types", () => {
     });
     const requestId = requestsOf(client.view.current())[0]!.id;
 
-    const decided = await decide(await socketTo(second), requestId, true);
+    const decided = await decide(await socketTo(second), conversationId, requestId, true);
     expect(decided).toMatchObject({ ok: true, value: { outcome: "approved", first: true } });
-    await waitForView(client.view, (view) => !isBusy(view.conversation) && transcript(view.conversation).at(-1)?.text === "done");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done");
   });
 
   it("still cancels a pending request when the turn is aborted after a host restart", async () => {
@@ -183,7 +189,7 @@ describe("presentation types", () => {
       answers: [fauxAssistantMessage(fauxToolCall("request_approval", { title: "Deploy v2.3?" }), { stopReason: "toolUse" })],
     });
     const client = await connectTo(defer, first);
-    await client.controller.submit("deploy", "followUp");
+    await startChat(client, "deploy");
     await waitForView(client.view, (view) => requestsOf(view).some((request) => request.decision === undefined));
     const dataDir = client.view.current().session.directory;
     await first.close();
@@ -199,20 +205,25 @@ describe("presentation types", () => {
 
     // The replayed wait task aborts the same way; the cancel write still lands.
     await client.controller.abort();
-    await waitForView(client.view, (view) => !isBusy(view.conversation));
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
     expect(requestsOf(client.view.current()).find((request) => request.id === requestId)?.decision?.outcome).toBe("cancelled");
   });
 
   it("rejects decide calls for unknown kinds, non-approval docs, and unknown requests", async () => {
     const host = await startFauxHost(defer, { extensions: [todo, approval] });
+    const owner = await connectTo(defer, host);
+    const conversationId = await startChat(owner, "deploy");
     const client = await socketTo(host);
 
-    expect(await decide(client, "x", true, "no.such.kind")).toMatchObject({ ok: false });
-    expect(await decide(client, "x", true, "todo.list")).toMatchObject({ ok: false });
-    expect(await decide(client, "missing-request", true)).toMatchObject({ ok: false, error: expect.stringContaining("missing-request") });
+    expect(await decide(client, conversationId, "x", true, "no.such.kind")).toMatchObject({ ok: false });
+    expect(await decide(client, conversationId, "x", true, "todo.list")).toMatchObject({ ok: false });
+    expect(await decide(client, conversationId, "missing-request", true)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("missing-request"),
+    });
 
     // Failures are per-call; the connection stays usable.
-    expect(await call(client, "abort", { conversationId: ROOT_CONVERSATION_ID })).toMatchObject({ ok: true, value: null });
+    expect(await call(client, "abort", { conversationId })).toMatchObject({ ok: true, value: null });
     expect(client.socket.readyState).toBe(WebSocket.OPEN);
   });
 });
