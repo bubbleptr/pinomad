@@ -31,7 +31,11 @@ import { DocumentView } from "./presentation/documents.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { addressFromHash } from "./address.ts";
+import { encode } from "uqr";
+import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
+import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
+import { DEVICE_KEY, deviceName, resolveAddress, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
 const page: CSSProperties = {
@@ -43,11 +47,17 @@ const page: CSSProperties = {
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
 export function App() {
-  const address = useMemo(() => addressFromHash(window.location.hash), []);
+  const address = useMemo(
+    () => resolveAddress(window.location.hash, window.location, localStorage.getItem(DEVICE_KEY)),
+    [],
+  );
   if (address === undefined) {
     return (
       <Centered>
-        <EmptyState title="No host token" description="Open the link the host printed: http://127.0.0.1:5199/#token=…" />
+        <EmptyState
+          title="No host link"
+          description="Open the token link the host printed, or scan a pairing QR on this device."
+        />
       </Centered>
     );
   }
@@ -62,12 +72,107 @@ export function Centered({ children }: { children: ReactNode }) {
   );
 }
 
-function Connected({ address }: { address: { url: string; token: string } }) {
-  return <RemoteWorkbench options={address} connectionKey={`${address.url} ${address.token}`} label={address.url} />;
+function Connected({ address }: { address: ResolvedAddress }) {
+  if (address.kind === "token") {
+    return <RemoteWorkbench options={address} connectionKey={`${address.url} ${address.token}`} label={address.url} />;
+  }
+  return <SecureClient address={address} />;
+}
+
+/** A secure-channel client: pairing on first sight of the QR link, stored key after. */
+function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
+  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
+  const device = useMemo<KeyPair>(() => {
+    // A stored key for the same host survives a spent pairing link: the host
+    // admits a registered device without consuming the offer.
+    if (address.kind === "pair" && stored !== undefined && stored.hostKey === address.hostKey) {
+      return keyPairFromPrivate(fromBase64Url(stored.privateKey));
+    }
+    return address.kind === "device" ? keyPairFromPrivate(fromBase64Url(address.privateKey)) : generateKeyPair();
+  }, [address, stored]);
+  const options = useMemo<RemoteDurableOptions>(
+    () => ({
+      transport: secureWebSocketTransport({
+        url: address.url,
+        hostKey: fromBase64Url(address.hostKey),
+        device,
+        ...(address.kind === "pair"
+          ? {
+              pairing: { secret: address.secret, name: deviceName(navigator.userAgent) },
+              onPaired: () => {
+                localStorage.setItem(
+                  DEVICE_KEY,
+                  JSON.stringify({ url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) }),
+                );
+                // The fragment held a one-time secret; it must not linger in history.
+                history.replaceState(null, "", window.location.pathname + window.location.search);
+              },
+            }
+          : {}),
+      }),
+    }),
+    [address, device],
+  );
+  const rejected =
+    address.kind === "pair" ? (
+      // A pairing offer is single-use; a rejected one is the offer's problem,
+      // not this device's — never offer to wipe a saved pairing from here.
+      <VStack gap={4} hAlign="center">
+        <EmptyState
+          title="This pairing code was used or has expired"
+          description="Generate a new QR on the host: run bun run pair, or open Devices → Pair a device."
+        />
+        {stored === undefined ? null : (
+          <Button
+            label="Use saved pairing"
+            variant="secondary"
+            onClick={() => {
+              history.replaceState(null, "", window.location.pathname + window.location.search);
+              window.location.reload();
+            }}
+          />
+        )}
+      </VStack>
+    ) : (
+      <VStack gap={4} hAlign="center">
+        <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
+        <Button
+          label="Forget this host"
+          variant="secondary"
+          onClick={() => {
+            localStorage.removeItem(DEVICE_KEY);
+            window.location.reload();
+          }}
+        />
+      </VStack>
+    );
+  return (
+    <RemoteWorkbench
+      options={options}
+      connectionKey={`${address.url} ${address.hostKey}`}
+      label={address.url}
+      rejected={rejected}
+      device={device}
+    />
+  );
 }
 
 /** Connects with `options` and shows the workbench, or why it cannot. */
-export function RemoteWorkbench({ options, connectionKey, label }: { options: RemoteDurableOptions; connectionKey: string; label: string }) {
+export function RemoteWorkbench({
+  options,
+  connectionKey,
+  label,
+  rejected,
+  device,
+}: {
+  options: RemoteDurableOptions;
+  connectionKey: string;
+  label: string;
+  /** Secure-channel 4401: pairing failed or the device was revoked. */
+  rejected?: ReactNode;
+  /** This browser's device key, for marking "This device" in the devices list. */
+  device?: KeyPair;
+}) {
   const state = useRemoteDurable(options, connectionKey);
   if (state.status === "connecting") {
     return (
@@ -77,19 +182,25 @@ export function RemoteWorkbench({ options, connectionKey, label }: { options: Re
     );
   }
   if (state.status === "failed") {
+    // Only a 4401 rejection means the pairing itself is bad — an unreachable
+    // host keeps the key and the banner.
     return (
       <Centered>
-        <Banner status="error" title="Could not connect to the host" description={state.error} />
+        {rejected !== undefined && state.unauthorized ? (
+          rejected
+        ) : (
+          <Banner status="error" title="Could not connect to the host" description={state.error} />
+        )}
       </Centered>
     );
   }
-  return <Workbench remote={state.remote} />;
+  return <Workbench remote={state.remote} rejected={rejected} device={device} />;
 }
 
 const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
   (conversation.docs["pi.agent"] ?? {}) as AgentState;
 
-function Workbench({ remote }: { remote: RemoteDurable }) {
+function Workbench({ remote, rejected, device }: { remote: RemoteDurable; rejected?: ReactNode; device?: KeyPair }) {
   const view = useDurableView(remote);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
@@ -115,11 +226,13 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
   const [navOpen, setNavOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [forkAt, setForkAt] = useState<string>();
+  // A revoked device is closed with 4401; hooks above stay mounted either way.
+  if (view.connection === "closed" && rejected !== undefined) return <Centered>{rejected}</Centered>;
   return (
     <VStack style={page}>
       <Layout
         height="fill"
-        start={narrow ? undefined : <ConversationNav view={view} remote={remote} onDraft={startDraft} />}
+        start={narrow ? undefined : <ConversationNav view={view} remote={remote} device={device} onDraft={startDraft} />}
         content={
           <LayoutContent padding={0}>
             <VStack height="100%">
@@ -182,7 +295,7 @@ function Workbench({ remote }: { remote: RemoteDurable }) {
       />
       {narrow ? (
         <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="Conversations">
-          <ConversationItems view={view} remote={remote} onDraft={startDraft} onSelect={() => setNavOpen(false)} />
+          <ConversationItems view={view} remote={remote} device={device} onDraft={startDraft} onSelect={() => setNavOpen(false)} />
         </MobileNav>
       ) : null}
       {narrow ? (
@@ -257,7 +370,7 @@ function projectName(organized: DurableView["organized"], path: string): string 
   return organized.projects.find((entry) => entry.project.path === path)?.project.name ?? path.split("/").at(-1) ?? path;
 }
 
-function ConversationNav({ view, remote, onDraft }: { view: DurableView; remote: RemoteDurable; onDraft: (home: Home) => void }) {
+function ConversationNav({ view, remote, device, onDraft }: { view: DurableView; remote: RemoteDurable; device?: KeyPair; onDraft: (home: Home) => void }) {
   const connection =
     view.connection === "connected" ? (
       <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
@@ -268,7 +381,7 @@ function ConversationNav({ view, remote, onDraft }: { view: DurableView; remote:
     <SideNav
       header={<SideNavHeading heading="PiNomad host" subheading={view.session.id} headerEndContent={connection} />}
     >
-      <ConversationItems view={view} remote={remote} onDraft={onDraft} />
+      <ConversationItems view={view} remote={remote} device={device} onDraft={onDraft} />
     </SideNav>
   );
 }
@@ -276,16 +389,19 @@ function ConversationNav({ view, remote, onDraft }: { view: DurableView; remote:
 function ConversationItems({
   view,
   remote,
+  device,
   onSelect,
   onDraft,
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  device?: KeyPair;
   onSelect?: () => void;
   onDraft: (home: Home) => void;
 }) {
   const disabled = view.connection !== "connected";
   const [addOpen, setAddOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const start = (home: Home): void => {
     onDraft(home);
@@ -339,8 +455,12 @@ function ConversationItems({
         </SideNavSection>
       ))}
       <SideNavItem label="Add project" isDisabled={disabled} onClick={() => setAddOpen(true)} />
+      <SideNavItem label="Devices" isDisabled={disabled} onClick={() => setDevicesOpen(true)} />
       {addOpen ? (
         <AddProjectDialog remote={remote} connected={!disabled} onClose={() => setAddOpen(false)} />
+      ) : null}
+      {devicesOpen ? (
+        <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
       ) : null}
       {removing === undefined ? null : (
         <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
@@ -688,5 +808,156 @@ function LiveState({ view, remote }: { view: DurableView; remote: RemoteDurable 
         </List>
       )}
     </VStack>
+  );
+}
+
+function DevicesDialog({
+  view,
+  remote,
+  self,
+  onClose,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  self?: KeyPair;
+  onClose: () => void;
+}) {
+  const connected = view.connection === "connected";
+  const selfKey = self === undefined ? undefined : toBase64Url(self.publicKey);
+  const [offer, setOffer] = useState<{ url: string; expiresAt: number }>();
+  const [pairError, setPairError] = useState<string>();
+  const pair = (): void => {
+    setPairError(undefined);
+    void remote.controller.createPairing().then(setOffer, (error: unknown) => {
+      setPairError(error instanceof Error ? error.message : String(error));
+    });
+  };
+  return (
+    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={440}>
+      <Layout
+        header={
+          <DialogHeader
+            title="Devices"
+            subtitle="Paired devices can reach this host over the secure channel."
+            onOpenChange={() => onClose()}
+          />
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4} padding={2}>
+              {view.devices.length === 0 ? (
+                <Text type="supporting">No paired devices.</Text>
+              ) : (
+                <List density="compact">
+                  {view.devices.map((device) => (
+                    <DeviceRow
+                      key={device.publicKey}
+                      device={device}
+                      isSelf={device.publicKey === selfKey}
+                      connected={connected}
+                      remote={remote}
+                    />
+                  ))}
+                </List>
+              )}
+              {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
+              {offer === undefined ? (
+                <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
+              ) : (
+                <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+      />
+    </Dialog>
+  );
+}
+
+function DeviceRow({
+  device,
+  isSelf,
+  connected,
+  remote,
+}: {
+  device: DeviceEntry;
+  isSelf: boolean;
+  connected: boolean;
+  remote: RemoteDurable;
+}) {
+  return (
+    <ListItem
+      label={device.name}
+      description={`Paired ${new Date(device.pairedAt).toLocaleDateString()}`}
+      endContent={
+        <HStack gap={2} vAlign="center">
+          {isSelf ? <Token label="This device" size="sm" /> : null}
+          <Button
+            label="Revoke"
+            variant="ghost"
+            size="sm"
+            isDisabled={!connected}
+            onClick={() => void remote.controller.revokeDevice(device.publicKey)}
+          />
+        </HStack>
+      }
+    />
+  );
+}
+
+function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: number; onRenew: () => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  if (seconds === 0) {
+    return (
+      <HStack gap={2} vAlign="center">
+        <Text type="supporting">Expired</Text>
+        <Button label="New code" variant="secondary" size="sm" onClick={onRenew} />
+      </HStack>
+    );
+  }
+  return (
+    <VStack gap={3} hAlign="center">
+      <QrImage text={url} />
+      <Text type="supporting" style={{ wordBreak: "break-all", userSelect: "all" }}>
+        {url}
+      </Text>
+      <Text type="supporting">
+        Expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+      </Text>
+    </VStack>
+  );
+}
+
+const QR_QUIET = 2;
+
+function QrImage({ text }: { text: string }) {
+  const qr = useMemo(() => encode(text, { border: 0 }), [text]);
+  const size = qr.size + QR_QUIET * 2;
+  return (
+    <svg
+      role="img"
+      aria-label="Pairing QR code"
+      viewBox={`0 0 ${size} ${size}`}
+      width={200}
+      height={200}
+      style={{ display: "block" }}
+    >
+      {/* Fixed black-on-white: scanners need the contrast regardless of theme. */}
+      <rect width={size} height={size} fill="#ffffff" />
+      {/* One path, not per-module rects — rect seams anti-alias into a ragged grid that hurts scanning. */}
+      <path
+        shapeRendering="crispEdges"
+        fill="#000000"
+        d={qr.data
+          .flatMap((row, y) => row.map((dark, x) => (dark ? `M${x + QR_QUIET} ${y + QR_QUIET}h1v1h-1z` : "")))
+          .filter((segment) => segment !== "")
+          .join("")}
+      />
+    </svg>
   );
 }

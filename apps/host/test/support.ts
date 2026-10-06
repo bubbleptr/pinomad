@@ -31,6 +31,7 @@ export async function startFauxHost(
     browserOrigins,
     extensions,
     projects,
+    remote,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -44,6 +45,8 @@ export async function startFauxHost(
     extensions?: OpenHostOptions["extensions"];
     /** Directories registered as projects at open. */
     projects?: readonly string[];
+    /** The 0.0.0.0 secure-channel listener; off by default. */
+    remote?: OpenHostOptions["remote"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -62,6 +65,7 @@ export async function startFauxHost(
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
     ...(extensions === undefined ? {} : { extensions }),
     ...(projects === undefined ? {} : { projects }),
+    ...(remote === undefined ? {} : { remote }),
   });
   defer(() => host.close());
   return host;

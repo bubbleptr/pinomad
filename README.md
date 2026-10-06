@@ -32,6 +32,35 @@ agent 用 read / write / edit / bash 工具，执行前不需要审批。系统�
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
 - Skills：`<cwd>/.agents/skills` 和 `~/.agents/skills`，同名时项目的生效。
 
+## 远程访问（ADR-0008）
+
+一条命令起全部（构建 Web、起宿主、起 vite），并在终端打印电脑浏览器链接和手机配对二维码：
+
+```sh
+bun run start
+# 透传宿主参数：bun run start -- --faux "hi" --data-dir /tmp/demo
+```
+
+手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备和吊销在 Web 侧栏的 Devices 里管理；吊销设备也可以在那直接点 Revoke。
+
+<details><summary>手动/高级：分开跑各个进程</summary>
+
+默认只监听 `127.0.0.1`。`--remote-port N` 另起一个监听所有网卡的安全通道端口，同端口用 HTTP 提供构建好的 Web 客户端（`apps/web/dist`，缺失时页面是 503）：
+
+```sh
+bun run build
+bun run host -- --remote-port 7422
+bun run web          # 电脑上的开发服务器 http://127.0.0.1:5199
+bun run link         # 打印带 token 的浏览器链接
+bun run pair         # 打印配对二维码（一次性，5 分钟过期）
+# 走隧道/自建入口，或 LAN 地址探测选错网卡时用 --public-url 覆盖：
+bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
+```
+
+远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。
+
+</details>
+
 ## 验证
 
 ```sh

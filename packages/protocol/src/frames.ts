@@ -15,7 +15,8 @@ export type StreamName =
   | `doc:${string}:${ConversationId}`
   | "tasks"
   | "conversations"
-  | "index";
+  | "index"
+  | "devices";
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
 export const docStream = (kind: string, id: ConversationId): StreamName => `doc:${kind}:${id}`;
@@ -57,6 +58,10 @@ export interface CallMethods {
     args: { conversationId: ConversationId; kind: string; requestId: string; approved: boolean };
     result: { outcome: "approved" | "rejected" | "cancelled"; first: boolean };
   };
+  /** A one-time pairing offer; `url` carries the host public key and the secret. */
+  createPairing: { args: Record<string, never>; result: { url: string; expiresAt: number } };
+  /** Forget a paired device and drop its live connections. */
+  revokeDevice: { args: { publicKey: string }; result: null };
 }
 
 export type CallMethod = keyof CallMethods;
@@ -96,7 +101,13 @@ export function isClientFrame(value: unknown): value is ClientFrame {
     const stream = value.stream;
     return (
       typeof stream === "string"
-      && (stream === "tasks" || stream === "conversations" || stream === "index" || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream))
+      && (
+        stream === "tasks"
+        || stream === "conversations"
+        || stream === "index"
+        || stream === "devices"
+        || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
+      )
     );
   }
   if (value.type !== "call" || !Number.isSafeInteger(value.id) || !record(value.args)) return false;
@@ -133,6 +144,10 @@ export function isClientFrame(value: unknown): value is ClientFrame {
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";
+    case "createPairing":
+      return Object.keys(args).length === 0;
+    case "revokeDevice":
+      return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
     default:
       return false;
   }

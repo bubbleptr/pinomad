@@ -13,7 +13,9 @@
     "build": "cd apps/web && bun run build",
     "host": "node apps/host/src/main.ts",
     "web": "cd apps/web && bun run dev",
-    "link": "node apps/host/src/cli/web-link.ts"
+    "link": "node apps/host/src/cli/web-link.ts",
+    "pair": "node apps/host/src/cli/pair.ts",
+    "start": "node apps/host/src/cli/start.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

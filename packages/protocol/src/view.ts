@@ -2,6 +2,7 @@
 // pi's packages/coding-agent/src/experimental/durable/runtime.ts (MIT, Earendil Works).
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
+import type { DeviceEntry } from "./devices.ts";
 import type { Home, Organized } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 
@@ -58,6 +59,8 @@ export interface DurableView {
   readonly connection: ConnectionState;
   /** The shown conversation's extension documents, in the host's order. */
   readonly docs: readonly ExtensionDocView[];
+  /** Paired devices on the host (ADR-0008); empty while remote access is off. */
+  readonly devices: readonly DeviceEntry[];
 }
 
 export interface DurableViewSource {
@@ -88,4 +91,8 @@ export interface DurableController {
   fork(entryId: string, prompt: string, removeTools?: readonly string[]): Promise<void>;
   /** Answer a pending approval request of the document `kind`; failures surface as notices. */
   decide(kind: string, requestId: string, approved: boolean): Promise<void>;
+  /** A one-time pairing offer for a new device; rejects while remote access is off. */
+  createPairing(): Promise<{ url: string; expiresAt: number }>;
+  /** Forget a paired device and drop its live connections. */
+  revokeDevice(publicKey: string): Promise<void>;
 }
