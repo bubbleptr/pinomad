@@ -12,10 +12,10 @@
 - 展示类型 `pinomad.todo`、`pinomad.approval` 和兜底渲染（ADR-0005）
 - 远程访问第一期：Noise IK 安全通道、扫码配对、设备登记与吊销，传输只有局域网直连；出门在外可以自备 Tunnel 或 tailnet，配合 `--public-url` 使用（ADR-0008）
 - 宿主常驻：用户级系统服务、等空闲重启、源码检出升级、协议版本检查（ADR-0009）
+- Git 项目的对话默认在独立 worktree 里工作；fork 复制当前文件；归档清理（ADR-0010）
 
 ## M1：同时开多个任务不打架 ← 下一步
 
-- Git worktree 作为第二种执行检出，连同 fork 时检出怎么处理、改动怎么合回项目、什么时候清理（需要新 ADR；ADR-0007 遗留）
 - `pinomad.diff` 展示类型；工具结果的 `details` 能声明展示类型（ADR-0005 遗留）
 - 可选的审批闸门，拦在 bash / write / edit 之前，复用 `pinomad.approval`（ADR-0006 遗留）
 
