@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_HOST_URL, deviceName, resolveAddress } from "../src/address.ts";
+import { DEFAULT_HOST_URL, deviceName, resolveAddress, servedByHost } from "../src/address.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
@@ -54,6 +54,16 @@ describe("resolveAddress", () => {
     expect(resolveAddress("", http, "not json")).toBeUndefined();
     expect(resolveAddress("", http, JSON.stringify({ url: "w" }))).toBeUndefined();
     expect(resolveAddress("", http, JSON.stringify({ url: "w", hostKey: "!!", privateKey: deviceKey }))).toBeUndefined();
+  });
+});
+
+describe("servedByHost", () => {
+  it("is true only when the page and the gateway share host:port", () => {
+    expect(servedByHost("ws://127.0.0.1:7420", { host: "127.0.0.1:7420" })).toBe(true);
+    expect(servedByHost("wss://pinomad.example.com", { host: "pinomad.example.com" })).toBe(true);
+    // Same host, different port: the vite dev server is not the host.
+    expect(servedByHost("ws://127.0.0.1:7420", { host: "127.0.0.1:5199" })).toBe(false);
+    expect(servedByHost("ws://192.168.1.5:7422", { host: "127.0.0.1:5199" })).toBe(false);
   });
 });
 
