@@ -20,6 +20,7 @@ import { Markdown } from "@astryxdesign/core/Markdown";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
@@ -244,7 +245,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   const home = view.home;
   const homeLabel =
     home === undefined ? undefined : home.kind === "chat" ? "Chat" : projectName(view.organized, home.path);
-  const checkout = conversation === undefined ? undefined : agentOf(conversation).cwd;
+  const cwd = conversation === undefined ? undefined : agentOf(conversation).cwd;
+  const branch = conversation === undefined ? undefined : view.checkout?.branch;
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
   const startDraft = (home: Home): void => {
     setDraft(home);
@@ -294,9 +296,9 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                       <Text type="label" weight="semibold">
                         {homeLabel}
                       </Text>
-                      {checkout === undefined ? null : (
+                      {cwd === undefined ? null : (
                         <Text type="supporting" maxLines={1}>
-                          {checkout}
+                          {branch === undefined ? cwd : `${branch} · ${cwd}`}
                         </Text>
                       )}
                     </HStack>
@@ -363,7 +365,7 @@ function ForkDialog({ entryId, remote, connected, onClose }: { entryId: string; 
         header={
           <DialogHeader
             title="Fork from this answer"
-            subtitle="The fork sees the conversation up to here and runs in its own conversation."
+            subtitle="The fork sees the conversation up to here and gets its own copy of the files as of now."
             onOpenChange={() => onClose()}
           />
         }
@@ -645,16 +647,29 @@ function RemoveProjectDialog({
 
 function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; home: Home; connected: boolean }) {
   const [value, setValue] = useState("");
+  // ADR-0010: project conversations default to a fresh worktree; this switch opts out.
+  const [direct, setDirect] = useState(false);
   return (
-    <ChatComposer
-      value={value}
-      onChange={setValue}
-      onSubmit={(text) => {
-        void remote.controller.createConversation(home, text);
-      }}
-      isDisabled={!connected}
-      placeholder="The first message creates the conversation…"
-    />
+    <VStack gap={1}>
+      {home.kind !== "project" ? null : (
+        <Switch
+          label="Work directly in project directory"
+          size="sm"
+          value={direct}
+          onChange={setDirect}
+          isDisabled={!connected}
+        />
+      )}
+      <ChatComposer
+        value={value}
+        onChange={setValue}
+        onSubmit={(text) => {
+          void remote.controller.createConversation(home, text, direct ? "project" : undefined);
+        }}
+        isDisabled={!connected}
+        placeholder="The first message creates the conversation…"
+      />
+    </VStack>
   );
 }
 
