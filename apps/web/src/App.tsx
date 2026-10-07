@@ -745,7 +745,7 @@ function detailOf(tool: ToolCallView, toolPresentations: DurableView["toolPresen
   const classified = tool.details === undefined ? undefined : classify(toolPresentations[tool.name], tool.details);
   if (classified?.type === "pinomad.diff") return <DiffView patch={classified.value.patch} />;
   const text =
-    tool.output === undefined ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
+    tool.output === undefined || tool.output === "" ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
   const images = (tool.images ?? []).map((image, index) => (
     <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="" style={{ maxWidth: "100%" }} />
   ));
