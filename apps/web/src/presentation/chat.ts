@@ -24,6 +24,8 @@ export interface ToolCallView {
   readonly details?: unknown;
   /** A subagent's conversation, from the call's running details. */
   readonly conversationId?: ConversationId;
+  /** Image blocks of the result, for example an MCP tool's screenshots. */
+  readonly images?: readonly { readonly data: string; readonly mimeType: string }[];
 }
 
 export type ChatItem =
@@ -49,6 +51,8 @@ type Block = {
   readonly id?: string;
   readonly name?: string;
   readonly arguments?: unknown;
+  readonly data?: string;
+  readonly mimeType?: string;
 };
 type Message = { readonly role: string; readonly content: string | readonly Block[]; readonly stopReason?: string; readonly toolCallId?: string; readonly isError?: boolean; readonly details?: unknown };
 
@@ -117,11 +121,15 @@ export function chatItems(view: ConversationView): ChatItem[] {
     else if (entry.kind === "pi.tool-result" && message?.role === "toolResult" && message.toolCallId !== undefined) {
       // A finished call keeps linking to its subagent through the result details.
       const child = (message.details as { conversationId?: ConversationId } | undefined)?.conversationId;
+      const images = Array.isArray(message.content)
+        ? message.content.flatMap((block) => (block.type === "image" && block.data !== undefined && block.mimeType !== undefined ? [{ data: block.data, mimeType: block.mimeType }] : []))
+        : [];
       updateCall(message.toolCallId, {
         status: message.isError ? "error" : "complete",
         output: textOf(message.content),
         ...(message.details === undefined ? {} : { details: message.details }),
         ...(child === undefined ? {} : { conversationId: child }),
+        ...(images.length === 0 ? {} : { images }),
       });
     } else if (entry.kind === "pi.compaction") items.push({ kind: "compaction", id, summary: message === undefined ? "" : textOf(message.content) });
     else if (entry.kind === "pi.reset") items.push({ kind: "reset", id });

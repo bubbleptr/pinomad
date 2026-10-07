@@ -17,12 +17,13 @@
 - 结构化提问 `ask_user_question` 和 `pinomad.question`，取代审批（ADR-0011）
 - 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
 - 前台子代理工具 `subagent`：子对话归调用任务所有，中止连带、重启不重复派活；共用父对话检出，并行写只靠工具描述约束；子代理里禁用 `ask_user_question`；模型和思考等级默认沿用父对话，可用 `model` / `thinkingLevel` 参数指定；调用结束后卡片仍能链到子对话（ADR-0010 §5）
+- MCP 接入：`~/.agents/mcp.json` 全局 `mcpServers` 配置，每个 server 在宿主里只连一份、所有对话共用；工具以 `mcp__<server>__<tool>` 直接声明，`tools/list_changed` 跟随；状态和配置错误经 `mcp` 流推到客户端右侧面板；结果图片显示在工具卡片里（ADR-0012；协议 v3）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
-## M2：coding 能力补齐
+## M2：coding 能力补齐（已完成）
 
-目标：日常 coding 不用再切回 Pi CLI。子代理已完成（见"已完成"），剩下 MCP，要先写新 ADR。
+目标：日常 coding 不用再切回 Pi CLI。子代理和 MCP 都已完成（见"已完成"）。
 
 工具集和 Pi CLI 的默认一致，就是 read / bash / edit / write 四个。pi-coding-agent 虽然也带了 grep / find / ls，但默认是关的，搜索交给 bash，所以不算缺口，不进 M2。将来需要不带 bash 的只读工具集时再补（比如只读子代理）。届时注意：CLI 的这三个工具是 `AgentTool`，构造时绑死 cwd，直接调本机 fs 和 `child_process`，要基于每次调用的 `api.env` 重写。read 读图片等上游，见"等上游"。
 
@@ -31,18 +32,22 @@
 - 并行写冲突现在只靠工具描述约束；真出问题时再考虑只读子代理，或给写文件的子代理单独开 worktree（会改动 ADR-0010 §5）。
 - 子对话的呈现方式和位置要重新设计：现在作为普通对话挂在侧栏父对话下，标题取自父代理写的任务描述开头（真实模型冒烟里是 "In the working directory /tmp/…" 这种套话），分不清各子代理在干什么；工具卡片上的子对话 id 也点不过去。
 
-### 1. MCP 接入（ADR-0004 定为早期的外部扩展入口；需要新 ADR）
+### MCP 的后续
 
-- 现状：没有。pi-coding-agent 1.0.4 有一套完整的 MCP 实现（`createMcpExtension`：stdio / streamable HTTP 传输、OAuth、`codemode` / `deferred` / `direct` / `hidden` 四种暴露方式、resource 工具），但它是 CLI 的 `ExtensionFactory`，依赖 CLI 的会话和 `/mcp` 界面，装不进 Durable 的 registry。能复用多少（配置解析、传输、`mcp__<server>__<tool>` 命名约定）要先调研。
-- ADR 要定的事：
-  - 配置从哪读：ADR-0006 定了 AGENTS.md / Skills 不读 `~/.pi`，但模型认证和 settings 复用 `~/.pi/agent`。`mcp.json` 跟哪边走：`~/.agents/mcp.json` 加 `<project>/.agents/mcp.json`，还是复用 pi 的。项目级配置等于让仓库在宿主上启动任意命令，要不要先让用户确认信任。
-  - 连接生命周期：stdio server 在宿主进程里常驻一份、按 cwd（worktree）各起一份，还是按对话起；宿主等空闲重启（ADR-0009）时怎么关。
-  - 暴露方式：第一版是否只做 `direct`（工具直接声明给模型），codemode / tool_search 以后再说。
-  - 崩溃重放：无法知道 MCP 工具是否幂等，一律不声明 `replay: "safe"`，中断后模型拿到 `interrupted`。
-  - OAuth：宿主没有界面，授权链接得经客户端打开，回调还要回到宿主，和远程访问（ADR-0008）有交集。第一版可以只支持不需要登录的 server。
-  - 呈现：结果里的文本照常显示；`structuredContent` 走兜底渲染，不映射到展示类型。MCP 工具也可能返回图片，而 Web 工具卡片现在会丢掉图片（见"等上游"的 read 读图片），两边要用同一套图片渲染，MCP 先做的话就在这里补上。
-  - 状态可见：客户端至少要能看到每个 server 连上没有、错误是什么。先用宿主的 warning 广播。
-- 验收：本地起一个 stdio 测试 server，模型能调用它的工具，结果出现在对话里；配置错误和连接失败在客户端有提示。
+MCP 接入已完成（ADR-0012），第一版工具直接声明。
+
+下一步（单独的 ADR 和 PR）：codemode。Pi CLI 里 MCP 默认走 codemode，模型在 QuickJS 沙箱里写脚本找工具、调工具，能并发、能过滤大结果，工具声明也不随 server 连接变化。要基于 `@earendil-works/pi-codemode` 重写成 Durable 工具（CLI 的 `createCodemodeExtension` 是 `ExtensionFactory`，装不进 registry），开工前要定：
+- 脚本里能调哪些工具：倾向只开放 MCP 工具，bash / edit 仍走独立的工具任务和 diff 展示。
+- 一次脚本里的多次调用在 Web 上怎么呈现（ADR-0005 的展示类型）。
+- 发现方式：`searchTools` / `describeTool` / `describeNamespace`，以及系统提示词里列出 server 的那一段。
+- 默认 exposure：打算和 Pi CLI 对齐为 codemode，`direct` 留作按 server 配置的选项；`deferred` + `tool_search`（Durable 的 `control.addTools`）要不要同时做。
+
+这些都等有明确需求再做：
+
+- 项目级 `mcp.json`：等于让仓库在宿主上不经模型就起任意进程，登记项目时要先确认信任；协议和 Web 都要动。
+- OAuth：HTTP server 回 401 现在只在状态里提示"需要登录"；授权链接要经客户端打开、回调回到宿主，和远程访问（ADR-0008）有交集。
+- 配置热加载、server 掉线或崩溃后的手动重连：现在都要重启宿主（`service -- restart` 等空闲）。
+- MCP resources / prompts 还没有接入方式和呈现。
 
 ## M3：在哪都能连
 
@@ -75,7 +80,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 不自己实现，也不去上游提 issue，等官方版本带上后随升级（ADR-0002 锁精确版本，升级时顺带评审）接入。
 
-- read 读图片（ADR-0002、0006 遗留）：Pi CLI 的 read 能读图片，Durable 的 read 识别出图片后返回 `unsupported_image`，README 写的是 "not supported yet"。截至 2026-10-07，上游 main 和 CHANGELOG 的 Unreleased 都还没有，也没有对应的 issue 或 PR。上游支持后，PiNomad 这边还要做：Web 的 `chatItems` 用 `textOf` 只取 text 块，会丢掉工具结果里的图片，要在工具卡片里显示出来。
+- read 读图片（ADR-0002、0006 遗留）：Pi CLI 的 read 能读图片，Durable 的 read 识别出图片后返回 `unsupported_image`，README 写的是 "not supported yet"。截至 2026-10-07，上游 main 和 CHANGELOG 的 Unreleased 都还没有，也没有对应的 issue 或 PR。Web 工具卡片已经能显示结果里的图片块（随 MCP 做的，ADR-0012），上游支持后接上 read 即可。
 
 ## 待定优先级：其余展示类型
 

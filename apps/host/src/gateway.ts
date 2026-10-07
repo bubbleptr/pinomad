@@ -33,6 +33,7 @@ import {
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
 } from "@pinomad/protocol/frames.ts";
+import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
 import {
@@ -83,6 +84,8 @@ export interface GatewayOptions {
   readonly dataDir: string;
   /** Agent settings applied to conversations created through the gateway. */
   readonly defaults: ConversationDefaults;
+  /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
+  readonly mcp?: { readonly value: McpStatus; subscribe(listener: (value: McpStatus) => void): () => void };
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
@@ -642,6 +645,11 @@ class GatewayClient {
       return this.#forward(stream, watch, send);
     }
     if (stream === "tasks") return this.#forward(stream, await this.#options.harness.watchTaskGraph(context), send);
+    if (stream === "mcp") {
+      await send({ type: "snapshot", stream, value: this.#options.mcp?.value ?? null });
+      const mcp = this.#options.mcp;
+      return mcp === undefined ? { stop: () => {} } : { stop: mcp.subscribe((value) => void send({ type: "snapshot", stream, value })) };
+    }
     if (stream.startsWith("doc:")) {
       const at = stream.lastIndexOf(":");
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);

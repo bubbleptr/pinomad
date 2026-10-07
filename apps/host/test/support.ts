@@ -39,6 +39,7 @@ export async function startFauxHost(
     webRoot,
     remote,
     fauxModels,
+    mcpConfig,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -63,6 +64,8 @@ export async function startFauxHost(
     remote?: OpenHostOptions["remote"];
     /** The faux provider's model list instead of the default lone `faux-1` — include it to keep it. */
     fauxModels?: readonly FauxModelDefinition[];
+    /** MCP config file for the host's bridge (ADR-0012). */
+    mcpConfig?: string;
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -89,6 +92,7 @@ export async function startFauxHost(
     ...(projects === undefined ? {} : { projects }),
     ...(webRoot === undefined ? {} : { webRoot }),
     ...(remote === undefined ? {} : { remote }),
+    ...(mcpConfig === undefined ? {} : { mcpConfig }),
   });
   defer(() => host.close());
   return host;

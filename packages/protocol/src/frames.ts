@@ -16,7 +16,8 @@ export type StreamName =
   | "tasks"
   | "conversations"
   | "index"
-  | "devices";
+  | "devices"
+  | "mcp";
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
 export const docStream = (kind: string, id: ConversationId): StreamName => `doc:${kind}:${id}`;
@@ -25,7 +26,7 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
 /** Bumped on breaking frame/stream changes; compared against the hello frame's `protocol`. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -124,6 +125,7 @@ export function isClientFrame(value: unknown): value is ClientFrame {
         || stream === "conversations"
         || stream === "index"
         || stream === "devices"
+        || stream === "mcp"
         || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
       )
     );

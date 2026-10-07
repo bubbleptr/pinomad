@@ -3,6 +3,7 @@
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { DeviceEntry } from "./devices.ts";
+import type { McpStatus } from "./mcp.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 
@@ -66,6 +67,8 @@ export interface DurableView {
   readonly toolPresentations: Record<string, PresentationType>;
   /** Paired devices on the host (ADR-0008); empty while remote access is off. */
   readonly devices: readonly DeviceEntry[];
+  /** MCP server status (ADR-0012); `null` while the snapshot has not arrived. */
+  readonly mcp: McpStatus | null;
 }
 
 export interface DurableViewSource {

@@ -739,12 +739,23 @@ function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; hom
   );
 }
 
-/** What a finished tool result expands to: a diff view when the host declared one, else its text output. */
+/** What a finished tool result expands to: a diff view when the host declared one, else its text output plus any images. */
 function detailOf(tool: ToolCallView, toolPresentations: DurableView["toolPresentations"]): ReactNode {
   if (tool.status === "error") return undefined;
   const classified = tool.details === undefined ? undefined : classify(toolPresentations[tool.name], tool.details);
   if (classified?.type === "pinomad.diff") return <DiffView patch={classified.value.patch} />;
-  return tool.output === undefined ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
+  const text =
+    tool.output === undefined || tool.output === "" ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
+  const images = (tool.images ?? []).map((image, index) => (
+    <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="" style={{ maxWidth: "100%" }} />
+  ));
+  if (text === undefined && images.length === 0) return undefined;
+  return (
+    <VStack gap={2}>
+      {text}
+      {images}
+    </VStack>
+  );
 }
 
 function ChatRow({
@@ -942,7 +953,35 @@ function LiveState({ view, remote }: { view: DurableView; remote: RemoteDurable 
           ))}
         </List>
       )}
+      <McpSection view={view} />
     </VStack>
+  );
+}
+
+const MCP_VARIANT = { connecting: "warning", connected: "success", failed: "error", disabled: "neutral" } as const;
+
+/** The host's MCP servers (ADR-0012): per-server state and config errors; hidden when MCP is off. */
+function McpSection({ view }: { view: DurableView }) {
+  const mcp = view.mcp;
+  if (mcp === null || (mcp.servers.length === 0 && mcp.errors.length === 0)) return null;
+  return (
+    <List density="compact" header={<Text type="label" weight="semibold">MCP</Text>}>
+      {mcp.servers.map((server) => (
+        <ListItem
+          key={server.name}
+          label={server.name}
+          description={
+            server.state === "connected"
+              ? `${server.tools} tool${server.tools === 1 ? "" : "s"}${server.error === undefined ? "" : ` · ${server.error}`}`
+              : (server.error ?? server.state)
+          }
+          startContent={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} isPulsing={server.state === "connecting"} />}
+        />
+      ))}
+      {mcp.errors.map((error, index) => (
+        <ListItem key={index} label={error} startContent={<StatusDot variant="error" label="config error" />} />
+      ))}
+    </List>
   );
 }
 
