@@ -62,7 +62,6 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）
 - 协议版本号靠人工在破坏性变更时加一，没有机器检查（ADR-0009）
 - macOS 日志不轮转（ADR-0009）
-- `@earendil-works/*` 锁在 1.0.0，评审并升级到 1.0.4（ADR-0002）。1.0.3/1.0.4 的破坏性变更针对自己实现的 `ExecutionEnv`，我们只直接用 `NodeExecutionEnv`，预计影响小；另外三个包的变更还没看。放在 M2 之前做，grep/find/ls 可以用上新增的 `openDirReader()`、`scanLines()`
 
 ## 不在计划内
 
