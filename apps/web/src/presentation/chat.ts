@@ -115,10 +115,13 @@ export function chatItems(view: ConversationView): ChatItem[] {
     if (entry.kind === "pi.user" && message?.role === "user") items.push({ kind: "user", id, text: textOf(message.content) });
     else if (entry.kind === "pi.assistant" && message?.role === "assistant") addAssistant(id, message, false);
     else if (entry.kind === "pi.tool-result" && message?.role === "toolResult" && message.toolCallId !== undefined) {
+      // A finished call keeps linking to its subagent through the result details.
+      const child = (message.details as { conversationId?: ConversationId } | undefined)?.conversationId;
       updateCall(message.toolCallId, {
         status: message.isError ? "error" : "complete",
         output: textOf(message.content),
         ...(message.details === undefined ? {} : { details: message.details }),
+        ...(child === undefined ? {} : { conversationId: child }),
       });
     } else if (entry.kind === "pi.compaction") items.push({ kind: "compaction", id, summary: message === undefined ? "" : textOf(message.content) });
     else if (entry.kind === "pi.reset") items.push({ kind: "reset", id });
