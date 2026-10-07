@@ -9,8 +9,15 @@ const user = (text: string) => entry("pi.user", { role: "user", content: text })
 const assistant = (content: unknown[], stopReason = "stop") => entry("pi.assistant", { role: "assistant", content, stopReason });
 const text = (value: string) => ({ type: "text", text: value });
 const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
-const result = (callId: string, name: string, output: string, isError = false) =>
-  entry("pi.tool-result", { role: "toolResult", toolCallId: callId, toolName: name, content: [text(output)], isError });
+const result = (callId: string, name: string, output: string, isError = false, details?: unknown) =>
+  entry("pi.tool-result", {
+    role: "toolResult",
+    toolCallId: callId,
+    toolName: name,
+    content: [text(output)],
+    isError,
+    ...(details === undefined ? {} : { details }),
+  });
 const view = (entries: EntryRecord[], live: object = {}, inbox: object[] = []): ConversationView =>
   ({ conversation: { id: 0 }, entries, docs: { "pi.live": live, "pi.inbox": { items: inbox } } }) as unknown as ConversationView;
 
@@ -43,6 +50,16 @@ describe("chatItems", () => {
         { callId: "c1", name: "logs", status: "complete", output: "3 errors" },
         { callId: "c2", name: "metrics", status: "running", output: "fetching", conversationId: 7 },
       ],
+    });
+  });
+
+  it("keeps a completed call linked to its subagent through the result details", () => {
+    const items = chatItems(
+      view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse"), result("c1", "subagent", "report", false, { conversationId: 9 })]),
+    );
+    expect(items.at(-1)).toMatchObject({
+      kind: "assistant",
+      tools: [{ callId: "c1", name: "subagent", status: "complete", output: "report", details: { conversationId: 9 }, conversationId: 9 }],
     });
   });
 
