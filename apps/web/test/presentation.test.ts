@@ -53,6 +53,20 @@ describe("chatItems", () => {
     });
   });
 
+  it("collects image blocks of a tool result into the call's images", () => {
+    const resultWithImage = entry("pi.tool-result", {
+      role: "toolResult",
+      toolCallId: "c1",
+      toolName: "mcp__shot__capture",
+      content: [text("captured"), { type: "image", data: "aGk=", mimeType: "image/png" }],
+      isError: false,
+    });
+    const items = chatItems(view([assistant([call("c1", "mcp__shot__capture", {})], "toolUse"), resultWithImage]));
+    expect(items.at(-1)).toMatchObject({
+      tools: [{ callId: "c1", status: "complete", output: "captured", images: [{ data: "aGk=", mimeType: "image/png" }] }],
+    });
+  });
+
   it("keeps a completed call linked to its subagent through the result details", () => {
     const items = chatItems(
       view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse"), result("c1", "subagent", "report", false, { conversationId: 9 })]),
