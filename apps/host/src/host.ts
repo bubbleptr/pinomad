@@ -165,6 +165,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
+      toolPresentations: Object.assign({}, ...(options.extensions ?? []).map((extension) => extension.tools ?? {})),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
       ...(hostKey === undefined || offers === undefined || options.remote === undefined
         ? {}

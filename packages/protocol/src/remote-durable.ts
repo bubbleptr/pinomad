@@ -87,6 +87,7 @@ class RemoteClient {
   readonly #values = new Map<StreamName, unknown>();
   readonly #wanted = new Set<StreamName>(["conversations", "index", "devices"]);
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
+  #toolPresentations: Record<string, PresentationType> = {};
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
   readonly #pending = new Map<number, Pending>();
   readonly #transport: FrameTransport;
@@ -175,9 +176,12 @@ class RemoteClient {
         }
         this.#attempt = 0;
         this.#docs = frame.docs;
+        this.#toolPresentations = frame.toolPresentations;
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
-        if (this.#state !== undefined) this.#update({ session: frame.session, models: frame.models, connection: "connected" });
+        if (this.#state !== undefined) {
+          this.#update({ session: frame.session, models: frame.models, toolPresentations: frame.toolPresentations, connection: "connected" });
+        }
         else this.#awaitFirstView(frame);
         return;
       }
@@ -222,6 +226,7 @@ class RemoteClient {
         notices: [],
         connection: "connected",
         docs: [],
+        toolPresentations: hello.toolPresentations,
         devices: [],
       };
       this.#refresh();
@@ -392,8 +397,18 @@ class RemoteClient {
           await this.#switch(forked);
           await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: newRequestId() });
         }),
-      decide: (kind, requestId, approved) =>
-        this.#command(() => this.#call("decide", { conversationId: conversationId(), kind, requestId, approved })),
+      answer: (kind, requestId, answers) =>
+        this.#command(() => this.#call("answer", { conversationId: conversationId(), kind, requestId, answers })),
+      // Queued like other commands, but the caller needs the result: queue it
+      // the way createPairing does and return the promise.
+      changes: () => {
+        const call = this.#commands.then(() => this.#call("changes", { conversationId: conversationId() }));
+        this.#commands = call.then(
+          () => {},
+          () => {},
+        );
+        return call;
+      },
       // Queued like other commands, but the caller owns the error: the dialog
       // shows it, so no notice.
       createPairing: () => {

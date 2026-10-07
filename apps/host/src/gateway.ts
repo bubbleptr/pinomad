@@ -22,7 +22,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { WebSocket, WebSocketServer } from "ws";
 import { Value } from "typebox/value";
-import { ApprovalSchema } from "@pinomad/protocol/presentation.ts";
+import { QuestionSchema, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import {
   type CallMethod,
   type CallMethods,
@@ -43,7 +43,7 @@ import {
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import { branchSuffix, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreePath } from "./checkout.ts";
+import { branchSuffix, changesOf, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreeExists, worktreePath } from "./checkout.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import {
   addProject,
@@ -85,6 +85,8 @@ export interface GatewayOptions {
   readonly defaults: ConversationDefaults;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
+  /** Tool name → presentation of its result `details`, announced in the hello. */
+  readonly toolPresentations?: Record<string, PresentationType>;
   /** Built web client served over plain HTTP on both listeners; absent → 503. */
   readonly webRoot?: string;
   /** Set to also listen for secure-channel clients on all interfaces. */
@@ -577,6 +579,7 @@ class GatewayClient {
         kind: doc.token.definition.kind,
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
       })),
+      toolPresentations: options.toolPresentations ?? {},
     });
   }
 
@@ -785,7 +788,13 @@ class GatewayClient {
     switch (method) {
       case "submit": {
         const { text, whenBusy, requestId } = args as CallMethods["submit"]["args"];
-        const submission = await conversation.submit({ type: "input", content: text, whenBusy, requestId }, context);
+        // A pending question never blocks the composer (ADR-0011 §4): mark it
+        // dismissed so its wait task finishes, then steer regardless.
+        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
+        const submission = await conversation.submit(
+          { type: "input", content: text, whenBusy: dismissed ? "steer" : whenBusy, requestId },
+          context,
+        );
         void submission.wait(context).then(
           (settled) => {
             if (settled.status === "unanswered" && settled.reason !== "aborted") {
@@ -843,28 +852,99 @@ class GatewayClient {
         );
         return { conversationId: fork.id };
       }
-      case "decide": {
-        const { kind, requestId, approved } = args as CallMethods["decide"]["args"];
-        // A PiNomad-owned interaction: core applies the client decision against
-        // the pinomad.approval presentation schema, not extension code.
+      case "answer": {
+        const { kind, requestId, answers } = args as CallMethods["answer"]["args"];
+        // A PiNomad-owned interaction: core applies the client's answers against
+        // the pinomad.question presentation schema, not extension code.
         const doc = this.#options.docs?.find(
-          (candidate) => candidate.token.definition.kind === kind && candidate.presentation === "pinomad.approval",
+          (candidate) => candidate.token.definition.kind === kind && candidate.presentation === "pinomad.question",
         );
-        if (doc === undefined) throw new Error(`Document ${kind} does not accept decisions`);
+        if (doc === undefined) throw new Error(`Document ${kind} does not accept answers`);
         const token = doc.token;
         return await this.#options.harness.commit(async (tx) => {
           const value = await tx.doc(token, conversation.id);
-          if (!Value.Check(ApprovalSchema, value)) throw new Error(`Document ${kind} does not hold approval requests`);
+          if (!Value.Check(QuestionSchema, value)) throw new Error(`Document ${kind} does not hold question requests`);
           const request = value.requests.find((candidate) => candidate.id === requestId);
-          if (request === undefined) throw new Error(`Unknown approval request ${requestId}`);
-          if (request.decision === undefined) {
-            request.decision = { outcome: approved ? "approved" : "rejected", at: Date.now() };
-            return { outcome: request.decision.outcome, first: true };
+          if (request === undefined) throw new Error(`Unknown question request ${requestId}`);
+          if (request.resolution !== undefined) return { first: false };
+          if (answers.length !== request.questions.length) {
+            throw new Error(`Expected ${request.questions.length} answers, got ${answers.length}`);
           }
-          return { outcome: request.decision.outcome, first: false };
+          for (let i = 0; i < request.questions.length; i++) {
+            const question = request.questions[i]!;
+            const answer = answers[i]!;
+            const labels = new Set(question.options.map((option) => option.label));
+            for (const label of answer.selected) {
+              if (!labels.has(label)) throw new Error(`Unknown option for "${question.header}": ${label}`);
+            }
+            if (question.multiSelect !== true && answer.selected.length > 1) {
+              throw new Error(`"${question.header}" accepts a single option`);
+            }
+          }
+          request.resolution = { outcome: "answered", answers, at: Date.now() };
+          return { first: true };
         }, context);
       }
+      case "changes": {
+        return await this.#changes(conversation, context);
+      }
     }
+  }
+
+  /**
+   * Mark every unresolved `pinomad.question` request of a conversation
+   * dismissed — the user chose to reply in chat instead (ADR-0011 §4). The wait
+   * task sees the doc change and ends the tool. True when any were dismissed.
+   */
+  async #dismissPendingQuestions(conversationId: ConversationId, context: Context): Promise<boolean> {
+    const questionDocs = (this.#options.docs ?? []).filter((doc) => doc.presentation === "pinomad.question");
+    // Snapshot first: submits happen on every message, so committing blindly
+    // would write on every send and materialize an empty doc per conversation.
+    const snapshots = await Promise.all(questionDocs.map((doc) => this.#options.harness.snapshot(doc.token, conversationId, context)));
+    const pending = snapshots.some(
+      (value) => Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined),
+    );
+    if (!pending) return false;
+    return await this.#options.harness.commit(async (tx) => {
+      let dismissed = false;
+      for (const doc of questionDocs) {
+        const value = await tx.doc(doc.token, conversationId);
+        if (!Value.Check(QuestionSchema, value)) continue;
+        // Re-check inside the commit: a client answer may have landed meanwhile.
+        for (const request of value.requests) {
+          if (request.resolution === undefined) {
+            request.resolution = { outcome: "dismissed", at: Date.now() };
+            dismissed = true;
+          }
+        }
+      }
+      return dismissed;
+    }, context);
+  }
+
+  /**
+   * The conversation's file changes (ADR-0010 context): a worktree diff vs its
+   * recorded base, else a project dir's uncommitted diff vs HEAD.
+   */
+  /** Chat checkouts live in the data dir — never treated as a user repo. */
+  get #chatsPrefix(): string {
+    return join(this.#options.dataDir, "chats") + sep;
+  }
+
+  async #changes(conversation: Conversation, context: Context) {
+    const cwd = (await conversation.agent(context)).cwd;
+    if (cwd === undefined) return { available: false as const, reason: "No working directory" };
+    // A chat dir could sit inside a repo (when the data dir does) — it is never a project checkout.
+    if (cwd.startsWith(this.#chatsPrefix)) return { available: false as const, reason: "Chat conversations have no repository" };
+    const index = await this.#options.harness.snapshot(IndexDoc, context);
+    const record = checkoutAt(index?.checkouts, cwd);
+    if (record !== undefined) {
+      if (!(await worktreeExists(record.path))) return { available: false as const, reason: "No changes yet" };
+      return { available: true as const, ...(await changesOf(record.path, record.base)) };
+    }
+    const base = await gitBase(cwd);
+    if (base === undefined) return { available: false as const, reason: "Not in a git repository" };
+    return { available: true as const, ...(await changesOf(base.repo, base.base)) };
   }
 
   /**
@@ -883,8 +963,7 @@ class GatewayClient {
       // position inside it (forks of forks and subagents resolve the same way).
       source = { repo: existing.repo, dir: existing.path, subdir: relative(existing.path, cwd) };
     } else {
-      const chats = join(this.#options.dataDir, "chats");
-      if (cwd === chats || cwd.startsWith(chats + sep)) return undefined;
+      if (cwd.startsWith(this.#chatsPrefix)) return undefined;
       const base = await gitBase(cwd);
       if (base === undefined) return undefined;
       source = { repo: base.repo, dir: base.repo, subdir: base.subdir };

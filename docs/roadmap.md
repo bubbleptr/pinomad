@@ -9,15 +9,15 @@
 - 宿主与 Web 客户端骨架，宿主和客户端只通过 `packages/protocol` 通信（ADR-0001、0002、0003）
 - 项目 → 对话、Chat、fork、compact、abort、切换模型和思考等级（ADR-0007）
 - 编码工具 read / write / edit / bash；AGENTS.md 与 Skills 上下文（ADR-0006）
-- 展示类型 `pinomad.todo`、`pinomad.approval` 和兜底渲染（ADR-0005）
+- 展示类型 `pinomad.todo`、`pinomad.question`、`pinomad.diff` 和兜底渲染（ADR-0005；`pinomad.approval` 后被 ADR-0011 换掉）
 - 远程访问第一期：Noise IK 安全通道、扫码配对、设备登记与吊销，传输只有局域网直连；出门在外可以自备 Tunnel 或 tailnet，配合 `--public-url` 使用（ADR-0008）
 - 宿主常驻：用户级系统服务、等空闲重启、源码检出升级、协议版本检查（ADR-0009）
 - Git 项目的对话默认在独立 worktree 里工作；fork 复制当前文件；归档清理（ADR-0010）
+- `pinomad.diff` 展示类型；工具结果 `details` 声明展示类型；edit/write 渲染成 diff（ADR-0005、0011）
+- 结构化提问 `ask_user_question` 和 `pinomad.question`，取代审批（ADR-0011）
+- 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
 
-## M1：同时开多个任务不打架 ← 下一步
-
-- `pinomad.diff` 展示类型；工具结果的 `details` 能声明展示类型（ADR-0005 遗留）
-- 可选的审批闸门，拦在 bash / write / edit 之前，复用 `pinomad.approval`（ADR-0006 遗留）
+## M1：并行任务的审阅与对齐（已完成）
 
 ## M2：coding 能力补齐
 
@@ -31,7 +31,8 @@
 - 可以自己部署的中继（ADR-0008 第二期）；同时按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
 - 官方中继、推送通知（ADR-0008 第三期）
-- 按设备区分的权限：只读设备、按设备的审批策略（ADR-0008）
+- 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
+- 对话列表里提示"有问题等你回答"，和推送通知一起做（ADR-0011）
 
 ## M4：客户端完善
 

@@ -13,7 +13,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
-import { approval } from "./extensions/approval.ts";
+import { question } from "./extensions/question.ts";
 import { coding } from "./extensions/coding.ts";
 import { createContext } from "./extensions/context.ts";
 import { todo } from "./extensions/todo.ts";
@@ -40,7 +40,7 @@ const common = {
   dataDir,
   projects: values.project ?? [],
   port: Number(values.port),
-  extensions: [createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }), coding, todo, approval],
+  extensions: [createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }), coding, todo, question],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   // Both gateway ports serve the built client; in service mode the loopback
   // port is the only web server around (ADR-0009 §7).

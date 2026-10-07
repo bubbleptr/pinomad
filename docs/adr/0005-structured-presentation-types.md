@@ -33,4 +33,6 @@ Durable 加 chord 保证插件状态是可同步的结构化 JSON：文档有 `k
 - **审批完全存在文档里**：待审批请求和决定都在文档中，宿主重启后各客户端看到的仍是同一份状态。工具 `request_approval` 声明为 `replay: "safe"`，按 `callId` 去重，重放时不会产生重复请求。
 - **取消走 Durable 的 abort 协议**：工具调用创建一个归它所有的子任务 `approval.wait` 来等待决定。中止对话时子任务先被中止，由子任务的 `abort` 处理器写入 `cancelled`。中止标记打上后，run 模式的 invocation 不能再提交，所以工具自己在中止时写不进去，只有新开的 abort invocation 可以写。等待中的 phase 必须响应 `runtime.signal`，否则 abort invocation 排不上，`conversation.abort()` 会一直挂住。
 
+`pinomad.approval` 后来由 ADR-0011 换成了 `pinomad.question`，上面记下的文档、先写入者为准、abort 取消这套机制原样沿用。
+
 尚未覆盖：工具结果 `details` 的展示类型声明；其余候选类型；桌面端和移动端渲染。

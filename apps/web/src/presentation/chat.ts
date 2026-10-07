@@ -20,6 +20,8 @@ export interface ToolCallView {
   readonly target?: string;
   readonly status: "pending" | "running" | "complete" | "error";
   readonly output?: string;
+  /** Structured result details, for presentation types like `pinomad.diff`. */
+  readonly details?: unknown;
   /** A subagent's conversation, from the call's running details. */
   readonly conversationId?: ConversationId;
 }
@@ -48,7 +50,7 @@ type Block = {
   readonly name?: string;
   readonly arguments?: unknown;
 };
-type Message = { readonly role: string; readonly content: string | readonly Block[]; readonly stopReason?: string; readonly toolCallId?: string; readonly isError?: boolean };
+type Message = { readonly role: string; readonly content: string | readonly Block[]; readonly stopReason?: string; readonly toolCallId?: string; readonly isError?: boolean; readonly details?: unknown };
 
 function textOf(content: Message["content"]): string {
   if (typeof content === "string") return content;
@@ -113,7 +115,11 @@ export function chatItems(view: ConversationView): ChatItem[] {
     if (entry.kind === "pi.user" && message?.role === "user") items.push({ kind: "user", id, text: textOf(message.content) });
     else if (entry.kind === "pi.assistant" && message?.role === "assistant") addAssistant(id, message, false);
     else if (entry.kind === "pi.tool-result" && message?.role === "toolResult" && message.toolCallId !== undefined) {
-      updateCall(message.toolCallId, { status: message.isError ? "error" : "complete", output: textOf(message.content) });
+      updateCall(message.toolCallId, {
+        status: message.isError ? "error" : "complete",
+        output: textOf(message.content),
+        ...(message.details === undefined ? {} : { details: message.details }),
+      });
     } else if (entry.kind === "pi.compaction") items.push({ kind: "compaction", id, summary: message === undefined ? "" : textOf(message.content) });
     else if (entry.kind === "pi.reset") items.push({ kind: "reset", id });
   }

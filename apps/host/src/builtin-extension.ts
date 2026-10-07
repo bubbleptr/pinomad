@@ -13,4 +13,6 @@ export interface ExtensionDoc {
 export interface BuiltinExtension {
   readonly extension: Extension;
   readonly docs?: readonly ExtensionDoc[];
+  /** Tool name → presentation of its result `details` (ADR-0005). */
+  readonly tools?: Readonly<Record<string, PresentationType>>;
 }

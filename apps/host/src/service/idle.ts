@@ -1,5 +1,5 @@
 // Restart gating (ADR-0009 §5): the task graph is every live task, so an empty
-// map means idle — a pending `approval.wait` counts as busy by design.
+// map means idle — a pending `question.wait` counts as busy by design.
 import type { TaskGraph } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 
