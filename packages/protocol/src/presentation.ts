@@ -5,7 +5,7 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
-export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff";
+export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode";
 
 /** Also used as the `todo_write` tool's `items` element schema on the host. */
 export const TodoItemSchema = Type.Object({
@@ -68,10 +68,31 @@ export const DiffSchema = Type.Object({ patch: Type.String() });
 
 export type DiffDetails = Static<typeof DiffSchema>;
 
+/**
+ * A `codemode` call's details (ADR-0013 §7): the script plus every nested call
+ * it made, so the card can show progress while the script still runs.
+ */
+export const CodemodeCallSchema = Type.Object({
+  name: Type.String(),
+  /** Compact JSON of the arguments, summarized. */
+  args: Type.String(),
+  status: Type.Union([Type.Literal("running"), Type.Literal("ok"), Type.Literal("error"), Type.Literal("cancelled")]),
+  durationMs: Type.Optional(Type.Number()),
+  error: Type.Optional(Type.String()),
+  /** A nested call's declared-presentation details (for example a diff), size-bounded host-side. */
+  details: Type.Optional(Type.Unknown()),
+});
+
+export const CodemodeSchema = Type.Object({ code: Type.String(), calls: Type.Array(CodemodeCallSchema) });
+
+export type CodemodeCall = Static<typeof CodemodeCallSchema>;
+export type CodemodeDetails = Static<typeof CodemodeSchema>;
+
 export type ClassifiedDoc =
   | { readonly type: "pinomad.todo"; readonly value: TodoState }
   | { readonly type: "pinomad.question"; readonly value: QuestionState }
   | { readonly type: "pinomad.diff"; readonly value: DiffDetails }
+  | { readonly type: "pinomad.codemode"; readonly value: CodemodeDetails }
   | { readonly type: "fallback"; readonly value: unknown };
 
 /**
@@ -88,6 +109,9 @@ export function classify(presentation: PresentationType | undefined, value: unkn
   }
   if (presentation === "pinomad.diff" && Value.Check(DiffSchema, value)) {
     return { type: "pinomad.diff", value };
+  }
+  if (presentation === "pinomad.codemode" && Value.Check(CodemodeSchema, value)) {
+    return { type: "pinomad.codemode", value };
   }
   return { type: "fallback", value };
 }

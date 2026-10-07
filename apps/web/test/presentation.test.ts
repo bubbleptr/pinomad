@@ -53,6 +53,19 @@ describe("chatItems", () => {
     });
   });
 
+  it("carries a running call's live details into the tool view", () => {
+    const details = { code: "await tools.read({})", calls: [{ name: "read", args: "{}", status: "running" }] };
+    const items = chatItems(
+      view(
+        [user("go"), assistant([call("c1", "codemode", { code: "…" })], "toolUse")],
+        { run: {}, tools: [{ callId: "c1", name: "codemode", status: "running", details }] },
+      ),
+    );
+    expect(items.at(-1)).toMatchObject({
+      tools: [{ callId: "c1", name: "codemode", status: "running", details }],
+    });
+  });
+
   it("collects image blocks of a tool result into the call's images", () => {
     const resultWithImage = entry("pi.tool-result", {
       role: "toolResult",
