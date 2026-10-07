@@ -114,7 +114,7 @@ function locked<T>(repo: string, work: () => Promise<T>): Promise<T> {
 }
 
 /** A worktree directory is real when it holds git's `.git` file, not merely when the path exists. */
-const isWorktreeDir = async (path: string): Promise<boolean> =>
+export const worktreeExists = async (path: string): Promise<boolean> =>
   stat(join(path, ".git")).then(
     () => true,
     () => false,
@@ -128,7 +128,7 @@ const isWorktreeDir = async (path: string): Promise<boolean> =>
  */
 export async function ensureWorktree(record: WorktreeCheckout): Promise<void> {
   await locked(record.repo, async () => {
-    if (await isWorktreeDir(record.path)) return;
+    if (await worktreeExists(record.path)) return;
     // Drop registrations whose directories are gone before re-adding a path.
     await git(record.repo, ["worktree", "prune"]);
     const branchExists = await git(record.repo, ["show-ref", "--verify", "--quiet", `refs/heads/${record.branch}`]).then(
@@ -155,7 +155,7 @@ export async function ensureWorktree(record: WorktreeCheckout): Promise<void> {
  */
 export async function removeWorktree(record: WorktreeCheckout): Promise<string | undefined> {
   return await locked(record.repo, async () => {
-    if (!(await isWorktreeDir(record.path))) return undefined;
+    if (!(await worktreeExists(record.path))) return undefined;
     return await git(record.repo, ["worktree", "remove", record.path]).then(
       () => undefined,
       (error: unknown) => reasonOf(error),
@@ -167,4 +167,30 @@ function reasonOf(error: unknown): string {
   const stderr = (error as { stderr?: unknown })?.stderr;
   const text = typeof stderr === "string" && stderr.trim() !== "" ? stderr.trim() : error instanceof Error ? error.message : String(error);
   return text.split("\n").filter((line) => line.trim() !== "").at(-1) ?? text;
+}
+
+/**
+ * Everything `dir` differs from `base` as a unified patch: commits made since,
+ * uncommitted edits, deletions, and untracked-but-not-ignored files — staged
+ * through a scratch index so the user's real index never moves.
+ */
+export async function changesOf(dir: string, base: string, maxBytes = 1024 * 1024): Promise<{
+  readonly base: string;
+  readonly patch: string;
+  readonly truncated: boolean;
+}> {
+  const indexFile = join(tmpdir(), `pinomad-index-${randomBytes(8).toString("hex")}`);
+  const env = { GIT_INDEX_FILE: indexFile };
+  try {
+    await git(dir, ["read-tree", "HEAD"], env);
+    await git(dir, ["add", "-A"], env);
+    const { stdout } = await git(dir, ["diff", "--cached", "--no-color", "--find-renames", base], env);
+    if (Buffer.byteLength(stdout) <= maxBytes) return { base, patch: stdout, truncated: false };
+    // Cut at a line boundary so the patch stays parseable as far as it goes.
+    const cut = stdout.slice(0, maxBytes);
+    const patch = cut.slice(0, cut.lastIndexOf("\n") + 1);
+    return { base, patch, truncated: true };
+  } finally {
+    await rm(indexFile, { force: true });
+  }
 }
