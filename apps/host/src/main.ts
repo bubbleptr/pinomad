@@ -52,6 +52,7 @@ const common = {
   dataDir,
   projects: values.project ?? [],
   port: Number(values.port),
+  mcpConfig: join(homedir(), ".agents", "mcp.json"),
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   // Both gateway ports serve the built client; in service mode the loopback
   // port is the only web server around (ADR-0009 §7).

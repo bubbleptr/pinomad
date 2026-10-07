@@ -14,6 +14,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, type ConversationDefaults, ensureIndex, IndexDoc } from "./organization.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, pairingOffers } from "./devices.ts";
+import { type McpBridge, startMcp } from "./mcp.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -29,6 +30,8 @@ export interface OpenHostOptions {
   readonly modelSummaries: () => readonly ModelSummary[];
   /** Built-in extensions installed before the Harness opens; their docs reach the gateway. */
   readonly extensions?: readonly BuiltinExtension[];
+  /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
+  readonly mcpConfig?: string;
   readonly settings?: HarnessSettings;
   /** Defaults applied to every conversation created on this host. */
   readonly initialModel?: ModelRef & { readonly thinkingLevel?: ModelThinkingLevel };
@@ -94,12 +97,15 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     });
 
   let harness: Harness | undefined;
+  let mcp: McpBridge | undefined;
   try {
     const token = await hostToken(options.dataDir);
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
     const registry = createRegistry();
     for (const { extension } of options.extensions ?? []) registry.install(extension);
+    // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
+    mcp = options.mcpConfig === undefined ? undefined : startMcp({ configPath: options.mcpConfig, registry });
     // One environment per working directory; conversations sharing a cwd share it.
     const environments = new Map<string, NodeExecutionEnv>();
     const chatsDir = join(options.dataDir, "chats");
@@ -166,6 +172,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
       toolPresentations: Object.assign({}, ...(options.extensions ?? []).map((extension) => extension.tools ?? {})),
+      ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
       ...(hostKey === undefined || offers === undefined || options.remote === undefined
         ? {}
@@ -199,6 +206,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
+            // MCP servers go down with the host (stdio children get the spec shutdown).
+            await mcp?.close();
             await Promise.all([...environments.values()].map((env) => env.cleanup(context)));
           } finally {
             await release();
@@ -208,6 +217,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
     };
   } catch (error) {
+    await mcp?.close().catch(() => {});
     await harness?.close(context).catch(() => {});
     await release().catch(() => {});
     throw error;

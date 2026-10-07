@@ -9,6 +9,7 @@ const SNAPSHOTS: Record<string, unknown> = {
   index: { projects: [], conversations: [] },
   devices: { devices: [] },
   tasks: { tasks: {} },
+  mcp: null,
 };
 
 interface Fake {

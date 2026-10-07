@@ -1,6 +1,7 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import type { HostDevices } from "./devices.ts";
+import type { McpStatus } from "./mcp.ts";
 import { checkoutOf, homeOf, type HostIndex, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
@@ -85,7 +86,7 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
-  readonly #wanted = new Set<StreamName>(["conversations", "index", "devices"]);
+  readonly #wanted = new Set<StreamName>(["conversations", "index", "devices", "mcp"]);
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   #toolPresentations: Record<string, PresentationType> = {};
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
@@ -218,7 +219,7 @@ class RemoteClient {
   }
 
   #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>): void {
-    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index"), this.#snapshot("devices")]).then(() => {
+    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index"), this.#snapshot("devices"), this.#snapshot("mcp")]).then(() => {
       this.#state = {
         session: hello.session,
         organized: { chats: [], projects: [] },
@@ -228,6 +229,7 @@ class RemoteClient {
         docs: [],
         toolPresentations: hello.toolPresentations,
         devices: [],
+        mcp: null,
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -275,6 +277,7 @@ class RemoteClient {
       tasks,
       docs,
       devices,
+      mcp: (this.#values.get("mcp") as McpStatus | null | undefined) ?? null,
     });
   }
 
