@@ -1,28 +1,27 @@
 // ADR-0005: extension documents render through `classify` — typed views for
 // conforming values, a key-value fallback for everything else so an unknown or
 // malformed document is still inspectable.
-import { Button } from "@astryxdesign/core/Button";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import type { JsonValue } from "@earendil-works/chord";
-import { classify } from "@pinomad/protocol/presentation.ts";
+import { classify, type QuestionRequest, type QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
 
 const STATUS_LABEL = { pending: "pending", in_progress: "in progress", completed: "completed" } as const;
 
-export function DocumentView({ doc, remote, connected }: { doc: ExtensionDocView; remote: RemoteDurable; connected: boolean }) {
+export function DocumentView({ doc }: { doc: ExtensionDocView; remote: RemoteDurable; connected: boolean }) {
   if (doc.value === null) return null;
   const classified = classify(doc.presentation, doc.value);
   // A classified doc gets a product name; the fallback keeps the kind for inspection.
-  const heading = classified.type === "pinomad.todo" ? "Todo" : classified.type === "pinomad.approval" ? "Approvals" : doc.kind;
+  const heading = classified.type === "pinomad.todo" ? "Todo" : classified.type === "pinomad.question" ? "Questions" : doc.kind;
   const content =
     classified.type === "pinomad.todo" ? (
       <TodoDoc doc={classified.value} />
-    ) : classified.type === "pinomad.approval" ? (
-      <ApprovalDoc kind={doc.kind} doc={classified.value} remote={remote} connected={connected} />
+    ) : classified.type === "pinomad.question" ? (
+      <QuestionDoc doc={classified.value} />
     ) : (
       <FallbackDoc value={classified.value} />
     );
@@ -48,63 +47,39 @@ function TodoDoc({ doc }: { doc: { items: readonly { text: string; status: "pend
   );
 }
 
-function ApprovalDoc({
-  kind,
-  doc,
-  remote,
-  connected,
-}: {
-  kind: string;
-  doc: {
-    requests: readonly {
-      id: string;
-      title: string;
-      detail?: string;
-      requestedAt: number;
-      decision?: { outcome: "approved" | "rejected" | "cancelled"; at: number };
-    }[];
-  };
-  remote: RemoteDurable;
-  connected: boolean;
-}) {
+/** One row per question; pending requests answer above the composer instead. */
+function statusOf(request: QuestionRequest, index: number): { label: string; color?: "green" | "gray" } {
+  const resolution = request.resolution;
+  if (resolution === undefined) return { label: "pending" };
+  if (resolution.outcome === "dismissed") return { label: "answered in chat", color: "gray" };
+  if (resolution.outcome === "cancelled") return { label: "cancelled", color: "gray" };
+  const answer = resolution.answers[index];
+  if (answer === undefined || (answer.selected.length === 0 && answer.other === undefined)) return { label: "skipped", color: "gray" };
+  const text = [answer.selected.join(", "), ...(answer.other === undefined ? [] : [`other: "${answer.other}"`])]
+    .filter((part) => part !== "")
+    .join("; ");
+  return { label: text === "" ? "skipped" : text, color: "green" };
+}
+
+function QuestionDoc({ doc }: { doc: QuestionState }) {
   return (
     <List density="compact">
       {doc.requests.length === 0 ? (
         <ListItem label="Empty" />
       ) : (
-        doc.requests.map((request) => (
-          <ListItem
-            key={request.id}
-            label={request.title}
-            {...(request.detail === undefined ? {} : { description: request.detail })}
-            endContent={
-              request.decision === undefined ? (
-                <HStack gap={1}>
-                  <Button
-                    label="Approve"
-                    variant="secondary"
-                    size="sm"
-                    isDisabled={!connected}
-                    onClick={() => void remote.controller.decide(kind, request.id, true)}
-                  />
-                  <Button
-                    label="Reject"
-                    variant="ghost"
-                    size="sm"
-                    isDisabled={!connected}
-                    onClick={() => void remote.controller.decide(kind, request.id, false)}
-                  />
-                </HStack>
-              ) : (
-                <Token
-                  label={request.decision.outcome}
-                  color={request.decision.outcome === "approved" ? "green" : request.decision.outcome === "rejected" ? "red" : "gray"}
-                  size="sm"
-                />
-              )
-            }
-          />
-        ))
+        doc.requests.flatMap((request) =>
+          request.questions.map((question, index) => {
+            const status = statusOf(request, index);
+            return (
+              <ListItem
+                key={`${request.id}-${index}`}
+                label={question.question}
+                description={status.label}
+                startContent={<Token label={question.header} size="sm" />}
+              />
+            );
+          }),
+        )
       )}
     </List>
   );

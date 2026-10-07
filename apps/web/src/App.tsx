@@ -25,10 +25,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
 import { DocumentView } from "./presentation/documents.tsx";
+import { DiffView } from "./presentation/diff.tsx";
+import { PendingQuestions } from "./presentation/question.tsx";
+import { classify } from "@pinomad/protocol/presentation.ts";
+import type { ToolCallView } from "./presentation/chat.ts";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
@@ -257,6 +261,7 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   const [navOpen, setNavOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [forkAt, setForkAt] = useState<string>();
+  const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host
   // upgrade may auto-reload again.
   useEffect(() => {
@@ -301,17 +306,23 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                           {branch === undefined ? cwd : `${branch} · ${cwd}`}
                         </Text>
                       )}
+                      <Button label="Changes" variant="ghost" size="sm" onClick={() => setChangesOpen(true)} />
                     </HStack>
                   )}
                   <ChatLayout
                     style={chatColumn}
-                    composer={<Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />}
+                    composer={
+                      <VStack gap={1}>
+                        <PendingQuestions view={view} remote={remote} />
+                        <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
+                      </VStack>
+                    }
                     emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
                   >
                     {items.length === 0 ? null : (
                       <ChatMessageList isStreaming={busy}>
                         {items.map((item) => (
-                          <ChatRow key={item.id} item={item} onFork={setForkAt} connected={view.connection === "connected"} />
+                          <ChatRow key={item.id} item={item} onFork={setForkAt} connected={view.connection === "connected"} toolPresentations={view.toolPresentations} />
                         ))}
                       </ChatMessageList>
                     )}
@@ -349,6 +360,9 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
       {forkAt === undefined ? null : (
         <ForkDialog entryId={forkAt} remote={remote} connected={view.connection === "connected"} onClose={() => setForkAt(undefined)} />
       )}
+      {changesOpen && conversation !== undefined && (
+        <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
+      )}
     </VStack>
   );
 }
@@ -379,6 +393,58 @@ function ForkDialog({ entryId, remote, connected, onClose }: { entryId: string; 
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               <Button label="Fork" variant="primary" isDisabled={!connected || prompt.trim() === ""} onClick={fork} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
+  );
+}
+
+type ChangesResult = { available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean };
+
+/** The conversation's file changes (ADR-0010/0011-B2): a worktree diff vs base, or a project dir's uncommitted diff. */
+function ChangesDialog({ view, remote, busy, onClose }: { view: DurableView; remote: RemoteDurable; busy: boolean; onClose: () => void }) {
+  const [result, setResult] = useState<ChangesResult>();
+  const refresh = useMemo(() => () => void remote.controller.changes().then(setResult).catch(() => {}), [remote]);
+  useEffect(refresh, [refresh]);
+  // An idle turn may have produced new changes; refresh once when it settles.
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy) refresh();
+    wasBusy.current = busy;
+  }, [busy, refresh]);
+  const direct = view.checkout === undefined;
+  return (
+    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={720}>
+      <Layout
+        header={<DialogHeader title="Changes" onOpenChange={() => onClose()} />}
+        content={
+          <LayoutContent>
+            <VStack gap={2} padding={3}>
+              {result === undefined ? (
+                <Text type="supporting">Loading…</Text>
+              ) : !result.available ? (
+                <Text type="supporting">{result.reason}</Text>
+              ) : (
+                <>
+                  {direct ? (
+                    <Text type="supporting">
+                      These are the project directory's uncommitted changes, shared with other conversations working there.
+                    </Text>
+                  ) : null}
+                  {result.truncated ? <Text type="supporting">The diff is truncated; the rest is not shown.</Text> : null}
+                  <DiffView patch={result.patch} />
+                </>
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Refresh" variant="secondary" isDisabled={view.connection !== "connected"} onClick={refresh} />
+              <Button label="Close" variant="primary" onClick={onClose} />
             </HStack>
           </LayoutFooter>
         }
@@ -673,7 +739,25 @@ function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; hom
   );
 }
 
-function ChatRow({ item, onFork, connected }: { item: ChatItem; onFork: (entryId: string) => void; connected: boolean }) {
+/** What a finished tool result expands to: a diff view when the host declared one, else its text output. */
+function detailOf(tool: ToolCallView, toolPresentations: DurableView["toolPresentations"]): ReactNode {
+  if (tool.status === "error") return undefined;
+  const classified = tool.details === undefined ? undefined : classify(toolPresentations[tool.name], tool.details);
+  if (classified?.type === "pinomad.diff") return <DiffView patch={classified.value.patch} />;
+  return tool.output === undefined ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
+}
+
+function ChatRow({
+  item,
+  onFork,
+  connected,
+  toolPresentations,
+}: {
+  item: ChatItem;
+  onFork: (entryId: string) => void;
+  connected: boolean;
+  toolPresentations: DurableView["toolPresentations"];
+}) {
   switch (item.kind) {
     case "user":
       return (
@@ -720,9 +804,10 @@ function ChatRow({ item, onFork, connected }: { item: ChatItem; onFork: (entryId
                     ? {}
                     : { target: tool.target }),
                 ...(tool.status === "error" && tool.output !== undefined ? { errorMessage: tool.output } : {}),
-                ...(tool.status !== "error" && tool.output !== undefined
-                  ? { resultDetail: <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown> }
-                  : {}),
+                ...(() => {
+                  const detail = detailOf(tool, toolPresentations);
+                  return detail === undefined ? {} : { resultDetail: detail };
+                })(),
               }))}
             />
           )}

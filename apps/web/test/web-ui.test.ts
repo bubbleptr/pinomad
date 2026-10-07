@@ -4,7 +4,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
 import { chromium } from "@playwright/test";
-import { approval } from "@pinomad/host/src/extensions/approval.ts";
+import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
@@ -152,18 +152,25 @@ it.each([
   });
 });
 
-it("renders todo and approval documents on every page and shares one decision", async () => {
+it("renders todo and a pending question card on every page and shares one answer", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
-    extensions: [todo, approval],
+    extensions: [todo, question],
     answers: [
       fauxAssistantMessage(
         fauxToolCall("todo_write", { items: [{ text: "Investigate the report", status: "in_progress" }] }),
         { stopReason: "toolUse" },
       ),
-      fauxAssistantMessage(fauxToolCall("request_approval", { title: "Deploy v2.3?" }), { stopReason: "toolUse" }),
-      "all approved",
+      fauxAssistantMessage(
+        fauxToolCall("ask_user_question", {
+          questions: [
+            { header: "Deploy", question: "Deploy v2.3 now?", options: [{ label: "Yes" }, { label: "No" }] },
+          ],
+        }),
+        { stopReason: "toolUse" },
+      ),
+      "all answered",
     ],
   });
   const a = await openPage(host, 1280, webOrigin);
@@ -177,19 +184,22 @@ it("renders todo and approval documents on every page and shares one decision", 
   for (const page of [a, b]) {
     const panel = page.getByLabel("Live state");
     await panel.getByText("Investigate the report", { exact: true }).waitFor();
-    await panel.getByText("Deploy v2.3?", { exact: true }).waitFor();
-    await expect.poll(() => panel.getByRole("button", { name: "Approve", exact: true }).count()).toBe(1);
+    // The pending question renders above the composer in the main column.
+    const card = page.getByTestId("pending-questions");
+    await card.getByText("Deploy v2.3 now?", { exact: true }).waitFor();
+    await expect.poll(() => card.getByRole("button", { name: "Submit", exact: true }).count()).toBe(1);
   }
 
-  await a.getByLabel("Live state").getByRole("button", { name: "Approve", exact: true }).click();
-  await b.getByLabel("Live state").getByText("approved", { exact: true }).waitFor();
-  await expect.poll(() => b.getByLabel("Live state").getByRole("button", { name: "Approve", exact: true }).count()).toBe(0);
-  await a.getByText("all approved", { exact: true }).waitFor();
+  await a.getByTestId("pending-questions").getByRole("radio", { name: "Yes", exact: true }).click();
+  await a.getByTestId("pending-questions").getByRole("button", { name: "Submit", exact: true }).click();
+  // Both pages converge on the stored answer; the turn continues.
+  await b.getByLabel("Live state").getByText("Yes", { exact: true }).waitFor();
+  await a.getByText("all answered", { exact: true }).waitFor();
 });
 
 it("renders a document that fails its presentation schema as key-value fallback", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], extensions: [todo, approval] });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], extensions: [todo, question] });
   const owner = await connectTo(defer, host);
   const conversationId = await startChat(owner, "has a bad doc");
   // Declared pinomad.todo but shaped wrong: the client must not lie about it.
