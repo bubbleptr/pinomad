@@ -28,6 +28,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作，fork 得到新 worktree |
 | [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval` |
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
+| [0013](0013-codemode-and-tool-exposure.md) | codemode 是默认开启的通用工具；工具按 `direct` / `model-only` / `codemode` 暴露，和来源正交，MCP 默认 `codemode` |
 
 ## 远程与运维
 
@@ -46,4 +47,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0007：worktree 执行检出、fork 时检出怎么处理 | 已由 0010 决定 |
 | 0006：做远程访问前先定认证和审批策略 | 认证已由 0008 决定；审批闸门由 0011 决定不做 |
 | 0005：`pinomad.approval` | 由 0011 换成 `pinomad.question` |
+| 0012 §5：MCP 工具直接声明，codemode 以后再说 | 由 0013 取代：MCP 默认 `codemode` 暴露 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |

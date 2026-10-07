@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-07
+最后更新：2026-10-08
 
 ## 已完成
 
@@ -36,13 +36,15 @@
 
 MCP 接入已完成（ADR-0012），第一版工具直接声明。
 
-下一步（单独的 ADR 和 PR）：codemode。Pi CLI 里 MCP 默认走 codemode，模型在 QuickJS 沙箱里写脚本找工具、调工具，能并发、能过滤大结果，工具声明也不随 server 连接变化。要基于 `@earendil-works/pi-codemode` 重写成 Durable 工具（CLI 的 `createCodemodeExtension` 是 `ExtensionFactory`，装不进 registry），开工前要定：
-- 脚本里能调哪些工具：倾向只开放 MCP 工具，bash / edit 仍走独立的工具任务和 diff 展示。
-- 一次脚本里的多次调用在 Web 上怎么呈现（ADR-0005 的展示类型）。
-- 发现方式：`searchTools` / `describeTool` / `describeNamespace`，以及系统提示词里列出 server 的那一段。
-- 默认 exposure：打算和 Pi CLI 对齐为 codemode，`direct` 留作按 server 配置的选项；`deferred` + `tool_search`（Durable 的 `control.addTools`）要不要同时做。
+下一步：codemode（ADR-0013，待实现，单独一个 PR）。codemode 是所有对话默认开启的通用工具，和 MCP 正交；工具按暴露方式 `direct` / `model-only` / `codemode` 区分，MCP 工具默认 `codemode`，`mcp.json` 里可按 server 写 `exposure: "direct"`。验收：
+- 脚本能并发调用 read / bash / edit / write 和 MCP 工具，只有脚本输出进入上下文；`ask_user_question`、`subagent`、`codemode` 在脚本里不可调。
+- MCP 工具默认不出现在模型的工具声明里，server 连上前后 codemode 的工具描述不变；脚本能用 `searchTools` / `describeTool` / `describeNamespace` 找到它们。
+- 中止父调用会取消正在跑的嵌套调用；宿主崩溃后整段脚本得到 `interrupted`。
+- Web 上一次调用是一张 `pinomad.codemode` 卡片：脚本、嵌套调用列表（运行中实时更新）、输出；edit / write 的 diff 能在卡片里展开。
 
-这些都等有明确需求再做：
+codemode 之后可能的后续，都等有明确需求再做：`store` / `load`（要一个跟着 fork 走的可回退文档）、`models`（分类、图片模型）、`deferred` + `tool_search`（可用 Durable 的 `control.addTools`）、CLI 的 `only` 模式、bash 在脚本里返回带退出码的结构化结果。
+
+MCP 本身的后续，都等有明确需求再做：
 
 - 项目级 `mcp.json`：等于让仓库在宿主上不经模型就起任意进程，登记项目时要先确认信任；协议和 Web 都要动。
 - OAuth：HTTP server 回 401 现在只在状态里提示"需要登录"；授权链接要经客户端打开、回调回到宿主，和远程访问（ADR-0008）有交集。
