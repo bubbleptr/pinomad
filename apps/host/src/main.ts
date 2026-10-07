@@ -17,12 +17,14 @@ import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { question } from "./extensions/question.ts";
 import { coding } from "./extensions/coding.ts";
+import { createCodemode } from "./extensions/codemode.ts";
 import { createContext } from "./extensions/context.ts";
 import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
 import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
+import type { ScriptTool } from "./script-tools.ts";
 
 const { values } = parseArgs({
   options: {
@@ -40,14 +42,27 @@ const { values } = parseArgs({
 
 const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
 // Extensions are built per options source: `subagent` validates `model` against
-// the same Models and advertised summaries the gateway serves.
-const extensionsFor = (models: Models, summaries: () => readonly ModelSummary[]): readonly BuiltinExtension[] => [
-  createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }),
-  coding,
-  todo,
-  question,
-  createSubagent({ models, modelSummaries: summaries, exclude: [question.extension] }),
-];
+// the same Models and advertised summaries the gateway serves. The host function
+// form hands codemode the script-tool catalog (MCP `codemode` exposure, ADR-0013).
+const extensionsFor =
+  (models: Models, summaries: () => readonly ModelSummary[]) =>
+  (host: { readonly scriptTools: () => readonly ScriptTool[] }): readonly BuiltinExtension[] => {
+    const others: BuiltinExtension[] = [
+      createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }),
+      coding,
+      todo,
+      question,
+      createSubagent({ models, modelSummaries: summaries, exclude: [question.extension] }),
+    ];
+    return [
+      ...others,
+      createCodemode({
+        scriptTools: host.scriptTools,
+        modelOnly: others.flatMap((extension) => extension.modelOnly ?? []),
+        presentations: Object.assign({}, ...others.map((extension) => extension.tools ?? {})),
+      }),
+    ];
+  };
 const common = {
   dataDir,
   projects: values.project ?? [],
