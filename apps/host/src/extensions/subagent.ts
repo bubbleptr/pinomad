@@ -107,10 +107,9 @@ export function createSubagent(options: {
       if (settled.status !== "done" || settled.type !== "input") throw new Error(`Subagent failed: ${settled.status}`);
       const answer = await api.commit((tx) => tx.entry(AssistantEntry, settled.answer), context);
       const message = answer?.model?.[0];
+      // pi-ai's AssistantMessage content is always a block array, never a string.
       const text =
-        message?.role !== "assistant" || typeof message.content === "string"
-          ? ""
-          : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+        message?.role === "assistant" ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("") : "";
       const result: ToolExecutionResult = {
         content: [{ type: "text", text: text === "" ? "(The subagent returned no text.)" : text }],
         details: { conversationId: child },
