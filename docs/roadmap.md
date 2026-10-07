@@ -16,28 +16,21 @@
 - `pinomad.diff` 展示类型；工具结果 `details` 声明展示类型；edit/write 渲染成 diff（ADR-0005、0011）
 - 结构化提问 `ask_user_question` 和 `pinomad.question`，取代审批（ADR-0011）
 - 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
+- 前台子代理工具 `subagent`：子对话归调用任务所有，中止连带、重启不重复派活；共用父对话检出，并行写只靠工具描述约束；子代理里禁用 `ask_user_question`；模型和思考等级默认沿用父对话，可用 `model` / `thinkingLevel` 参数指定；调用结束后卡片仍能链到子对话（ADR-0010 §5）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
 ## M2：coding 能力补齐
 
-目标：日常 coding 不用再切回 Pi CLI。子代理只改宿主的内置扩展，先做；MCP 要先写新 ADR。
+目标：日常 coding 不用再切回 Pi CLI。子代理已完成（见"已完成"），剩下 MCP，要先写新 ADR。
 
-工具集和 Pi CLI 的默认一致，就是 read / bash / edit / write 四个。pi-coding-agent 虽然也带了 grep / find / ls，但默认是关的，搜索交给 bash，所以不算缺口，不进 M2。将来需要不带 bash 的只读工具集时再补（见子代理的"并行写冲突"）。届时注意：CLI 的这三个工具是 `AgentTool`，构造时绑死 cwd，直接调本机 fs 和 `child_process`，要基于每次调用的 `api.env` 重写。read 读图片等上游，见"等上游"。
+工具集和 Pi CLI 的默认一致，就是 read / bash / edit / write 四个。pi-coding-agent 虽然也带了 grep / find / ls，但默认是关的，搜索交给 bash，所以不算缺口，不进 M2。将来需要不带 bash 的只读工具集时再补（比如只读子代理）。届时注意：CLI 的这三个工具是 `AgentTool`，构造时绑死 cwd，直接调本机 fs 和 `child_process`，要基于每次调用的 `api.env` 重写。read 读图片等上游，见"等上游"。
 
-### 1. 子代理工具
+子代理第一版之后可能的后续，都等有明确需求再做：
+- 后台子代理（Durable 例 23：spawn / message / wait / stop / list，回答作为 follow-up 回帖给父对话）。
+- 并行写冲突现在只靠工具描述约束；真出问题时再考虑只读子代理，或给写文件的子代理单独开 worktree（会改动 ADR-0010 §5）。
 
-- 现状：协议和 Web 都已经就绪。`gateway.ts` 把有 owner 的对话标成 `subagent`，`organizeConversations` 把它挂到发起它的对话下面，`checkoutOf` 让它共用发起对话的执行检出（ADR-0010 §5），Web 从运行中工具的 `details.conversationId` 链接到子对话。还缺宿主上真正创建子代理的工具。
-- Durable README 给了两种模式：前台（例 22，工具调用一直阻塞到子对话结束，返回它的回答）和后台（例 23，后台锚任务持有子对话，支持 spawn / message / wait / stop / list，回答作为 follow-up 回帖给父对话）。第一版做前台：语义简单，abort 和空闲判断天然正确（中止调用就中止子对话，子对话空闲了父对话才算空闲）。后台子代理等有明确需求再做。
-- 做法：新内置扩展 `subagent`，工具声明 `replay: "safe"`，用 `scanConversations({ ownerTaskId })` 复用已经建好的子对话，提交时带 `requestId` 去重，宿主崩溃重启后不会重复派活。子对话创建时 `configure` 掉 `subagent` 扩展，不允许递归。
-- 待定：
-  - 子代理的模型和思考等级：沿用父对话，还是允许指定更便宜的模型（和 M4 的设置界面相关）。
-  - 并行写冲突：一轮里发起的多个子代理调用会并发跑，而且共用同一个执行检出，同时写文件会互相覆盖。第一版可以让子代理只做只读调查：工具集换成 read 加 grep / find / ls，不给 bash / edit / write（这时才需要补上那三个工具）；或者靠工具描述约束；或者给要写文件的子代理单独开 worktree（这会改动 ADR-0010 §5）。
-  - 子代理调 `ask_user_question`：问题文档在子对话上，用户看的却是父对话，不在父对话的工具卡片上提示的话，子代理会一直等下去。要么做这个提示，要么在子代理里禁用这个工具。
-  - 调用结束后的链接：Web 只从 `pi.live` 里运行中的 slot 读 `conversationId`，调用一结束卡片就链不到子对话了。最终结果的 `details` 也要带上 `conversationId`。
-- 验收：faux 模型跑通"父对话 → 子代理 → 回答回到父对话"；中止父对话会连带中止子对话；宿主被强杀重启后不重复创建子对话（沿用 crash-recovery 测试的做法）。
-
-### 2. MCP 接入（ADR-0004 定为早期的外部扩展入口；需要新 ADR）
+### 1. MCP 接入（ADR-0004 定为早期的外部扩展入口；需要新 ADR）
 
 - 现状：没有。pi-coding-agent 1.0.4 有一套完整的 MCP 实现（`createMcpExtension`：stdio / streamable HTTP 传输、OAuth、`codemode` / `deferred` / `direct` / `hidden` 四种暴露方式、resource 工具），但它是 CLI 的 `ExtensionFactory`，依赖 CLI 的会话和 `/mcp` 界面，装不进 Durable 的 registry。能复用多少（配置解析、传输、`mcp__<server>__<tool>` 命名约定）要先调研。
 - ADR 要定的事：
