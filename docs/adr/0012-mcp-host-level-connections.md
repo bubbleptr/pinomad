@@ -27,7 +27,10 @@ ADR-0004 把 MCP 定为早期的外部扩展入口。pi-coding-agent 1.0.4 自�
    - server 中途断开时标记为失败，撤下它的工具。第一版不自动重连。
    - server 发出 `notifications/tools/list_changed` 时重新拉取工具列表。
 
-5. **只做直接声明。** 每个 MCP 工具都作为普通工具声明给模型，名字是 `mcp__<server>__<tool>`：名字中 `[A-Za-z0-9_]` 以外的字符换成 `_`，总长截到 64 个字符。换名后撞名的工具跳过，并在状态里报错。codemode、tool_search 这类延迟加载的方式，等工具多到明显占用上下文时再说。
+5. **第一版只做直接声明，codemode 是下一步。** 每个 MCP 工具都作为普通工具声明给模型，名字是 `mcp__<server>__<tool>`：名字中 `[A-Za-z0-9_]` 以外的字符换成 `_`，总长截到 64 个字符。换名后撞名的工具跳过，并在状态里报错。
+   - 这和 Pi CLI 的默认不同：CLI 里 server 的默认 `exposure` 是 `codemode`，MCP 工具不直接声明，模型在 QuickJS 沙箱里写脚本，经 `searchTools` / `describeTool` 找到工具再调用。好处是工具声明不随 server 连接变化（不打断 prompt cache）、工具多也不撑大上下文、脚本能并发调用和过滤大结果。
+   - 第一版先不做，是因为 CLI 的 codemode 同样是 `ExtensionFactory`，要基于 `@earendil-works/pi-codemode` 重写成 Durable 工具，而且有几件事要单独定：脚本里能调哪些工具（只开放 MCP，还是连 bash / edit 也开放）、一次脚本里的多次调用在 Web 上怎么呈现、默认 exposure 用哪种。另写 ADR、单独一个 PR，做完后默认 exposure 打算和 Pi CLI 对齐为 codemode。
+   - 直接声明的代价：工具多的 server 会占不少上下文；server 在后台连上时工具声明会变，那一轮的 prompt cache 失效。
 
 6. **结果与重放。**
    - MCP 工具一律不声明 `replay: "safe"`：无从知道它们是否幂等。宿主中途崩溃，模型拿到 `interrupted`。
@@ -44,6 +47,8 @@ ADR-0004 把 MCP 定为早期的外部扩展入口。pi-coding-agent 1.0.4 自�
 - **读 `~/.pi/agent/mcp.json`，和 Pi CLI 共用配置**：和 ADR-0001"不兼容 CLI 配置"的取向相反；CLI 特有的字段（codemode、`auth.provider`）PiNomad 也不支持，共用一份文件反而容易让人以为都生效。
 - **读项目级配置，登记项目时确认信任**：要改协议和 Web，第一版用不上。
 - **按 cwd（worktree）或按对话起 server**：能支持和项目相关的 server，但进程数随对话增长，回收时机也难定。第一版想接的 server（文档检索、浏览器、GitHub 之类）都是全局的。
+- **这一版就和 Pi CLI 一样默认走 codemode**：行为和 CLI 一致，但要先定上面第 5 条列的几个问题，工作量也比连接管理本身大，拆开做更好评审。
+- **只加 `deferred` + `tool_search`**：Durable 的 `control.addTools` 能让下一轮多声明工具，做起来便宜，但只解决上下文占用，不解决组合和过滤结果，和 CLI 的默认用法也不一样。
 - **只用现有的 warning 通知报状态**：通知是瞬时的，客户端晚连上就看不到之前的连接失败。
 
 ## 后果
