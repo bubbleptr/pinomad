@@ -15,6 +15,7 @@ import { addProject, type ConversationDefaults, ensureIndex, IndexDoc } from "./
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, pairingOffers } from "./devices.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
+import type { ScriptTool } from "./script-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -28,8 +29,14 @@ export interface OpenHostOptions {
   readonly dataDir: string;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
-  /** Built-in extensions installed before the Harness opens; their docs reach the gateway. */
-  readonly extensions?: readonly BuiltinExtension[];
+  /**
+   * Built-in extensions installed before the Harness opens; their docs reach the gateway.
+   * The function form is resolved once before MCP starts — `scriptTools()` stays
+   * lazy so codemode sees servers that connect later (ADR-0013 §2).
+   */
+  readonly extensions?:
+    | readonly BuiltinExtension[]
+    | ((host: { readonly scriptTools: () => readonly ScriptTool[] }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
   readonly settings?: HarnessSettings;
@@ -103,7 +110,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
     const registry = createRegistry();
-    for (const { extension } of options.extensions ?? []) registry.install(extension);
+    const extensions =
+      typeof options.extensions === "function"
+        ? options.extensions({ scriptTools: () => mcp?.scriptTools() ?? [] })
+        : (options.extensions ?? []);
+    for (const { extension } of extensions) registry.install(extension);
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
     mcp = options.mcpConfig === undefined ? undefined : startMcp({ configPath: options.mcpConfig, registry });
     // One environment per working directory; conversations sharing a cwd share it.
@@ -170,8 +181,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       token,
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
-      docs: (options.extensions ?? []).flatMap((extension) => extension.docs ?? []),
-      toolPresentations: Object.assign({}, ...(options.extensions ?? []).map((extension) => extension.tools ?? {})),
+      docs: extensions.flatMap((extension) => extension.docs ?? []),
+      toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
       ...(hostKey === undefined || offers === undefined || options.remote === undefined

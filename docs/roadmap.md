@@ -18,12 +18,13 @@
 - 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
 - 前台子代理工具 `subagent`：子对话归调用任务所有，中止连带、重启不重复派活；共用父对话检出，并行写只靠工具描述约束；子代理里禁用 `ask_user_question`；模型和思考等级默认沿用父对话，可用 `model` / `thinkingLevel` 参数指定；调用结束后卡片仍能链到子对话（ADR-0010 §5）
 - MCP 接入：`~/.agents/mcp.json` 全局 `mcpServers` 配置，每个 server 在宿主里只连一份、所有对话共用；工具以 `mcp__<server>__<tool>` 直接声明，`tools/list_changed` 跟随；状态和配置错误经 `mcp` 流推到客户端右侧面板；结果图片显示在工具卡片里（ADR-0012；协议 v3）
+- codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用并能展开 edit / write 的 diff（ADR-0013）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
 ## M2：coding 能力补齐（已完成）
 
-目标：日常 coding 不用再切回 Pi CLI。子代理和 MCP 都已完成（见"已完成"）。
+目标：日常 coding 不用再切回 Pi CLI。子代理、MCP 和 codemode 都已完成（见"已完成"）。
 
 工具集和 Pi CLI 的默认一致，就是 read / bash / edit / write 四个。pi-coding-agent 虽然也带了 grep / find / ls，但默认是关的，搜索交给 bash，所以不算缺口，不进 M2。将来需要不带 bash 的只读工具集时再补（比如只读子代理）。届时注意：CLI 的这三个工具是 `AgentTool`，构造时绑死 cwd，直接调本机 fs 和 `child_process`，要基于每次调用的 `api.env` 重写。read 读图片等上游，见"等上游"。
 
@@ -34,13 +35,7 @@
 
 ### MCP 的后续
 
-MCP 接入已完成（ADR-0012），第一版工具直接声明。
-
-下一步：codemode（ADR-0013，待实现，单独一个 PR）。codemode 是所有对话默认开启的通用工具，和 MCP 正交；工具按暴露方式 `direct` / `model-only` / `codemode` 区分，MCP 工具默认 `codemode`，`mcp.json` 里可按 server 写 `exposure: "direct"`。验收：
-- 脚本能并发调用 read / bash / edit / write 和 MCP 工具，只有脚本输出进入上下文；`ask_user_question`、`subagent`、`codemode` 在脚本里不可调。
-- MCP 工具默认不出现在模型的工具声明里，server 连上前后 codemode 的工具描述不变；脚本能用 `searchTools` / `describeTool` / `describeNamespace` 找到它们。
-- 中止父调用会取消正在跑的嵌套调用；宿主崩溃后整段脚本得到 `interrupted`。
-- Web 上一次调用是一张 `pinomad.codemode` 卡片：脚本、嵌套调用列表（运行中实时更新）、输出；edit / write 的 diff 能在卡片里展开。
+MCP 接入和 codemode 都已完成（ADR-0012、0013）。
 
 codemode 之后可能的后续，都等有明确需求再做：`store` / `load`（要一个跟着 fork 走的可回退文档）、`models`（分类、图片模型）、`deferred` + `tool_search`（可用 Durable 的 `control.addTools`）、CLI 的 `only` 模式、bash 在脚本里返回带退出码的结构化结果。
 

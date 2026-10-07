@@ -15,6 +15,8 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
+import type { BuiltinExtension } from "../src/builtin-extension.ts";
+import type { ScriptTool } from "../src/script-tools.ts";
 
 /** Cleanups registered during a test, run in reverse after it. */
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
@@ -51,11 +53,16 @@ export async function startFauxHost(
     browserOrigins?: readonly string[];
     /**
      * Built-in extensions installed on the host. A function receives the host's
-     * `models` and `modelSummaries`, for extensions configured from them.
+     * `models` and `modelSummaries`, for extensions configured from them, plus
+     * the lazy script-tool catalog codemode reads (ADR-0013).
      */
     extensions?:
-      | OpenHostOptions["extensions"]
-      | ((provided: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => OpenHostOptions["extensions"]);
+      | Exclude<OpenHostOptions["extensions"], undefined>
+      | ((provided: {
+          models: Models;
+          modelSummaries: () => readonly ModelSummary[];
+          scriptTools: () => readonly ScriptTool[];
+        }) => readonly BuiltinExtension[]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
     /** Built web client served on the gateway ports. */
@@ -88,7 +95,15 @@ export async function startFauxHost(
     initialModel: { provider: model.provider, modelId: model.id },
     port,
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
-    ...(extensions === undefined ? {} : { extensions: typeof extensions === "function" ? extensions({ models, modelSummaries }) : extensions }),
+    ...(extensions === undefined
+      ? {}
+      : {
+          extensions:
+            typeof extensions === "function"
+              ? (host: { scriptTools: () => readonly ScriptTool[] }) =>
+                  extensions({ models, modelSummaries, scriptTools: host.scriptTools })
+              : extensions,
+        }),
     ...(projects === undefined ? {} : { projects }),
     ...(webRoot === undefined ? {} : { webRoot }),
     ...(remote === undefined ? {} : { remote }),

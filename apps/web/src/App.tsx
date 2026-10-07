@@ -28,6 +28,7 @@ import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
+import { CodemodeView } from "./presentation/codemode.tsx";
 import { DocumentView } from "./presentation/documents.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -741,8 +742,10 @@ function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; hom
 
 /** What a finished tool result expands to: a diff view when the host declared one, else its text output plus any images. */
 function detailOf(tool: ToolCallView, toolPresentations: DurableView["toolPresentations"]): ReactNode {
-  if (tool.status === "error") return undefined;
   const classified = tool.details === undefined ? undefined : classify(toolPresentations[tool.name], tool.details);
+  // A codemode card shows its script and nested calls even while running or failed (ADR-0013 §7).
+  if (classified?.type === "pinomad.codemode") return <CodemodeView details={classified.value} tool={tool} toolPresentations={toolPresentations} />;
+  if (tool.status === "error") return undefined;
   if (classified?.type === "pinomad.diff") return <DiffView patch={classified.value.patch} />;
   const text =
     tool.output === undefined || tool.output === "" ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;

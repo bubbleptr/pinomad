@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import {
+  type CallToolResult,
   McpAuthRequiredError,
   McpClient,
   McpHttpError,
@@ -20,6 +21,7 @@ import {
 import { defineExtension, defineTool, type Registry, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { McpServerStatus, McpStatus } from "@pinomad/protocol/mcp.ts";
+import type { ScriptTool } from "./script-tools.ts";
 
 export interface McpBridge {
   /** Latest status; subscribed listeners get every subsequent publication. */
@@ -27,6 +29,8 @@ export interface McpBridge {
     readonly value: McpStatus;
     subscribe(listener: (value: McpStatus) => void): () => void;
   };
+  /** Every connected server's tools for codemode scripts — both exposures (ADR-0013 §3). */
+  scriptTools(): readonly ScriptTool[];
   close(): Promise<void>;
 }
 
@@ -36,7 +40,13 @@ type ServerSpec =
 
 type ConfigEntry = { readonly name: string } & (
   | { readonly disabled: true }
-  | { readonly disabled?: false; readonly spec: ServerSpec; readonly timeoutMs: number }
+  | {
+      readonly disabled?: false;
+      readonly spec: ServerSpec;
+      readonly timeoutMs: number;
+      readonly exposure: "codemode" | "direct";
+      readonly description?: string;
+    }
 );
 
 const ENV_VAR = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -87,6 +97,13 @@ function parseServer(name: string, raw: unknown, error: (message: string) => voi
   const timeout =
     raw.timeout === undefined ? 60_000 : typeof raw.timeout === "number" && raw.timeout > 0 ? raw.timeout * 1000 : undefined;
   if (timeout === undefined) return fail(`"timeout" must be a positive number of seconds`);
+  // ADR-0013 §3: codemode is the default exposure; "direct" declares the tools to the model too.
+  if (raw.exposure !== undefined && raw.exposure !== "codemode" && raw.exposure !== "direct") {
+    return fail(`"exposure" must be "codemode" or "direct"`);
+  }
+  if (raw.description !== undefined && typeof raw.description !== "string") return fail(`"description" must be a string`);
+  const exposure = raw.exposure ?? "codemode";
+  const description = raw.description as string | undefined;
   if (raw.command !== undefined || raw.type === "stdio") {
     if (typeof raw.command !== "string" || raw.command === "") return fail(`stdio server needs a "command"`);
     if (raw.args !== undefined && (!Array.isArray(raw.args) || !raw.args.every((arg) => typeof arg === "string"))) {
@@ -102,13 +119,21 @@ function parseServer(name: string, raw: unknown, error: (message: string) => voi
       name,
       spec: { kind: "stdio", command: raw.command, args: raw.args as string[] | undefined, env, cwd },
       timeoutMs: timeout,
+      exposure,
+      ...(description === undefined ? {} : { description }),
     };
   }
   if (raw.url !== undefined || raw.type === "http" || raw.type === "sse") {
     if (typeof raw.url !== "string" || raw.url === "") return fail(`HTTP server needs a "url"`);
     const headers = expandAll(raw.headers, "headers", (message) => error(`${name}: ${message}`));
     if (raw.headers !== undefined && headers === undefined) return undefined;
-    return { name, spec: { kind: "http", url: raw.url, headers }, timeoutMs: timeout };
+    return {
+      name,
+      spec: { kind: "http", url: raw.url, headers },
+      timeoutMs: timeout,
+      exposure,
+      ...(description === undefined ? {} : { description }),
+    };
   }
   return fail(`needs "command" (stdio) or "url" (HTTP)`);
 }
@@ -137,10 +162,46 @@ async function loadConfig(configPath: string): Promise<{ errors: string[]; entri
 /** `mcp__<server>__<tool>`, provider-safe: [A-Za-z0-9_] only, at most 64 chars. */
 const callName = (server: string, tool: string): string => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 64);
 
-function mcpTool(client: McpClient, timeoutMs: number, name: string, tool: McpTool): ToolRegistration {
-  return defineTool({
+/** The CallToolResult envelope as a JSON schema, so codemode declarations render `CallToolResult<T>`. */
+const callToolResultSchema = (tool: McpTool): Record<string, unknown> => ({
+  type: "object",
+  properties: {
+    content: { type: "array", items: { type: "object" } },
+    isError: { type: "boolean" },
+    _meta: { type: "object" },
+    structuredContent: tool.outputSchema ?? { type: "object" },
+  },
+  required: ["content"],
+});
+
+function scriptTool(
+  client: McpClient,
+  timeoutMs: number,
+  server: string,
+  description: string | undefined,
+  name: string,
+  tool: McpTool,
+): ScriptTool {
+  return {
     name,
     description: tool.description ?? tool.title ?? tool.name,
+    inputSchema: tool.inputSchema,
+    outputSchema: callToolResultSchema(tool),
+    namespace: {
+      name: server,
+      ...(description === undefined ? {} : { description }),
+      ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
+    },
+    // Raw CallToolResult: scripts see `isError` and `structuredContent` themselves (ADR-0013 §4).
+    call: (args, signal) => client.callTool(tool.name, args as Record<string, unknown>, { signal, timeoutMs }),
+  };
+}
+
+/** The model-facing registration of a `direct` server tool: the script value maps to content blocks. */
+function asModelTool(tool: ScriptTool): ToolRegistration {
+  return defineTool({
+    name: tool.name,
+    description: tool.description,
     // Providers require an object schema, and some reject one without `properties`.
     parameters: Type.Unsafe<Record<string, unknown>>({
       ...tool.inputSchema,
@@ -149,16 +210,20 @@ function mcpTool(client: McpClient, timeoutMs: number, name: string, tool: McpTo
     }),
     // MCP tools may not be idempotent; an interrupted call replays as `interrupted` (ADR-0012 §6).
     execute: async (args, _api, context) => {
-      const result = await client.callTool(tool.name, args, { signal: context.abortSignal, timeoutMs });
+      const result = (await tool.call(args, context.abortSignal ?? NEVER_ABORT)) as CallToolResult;
       return { content: toLlmContent(result), isError: result.isError === true };
     },
   });
 }
 
+const NEVER_ABORT = new AbortController().signal;
+
 export function startMcp(options: { configPath: string; registry: Registry }): McpBridge {
   const listeners = new Set<(value: McpStatus) => void>();
   const servers = new Map<string, McpServerStatus>();
-  const toolsets = new Map<string, ToolRegistration[]>();
+  // Every connected server's tools as script tools; the `mcp` extension mirrors the `direct` ones.
+  const toolsets = new Map<string, ScriptTool[]>();
+  const exposures = new Map<string, "codemode" | "direct">();
   // Every client ever created, so close() also aborts connections still in flight.
   const live = new Set<McpClient>();
   let errors: string[] = [];
@@ -169,7 +234,10 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
     for (const listener of listeners) listener(value);
   };
   const install = (): void => {
-    options.registry.install(defineExtension({ name: "mcp", tools: [...toolsets.values()].flat() }));
+    const direct = [...toolsets.entries()].flatMap(([name, tools]) =>
+      exposures.get(name) === "direct" ? tools.map(asModelTool) : [],
+    );
+    options.registry.install(defineExtension({ name: "mcp", tools: direct }));
   };
   const set = (name: string, patch: Partial<McpServerStatus> & Pick<McpServerStatus, "state">): void => {
     servers.set(name, { name, tools: 0, ...servers.get(name), ...patch });
@@ -177,9 +245,9 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
   };
 
   /** Rebuild a connected server's tool registrations; `removed` clears them after a drop. */
-  const relist = async (name: string, client: McpClient, timeoutMs: number): Promise<void> => {
+  const relist = async (name: string, client: McpClient, timeoutMs: number, description: string | undefined): Promise<void> => {
     const taken = new Set([...toolsets.entries()].flatMap(([other, tools]) => (other === name ? [] : tools.map((tool) => tool.name))));
-    const tools: ToolRegistration[] = [];
+    const tools: ScriptTool[] = [];
     const collisions: string[] = [];
     for (const tool of await client.listTools()) {
       const wire = callName(name, tool.name);
@@ -188,7 +256,7 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
         continue;
       }
       taken.add(wire);
-      tools.push(mcpTool(client, timeoutMs, wire, tool));
+      tools.push(scriptTool(client, timeoutMs, name, description, wire, tool));
     }
     if (closed) return;
     toolsets.set(name, tools);
@@ -211,7 +279,7 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
     return stderr === undefined || stderr === "" ? base : `${base}\n${stderr}`;
   };
 
-  const connect = async (name: string, spec: ServerSpec, timeoutMs: number): Promise<void> => {
+  const connect = async (name: string, spec: ServerSpec, timeoutMs: number, description: string | undefined): Promise<void> => {
     const client = new McpClient({ name: "pinomad", version: "0.0.0" });
     live.add(client);
     let stdio: StdioTransport | undefined;
@@ -231,11 +299,11 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
         if (!closed) fail(name, `disconnected${lastError === undefined ? "" : `: ${lastError}`}`);
       });
       client.onNotification("notifications/tools/list_changed", () => {
-        relist(name, client, timeoutMs).catch((error: unknown) => {
+        relist(name, client, timeoutMs, description).catch((error: unknown) => {
           fail(name, error instanceof Error ? error.message : String(error));
         });
       });
-      await relist(name, client, timeoutMs);
+      await relist(name, client, timeoutMs, description);
     } catch (error) {
       live.delete(client);
       if (!closed) fail(name, describeConnectError(error, stdio));
@@ -264,12 +332,14 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
     install();
     for (const entry of loaded.entries) {
       if (entry.disabled === true) continue;
-      void connect(entry.name, entry.spec, entry.timeoutMs);
+      exposures.set(entry.name, entry.exposure);
+      void connect(entry.name, entry.spec, entry.timeoutMs, entry.description);
     }
   });
 
   return {
     status,
+    scriptTools: () => [...toolsets.values()].flat(),
     async close() {
       closed = true;
       // A still-connecting client closes its transport, which rejects the

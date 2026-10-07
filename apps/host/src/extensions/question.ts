@@ -131,5 +131,7 @@ const askUserQuestion = defineTool({
 
 export const question: BuiltinExtension = {
   extension: defineExtension({ name: "question", tools: [askUserQuestion], tasks: [QuestionWait] }),
+  // Nested in a script the question would block with no user visible prompt (ADR-0013 §2).
+  modelOnly: ["ask_user_question"],
   docs: [{ token: QuestionDoc, presentation: "pinomad.question" }],
 };

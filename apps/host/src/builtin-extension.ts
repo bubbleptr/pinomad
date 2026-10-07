@@ -15,4 +15,11 @@ export interface BuiltinExtension {
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details` (ADR-0005). */
   readonly tools?: Readonly<Record<string, PresentationType>>;
+  /**
+   * Tools declared to the model but not callable from codemode scripts
+   * (ADR-0013 §2 `model-only` exposure): `ask_user_question` would block
+   * invisibly on a user answer, `subagent` relies on its own task's owner
+   * and memo, and `codemode` must not nest scripts.
+   */
+  readonly modelOnly?: readonly string[];
 }

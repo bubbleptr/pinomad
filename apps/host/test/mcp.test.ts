@@ -56,7 +56,7 @@ const alive = (pid: number): boolean => {
 
 describe("mcp", () => {
   it("serves a connected server's tools to conversations and returns text, images, and errors", async () => {
-    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture] } });
+    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture], exposure: "direct" } });
     const host = await startFauxHost(defer, {
       mcpConfig: configPath,
       answers: [
@@ -88,6 +88,7 @@ describe("mcp", () => {
       off: { command: process.execPath, args: [fixture], enabled: false },
       malformed: { args: [] },
       badenv: { command: process.execPath, args: [fixture], env: { MISSING: "${PINOMAD_UNSET_TEST_VAR}" } },
+      badexposure: { command: process.execPath, args: [fixture], exposure: "everywhere" },
     });
     const host = await startFauxHost(defer, { mcpConfig: configPath });
     const client = await connectTo(defer, host);
@@ -102,6 +103,7 @@ describe("mcp", () => {
     expect(status.servers.map((entry) => entry.name).sort()).toEqual(["broken", "good", "off"]);
     expect(status.errors.some((error) => error.includes("malformed"))).toBe(true);
     expect(status.errors.some((error) => error.includes("badenv") && error.includes("PINOMAD_UNSET_TEST_VAR"))).toBe(true);
+    expect(status.errors.some((error) => error.includes("badexposure") && error.includes("exposure"))).toBe(true);
   });
 
   it("reports an unreadable config as an error and a missing config as empty status", async () => {
@@ -121,7 +123,7 @@ describe("mcp", () => {
   });
 
   it("re-lists a server's tools on notifications/tools/list_changed", async () => {
-    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture] } });
+    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture], exposure: "direct" } });
     const host = await startFauxHost(defer, {
       mcpConfig: configPath,
       answers: [
@@ -151,7 +153,7 @@ describe("mcp", () => {
   });
 
   it("marks a server that exits mid-session failed and drops its tools", async () => {
-    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture] } });
+    const configPath = await writeConfig({ fixture: { command: process.execPath, args: [fixture], exposure: "direct" } });
     const host = await startFauxHost(defer, {
       mcpConfig: configPath,
       answers: [fauxAssistantMessage(fauxToolCall("mcp__fixture__crash", {}), { stopReason: "toolUse" }), "it crashed"],

@@ -142,6 +142,8 @@ export function chatItems(view: ConversationView): ChatItem[] {
     updateCall(slot.callId, {
       status: "running",
       ...(slot.output === undefined ? {} : { output: slot.output }),
+      // Live details keep a codemode card's call list moving while it runs (ADR-0013 §7).
+      ...(slot.details === undefined ? {} : { details: slot.details }),
       ...(child === undefined ? {} : { conversationId: child }),
     });
   }

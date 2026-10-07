@@ -121,5 +121,6 @@ export function createSubagent(options: {
   // Declared after `tool` because execute captures it for the child's extension
   // removal; it is initialized before any call can run.
   const extension = defineExtension({ name: "subagent", tools: [tool] });
-  return { extension };
+  // Nested in a script, memo/owner bookkeeping of a child conversation would go wrong (ADR-0013 §2).
+  return { extension, modelOnly: ["subagent"] };
 }

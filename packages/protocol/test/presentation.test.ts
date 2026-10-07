@@ -34,6 +34,19 @@ describe("classify", () => {
     expect(classify("pinomad.diff", { noPatch: true })).toEqual({ type: "fallback", value: { noPatch: true } });
   });
 
+  it("classifies codemode details and falls back for malformed ones", () => {
+    const details = {
+      code: "await tools.read({ path: 'a' })",
+      calls: [
+        { name: "read", args: '{"path":"a"}', status: "ok", durationMs: 12 },
+        { name: "edit", args: "{}", status: "error", error: "nope", details: { patch: "--- a\n+++ b\n" } },
+      ],
+    };
+    expect(classify("pinomad.codemode", details)).toEqual({ type: "pinomad.codemode", value: details });
+    expect(classify("pinomad.codemode", { code: "x", calls: [{ name: "read" }] })).toEqual({ type: "fallback", value: { code: "x", calls: [{ name: "read" }] } });
+    expect(classify("pinomad.codemode", { code: 1 })).toEqual({ type: "fallback", value: { code: 1 } });
+  });
+
   it.each([
     ["a bad item status", { items: [{ text: "Ship it", status: "unknown" }] }],
     ["a missing field", { items: [{ status: "pending" }] }],
