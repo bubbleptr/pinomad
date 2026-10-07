@@ -31,7 +31,7 @@ Git 项目的对话默认在独立 worktree 里工作（ADR-0010）：宿主在 
 
 Chat 对话在 `<数据目录>/chats/<对话 id>` 里工作。fork 和子代理的对话显示在所属对话下面。归档只是隐藏，移除项目也不会删除目录和对话。
 
-agent 用 read / write / edit / bash 工具，执行前不需要审批。系统提示词会带上以下内容，每次请求都重新读取（ADR-0006）：
+agent 用 read / write / edit / bash 工具，执行前不需要审批；拿不准方向时用 `ask_user_question` 向用户提 1–4 个带选项的问题，问题卡片显示在输入框上方，用户也可以不回卡片、直接在对话里回复（ADR-0011）。edit / write 的结果带 unified diff，渲染成 diff 而不是文本；对话标题栏的 Changes 按钮随时查看当前检出的全部改动（worktree 相对基线 commit，项目目录则是未提交的改动），busy 转空闲时自动刷新。系统提示词会带上以下内容，每次请求都重新读取（ADR-0006）：
 
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
 - Skills：`<cwd>/.agents/skills` 和 `~/.agents/skills`，同名时项目的生效。

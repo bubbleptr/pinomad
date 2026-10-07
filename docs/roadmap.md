@@ -9,16 +9,15 @@
 - 宿主与 Web 客户端骨架，宿主和客户端只通过 `packages/protocol` 通信（ADR-0001、0002、0003）
 - 项目 → 对话、Chat、fork、compact、abort、切换模型和思考等级（ADR-0007）
 - 编码工具 read / write / edit / bash；AGENTS.md 与 Skills 上下文（ADR-0006）
-- 展示类型 `pinomad.todo`、`pinomad.approval` 和兜底渲染（ADR-0005）
+- 展示类型 `pinomad.todo`、`pinomad.question`、`pinomad.diff` 和兜底渲染（ADR-0005；`pinomad.approval` 后被 ADR-0011 换掉）
 - 远程访问第一期：Noise IK 安全通道、扫码配对、设备登记与吊销，传输只有局域网直连；出门在外可以自备 Tunnel 或 tailnet，配合 `--public-url` 使用（ADR-0008）
 - 宿主常驻：用户级系统服务、等空闲重启、源码检出升级、协议版本检查（ADR-0009）
 - Git 项目的对话默认在独立 worktree 里工作；fork 复制当前文件；归档清理（ADR-0010）
+- `pinomad.diff` 展示类型；工具结果 `details` 声明展示类型；edit/write 渲染成 diff（ADR-0005、0011）
+- 结构化提问 `ask_user_question` 和 `pinomad.question`，取代审批（ADR-0011）
+- 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
 
-## M1：并行任务的审阅与对齐 ← 进行中
-
-- `pinomad.diff` 展示类型；工具结果的 `details` 能声明展示类型（ADR-0005 遗留）
-- 结构化提问工具 `ask_user_question` 和 `pinomad.question`，取代审批（ADR-0011）
-- 对话级改动面板：整条对话相对检出起点的 git diff，包括 bash 改的文件
+## M1：并行任务的审阅与对齐（已完成）
 
 ## M2：coding 能力补齐
 
