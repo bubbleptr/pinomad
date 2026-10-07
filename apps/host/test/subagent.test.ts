@@ -181,7 +181,8 @@ describe("subagent tool", () => {
     await child.waitForIdle(context);
     const view = await viewOf(host, childId);
     expect(isBusy(view)).toBe(false);
-    expect(isBusy(client.view.current().conversation!)).toBe(false);
+    // The client's view of the parent is a remote snapshot; its abort settles on its own schedule.
+    await waitForView(client.view, (current) => !isBusy(current.conversation!));
     expect(transcript(view).at(-1)).toMatchObject({ role: "assistant", stopReason: "aborted" });
     expect((transcript(view).at(-1)?.text.length ?? 0)).toBeLessThan(LONG_ANSWER.length);
     expect(client.view.current().conversation!.conversation.id).toBe(parentId);
