@@ -2,14 +2,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
+import {
+  fauxAssistantMessage,
+  type FauxModelDefinition,
+  fauxProvider,
+  type FauxResponseStep,
+} from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { DurableViewSource } from "@pinomad/protocol/view.ts";
+import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
 
 /** Cleanups registered during a test, run in reverse after it. */
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
@@ -33,6 +38,7 @@ export async function startFauxHost(
     projects,
     webRoot,
     remote,
+    fauxModels,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -42,31 +48,44 @@ export async function startFauxHost(
     /** Fixed, so clients reconnect to a restarted host. */
     port?: number;
     browserOrigins?: readonly string[];
-    /** Built-in extensions installed on the host. */
-    extensions?: OpenHostOptions["extensions"];
+    /**
+     * Built-in extensions installed on the host. A function receives the host's
+     * `models` and `modelSummaries`, for extensions configured from them.
+     */
+    extensions?:
+      | OpenHostOptions["extensions"]
+      | ((provided: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => OpenHostOptions["extensions"]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
     /** Built web client served on the gateway ports. */
     webRoot?: string;
     /** The 0.0.0.0 secure-channel listener; off by default. */
     remote?: OpenHostOptions["remote"];
+    /** The faux provider's model list instead of the default lone `faux-1` — include it to keep it. */
+    fauxModels?: readonly FauxModelDefinition[];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
   defer(dir.remove);
-  const faux = fauxProvider({ tokensPerSecond, tokenSize: { min: 1, max: 1 } });
+  const faux = fauxProvider({
+    tokensPerSecond,
+    tokenSize: { min: 1, max: 1 },
+    ...(fauxModels === undefined ? {} : { models: [...fauxModels] }),
+  });
   const models = createModels();
   models.setProvider(faux.provider);
   faux.setResponses(answers.map((answer) => (typeof answer === "string" ? fauxAssistantMessage(answer) : answer)));
   const model = faux.getModel();
+  const modelSummaries = (): ModelSummary[] =>
+    faux.models.map((each) => ({ provider: each.provider, modelId: each.id, name: each.name, contextWindow: each.contextWindow }));
   const host = await openHost({
     dataDir: dir.path,
     models,
-    modelSummaries: () => [{ provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow }],
+    modelSummaries,
     initialModel: { provider: model.provider, modelId: model.id },
     port,
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
-    ...(extensions === undefined ? {} : { extensions }),
+    ...(extensions === undefined ? {} : { extensions: typeof extensions === "function" ? extensions({ models, modelSummaries }) : extensions }),
     ...(projects === undefined ? {} : { projects }),
     ...(webRoot === undefined ? {} : { webRoot }),
     ...(remote === undefined ? {} : { remote }),

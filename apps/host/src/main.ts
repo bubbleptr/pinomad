@@ -9,13 +9,16 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { createModels } from "@earendil-works/pi-ai/models";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
+import type { BuiltinExtension } from "./builtin-extension.ts";
 import { question } from "./extensions/question.ts";
 import { coding } from "./extensions/coding.ts";
 import { createContext } from "./extensions/context.ts";
+import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
@@ -36,11 +39,19 @@ const { values } = parseArgs({
 });
 
 const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+// Extensions are built per options source: `subagent` validates `model` against
+// the same Models and advertised summaries the gateway serves.
+const extensionsFor = (models: Models, summaries: () => readonly ModelSummary[]): readonly BuiltinExtension[] => [
+  createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }),
+  coding,
+  todo,
+  question,
+  createSubagent({ models, modelSummaries: summaries, exclude: [question.extension] }),
+];
 const common = {
   dataDir,
   projects: values.project ?? [],
   port: Number(values.port),
-  extensions: [createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }), coding, todo, question],
   browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
   // Both gateway ports serve the built client; in service mode the loopback
   // port is the only web server around (ADR-0009 §7).
@@ -63,11 +74,12 @@ function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {
   // Every request gets a fresh step, so a request rerun after a crash streams it again.
   faux.setResponses(Array.from({ length: 1000 }, responses));
   const model = faux.getModel();
-  const summary = { provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow };
+  const summaries = () => [{ provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow }];
   return {
     ...common,
     models,
-    modelSummaries: () => [summary],
+    modelSummaries: summaries,
+    extensions: extensionsFor(models, summaries),
     initialModel: { provider: model.provider, modelId: model.id },
   };
 }
@@ -77,10 +89,12 @@ async function piOptions(): Promise<OpenHostOptions> {
   const settingsManager = SettingsManager.create(process.cwd());
   configureHarnessHttp(settingsManager);
   const initialModel = defaultModel(settingsManager, modelRuntime);
+  const summaries = () => modelSummaries(modelRuntime);
   return {
     ...common,
     models: modelRuntime,
-    modelSummaries: () => modelSummaries(modelRuntime),
+    modelSummaries: summaries,
+    extensions: extensionsFor(modelRuntime, summaries),
     settings: createHarnessSettings(settingsManager),
     ...(initialModel === undefined ? {} : { initialModel }),
   };
