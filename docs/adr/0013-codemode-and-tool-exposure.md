@@ -32,7 +32,10 @@ Durable 1.0.4 没有这两样东西：模型看到哪些工具只由 agent 的 `
    - `codemode` 不声明 `replay: "safe"`。宿主中途崩溃，整段脚本得到 `interrupted`；已经执行的调用不会撤销。中止父调用会经沙箱的 `signal` 取消正在跑的嵌套调用。
    - 结果交给脚本的形式：MCP 工具是它的 `CallToolResult`（含 `isError`、`structuredContent`）；read 读到图片时是图片块；其他工具是文本内容。工具报错时脚本里的调用 reject，错误文本就是工具的错误输出。
 
-5. **工具发现照搬 CLI 的脚本接口。** 脚本里有 `tools.<name>(args)`、`ALL_TOOLS`、`searchTools`（BM25）、`describeTool`、`describeNamespace`，以及 `text`、`image`、`console`、`return`、`exit`。`codemode` 的工具描述内联 `direct` 工具的声明（3000 token 左右的预算），`codemode` 类工具只列命名空间、不内联，所以 server 连上或断开不改变工具声明。
+5. **工具发现照搬 CLI 的脚本接口。** 脚本里有 `tools.<name>(args)`、`ALL_TOOLS`、`searchTools`（BM25）、`describeTool`、`describeNamespace`，以及 `text`、`image`、`console`、`return`、`exit`。
+   - `codemode` 的工具描述是固定文本，只讲脚本接口。Durable 的工具描述在注册时就定了，不能随对话变化。
+   - 随对话变化的部分放进系统提示词段 `codemode`：哪些已声明的工具也能在脚本里调（参数相同，不再重复声明），以及只能在脚本里调的命名空间（名字、说明、工具数）。`codemode` 类工具不内联声明，脚本用 `describeTool` 查。
+   - server 连上或断开只改这个提示词段（Durable 以追加的系统消息生效），不改工具声明，prompt cache 的前缀不受影响。
 
 6. **不提供 `store` / `load` 和 `models`。** `store` 要一个跟着 fork 走的可回退文档，`models`（分类、图片模型）目前没有使用场景；都等有需求再加。
 
