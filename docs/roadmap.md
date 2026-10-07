@@ -34,6 +34,17 @@
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
 - 对话列表里提示"有问题等你回答"，和推送通知一起做（ADR-0011）
 
+## 待定优先级：代码在别的机器上跑
+
+coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外，还有代码在哪执行。现在宿主只能操作自己所在机器上的代码（ADR-0003）。M2 做完、开始设计中继之前再决定优先级。
+
+- 用 `@earendil-works/pi-env`（1.0.4 起官方提供，SSH 部署 Rust 守护进程的 `RemoteExecutionEnv`）支持远端机器上的项目：宿主和 Durable 状态留在本机，工具在远端执行（需要新 ADR）
+  - 项目要记录所在机器；每个对话创建的 env 不再固定是 `NodeExecutionEnv`（`host.ts`）
+  - `checkout.ts` 的 worktree、fork 快照、改动 diff 和 `organization.ts` 的路径检查现在直接用本机 `node:fs` / `child_process`，要改成经由 env 执行；在那之前，新的 git 操作尽量收在 `checkout.ts` 里
+  - 主机密钥确认、SSH 凭据管理的界面；宿主持有多台机器的凭据，安全边界随之变大
+  - 不解决客户端连宿主的问题（仍靠 M3 中继），宿主也要能连到目标机器
+- 每个任务一台临时机器或容器，作为 worktree 之外更彻底的并行隔离方式
+
 ## M4：客户端完善
 
 - 桌面端（Electron 外壳，按 ADR-0001 从 Pace 复制）
@@ -51,6 +62,7 @@
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）
 - 协议版本号靠人工在破坏性变更时加一，没有机器检查（ADR-0009）
 - macOS 日志不轮转（ADR-0009）
+- `@earendil-works/*` 锁在 1.0.0，评审并升级到 1.0.4（ADR-0002）。1.0.3/1.0.4 的破坏性变更针对自己实现的 `ExecutionEnv`，我们只直接用 `NodeExecutionEnv`，预计影响小；另外三个包的变更还没看。放在 M2 之前做，grep/find/ls 可以用上新增的 `openDirReader()`、`scanLines()`
 
 ## 不在计划内
 
