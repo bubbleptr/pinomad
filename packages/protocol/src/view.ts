@@ -4,7 +4,7 @@
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { DeviceEntry } from "./devices.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
-import type { PresentationType } from "./presentation.ts";
+import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 
 export interface ModelSummary extends ModelRef {
   readonly name: string;
@@ -62,6 +62,8 @@ export interface DurableView {
   readonly connection: ConnectionState;
   /** The shown conversation's extension documents, in the host's order. */
   readonly docs: readonly ExtensionDocView[];
+  /** How the host wants each tool's result `details` rendered (ADR-0005). */
+  readonly toolPresentations: Record<string, PresentationType>;
   /** Paired devices on the host (ADR-0008); empty while remote access is off. */
   readonly devices: readonly DeviceEntry[];
 }
@@ -92,8 +94,10 @@ export interface DurableController {
   switchConversation(id: ConversationId): Promise<void>;
   /** Fork the shown conversation at an entry, switch to the fork, and send it `prompt`. */
   fork(entryId: string, prompt: string, removeTools?: readonly string[]): Promise<void>;
-  /** Answer a pending approval request of the document `kind`; failures surface as notices. */
-  decide(kind: string, requestId: string, approved: boolean): Promise<void>;
+  /** Answer a pending `pinomad.question` request; failures surface as notices. */
+  answer(kind: string, requestId: string, answers: QuestionAnswer[]): Promise<void>;
+  /** The shown conversation's file changes; unavailable for Chat and non-git checkouts. */
+  changes(): Promise<{ available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean }>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */

@@ -1,7 +1,7 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { Home, Project } from "./organization.ts";
-import type { PresentationType } from "./presentation.ts";
+import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { ModelSummary, Notice, SessionInfo } from "./view.ts";
 
 /**
@@ -25,7 +25,7 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
 /** Bumped on breaking frame/stream changes; compared against the hello frame's `protocol`. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -60,10 +60,18 @@ export interface CallMethods {
     args: { conversationId: ConversationId; entryId: string; removeTools?: readonly string[] };
     result: { conversationId: ConversationId };
   };
-  /** Answer a pending `pinomad.approval` request; `first` is true for the write that settled it. */
-  decide: {
-    args: { conversationId: ConversationId; kind: string; requestId: string; approved: boolean };
-    result: { outcome: "approved" | "rejected" | "cancelled"; first: boolean };
+  /** Answer a pending `pinomad.question` request; `first` is true for the write that settled it. */
+  answer: {
+    args: { conversationId: ConversationId; kind: string; requestId: string; answers: QuestionAnswer[] };
+    result: { first: boolean };
+  };
+  /**
+   * The shown conversation's file changes as a unified patch: a worktree diff
+   * vs its base commit, or a project directory's uncommitted diff vs HEAD.
+   */
+  changes: {
+    args: { conversationId: ConversationId };
+    result: { available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean };
   };
   /** A one-time pairing offer; `url` carries the host public key and the secret. */
   createPairing: { args: Record<string, never>; result: { url: string; expiresAt: number } };
@@ -81,6 +89,8 @@ export type ServerFrame =
       readonly models: readonly ModelSummary[];
       /** The conversation documents offered as `doc:` streams, in host order. */
       readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
+      /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
+      readonly toolPresentations: Record<string, PresentationType>;
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
@@ -140,8 +150,17 @@ export function isClientFrame(value: unknown): value is ClientFrame {
         conversationId() && typeof args.entryId === "string" && /^[1-9]\d*$/.test(args.entryId)
         && (args.removeTools === undefined || (Array.isArray(args.removeTools) && args.removeTools.every(nonempty)))
       );
-    case "decide":
-      return conversationId() && nonempty(args.kind) && nonempty(args.requestId) && typeof args.approved === "boolean";
+    case "answer":
+      return (
+        conversationId() && nonempty(args.kind) && nonempty(args.requestId) && Array.isArray(args.answers)
+        && args.answers.every(
+          (answer) =>
+            record(answer) && Array.isArray(answer.selected) && answer.selected.every((l) => typeof l === "string")
+            && (answer.other === undefined || typeof answer.other === "string"),
+        )
+      );
+    case "changes":
+      return conversationId();
     case "addProject":
     case "removeProject":
       return nonempty(args.path);

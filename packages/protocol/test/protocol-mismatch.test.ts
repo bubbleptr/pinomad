@@ -33,6 +33,7 @@ function fakeTransport(protocols: readonly number[]): Fake {
         session: { id: "fake", directory: "" },
         models: [],
         docs: [],
+        toolPresentations: {},
       };
       queueMicrotask(() => handlers.message(JSON.stringify(hello)));
       return {
