@@ -434,47 +434,52 @@ function resultContent(
     });
   }
   // Merge consecutive text blocks, then bound total text by the output token budget.
-  const merged: typeof items = [];
+  return truncateText(mergeText(items), (maxOutputTokens ?? 10_000) * 4);
+}
+
+type ResultItem = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
+/** Fold adjacent text blocks into one, keeping `\n` between them. */
+function mergeText(items: ResultItem[]): ResultItem[] {
+  const merged: ResultItem[] = [];
   for (const item of items) {
     const last = merged.at(-1);
     if (item.type === "text" && last?.type === "text") merged[merged.length - 1] = { type: "text", text: `${last.text}\n${item.text}` };
     else merged.push(item);
   }
-  return truncateText(merged, (maxOutputTokens ?? 10_000) * 4);
+  return merged;
 }
 
-function truncateText(
-  items: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[],
-  budget: number,
-): typeof items {
+/**
+ * Keep the first and last `budget` characters of text; images always survive,
+ * in place and in order. One walk over the items tracks cumulative text
+ * offsets, so an item straddling a kept boundary is sliced, and the single
+ * omission marker lands where the dropped range starts.
+ */
+function truncateText(items: ResultItem[], budget: number): ResultItem[] {
   const total = items.reduce((sum, item) => sum + (item.type === "text" ? item.text.length : 0), 0);
   if (total <= budget) return items;
   const headBudget = Math.floor(budget / 2);
-  const tailBudget = budget - headBudget;
-  const head: typeof items = [];
-  let used = 0;
+  const tailStart = total - (budget - headBudget);
+  const omitted = total - headBudget - (total - tailStart);
+  const out: ResultItem[] = [];
+  let offset = 0;
+  let marked = false;
   for (const item of items) {
-    if (used >= headBudget) break;
     if (item.type !== "text") {
-      head.push(item);
+      out.push(item);
       continue;
     }
-    const take = Math.min(headBudget - used, item.text.length);
-    head.push({ type: "text", text: item.text.slice(0, take) });
-    used += take;
-  }
-  const tail: typeof items = [];
-  let tailUsed = 0;
-  for (const item of [...items].reverse()) {
-    if (tailUsed >= tailBudget) break;
-    if (item.type !== "text") {
-      tail.unshift(item);
-      continue;
+    const end = offset + item.text.length;
+    const head = item.text.slice(0, Math.max(headBudget - offset, 0));
+    const tail = end > tailStart ? item.text.slice(Math.max(tailStart - offset, 0)) : "";
+    if (head !== "") out.push({ type: "text", text: head });
+    if (!marked && end >= headBudget) {
+      out.push({ type: "text", text: `\n[... ${omitted} characters omitted ...]\n` });
+      marked = true;
     }
-    const take = Math.min(tailBudget - tailUsed, item.text.length);
-    tail.unshift({ type: "text", text: item.text.slice(-take) });
-    tailUsed += take;
+    if (tail !== "") out.push({ type: "text", text: tail });
+    offset = end;
   }
-  const omitted = total - used - tailUsed;
-  return [...head, { type: "text", text: `\n[... ${omitted} characters omitted ...]\n` }, ...tail];
+  return mergeText(out);
 }

@@ -173,6 +173,37 @@ describe("codemode", () => {
     expect(resultText(result)).toContain("Script error: Error: boom");
   });
 
+  it("keeps image blocks when long script output is truncated", async () => {
+    const host = await startFauxHost(defer, {
+      extensions: extensionsFor,
+      answers: [
+        script([
+          '// @options: {"max_output_tokens": 100}',
+          'text("a".repeat(2000));',
+          'image({ type: "image", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", mimeType: "image/png" });',
+          'text("b".repeat(2000));',
+        ].join("\n")),
+        "done",
+      ],
+    });
+    const client = await connectTo(defer, host);
+    await startChat(client, "run it");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done",
+    );
+
+    const blocks = lastResult(client).content ?? [];
+    // The image sits in the omitted middle of the text but must survive truncation.
+    expect(blocks.filter((block) => block.type === "image")).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "text" });
+    expect((blocks[0] as { text: string }).text).toContain("Script completed");
+    const text = resultText(lastResult(client));
+    expect(text).toContain("characters omitted");
+    expect(blocks.at(-1)).toMatchObject({ type: "text" });
+    expect((blocks.at(-1) as { text: string }).text.endsWith("b".repeat(10))).toBe(true);
+  });
+
   it("lets a script catch a nested tool's error and continue", async () => {
     const project = await tempDir();
     defer(project.remove);
