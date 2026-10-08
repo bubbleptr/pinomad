@@ -1,10 +1,44 @@
+import { once } from "node:events";
+import { WebSocket } from "ws";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import type { CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
+import type { OpenedHost } from "../src/host.ts";
 import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
+let nextCall = 1;
+
+/** A raw client that can observe call results, which controller methods deliberately hide. */
+async function socketTo(host: OpenedHost) {
+  const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+  defer(() => socket.terminate());
+  const frames: ServerFrame[] = [];
+  socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
+  await once(socket, "open");
+  return { socket, frames };
+}
+
+function call<M extends keyof CallMethods>(
+  client: { socket: WebSocket; frames: ServerFrame[] },
+  method: M,
+  args: CallMethods[M]["args"],
+): Promise<Extract<ServerFrame, { type: "result" }>> {
+  const id = nextCall++;
+  client.socket.send(JSON.stringify({ type: "call", id, method, args }));
+  return (async () => {
+    for (;;) {
+      const found = client.frames.find(
+        (frame): frame is Extract<ServerFrame, { type: "result" }> => frame.type === "result" && frame.id === id,
+      );
+      if (found !== undefined) return found;
+      await once(client.socket, "message");
+    }
+  })();
+}
+
 const inboxOf = (view: { conversation?: { docs: Record<string, unknown> } }) =>
   ((view.conversation?.docs["pi.inbox"] ?? { items: [] }) as { items: { mode: string }[] }).items;
 
@@ -85,5 +119,106 @@ describe("remote controller", () => {
 
     await client.controller.submit("hello", "followUp");
     await waitForView(client.view, (view) => view.notices.some((notice) => notice.message === "No conversation selected"));
+  });
+
+  it("carries the host's defaults on hello and the models' thinking levels", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [
+        { id: "faux-1", name: "Faux Model" },
+        { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+      ],
+    });
+    const client = await connectTo(defer, host);
+
+    expect(client.view.current().defaults.model).toEqual({ provider: "faux", modelId: "faux-1" });
+    const summaries = client.view.current().models;
+    expect(summaries.find((each) => each.modelId === "faux-1")?.thinkingLevels).toEqual(["off"]);
+    const thinkerLevels = summaries.find((each) => each.modelId === "faux-thinker")?.thinkingLevels;
+    expect(thinkerLevels?.[0]).toBe("off");
+    expect(thinkerLevels).toContain("high");
+  });
+
+  it("creates a conversation with an explicit model and a clamped thinking level", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [
+        { id: "faux-1", name: "Faux Model" },
+        { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+      ],
+      answers: ["done"],
+    });
+    const client = await connectTo(defer, host);
+
+    // faux-thinker has no xhigh/max mapping; xhigh clamps down to high.
+    await client.controller.createConversation(
+      { kind: "chat" },
+      "hello",
+      { model: { provider: "faux", modelId: "faux-thinker" }, thinkingLevel: "xhigh" },
+    );
+    const id = client.view.current().conversation!.conversation.id;
+    const state = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
+    expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
+    expect(state?.thinkingLevel).toBe("high");
+  });
+
+  it("notices instead of creating when the requested model is unknown", async () => {
+    const host = await startFauxHost(defer);
+    const client = await connectTo(defer, host);
+
+    await client.controller.createConversation(
+      { kind: "chat" },
+      "hello",
+      { model: { provider: "faux", modelId: "nope" } },
+    );
+    await waitForView(client.view, (view) =>
+      view.notices.some((notice) => notice.level === "error" && notice.message === "Unknown model: faux/nope"),
+    );
+    expect(client.view.current().conversation).toBeUndefined();
+  });
+
+  it("sets a supported thinking level and notices an unsupported one", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+      answers: ["done"],
+    });
+    const client = await connectTo(defer, host);
+
+    const id = await startChat(client, "hello");
+    await client.controller.setThinkingLevel("medium");
+    await expect
+      .poll(async () => (await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT))?.thinkingLevel)
+      .toBe("medium");
+
+    await client.controller.setThinkingLevel("xhigh");
+    await waitForView(client.view, (view) =>
+      view.notices.some(
+        (notice) =>
+          notice.level === "error" && notice.message === "Thinking level xhigh is not supported by faux/faux-thinker",
+      ),
+    );
+  });
+
+  it("returns the existing conversation for a repeated create requestId with a now-unknown model", async () => {
+    const host = await startFauxHost(defer, { answers: ["first"] });
+    const client = await socketTo(host);
+
+    const first = await call(client, "createConversation", {
+      home: { kind: "chat" },
+      text: "hi",
+      requestId: "dup-1",
+      model: { provider: "faux", modelId: "faux-1" },
+    });
+    expect(first).toMatchObject({ ok: true });
+    const firstId = (first as { value?: { conversationId: string } }).value?.conversationId;
+    expect(firstId).toBeDefined();
+
+    // A retry of the same request resolves to the existing conversation even
+    // though its model is no longer known.
+    const second = await call(client, "createConversation", {
+      home: { kind: "chat" },
+      text: "hi",
+      requestId: "dup-1",
+      model: { provider: "faux", modelId: "removed" },
+    });
+    expect(second).toMatchObject({ ok: true, value: { conversationId: firstId } });
   });
 });

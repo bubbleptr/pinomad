@@ -2,7 +2,7 @@ import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { Home, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
-import type { ModelSummary, Notice, SessionInfo } from "./view.ts";
+import type { ConversationDefaults, ModelSummary, Notice, SessionInfo, ThinkingLevel } from "./view.ts";
 
 /**
  * A subscribable value: one conversation's view, one of its documents (`null`
@@ -26,7 +26,7 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
 /** Bumped on breaking frame/stream changes; compared against the hello frame's `protocol`. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -38,7 +38,15 @@ export interface CallMethods {
    * is in a repository; `"project"` works directly in the project directory.
    */
   createConversation: {
-    args: { home: Home; text: string; requestId: string; checkout?: "worktree" | "project" };
+    args: {
+      home: Home;
+      text: string;
+      requestId: string;
+      checkout?: "worktree" | "project";
+      /** Overrides the host's defaults for the new agent; the level clamps to the model. */
+      model?: ModelRef;
+      thinkingLevel?: ThinkingLevel;
+    };
     result: { conversationId: ConversationId };
   };
   archive: { args: { conversationId: ConversationId; archived: boolean }; result: null };
@@ -55,7 +63,8 @@ export interface CallMethods {
   abort: { args: { conversationId: ConversationId }; result: null };
   compact: { args: { conversationId: ConversationId; instructions?: string }; result: { taskId: string } };
   setModel: { args: { conversationId: ConversationId; model: ModelRef }; result: null };
-  cycleThinking: { args: { conversationId: ConversationId }; result: null };
+  /** Set the agent's thinking level; rejects when the model doesn't support it. */
+  setThinkingLevel: { args: { conversationId: ConversationId; level: ThinkingLevel }; result: null };
   /** A new ownerless conversation that sees this one's entries through `entryId`. */
   fork: {
     args: { conversationId: ConversationId; entryId: string; removeTools?: readonly string[] };
@@ -88,6 +97,8 @@ export type ServerFrame =
       readonly protocol: number;
       readonly session: SessionInfo;
       readonly models: readonly ModelSummary[];
+      /** New-conversation defaults; absent means the host has none. */
+      readonly defaults?: ConversationDefaults;
       /** The conversation documents offered as `doc:` streams, in host order. */
       readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
       /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
@@ -141,8 +152,9 @@ export function isClientFrame(value: unknown): value is ClientFrame {
         && nonempty(args.requestId)
       );
     case "abort":
-    case "cycleThinking":
       return conversationId();
+    case "setThinkingLevel":
+      return conversationId() && nonempty(args.level);
     case "compact":
       return conversationId() && (args.instructions === undefined || typeof args.instructions === "string");
     case "setModel":
@@ -171,6 +183,8 @@ export function isClientFrame(value: unknown): value is ClientFrame {
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
         && nonempty(args.text) && nonempty(args.requestId)
         && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
+        && (args.model === undefined || (record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId)))
+        && (args.thinkingLevel === undefined || nonempty(args.thinkingLevel))
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";

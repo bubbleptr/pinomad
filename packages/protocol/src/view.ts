@@ -2,14 +2,26 @@
 // pi's packages/coding-agent/src/experimental/durable/runtime.ts (MIT, Earendil Works).
 // `connection` is the one addition, since a remote view can lose its host.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { DeviceEntry } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 
+/** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
+export type ThinkingLevel = ModelThinkingLevel;
+
 export interface ModelSummary extends ModelRef {
   readonly name: string;
   readonly contextWindow: number;
+  /** Levels the model supports, always starting with "off"; a non-reasoning model reports ["off"]. */
+  readonly thinkingLevels: readonly ThinkingLevel[];
+}
+
+/** What a new conversation starts with; the host's configured defaults. */
+export interface ConversationDefaults {
+  readonly model?: ModelRef;
+  readonly thinkingLevel?: ThinkingLevel;
 }
 
 export interface Notice {
@@ -57,6 +69,8 @@ export interface DurableView {
   /** The shown conversation's worktree checkout (ADR-0010); absent for project-dir and Chat checkouts. */
   readonly checkout?: WorktreeCheckout;
   readonly models: readonly ModelSummary[];
+  /** The host's new-conversation defaults, from the hello frame. */
+  readonly defaults: ConversationDefaults;
   readonly notices: readonly Notice[];
   /** The live task graph while the task panel is open. */
   readonly tasks?: TaskGraph;
@@ -82,15 +96,24 @@ export interface DurableController {
   addProject(path: string): Promise<void>;
   /** Unregister a project; its directory and conversations are kept. */
   removeProject(path: string): Promise<void>;
-  /** Create a conversation at a home, send `text`, and show it. `checkout` selects project-dir over the worktree default. */
-  createConversation(home: Home, text: string, checkout?: "worktree" | "project"): Promise<void>;
+  /**
+   * Create a conversation at a home, send `text`, and show it. `checkout` selects
+   * project-dir over the worktree default; `model`/`thinkingLevel` override the
+   * host's defaults for the new agent (the level clamps to the model's levels).
+   */
+  createConversation(
+    home: Home,
+    text: string,
+    options?: { checkout?: "worktree" | "project"; model?: ModelRef; thinkingLevel?: ThinkingLevel },
+  ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
   /** Prompt when idle; otherwise steer or queue a follow-up. */
   submit(text: string, whenBusy: "steer" | "followUp"): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   abort(): Promise<void>;
-  cycleThinking(): Promise<void>;
+  /** Set the shown conversation's thinking level; rejects when the model can't take it. */
+  setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setModel(model: ModelRef): Promise<void>;
   toggleTasks(): Promise<void>;
   /** Show and talk to another conversation. */

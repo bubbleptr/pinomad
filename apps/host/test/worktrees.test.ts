@@ -167,7 +167,7 @@ describe("worktree checkouts", () => {
     });
     const client = await connectTo(defer, host);
 
-    await client.controller.createConversation({ kind: "project", path: repoDir }, "one", "project");
+    await client.controller.createConversation({ kind: "project", path: repoDir }, "one", { checkout: "project" });
     await settled(client, "one");
     expect(await realpath(cwdOf(client))).toBe(await realpath(repoDir));
     expect(client.view.current().checkout).toBeUndefined();
@@ -274,7 +274,7 @@ describe("worktree checkouts", () => {
     });
     const client = await connectTo(defer, host);
 
-    await client.controller.createConversation({ kind: "project", path: repoDir }, "parent", "project");
+    await client.controller.createConversation({ kind: "project", path: repoDir }, "parent", { checkout: "project" });
     await settled(client, "parent done");
     expect(await realpath(cwdOf(client))).toBe(await realpath(repoDir));
 

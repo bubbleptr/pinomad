@@ -23,6 +23,7 @@ import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
 import type { ScriptTool } from "./script-tools.ts";
 
@@ -90,7 +91,15 @@ function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {
   // Every request gets a fresh step, so a request rerun after a crash streams it again.
   faux.setResponses(Array.from({ length: 1000 }, responses));
   const model = faux.getModel();
-  const summaries = () => [{ provider: model.provider, modelId: model.id, name: model.name, contextWindow: model.contextWindow }];
+  const summaries = () => [
+    {
+      provider: model.provider,
+      modelId: model.id,
+      name: model.name,
+      contextWindow: model.contextWindow,
+      thinkingLevels: getSupportedThinkingLevels(model),
+    },
+  ];
   return {
     ...common,
     models,

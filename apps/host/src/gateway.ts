@@ -578,6 +578,7 @@ class GatewayClient {
       protocol: PROTOCOL_VERSION,
       session: options.session,
       models: options.modelSummaries(),
+      defaults: options.defaults,
       docs: (options.docs ?? []).map((doc) => ({
         kind: doc.token.definition.kind,
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
@@ -761,8 +762,11 @@ class GatewayClient {
             text: create.text,
             requestId: create.requestId,
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
+            ...(create.model === undefined ? {} : { model: create.model }),
+            ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
           },
           this.#options.defaults,
+          this.#options.models,
           context,
         );
         return { conversationId };
@@ -833,14 +837,15 @@ class GatewayClient {
         await conversation.configure({ model: ref, thinkingLevel: clampThinkingLevel(model, thinking) }, context);
         return null;
       }
-      case "cycleThinking": {
+      case "setThinkingLevel": {
+        const { level } = args as CallMethods["setThinkingLevel"]["args"];
         const agent = await this.#agent(conversation.id);
         const model = agent.model === undefined ? undefined : this.#options.models.getModel(agent.model.provider, agent.model.modelId);
         if (model === undefined) throw new Error("No model selected");
-        if (!model.reasoning) throw new Error("Current model does not support thinking");
-        const levels = getSupportedThinkingLevels(model);
-        const level = agent.thinkingLevel ?? "off";
-        await conversation.configure({ thinkingLevel: levels[(levels.indexOf(level) + 1) % levels.length] ?? "off" }, context);
+        if (!getSupportedThinkingLevels(model).includes(level)) {
+          throw new Error(`Thinking level ${level} is not supported by ${agent.model!.provider}/${agent.model!.modelId}`);
+        }
+        await conversation.configure({ thinkingLevel: level }, context);
         return null;
       }
       case "fork": {
