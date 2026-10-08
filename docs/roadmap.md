@@ -46,6 +46,20 @@ MCP 本身的后续，都等有明确需求再做：
 - 配置热加载、server 掉线或崩溃后的手动重连：现在都要重启宿主（`service -- restart` 等空闲）。
 - MCP resources / prompts 还没有接入方式和呈现。
 
+## M2.5：搬入 Pace 的界面（进行中）
+
+把 Pace 的对话界面和外框搬进 Web 客户端（ADR-0014）。按依赖顺序拆成 stacked PR：
+
+1. 视觉基础：Tailwind v4、token 桥、Montserrat、Hugeicons、`@/` 别名；现有界面不改结构，只换底子。
+2. 对话流：思维链（工具 step 行、思考行、状态行）、Markdown 和代码块；从 Durable 的 `ConversationView` 推导 `CotView`。edit / write 的 diff、codemode 的嵌套调用、工具结果图片、fork 按钮都要保留；子代理卡片能点进子对话（运行中也能点），查看子对话时能回到父对话。
+3. Composer：Pace 的 ChatPromptInput、排队消息、运行失败恢复。
+4. 外框和首页：侧栏结构、首页 hero、带"模型 · 思考等级"选择的 Composer；新建对话可以选模型（`createConversation` 加 `model`，协议 v4）。保留窄屏布局。
+
+之后接着做（细节到时再定）：
+- 子代理在侧栏的位置（现在挂在父对话下，标题是任务描述开头，分不清）。
+- 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
+- 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
+
 ## M3：在哪都能连
 
 - 可以自己部署的中继（ADR-0008 第二期）；同时按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
@@ -69,9 +83,6 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 - 桌面端（Electron 外壳，按 ADR-0001 从 Pace 复制）
 - 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）
-- 取消归档、查看已归档对话
-- 新建对话时选择模型
-- 对话自动起名（ADR-0007 遗留）
 
 ## 等上游
 

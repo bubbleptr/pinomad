@@ -1,6 +1,6 @@
-import "@astryxdesign/core/reset.css";
-import "@astryxdesign/core/astryx.css";
-import "@astryxdesign/theme-neutral/theme.css";
+// Astryx CSS is @imported inside styles.css (after tailwindcss) so its
+// cascade layers outrank Tailwind preflight.
+import "./app/styles.css";
 import { Theme } from "@astryxdesign/core";
 import { neutralTheme } from "@astryxdesign/theme-neutral/built";
 import { StrictMode } from "react";

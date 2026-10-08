@@ -1,0 +1,270 @@
+@layer theme, base, properties, reset, astryx-base, astryx-theme, components, utilities;
+@import "tailwindcss";
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
+
+/* Montserrat is the body/heading family, overriding the Astryx neutral
+   theme's default stack via --font-family-body/heading below. Fontsource
+   registers the file as "Montserrat Variable", so the face is declared here
+   under the plain name the token stack asks for; Vite emits the woff2 into
+   the web bundle's assets. */
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@source "../**/*.{ts,tsx}";
+
+/* —— Font override ——
+   theme-neutral declares --font-family-* on :scope inside
+   @scope ([data-astryx-theme="neutral"]); at equal specificity a scoped
+   declaration beats an unscoped one on scope proximity, so the doubled
+   attribute selector lifts this rule above :scope (0,2,0 > 0,1,0) and the
+   override wins before proximity is even consulted. */
+[data-astryx-theme][data-astryx-theme] {
+  --font-family-body: Montserrat, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-family-heading: Montserrat, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* —— Semantic token bridge ——
+   Composes Astryx first-level tokens into the app-level semantic vocabulary.
+   Declared on both :root and the
+   Astryx theme scope: custom properties resolve chained var() references at
+   the element they are declared on, so re-declaring under [data-astryx-theme]
+   lets the bridge pick up theme-neutral's token overrides. */
+:root,
+[data-astryx-theme] {
+  --foreground: var(--color-text-primary);
+  --background: var(--color-background-body);
+  --surface: var(--color-background-surface);
+  --surface-muted: var(--color-background-muted);
+  --surface-secondary: var(--color-background-muted);
+  --surface-hover: var(--color-overlay-hover);
+  --muted: var(--color-text-secondary);
+  --default: var(--color-neutral);
+  --separator: var(--color-border);
+  --border: var(--color-border);
+  --primary: var(--color-accent);
+  --danger: var(--color-error);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --radius: var(--radius-element);
+  /* Squircle compensation: a continuous-curvature corner reads tighter than
+    a round corner at the same radius, so the scalable tokens run at 1.5x
+    the theme-neutral values (inner 6, element 10, container 12, page/chat
+    28). --radius-none and --radius-full stay fixed anchors. Values are px
+    because --radius-chat arrives from core in px. */
+  --radius-inner: 9px;
+  --radius-element: 15px;
+  --radius-container: 18px;
+  --radius-page: 42px;
+  --radius-chat: 42px;
+}
+
+/* Continuous-curvature (squircle) corners everywhere, iOS-style. Chromium
+   139+; engines without support keep plain round corners. corner-shape does
+   not inherit and cannot be carried inside a custom property, so it is
+   applied universally — it only has a visible effect where a border-radius
+   exists. Radii are compensated 1.5x in the bridge above. */
+@supports (corner-shape: squircle) {
+  *,
+  *::before,
+  *::after {
+    corner-shape: squircle;
+  }
+
+  /* ...but circles and pills must stay truly round: a squircle at
+     radius-full deforms a circle into a rounded square. .rounded-full
+     covers Tailwind markup (the convention — do not set radius-full via
+     inline styles); the .x* selectors are Astryx StyleX atomics emitting
+     border-radius:50% / var(--radius-full). Hashed but content-addressed;
+     test/design-system.test.ts fails loudly if an @astryxdesign/core upgrade
+     drops one. */
+  .rounded-full,
+  .x16rqkct,
+  .xy0xnkn,
+  .xjspbzw,
+  .x19415el,
+  .x1dgc8on,
+  .x1wc3881,
+  .x8agd5o {
+    corner-shape: round;
+  }
+}
+
+/* Tailwind utility names generated from the bridge. `inline` keeps the
+   var() references in the emitted utilities so they resolve at usage site,
+   inside the Astryx theme scope. */
+@theme inline {
+  --font-sans: var(--font-family-body);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-hover: var(--surface-hover);
+  --color-muted: var(--muted);
+  --color-default: var(--default);
+  --color-separator: var(--separator);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+}
+
+:root {
+  --pigui-icon-motion-duration: 800ms;
+
+  /* Pi mark colors: the only place color is allowed outside this bridge is
+     where "Pi is present" — the empty-state title shimmer and the composer's
+     brand accent border. Values are pi.dev's press-kit hex, kept verbatim for
+     dark mode; the light-mode leg reuses the same hue but lowers OKLCH
+     lightness via CSS relative-color syntax so each color still reads against
+     a white surface (yellow needed the deepest cut — #F1BE58 is too close to
+     white at full lightness). */
+  --pi-coral: light-dark(oklch(from #f09082 calc(l - 0.2) c h), #f09082);
+  --pi-blue: light-dark(oklch(from #4d9abf calc(l - 0.14) c h), #4d9abf);
+  --pi-yellow: light-dark(oklch(from #f1be58 calc(l - 0.3) c h), #f1be58);
+  --pigui-data-blue: #1677e8;
+  --pigui-data-orange: #ff6a2a;
+  --pigui-data-orange-strong: #f04c0c;
+  --pigui-data-amber: #f5b83d;
+  /* Categorical green, deliberately independent of `--success` ("operation
+     succeeded"). Sits between blue and orange in OKLCH lightness at a matching
+     chroma, so the categorical set reads evenly in either theme. */
+  --pigui-data-green: #0eab4e;
+  --pigui-data-peach: #ffe0d3;
+  --pigui-data-coral: #ffad8d;
+  --pigui-data-slate: #b7bec8;
+  --pigui-sidebar-wash-alpha: 32%;
+  --pigui-sidebar-item-radius: var(--radius);
+  --pigui-sidebar-content-padding-x: 0.5rem;
+  --pigui-sidebar-group-gap: 0.25rem;
+  --pigui-sidebar-indent: 0.8rem;
+  --pigui-sidebar-row-gap: var(--spacing-1);
+  --pigui-sidebar-row-height: 1.875rem;
+  --pigui-sidebar-row-icon-gap: 0.625rem;
+  --pigui-sidebar-row-padding-x: 0.5rem;
+  --pigui-sidebar-row-padding-y: 0.3125rem;
+  --pigui-sidebar-icon-box-size: 1.25rem;
+  --pigui-sidebar-icon-size: 1rem;
+  --pigui-sidebar-action-size: 1.25rem;
+  --pigui-sidebar-dropdown-padding: 0.25rem;
+  --pigui-sidebar-dropdown-menu-gap: var(--pigui-sidebar-row-gap);
+  --pigui-sidebar-dropdown-item-height: 1.75rem;
+  --pigui-sidebar-dropdown-item-gap: 0.5rem;
+  --pigui-sidebar-dropdown-item-padding-x: 0.5rem;
+  --pigui-sidebar-dropdown-item-padding-y: 0.25rem;
+  --pigui-sidebar-dropdown-icon-size: 0.875rem;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+}
+
+/* Low-frequency action buttons (send, steer/withdraw, refresh).
+   Astryx Button already presses via `transform: scale(0.98)`; neutralize
+   that so the individual `scale` does not multiply below 0.95. */
+.pigui-pressable {
+  transition: scale 150ms ease-out;
+}
+
+.pigui-pressable:active {
+  transform: none;
+  scale: 0.96;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pigui-pressable,
+  .pigui-pressable:active {
+    transition: none;
+    scale: none;
+    transform: none;
+  }
+}
+
+/* —— Scrollbars ——
+   Chromium's classic scrollbar is a wide, near-black slab that outweighs the
+   content beside it. A thin translucent thumb on a transparent track reads as
+   a hint rather than a control; deriving it from --foreground keeps it right
+   in both themes. `scrollbar-color` inherits, so one declaration covers every
+   scroll container; hovering the window darkens it slightly so it still
+   affords dragging. */
+:root {
+  scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+}
+
+/* Unlike scrollbar-color, scrollbar-width does not inherit. */
+* {
+  scrollbar-width: thin;
+}
+
+:root:hover {
+  scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent) transparent;
+}
+
+/* —— Scroll fade ——
+   Fade scrollable content at both ends of the scroll axis with a mask
+   gradient on the scroll container. */
+.pigui-scroll-fade {
+  --pigui-scroll-fade-size: var(--spacing-8);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--pigui-scroll-fade-size),
+    black calc(100% - var(--pigui-scroll-fade-size)),
+    transparent 100%
+  );
+}
+
+.pigui-scroll-fade-x {
+  --pigui-scroll-fade-size: var(--spacing-8);
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--pigui-scroll-fade-size),
+    black calc(100% - var(--pigui-scroll-fade-size)),
+    transparent 100%
+  );
+}
+
+* {
+  box-sizing: border-box;
+}
