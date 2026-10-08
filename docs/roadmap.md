@@ -46,7 +46,7 @@ MCP 本身的后续，都等有明确需求再做：
 - 配置热加载、server 掉线或崩溃后的手动重连：现在都要重启宿主（`service -- restart` 等空闲）。
 - MCP resources / prompts 还没有接入方式和呈现。
 
-## M2.5：搬入 Pace 的界面（进行中）
+## M2.5：搬入 Pace 的界面（主体已完成，余项暂缓）
 
 把 Pace 的对话界面和外框搬进 Web 客户端（ADR-0014）。按依赖顺序拆成 stacked PR：
 
@@ -56,17 +56,19 @@ MCP 本身的后续，都等有明确需求再做：
 4. 首页和 Composer（已完成）：草稿态变成 Pace 的首页——hero（"Build something useful with PiNomad"）、项目选择器、四条建议提示；新建对话可以选模型和思考等级（`createConversation` 加 `model` / `thinkingLevel`，hello 带默认模型，协议 v4）。Composer 换成 Pace 的 ChatPromptInput：左侧是"+"菜单和"模型 · 思考等级"胶囊，运行中带文字的草稿可以排队为 Follow-up 或 Steer，排队消息显示在输入框上方；footer 是位置行（Chat / Git worktree 加分支 / Project folder，草稿里项目可以选 worktree 还是直接在目录里跑）。Dock 的 Queue 区块撤掉，圆点只算运行中的任务。
 
 之后接着做（细节到时再定）：
+- **优先**：fork 和子代理在界面上怎么体现，还没有方案。现在两者都作为普通对话挂在侧栏的父对话下；子代理标题是任务描述开头，分不清各自在干什么（另见 M2 子代理后续）。M3 中继之后回来做。
 - 上下文用量指示（Pace 的位置行右侧有 context meter；我们的宿主还没暴露用量）。
 - 附件：ChatPromptInput 已经留好接口（drawer、onFiles），需要协议里能带附件的消息。
 - 斜杠命令和 @ 文件补全：Pace 的 trigger 菜单方案（leading token + typeahead）。
 - 撤回或改写排队中的消息（需要协议新增调用；Pace 是 queued-message 行内的 Withdraw / Steer 操作）。
 - 运行失败后的重试入口（Pace 的 run-failure 恢复）。`ChatRunFailure` 已搬入并支持 `onRetry`，`chat-entries.tsx` 还没传，按钮不显示。
 - 侧栏行显示运行中标记和更新时间：对话摘要要先加 `updatedAt` 和是否在跑。
-- 子代理在侧栏的位置（现在挂在父对话下，标题是任务描述开头，分不清）。
 - 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
 - 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
 
-## M3：在哪都能连
+## M3：在哪都能连（下一步）
+
+先做中继。场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。
 
 - 可以自己部署的中继（ADR-0008 第二期）；同时按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
