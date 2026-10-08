@@ -536,7 +536,19 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
   // Scope to the toast itself: the message also lands in Astryx's hidden
   // assertive live region, making a bare role=alert match ambiguous.
-  await page.locator("[data-toast-id]").getByText("No such directory", { exact: false }).waitFor();
+  const toast = page.locator("[data-toast-id]");
+  await toast.getByText("No such directory", { exact: false }).waitFor();
+
+  // An undismissed error toast must not sit over the composer or the header's
+  // actions — it would block sending until dismissed.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"));
+  const toastBox = (await toast.boundingBox())!;
+  const composerBox = (await page.getByRole("textbox").boundingBox())!;
+  const dockBox = (await page.getByRole("button", { name: "Dock", exact: true }).boundingBox())!;
+  const intersects = (a: typeof toastBox, b: typeof toastBox) =>
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  expect(intersects(toastBox, composerBox)).toBe(false);
+  expect(intersects(toastBox, dockBox)).toBe(false);
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {

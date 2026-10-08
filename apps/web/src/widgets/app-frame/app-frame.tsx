@@ -163,7 +163,7 @@ export function AppFrame({
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the dock
           that lists them starts closed. isTopLayer lifts it above dialogs. */}
-      <ToastViewport position="bottomEnd" isTopLayer>
+      <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
         <NoticeToasts notices={view.notices} />
       </ToastViewport>
     </>
