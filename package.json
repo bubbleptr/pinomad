@@ -13,6 +13,7 @@
     "build": "cd apps/web && bun run build",
     "host": "node apps/host/src/main.ts",
     "relay": "node apps/relay/src/main.ts",
+    "relay-id": "node apps/host/src/cli/relay-id.ts",
     "web": "cd apps/web && bun run dev",
     "link": "node apps/host/src/cli/web-link.ts",
     "pair": "node apps/host/src/cli/pair.ts",

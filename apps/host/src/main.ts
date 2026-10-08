@@ -3,7 +3,8 @@
 // is a gateway client. Run on Node, not Bun (node:sqlite, pi-durable's engines).
 //
 //   node apps/host/src/main.ts [--data-dir DIR] [--port 7420] [--project DIR]...
-//   node apps/host/src/main.ts --remote-port 7422 [--public-url URL]      # remote access (ADR-0008)
+//   node apps/host/src/main.ts --remote-port 7422 [--public-url URL]      # remote access, LAN (ADR-0008)
+//   node apps/host/src/main.ts --relay https://relay.example.com          # remote access via relay
 //   node apps/host/src/main.ts --faux "scripted answer" [--faux-tps 40]   # no real model, for tests
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -38,6 +39,7 @@ const { values } = parseArgs({
     "browser-origin": { type: "string", multiple: true },
     "remote-port": { type: "string" },
     "public-url": { type: "string" },
+    relay: { type: "string" },
   },
 });
 
@@ -82,6 +84,7 @@ const common = {
           ...(values["public-url"] === undefined ? {} : { publicUrl: values["public-url"] }),
         },
       }),
+  ...(values.relay === undefined ? {} : { relay: { origin: values.relay } }),
 };
 
 function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {
@@ -139,6 +142,7 @@ console.log(
     model,
     web,
     ...(host.remote === undefined ? {} : { remote: host.remote.advertiseUrl }),
+    ...(host.relay === undefined ? {} : { relay: { origin: host.relay.origin, hostId: host.relay.hostId } }),
   }),
 );
 

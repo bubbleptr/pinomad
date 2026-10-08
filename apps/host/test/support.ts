@@ -41,6 +41,7 @@ export async function startFauxHost(
     projects,
     webRoot,
     remote,
+    relay,
     fauxModels,
     mcpConfig,
   }: {
@@ -70,6 +71,8 @@ export async function startFauxHost(
     webRoot?: string;
     /** The 0.0.0.0 secure-channel listener; off by default. */
     remote?: OpenHostOptions["remote"];
+    /** Dial a relay for inbound secure-channel devices; off by default. */
+    relay?: OpenHostOptions["relay"];
     /** The faux provider's model list instead of the default lone `faux-1` — include it to keep it. */
     fauxModels?: readonly FauxModelDefinition[];
     /** MCP config file for the host's bridge (ADR-0012). */
@@ -114,6 +117,7 @@ export async function startFauxHost(
     ...(projects === undefined ? {} : { projects }),
     ...(webRoot === undefined ? {} : { webRoot }),
     ...(remote === undefined ? {} : { remote }),
+    ...(relay === undefined ? {} : { relay }),
     ...(mcpConfig === undefined ? {} : { mcpConfig }),
   });
   defer(() => host.close());

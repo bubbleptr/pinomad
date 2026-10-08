@@ -20,6 +20,7 @@
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@earendil-works/pi-durable": "1.0.4",
         "@earendil-works/pi-mcp": "1.0.4",
+        "@noble/curves": "2.4.0",
         "@pinomad/protocol": "workspace:*",
         "diff": "8.0.4",
         "proper-lockfile": "4.1.2",
@@ -29,6 +30,7 @@
         "ws": "8.22.0",
       },
       "devDependencies": {
+        "@pinomad/relay": "workspace:*",
         "@types/proper-lockfile": "4.1.4",
         "@types/ws": "8.18.2",
       },
