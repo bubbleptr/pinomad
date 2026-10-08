@@ -55,15 +55,19 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   expect((await composer.boundingBox())!.width).toBeGreaterThan(300);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
+  // A single header row: the old button bar is gone.
+  expect(await page.getByRole("button", { name: "Conversations" }).count()).toBe(0);
+  expect(await page.getByRole("button", { name: "Live state" }).count()).toBe(0);
+
   // The initial screen is a draft chat; the first message creates the conversation.
   await composer.fill("hello");
   await composer.press("Enter");
   await page.getByText("step-0", { exact: false }).waitFor();
 
-  await page.getByRole("button", { name: "Conversations", exact: true }).click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "hello", exact: true }).click();
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
-  await page.getByRole("button", { name: "Live state", exact: true }).click();
+  await page.getByRole("button", { name: "Dock", exact: true }).click();
   await page.getByRole("dialog").getByText("No live tasks").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Controls", exact: true }).click();
@@ -185,6 +189,7 @@ it("renders todo and a pending question card on every page and shares one answer
   await b.getByRole("button", { name: "plan and deploy", exact: true }).click();
 
   for (const page of [a, b]) {
+    await page.getByRole("button", { name: "Dock", exact: true }).click();
     const panel = page.getByLabel("Live state");
     await panel.getByText("Investigate the report", { exact: true }).waitFor();
     // The pending question renders above the composer in the main column.
@@ -213,6 +218,7 @@ it("renders a document that fails its presentation schema as key-value fallback"
 
   const page = await openPage(host, 1280, webOrigin);
   await page.getByRole("button", { name: "has a bad doc", exact: true }).click();
+  await page.getByRole("button", { name: "Dock", exact: true }).click();
   const panel = page.getByLabel("Live state");
   await panel.getByText("todo.list", { exact: true }).waitFor();
   await panel.getByText("items", { exact: true }).waitFor();
@@ -285,11 +291,12 @@ it("opens a subagent's conversation from its card and returns to the parent", as
   await page.getByRole("button", { name: /Worked for/, exact: false }).click();
   await page.getByRole("button", { name: /Used count the lines/, exact: false }).click();
   await page.getByRole("button", { name: "Open conversation", exact: true }).click();
-  await page.getByRole("button", { name: "Back to parent", exact: true }).waitFor();
+  // The header breadcrumb is <parent title> › <child title>.
+  await page.getByRole("button", { name: "Back to delegate", exact: true }).waitFor();
   await page.getByText("child answer", { exact: true }).waitFor();
 
-  await page.getByRole("button", { name: "Back to parent", exact: true }).click();
-  await expect.poll(() => page.getByRole("button", { name: "Back to parent", exact: true }).count()).toBe(0);
+  await page.getByRole("button", { name: "Back to delegate", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "Back to delegate", exact: true }).count()).toBe(0);
   await page.getByText("parent final", { exact: true }).waitFor();
 });
 
@@ -314,8 +321,8 @@ it("renders a real edit's diff inside the tool row instead of the raw args", asy
   });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
   await page.getByRole("textbox").fill("fix the notes");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
@@ -358,8 +365,8 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
   });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
   await page.getByRole("textbox").fill("fix the notes");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
@@ -395,8 +402,8 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByRole("group", { name: projectName }).waitFor();
 
   // A new conversation in the project runs under it.
-  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
   await page.getByText(`New conversation in ${projectName}`, { exact: true }).waitFor();
   await page.getByRole("textbox").fill("project work");
   await page.getByRole("textbox").press("Enter");
@@ -412,6 +419,7 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByText("chat answer", { exact: true }).waitFor();
   const chats = page.getByRole("group", { name: "Chats" });
   await chats.getByRole("button", { name: "chat work", exact: true }).waitFor();
+  await chats.getByRole("button", { name: "chat work", exact: true }).hover();
   await chats.getByRole("button", { name: "Conversation actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await expect.poll(() => chats.getByRole("button", { name: "chat work", exact: true }).count()).toBe(0);
@@ -428,6 +436,79 @@ it("organizes conversations under projects and chats", async () => {
     .organized.projects[0]!.conversations.find((node) => node.children.length > 0)!;
   expect(parentNode.children[0]!.summary.kind).toBe("fork");
   await page.getByText("fork answer", { exact: true }).waitFor();
+});
+
+it("keeps the dock closed until asked and keeps it open across conversations", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  const composer = page.getByRole("textbox");
+  await composer.fill("first chat");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await startChat(observer, "second chat");
+  await page.getByRole("button", { name: "second chat", exact: true }).waitFor();
+
+  // Closed by default: nothing of the live state is mounted.
+  expect(await page.getByLabel("Live state").count()).toBe(0);
+  const dockToggle = page.getByRole("button", { name: "Dock", exact: true });
+  expect(await dockToggle.getAttribute("aria-pressed")).toBe("false");
+  await dockToggle.click();
+  const panel = page.getByLabel("Live state");
+  await panel.getByText("No live tasks", { exact: true }).waitFor();
+  expect(await page.getByRole("button", { name: "Dock", exact: true }).getAttribute("aria-pressed")).toBe("true");
+
+  // Switching conversations keeps the dock open.
+  await page.getByRole("button", { name: "second chat", exact: true }).click();
+  await page.getByText("second answer", { exact: true }).waitFor();
+  await panel.getByText("No live tasks", { exact: true }).waitFor();
+
+  // And closes again.
+  await page.getByRole("button", { name: "Dock", exact: true }).click();
+  await expect.poll(() => page.getByLabel("Live state").count()).toBe(0);
+});
+
+it("puts the conversation title in the header and the path inside the dock", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  const composer = page.getByRole("textbox");
+  await composer.fill("title me");
+  await composer.press("Enter");
+  await page.getByText("an answer", { exact: true }).waitFor();
+
+  // The header carries the conversation's title — not its path.
+  await expect.poll(() => page.locator("h1").textContent()).toBe("title me");
+  expect(await page.getByText("/chats/", { exact: false }).count()).toBe(0);
+
+  // The path moved into the dock's Workspace section.
+  await page.getByRole("button", { name: "Dock", exact: true }).click();
+  const panel = page.getByLabel("Live state");
+  await panel.getByText("Workspace", { exact: true }).waitFor();
+  await panel.getByText("/chats/", { exact: false }).waitFor();
+});
+
+it("collapses the sidebar into the header toggle and restores it", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "New chat", exact: true }).count()).toBe(0);
+  const expand = page.getByRole("button", { name: "Expand sidebar", exact: true });
+  await expand.waitFor();
+
+  // The choice survives a reload.
+  await page.reload();
+  await expand.waitFor();
+  expect(await page.getByRole("button", { name: "New chat", exact: true }).count()).toBe(0);
+
+  await expand.click();
+  await page.getByRole("button", { name: "New chat", exact: true }).waitFor();
+  await expect.poll(() => page.getByRole("button", { name: "Expand sidebar" }).count()).toBe(0);
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {
@@ -702,7 +783,10 @@ it("opens a switched conversation at its latest answer instead of the old scroll
   // Scroll chat A to the very top with a real wheel gesture over the messages.
   await page.mouse.move(640, 400);
   await page.mouse.wheel(0, -5000);
-  await expect.poll(async () => (await scrollerOf(page, "A 149"))?.top ?? 99999).toBeLessThan(20);
+  await page.mouse.wheel(0, -5000);
+  // The smooth-scroll spring can settle a few px short of 0 — "near the top" is
+  // enough to prove A is scrolled away from its bottom.
+  await expect.poll(async () => (await scrollerOf(page, "A 149"))?.top ?? 99999).toBeLessThan(40);
 
   // Switching conversations must not inherit that scroll position.
   await chats.getByRole("button", { name: "second chat", exact: true }).click();

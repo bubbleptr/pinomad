@@ -1,0 +1,445 @@
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { KeyPair } from "@pinomad/protocol/noise.ts";
+import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus } from "../../shared/ui/icons.tsx";
+import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
+import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
+import { DevicesDialog } from "./devices-dialog.tsx";
+
+const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
+
+const readExpandedProjects = (): Record<string, boolean> => {
+  const raw = window.localStorage.getItem(PROJECT_EXPANDED_KEY);
+  if (raw === null) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, boolean] => typeof entry[0] === "string" && typeof entry[1] === "boolean",
+      ),
+    );
+  } catch {
+    return {};
+  }
+};
+
+const writeExpandedProjects = (expanded: Record<string, boolean>): void => {
+  window.localStorage.setItem(PROJECT_EXPANDED_KEY, JSON.stringify(expanded));
+};
+
+const flattenNodes = (nodes: readonly ConversationNode[]): ConversationNode[] =>
+  nodes.flatMap((node) => [node, ...flattenNodes(node.children)]);
+
+function useSidebarSectionExpansion(section: "chats" | "projects") {
+  const storageKey = `pinomad.sidebarSection.${section}.expanded`;
+  const [expanded, setExpanded] = useState(() =>
+    typeof window === "undefined" || window.localStorage.getItem(storageKey) !== "false",
+  );
+  const contentId = useId();
+  const toggle = () => {
+    const next = !expanded;
+    window.localStorage.setItem(storageKey, String(next));
+    setExpanded(next);
+  };
+  return { expanded, contentId, toggle };
+}
+
+/** The SideNav's 40px header band: collapse toggle (desktop only) + connection dot. */
+export function SidebarHeaderBand({
+  connection,
+  inDrawer,
+  onCollapse,
+}: {
+  connection: DurableView["connection"];
+  inDrawer?: boolean;
+  onCollapse?: () => void;
+}) {
+  return (
+    <div className="flex h-10 items-center justify-between px-2">
+      {inDrawer ? <span /> : (
+        <IconButton
+          icon={<AnimatedSidebar className="size-4" />}
+          label="Collapse sidebar"
+          size="sm"
+          variant="ghost"
+          onClick={onCollapse}
+        />
+      )}
+      {connection === "connected" ? (
+        <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
+      ) : (
+        <StatusDot variant={connection === "closed" ? "error" : "warning"} label={connection} tooltip={connection} isPulsing />
+      )}
+    </div>
+  );
+}
+
+/** Footer slot: the Devices entry. Renders its own dialog. */
+export function SidebarFooter({
+  view,
+  remote,
+  device,
+  onSelect,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  device?: KeyPair;
+  onSelect?: () => void;
+}) {
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  return (
+    <>
+      <SideNavItem
+        icon={<Computer aria-hidden="true" />}
+        label="Devices"
+        isDisabled={view.connection !== "connected"}
+        onClick={() => {
+          setDevicesOpen(true);
+          onSelect?.();
+        }}
+      />
+      {devicesOpen ? <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} /> : null}
+    </>
+  );
+}
+
+// Codex-style section header (Pace's SidebarSectionHeader): the title is the
+// collapse toggle and the creation action only surfaces on hover/focus.
+// SideNavSection keeps its own title visually hidden so the group still has
+// an accessible name.
+function SidebarSectionHeader({
+  title,
+  expanded,
+  contentId,
+  onToggle,
+  actions,
+}: {
+  title: string;
+  expanded: boolean;
+  contentId: string;
+  onToggle: () => void;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="pigui-sidenav-section-header">
+      <button
+        type="button"
+        className="pigui-sidenav-section-toggle"
+        aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={onToggle}
+      >
+        <span className="pigui-sidenav-section-toggle__title">{title}</span>
+        <ChevronRight
+          aria-hidden="true"
+          className="pigui-sidenav-section-toggle__chevron"
+          data-expanded={expanded ? "true" : "false"}
+        />
+      </button>
+      <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+        {actions}
+      </HStack>
+    </div>
+  );
+}
+
+/** Fixed-size glyph slot so rows with and without status stay aligned. */
+function SessionGlyphSlot() {
+  return <span className="pigui-session-glyph" data-testid="session-glyph" />;
+}
+
+function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
+  const StateIcon = expanded ? FolderOpenState : FolderClosed;
+  return (
+    <span
+      aria-hidden="true"
+      className="pigui-project-expansion-indicator"
+      data-expanded={expanded ? "true" : "false"}
+    >
+      <StateIcon className="pigui-project-expansion-indicator__state" />
+      <ChevronRight className="pigui-project-expansion-indicator__chevron" />
+    </span>
+  );
+}
+
+function ConversationRow({
+  node,
+  depth,
+  shown,
+  disabled,
+  remote,
+  onSelect,
+}: {
+  node: ConversationNode;
+  depth: number;
+  shown: ConversationId | undefined;
+  disabled: boolean;
+  remote: RemoteDurable;
+  onSelect?: () => void;
+}) {
+  const { summary } = node;
+  const item = (
+    <SideNavItem
+      icon={<SessionGlyphSlot />}
+      label={summary.title ?? "New conversation"}
+      isSelected={summary.id === shown}
+      isDisabled={disabled}
+      // Reserve the overlay actions' width so the label truncates before them.
+      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
+      onClick={() => {
+        void remote.controller.switchConversation(summary.id);
+        onSelect?.();
+      }}
+    >
+      {node.children.length === 0
+        ? undefined
+        : node.children.map((child) => (
+            <ConversationRow
+              key={child.summary.id}
+              node={child}
+              depth={depth + 1}
+              shown={shown}
+              disabled={disabled}
+              remote={remote}
+              onSelect={onSelect}
+            />
+          ))}
+    </SideNavItem>
+  );
+  if (depth > 0) return item;
+  // Same overlay-sibling pattern as the project row: the actions menu cannot
+  // live inside the SideNavItem <button>.
+  return (
+    <div className="pigui-sidenav-row-with-actions pigui-sidenav-session-row">
+      {item}
+      <HStack className="pigui-sidenav-row-actions pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+        <DropdownMenu
+          hasChevron={false}
+          button={{
+            icon: <MoreHorizontal aria-hidden="true" />,
+            isIconOnly: true,
+            label: "Conversation actions",
+            size: "sm",
+            variant: "ghost",
+            isDisabled: disabled,
+          }}
+          items={[
+            {
+              label: "Archive",
+              icon: <Archive aria-hidden="true" size={16} />,
+              onClick: () => void remote.controller.archive(summary.id, true),
+            },
+          ]}
+        />
+      </HStack>
+    </div>
+  );
+}
+
+/**
+ * The sidebar's shared content — the "New chat" entry plus the Chats and
+ * Projects sections — rendered inside the desktop SideNav and inside MobileNav
+ * on narrow screens.
+ */
+export function SidebarContent({
+  view,
+  remote,
+  drafting,
+  shownId,
+  onDraft,
+  onSelect,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  drafting: boolean;
+  shownId: ConversationId | undefined;
+  onDraft: (home: Home) => void;
+  onSelect?: () => void;
+}) {
+  const disabled = view.connection !== "connected";
+  const [addOpen, setAddOpen] = useState(false);
+  const [removing, setRemoving] = useState<Project>();
+  const [expandedProjects, setExpandedProjects] = useState(readExpandedProjects);
+  const chats = useSidebarSectionExpansion("chats");
+  const projects = useSidebarSectionExpansion("projects");
+  const start = (home: Home): void => {
+    onDraft(home);
+    onSelect?.();
+  };
+  const shownProjectPath = useMemo(
+    () =>
+      shownId === undefined
+        ? undefined
+        : view.organized.projects.find(({ conversations }) =>
+            flattenNodes(conversations).some((node) => node.summary.id === shownId),
+          )?.project.path,
+    [shownId, view.organized.projects],
+  );
+  // Keep the shown conversation's project open even if the user folded it.
+  useEffect(() => {
+    if (shownProjectPath === undefined) return;
+    setExpandedProjects((prev) => {
+      if (prev[shownProjectPath] !== false) return prev;
+      const next = { ...prev, [shownProjectPath]: true };
+      writeExpandedProjects(next);
+      return next;
+    });
+  }, [shownProjectPath]);
+  const toggleProject = (path: string): void =>
+    setExpandedProjects((prev) => {
+      const next = { ...prev, [path]: !(prev[path] ?? true) };
+      writeExpandedProjects(next);
+      return next;
+    });
+
+  return (
+    <>
+      <SideNavSection isHeaderHidden title="New chat">
+        <SideNavItem
+          icon={<AnimatedNewChat className="size-4" />}
+          label="New chat"
+          isSelected={drafting}
+          isDisabled={disabled}
+          onClick={() => start({ kind: "chat" })}
+        />
+      </SideNavSection>
+      <SideNavSection isHeaderHidden title="Chats">
+        <SidebarSectionHeader
+          title="Chats"
+          expanded={chats.expanded}
+          contentId={chats.contentId}
+          onToggle={chats.toggle}
+          actions={
+            <IconButton
+              icon={<Plus aria-hidden="true" />}
+              label="New chat without a project"
+              tooltip="New chat"
+              size="sm"
+              variant="ghost"
+              isDisabled={disabled}
+              onClick={() => start({ kind: "chat" })}
+            />
+          }
+        />
+        <VStack id={chats.contentId} gap={0.5}>
+          {chats.expanded ? (
+            view.organized.chats.length === 0 ? (
+              <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No chats" />
+            ) : (
+              view.organized.chats.map((node) => (
+                <ConversationRow
+                  key={node.summary.id}
+                  node={node}
+                  depth={0}
+                  shown={shownId}
+                  disabled={disabled}
+                  remote={remote}
+                  onSelect={onSelect}
+                />
+              ))
+            )
+          ) : null}
+        </VStack>
+      </SideNavSection>
+      <SideNavSection isHeaderHidden title="Projects">
+        <SidebarSectionHeader
+          title="Projects"
+          expanded={projects.expanded}
+          contentId={projects.contentId}
+          onToggle={projects.toggle}
+          actions={
+            <IconButton
+              icon={<Plus aria-hidden="true" />}
+              label="Add project"
+              tooltip="Add project"
+              size="sm"
+              variant="ghost"
+              isDisabled={disabled}
+              onClick={() => setAddOpen(true)}
+            />
+          }
+        />
+        <VStack id={projects.contentId} gap={0.5}>
+          {projects.expanded ? (
+            view.organized.projects.map(({ project, conversations }) => {
+                const expanded = expandedProjects[project.path] ?? true;
+                return (
+                  <div key={project.path} className="pigui-sidenav-row-with-actions">
+                    <SideNavItem
+                      collapsible={{ isCollapsed: !expanded, onCollapsedChange: () => toggleProject(project.path) }}
+                      icon={<ProjectExpansionIndicator expanded={expanded} />}
+                      label={project.name}
+                      isDisabled={disabled}
+                      // A <button> row cannot contain the interactive actions;
+                      // this only reserves their width so the label truncates
+                      // before the overlay.
+                      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
+                    >
+                      {conversations.length === 0 ? (
+                        <SideNavItem isDisabled label="No conversations" />
+                      ) : (
+                        conversations.map((node) => (
+                          <ConversationRow
+                            key={node.summary.id}
+                            node={node}
+                            depth={0}
+                            shown={shownId}
+                            disabled={disabled}
+                            remote={remote}
+                            onSelect={onSelect}
+                          />
+                        ))
+                      )}
+                    </SideNavItem>
+                    <HStack className="pigui-sidenav-row-actions" gap={0.5} vAlign="center">
+                      <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+                        <IconButton
+                          icon={<Plus aria-hidden="true" />}
+                          label={`New conversation in ${project.name}`}
+                          size="sm"
+                          variant="ghost"
+                          isDisabled={disabled}
+                          onClick={() => start({ kind: "project", path: project.path })}
+                        />
+                        <DropdownMenu
+                          hasChevron={false}
+                          button={{
+                            icon: <MoreHorizontal aria-hidden="true" />,
+                            isIconOnly: true,
+                            label: `Project actions for ${project.name}`,
+                            size: "sm",
+                            variant: "ghost",
+                            isDisabled: disabled,
+                          }}
+                          items={[
+                            {
+                              label: "Remove project",
+                              icon: <Archive aria-hidden="true" size={16} />,
+                              onClick: () => setRemoving(project),
+                            },
+                          ]}
+                        />
+                      </HStack>
+                    </HStack>
+                  </div>
+                );
+              })
+          ) : null}
+        </VStack>
+      </SideNavSection>
+      {addOpen ? <AddProjectDialog remote={remote} connected={!disabled} onClose={() => setAddOpen(false)} /> : null}
+      {removing === undefined ? null : (
+        <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
+      )}
+    </>
+  );
+}
