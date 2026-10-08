@@ -33,6 +33,18 @@
         "@types/ws": "8.18.2",
       },
     },
+    "apps/relay": {
+      "name": "@pinomad/relay",
+      "version": "0.0.0",
+      "dependencies": {
+        "@pinomad/protocol": "workspace:*",
+        "ws": "8.22.0",
+      },
+      "devDependencies": {
+        "@noble/curves": "2.4.0",
+        "@types/ws": "8.18.2",
+      },
+    },
     "apps/web": {
       "name": "@pinomad/web",
       "version": "0.0.0",
@@ -316,6 +328,8 @@
     "@pinomad/host": ["@pinomad/host@workspace:apps/host"],
 
     "@pinomad/protocol": ["@pinomad/protocol@workspace:packages/protocol"],
+
+    "@pinomad/relay": ["@pinomad/relay@workspace:apps/relay"],
 
     "@pinomad/web": ["@pinomad/web@workspace:apps/web"],
 

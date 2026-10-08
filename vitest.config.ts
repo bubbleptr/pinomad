@@ -35,6 +35,13 @@ export default defineConfig({
       {
         test: {
           ...shared,
+          name: "relay",
+          include: ["apps/relay/test/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...shared,
           name: "web",
           include: ["apps/web/test/**/*.test.ts"],
         },

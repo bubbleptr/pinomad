@@ -8,10 +8,11 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web",
+    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web && tsc --noEmit -p apps/relay",
     "test": "vitest run",
     "build": "cd apps/web && bun run build",
     "host": "node apps/host/src/main.ts",
+    "relay": "node apps/relay/src/main.ts",
     "web": "cd apps/web && bun run dev",
     "link": "node apps/host/src/cli/web-link.ts",
     "pair": "node apps/host/src/cli/pair.ts",
