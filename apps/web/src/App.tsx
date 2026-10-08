@@ -3,20 +3,14 @@ import { Button } from "@astryxdesign/core/Button";
 import {
   ChatComposer,
   ChatLayout,
-  ChatMessage,
-  ChatMessageBubble,
   ChatMessageList,
-  ChatSystemMessage,
-  ChatToolCalls,
 } from "@astryxdesign/core/Chat";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutFooter, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Markdown } from "@astryxdesign/core/Markdown";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -25,15 +19,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
-import { type ChatItem, chatItems, queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
-import { CodemodeView } from "./presentation/codemode.tsx";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { findConversation, type ConversationNode, type Home, type Project } from "@pinomad/protocol/organization.ts";
+import { queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
+import { deriveChat } from "./entities/conversation/cot-view.ts";
+import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
 import { DocumentView } from "./presentation/documents.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
-import { classify } from "@pinomad/protocol/presentation.ts";
-import type { ToolCallView } from "./presentation/chat.ts";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
@@ -72,8 +65,10 @@ export function App() {
 
 export function Centered({ children }: { children: ReactNode }) {
   return (
-    <VStack style={page} hAlign="center" vAlign="center" padding={6}>
-      {children}
+    <VStack style={page} isScrollable>
+      <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
+        {children}
+      </VStack>
     </VStack>
   );
 }
@@ -245,14 +240,24 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   // leaves it, archiving the shown one or "New chat" enters it.
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
   const conversation = drafting ? undefined : view.conversation;
-  const items = useMemo(() => (conversation === undefined ? [] : chatItems(conversation)), [conversation]);
   const busy = conversation !== undefined && isBusy(conversation);
+  const items = useMemo(
+    () => (conversation === undefined ? [] : deriveChat(conversation, view.toolPresentations, busy)),
+    [conversation, view.toolPresentations, busy],
+  );
   const home = view.home;
   const homeLabel =
     home === undefined ? undefined : home.kind === "chat" ? "Chat" : projectName(view.organized, home.path);
   const cwd = conversation === undefined ? undefined : agentOf(conversation).cwd;
   const branch = conversation === undefined ? undefined : view.checkout?.branch;
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
+  // A shown subagent conversation offers a way back to the run that owns it.
+  const shownSummary =
+    conversation === undefined
+      ? undefined
+      : findConversation(view.organized, conversation.conversation.id)?.summary;
+  const parentId = shownSummary?.kind === "subagent" ? shownSummary.parent : undefined;
+  const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
   const startDraft = (home: Home): void => {
     setDraft(home);
     setDrafting(true);
@@ -299,6 +304,14 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                 <>
                   {homeLabel === undefined ? null : (
                     <HStack padding={2} gap={2} vAlign="center">
+                      {parentId === undefined ? null : (
+                        <Button
+                          label="Back to parent"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void remote.controller.switchConversation(parentId)}
+                        />
+                      )}
                       <Text type="label" weight="semibold">
                         {homeLabel}
                       </Text>
@@ -311,6 +324,7 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                     </HStack>
                   )}
                   <ChatLayout
+                    key={conversation.conversation.id}
                     style={chatColumn}
                     composer={
                       <VStack gap={1}>
@@ -321,10 +335,21 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                     emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
                   >
                     {items.length === 0 ? null : (
-                      <ChatMessageList isStreaming={busy}>
-                        {items.map((item) => (
-                          <ChatRow key={item.id} item={item} onFork={setForkAt} connected={view.connection === "connected"} toolPresentations={view.toolPresentations} />
-                        ))}
+                      <ChatMessageList isStreaming={busy} gap={0}>
+                        {/* Pace's live-session-column gutter: centered column
+                            with horizontal padding; chat.css's CoT rail
+                            expects that breathing room at the left edge. */}
+                        <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
+                          {items.map((item) => (
+                            <ChatEntryView
+                              key={item.id}
+                              entry={item}
+                              connected={view.connection === "connected"}
+                              openConversation={openConversation}
+                              onFork={setForkAt}
+                            />
+                          ))}
+                        </div>
                       </ChatMessageList>
                     )}
                   </ChatLayout>
@@ -738,101 +763,6 @@ function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; hom
       />
     </VStack>
   );
-}
-
-/** What a finished tool result expands to: a diff view when the host declared one, else its text output plus any images. */
-function detailOf(tool: ToolCallView, toolPresentations: DurableView["toolPresentations"]): ReactNode {
-  const classified = tool.details === undefined ? undefined : classify(toolPresentations[tool.name], tool.details);
-  // A codemode card shows its script and nested calls even while running or failed (ADR-0013 §7).
-  if (classified?.type === "pinomad.codemode") return <CodemodeView details={classified.value} tool={tool} toolPresentations={toolPresentations} />;
-  if (tool.status === "error") return undefined;
-  if (classified?.type === "pinomad.diff") return <DiffView patch={classified.value.patch} />;
-  const text =
-    tool.output === undefined || tool.output === "" ? undefined : <Markdown density="compact">{`\`\`\`\n${tool.output}\n\`\`\``}</Markdown>;
-  const images = (tool.images ?? []).map((image, index) => (
-    <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="" style={{ maxWidth: "100%" }} />
-  ));
-  if (text === undefined && images.length === 0) return undefined;
-  return (
-    <VStack gap={2}>
-      {text}
-      {images}
-    </VStack>
-  );
-}
-
-function ChatRow({
-  item,
-  onFork,
-  connected,
-  toolPresentations,
-}: {
-  item: ChatItem;
-  onFork: (entryId: string) => void;
-  connected: boolean;
-  toolPresentations: DurableView["toolPresentations"];
-}) {
-  switch (item.kind) {
-    case "user":
-      return (
-        <ChatMessage sender="user">
-          <ChatMessageBubble>{item.text}</ChatMessageBubble>
-        </ChatMessage>
-      );
-    case "assistant": {
-      const interrupted = item.stopReason === "aborted";
-      // Only a settled answer is an entry a fork can start from.
-      const forkable = !item.streaming && !interrupted;
-      return (
-        <ChatMessage
-          sender="assistant"
-          metadata={
-            interrupted ? (
-              <Token label="interrupted" color="orange" size="sm" />
-            ) : forkable ? (
-              <Button label="Fork" variant="ghost" size="sm" isDisabled={!connected} tooltip="Continue from here in a new conversation" onClick={() => onFork(item.id)} />
-            ) : undefined
-          }
-        >
-          {item.thinking === undefined ? null : (
-            <Collapsible trigger={<Text type="supporting">{item.streaming && item.text === "" ? "Thinking…" : "Thinking"}</Text>} defaultIsOpen={false}>
-              <Markdown density="compact">{item.thinking}</Markdown>
-            </Collapsible>
-          )}
-          {item.text === "" ? null : (
-            <ChatMessageBubble variant="ghost">
-              <Markdown density="compact" isStreaming={item.streaming}>
-                {item.text}
-              </Markdown>
-            </ChatMessageBubble>
-          )}
-          {item.tools.length === 0 ? null : (
-            <ChatToolCalls
-              calls={item.tools.map((tool) => ({
-                key: tool.callId,
-                name: tool.name,
-                status: tool.status,
-                ...(tool.conversationId !== undefined
-                  ? { target: `subagent ${tool.conversationId}` }
-                  : tool.target === undefined
-                    ? {}
-                    : { target: tool.target }),
-                ...(tool.status === "error" && tool.output !== undefined ? { errorMessage: tool.output } : {}),
-                ...(() => {
-                  const detail = detailOf(tool, toolPresentations);
-                  return detail === undefined ? {} : { resultDetail: detail };
-                })(),
-              }))}
-            />
-          )}
-        </ChatMessage>
-      );
-    }
-    case "compaction":
-      return <ChatSystemMessage variant="divider">Earlier context summarized</ChatSystemMessage>;
-    case "reset":
-      return <ChatSystemMessage variant="divider">New context</ChatSystemMessage>;
-  }
 }
 
 function Composer({

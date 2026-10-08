@@ -1,120 +1,16 @@
 import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { chatItems, queueItems, statusText, taskRows, usageRows } from "../src/presentation/chat.ts";
+import { queueItems, statusText, taskRows, usageRows } from "../src/presentation/chat.ts";
 
-let nextId = 1;
-const entry = (kind: string, message: unknown): EntryRecord =>
-  ({ id: nextId++, conversationId: 0, kind, model: [message] }) as unknown as EntryRecord;
-const user = (text: string) => entry("pi.user", { role: "user", content: text });
-const assistant = (content: unknown[], stopReason = "stop") => entry("pi.assistant", { role: "assistant", content, stopReason });
 const text = (value: string) => ({ type: "text", text: value });
-const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
-const result = (callId: string, name: string, output: string, isError = false, details?: unknown) =>
-  entry("pi.tool-result", {
-    role: "toolResult",
-    toolCallId: callId,
-    toolName: name,
-    content: [text(output)],
-    isError,
-    ...(details === undefined ? {} : { details }),
-  });
 const view = (entries: EntryRecord[], live: object = {}, inbox: object[] = []): ConversationView =>
   ({ conversation: { id: 0 }, entries, docs: { "pi.live": live, "pi.inbox": { items: inbox } } }) as unknown as ConversationView;
-
-describe("chatItems", () => {
-  it("maps user and assistant entries, marking an interrupted partial", () => {
-    const items = chatItems(view([user("hi"), assistant([text("hel")], "aborted"), assistant([text("hello")])]));
-    expect(items.map((item) => [item.kind, "text" in item ? item.text : undefined, "stopReason" in item ? item.stopReason : undefined])).toEqual([
-      ["user", "hi", undefined],
-      ["assistant", "hel", "aborted"],
-      ["assistant", "hello", "stop"],
-    ]);
-  });
-
-  it("appends the in-flight partial as a streaming assistant item", () => {
-    const items = chatItems(view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [text("he")] } } }));
-    expect(items.at(-1)).toMatchObject({ kind: "assistant", text: "he", streaming: true });
-  });
-
-  it("attaches tool results and live tool progress to the calls of their answer", () => {
-    const items = chatItems(
-      view(
-        [user("go"), assistant([call("c1", "logs", { service: "api" }), call("c2", "metrics", {})], "toolUse"), result("c1", "logs", "3 errors")],
-        { run: {}, tools: [{ callId: "c2", name: "metrics", status: "running", output: "fetching", details: { conversationId: 7 } }] },
-      ),
-    );
-    const answer = items.at(-1);
-    expect(answer).toMatchObject({
-      kind: "assistant",
-      tools: [
-        { callId: "c1", name: "logs", status: "complete", output: "3 errors" },
-        { callId: "c2", name: "metrics", status: "running", output: "fetching", conversationId: 7 },
-      ],
-    });
-  });
-
-  it("carries a running call's live details into the tool view", () => {
-    const details = { code: "await tools.read({})", calls: [{ name: "read", args: "{}", status: "running" }] };
-    const items = chatItems(
-      view(
-        [user("go"), assistant([call("c1", "codemode", { code: "…" })], "toolUse")],
-        { run: {}, tools: [{ callId: "c1", name: "codemode", status: "running", details }] },
-      ),
-    );
-    expect(items.at(-1)).toMatchObject({
-      tools: [{ callId: "c1", name: "codemode", status: "running", details }],
-    });
-  });
-
-  it("collects image blocks of a tool result into the call's images", () => {
-    const resultWithImage = entry("pi.tool-result", {
-      role: "toolResult",
-      toolCallId: "c1",
-      toolName: "mcp__shot__capture",
-      content: [text("captured"), { type: "image", data: "aGk=", mimeType: "image/png" }],
-      isError: false,
-    });
-    const items = chatItems(view([assistant([call("c1", "mcp__shot__capture", {})], "toolUse"), resultWithImage]));
-    expect(items.at(-1)).toMatchObject({
-      tools: [{ callId: "c1", status: "complete", output: "captured", images: [{ data: "aGk=", mimeType: "image/png" }] }],
-    });
-  });
-
-  it("keeps a completed call linked to its subagent through the result details", () => {
-    const items = chatItems(
-      view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse"), result("c1", "subagent", "report", false, { conversationId: 9 })]),
-    );
-    expect(items.at(-1)).toMatchObject({
-      kind: "assistant",
-      tools: [{ callId: "c1", name: "subagent", status: "complete", output: "report", details: { conversationId: 9 }, conversationId: 9 }],
-    });
-  });
-
-  it("marks the calls of an interrupted answer as not run", () => {
-    const items = chatItems(view([user("go"), assistant([call("c1", "logs", {})], "aborted")]));
-    expect(items.at(-1)).toMatchObject({ tools: [{ callId: "c1", status: "error", output: "Not run: the answer was interrupted." }] });
-  });
-
-  it("shows compaction summaries and context resets", () => {
-    const compaction = entry("pi.compaction", { role: "user", content: "summary of earlier work" });
-    const reset = { id: nextId++, conversationId: 0, kind: "pi.reset" } as unknown as EntryRecord;
-    expect(chatItems(view([compaction, reset])).map((item) => item.kind)).toEqual(["compaction", "reset"]);
-  });
-
-  it("keeps an answer's thinking apart from its text, also while streaming", () => {
-    const thinking = (value: string) => ({ type: "thinking", thinking: value });
-    expect(chatItems(view([assistant([thinking("pool sizes?"), text("rollback")])])).at(-1)).toMatchObject({ text: "rollback", thinking: "pool sizes?" });
-    expect(chatItems(view([assistant([text("plain")])])).at(-1)).not.toHaveProperty("thinking");
-    const live = { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [thinking("che")] } } };
-    expect(chatItems(view([], live)).at(-1)).toMatchObject({ text: "", thinking: "che", streaming: true });
-  });
-});
 
 describe("statusText", () => {
   it("names what the conversation is doing, most specific first", () => {
     expect(statusText(view([]))).toBe("");
-    expect(statusText(view([], { run: {} }))).toBe("Working...");
-    expect(statusText(view([], { run: {}, tools: [{ callId: "c", name: "logs", status: "running" }] }))).toBe("Running logs...");
+    expect(statusText(view([], { run: {} }))).toBe("");
+    expect(statusText(view([], { run: {}, tools: [{ callId: "c", name: "logs", status: "running" }] }))).toBe("");
     expect(statusText(view([], { run: {}, generation: { attempt: 1, retry: { at: 0, error: "overloaded" } } }))).toBe(
       "Retrying (attempt 2): overloaded",
     );

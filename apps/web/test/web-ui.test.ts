@@ -1,20 +1,23 @@
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createModels } from "@earendil-works/pi-ai/models";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
-import { chromium } from "@playwright/test";
+import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
-import { fromBase64Url, secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
+import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
-import { chatItems } from "../src/presentation/chat.ts";
+import { coding } from "@pinomad/host/src/extensions/coding.ts";
+import { createSubagent } from "@pinomad/host/src/extensions/subagent.ts";
+import { deriveChat } from "../src/entities/conversation/cot-view.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();
@@ -131,8 +134,8 @@ it.each([
   );
 
   const fork = page.getByRole("button", { name: "Fork", exact: true });
-  // The prompt's own answer and the appended entry both offer Fork; the latter is last.
-  await expect.poll(() => fork.count()).toBe(2);
+  // One Fork action per run: the run's last assistant entry is the appended one.
+  await expect.poll(() => fork.count()).toBe(1);
   await fork.last().click();
   await page.getByRole("textbox", { name: "First message", exact: true }).fill("Continue from this evidence.");
   await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
@@ -250,10 +253,127 @@ it("shows interruption without a text bubble and never offers a fork for streami
     observer.view,
     (view) =>
       view.conversation !== undefined
-      && chatItems(view.conversation).some((item) => item.kind === "assistant" && item.stopReason === "aborted"),
+      && deriveChat(view.conversation, view.toolPresentations, isBusy(view.conversation)).some(
+        (item) => item.kind === "run" && item.interrupted,
+      ),
   );
   await expect.poll(() => page.getByText("interrupted", { exact: true }).count()).toBe(1);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
+});
+
+it("opens a subagent's conversation from its card and returns to the parent", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+      createSubagent({ models, modelSummaries, exclude: [] }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      "child answer",
+      "parent final",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("delegate");
+  await composer.press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  // The settled subagent call sits folded inside the chain of thought;
+  // expanding the run, then the step, reveals the link to its child.
+  await page.getByRole("button", { name: /Worked for/, exact: false }).click();
+  await page.getByRole("button", { name: /Used count the lines/, exact: false }).click();
+  await page.getByRole("button", { name: "Open conversation", exact: true }).click();
+  await page.getByRole("button", { name: "Back to parent", exact: true }).waitFor();
+  await page.getByText("child answer", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Back to parent", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "Back to parent", exact: true }).count()).toBe(0);
+  await page.getByText("parent final", { exact: true }).waitFor();
+});
+
+it("renders a real edit's diff inside the tool row instead of the raw args", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [project.path],
+    extensions: [coding],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("write", { path: "notes.txt", content: "alpha\nbeta\ngamma\n" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(fauxToolCall("edit", { path: "notes.txt", edits: [{ oldText: "beta", newText: "delta" }] }), {
+        stopReason: "toolUse",
+      }),
+      "edit complete",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("textbox").fill("fix the notes");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("edit complete", { exact: true }).waitFor();
+
+  // Expand the run's folded steps: each round is its own single-call step,
+  // and a single-call step expands straight to the detail.
+  await page.getByRole("button", { name: /Worked for/ }).click();
+  await page.getByRole("button", { name: /Edited notes.txt/ }).click();
+
+  const editDetail = page.locator('[data-slot="chat-tool-step-detail"]').last();
+  // The diff view carries the hunk lines; the args and output panes are gone.
+  await editDetail.getByText("-beta", { exact: true }).waitFor();
+  await editDetail.getByText("+delta", { exact: true }).waitFor();
+  expect(await editDetail.locator('[data-slot="chat-tool-args"]').count()).toBe(0);
+  expect(await editDetail.locator('[data-slot="chat-tool-result"]').count()).toBe(0);
+});
+
+it("keeps the chain of thought in place when a grouped tool row takes focus", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [project.path],
+    extensions: [coding],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("write", { path: "notes.txt", content: "alpha\nbeta\n" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(
+        [
+          fauxToolCall("read", { path: "notes.txt" }),
+          fauxToolCall("edit", { path: "notes.txt", edits: [{ oldText: "beta", newText: "delta" }] }),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      "edit complete",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("textbox").fill("fix the notes");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("edit complete", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: /Worked for/ }).click();
+  await page.getByRole("button", { name: /Read 1 file/ }).click();
+  // The grouped rows overhang their clip box for the hover fill; focusing one
+  // must not scroll that box sideways and shear off the steps' left edge.
+  await page.getByRole("button", { name: /^edit/ }).click();
+
+  const content = page.locator(".chain-of-thought__content").last();
+  const contentBox = (await content.boundingBox())!;
+  const firstStep = (await content.locator(".chat-step__trigger").first().boundingBox())!;
+  expect(firstStep.x).toBeGreaterThanOrEqual(contentBox.x);
 });
 
 it("organizes conversations under projects and chats", async () => {
@@ -473,4 +593,124 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   await fresh.getByText("used or has expired", { exact: false }).waitFor();
   expect(await fresh.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
   expect(await fresh.getByRole("button", { name: "Use saved pairing" }).count()).toBe(0);
+});
+
+it("keeps a rejected pairing's recovery button reachable by scrolling on a short viewport", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  // Consume the offer with one pairing so the link is rejected next time.
+  const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await first.getByRole("textbox").waitFor();
+  await first.close();
+
+  // A saved pairing for a different host renders the spent-code screen plus a
+  // "Use saved pairing" recovery button — the content is taller than 220px.
+  const context = await browser.newContext({ viewport: { width: 280, height: 220 } });
+  defer(() => context.close());
+  const saved = generateKeyPair();
+  await context.addInitScript((device) => {
+    try {
+      localStorage.setItem("pinomad.device", JSON.stringify(device));
+    } catch {
+      // Non-http preload pages (about:blank) have no usable localStorage.
+    }
+  }, { url: host.remote!.url, hostKey: toBase64Url(generateKeyPair().publicKey), privateKey: toBase64Url(saved.privateKey) });
+  const page = await context.newPage();
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  const message = page.getByText("used or has expired", { exact: false });
+  await message.waitFor();
+  const button = page.getByRole("button", { name: "Use saved pairing", exact: true });
+
+  // A real scroll gesture must bring the recovery button into view.
+  await page.mouse.move(140, 110);
+  await page.mouse.wheel(0, 2000);
+  await page.waitForFunction(() => {
+    const scroller = Array.from(document.querySelectorAll("#root div")).find((d) => d.scrollTop > 0);
+    return scroller !== undefined;
+  });
+  const box = await button.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(220);
+
+  // Scrolling back up returns the message to the viewport.
+  await page.mouse.wheel(0, -2000);
+  await page.waitForFunction(() => {
+    const scroller = Array.from(document.querySelectorAll("#root div")).find((d) => d.scrollHeight > d.clientHeight + 1);
+    return scroller === undefined || scroller.scrollTop === 0;
+  });
+  const messageBox = await message.boundingBox();
+  expect(messageBox!.y).toBeGreaterThanOrEqual(0);
+});
+
+// The element that clips and scrolls the messages: the nearest ancestor of a
+// rendered message that actually overflows (scrollHeight > clientHeight).
+const scrollerOf = async (page: Page, text: string) =>
+  page.getByText(text, { exact: true }).evaluate((el) => {
+    let cur: HTMLElement | null = el.parentElement;
+    while (
+      cur !== null &&
+      (cur.scrollHeight <= cur.clientHeight + 1 || !["auto", "scroll"].includes(getComputedStyle(cur).overflowY))
+    )
+      cur = cur.parentElement;
+    return cur === null ? null : { top: cur.scrollTop, height: cur.scrollHeight, client: cur.clientHeight };
+  });
+
+it("scrolls a long conversation with the mouse wheel over the message column", async () => {
+  const webOrigin = await startWeb();
+  const long = Array.from({ length: 150 }, (_, i) => `- line ${i}`).join("\n");
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  const composer = page.getByRole("textbox");
+  await composer.fill("long chat");
+  await composer.press("Enter");
+  const last = page.getByText("line 149", { exact: true });
+  await last.waitFor();
+
+  const before = await scrollerOf(page, "line 149");
+  expect(before).not.toBeNull();
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -1500);
+  await expect.poll(async () => (await scrollerOf(page, "line 100"))?.top ?? 99999).toBeLessThan(before!.top - 200);
+});
+
+it("opens a switched conversation at its latest answer instead of the old scroll position", async () => {
+  const webOrigin = await startWeb();
+  const long = (tag: string) => Array.from({ length: 150 }, (_, i) => `- ${tag} ${i}`).join("\n");
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long("A"), long("B")] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // Chat A through the page; chat B through a second client so the page stays on A.
+  const composer = page.getByRole("textbox");
+  await composer.fill("first chat");
+  await composer.press("Enter");
+  const lastA = page.getByText("A 149", { exact: true });
+  await lastA.waitFor();
+  await startChat(observer, "second chat");
+  const chats = page.getByRole("group", { name: "Chats" });
+  await chats.getByRole("button", { name: "second chat", exact: true }).waitFor();
+
+  // Scroll chat A to the very top with a real wheel gesture over the messages.
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -5000);
+  await expect.poll(async () => (await scrollerOf(page, "A 149"))?.top ?? 99999).toBeLessThan(20);
+
+  // Switching conversations must not inherit that scroll position.
+  await chats.getByRole("button", { name: "second chat", exact: true }).click();
+  await page.getByText("B 149", { exact: true }).waitFor();
+  await expect
+    .poll(async () => {
+      const s = await scrollerOf(page, "B 149");
+      return s === null ? 99999 : s.height - s.top - s.client;
+    })
+    .toBeLessThan(8);
 });

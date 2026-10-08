@@ -31,7 +31,7 @@
 子代理第一版之后可能的后续，都等有明确需求再做：
 - 后台子代理（Durable 例 23：spawn / message / wait / stop / list，回答作为 follow-up 回帖给父对话）。
 - 并行写冲突现在只靠工具描述约束；真出问题时再考虑只读子代理，或给写文件的子代理单独开 worktree（会改动 ADR-0010 §5）。
-- 子对话的呈现方式和位置要重新设计：现在作为普通对话挂在侧栏父对话下，标题取自父代理写的任务描述开头（真实模型冒烟里是 "In the working directory /tmp/…" 这种套话），分不清各子代理在干什么；工具卡片上的子对话 id 也点不过去。
+- 子对话的呈现方式和位置要重新设计：现在作为普通对话挂在侧栏父对话下，标题取自父代理写的任务描述开头（真实模型冒烟里是 "In the working directory /tmp/…" 这种套话），分不清各子代理在干什么。工具卡片已能点进子对话（M2.5 第 2 步）。
 
 ### MCP 的后续
 
@@ -45,6 +45,20 @@ MCP 本身的后续，都等有明确需求再做：
 - OAuth：HTTP server 回 401 现在只在状态里提示"需要登录"；授权链接要经客户端打开、回调回到宿主，和远程访问（ADR-0008）有交集。
 - 配置热加载、server 掉线或崩溃后的手动重连：现在都要重启宿主（`service -- restart` 等空闲）。
 - MCP resources / prompts 还没有接入方式和呈现。
+
+## M2.5：搬入 Pace 的界面（进行中）
+
+把 Pace 的对话界面和外框搬进 Web 客户端（ADR-0014）。按依赖顺序拆成 stacked PR：
+
+1. 视觉基础：Tailwind v4、token 桥、Montserrat、Hugeicons、`@/` 别名；现有界面不改结构，只换底子。
+2. 对话流（已完成）：思维链（工具 step 行、思考行、状态行）、Markdown 和代码块；从 Durable 的 `ConversationView` 推导 `CotView`。edit / write 的 diff、codemode 的嵌套调用、工具结果图片、fork 按钮都保留；子代理卡片能点进子对话（运行中也能点），卡片标题用 `subagent` 新增的可选参数 `description`，查看子对话时能回到父对话。
+3. Composer：Pace 的 ChatPromptInput、排队消息、运行失败恢复。
+4. 外框和首页：侧栏结构、首页 hero、带"模型 · 思考等级"选择的 Composer；新建对话可以选模型（`createConversation` 加 `model`，协议 v4）。保留窄屏布局。
+
+之后接着做（细节到时再定）：
+- 子代理在侧栏的位置（现在挂在父对话下，标题是任务描述开头，分不清）。
+- 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
+- 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
 
 ## M3：在哪都能连
 
@@ -69,9 +83,6 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 - 桌面端（Electron 外壳，按 ADR-0001 从 Pace 复制）
 - 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）
-- 取消归档、查看已归档对话
-- 新建对话时选择模型
-- 对话自动起名（ADR-0007 遗留）
 
 ## 等上游
 

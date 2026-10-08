@@ -44,13 +44,16 @@ export function createSubagent(options: {
       "Delegate a self-contained task to a subagent that runs in its own conversation and returns its final answer. " +
       "The subagent starts with none of this conversation's context, so put everything it needs in `task`. " +
       "It works in the same files as you: subagents called in the same turn run concurrently, so give parallel subagents read-only work or non-overlapping files. " +
-      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you. " +
+      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `description` only labels the call. " +
       `Available models: ${available()}.`,
     parameters: Type.Object({
       task: Type.String({
         minLength: 1,
         description: "Complete, self-contained instructions. The subagent sees none of this conversation.",
       }),
+      description: Type.Optional(
+        Type.String({ description: 'A short 3-6 word label for the user, e.g. "Audit auth middleware".' }),
+      ),
       model: Type.Optional(Type.String({ description: "Optional `provider/modelId` to use instead of yours." })),
       thinkingLevel: Type.Optional(
         Type.Union(
