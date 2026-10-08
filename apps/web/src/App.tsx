@@ -72,8 +72,10 @@ export function App() {
 
 export function Centered({ children }: { children: ReactNode }) {
   return (
-    <VStack style={page} hAlign="center" vAlign="center" padding={6}>
-      {children}
+    <VStack style={page} isScrollable>
+      <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
+        {children}
+      </VStack>
     </VStack>
   );
 }

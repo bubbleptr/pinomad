@@ -10,7 +10,7 @@ import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
-import { fromBase64Url, secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
+import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
@@ -473,4 +473,59 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   await fresh.getByText("used or has expired", { exact: false }).waitFor();
   expect(await fresh.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
   expect(await fresh.getByRole("button", { name: "Use saved pairing" }).count()).toBe(0);
+});
+
+it("keeps a rejected pairing's recovery button reachable by scrolling on a short viewport", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  // Consume the offer with one pairing so the link is rejected next time.
+  const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await first.getByRole("textbox").waitFor();
+  await first.close();
+
+  // A saved pairing for a different host renders the spent-code screen plus a
+  // "Use saved pairing" recovery button — the content is taller than 220px.
+  const context = await browser.newContext({ viewport: { width: 280, height: 220 } });
+  defer(() => context.close());
+  const saved = generateKeyPair();
+  await context.addInitScript((device) => {
+    try {
+      localStorage.setItem("pinomad.device", JSON.stringify(device));
+    } catch {
+      // Non-http preload pages (about:blank) have no usable localStorage.
+    }
+  }, { url: host.remote!.url, hostKey: toBase64Url(generateKeyPair().publicKey), privateKey: toBase64Url(saved.privateKey) });
+  const page = await context.newPage();
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  const message = page.getByText("used or has expired", { exact: false });
+  await message.waitFor();
+  const button = page.getByRole("button", { name: "Use saved pairing", exact: true });
+
+  // A real scroll gesture must bring the recovery button into view.
+  await page.mouse.move(140, 110);
+  await page.mouse.wheel(0, 2000);
+  await page.waitForFunction(() => {
+    const scroller = Array.from(document.querySelectorAll("#root div")).find((d) => d.scrollTop > 0);
+    return scroller !== undefined;
+  });
+  const box = await button.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(220);
+
+  // Scrolling back up returns the message to the viewport.
+  await page.mouse.wheel(0, -2000);
+  await page.waitForFunction(() => {
+    const scroller = Array.from(document.querySelectorAll("#root div")).find((d) => d.scrollHeight > d.clientHeight + 1);
+    return scroller === undefined || scroller.scrollTop === 0;
+  });
+  const messageBox = await message.boundingBox();
+  expect(messageBox!.y).toBeGreaterThanOrEqual(0);
 });
