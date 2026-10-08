@@ -128,13 +128,17 @@ export function DraftHome({
             size="sm"
             isDisabled={!connected}
             value={draft.kind === "chat" ? "chat" : draft.path}
-            startIcon={draft.kind === "chat" ? <ChatAdd aria-hidden="true" /> : <FolderClosed aria-hidden="true" />}
+            startIcon={
+              draft.kind === "chat"
+                ? <ChatAdd aria-hidden="true" className="size-4 shrink-0" />
+                : <FolderClosed aria-hidden="true" className="size-4 shrink-0" />
+            }
             options={[
-              { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" /> },
+              { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0" /> },
               ...view.organized.projects.map((entry) => ({
                 value: entry.project.path,
                 label: entry.project.name,
-                icon: <FolderClosed aria-hidden="true" />,
+                icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0" />,
               })),
             ]}
             onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
