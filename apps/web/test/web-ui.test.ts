@@ -46,6 +46,18 @@ const allNodes = (view: { organized: { chats: readonly ConversationNode[]; proje
   return flat(view.organized.chats.concat(...view.organized.projects.map((entry) => entry.conversations)));
 };
 
+it("opens the Devices dialog from the phone drawer", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 390, webOrigin);
+
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  // The drawer closed; only the Devices dialog remains.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
+  await page.getByRole("dialog").getByRole("button", { name: "Pair a device", exact: true }).waitFor();
+});
+
 it("keeps the chat usable on a phone with navigation and live state still reachable", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
@@ -511,6 +523,20 @@ it("collapses the sidebar into the header toggle and restores it", async () => {
   await expand.click();
   await page.getByRole("button", { name: "New chat", exact: true }).waitFor();
   await expect.poll(() => page.getByRole("button", { name: "Expand sidebar" }).count()).toBe(0);
+});
+
+it("surfaces a failed command as a toast without opening the dock", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  // The dock stays closed; a rejected command must still be visible.
+  await page.getByRole("button", { name: "Add project", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill("/nonexistent/pinomad-nope");
+  await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
+  // Scope to the toast itself: the message also lands in Astryx's hidden
+  // assertive live region, making a bare role=alert match ambiguous.
+  await page.locator("[data-toast-id]").getByText("No such directory", { exact: false }).waitFor();
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {

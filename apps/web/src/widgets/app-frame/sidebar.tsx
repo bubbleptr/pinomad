@@ -8,11 +8,9 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
-import { DevicesDialog } from "./devices-dialog.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
@@ -84,32 +82,28 @@ export function SidebarHeaderBand({
   );
 }
 
-/** Footer slot: the Devices entry. Renders its own dialog. */
+/** Footer slot: the Devices entry. The dialog itself is hoisted into
+    AppFrame — inside MobileNav it would render in the drawer that this click
+    just closed. */
 export function SidebarFooter({
   view,
-  remote,
-  device,
+  onOpenDevices,
   onSelect,
 }: {
   view: DurableView;
-  remote: RemoteDurable;
-  device?: KeyPair;
+  onOpenDevices: () => void;
   onSelect?: () => void;
 }) {
-  const [devicesOpen, setDevicesOpen] = useState(false);
   return (
-    <>
-      <SideNavItem
-        icon={<Computer aria-hidden="true" />}
-        label="Devices"
-        isDisabled={view.connection !== "connected"}
-        onClick={() => {
-          setDevicesOpen(true);
-          onSelect?.();
-        }}
-      />
-      {devicesOpen ? <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} /> : null}
-    </>
+    <SideNavItem
+      icon={<Computer aria-hidden="true" />}
+      label="Devices"
+      isDisabled={view.connection !== "connected"}
+      onClick={() => {
+        onOpenDevices();
+        onSelect?.();
+      }}
+    />
   );
 }
 

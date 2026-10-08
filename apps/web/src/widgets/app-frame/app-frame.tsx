@@ -2,17 +2,19 @@ import { AppShell } from "@astryxdesign/core/AppShell";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav } from "@astryxdesign/core/SideNav";
+import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import { Button } from "@astryxdesign/core/Button";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { ConversationSummary, DurableView } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { queueItems, taskRows } from "../../presentation/chat.ts";
 import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
+import { DevicesDialog } from "./devices-dialog.tsx";
 import { DockPanel, DockDialog } from "../dock/dock.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
@@ -59,6 +61,7 @@ export function AppFrame({
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [dockOpen, setDockOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const toggleSidebar = (): void => {
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
@@ -94,7 +97,7 @@ export function AppFrame({
             <SideNav
               resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
               header={<SidebarHeaderBand connection={view.connection} onCollapse={toggleSidebar} />}
-              footer={<SidebarFooter remote={remote} view={view} device={device} />}
+              footer={<SidebarFooter view={view} onOpenDevices={() => setDevicesOpen(true)} />}
             >
               {sidebar}
             </SideNav>
@@ -142,7 +145,7 @@ export function AppFrame({
           }
         >
           {sidebar}
-          <SidebarFooter remote={remote} view={view} device={device} onSelect={() => setNavOpen(false)} />
+          <SidebarFooter view={view} onOpenDevices={() => setDevicesOpen(true)} onSelect={() => setNavOpen(false)} />
         </MobileNav>
       ) : null}
       {narrow ? (
@@ -154,8 +157,41 @@ export function AppFrame({
           conversation={conversation}
         />
       ) : null}
+      {devicesOpen ? (
+        <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
+      ) : null}
+      {/* Every notice the workbench learns about also lands as a toast —
+          rejected commands only surface as notices otherwise, and the dock
+          that lists them starts closed. isTopLayer lifts it above dialogs. */}
+      <ToastViewport position="bottomEnd" isTopLayer>
+        <NoticeToasts notices={view.notices} />
+      </ToastViewport>
     </>
   );
+}
+
+function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
+  const toast = useToast();
+  // Notices already present at mount are history the dock shows; only toast
+  // what arrives after. The last seen id survives re-renders and switches.
+  const seenRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const latest = notices[notices.length - 1]?.id;
+    if (seenRef.current === undefined) {
+      seenRef.current = latest ?? -1;
+      return;
+    }
+    for (const notice of notices) {
+      if (notice.id <= seenRef.current) continue;
+      toast({
+        body: notice.message,
+        type: notice.level === "error" ? "error" : "info",
+        uniqueID: String(notice.id),
+      });
+    }
+    if (latest !== undefined) seenRef.current = latest;
+  }, [notices, toast]);
+  return null;
 }
 
 function FrameHeader({
