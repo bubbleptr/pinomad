@@ -98,7 +98,19 @@ export function DraftHome({
     localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
-  const levels = summaryOf(view.models, pick.model)?.thinkingLevels ?? ["off"];
+  // The pick is reconciled against this hello's models at render time, not
+  // synced into state: after a reconnect whose host offers different models a
+  // remembered pick would otherwise submit a model the host no longer has.
+  const effectiveModel =
+    pick.model !== undefined && summaryOf(view.models, pick.model) !== undefined
+      ? pick.model
+      : summaryOf(view.models, view.defaults.model) !== undefined
+        ? view.defaults.model
+        : view.models[0] === undefined
+          ? undefined
+          : refOf(view.models[0]);
+  const levels = summaryOf(view.models, effectiveModel)?.thinkingLevels ?? ["off"];
+  const effectiveLevel = clampLevel(levels, pick.level);
   const modelItems = view.models.map((model) => ({
     label: `${model.provider}/${model.modelId}`,
     onClick: () => {
@@ -160,8 +172,8 @@ export function DraftHome({
             onSubmit={(text) => {
               void remote.controller.createConversation(draft, text, {
                 ...(draft.kind === "project" && direct ? { checkout: "project" as const } : {}),
-                ...(pick.model === undefined ? {} : { model: pick.model }),
-                thinkingLevel: pick.level,
+                ...(effectiveModel === undefined ? {} : { model: effectiveModel }),
+                thinkingLevel: effectiveLevel,
               });
             }}
             isDisabled={!connected}
@@ -170,7 +182,7 @@ export function DraftHome({
               <>
                 <DropdownMenu
                   button={{
-                    label: pick.model === undefined ? "No model" : `${pick.model.provider}/${pick.model.modelId}`,
+                    label: effectiveModel === undefined ? "No model" : `${effectiveModel.provider}/${effectiveModel.modelId}`,
                     variant: "ghost",
                     size: "sm",
                     isDisabled: !connected,
@@ -179,7 +191,7 @@ export function DraftHome({
                 />
                 <DropdownMenu
                   button={{
-                    label: `Thinking: ${pick.level}`,
+                    label: `Thinking: ${effectiveLevel}`,
                     variant: "ghost",
                     size: "sm",
                     isDisabled: thinkingDisabled,

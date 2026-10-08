@@ -100,6 +100,25 @@ export async function createConversation(
   models: Models,
   context: Context,
 ): Promise<ConversationId> {
+  // Retries can outlive the model list they were made against: the index
+  // lookup runs before model validation so an already-created request still
+  // resolves instead of rejecting on the stale model. The creating commit
+  // landed but its submit may not have (process died between the two), so the
+  // retry still submits — submit dedupes on requestId, making a fully-admitted
+  // create's retry a no-op.
+  const index = await harness.snapshot(IndexDoc, context);
+  const prior = index?.conversations.find((entry) => entry.requestId === input.requestId);
+  if (prior !== undefined) {
+    const existing = await harness.conversation(prior.id, context);
+    if (existing !== undefined) {
+      await existing.submit(
+        { type: "input", content: input.text, whenBusy: "followUp", requestId: input.requestId },
+        context,
+      );
+    }
+    return prior.id;
+  }
+
   const modelRef = input.model ?? defaults.model;
   const model =
     modelRef === undefined ? undefined : models.getModel(modelRef.provider, modelRef.modelId);

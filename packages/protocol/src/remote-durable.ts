@@ -181,7 +181,13 @@ class RemoteClient {
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) {
-          this.#update({ session: frame.session, models: frame.models, toolPresentations: frame.toolPresentations, connection: "connected" });
+          this.#update({
+            session: frame.session,
+            models: frame.models,
+            toolPresentations: frame.toolPresentations,
+            defaults: frame.defaults ?? {},
+            connection: "connected",
+          });
         }
         else this.#awaitFirstView(frame);
         return;

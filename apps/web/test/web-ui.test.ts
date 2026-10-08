@@ -86,6 +86,39 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   await page.getByRole("menuitem", { name: "Compact", exact: true }).waitFor();
 });
 
+it("replaces a draft pick the restarted host no longer offers", async () => {
+  const webOrigin = await startWeb();
+  const port = await freePort();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+    answers: ["old host answer", "new host answer"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("button", { name: "faux/faux-thinker", exact: true }).waitFor();
+
+  // Restart on the same port/dataDir (the fixture's reconnect mechanism) with
+  // a different model list — the stored pick is gone from the new hello.
+  await host.close();
+  await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-other", name: "Faux Other" }],
+    answers: ["new host answer"],
+  });
+
+  // The draft falls back to an available model and submits with it.
+  await page.getByRole("button", { name: "faux/faux-other", exact: true }).waitFor();
+  await page.getByRole("textbox").fill("after reconnect");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("new host answer", { exact: true }).waitFor();
+});
+
 it("preserves an unsent follow-up and disables write controls while reconnecting", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["An answer to fork."] });
