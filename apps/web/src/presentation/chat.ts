@@ -2,6 +2,7 @@
 // derivations follow pi's durable TUI (packages/coding-agent/src/experimental/durable/tui.ts,
 // MIT, Earendil Works) so every client tells the same story. Type-only imports keep it browser-safe.
 import type {
+  AgentState,
   ConversationView,
   InboxState,
   LiveState,
@@ -23,6 +24,9 @@ function textOf(content: Message["content"]): string {
 }
 
 const liveOf = (view: ConversationView): LiveState => (view.docs["pi.live"] ?? {}) as LiveState;
+
+/** The conversation's agent doc (model, thinking level, cwd). */
+export const agentOf = (view: ConversationView): AgentState => (view.docs["pi.agent"] ?? {}) as AgentState;
 
 /** What the conversation is doing beyond the run itself, most specific first; empty when idle or just busy. */
 export function statusText(view: ConversationView): string {

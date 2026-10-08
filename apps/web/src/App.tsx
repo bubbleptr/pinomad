@@ -9,31 +9,24 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { HStack, Layout, LayoutContent, LayoutFooter, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
-import { List, ListItem } from "@astryxdesign/core/List";
-import { MobileNav } from "@astryxdesign/core/MobileNav";
-import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Token } from "@astryxdesign/core/Token";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { findConversation, type ConversationNode, type Home, type Project } from "@pinomad/protocol/organization.ts";
-import { queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
+import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
+import { agentOf, statusText } from "./presentation/chat.ts";
 import { deriveChat } from "./entities/conversation/cot-view.ts";
+import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
-import { DocumentView } from "./presentation/documents.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { encode } from "uqr";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import { DEVICE_KEY, deviceName, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
@@ -200,9 +193,6 @@ export function RemoteWorkbench({
   return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} />;
 }
 
-const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
-  (conversation.docs["pi.agent"] ?? {}) as AgentState;
-
 /**
  * The host speaks a protocol this bundle doesn't. A page the host itself
  * serves reloads once to fetch the matching bundle — the sessionStorage
@@ -245,27 +235,22 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     () => (conversation === undefined ? [] : deriveChat(conversation, view.toolPresentations, busy)),
     [conversation, view.toolPresentations, busy],
   );
-  const home = view.home;
-  const homeLabel =
-    home === undefined ? undefined : home.kind === "chat" ? "Chat" : projectName(view.organized, home.path);
-  const cwd = conversation === undefined ? undefined : agentOf(conversation).cwd;
-  const branch = conversation === undefined ? undefined : view.checkout?.branch;
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
-  // A shown subagent conversation offers a way back to the run that owns it.
+  // A shown subagent conversation offers a breadcrumb back to the run that owns it.
   const shownSummary =
     conversation === undefined
       ? undefined
       : findConversation(view.organized, conversation.conversation.id)?.summary;
   const parentId = shownSummary?.kind === "subagent" ? shownSummary.parent : undefined;
+  const parentSummary =
+    parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
   const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
   const startDraft = (home: Home): void => {
     setDraft(home);
     setDrafting(true);
   };
-  // Below this the chat column would be squeezed; the live state moves into a dialog.
+  // Below this the chat column would be squeezed; the dock opens as a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
-  const [navOpen, setNavOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
   const [forkAt, setForkAt] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host
@@ -276,120 +261,80 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   // A revoked device is closed with 4401; hooks above stay mounted either way.
   if (view.connection === "closed" && rejected !== undefined) return <Centered>{rejected}</Centered>;
   return (
-    <VStack style={page}>
-      <Layout
-        height="fill"
-        start={narrow ? undefined : <ConversationNav view={view} remote={remote} device={device} onDraft={startDraft} />}
-        content={
-          <LayoutContent padding={0}>
-            <VStack height="100%">
-              {narrow ? (
-                <HStack padding={2} gap={2} hAlign="between">
-                  <Button label="Conversations" variant="ghost" onClick={() => setNavOpen(true)} />
-                  <Button label="Live state" variant="ghost" onClick={() => setPanelOpen(true)} />
-                </HStack>
-              ) : null}
-              <ConnectionBanner view={view} wsUrl={wsUrl} />
-              {conversation === undefined ? (
-                <ChatLayout
-                  style={chatColumn}
-                  composer={<DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />}
-                  emptyState={
-                    <EmptyState title={draftLabel} description="The first message creates the conversation." />
-                  }
-                >
-                  {null}
-                </ChatLayout>
-              ) : (
-                <>
-                  {homeLabel === undefined ? null : (
-                    <HStack padding={2} gap={2} vAlign="center">
-                      {parentId === undefined ? null : (
-                        <Button
-                          label="Back to parent"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => void remote.controller.switchConversation(parentId)}
-                        />
-                      )}
-                      <Text type="label" weight="semibold">
-                        {homeLabel}
-                      </Text>
-                      {cwd === undefined ? null : (
-                        <Text type="supporting" maxLines={1}>
-                          {branch === undefined ? cwd : `${branch} · ${cwd}`}
-                        </Text>
-                      )}
-                      <Button label="Changes" variant="ghost" size="sm" onClick={() => setChangesOpen(true)} />
-                    </HStack>
-                  )}
-                  <ChatLayout
-                    key={conversation.conversation.id}
-                    style={chatColumn}
-                    composer={
-                      <VStack gap={1}>
-                        <PendingQuestions view={view} remote={remote} />
-                        <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
-                      </VStack>
-                    }
-                    emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
-                  >
-                    {items.length === 0 ? null : (
-                      <ChatMessageList isStreaming={busy} gap={0}>
-                        {/* Pace's live-session-column gutter: centered column
-                            with horizontal padding; chat.css's CoT rail
-                            expects that breathing room at the left edge. */}
-                        <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
-                          {items.map((item) => (
-                            <ChatEntryView
-                              key={item.id}
-                              entry={item}
-                              connected={view.connection === "connected"}
-                              openConversation={openConversation}
-                              onFork={setForkAt}
-                            />
-                          ))}
-                        </div>
-                      </ChatMessageList>
-                    )}
-                  </ChatLayout>
-                </>
-              )}
-            </VStack>
-          </LayoutContent>
-        }
-        end={
-          narrow ? undefined : (
-            <LayoutPanel width={320} hasDivider padding={3} label="Live state">
-              <LiveState view={view} remote={remote} />
-            </LayoutPanel>
-          )
-        }
-      />
-      {narrow ? (
-        <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="Conversations">
-          <ConversationItems view={view} remote={remote} device={device} onDraft={startDraft} onSelect={() => setNavOpen(false)} />
-        </MobileNav>
-      ) : null}
-      {narrow ? (
-        <Dialog isOpen={panelOpen} onOpenChange={setPanelOpen} width={360}>
-          <Layout
-            header={<DialogHeader title="Live state" onOpenChange={setPanelOpen} />}
-            content={
-              <LayoutContent>
-                <LiveState view={view} remote={remote} />
-              </LayoutContent>
+    <>
+      <AppFrame
+        view={view}
+        remote={remote}
+        device={device}
+        narrow={narrow}
+        drafting={drafting}
+        draftingChat={drafting && draft.kind === "chat"}
+        draftLabel={draftLabel}
+        conversation={conversation}
+        summary={shownSummary}
+        parentSummary={parentSummary}
+        banner={<ConnectionBanner view={view} wsUrl={wsUrl} />}
+        onDraft={startDraft}
+        onOpenChanges={() => setChangesOpen(true)}
+      >
+        {conversation === undefined ? (
+          <ChatLayout
+            style={chatColumn}
+            composer={
+              <div className="mx-auto w-full max-w-[44rem]">
+                <DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />
+              </div>
             }
-          />
-        </Dialog>
-      ) : null}
+            emptyState={
+              <EmptyState title={draftLabel} description="The first message creates the conversation." />
+            }
+          >
+            {null}
+          </ChatLayout>
+        ) : (
+          <ChatLayout
+            key={conversation.conversation.id}
+            style={chatColumn}
+            composer={
+              // Same 44rem centered column as the message list, so the
+              // composer lines up with the conversation at every width.
+              <div className="mx-auto w-full max-w-[44rem]">
+                <VStack gap={1}>
+                  <PendingQuestions view={view} remote={remote} />
+                  <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
+                </VStack>
+              </div>
+            }
+            emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
+          >
+            {items.length === 0 ? null : (
+              <ChatMessageList isStreaming={busy} gap={0}>
+                {/* Pace's live-session-column gutter: centered column
+                    with horizontal padding; chat.css's CoT rail
+                    expects that breathing room at the left edge. */}
+                <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
+                  {items.map((item) => (
+                    <ChatEntryView
+                      key={item.id}
+                      entry={item}
+                      connected={view.connection === "connected"}
+                      openConversation={openConversation}
+                      onFork={setForkAt}
+                    />
+                  ))}
+                </div>
+              </ChatMessageList>
+            )}
+          </ChatLayout>
+        )}
+      </AppFrame>
       {forkAt === undefined ? null : (
         <ForkDialog entryId={forkAt} remote={remote} connected={view.connection === "connected"} onClose={() => setForkAt(undefined)} />
       )}
       {changesOpen && conversation !== undefined && (
         <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
       )}
-    </VStack>
+    </>
   );
 }
 
@@ -499,244 +444,6 @@ function projectName(organized: DurableView["organized"], path: string): string 
   return organized.projects.find((entry) => entry.project.path === path)?.project.name ?? path.split("/").at(-1) ?? path;
 }
 
-function ConversationNav({ view, remote, device, onDraft }: { view: DurableView; remote: RemoteDurable; device?: KeyPair; onDraft: (home: Home) => void }) {
-  const connection =
-    view.connection === "connected" ? (
-      <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
-    ) : (
-      <StatusDot variant={view.connection === "closed" ? "error" : "warning"} label={view.connection} tooltip={view.connection} isPulsing />
-    );
-  return (
-    <SideNav
-      header={<SideNavHeading heading="PiNomad host" subheading={view.session.id} headerEndContent={connection} />}
-    >
-      <ConversationItems view={view} remote={remote} device={device} onDraft={onDraft} />
-    </SideNav>
-  );
-}
-
-function ConversationItems({
-  view,
-  remote,
-  device,
-  onSelect,
-  onDraft,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  device?: KeyPair;
-  onSelect?: () => void;
-  onDraft: (home: Home) => void;
-}) {
-  const disabled = view.connection !== "connected";
-  const [addOpen, setAddOpen] = useState(false);
-  const [devicesOpen, setDevicesOpen] = useState(false);
-  const [removing, setRemoving] = useState<Project>();
-  const start = (home: Home): void => {
-    onDraft(home);
-    onSelect?.();
-  };
-  return (
-    <>
-      <SideNavSection
-        title="Chats"
-        endContent={
-          <Button label="New chat" variant="ghost" size="sm" isDisabled={disabled} onClick={() => start({ kind: "chat" })} />
-        }
-      >
-        {view.organized.chats.map((node) => (
-          <ConversationNodeItem
-            key={node.summary.id}
-            node={node}
-            depth={0}
-            shown={view.conversation?.conversation.id}
-            disabled={disabled}
-            remote={remote}
-            onSelect={onSelect}
-          />
-        ))}
-      </SideNavSection>
-      {view.organized.projects.map(({ project, conversations }) => (
-        <SideNavSection
-          key={project.path}
-          title={project.name}
-          endContent={
-            <DropdownMenu
-              button={{ label: "Actions", variant: "ghost", size: "sm", isDisabled: disabled }}
-              items={[
-                { label: "New conversation", onClick: () => start({ kind: "project", path: project.path }) },
-                { label: "Remove project", onClick: () => setRemoving(project) },
-              ]}
-            />
-          }
-        >
-          {conversations.map((node) => (
-            <ConversationNodeItem
-              key={node.summary.id}
-              node={node}
-              depth={0}
-              shown={view.conversation?.conversation.id}
-              disabled={disabled}
-              remote={remote}
-              onSelect={onSelect}
-            />
-          ))}
-        </SideNavSection>
-      ))}
-      <SideNavItem label="Add project" isDisabled={disabled} onClick={() => setAddOpen(true)} />
-      <SideNavItem label="Devices" isDisabled={disabled} onClick={() => setDevicesOpen(true)} />
-      {addOpen ? (
-        <AddProjectDialog remote={remote} connected={!disabled} onClose={() => setAddOpen(false)} />
-      ) : null}
-      {devicesOpen ? (
-        <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
-      ) : null}
-      {removing === undefined ? null : (
-        <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
-      )}
-    </>
-  );
-}
-
-function ConversationNodeItem({
-  node,
-  depth,
-  shown,
-  disabled,
-  remote,
-  onSelect,
-}: {
-  node: ConversationNode;
-  depth: number;
-  shown: ConversationId | undefined;
-  disabled: boolean;
-  remote: RemoteDurable;
-  onSelect?: () => void;
-}) {
-  const { summary } = node;
-  // Archive sits beside the item, not in endContent: a <button> inside the item's
-  // own <button> is invalid HTML and pollutes the item's accessible name.
-  const item = (
-    <SideNavItem
-      label={summary.title ?? "New conversation"}
-      isSelected={summary.id === shown}
-      isDisabled={disabled}
-      style={depth === 0 ? { flex: 1, minWidth: 0 } : undefined}
-      onClick={() => {
-        void remote.controller.switchConversation(summary.id);
-        onSelect?.();
-      }}
-    >
-      {node.children.length === 0
-        ? undefined
-        : node.children.map((child) => (
-            <ConversationNodeItem
-              key={child.summary.id}
-              node={child}
-              depth={depth + 1}
-              shown={shown}
-              disabled={disabled}
-              remote={remote}
-              onSelect={onSelect}
-            />
-          ))}
-    </SideNavItem>
-  );
-  if (depth > 0) return item;
-  return (
-    // vAlign="start": the item's height grows with expanded children; the action
-    // must sit on the item's own row, not vertically centered over the block.
-    // The trigger is a sibling, not endContent: a <button> inside the item's own
-    // <button> is invalid HTML and pollutes the item's accessible name.
-    <HStack gap={0} vAlign="start">
-      {item}
-      <DropdownMenu
-        hasChevron={false}
-        button={{ label: "Conversation actions", children: "⋯", variant: "ghost", size: "sm", isDisabled: disabled }}
-        items={[
-          {
-            label: "Archive",
-            onClick: () => void remote.controller.archive(summary.id, true),
-          },
-        ]}
-      />
-    </HStack>
-  );
-}
-
-function AddProjectDialog({ remote, connected, onClose }: { remote: RemoteDurable; connected: boolean; onClose: () => void }) {
-  const [path, setPath] = useState("");
-  const add = (): void => {
-    void remote.controller.addProject(path.trim());
-    onClose();
-  };
-  return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
-      <Layout
-        header={
-          <DialogHeader
-            title="Add project"
-            subtitle="A local directory on the host that conversations can work in."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            <TextInput label="Path" value={path} onChange={setPath} />
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <HStack gap={2} hAlign="end">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Add project" variant="primary" isDisabled={!connected || path.trim() === ""} onClick={add} />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
-  );
-}
-
-function RemoveProjectDialog({
-  project,
-  remote,
-  connected,
-  onClose,
-}: {
-  project: Project;
-  remote: RemoteDurable;
-  connected: boolean;
-  onClose: () => void;
-}) {
-  const remove = (): void => {
-    void remote.controller.removeProject(project.path);
-    onClose();
-  };
-  return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
-      <Layout
-        header={
-          <DialogHeader
-            title={`Remove project ${project.name}?`}
-            subtitle="The directory and its conversations are kept; only the registration is removed."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={<LayoutContent />}
-        footer={
-          <LayoutFooter>
-            <HStack gap={2} hAlign="end">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Remove project" variant="primary" isDisabled={!connected} onClick={remove} />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
-  );
-}
-
 function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; home: Home; connected: boolean }) {
   const [value, setValue] = useState("");
   // ADR-0010: project conversations default to a fresh worktree; this switch opts out.
@@ -839,232 +546,5 @@ function Composer({
         />
       }
     />
-  );
-}
-
-function LiveState({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
-  const rows = view.tasks === undefined ? [] : taskRows(view.tasks);
-  const queue = view.conversation === undefined ? [] : queueItems(view.conversation);
-  const notices = [...view.notices].reverse().slice(0, 5);
-  const usage = view.conversation === undefined ? [] : usageRows(view.conversation);
-  return (
-    <VStack gap={4}>
-      {view.docs.map((doc) => (
-        <DocumentView key={doc.kind} doc={doc} remote={remote} connected={view.connection === "connected"} />
-      ))}
-      <List density="compact" header={<Text type="label" weight="semibold">Tasks</Text>}>
-        {rows.length === 0 ? (
-          <ListItem label="No live tasks" />
-        ) : (
-          rows.map((row) => <ListItem key={row.id} label={`${"\u00a0\u00a0".repeat(row.depth)}${row.depth > 0 ? "└ " : ""}${row.label}`} />)
-        )}
-      </List>
-      <List density="compact" header={<Text type="label" weight="semibold">Queue</Text>}>
-        {queue.length === 0 ? (
-          <ListItem label="Empty" />
-        ) : (
-          queue.map((item) => <ListItem key={item.id} label={item.text} startContent={<Token label={item.mode} size="sm" />} />)
-        )}
-      </List>
-      {notices.length === 0 ? null : (
-        <List density="compact" header={<Text type="label" weight="semibold">Notices</Text>}>
-          {notices.map((notice) => (
-            <ListItem
-              key={notice.id}
-              label={notice.message}
-              startContent={
-                <StatusDot variant={notice.level === "error" ? "error" : notice.level === "warning" ? "warning" : "neutral"} label={notice.level} />
-              }
-            />
-          ))}
-        </List>
-      )}
-      {usage.length === 0 ? null : (
-        <List density="compact" header={<Text type="label" weight="semibold">Usage</Text>}>
-          {usage.map((row) => (
-            <ListItem key={row.key} label={row.key} description={`↑${row.input} ↓${row.output} · $${row.cost.toFixed(4)}`} />
-          ))}
-        </List>
-      )}
-      <McpSection view={view} />
-    </VStack>
-  );
-}
-
-const MCP_VARIANT = { connecting: "warning", connected: "success", failed: "error", disabled: "neutral" } as const;
-
-/** The host's MCP servers (ADR-0012): per-server state and config errors; hidden when MCP is off. */
-function McpSection({ view }: { view: DurableView }) {
-  const mcp = view.mcp;
-  if (mcp === null || (mcp.servers.length === 0 && mcp.errors.length === 0)) return null;
-  return (
-    <List density="compact" header={<Text type="label" weight="semibold">MCP</Text>}>
-      {mcp.servers.map((server) => (
-        <ListItem
-          key={server.name}
-          label={server.name}
-          description={
-            server.state === "connected"
-              ? `${server.tools} tool${server.tools === 1 ? "" : "s"}${server.error === undefined ? "" : ` · ${server.error}`}`
-              : (server.error ?? server.state)
-          }
-          startContent={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} isPulsing={server.state === "connecting"} />}
-        />
-      ))}
-      {mcp.errors.map((error, index) => (
-        <ListItem key={index} label={error} startContent={<StatusDot variant="error" label="config error" />} />
-      ))}
-    </List>
-  );
-}
-
-function DevicesDialog({
-  view,
-  remote,
-  self,
-  onClose,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  self?: KeyPair;
-  onClose: () => void;
-}) {
-  const connected = view.connection === "connected";
-  const selfKey = self === undefined ? undefined : toBase64Url(self.publicKey);
-  const [offer, setOffer] = useState<{ url: string; expiresAt: number }>();
-  const [pairError, setPairError] = useState<string>();
-  const pair = (): void => {
-    setPairError(undefined);
-    void remote.controller.createPairing().then(setOffer, (error: unknown) => {
-      setPairError(error instanceof Error ? error.message : String(error));
-    });
-  };
-  return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={440}>
-      <Layout
-        header={
-          <DialogHeader
-            title="Devices"
-            subtitle="Paired devices can reach this host over the secure channel."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            <VStack gap={4} padding={2}>
-              {view.devices.length === 0 ? (
-                <Text type="supporting">No paired devices.</Text>
-              ) : (
-                <List density="compact">
-                  {view.devices.map((device) => (
-                    <DeviceRow
-                      key={device.publicKey}
-                      device={device}
-                      isSelf={device.publicKey === selfKey}
-                      connected={connected}
-                      remote={remote}
-                    />
-                  ))}
-                </List>
-              )}
-              {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
-              {offer === undefined ? (
-                <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
-              ) : (
-                <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
-              )}
-            </VStack>
-          </LayoutContent>
-        }
-      />
-    </Dialog>
-  );
-}
-
-function DeviceRow({
-  device,
-  isSelf,
-  connected,
-  remote,
-}: {
-  device: DeviceEntry;
-  isSelf: boolean;
-  connected: boolean;
-  remote: RemoteDurable;
-}) {
-  return (
-    <ListItem
-      label={device.name}
-      description={`Paired ${new Date(device.pairedAt).toLocaleDateString()}`}
-      endContent={
-        <HStack gap={2} vAlign="center">
-          {isSelf ? <Token label="This device" size="sm" /> : null}
-          <Button
-            label="Revoke"
-            variant="ghost"
-            size="sm"
-            isDisabled={!connected}
-            onClick={() => void remote.controller.revokeDevice(device.publicKey)}
-          />
-        </HStack>
-      }
-    />
-  );
-}
-
-function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: number; onRenew: () => void }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
-  if (seconds === 0) {
-    return (
-      <HStack gap={2} vAlign="center">
-        <Text type="supporting">Expired</Text>
-        <Button label="New code" variant="secondary" size="sm" onClick={onRenew} />
-      </HStack>
-    );
-  }
-  return (
-    <VStack gap={3} hAlign="center">
-      <QrImage text={url} />
-      <Text type="supporting" style={{ wordBreak: "break-all", userSelect: "all" }}>
-        {url}
-      </Text>
-      <Text type="supporting">
-        Expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-      </Text>
-    </VStack>
-  );
-}
-
-const QR_QUIET = 2;
-
-function QrImage({ text }: { text: string }) {
-  const qr = useMemo(() => encode(text, { border: 0 }), [text]);
-  const size = qr.size + QR_QUIET * 2;
-  return (
-    <svg
-      role="img"
-      aria-label="Pairing QR code"
-      viewBox={`0 0 ${size} ${size}`}
-      width={200}
-      height={200}
-      style={{ display: "block" }}
-    >
-      {/* Fixed black-on-white: scanners need the contrast regardless of theme. */}
-      <rect width={size} height={size} fill="#ffffff" />
-      {/* One path, not per-module rects — rect seams anti-alias into a ragged grid that hurts scanning. */}
-      <path
-        shapeRendering="crispEdges"
-        fill="#000000"
-        d={qr.data
-          .flatMap((row, y) => row.map((dark, x) => (dark ? `M${x + QR_QUIET} ${y + QR_QUIET}h1v1h-1z` : "")))
-          .filter((segment) => segment !== "")
-          .join("")}
-      />
-    </svg>
   );
 }

@@ -269,3 +269,355 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* —— App frame / sidebar (Pace app-frame) —— */
+
+/* The SideNav enforces a label weight bump for the selected item, but every
+   selected item label must stay at normal weight (everything 400). Scoped to
+   the nav on purpose: sitting on the whole layout it silently flattened every
+   weight in the app, markdown bold and Tailwind font-medium included. */
+.pigui-app-layout .astryx-side-nav :where(*) {
+  font-weight: var(--font-weight-normal, 400);
+}
+
+.pigui-app-layout .astryx-side-nav-section span,
+.pigui-app-layout .astryx-side-nav-item,
+.pigui-app-layout .astryx-side-nav-item[data-selected="selected"] {
+  font-weight: var(--font-weight-normal, 400);
+}
+
+/* Inactive side nav rows keep normal foreground color instead of the
+   secondary tone Astryx applies by default. */
+.pigui-app-layout .astryx-side-nav-item:not([aria-disabled="true"]):not(:disabled),
+.pigui-app-layout .astryx-side-nav-item:not([aria-disabled="true"]):not(:disabled) .astryx-icon {
+  color: var(--foreground);
+}
+
+.pigui-app-layout .astryx-side-nav-item {
+  border-radius: var(--pigui-sidebar-item-radius);
+  min-height: var(--pigui-sidebar-row-height);
+}
+
+.pigui-app-layout .astryx-side-nav-item svg,
+.pigui-app-layout .astryx-more-menu svg,
+.pigui-app-layout .pigui-session-glyph svg {
+  width: var(--pigui-sidebar-icon-size);
+  height: var(--pigui-sidebar-icon-size);
+  shape-rendering: geometricPrecision;
+}
+
+/* Fixed-size glyph slot so conversation rows with and without status stay aligned. */
+.pigui-session-glyph {
+  display: inline-flex;
+  width: var(--pigui-sidebar-icon-size);
+  height: var(--pigui-sidebar-icon-size);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Row actions (conversation menu / project actions) are interactive, so they
+   cannot live inside the SideNavItem <button>. They render as an overlay
+   sibling aligned to the first row; the in-row spacer reserves their width so
+   the label truncates before the overlay. */
+.pigui-sidenav-row-with-actions {
+  position: relative;
+}
+
+.pigui-sidenav-row-actions {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: var(--spacing-1);
+  height: var(--pigui-sidebar-row-height);
+  z-index: 1;
+}
+
+/* Row actions share the row surface; only the glyph gains emphasis.
+   Match StyleX specificity without changing the built-in focus outline. */
+.pigui-sidenav-hover-actions .astryx-button:not(#\#):not(#\#):not(#\#) {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--muted);
+  transform: none;
+  transition-property: color;
+}
+
+.pigui-sidenav-hover-actions .astryx-button:not(:disabled):not([aria-disabled="true"]):is(:focus-visible, :active, [aria-expanded="true"]):not(#\#):not(#\#):not(#\#) {
+  color: var(--foreground);
+}
+
+@media (hover: hover) {
+  .pigui-sidenav-hover-actions .astryx-button:not(:disabled):not([aria-disabled="true"]):hover:not(#\#):not(#\#):not(#\#) {
+    color: var(--foreground);
+  }
+
+  /* The action overlay is a sibling, so hovering it does not hover the
+     navigation button. Keep the same row wash across that boundary. */
+  .pigui-sidenav-row-with-actions:has(> .pigui-sidenav-row-actions:hover) > div > .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#) {
+    background-color: var(--color-overlay-hover);
+  }
+}
+
+.pigui-sidenav-actions-spacer {
+  display: inline-block;
+  width: calc(2 * var(--size-element-sm) + var(--spacing-0-5));
+}
+
+/* Astryx nested SideNavItem children use padding-inline-start: var(--spacing-6)
+   at StyleX ID-level specificity. Conversation rows already lead with a glyph
+   slot the same size as the project folder, so that extra indent pushes titles
+   toward the row center. Match StyleX specificity and drop the indent so the
+   two columns line up. childrenInner is a block box with no gap; space the
+   rows from the project header and from each other so hover/selected washes do
+   not pinch. padding-block-start lives on childrenInner (inside the 0fr
+   collapse) so the gap clips away when the project is folded. */
+.pigui-sidenav-row-with-actions [role="group"] > div:not(#\#):not(#\#):not(#\#) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pigui-sidebar-row-gap);
+  padding-block-start: var(--pigui-sidebar-row-gap);
+  padding-inline-start: 0;
+}
+
+/* Section header (Chats / Projects): the title is the collapse toggle, laid
+   out on the same row grid as the items so the hover-only "+" lines up with
+   the project-row actions below it. */
+.pigui-sidenav-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-height: var(--pigui-sidebar-row-height);
+  padding-inline: var(--spacing-2) var(--spacing-1);
+}
+
+.pigui-sidenav-section-toggle {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0;
+  border: none;
+  border-radius: var(--pigui-sidebar-item-radius);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-supporting-size);
+  line-height: var(--text-supporting-leading);
+  text-align: start;
+  cursor: default;
+}
+
+.pigui-sidenav-section-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.pigui-sidenav-section-toggle__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pigui-sidenav-section-toggle__chevron {
+  width: var(--pigui-sidebar-icon-size);
+  height: var(--pigui-sidebar-icon-size);
+  flex: 0 0 auto;
+  opacity: 0;
+  transition:
+    opacity 120ms ease-out,
+    rotate 150ms ease-out;
+}
+
+.pigui-sidenav-section-toggle__chevron[data-expanded="true"] {
+  rotate: 90deg;
+}
+
+/* Actions (new chat, add project, row menus) are hidden until the row is
+   hovered, keyboard-focused, or has its menu open. Guarded by (hover: hover)
+   so touch devices keep the actions permanently reachable. Opacity only, no
+   pointer-events toggle: a pointer over the buttons already hovers the row (or
+   the overlay), so they are never invisible-but-clickable, and automation can
+   hit them without a prior hover. */
+@media (hover: hover) {
+  .pigui-sidenav-hover-actions {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  /* Project rows: only the header button counts, not the nested conversation
+     rows the same wrapper contains. The overlay's own :hover keeps it shown
+     once the pointer crosses from the button onto the actions. */
+  .pigui-sidenav-section-header:hover .pigui-sidenav-hover-actions,
+  .pigui-sidenav-section-header:focus-within .pigui-sidenav-hover-actions,
+  .pigui-sidenav-session-row:hover > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-session-row:focus-within > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-with-actions:has(> div > .astryx-side-nav-item:hover) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-with-actions:has(> div > .astryx-side-nav-item:focus-visible) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-actions:hover > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-actions:focus-within > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-hover-actions:has([aria-expanded="true"]) {
+    opacity: 1;
+  }
+
+  .pigui-sidenav-section-header:hover .pigui-sidenav-section-toggle__chevron,
+  .pigui-sidenav-section-header:focus-within .pigui-sidenav-section-toggle__chevron,
+  .pigui-sidenav-section-toggle__chevron[data-expanded="false"] {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .pigui-sidenav-section-toggle__chevron {
+    opacity: 1;
+  }
+}
+
+/* Conversation rows keep the meta slot in the trailing position and swap it
+   for the actions menu on hover so the two never overlap. */
+.pigui-sidenav-session-meta {
+  transition: opacity 120ms ease-out;
+}
+
+@media (hover: hover) {
+  .pigui-sidenav-session-row:hover .pigui-sidenav-session-meta,
+  .pigui-sidenav-session-row:focus-within .pigui-sidenav-session-meta {
+    opacity: 0;
+  }
+}
+
+/* Project rows carry their own folder/chevron indicator — hide the built-in
+   trailing chevron Astryx renders on collapsible items. */
+.pigui-app-layout .astryx-side-nav-item[aria-expanded] > span:last-of-type {
+  display: none;
+}
+
+.pigui-project-expansion-indicator {
+  position: relative;
+  display: inline-flex;
+  width: var(--pigui-sidebar-icon-size);
+  height: var(--pigui-sidebar-icon-size);
+  align-items: center;
+  justify-content: center;
+  color: var(--foreground);
+}
+
+.pigui-project-expansion-indicator__state,
+.pigui-project-expansion-indicator__chevron {
+  position: absolute;
+  width: var(--pigui-sidebar-icon-size);
+  height: var(--pigui-sidebar-icon-size);
+  transition:
+    opacity 120ms var(--ease-out),
+    rotate 150ms var(--ease-out);
+}
+
+.pigui-project-expansion-indicator__state {
+  opacity: 1;
+}
+
+.pigui-project-expansion-indicator__chevron {
+  opacity: 0;
+  rotate: 0deg;
+}
+
+.pigui-project-expansion-indicator[data-expanded="true"] .pigui-project-expansion-indicator__chevron {
+  rotate: 90deg;
+}
+
+.pigui-app-layout
+  .astryx-side-nav-item:is(
+    :hover,
+    [data-hovered="true"],
+    :focus-visible,
+    [data-focus-visible="true"]
+  )
+  .pigui-project-expansion-indicator__state {
+  opacity: 0;
+}
+
+.pigui-app-layout
+  .astryx-side-nav-item:is(
+    :hover,
+    [data-hovered="true"],
+    :focus-visible,
+    [data-focus-visible="true"]
+  )
+  .pigui-project-expansion-indicator__chevron {
+  opacity: 1;
+}
+
+/* The main surface is elevated: content sits on --surface over the wash. */
+.pigui-app-layout [role="main"] {
+  overscroll-behavior: none;
+}
+
+.pigui-app-layout [role="main"]:not(#\#):not(#\#):not(#\#) {
+  background-color: var(--surface);
+}
+
+/* —— Animated icons (shared/ui/animated-icons) —— */
+
+.pigui-animated-icon {
+  overflow: visible;
+}
+
+/* These controls use the icon's hover gesture instead of press scaling. */
+:where(button, a, [role="menuitem"]):has(svg.pigui-animated-icon):active {
+  transform: none;
+  scale: none;
+}
+
+.pigui-animated-icon [data-icon-part] {
+  transform-box: view-box;
+  transform-origin: center;
+  animation-duration: calc(var(--pigui-icon-motion-duration) - var(--icon-motion-delay, 0ms));
+  animation-delay: var(--icon-motion-delay, 0ms);
+  animation-timing-function: var(--ease-standard);
+}
+
+.pigui-animated-icon[data-icon-motion="new-chat"] [data-icon-part="add"] {
+  transform-origin: 77.0833% 22.9167%;
+}
+
+/* Only a fine pointer starts decorative motion. Focus and touch stay still. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  :where(button, a, [role="menuitem"]):hover:not(:disabled):not([aria-disabled="true"]) {
+    & .pigui-animated-icon[data-icon-hover][data-icon-motion="new-chat"] [data-icon-part="bubble"] {
+      animation-name: pigui-icon-chat;
+    }
+
+    & .pigui-animated-icon[data-icon-hover][data-icon-motion="new-chat"] [data-icon-part="add"] {
+      animation-name: pigui-icon-chat-add;
+    }
+
+    & .pigui-animated-icon[data-icon-hover][data-icon-motion="sidebar"] [data-icon-part="divider"] {
+      animation-name: pigui-icon-sidebar;
+      animation-timing-function: linear;
+    }
+  }
+}
+
+@keyframes pigui-icon-chat {
+  0%, 100% { transform: none; }
+  32% { transform: translateY(2.9167%) scale(0.96); }
+  65% { transform: translateY(-4.1667%) scale(1.025); }
+}
+
+@keyframes pigui-icon-chat-add {
+  0%, 100% { transform: none; }
+  14% { transform: rotate(-14deg) scale(0.48); }
+  45% { transform: rotate(5deg) scale(1.22); }
+  75% { transform: rotate(-2deg) scale(0.98); }
+}
+
+@keyframes pigui-icon-sidebar {
+  0%, 100% { d: path("M9 3V21"); }
+  10% { d: path("M6.8 3.123V20.877"); }
+  22% { d: path("M4.3 4.051V19.949"); }
+  32%, 50% { d: path("M3.4 5.456V18.544"); }
+  66% { d: path("M5.4 3.419V20.581"); }
+  82% { d: path("M8.3 3.02V20.98"); }
+  92% { d: path("M9.25 3V21"); }
+}
