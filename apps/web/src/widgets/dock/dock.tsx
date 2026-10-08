@@ -3,10 +3,9 @@ import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
-import { Token } from "@astryxdesign/core/Token";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { agentOf, queueItems, taskRows, usageRows } from "../../presentation/chat.ts";
+import { agentOf, taskRows, usageRows } from "../../presentation/chat.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 
 /** Desktop dock: the live-state panel docked to the right of the chat column. */
@@ -64,7 +63,6 @@ export function LiveState({
   conversation: DurableView["conversation"];
 }) {
   const rows = view.tasks === undefined ? [] : taskRows(view.tasks);
-  const queue = conversation === undefined ? [] : queueItems(conversation);
   const notices = [...view.notices].reverse().slice(0, 5);
   const usage = conversation === undefined ? [] : usageRows(conversation);
   const branch = conversation === undefined ? undefined : view.checkout?.branch;
@@ -85,13 +83,6 @@ export function LiveState({
           <ListItem label="No live tasks" />
         ) : (
           rows.map((row) => <ListItem key={row.id} label={`${"  ".repeat(row.depth)}${row.depth > 0 ? "└ " : ""}${row.label}`} />)
-        )}
-      </List>
-      <List density="compact" header={<Text type="label" weight="semibold">Queue</Text>}>
-        {queue.length === 0 ? (
-          <ListItem label="Empty" />
-        ) : (
-          queue.map((item) => <ListItem key={item.id} label={item.text} startContent={<Token label={item.mode} size="sm" />} />)
         )}
       </List>
       {notices.length === 0 ? null : (

@@ -1,27 +1,15 @@
-import { ChatComposer } from "@astryxdesign/core/Chat";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
-import { Switch } from "@astryxdesign/core/Switch";
-import type { ModelRef } from "@earendil-works/pi-durable";
 import { useRef, useState } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
+import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
+import { ModelSelector } from "../../entities/model/model-selector.tsx";
+import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
+import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
 import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
-
-const DRAFT_MODEL_KEY = "pinomad.draft.model";
-
-// pi-ai's thinking-level order; used to clamp a stored/default level down to
-// what the picked model supports (highest supported level not above it).
-const LEVEL_ORDER: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
-const clampLevel = (levels: readonly ThinkingLevel[], want: ThinkingLevel): ThinkingLevel => {
-  if (levels.includes(want)) return want;
-  const wantIndex = LEVEL_ORDER.indexOf(want);
-  return levels.filter((level) => LEVEL_ORDER.indexOf(level) <= wantIndex).at(-1) ?? "off";
-};
 
 // Pace's four draft suggestions; representative first-touch prompts.
 const SUGGESTED_PROMPTS = [
@@ -31,40 +19,10 @@ const SUGGESTED_PROMPTS = [
   { Icon: FileDiff, label: "Review my uncommitted changes" },
 ] as const;
 
-interface DraftPick {
-  readonly provider: string;
-  readonly modelId: string;
-  readonly thinkingLevel: string;
-}
-
-/** The last draft pick, only when its model is still listed. */
-function readDraftPick(models: readonly ModelSummary[]): DraftPick | undefined {
-  try {
-    const raw = localStorage.getItem(DRAFT_MODEL_KEY);
-    if (raw === null) return undefined;
-    const pick = JSON.parse(raw) as Partial<DraftPick>;
-    if (
-      typeof pick.provider === "string"
-      && typeof pick.modelId === "string"
-      && typeof pick.thinkingLevel === "string"
-      && models.some((model) => model.provider === pick.provider && model.modelId === pick.modelId)
-    ) {
-      return pick as DraftPick;
-    }
-  } catch {
-    // A malformed entry is dropped rather than blocking the draft.
-  }
-  return undefined;
-}
-
-const summaryOf = (models: readonly ModelSummary[], ref: ModelRef | undefined): ModelSummary | undefined =>
-  ref === undefined ? undefined : models.find((each) => each.provider === ref.provider && each.modelId === ref.modelId);
-
-const refOf = (summary: ModelSummary): ModelRef => ({ provider: summary.provider, modelId: summary.modelId });
-
 /**
  * The draft screen: Pace's SessionDraftComposer layout — hero, project
- * picker, composer with model/thinking menus, and suggestion pills.
+ * picker, prompt input with the model · thinking capsule and the location
+ * row, and suggestion pills.
  */
 export function DraftHome({
   view,
@@ -80,34 +38,17 @@ export function DraftHome({
   connected: boolean;
 }) {
   const [value, setValue] = useState("");
-  // ADR-0010: project conversations default to a fresh worktree; this switch opts out.
-  const [direct, setDirect] = useState(false);
-  const composerRef = useRef<HTMLDivElement>(null);
-  const [pick, setPick] = useState<{ model: ModelRef | undefined; level: ThinkingLevel }>(() => {
-    const stored = readDraftPick(view.models);
-    const model: ModelRef | undefined =
-      stored !== undefined
-        ? { provider: stored.provider, modelId: stored.modelId }
-        : view.defaults.model ?? (view.models[0] === undefined ? undefined : refOf(view.models[0]));
-    const levels = summaryOf(view.models, model)?.thinkingLevels ?? ["off"];
-    const want = (stored?.thinkingLevel ?? view.defaults.thinkingLevel ?? "off") as ThinkingLevel;
-    return { model, level: clampLevel(levels, want) };
-  });
+  // ADR-0010: project conversations default to a fresh worktree; the picker opts out.
+  const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
+  const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  const { pick, setModel, setLevel } = useDraftModelPick(view);
 
-  const remember = (model: ModelRef, level: ThinkingLevel): void => {
-    localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
-  };
-
-  const levels = summaryOf(view.models, pick.model)?.thinkingLevels ?? ["off"];
-  const modelItems = view.models.map((model) => ({
-    label: `${model.provider}/${model.modelId}`,
-    onClick: () => {
-      const level = clampLevel(model.thinkingLevels, pick.level);
-      setPick({ model: refOf(model), level });
-      remember(refOf(model), level);
-    },
-  }));
-  const thinkingDisabled = !connected || levels.length <= 1;
+  const location =
+    draft.kind === "project" ? (
+      <CheckoutStrategyPicker value={checkoutMode} onChange={setCheckoutMode} isDisabled={!connected} />
+    ) : (
+      <ComposerStaticChip chrome="selector" icon={ChatAdd} label="Chat" testId="composer-location-label" />
+    );
 
   return (
     <section
@@ -144,56 +85,34 @@ export function DraftHome({
             onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
           />
         </div>
-        <div ref={composerRef} className="flex w-full flex-col gap-3">
-          {draft.kind !== "project" ? null : (
-            <Switch
-              label="Work directly in project directory"
-              size="sm"
-              value={direct}
-              onChange={setDirect}
-              isDisabled={!connected}
-            />
-          )}
-          <ChatComposer
+        <div className="flex w-full flex-col gap-3">
+          <ChatPromptInput
+            accent="brand"
+            accentFocusRing
             value={value}
-            onChange={setValue}
-            onSubmit={(text) => {
+            inputRef={inputRef}
+            onValueChange={setValue}
+            onSubmit={() => {
+              const text = value.trim();
+              if (text === "") return;
               void remote.controller.createConversation(draft, text, {
-                ...(draft.kind === "project" && direct ? { checkout: "project" as const } : {}),
+                ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
                 ...(pick.model === undefined ? {} : { model: pick.model }),
                 thinkingLevel: pick.level,
               });
             }}
             isDisabled={!connected}
             placeholder="Do anything with Pi"
-            footerActions={
-              <>
-                <DropdownMenu
-                  button={{
-                    label: pick.model === undefined ? "No model" : `${pick.model.provider}/${pick.model.modelId}`,
-                    variant: "ghost",
-                    size: "sm",
-                    isDisabled: !connected,
-                  }}
-                  items={modelItems}
-                />
-                <DropdownMenu
-                  button={{
-                    label: `Thinking: ${pick.level}`,
-                    variant: "ghost",
-                    size: "sm",
-                    isDisabled: thinkingDisabled,
-                  }}
-                  items={levels.map((level) => ({
-                    label: level,
-                    onClick: () => {
-                      if (pick.model !== undefined) remember(pick.model, level);
-                      setPick((current) => ({ ...current, level }));
-                    },
-                  }))}
-                />
-              </>
+            startActions={
+              <ModelSelector
+                models={view.models}
+                selected={{ model: pick.model, level: pick.level }}
+                isDisabled={!connected}
+                onModelChange={setModel}
+                onLevelChange={setLevel}
+              />
             }
+            footer={<ComposerLocationRow location={location} />}
           />
         </div>
         <ChatPromptSuggestion className="w-full max-w-[35rem]">
@@ -205,8 +124,7 @@ export function DraftHome({
                 showEndIcon={false}
                 onPress={() => {
                   setValue(label);
-                  // ChatComposer's input is a contentEditable region, not a textarea.
-                  (composerRef.current?.querySelector("[contenteditable]") as HTMLElement | null)?.focus();
+                  inputRef.current?.focusAtEnd();
                 }}
               >
                 <span className="inline-flex min-w-0 items-center gap-2">

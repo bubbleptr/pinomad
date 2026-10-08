@@ -1,12 +1,10 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import {
-  ChatComposer,
   ChatLayout,
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
@@ -15,10 +13,10 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
-import { agentOf, statusText } from "./presentation/chat.ts";
 import { deriveChat } from "./entities/conversation/cot-view.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
+import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
 import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -295,7 +293,7 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
               <div className="mx-auto w-full max-w-[44rem]">
                 <VStack gap={1}>
                   <PendingQuestions view={view} remote={remote} />
-                  <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
+                  <ConversationComposer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
                 </VStack>
               </div>
             }
@@ -436,96 +434,4 @@ function ConnectionBanner({ view, wsUrl }: { view: DurableView; wsUrl: string })
 
 function projectName(organized: DurableView["organized"], path: string): string {
   return organized.projects.find((entry) => entry.project.path === path)?.project.name ?? path.split("/").at(-1) ?? path;
-}
-
-function Composer({
-  view,
-  remote,
-  conversation,
-  busy,
-  narrow,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  conversation: NonNullable<DurableView["conversation"]>;
-  busy: boolean;
-  narrow: boolean;
-}) {
-  const [value, setValue] = useState("");
-  const agent = agentOf(conversation);
-  const model = agent.model === undefined ? "No model" : `${agent.model.provider}/${agent.model.modelId}`;
-  const status = statusText(conversation);
-  const disconnected = view.connection !== "connected";
-  const models = view.models.map((candidate) => ({
-    label: `${candidate.provider}/${candidate.modelId}`,
-    onClick: () => void remote.controller.setModel({ provider: candidate.provider, modelId: candidate.modelId }),
-  }));
-  const summary = view.models.find(
-    (candidate) => agent.model !== undefined && candidate.provider === agent.model.provider && candidate.modelId === agent.model.modelId,
-  );
-  const thinkingLevels = summary?.thinkingLevels ?? ["off"];
-  const thinkingDisabled = disconnected || thinkingLevels.length <= 1;
-  const thinkingItems = thinkingLevels.map((level) => ({
-    label: level,
-    onClick: () => void remote.controller.setThinkingLevel(level),
-  }));
-  return (
-    <ChatComposer
-      value={value}
-      onChange={setValue}
-      // Enter prompts when idle and steers when busy.
-      onSubmit={(text) => void remote.controller.submit(text, "steer")}
-      isStopShown={busy && value.trim() === ""}
-      onStop={() => void remote.controller.abort()}
-      isDisabled={disconnected}
-      placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
-      headerContext={status === "" ? undefined : <Text type="supporting">{status}</Text>}
-      footerActions={
-        narrow ? (
-          <DropdownMenu
-            button={{ label: "Controls", variant: "ghost", isDisabled: disconnected }}
-            items={[
-              { label: "Compact", onClick: () => void remote.controller.compact(undefined) },
-              {
-                type: "section",
-                title: `Thinking: ${agent.thinkingLevel ?? "off"}`,
-                items: thinkingItems,
-              },
-              { type: "section", title: `Model: ${model}`, items: models },
-            ]}
-          />
-        ) : (
-          <>
-            <DropdownMenu
-              button={{ label: model, variant: "ghost", size: "sm", isDisabled: disconnected }}
-              items={models}
-            />
-            <DropdownMenu
-              button={{
-                label: `Thinking: ${agent.thinkingLevel ?? "off"}`,
-                variant: "ghost",
-                size: "sm",
-                isDisabled: thinkingDisabled,
-              }}
-              items={thinkingItems}
-            />
-            <Button label="Compact" variant="ghost" size="sm" isDisabled={disconnected} onClick={() => void remote.controller.compact(undefined)} />
-          </>
-        )
-      }
-      sendActions={
-        <Button
-          label="Follow-up"
-          variant="ghost"
-          size={narrow ? "md" : "sm"}
-          tooltip="Queue after the running turn"
-          isDisabled={disconnected || value.trim() === ""}
-          onClick={() => {
-            void remote.controller.submit(value.trim(), "followUp");
-            setValue("");
-          }}
-        />
-      }
-    />
-  );
 }

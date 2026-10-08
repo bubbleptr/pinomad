@@ -1,4 +1,8 @@
+import { execFile } from "node:child_process";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -21,6 +25,7 @@ import { deriveChat } from "../src/entities/conversation/cot-view.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();
+const run = promisify(execFile);
 const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
 
 async function startWeb(): Promise<string> {
@@ -82,8 +87,8 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   await page.getByRole("button", { name: "Dock", exact: true }).click();
   await page.getByRole("dialog").getByText("No live tasks").waitFor();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Controls", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Compact", exact: true }).waitFor();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
 });
 
 it("preserves an unsent follow-up and disables write controls while reconnecting", async () => {
@@ -98,8 +103,10 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
 
   await host.close();
   await page.getByText("Host connection lost", { exact: true }).waitFor();
-  expect(await page.getByRole("button", { name: "Follow-up", exact: true }).isDisabled()).toBe(true);
-  expect(await page.getByRole("button", { name: "Compact", exact: true }).isDisabled()).toBe(true);
+  // Follow-up is only offered while a run is busy — the capsule and the
+  // + menu are the always-present write controls here.
+  expect(await page.getByRole("button", { name: "Model and Thinking", exact: true }).isDisabled()).toBe(true);
+  expect(await page.getByRole("button", { name: "More actions", exact: true }).isDisabled()).toBe(true);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).isDisabled()).toBe(true);
   expect(await composer.textContent()).toBe("keep this draft");
 });
@@ -449,17 +456,20 @@ it("creates the draft with the picked model and thinking level", async () => {
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // The default is the host's first model; pick the reasoning one + a level.
-  await page.getByRole("button", { name: "faux/faux-1", exact: true }).click();
-  await page.getByRole("menuitem", { name: "faux/faux-thinker", exact: true }).click();
-  await page.getByRole("button", { name: "Thinking: off", exact: true }).click();
-  await page.getByRole("menuitem", { name: "medium", exact: true }).click();
+  // The default is the host's first model; the capsule picks the reasoning one + a level.
+  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  await capsule.click();
+  await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
+  await page.getByRole("button", { name: "Medium", exact: true }).click();
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · Medium");
+  await page.keyboard.press("Escape");
   await page.getByRole("textbox").fill("deep work");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("thinking answer", { exact: true }).waitFor();
 
   // The new conversation's composer shows the picked model, and the agent doc carries it.
-  await page.getByRole("button", { name: "faux/faux-thinker", exact: true }).waitFor();
+  const liveCapsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  await expect.poll(() => liveCapsule.textContent()).toContain("Faux Thinker · Medium");
   await expect.poll(async () => {
     const conversationId = observer.view.current().organized.chats.find((node) => node.summary.title === "deep work")?.summary.id;
     if (conversationId === undefined) return undefined;
@@ -468,24 +478,44 @@ it("creates the draft with the picked model and thinking level", async () => {
   }).toBe("faux/faux-thinker:medium");
 });
 
-it("sets the thinking level from the conversation composer's menu", async () => {
+it("changes the model and thinking level from the composer capsule", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
-    fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+    fauxModels: [
+      { id: "faux-1", name: "Faux Model" },
+      { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+    ],
     answers: ["done"],
   });
+  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("textbox").fill("hello");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
-  // The menu lists the model's supported levels; picking one relabels it.
-  await page.getByRole("button", { name: "Thinking: off", exact: true }).click();
-  await page.getByRole("menuitem", { name: "low", exact: true }).waitFor();
-  await page.getByRole("menuitem", { name: "high", exact: true }).click();
-  await page.getByRole("button", { name: "Thinking: high", exact: true }).waitFor();
+  // The default model is non-reasoning: plain name, no Thinking section.
+  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
+  await capsule.click();
+  // Non-reasoning model: no Thinking section (no level rows at all).
+  expect(await page.getByRole("button", { name: "High", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("button", { name: "Faux Thinker", exact: false }).textContent()).not.toContain("·");
+
+  // Picking the reasoning model reveals its levels once the setModel call
+  // round-trips; picking one relabels the trigger.
+  await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
+  await page.getByRole("button", { name: "High", exact: true }).waitFor();
+  await page.getByRole("button", { name: "High", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · High");
+  await expect.poll(async () => {
+    const id = observer.view.current().organized.chats.find((node) => node.summary.title === "hello")?.summary.id;
+    if (id === undefined) return undefined;
+    const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
+    return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
+  }).toBe("faux/faux-thinker:high");
 });
 
 it("organizes conversations under projects and chats", async () => {
@@ -614,6 +644,102 @@ it("collapses the sidebar into the header toggle and restores it", async () => {
   await expand.click();
   await page.getByRole("button", { name: "New chat", exact: true }).waitFor();
   await expect.poll(() => page.getByRole("button", { name: "Expand sidebar" }).count()).toBe(0);
+});
+
+it("compacts the conversation from the more-actions menu", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("hello");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).click();
+  await page.locator("[data-toast-id]").getByText("Compaction", { exact: false }).waitFor();
+});
+
+it("shows a queued follow-up above the composer until the run takes it", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    tokensPerSecond: 60,
+    answers: ["word ".repeat(500), "followed"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("go");
+  await page.getByRole("textbox").press("Enter");
+  // Wait for the live composer (the draft's input would eat the fill otherwise)
+  // and for the run to be provably busy.
+  await page.getByText("word", { exact: false }).first().waitFor();
+  await page.getByRole("textbox").fill("next task");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+
+  const queued = page.locator(".chat-queued-message");
+  await queued.getByText("next task", { exact: true }).waitFor();
+  await queued.getByText("Follow-up", { exact: true }).waitFor();
+  // Once the run takes it, the row is gone and the message is a user entry.
+  await page.locator(".chat-queued-message").first().waitFor({ state: "detached" });
+  await page.getByText("followed", { exact: true }).waitFor();
+});
+
+it("shows the location row and honors the draft checkout picker", async () => {
+  const webOrigin = await startWeb();
+  const repoDir = await tempDir();
+  defer(repoDir.remove);
+  const repoName = repoDir.path.split("/").at(-1)!;
+  await mkdir(join(repoDir.path, ".git-placeholder"), { recursive: true });
+  await run("git", ["-C", repoDir.path, "init", "-b", "main"]);
+  await writeFile(join(repoDir.path, "tracked.txt"), "tracked\n");
+  await run("git", ["-C", repoDir.path, "add", "-A"]);
+  await run("git", ["-C", repoDir.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
+  const plainDir = await tempDir();
+  defer(plainDir.remove);
+  const plainName = plainDir.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [repoDir.path, plainDir.path],
+    answers: ["chat done", "tree done", "direct done"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // A chat conversation carries the static "Chat" chip.
+  await page.getByRole("textbox").fill("chat hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("chat done", { exact: true }).waitFor();
+  await page.getByText("Chat", { exact: true }).waitFor();
+
+  // A repo project defaults to a worktree: "Git worktree" + its pinomad branch.
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: repoName, exact: true }).click();
+  await page.getByRole("combobox", { name: "Where to work", exact: true }).waitFor();
+  await page.getByRole("textbox").fill("tree hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("tree done", { exact: true }).waitFor();
+  await page.getByText("Git worktree", { exact: true }).waitFor();
+  await page.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
+
+  // A plain project with "Project folder" works directly in its directory.
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: plainName, exact: true }).click();
+  await page.getByRole("combobox", { name: "Where to work", exact: true }).click();
+  await page.getByRole("option", { name: "Project folder", exact: true }).click();
+  await page.getByRole("textbox").fill("direct hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("direct done", { exact: true }).waitFor();
+  await page.getByText("Project folder", { exact: true }).waitFor();
+  await expect.poll(async () => {
+    const id = observer.view.current().organized.projects.find((p) => p.project.name === plainName)
+      ?.conversations.find((node) => node.summary.title === "direct hi")?.summary.id;
+    if (id === undefined) return undefined;
+    const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
+    return agent?.cwd;
+  }).toBe(await realpath(plainDir.path));
 });
 
 it("surfaces a failed command as a toast without opening the dock", async () => {

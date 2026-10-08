@@ -10,7 +10,7 @@ import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
-import { queueItems, taskRows } from "../../presentation/chat.ts";
+import { taskRows } from "../../presentation/chat.ts";
 import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
@@ -67,11 +67,7 @@ export function AppFrame({
     setSidebarOpen(!sidebarOpen);
   };
   const openConversation = (id: ConversationId): void => void remote.controller.switchConversation(id);
-  // Tasks live on the view (any conversation); the queue is per shown conversation.
-  const liveActivity =
-    view.tasks !== undefined && taskRows(view.tasks).length > 0
-      ? true
-      : conversation !== undefined && queueItems(conversation).length > 0;
+  const liveActivity = view.tasks !== undefined && taskRows(view.tasks).length > 0;
 
   const sidebar = (
     <SidebarContent
