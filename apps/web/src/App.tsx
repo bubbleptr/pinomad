@@ -3,6 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import {
   ChatComposer,
   ChatLayout,
+  ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
@@ -22,7 +23,6 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import { findConversation, type ConversationNode, type Home, type Project } from "@pinomad/protocol/organization.ts";
 import { queueItems, statusText, taskRows, usageRows } from "./presentation/chat.ts";
 import { deriveChat } from "./entities/conversation/cot-view.ts";
-import { ChatConversation } from "./shared/ui/chat/chat-conversation.tsx";
 import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
 import { DocumentView } from "./presentation/documents.tsx";
 import { DiffView } from "./presentation/diff.tsx";
@@ -324,6 +324,7 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                     </HStack>
                   )}
                   <ChatLayout
+                    key={conversation.conversation.id}
                     style={chatColumn}
                     composer={
                       <VStack gap={1}>
@@ -334,11 +335,11 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                     emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
                   >
                     {items.length === 0 ? null : (
-                      <ChatConversation isStreaming={busy}>
+                      <ChatMessageList isStreaming={busy} gap={0}>
                         {/* Pace's live-session-column gutter: centered column
                             with horizontal padding; chat.css's CoT rail
                             expects that breathing room at the left edge. */}
-                        <ChatConversation.Content className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
+                        <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
                           {items.map((item) => (
                             <ChatEntryView
                               key={item.id}
@@ -348,8 +349,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                               onFork={setForkAt}
                             />
                           ))}
-                        </ChatConversation.Content>
-                      </ChatConversation>
+                        </div>
+                      </ChatMessageList>
                     )}
                   </ChatLayout>
                 </>

@@ -139,11 +139,18 @@ type RunMessage = {
   readonly msg: AssistantMessageLike;
   /** The `pi.live` generation partial: still streaming. */
   readonly partial?: boolean;
+  /**
+   * Results keyed by call id, scoped to this message's own calls — providers
+   * reuse call ids across rounds, so a run-wide map would hand every round
+   * the newest result.
+   */
+  readonly results: ReadonlyMap<string, ToolResultLike>;
 };
 
 type RunDraft = {
-  readonly assistants: { id: string; msg: AssistantMessageLike }[];
-  readonly results: Map<string, ToolResultLike>;
+  readonly assistants: { id: string; msg: AssistantMessageLike; results: Map<string, ToolResultLike> }[];
+  /** Results whose call id no earlier pending call in the draft claims. */
+  readonly orphans: Map<string, ToolResultLike>;
   /** Latest message timestamp seen inside the run. */
   lastTs?: number;
 };
@@ -205,12 +212,11 @@ function codemodeChild(
 function toolItem(
   block: CallBlock,
   message: RunMessage,
-  draft: RunDraft,
   liveSlots: ReadonlyMap<string, Slot>,
   toolPresentations: Record<string, PresentationType>,
 ): ConversationToolItem {
   const callId = block.id;
-  const result = draft.results.get(callId);
+  const result = message.results.get(callId);
   const slot = message.partial ? undefined : liveSlots.get(callId);
   const toolName = slot?.name ?? block.name;
   const argsText = argsTextOf(block.arguments, toolName);
@@ -295,9 +301,10 @@ function deriveRun(
 ): ChatEntry {
   const liveSlots = new Map<string, Slot>((busy ? live.tools : undefined)?.map((slot) => [slot.callId, slot]) ?? []);
   const partial = busy ? (live.generation?.message as AssistantMessageLike | undefined) : undefined;
+  const emptyResults: ReadonlyMap<string, ToolResultLike> = new Map();
   const messages: RunMessage[] = [
-    ...draft.assistants.map(({ id: entryId, msg }) => ({ id: entryId, msg })),
-    ...(partial === undefined ? [] : [{ id: "live", msg: partial, partial: true as const }]),
+    ...draft.assistants.map(({ id: entryId, msg, results }) => ({ id: entryId, msg, results })),
+    ...(partial === undefined ? [] : [{ id: "live", msg: partial, partial: true as const, results: emptyResults }]),
   ];
   const latest = messages[messages.length - 1];
   const lastCommitted = draft.assistants[draft.assistants.length - 1];
@@ -314,14 +321,11 @@ function deriveRun(
   // A call still owed an execution keeps the phase on acting. Calls inside a
   // non-toolUse answer never ran (they carry the interrupted error instead),
   // so they do not count.
-  const unexecutedTool = messages.some((message) =>
-    message.msg.content.some(
-      (block) =>
-        isCallBlock(block) &&
-        !draft.results.has(block.id) &&
-        (message.partial === true || message.msg.stopReason === "toolUse"),
-    ),
-  );
+  const pendingCall = (message: RunMessage, block: Block): block is CallBlock =>
+    isCallBlock(block) &&
+    !message.results.has(block.id) &&
+    (message.partial === true || message.msg.stopReason === "toolUse");
+  const unexecutedTool = messages.some((message) => message.msg.content.some((block) => pendingCall(message, block)));
   const latestPart = latest?.msg.content[latest.msg.content.length - 1];
 
   let phase: CotPhase;
@@ -339,12 +343,12 @@ function deriveRun(
     const content = message.msg.content;
     slotsOf(content).forEach((slot, slotIndex) => {
       if (slot.kind === "tools") {
-        const pending = slot.blocks.filter((block) => !draft.results.has(block.id));
+        const pending = slot.blocks.filter((block) => pendingCall(message, block));
         const stepLive = ticking && pending.length > 0;
         steps.push({
           kind: "tools",
           id: `${message.id}-tools-${slotIndex}`,
-          tools: slot.blocks.map((block) => toolItem(block, message, draft, liveSlots, toolPresentations)),
+          tools: slot.blocks.map((block) => toolItem(block, message, liveSlots, toolPresentations)),
           live: stepLive,
           // The agent executes in order, so the active call is the first unexecuted one.
           ...(stepLive && pending[0] !== undefined ? { activeToolCallId: pending[0].id } : {}),
@@ -410,7 +414,7 @@ export function deriveChat(
 
   const flush = (busyRun: boolean): void => {
     if (draft === undefined) return;
-    if (draft.assistants.length > 0 || draft.results.size > 0 || busyRun) {
+    if (draft.assistants.length > 0 || draft.orphans.size > 0 || busyRun) {
       const anchor = draft.assistants[0]?.id ?? `open-${runSeq++}`;
       items.push(deriveRun(`run-${anchor}`, draft, live, busyRun, toolPresentations));
     }
@@ -434,19 +438,36 @@ export function deriveChat(
       flush(false);
       items.push({ kind: "reset", id });
     } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
-      draft ??= { assistants: [], results: new Map() };
-      draft.assistants.push({ id, msg: message });
+      draft ??= { assistants: [], orphans: new Map() };
+      // A result can outrun its call in the log; the new call claims it.
+      const results = new Map<string, ToolResultLike>();
+      for (const block of message.content) {
+        if (!isCallBlock(block)) continue;
+        const orphan = draft.orphans.get(block.id);
+        if (orphan !== undefined) {
+          draft.orphans.delete(block.id);
+          results.set(block.id, orphan);
+        }
+      }
+      draft.assistants.push({ id, msg: message, results });
       draft.lastTs = message.timestamp ?? draft.lastTs;
     } else if (entry.kind === "pi.tool-result" && message?.role === "toolResult" && message.toolCallId !== undefined) {
-      draft ??= { assistants: [], results: new Map() };
-      draft.results.set(message.toolCallId, message);
+      draft ??= { assistants: [], orphans: new Map() };
+      // Call ids repeat across rounds: the newest unclaimed call owns it.
+      const target = draft.assistants.findLast(
+        (assistant) =>
+          !assistant.results.has(message.toolCallId) &&
+          assistant.msg.content.some((block) => isCallBlock(block) && block.id === message.toolCallId),
+      );
+      if (target === undefined) draft.orphans.set(message.toolCallId, message);
+      else target.results.set(message.toolCallId, message);
       draft.lastTs = message.timestamp ?? draft.lastTs;
     }
   }
 
   // The tail group is the live run while the conversation is busy; an empty
   // one still renders (the run exists even before its first message).
-  draft ??= busy ? { assistants: [], results: new Map() } : undefined;
+  draft ??= busy ? { assistants: [], orphans: new Map() } : undefined;
   flush(busy);
   return items;
 }

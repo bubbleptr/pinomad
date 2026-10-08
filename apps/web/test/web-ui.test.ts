@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
-import { chromium } from "@playwright/test";
+import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
@@ -648,4 +648,69 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   });
   const messageBox = await message.boundingBox();
   expect(messageBox!.y).toBeGreaterThanOrEqual(0);
+});
+
+// The element that clips and scrolls the messages: the nearest ancestor of a
+// rendered message that actually overflows (scrollHeight > clientHeight).
+const scrollerOf = async (page: Page, text: string) =>
+  page.getByText(text, { exact: true }).evaluate((el) => {
+    let cur: HTMLElement | null = el.parentElement;
+    while (
+      cur !== null &&
+      (cur.scrollHeight <= cur.clientHeight + 1 || !["auto", "scroll"].includes(getComputedStyle(cur).overflowY))
+    )
+      cur = cur.parentElement;
+    return cur === null ? null : { top: cur.scrollTop, height: cur.scrollHeight, client: cur.clientHeight };
+  });
+
+it("scrolls a long conversation with the mouse wheel over the message column", async () => {
+  const webOrigin = await startWeb();
+  const long = Array.from({ length: 150 }, (_, i) => `- line ${i}`).join("\n");
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  const composer = page.getByRole("textbox");
+  await composer.fill("long chat");
+  await composer.press("Enter");
+  const last = page.getByText("line 149", { exact: true });
+  await last.waitFor();
+
+  const before = await scrollerOf(page, "line 149");
+  expect(before).not.toBeNull();
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -1500);
+  await expect.poll(async () => (await scrollerOf(page, "line 100"))?.top ?? 99999).toBeLessThan(before!.top - 200);
+});
+
+it("opens a switched conversation at its latest answer instead of the old scroll position", async () => {
+  const webOrigin = await startWeb();
+  const long = (tag: string) => Array.from({ length: 150 }, (_, i) => `- ${tag} ${i}`).join("\n");
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long("A"), long("B")] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // Chat A through the page; chat B through a second client so the page stays on A.
+  const composer = page.getByRole("textbox");
+  await composer.fill("first chat");
+  await composer.press("Enter");
+  const lastA = page.getByText("A 149", { exact: true });
+  await lastA.waitFor();
+  await startChat(observer, "second chat");
+  const chats = page.getByRole("group", { name: "Chats" });
+  await chats.getByRole("button", { name: "second chat", exact: true }).waitFor();
+
+  // Scroll chat A to the very top with a real wheel gesture over the messages.
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -5000);
+  await expect.poll(async () => (await scrollerOf(page, "A 149"))?.top ?? 99999).toBeLessThan(20);
+
+  // Switching conversations must not inherit that scroll position.
+  await chats.getByRole("button", { name: "second chat", exact: true }).click();
+  await page.getByText("B 149", { exact: true }).waitFor();
+  await expect
+    .poll(async () => {
+      const s = await scrollerOf(page, "B 149");
+      return s === null ? 99999 : s.height - s.top - s.client;
+    })
+    .toBeLessThan(8);
 });

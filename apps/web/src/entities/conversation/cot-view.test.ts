@@ -287,6 +287,76 @@ describe("deriveChat", () => {
     expect(run.cot.elapsedMs).toBe(4000);
   });
 
+  it("matches a repeated call id to its own round's result", () => {
+    const entries = deriveChat(
+      view([
+        user("go"),
+        assistant([call("c1", "read", { path: "a" })], "toolUse"),
+        result("c1", "read", "A"),
+        assistant([call("c1", "read", { path: "b" })], "toolUse"),
+        result("c1", "read", "B"),
+        assistant([text("done")]),
+      ]),
+      {},
+      false,
+    );
+    const steps = runs(entries)[0]!.cot.steps.filter((step) => step.kind === "tools");
+    expect(steps.map((step) => step.tools[0]!.output)).toEqual(["A", "B"]);
+  });
+
+  it("does not let an earlier round's result satisfy a repeated call id", () => {
+    const entries = deriveChat(
+      view(
+        [
+          user("go"),
+          assistant([call("c1", "read", { path: "a" })], "toolUse"),
+          result("c1", "read", "A"),
+          assistant([call("c1", "read", { path: "b" })], "toolUse"),
+        ],
+        { run: {}, tools: [{ callId: "c1", name: "read", status: "running" }] },
+      ),
+      {},
+      true,
+    );
+    const run = runs(entries)[0]!;
+    expect(run.cot.phase).toBe("acting");
+    const steps = run.cot.steps.filter((step) => step.kind === "tools");
+    expect(steps[0]!.tools[0]).toMatchObject({ state: "output-available", output: "A" });
+    expect(steps[1]!.live).toBe(true);
+    expect(steps[1]!.activeToolCallId).toBe("c1");
+    expect(steps[1]!.tools[0]!.state).not.toBe("output-available");
+  });
+
+  it("an aborted call is not pending: its step stays settled while the retry thinks", () => {
+    const entries = deriveChat(
+      view([user("go"), assistant([call("c1", "bash", { command: "x" })], "aborted")], {
+        run: {},
+        generation: { attempt: 1, message: { role: "assistant", content: [thinking("retrying")] } },
+      }),
+      {},
+      true,
+    );
+    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
+    expect(step.live).toBe(false);
+    expect(step.activeToolCallId).toBeUndefined();
+    expect(step.tools[0]).toMatchObject({ state: "output-error" });
+  });
+
+  it("text ahead of a running call stays interim while the answer waits", () => {
+    const entries = deriveChat(
+      view([user("go"), assistant([text("Checking the logs"), call("c1", "bash", { command: "ls" })], "toolUse")], {
+        run: {},
+        tools: [{ callId: "c1", name: "bash", status: "running" }],
+      }),
+      {},
+      true,
+    );
+    const run = runs(entries)[0]!;
+    expect(run.cot.answer).toBeUndefined();
+    expect(run.cot.steps.map((step) => step.kind)).toEqual(["interim", "tools"]);
+    expect(run.cot.steps[0]).toMatchObject({ kind: "interim", text: "Checking the logs" });
+  });
+
   it("measures a run with no answer to its last entry", () => {
     const entries = deriveChat(
       view([
