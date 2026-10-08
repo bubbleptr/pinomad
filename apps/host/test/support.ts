@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import {
   fauxAssistantMessage,
@@ -87,7 +88,13 @@ export async function startFauxHost(
   faux.setResponses(answers.map((answer) => (typeof answer === "string" ? fauxAssistantMessage(answer) : answer)));
   const model = faux.getModel();
   const modelSummaries = (): ModelSummary[] =>
-    faux.models.map((each) => ({ provider: each.provider, modelId: each.id, name: each.name, contextWindow: each.contextWindow }));
+    faux.models.map((each) => ({
+      provider: each.provider,
+      modelId: each.id,
+      name: each.name,
+      contextWindow: each.contextWindow,
+      thinkingLevels: getSupportedThinkingLevels(each),
+    }));
   const host = await openHost({
     dataDir: dir.path,
     models,

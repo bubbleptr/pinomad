@@ -224,6 +224,7 @@ class RemoteClient {
         session: hello.session,
         organized: { chats: [], projects: [] },
         models: hello.models,
+        defaults: hello.defaults ?? {},
         notices: [],
         connection: "connected",
         docs: [],
@@ -341,13 +342,15 @@ class RemoteClient {
     return {
       addProject: (path) => this.#command(() => this.#call("addProject", { path })),
       removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
-      createConversation: (home, text, checkout) =>
+      createConversation: (home, text, options) =>
         this.#command(async () => {
           const { conversationId } = await this.#call("createConversation", {
             home,
             text,
             requestId: newRequestId(),
-            ...(checkout === undefined ? {} : { checkout }),
+            ...(options?.checkout === undefined ? {} : { checkout: options.checkout }),
+            ...(options?.model === undefined ? {} : { model: options.model }),
+            ...(options?.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
           });
           await this.#switch(conversationId);
         }),
@@ -373,7 +376,7 @@ class RemoteClient {
             (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
           );
       },
-      cycleThinking: () => this.#command(() => this.#call("cycleThinking", { conversationId: conversationId() })),
+      setThinkingLevel: (level) => this.#command(() => this.#call("setThinkingLevel", { conversationId: conversationId(), level })),
       setModel: (model) => this.#command(() => this.#call("setModel", { conversationId: conversationId(), model })),
       toggleTasks: () =>
         this.#command(async () => {

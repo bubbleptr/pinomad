@@ -86,4 +86,80 @@ describe("remote controller", () => {
     await client.controller.submit("hello", "followUp");
     await waitForView(client.view, (view) => view.notices.some((notice) => notice.message === "No conversation selected"));
   });
+
+  it("carries the host's defaults on hello and the models' thinking levels", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [
+        { id: "faux-1", name: "Faux Model" },
+        { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+      ],
+    });
+    const client = await connectTo(defer, host);
+
+    expect(client.view.current().defaults.model).toEqual({ provider: "faux", modelId: "faux-1" });
+    const summaries = client.view.current().models;
+    expect(summaries.find((each) => each.modelId === "faux-1")?.thinkingLevels).toEqual(["off"]);
+    const thinkerLevels = summaries.find((each) => each.modelId === "faux-thinker")?.thinkingLevels;
+    expect(thinkerLevels?.[0]).toBe("off");
+    expect(thinkerLevels).toContain("high");
+  });
+
+  it("creates a conversation with an explicit model and a clamped thinking level", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [
+        { id: "faux-1", name: "Faux Model" },
+        { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+      ],
+      answers: ["done"],
+    });
+    const client = await connectTo(defer, host);
+
+    // faux-thinker has no xhigh/max mapping; xhigh clamps down to high.
+    await client.controller.createConversation(
+      { kind: "chat" },
+      "hello",
+      { model: { provider: "faux", modelId: "faux-thinker" }, thinkingLevel: "xhigh" },
+    );
+    const id = client.view.current().conversation!.conversation.id;
+    const state = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
+    expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
+    expect(state?.thinkingLevel).toBe("high");
+  });
+
+  it("notices instead of creating when the requested model is unknown", async () => {
+    const host = await startFauxHost(defer);
+    const client = await connectTo(defer, host);
+
+    await client.controller.createConversation(
+      { kind: "chat" },
+      "hello",
+      { model: { provider: "faux", modelId: "nope" } },
+    );
+    await waitForView(client.view, (view) =>
+      view.notices.some((notice) => notice.level === "error" && notice.message === "Unknown model: faux/nope"),
+    );
+    expect(client.view.current().conversation).toBeUndefined();
+  });
+
+  it("sets a supported thinking level and notices an unsupported one", async () => {
+    const host = await startFauxHost(defer, {
+      fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+      answers: ["done"],
+    });
+    const client = await connectTo(defer, host);
+
+    const id = await startChat(client, "hello");
+    await client.controller.setThinkingLevel("medium");
+    await expect
+      .poll(async () => (await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT))?.thinkingLevel)
+      .toBe("medium");
+
+    await client.controller.setThinkingLevel("xhigh");
+    await waitForView(client.view, (view) =>
+      view.notices.some(
+        (notice) =>
+          notice.level === "error" && notice.message === "Thinking level xhigh is not supported by faux/faux-thinker",
+      ),
+    );
+  });
 });

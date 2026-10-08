@@ -391,7 +391,7 @@ describe("tool result details and changes", () => {
     const host = await startFauxHost(defer, { projects: [repoDir], answers: ["one", "two"] });
     const client = await connectTo(defer, host);
 
-    await client.controller.createConversation({ kind: "project", path: repoDir }, "direct", "project");
+    await client.controller.createConversation({ kind: "project", path: repoDir }, "direct", { checkout: "project" });
     await waitForView(client.view, (view) => !isBusy(view.conversation!));
     await writeFile(join(repoDir, "tracked.txt"), "modified\n");
 

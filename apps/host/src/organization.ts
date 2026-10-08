@@ -4,7 +4,8 @@
 import { mkdir, realpath, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { Context } from "@earendil-works/chord";
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { Models } from "@earendil-works/pi-ai/models";
 import {
   AgentDoc,
   type ConversationId,
@@ -25,11 +26,9 @@ export const IndexDoc = defineDoc<HostIndex>({
   initial: () => ({ projects: [], conversations: [] }),
 });
 
-/** What a new conversation starts with; the host's configured defaults. */
-export interface ConversationDefaults {
-  readonly model?: ModelRef;
-  readonly thinkingLevel?: ModelThinkingLevel;
-}
+/** What a new conversation starts with; the host's configured defaults. Wire-level type lives in protocol. */
+export type { ConversationDefaults } from "@pinomad/protocol/view.ts";
+import type { ConversationDefaults } from "@pinomad/protocol/view.ts";
 
 /** Materialize the index so watchers get a snapshot before the first write. */
 export async function ensureIndex(harness: Harness, context: Context): Promise<void> {
@@ -92,10 +91,25 @@ export async function createConversation(
     readonly requestId: string;
     /** `"project"` works directly in the project directory; default is a worktree when the project is a git repo. */
     readonly checkout?: "worktree" | "project";
+    /** Overrides the host default; an unknown ref rejects before the commit. */
+    readonly model?: ModelRef;
+    /** Overrides the host default; clamps to the effective model's levels. */
+    readonly thinkingLevel?: ModelThinkingLevel;
   },
   defaults: ConversationDefaults,
+  models: Models,
   context: Context,
 ): Promise<ConversationId> {
+  const modelRef = input.model ?? defaults.model;
+  const model =
+    modelRef === undefined ? undefined : models.getModel(modelRef.provider, modelRef.modelId);
+  if (input.model !== undefined && model === undefined) {
+    throw new Error(`Unknown model: ${input.model.provider}/${input.model.modelId}`);
+  }
+  const thinkingLevel =
+    model === undefined
+      ? input.thinkingLevel ?? defaults.thinkingLevel
+      : clampThinkingLevel(model, input.thinkingLevel ?? defaults.thinkingLevel ?? "off");
   const home = input.home;
   // Best-effort normalization; the registry check inside the commit is authoritative.
   const projectPath = home.kind === "project" ? await normalizePath(home.path).catch(() => home.path) : undefined;
@@ -113,8 +127,8 @@ export async function createConversation(
         agent: {
           // A worktree's cwd is set in init once the record's path is known.
           ...(projectPath === undefined || repo !== undefined ? {} : { cwd: projectPath }),
-          ...(defaults.model === undefined ? {} : { model: defaults.model }),
-          ...(defaults.thinkingLevel === undefined ? {} : { thinkingLevel: defaults.thinkingLevel }),
+          ...(modelRef === undefined ? {} : { model: modelRef }),
+          ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
         },
         init: async (tx, id) => {
           const doc = await tx.doc(IndexDoc);

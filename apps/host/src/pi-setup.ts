@@ -1,6 +1,6 @@
 // After createHarnessSettings / configureHarnessHttp / findInitialAgentModel in pi's
 // packages/coding-agent/src/experimental/durable/harness-setup.ts (MIT, Earendil Works).
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { ModelRef, HarnessSettings } from "@earendil-works/pi-durable";
 import type { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -60,5 +60,8 @@ export function modelSummaries(modelRuntime: ModelRuntime): ModelSummary[] {
     modelId: model.id,
     name: model.name,
     contextWindow: model.contextWindow,
+    // getSupportedThinkingLevels already returns ["off"] for non-reasoning
+    // models and always leads with "off", matching the wire invariant.
+    thinkingLevels: getSupportedThinkingLevels(model),
   }));
 }
