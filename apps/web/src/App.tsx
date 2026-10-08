@@ -10,7 +10,6 @@ import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
-import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
@@ -19,6 +18,7 @@ import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { agentOf, statusText } from "./presentation/chat.ts";
 import { deriveChat } from "./entities/conversation/cot-view.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
+import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -278,19 +278,13 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
         onOpenChanges={() => setChangesOpen(true)}
       >
         {conversation === undefined ? (
-          <ChatLayout
-            style={chatColumn}
-            composer={
-              <div className="mx-auto w-full max-w-[44rem]">
-                <DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />
-              </div>
-            }
-            emptyState={
-              <EmptyState title={draftLabel} description="The first message creates the conversation." />
-            }
-          >
-            {null}
-          </ChatLayout>
+          <DraftHome
+            view={view}
+            remote={remote}
+            draft={draft}
+            onDraft={startDraft}
+            connected={view.connection === "connected"}
+          />
         ) : (
           <ChatLayout
             key={conversation.conversation.id}
@@ -444,34 +438,6 @@ function projectName(organized: DurableView["organized"], path: string): string 
   return organized.projects.find((entry) => entry.project.path === path)?.project.name ?? path.split("/").at(-1) ?? path;
 }
 
-function DraftComposer({ remote, home, connected }: { remote: RemoteDurable; home: Home; connected: boolean }) {
-  const [value, setValue] = useState("");
-  // ADR-0010: project conversations default to a fresh worktree; this switch opts out.
-  const [direct, setDirect] = useState(false);
-  return (
-    <VStack gap={1}>
-      {home.kind !== "project" ? null : (
-        <Switch
-          label="Work directly in project directory"
-          size="sm"
-          value={direct}
-          onChange={setDirect}
-          isDisabled={!connected}
-        />
-      )}
-      <ChatComposer
-        value={value}
-        onChange={setValue}
-        onSubmit={(text) => {
-          void remote.controller.createConversation(home, text, direct ? "project" : undefined);
-        }}
-        isDisabled={!connected}
-        placeholder="The first message creates the conversation…"
-      />
-    </VStack>
-  );
-}
-
 function Composer({
   view,
   remote,
@@ -494,6 +460,15 @@ function Composer({
     label: `${candidate.provider}/${candidate.modelId}`,
     onClick: () => void remote.controller.setModel({ provider: candidate.provider, modelId: candidate.modelId }),
   }));
+  const summary = view.models.find(
+    (candidate) => agent.model !== undefined && candidate.provider === agent.model.provider && candidate.modelId === agent.model.modelId,
+  );
+  const thinkingLevels = summary?.thinkingLevels ?? ["off"];
+  const thinkingDisabled = disconnected || thinkingLevels.length <= 1;
+  const thinkingItems = thinkingLevels.map((level) => ({
+    label: level,
+    onClick: () => void remote.controller.setThinkingLevel(level),
+  }));
   return (
     <ChatComposer
       value={value}
@@ -510,8 +485,12 @@ function Composer({
           <DropdownMenu
             button={{ label: "Controls", variant: "ghost", isDisabled: disconnected }}
             items={[
-              { label: `Thinking: ${agent.thinkingLevel ?? "off"}`, onClick: () => void remote.controller.cycleThinking() },
               { label: "Compact", onClick: () => void remote.controller.compact(undefined) },
+              {
+                type: "section",
+                title: `Thinking: ${agent.thinkingLevel ?? "off"}`,
+                items: thinkingItems,
+              },
               { type: "section", title: `Model: ${model}`, items: models },
             ]}
           />
@@ -521,12 +500,14 @@ function Composer({
               button={{ label: model, variant: "ghost", size: "sm", isDisabled: disconnected }}
               items={models}
             />
-            <Button
-              label={`Thinking: ${agent.thinkingLevel ?? "off"}`}
-              variant="ghost"
-              size="sm"
-              isDisabled={disconnected}
-              onClick={() => void remote.controller.cycleThinking()}
+            <DropdownMenu
+              button={{
+                label: `Thinking: ${agent.thinkingLevel ?? "off"}`,
+                variant: "ghost",
+                size: "sm",
+                isDisabled: thinkingDisabled,
+              }}
+              items={thinkingItems}
             />
             <Button label="Compact" variant="ghost" size="sm" isDisabled={disconnected} onClick={() => void remote.controller.compact(undefined)} />
           </>

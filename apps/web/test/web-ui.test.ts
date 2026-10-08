@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
+import { AgentDoc, AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
 import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
@@ -395,6 +395,99 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
   expect(firstStep.x).toBeGreaterThanOrEqual(contentBox.x);
 });
 
+it("shows the draft home and fills the composer from a suggestion without creating", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("heading", { name: "Build something useful with PiNomad" }).waitFor();
+  await page.getByRole("combobox", { name: "Project", exact: true }).waitFor();
+  for (const label of [
+    "Explain this repo's architecture",
+    "Fix the failing test",
+    "Add a CLI flag with docs",
+    "Review my uncommitted changes",
+  ]) {
+    await page.getByRole("button", { name: label, exact: true }).waitFor();
+  }
+
+  // A suggestion fills the composer and focuses it; nothing is created.
+  await page.getByRole("button", { name: "Fix the failing test", exact: true }).click();
+  expect(await page.getByRole("textbox").textContent()).toBe("Fix the failing test");
+  expect(await page.getByRole("textbox").evaluate((el) => document.activeElement === el || el.contains(document.activeElement))).toBe(true);
+  await expect.poll(() => page.getByRole("button", { name: "No chats", exact: true }).count()).toBe(1);
+});
+
+it("creates the draft conversation under the picked project", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], projects: [project.path], answers: ["picked answer"] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
+  await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
+
+  await page.getByRole("textbox").fill("picked work");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("picked answer", { exact: true }).waitFor();
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "picked work", exact: true }).waitFor();
+});
+
+it("creates the draft with the picked model and thinking level", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    fauxModels: [
+      { id: "faux-1", name: "Faux Model" },
+      { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+    ],
+    answers: ["thinking answer"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // The default is the host's first model; pick the reasoning one + a level.
+  await page.getByRole("button", { name: "faux/faux-1", exact: true }).click();
+  await page.getByRole("menuitem", { name: "faux/faux-thinker", exact: true }).click();
+  await page.getByRole("button", { name: "Thinking: off", exact: true }).click();
+  await page.getByRole("menuitem", { name: "medium", exact: true }).click();
+  await page.getByRole("textbox").fill("deep work");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("thinking answer", { exact: true }).waitFor();
+
+  // The new conversation's composer shows the picked model, and the agent doc carries it.
+  await page.getByRole("button", { name: "faux/faux-thinker", exact: true }).waitFor();
+  await expect.poll(async () => {
+    const conversationId = observer.view.current().organized.chats.find((node) => node.summary.title === "deep work")?.summary.id;
+    if (conversationId === undefined) return undefined;
+    const agent = await host.harness.snapshot(AgentDoc, conversationId, BACKGROUND_CONTEXT);
+    return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
+  }).toBe("faux/faux-thinker:medium");
+});
+
+it("sets the thinking level from the conversation composer's menu", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+    answers: ["done"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("hello");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+
+  // The menu lists the model's supported levels; picking one relabels it.
+  await page.getByRole("button", { name: "Thinking: off", exact: true }).click();
+  await page.getByRole("menuitem", { name: "low", exact: true }).waitFor();
+  await page.getByRole("menuitem", { name: "high", exact: true }).click();
+  await page.getByRole("button", { name: "Thinking: high", exact: true }).waitFor();
+});
+
 it("organizes conversations under projects and chats", async () => {
   const webOrigin = await startWeb();
   const project = await tempDir();
@@ -416,8 +509,6 @@ it("organizes conversations under projects and chats", async () => {
   // A new conversation in the project runs under it — and the header says so.
   await page.getByRole("button", { name: projectName, exact: true }).hover();
   await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
-  // The draft label shows in the header AND as the empty-state heading.
-  await page.locator("h3", { hasText: `New conversation in ${projectName}` }).waitFor();
   await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
   await page.getByRole("textbox").fill("project work");
   await page.getByRole("textbox").press("Enter");
@@ -427,7 +518,7 @@ it("organizes conversations under projects and chats", async () => {
 
   // A new chat lands under Chats, then archives away.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await page.getByText("New chat", { exact: true }).nth(1).waitFor();
+  await expect.poll(() => page.locator("h1").textContent()).toBe("New chat");
   await page.getByRole("textbox").fill("chat work");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("chat answer", { exact: true }).waitFor();
@@ -540,8 +631,11 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   await toast.getByText("No such directory", { exact: false }).waitFor();
 
   // An undismissed error toast must not sit over the composer or the header's
-  // actions — it would block sending until dismissed.
-  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"));
+  // actions — it would block sending until dismissed. Settle the toast's own
+  // animations only: the draft hero's shimmer loops forever.
+  await page.waitForFunction(() =>
+    document.querySelector("[data-toast-id]")?.getAnimations({ subtree: true }).every((a) => a.playState !== "running"),
+  );
   const toastBox = (await toast.boundingBox())!;
   const composerBox = (await page.getByRole("textbox").boundingBox())!;
   const dockBox = (await page.getByRole("button", { name: "Dock", exact: true }).boundingBox())!;
