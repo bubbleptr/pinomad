@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-08
+最后更新：2026-10-09
 
 ## 已完成
 
@@ -50,7 +50,7 @@ MCP 本身的后续，都等有明确需求再做：
 
 把 Pace 的对话界面和外框搬进 Web 客户端（ADR-0014）。按依赖顺序拆成 stacked PR：
 
-1. 视觉基础：Tailwind v4、token 桥、Montserrat、Hugeicons、`@/` 别名；现有界面不改结构，只换底子。
+1. 视觉基础（已完成）：Tailwind v4、token 桥、Montserrat、Hugeicons、`@/` 别名；现有界面不改结构，只换底子。
 2. 对话流（已完成）：思维链（工具 step 行、思考行、状态行）、Markdown 和代码块；从 Durable 的 `ConversationView` 推导 `CotView`。edit / write 的 diff、codemode 的嵌套调用、工具结果图片、fork 按钮都保留；子代理卡片能点进子对话（运行中也能点），卡片标题用 `subagent` 新增的可选参数 `description`，查看子对话时能回到父对话。
 3. 外框（已完成）：Astryx AppShell，侧栏是 wash 底色、主区是白色；顶栏 40px，显示对话标题，子代理对话显示成"父对话 › 子对话"面包屑；右侧 Dock 默认收起，由顶栏按钮开关，有运行中的任务或排队消息时按钮上亮一个点；cwd 和分支移进 Dock 的 Workspace。侧栏按 Pace 分成 New chat、Chats、Projects，操作悬停时才出现，Devices 放在底部。窄屏只有一行顶栏。
 4. 首页和 Composer（已完成）：草稿态变成 Pace 的首页——hero（"Build something useful with PiNomad"）、项目选择器、四条建议提示；新建对话可以选模型和思考等级（`createConversation` 加 `model` / `thinkingLevel`，hello 带默认模型，协议 v4）。Composer 换成 Pace 的 ChatPromptInput：左侧是"+"菜单和"模型 · 思考等级"胶囊，运行中带文字的草稿可以排队为 Follow-up 或 Steer，排队消息显示在输入框上方；footer 是位置行（Chat / Git worktree 加分支 / Project folder，草稿里项目可以选 worktree 还是直接在目录里跑）。Dock 的 Queue 区块撤掉，圆点只算运行中的任务。
@@ -60,7 +60,7 @@ MCP 本身的后续，都等有明确需求再做：
 - 附件：ChatPromptInput 已经留好接口（drawer、onFiles），需要协议里能带附件的消息。
 - 斜杠命令和 @ 文件补全：Pace 的 trigger 菜单方案（leading token + typeahead）。
 - 撤回或改写排队中的消息（需要协议新增调用；Pace 是 queued-message 行内的 Withdraw / Steer 操作）。
-- 运行失败后的重试入口（Pace 的 run-failure 恢复）。
+- 运行失败后的重试入口（Pace 的 run-failure 恢复）。`ChatRunFailure` 已搬入并支持 `onRetry`，`chat-entries.tsx` 还没传，按钮不显示。
 - 侧栏行显示运行中标记和更新时间：对话摘要要先加 `updatedAt` 和是否在跑。
 - 子代理在侧栏的位置（现在挂在父对话下，标题是任务描述开头，分不清）。
 - 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
