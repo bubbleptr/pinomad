@@ -11,7 +11,7 @@ import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
-import { connectTo, followFirst, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
+import { connectTo, followFirst, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -89,6 +89,40 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
+});
+
+it("replaces a draft pick the restarted host no longer offers", async () => {
+  const webOrigin = await startWeb();
+  const port = await freePort();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-thinker", name: "Faux Thinker", reasoning: true }],
+    answers: ["old host answer", "new host answer"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
+
+  // Restart on the same port/dataDir (the fixture's reconnect mechanism) with
+  // a different model list — the stored pick is gone from the new hello.
+  await host.close();
+  await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-other", name: "Faux Other" }],
+    answers: ["new host answer"],
+  });
+
+  // The draft falls back to an available model and submits with it.
+  await expect.poll(() => capsule.textContent(), { timeout: 15000 }).toContain("Faux Other");
+  await page.getByRole("textbox").fill("after reconnect");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("new host answer", { exact: true }).waitFor();
 });
 
 it("preserves an unsent follow-up and disables write controls while reconnecting", async () => {
@@ -644,6 +678,75 @@ it("collapses the sidebar into the header toggle and restores it", async () => {
   await expand.click();
   await page.getByRole("button", { name: "New chat", exact: true }).waitFor();
   await expect.poll(() => page.getByRole("button", { name: "Expand sidebar" }).count()).toBe(0);
+});
+
+it("creates exactly one conversation when Enter is pressed twice quickly", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  const composer = page.getByRole("textbox");
+  await composer.fill("double tap");
+  // Two Enters before the first submit resolves: the second must not create
+  // a second conversation (each submit carries a fresh requestId).
+  await composer.evaluate((el) => {
+    for (const _ of [0, 1]) {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    }
+  });
+  await page.getByText("done", { exact: true }).waitFor();
+
+  await expect.poll(() => observer.view.current().organized.chats.length).toBe(1);
+});
+
+it("disables the follow-up and stop controls while disconnected", async () => {
+  const webOrigin = await startWeb();
+  const port = await freePort();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    answers: [LONG_ANSWER, LONG_ANSWER],
+    tokensPerSecond: 10,
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+
+  // Busy run + empty input: the disconnected Stop is disabled.
+  await composer.fill("keep busy");
+  await composer.press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await stop.waitFor();
+  await host.close();
+  await page.getByText("Host connection lost", { exact: true }).waitFor();
+  // ChatSendButton can't render a disabled stop, so while disconnected the
+  // stop state is hidden and the send control shows, disabled.
+  expect(await page.getByRole("button", { name: "Stop", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("button", { name: "Send", exact: true }).isDisabled()).toBe(true);
+
+  // Reconnect to a restarted host and start a second busy run; the Follow-up
+  // button appearing proves busy, then dropping the host again leaves it
+  // disabled and the typed text intact.
+  const restarted = await startFauxHost(defer, {
+    port,
+    dataDir: dir.path,
+    browserOrigins: [webOrigin],
+    answers: [LONG_ANSWER],
+    tokensPerSecond: 10,
+  });
+  await page.getByText("Host connection lost", { exact: true }).waitFor({ state: "detached" });
+  await composer.fill("again");
+  await composer.press("Enter");
+  await composer.fill("unsent follow-up");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).waitFor();
+  await restarted.close();
+  await page.getByText("Host connection lost", { exact: true }).waitFor();
+  expect(await page.getByRole("button", { name: "Follow-up", exact: true }).isDisabled()).toBe(true);
+  await expect.poll(() => composer.textContent()).toBe("unsent follow-up");
 });
 
 it("compacts the conversation from the more-actions menu", async () => {

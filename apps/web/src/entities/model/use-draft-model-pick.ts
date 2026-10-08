@@ -55,13 +55,17 @@ export interface DraftModelPick {
  * The draft's model+level pick: restored from localStorage, falling back to
  * the host defaults, and persisted on every change. Changing the model
  * re-clamps the level to that model's supported levels.
+ *
+ * The returned pick is reconciled against `view.models` at render time, not
+ * synced into state: after a reconnect whose hello lists different models, a
+ * remembered pick falls back to the host defaults, then the first model.
  */
 export function useDraftModelPick(view: DurableView): {
   pick: DraftModelPick;
   setModel: (model: ModelRef) => void;
   setLevel: (level: ThinkingLevel) => void;
 } {
-  const [pick, setPick] = useState<DraftModelPick>(() => {
+  const [remembered, setRemembered] = useState<DraftModelPick>(() => {
     const stored = readDraftPick(view.models);
     const model: ModelRef | undefined =
       stored !== undefined
@@ -79,16 +83,26 @@ export function useDraftModelPick(view: DurableView): {
     localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
+  const model =
+    remembered.model !== undefined && summaryOf(view.models, remembered.model) !== undefined
+      ? remembered.model
+      : summaryOf(view.models, view.defaults.model) !== undefined
+        ? view.defaults.model
+        : view.models[0] === undefined
+          ? undefined
+          : { provider: view.models[0].provider, modelId: view.models[0].modelId };
+  const level = clampLevel(summaryOf(view.models, model)?.thinkingLevels ?? ["off"], remembered.level);
+
   return {
-    pick,
-    setModel: (model) => {
-      const level = clampLevel(summaryOf(view.models, model)?.thinkingLevels ?? ["off"], pick.level);
-      setPick({ model, level });
-      remember(model, level);
+    pick: { model, level },
+    setModel: (next) => {
+      const nextLevel = clampLevel(summaryOf(view.models, next)?.thinkingLevels ?? ["off"], level);
+      setRemembered({ model: next, level: nextLevel });
+      remember(next, nextLevel);
     },
-    setLevel: (level) => {
-      setPick((current) => ({ ...current, level }));
-      if (pick.model !== undefined) remember(pick.model, level);
+    setLevel: (next) => {
+      setRemembered((current) => ({ ...current, level: next }));
+      if (model !== undefined) remember(model, next);
     },
   };
 }

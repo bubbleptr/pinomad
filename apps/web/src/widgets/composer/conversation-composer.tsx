@@ -100,6 +100,7 @@ export function ConversationComposer({
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
+              isDisabled={disconnected}
               onClick={() => submit("followUp")}
             />
           ) : null

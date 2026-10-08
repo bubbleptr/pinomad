@@ -1,10 +1,44 @@
+import { once } from "node:events";
+import { WebSocket } from "ws";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import type { CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
+import type { OpenedHost } from "../src/host.ts";
 import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
+let nextCall = 1;
+
+/** A raw client that can observe call results, which controller methods deliberately hide. */
+async function socketTo(host: OpenedHost) {
+  const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+  defer(() => socket.terminate());
+  const frames: ServerFrame[] = [];
+  socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
+  await once(socket, "open");
+  return { socket, frames };
+}
+
+function call<M extends keyof CallMethods>(
+  client: { socket: WebSocket; frames: ServerFrame[] },
+  method: M,
+  args: CallMethods[M]["args"],
+): Promise<Extract<ServerFrame, { type: "result" }>> {
+  const id = nextCall++;
+  client.socket.send(JSON.stringify({ type: "call", id, method, args }));
+  return (async () => {
+    for (;;) {
+      const found = client.frames.find(
+        (frame): frame is Extract<ServerFrame, { type: "result" }> => frame.type === "result" && frame.id === id,
+      );
+      if (found !== undefined) return found;
+      await once(client.socket, "message");
+    }
+  })();
+}
+
 const inboxOf = (view: { conversation?: { docs: Record<string, unknown> } }) =>
   ((view.conversation?.docs["pi.inbox"] ?? { items: [] }) as { items: { mode: string }[] }).items;
 
@@ -161,5 +195,30 @@ describe("remote controller", () => {
           notice.level === "error" && notice.message === "Thinking level xhigh is not supported by faux/faux-thinker",
       ),
     );
+  });
+
+  it("returns the existing conversation for a repeated create requestId with a now-unknown model", async () => {
+    const host = await startFauxHost(defer, { answers: ["first"] });
+    const client = await socketTo(host);
+
+    const first = await call(client, "createConversation", {
+      home: { kind: "chat" },
+      text: "hi",
+      requestId: "dup-1",
+      model: { provider: "faux", modelId: "faux-1" },
+    });
+    expect(first).toMatchObject({ ok: true });
+    const firstId = (first as { value?: { conversationId: string } }).value?.conversationId;
+    expect(firstId).toBeDefined();
+
+    // A retry of the same request resolves to the existing conversation even
+    // though its model is no longer known.
+    const second = await call(client, "createConversation", {
+      home: { kind: "chat" },
+      text: "hi",
+      requestId: "dup-1",
+      model: { provider: "faux", modelId: "removed" },
+    });
+    expect(second).toMatchObject({ ok: true, value: { conversationId: firstId } });
   });
 });

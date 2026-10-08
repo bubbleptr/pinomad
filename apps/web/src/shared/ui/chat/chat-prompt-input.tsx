@@ -226,13 +226,16 @@ export function ChatPromptInput({
             onSubmitRequest={handleSubmit}
           />
         }
-        isStopShown={isStopShown}
+        // ChatSendButton never disables in stop mode (`!isStopShown &&
+        // isDisabled`), so while disabled the stop state is hidden entirely:
+        // the send button renders in its place, disabled.
+        isStopShown={isStopShown && !isDisabled}
         placeholder={placeholder}
         sendActions={endActions}
         sendButton={
           <ChatSendButton
             className="pigui-pressable"
-            isDisabled={!isStopShown && (!canSubmit || isDisabled)}
+            isDisabled={isDisabled || (!isStopShown && !canSubmit)}
             // Bypass the composer's submit path, which force-clears the value.
             onSend={handleSubmit}
           />

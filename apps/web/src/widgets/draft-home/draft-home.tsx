@@ -38,6 +38,11 @@ export function DraftHome({
   connected: boolean;
 }) {
   const [value, setValue] = useState("");
+  // createConversation keeps the text and resolves after the view switches
+  // (a failure still resolves, as a notice). The ref guards synchronously —
+  // setState hasn't flushed by the time a second Enter's keydown runs.
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   // ADR-0010: project conversations default to a fresh worktree; the picker opts out.
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
@@ -92,14 +97,22 @@ export function DraftHome({
             value={value}
             inputRef={inputRef}
             onValueChange={setValue}
+            status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
               const text = value.trim();
-              if (text === "") return;
-              void remote.controller.createConversation(draft, text, {
-                ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
-                ...(pick.model === undefined ? {} : { model: pick.model }),
-                thinkingLevel: pick.level,
-              });
+              if (text === "" || submittingRef.current) return;
+              submittingRef.current = true;
+              setSubmitting(true);
+              void remote.controller
+                .createConversation(draft, text, {
+                  ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
+                  ...(pick.model === undefined ? {} : { model: pick.model }),
+                  thinkingLevel: pick.level,
+                })
+                .finally(() => {
+                  submittingRef.current = false;
+                  setSubmitting(false);
+                });
             }}
             isDisabled={!connected}
             placeholder="Do anything with Pi"
