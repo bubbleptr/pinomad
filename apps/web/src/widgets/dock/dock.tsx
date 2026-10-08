@@ -4,10 +4,9 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
-import type { AgentState } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { queueItems, taskRows, usageRows } from "../../presentation/chat.ts";
+import { agentOf, queueItems, taskRows, usageRows } from "../../presentation/chat.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 
 /** Desktop dock: the live-state panel docked to the right of the chat column. */
@@ -55,9 +54,6 @@ export function DockDialog({
   );
 }
 
-const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
-  (conversation.docs["pi.agent"] ?? {}) as AgentState;
-
 export function LiveState({
   view,
   remote,
@@ -68,9 +64,9 @@ export function LiveState({
   conversation: DurableView["conversation"];
 }) {
   const rows = view.tasks === undefined ? [] : taskRows(view.tasks);
-  const queue = view.conversation === undefined ? [] : queueItems(view.conversation);
+  const queue = conversation === undefined ? [] : queueItems(conversation);
   const notices = [...view.notices].reverse().slice(0, 5);
-  const usage = view.conversation === undefined ? [] : usageRows(view.conversation);
+  const usage = conversation === undefined ? [] : usageRows(conversation);
   const branch = conversation === undefined ? undefined : view.checkout?.branch;
   const cwd = conversation === undefined ? undefined : agentOf(conversation).cwd;
   return (

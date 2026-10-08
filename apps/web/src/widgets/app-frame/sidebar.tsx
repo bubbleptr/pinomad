@@ -9,7 +9,7 @@ import type { ConversationNode, Home, Project } from "@pinomad/protocol/organiza
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
-import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus } from "../../shared/ui/icons.tsx";
+import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
@@ -52,32 +52,34 @@ function useSidebarSectionExpansion(section: "chats" | "projects") {
   return { expanded, contentId, toggle };
 }
 
-/** The SideNav's 40px header band: collapse toggle (desktop only) + connection dot. */
+export function ConnectionDot({ connection }: { connection: DurableView["connection"] }) {
+  return connection === "connected" ? (
+    <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
+  ) : (
+    <StatusDot variant={connection === "closed" ? "error" : "warning"} label={connection} tooltip={connection} isPulsing />
+  );
+}
+
+/** The SideNav header band: collapse toggle + connection dot. The slot adds
+    8px block padding each side, so 24px of band lands the toggle on the same
+    40px center line as the main header (Pace's spacer trick). */
 export function SidebarHeaderBand({
   connection,
-  inDrawer,
   onCollapse,
 }: {
   connection: DurableView["connection"];
-  inDrawer?: boolean;
   onCollapse?: () => void;
 }) {
   return (
-    <div className="flex h-10 items-center justify-between px-2">
-      {inDrawer ? <span /> : (
-        <IconButton
-          icon={<AnimatedSidebar className="size-4" />}
-          label="Collapse sidebar"
-          size="sm"
-          variant="ghost"
-          onClick={onCollapse}
-        />
-      )}
-      {connection === "connected" ? (
-        <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
-      ) : (
-        <StatusDot variant={connection === "closed" ? "error" : "warning"} label={connection} tooltip={connection} isPulsing />
-      )}
+    <div className="flex h-6 items-center justify-between px-2">
+      <IconButton
+        icon={<AnimatedSidebar className="size-4" />}
+        label="Collapse sidebar"
+        size="sm"
+        variant="ghost"
+        onClick={onCollapse}
+      />
+      <ConnectionDot connection={connection} />
     </div>
   );
 }
@@ -253,14 +255,14 @@ function ConversationRow({
 export function SidebarContent({
   view,
   remote,
-  drafting,
+  draftingChat,
   shownId,
   onDraft,
   onSelect,
 }: {
   view: DurableView;
   remote: RemoteDurable;
-  drafting: boolean;
+  draftingChat: boolean;
   shownId: ConversationId | undefined;
   onDraft: (home: Home) => void;
   onSelect?: () => void;
@@ -307,7 +309,7 @@ export function SidebarContent({
         <SideNavItem
           icon={<AnimatedNewChat className="size-4" />}
           label="New chat"
-          isSelected={drafting}
+          isSelected={draftingChat}
           isDisabled={disabled}
           onClick={() => start({ kind: "chat" })}
         />
@@ -385,7 +387,7 @@ export function SidebarContent({
                       endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
                     >
                       {conversations.length === 0 ? (
-                        <SideNavItem isDisabled label="No conversations" />
+                        <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No conversations" />
                       ) : (
                         conversations.map((node) => (
                           <ConversationRow
@@ -423,7 +425,7 @@ export function SidebarContent({
                           items={[
                             {
                               label: "Remove project",
-                              icon: <Archive aria-hidden="true" size={16} />,
+                              icon: <Trash2 aria-hidden="true" size={16} />,
                               onClick: () => setRemoving(project),
                             },
                           ]}

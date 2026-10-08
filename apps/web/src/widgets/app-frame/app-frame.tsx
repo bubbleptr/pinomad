@@ -12,7 +12,7 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { queueItems, taskRows } from "../../presentation/chat.ts";
 import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
+import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DockPanel, DockDialog } from "../dock/dock.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
@@ -31,6 +31,7 @@ export function AppFrame({
   device,
   narrow,
   drafting,
+  draftingChat,
   draftLabel,
   conversation,
   summary,
@@ -45,6 +46,7 @@ export function AppFrame({
   device?: KeyPair;
   narrow: boolean;
   drafting: boolean;
+  draftingChat: boolean;
   draftLabel: string;
   conversation: DurableView["conversation"];
   summary: ConversationSummary | undefined;
@@ -72,7 +74,7 @@ export function AppFrame({
     <SidebarContent
       view={view}
       remote={remote}
-      drafting={drafting}
+      draftingChat={draftingChat}
       shownId={conversation?.conversation.id}
       onDraft={onDraft}
       onSelect={() => setNavOpen(false)}
@@ -126,8 +128,19 @@ export function AppFrame({
         </div>
       </AppShell>
       {narrow ? (
-        <MobileNav isOpen={navOpen} onOpenChange={setNavOpen}>
-          <SidebarHeaderBand connection={view.connection} inDrawer />
+        // The drawer is a top-layer <dialog>, outside .pigui-app-layout's DOM —
+        // give it the scoping class so the sidebar rules reach it too.
+        <MobileNav
+          className="pigui-app-layout text-foreground"
+          isOpen={navOpen}
+          onOpenChange={setNavOpen}
+          header={
+            <span className="flex items-center gap-2">
+              <span className="text-sm font-semibold">PiNomad</span>
+              <ConnectionDot connection={view.connection} />
+            </span>
+          }
+        >
           {sidebar}
           <SidebarFooter remote={remote} view={view} device={device} onSelect={() => setNavOpen(false)} />
         </MobileNav>

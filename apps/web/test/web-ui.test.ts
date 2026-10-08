@@ -401,10 +401,12 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
   await page.getByRole("group", { name: projectName }).waitFor();
 
-  // A new conversation in the project runs under it.
+  // A new conversation in the project runs under it — and the header says so.
   await page.getByRole("button", { name: projectName, exact: true }).hover();
   await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
-  await page.getByText(`New conversation in ${projectName}`, { exact: true }).waitFor();
+  // The draft label shows in the header AND as the empty-state heading.
+  await page.locator("h3", { hasText: `New conversation in ${projectName}` }).waitFor();
+  await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
   await page.getByRole("textbox").fill("project work");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("project answer", { exact: true }).waitFor();

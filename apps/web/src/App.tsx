@@ -16,7 +16,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
-import { statusText } from "./presentation/chat.ts";
+import { agentOf, statusText } from "./presentation/chat.ts";
 import { deriveChat } from "./entities/conversation/cot-view.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
@@ -193,9 +193,6 @@ export function RemoteWorkbench({
   return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} />;
 }
 
-const agentOf = (conversation: NonNullable<DurableView["conversation"]>): AgentState =>
-  (conversation.docs["pi.agent"] ?? {}) as AgentState;
-
 /**
  * The host speaks a protocol this bundle doesn't. A page the host itself
  * serves reloads once to fetch the matching bundle — the sessionStorage
@@ -270,7 +267,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
         remote={remote}
         device={device}
         narrow={narrow}
-        drafting={drafting && draft.kind === "chat"}
+        drafting={drafting}
+        draftingChat={drafting && draft.kind === "chat"}
         draftLabel={draftLabel}
         conversation={conversation}
         summary={shownSummary}
@@ -282,7 +280,11 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
         {conversation === undefined ? (
           <ChatLayout
             style={chatColumn}
-            composer={<DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />}
+            composer={
+            <div className="mx-auto w-full max-w-[44rem]">
+              <DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />
+            </div>
+          }
             emptyState={
               <EmptyState title={draftLabel} description="The first message creates the conversation." />
             }
@@ -294,10 +296,14 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
             key={conversation.conversation.id}
             style={chatColumn}
             composer={
-              <VStack gap={1}>
-                <PendingQuestions view={view} remote={remote} />
-                <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
-              </VStack>
+              // Same 44rem centered column as the message list, so the
+              // composer lines up with the conversation at every width.
+              <div className="mx-auto w-full max-w-[44rem]">
+                <VStack gap={1}>
+                  <PendingQuestions view={view} remote={remote} />
+                  <Composer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
+                </VStack>
+              </div>
             }
             emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
           >
