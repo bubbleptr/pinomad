@@ -39,6 +39,7 @@
       "name": "@pinomad/relay",
       "version": "0.0.0",
       "dependencies": {
+        "@pinomad/host": "workspace:*",
         "@pinomad/protocol": "workspace:*",
         "ws": "8.22.0",
       },
