@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createModels } from "@earendil-works/pi-ai/models";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
 import { chromium } from "@playwright/test";
@@ -12,9 +12,12 @@ import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
-import { chatItems } from "../src/presentation/chat.ts";
+import { coding } from "@pinomad/host/src/extensions/coding.ts";
+import { createSubagent } from "@pinomad/host/src/extensions/subagent.ts";
+import { deriveChat } from "../src/entities/conversation/cot-view.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();
@@ -131,8 +134,8 @@ it.each([
   );
 
   const fork = page.getByRole("button", { name: "Fork", exact: true });
-  // The prompt's own answer and the appended entry both offer Fork; the latter is last.
-  await expect.poll(() => fork.count()).toBe(2);
+  // One Fork action per run: the run's last assistant entry is the appended one.
+  await expect.poll(() => fork.count()).toBe(1);
   await fork.last().click();
   await page.getByRole("textbox", { name: "First message", exact: true }).fill("Continue from this evidence.");
   await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
@@ -250,10 +253,127 @@ it("shows interruption without a text bubble and never offers a fork for streami
     observer.view,
     (view) =>
       view.conversation !== undefined
-      && chatItems(view.conversation).some((item) => item.kind === "assistant" && item.stopReason === "aborted"),
+      && deriveChat(view.conversation, view.toolPresentations, isBusy(view.conversation)).some(
+        (item) => item.kind === "run" && item.interrupted,
+      ),
   );
   await expect.poll(() => page.getByText("interrupted", { exact: true }).count()).toBe(1);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
+});
+
+it("opens a subagent's conversation from its card and returns to the parent", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+      createSubagent({ models, modelSummaries, exclude: [] }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      "child answer",
+      "parent final",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("delegate");
+  await composer.press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  // The settled subagent call sits folded inside the chain of thought;
+  // expanding the run, then the step, reveals the link to its child.
+  await page.getByRole("button", { name: /Worked for/, exact: false }).click();
+  await page.getByRole("button", { name: /Used count the lines/, exact: false }).click();
+  await page.getByRole("button", { name: "Open conversation", exact: true }).click();
+  await page.getByRole("button", { name: "Back to parent", exact: true }).waitFor();
+  await page.getByText("child answer", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Back to parent", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "Back to parent", exact: true }).count()).toBe(0);
+  await page.getByText("parent final", { exact: true }).waitFor();
+});
+
+it("renders a real edit's diff inside the tool row instead of the raw args", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [project.path],
+    extensions: [coding],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("write", { path: "notes.txt", content: "alpha\nbeta\ngamma\n" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(fauxToolCall("edit", { path: "notes.txt", edits: [{ oldText: "beta", newText: "delta" }] }), {
+        stopReason: "toolUse",
+      }),
+      "edit complete",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("textbox").fill("fix the notes");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("edit complete", { exact: true }).waitFor();
+
+  // Expand the run's folded steps: each round is its own single-call step,
+  // and a single-call step expands straight to the detail.
+  await page.getByRole("button", { name: /Worked for/ }).click();
+  await page.getByRole("button", { name: /Edited notes.txt/ }).click();
+
+  const editDetail = page.locator('[data-slot="chat-tool-step-detail"]').last();
+  // The diff view carries the hunk lines; the args and output panes are gone.
+  await editDetail.getByText("-beta", { exact: true }).waitFor();
+  await editDetail.getByText("+delta", { exact: true }).waitFor();
+  expect(await editDetail.locator('[data-slot="chat-tool-args"]').count()).toBe(0);
+  expect(await editDetail.locator('[data-slot="chat-tool-result"]').count()).toBe(0);
+});
+
+it("keeps the chain of thought in place when a grouped tool row takes focus", async () => {
+  const webOrigin = await startWeb();
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [project.path],
+    extensions: [coding],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("write", { path: "notes.txt", content: "alpha\nbeta\n" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(
+        [
+          fauxToolCall("read", { path: "notes.txt" }),
+          fauxToolCall("edit", { path: "notes.txt", edits: [{ oldText: "beta", newText: "delta" }] }),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      "edit complete",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("group", { name: projectName }).getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New conversation", exact: true }).click();
+  await page.getByRole("textbox").fill("fix the notes");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("edit complete", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: /Worked for/ }).click();
+  await page.getByRole("button", { name: /Read 1 file/ }).click();
+  // The grouped rows overhang their clip box for the hover fill; focusing one
+  // must not scroll that box sideways and shear off the steps' left edge.
+  await page.getByRole("button", { name: /^edit/ }).click();
+
+  const content = page.locator(".chain-of-thought__content").last();
+  const contentBox = (await content.boundingBox())!;
+  const firstStep = (await content.locator(".chat-step__trigger").first().boundingBox())!;
+  expect(firstStep.x).toBeGreaterThanOrEqual(contentBox.x);
 });
 
 it("organizes conversations under projects and chats", async () => {

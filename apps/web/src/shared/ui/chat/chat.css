@@ -1,0 +1,1457 @@
+/* Chat primitive styles (shared/ui/chat). Astryx tokens only; unlayered on
+   purpose so these rules win over layered framework CSS. */
+
+/* —— TextShimmer —— */
+
+:root {
+  --chat-brand-sweep-duration: 4s;
+}
+
+.text-shimmer {
+  display: inline-block;
+  background: linear-gradient(
+    100deg,
+    var(--color-text-secondary) 40%,
+    var(--color-text-primary) 50%,
+    var(--color-text-secondary) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: chat-text-shimmer var(--duration-slow-max) linear infinite;
+}
+
+@keyframes chat-text-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer {
+    animation: none;
+  }
+}
+
+/* Brand tone: the coral -> yellow -> blue Pi mark sweep, reserved for the one
+   spot color marks "Pi is here" (see docs/design/brand.md). Overrides the
+   default grey gradient/animation rather than composing with them, so
+   Thinking…/Loading history… (which never set tone) are untouched. */
+.text-shimmer--brand {
+  /* `background-image` (not the `background` shorthand) - the shorthand
+     resets every sub-property it doesn't mention, including
+     `background-clip`, which would silently undo the base rule's
+     `background-clip: text` and paint an opaque box instead of clipped
+     letters. */
+  background-image: linear-gradient(
+    100deg,
+    var(--pi-coral) 20%,
+    var(--pi-yellow) 50%,
+    var(--pi-blue) 80%
+  );
+  background-size: 200% 100%;
+  /* A brand sweep is decorative, not a busy indicator: the runtime token
+     (~1.3s) reads as frantic on a 3xl headline. One shared brand tempo also
+     keeps the composer ring in step with the title. */
+  animation: chat-text-shimmer-brand var(--chat-brand-sweep-duration) linear infinite;
+}
+
+@keyframes chat-text-shimmer-brand {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Reduced motion still wants the three-color brand mark, just static -
+     unlike the default tone, which degrades to plain grey text. */
+  .text-shimmer--brand {
+    animation: none;
+    background-size: 100% 100%;
+    background-position: 0 0;
+  }
+}
+
+/* —— Markdown —— */
+
+/* Layout is ours; heading type scale is too. Astryx compact only tightens
+   heading margins — `#` still uses document heading-1. After
+   headingLevelStart=3, markdown # is data-level=3. Keep a conversation
+   scale: one step up for #, body size below that, never smaller than body. */
+.chat-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Astryx body leading is 1.4286 (14px -> 20px), tuned for UI labels. Chat
+   prose mixes bold, links, and inline code chips across wrapped lines, so
+   it reads like GitHub/Tailwind prose: a looser 1.6 leaves the code chip
+   room above and below instead of touching the neighbouring line.
+   !important matches Astryx StyleX's :not(#\#) specificity. */
+.chat-markdown .astryx-markdown {
+  line-height: 1.6 !important;
+}
+
+/* Inline code one size step below body: the monospace face reads a size
+   larger than the sans body at equal px, and a slightly smaller chip with
+   1px vertical padding keeps 3-4px of air inside the 1.6 line box. */
+.chat-markdown .chat-inline-code {
+  font-size: var(--font-size-sm) !important;
+  padding-block: 1px !important;
+}
+
+.chat-markdown .astryx-markdown-heading {
+  font-family: inherit;
+}
+
+/* styles.css flattens every weight under .pigui-app-layout to 400 for the
+   side nav; that also erased **bold** in assistant answers (Astryx's own
+   strong rule has the same specificity and loses on order). Restore it. */
+.chat-markdown :is(strong, b) {
+  font-weight: var(--font-weight-semibold);
+}
+
+.chat-markdown .astryx-markdown-heading[data-level="3"] {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+}
+
+.chat-markdown .astryx-markdown-heading[data-level="4"] {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: inherit;
+}
+
+.chat-markdown .astryx-markdown-heading[data-level="5"],
+.chat-markdown .astryx-markdown-heading[data-level="6"] {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  line-height: inherit;
+}
+
+/* Astryx compact density gives paragraphs only --spacing-1 (4px) block
+   margins, which collapse to less than the inter-line gap — consecutive
+   paragraphs visually merge. Restore a clear break between adjacent
+   paragraphs; first/last block margins stay Astryx's. !important matches
+   Astryx StyleX's :not(#\#) specificity. */
+.chat-markdown .astryx-markdown-paragraph + .astryx-markdown-paragraph {
+  margin-block-start: var(--spacing-3) !important;
+}
+
+/* Chat convention (GFM breaks mode, as in ChatGPT/GitHub): a single \n in
+   model output is an intentional line break, not a collapsible space.
+   pre-line renders newlines as breaks while still collapsing spaces. */
+.chat-markdown .astryx-markdown-paragraph {
+  white-space: pre-line;
+}
+
+/* A file link renders as a compact reference (icon + basename[:line]) — a
+   long relative path as link text would wrap awkwardly and bury the point.
+   The accent colour is the one Astryx markdown links use; no resting
+   underline, the leading file icon already marks it as a link. display stays
+   inline so the chip wraps inside a paragraph like any other text. */
+.chat-markdown .chat-file-link {
+  color: var(--color-text-accent);
+  text-decoration: none;
+}
+
+.chat-markdown .chat-file-link:hover,
+.chat-markdown .chat-file-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* Astryx controls draw a 2px accent outline on focus; the chip follows the
+   same ring rather than the browser default. */
+.chat-markdown .chat-file-link:focus-visible {
+  outline: var(--spacing-0-5) solid var(--color-accent);
+  outline-offset: var(--spacing-0-5);
+  border-radius: var(--radius-element);
+}
+
+/* The 13px / stroke-2 chat-icon scale is scoped to .chain-of-thought; the
+   chip restates it — same 14px Figtree line, same sizing rationale. */
+.chat-markdown .chat-file-link__icon {
+  display: inline;
+  width: var(--chat-icon-size, 13px);
+  height: var(--chat-icon-size, 13px);
+  margin-inline-end: var(--spacing-0-5);
+  vertical-align: -0.125em;
+}
+
+.chat-markdown .chat-file-link__icon,
+.chat-markdown .chat-file-link__icon * {
+  stroke-width: 2;
+}
+
+/* An inline-code span confirmed to be a real file keeps the code chip's look
+   and box metrics — only the accent text and link affordances change. Unlike
+   .chat-file-link there is no icon marking it, and the accent token sits a
+   few lightness points off body text, so the rest underline is what makes
+   the link distinguishable (the same affordance Astryx links rely on). */
+.chat-markdown .chat-inline-code-link {
+  color: var(--color-text-accent);
+  text-decoration: underline;
+}
+
+.chat-markdown .chat-inline-code-link .chat-inline-code {
+  color: inherit;
+}
+
+.chat-markdown .chat-inline-code-link:focus-visible {
+  outline: var(--spacing-0-5) solid var(--color-accent);
+  outline-offset: var(--spacing-0-5);
+  border-radius: var(--radius-element);
+}
+
+/* —— Code block —— */
+
+/* Surface, copy button, and highlighting are owned by Astryx CodeBlock;
+   the wrapper only keeps the block in the chat flow. */
+.chat-code-block {
+  min-width: 0;
+  margin-block: var(--spacing-2);
+}
+
+/* —— Conversation —— */
+
+/* The root is a positioning frame; the viewport owns scrolling so the
+   scroll-to-bottom button can float above it without scrolling away. */
+.chat-conversation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-conversation__viewport {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-conversation__content {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-conversation__scroll-button {
+  position: absolute;
+  inset-inline: 0;
+  bottom: var(--spacing-3);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  translate: 0 var(--spacing-1);
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    translate var(--duration-fast) var(--ease-standard);
+}
+
+.chat-conversation__scroll-button[data-visible="true"] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.chat-conversation__scroll-button[data-visible="true"] > * {
+  pointer-events: auto;
+}
+
+/* Float the round button on a surface so it reads over message text. */
+.chat-conversation__scroll-button .astryx-button {
+  border-radius: var(--radius-full);
+  background: var(--color-background-surface);
+  box-shadow: var(--shadow-low);
+}
+
+/* —— Messages —— */
+
+/* Alignment and bubble visuals are owned by Astryx ChatMessage/Bubble;
+   only the layout column, content, and hover actions remain ours. */
+.chat-message {
+  min-width: 0;
+}
+
+.chat-message__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* Astryx ChatMessage roots at 16px while its bubble, markdown and the
+   composer all sit at --font-size-base (14px). Pin the content so plain-text
+   assistant messages (control labels) do not render a size above the rest. */
+.chat-message__content {
+  min-width: 0;
+  font-size: var(--font-size-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-message__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-1);
+}
+
+/* Markdown handles its own block flow; undo the pre-wrap default. */
+.chat-message__content:has(> .chat-markdown) {
+  white-space: normal;
+}
+
+.chat-message__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-0-5);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.chat-message:hover .chat-message__actions,
+.chat-message:focus-within .chat-message__actions,
+.chat-message__actions--persist {
+  opacity: 1;
+}
+
+.chat-message__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-element-sm);
+  height: var(--size-element-sm);
+  border: none;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--color-icon-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.chat-message__action:hover {
+  background: var(--color-overlay-hover);
+  color: var(--color-icon-primary);
+}
+
+.chat-message__action:active {
+  background: var(--color-overlay-pressed);
+}
+
+/* —— Chain of thought —— */
+
+.chain-of-thought {
+  /* ADR-0030 §8: page turns and the settled fold both run at 300ms. The
+     theme's --duration-slow-max is 0.935s, so this is its own constant.
+     Exit is ~25% faster so the outgoing page gets out of the way. */
+  --cot-flip-duration: 300ms;
+  --cot-flip-exit-duration: 220ms;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  /* A nowrap step row reports its full width as min-content and hands it up
+     the tree, bursting the chat column when the split is dragged narrow. The
+     rows below thread `min-width: 0` for the same reason, but that only holds
+     while every descendant remembers to; containing the inline size stops the
+     leak at the block, whatever a future row does. */
+  contain: inline-size;
+  font-size: var(--font-size-base);
+  /* Icon slot sized to the text, not to 1em: a Hugeicons glyph fills ~12/14
+     of its box, so 13px puts its ink (~11px) just over the body face's cap
+     height at 14px instead of a head above it. Stroke 2 scales to ~1.1px,
+     matching the 14px text's 1.25px stems; the global 1.5 is tuned for 16px
+     nav icons and reads thin here. */
+  --chat-icon-size: 13px;
+  --chat-icon-stroke: 2;
+}
+
+/* Astryx lays the assistant body out with align-items: start, so it is
+   fit-content, and the block above contains its own inline size — nothing
+   inside asks for width any more. Without this a settled trace collapses the
+   whole message to the width of its header (measured: 672px → 147px). */
+.chat-message__body:has(> .chain-of-thought) {
+  align-self: stretch;
+  width: 100%;
+}
+
+.chain-of-thought__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  min-height: 1.5em;
+  cursor: pointer;
+}
+
+.chain-of-thought__trigger:hover {
+  color: var(--color-text-primary);
+}
+
+/* Label shares the trigger's face but is inert: no hover, no pointer. */
+.chain-of-thought__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+}
+
+.chat-pixel-loader {
+  --chat-pixel-gap: 0.12em;
+  --chat-pixel-cell: calc((1em - 2 * var(--chat-pixel-gap)) / 3);
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(3, var(--chat-pixel-cell));
+  gap: var(--chat-pixel-gap);
+}
+
+.chat-pixel-loader__cell {
+  width: var(--chat-pixel-cell);
+  height: var(--chat-pixel-cell);
+  background: var(--color-text-secondary);
+  border-radius: 0.08em;
+  opacity: 0.15;
+  animation: chat-pixel-on var(--chat-pixel-period, 860ms) ease-in-out infinite;
+}
+
+@keyframes chat-pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  45%,
+  55% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pixel-loader__cell {
+    animation: none;
+    opacity: 0.15;
+  }
+}
+
+/* Every row is one line, so spacing-3 between them would read as unrelated
+   blocks rather than one trace. */
+.chain-of-thought__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* Interim Output is what the model said to the user mid-run, so it reads a
+   shade darker than the step rows it sits between (ADR-0030 §7). */
+.chain-of-thought__interim {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* The whole list folds into the header at run(end); Base UI measures it. */
+.chain-of-thought__content {
+  margin-block-start: var(--spacing-2);
+  height: var(--collapsible-panel-height);
+  /* PiNomad: clip only the fold axis. With overflow: hidden this box became a
+     scroll container, and focusing a grouped Astryx tool row (whose hover fill
+     overhangs by -4px) scrolled it sideways, shearing every step's left edge. */
+  overflow-x: visible;
+  overflow-y: clip;
+  transition:
+    height var(--cot-flip-duration) var(--ease-standard),
+    opacity var(--cot-flip-duration) var(--ease-standard);
+}
+
+/* Flat while the run is in flight — no header, so no offset under one. */
+.chain-of-thought:not([data-phase="settled"]) .chain-of-thought__content {
+  margin-block-start: 0;
+}
+
+.chain-of-thought__content[data-starting-style],
+.chain-of-thought__content[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+
+/* —— Inline pager —— */
+
+/* Spans, not blocks, and no margin of their own: inside a trigger a top margin
+   would drop the label below the chevron's centre line. */
+.chat-inline-pager,
+.chat-inline-pager__flip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-inline-pager__flip {
+  position: relative;
+  overflow: hidden;
+  min-height: 1.5em;
+}
+
+.chat-inline-pager__page {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-inline-pager__page[data-motion="in"] {
+  animation: chat-inline-pager-in var(--cot-flip-duration, 300ms) var(--ease-standard) both;
+}
+
+.chat-inline-pager__page[data-motion="out"] {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  animation: chat-inline-pager-out var(--cot-flip-exit-duration, 220ms) var(--ease-standard) both;
+}
+
+@keyframes chat-inline-pager-in {
+  from {
+    transform: translateY(1.5em);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes chat-inline-pager-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-1.5em);
+    opacity: 0;
+  }
+}
+
+/* —— Step rows —— */
+
+.chat-step__trigger,
+.chat-step--plain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+.chat-step__trigger {
+  cursor: pointer;
+}
+
+.chat-step__trigger:hover {
+  color: var(--color-text-primary);
+}
+
+.chat-step__label {
+  min-width: 0;
+  line-height: inherit;
+  /* The shimmer clips text to its gradient; without the padding, descenders go. */
+  padding-block: 0.15em;
+}
+
+/* "Thought 2s" is one phrase: the number keeps the label's size and tone.
+   A smaller, disabled-grey figure read as a second, unrelated glyph and,
+   at 12px #a3a3a3, fell below AA contrast. Tabular figures keep "1.2s" and
+   "4.7s" the same width so a live burst does not nudge its chevron. */
+.chat-step__meta {
+  color: var(--color-text-secondary);
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-step__meta--error {
+  color: var(--color-danger);
+}
+
+/* Right = collapsed, down = expanded — the same rotation in all three places
+   a chevron appears: header, Thought row, tool row. */
+.chat-step__chevron {
+  flex-shrink: 0;
+  width: var(--chat-icon-size, 13px);
+  height: var(--chat-icon-size, 13px);
+  color: var(--color-icon-secondary);
+  rotate: 0deg;
+  transition: rotate var(--duration-fast) var(--ease-standard);
+}
+
+[data-panel-open] > .chat-step__chevron {
+  rotate: 90deg;
+}
+
+.chat-step__panel {
+  padding-inline-start: calc(var(--chat-icon-size, 13px) + var(--spacing-1-5));
+}
+
+.chat-step__body {
+  margin-block-start: var(--spacing-1);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* —— Tool step —— */
+
+.chat-tool-step__page {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A nowrap summary would otherwise push its full width up as min-content and
+   burst the chat column; min-width: 0 all the way down keeps it truncating. */
+.chat-tool-step__page .chat-step__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep status and duration intact; only the command summary should shrink. */
+.chat-tool-step__page .chat-step__meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Kind icons sit in the same slot the chevron uses, so header and
+   expanded rows share one left column (Codex's type-icon alignment). */
+.chat-tool-kind {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--chat-icon-size, 13px);
+  height: var(--chat-icon-size, 13px);
+  color: var(--color-icon-secondary);
+}
+
+.chat-tool-kind svg {
+  display: block;
+  width: var(--chat-icon-size, 13px);
+  height: var(--chat-icon-size, 13px);
+}
+
+/* Hugeicons writes stroke-width as a presentation attribute on every path;
+   a CSS declaration outranks it, so one rule retunes the whole set. */
+.chat-tool-kind svg,
+.chat-tool-kind svg *,
+.chat-step__chevron,
+.chat-step__chevron * {
+  stroke-width: var(--chat-icon-stroke, 2);
+}
+
+.chat-tool-step > .chat-step__panel {
+  padding-inline-start: 0;
+}
+
+/* A single call's args/output sit where the per-call rows would, indented
+   past the kind-icon column the step row and the burst rows share. */
+.chat-tool-step__detail {
+  margin-block-start: var(--spacing-1);
+  padding-inline-start: calc(var(--chat-icon-size, 13px) + var(--spacing-1-5));
+}
+
+.chat-tool-step__detail .chat-tool__section:first-child {
+  margin-block-start: 0;
+}
+
+.chat-tool-step__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: var(--spacing-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-tool-step__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+}
+
+.chat-tool-step__item .chat-tool-kind {
+  /* Match the call header, not the full box when result details expand. */
+  height: var(--spacing-6);
+}
+
+.chat-tool-step__item .astryx-chat-tool-calls {
+  /* The surrounding list owns spacing; Astryx's standalone top gap would
+     shift the call header below its sibling kind icon. */
+  margin-block-start: 0;
+}
+
+.chat-tool-step__item .chat-tool {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Astryx's status circle (check / spinner / x) is a second leading glyph
+   next to the kind icon. Failure still reads as "N failed" on the
+   summary; the kind icon is the type signal, matching Codex. */
+.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span:first-child,
+.chat-tool-step__item .astryx-chat-tool-calls > div > span:first-child {
+  display: none;
+}
+
+/* Astryx paints the row's target path and duration in --color-text-disabled
+   (#a3a3a3 at 12px, ~2.6:1 on white). They are read, not disabled: lift them
+   to the secondary tone the step rows above already use. The name span stays
+   Astryx's; the trailing chevron span carries no text. */
+.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span:not(:first-child):not(:last-child) {
+  color: var(--color-text-secondary);
+}
+
+/* Astryx sets the call name in its code face and the target and duration a
+   size down. Inside a burst those rows are the same kind of line as the
+   step row above them, so they take that row's face and size — one level,
+   not a header over a sub-header. Chevron and status spans carry no text. */
+.chat-tool-step__item {
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span,
+.chat-tool-step__item .astryx-chat-tool-calls > div > span {
+  font-family: inherit;
+  font-size: inherit;
+  font-style: normal;
+  font-weight: inherit;
+  letter-spacing: normal;
+}
+
+/* —— Status line —— */
+
+/* Always the last line while the run is live, and the only heartbeat. */
+.chat-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: var(--spacing-2) 0 0;
+  min-height: 1.5em;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+.chat-status-line__word {
+  line-height: inherit;
+  padding-block: 0.15em;
+}
+
+/* Same face as the status word beside it: a monospace clock on a Montserrat
+   line reads as a foreign object. Tabular figures alone stop the jitter. */
+.chat-status-line__clock {
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-inline-pager__page[data-motion],
+  .chain-of-thought__content,
+  .chat-step__chevron {
+    animation: none;
+    transition: none;
+  }
+}
+
+.chat-thought-md {
+  overflow-wrap: anywhere;
+}
+
+.chat-thought-md strong {
+  font-weight: var(--font-weight-medium);
+  color: inherit;
+}
+
+.chat-thought-md code {
+  font-family: var(--font-family-code);
+  font-size: 0.92em;
+}
+
+/* —— Tool row —— */
+
+.chat-tool {
+  min-width: 0;
+}
+
+/* Astryx 0.3.0 upstream bug (facebook/astryx#4830): rows widen their hover
+   background with a -4px inline margin, but the group's expand-animation
+   container clips at overflow:hidden, cutting the hover radius on grouped
+   rows (single rows are unclipped). Widen the clip box by the same overhang.
+   Scoped to multi-call groups (single-call groups carry data-state) and to
+   the 0.3.0 DOM shape: group toggle row + sibling content grid > clip
+   container. Drop once the upstream fix ships. */
+.chat-tool[data-slot="chat-tool-group"]:not([data-state])
+  [role="button"][aria-expanded]
+  + div
+  > div {
+  padding-inline: var(--spacing-1);
+  margin-inline: calc(-1 * var(--spacing-1));
+}
+
+/* Detail panes inside the Astryx ChatToolCalls row (args / result). The
+   Astryx detail container only indents; separation from the row above and
+   between panes is ours to provide. */
+.chat-tool__section {
+  margin: 0;
+  margin-block-start: var(--spacing-1-5);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-inner);
+  background: var(--color-background-muted);
+  font-family: var(--font-family-code);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+/* —— Prompt input ——
+   Shell, slot layout, send/stop button, and error status are owned by
+   Astryx ChatComposer; the native textarea, body padding, steady outer-only
+   elevation, input-to-footer gap, and neutral footer hint remain ours. */
+
+.prompt-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  anchor-scope: --pace-prompt-input;
+}
+
+.prompt-input__input {
+  anchor-name: --pace-prompt-input;
+}
+
+/* Astryx anchors suggestions to the caret and leaves their width intrinsic.
+   Size each menu from its own input so long descriptions cannot widen it. */
+.prompt-input__input > [popover]:has(.astryx-trigger-menu) {
+  position-anchor: --pace-prompt-input !important;
+  width: anchor-size(width);
+  min-width: 0;
+  max-width: calc(100vw - 2 * var(--spacing-4));
+}
+
+.prompt-input__input .astryx-trigger-menu {
+  min-width: 0;
+}
+
+.prompt-input .astryx-chat-composer {
+  /* Neutral's elevation tokens include an inset highlight in dark mode.
+     Keep the outer-only replacement local to the composer, not TextInput. */
+  --_composer-shadow-color: var(--color-shadow);
+  --shadow-low: 0 var(--border-width) var(--spacing-0-5) var(--_composer-shadow-color),
+    0 var(--spacing-0-5) var(--spacing-2) var(--_composer-shadow-color);
+  /* One step below Astryx's default so the chrome sits closer to the edge.
+     The elevated shell has no border; the total content inset is unchanged. */
+  --_chat-composer-padding: var(--spacing-2);
+  /* Astryx pairs --radius-chat (28 upstream; 42 after the 1.5x squircle
+     compensation in styles.css) with --spacing-3 (12) so the 32px
+     send button stays a circle: 28 − 12 = 16. Padding dropped one step,
+     so the shell must follow: outer = padding + half the md button. */
+  --_chat-composer-radius: calc(
+    var(--_chat-composer-padding) + var(--size-element-md) / 2
+  );
+}
+
+.prompt-input[data-drop] .astryx-chat-composer {
+  --_composer-shadow-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+/* Astryx balanced density uses --spacing-2 between the input and the
+   footer chrome. One step up so the placeholder and model selector
+   don't sit on the same visual band. */
+.prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
+  gap: var(--spacing-3);
+  /* Override Astryx's hover/focus elevation without changing the geometry. */
+  box-shadow: var(--shadow-low);
+}
+
+/* Preserve a focus indicator when the OS suppresses shadows. */
+@media (forced-colors: active) {
+  .prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
+    outline: var(--border-width) solid CanvasText;
+  }
+  .prompt-input .astryx-chat-composer > div:has(.prompt-input__input):focus-within {
+    outline: var(--spacing-0-5) solid Highlight;
+    outline-offset: var(--spacing-0-5);
+  }
+}
+
+/* ChatComposerInput renders its own typography on the editable and the
+   placeholder: --text-body-size at 22px leading with --spacing-1 padding.
+   Pin both to the chat 14px system (docs/design/chat.md) and the wider
+   inline padding the textarea used. !important matches Astryx StyleX's
+   :not(#\#) specificity. */
+.prompt-input__input > [aria-multiline="true"],
+.prompt-input__input > [aria-hidden="true"] {
+  font-size: var(--font-size-base) !important;
+  line-height: 1.5 !important;
+  padding: var(--spacing-1) var(--spacing-1-5) !important;
+}
+
+.prompt-input__input > [aria-multiline="true"] {
+  min-height: var(--size-element-md) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Astryx inserts an inline baseline alignment on each token span. */
+.prompt-input__input [data-astryx-token] {
+  vertical-align: middle !important;
+}
+
+/* Hint copy recedes below composer chrome (model selector uses
+   --color-text-secondary via text-muted). Opacity is reset so Firefox
+   does not further fade the token color. */
+.prompt-input__input > [aria-hidden="true"] {
+  color: var(--color-text-disabled) !important;
+  opacity: 1;
+}
+
+.prompt-input__input > [aria-disabled="true"] {
+  color: var(--color-text-disabled) !important;
+  cursor: not-allowed;
+}
+
+/* A stable slot, not a conditional line: the footer keeps one control row of
+   height whatever it holds, so the Session Draft and the Live Session composer
+   are the same size and the handoff never re-flows the column. */
+.prompt-input__footer {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-element-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* —— Prompt input, brand accent ——
+   Opt-in Pi-mark ring (docs/design/brand.md). The session-draft empty state
+   adds accentFocusRing so the ring also answers focus; inside a Session it
+   only marks a run in flight. A masked ::after ring keeps the
+   gradient to a 1px border without adding layout size - the alternative,
+   an actual `border`, would shift the composer's padding/geometry that the
+   shell's radius math above depends on. Idle state (no focus, not sending)
+   stays fully transparent so this is visually inert everywhere else. */
+.prompt-input[data-accent="brand"] .astryx-chat-composer {
+  position: relative;
+}
+
+.prompt-input[data-accent="brand"] .astryx-chat-composer::after {
+  content: "";
+  position: absolute;
+  /* Astryx's own composer card (the direct child holding the textarea) sets
+     z-index: 2 inside this same stacking context (this element establishes
+     one via its own z-index: 0), so the ring needs a higher z-index or the
+     opaque card paints straight over it. */
+  z-index: 3;
+  inset: 0;
+  border-radius: var(--_chat-composer-radius);
+  padding: var(--border-width);
+  /* One period of the tile spans the visible width, so the static focused
+     ring shows all three colors (not just the first two), and the tile
+     repeats once more so the sending-state flow can loop seamlessly. */
+  background: linear-gradient(
+    90deg,
+    var(--pi-coral) 0%,
+    var(--pi-yellow) 16.667%,
+    var(--pi-blue) 33.333%,
+    var(--pi-coral) 50%,
+    var(--pi-yellow) 66.667%,
+    var(--pi-blue) 83.333%,
+    var(--pi-coral) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.prompt-input[data-accent="brand"][data-accent-focus] .astryx-chat-composer:focus-within::after,
+.prompt-input[data-accent="brand"][data-status="submitted"] .astryx-chat-composer::after,
+.prompt-input[data-accent="brand"][data-status="streaming"] .astryx-chat-composer::after {
+  opacity: 1;
+}
+
+/* Flowing gradient only while actually sending — Session Creation included,
+   which reaches the composer as `submitted`; a focused-but-idle ring stays
+   static so the accent doesn't read as busy when it isn't. */
+.prompt-input[data-accent="brand"][data-status="submitted"] .astryx-chat-composer::after,
+.prompt-input[data-accent="brand"][data-status="streaming"] .astryx-chat-composer::after {
+  animation: chat-accent-flow var(--chat-brand-sweep-duration) linear infinite;
+}
+
+/* With a 300% tile, background-position 150% shifts the image by exactly one
+   tile (150% × (100% − 300%) = −300%), so the loop lands on the same pixels. */
+@keyframes chat-accent-flow {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-input[data-accent="brand"] .astryx-chat-composer::after {
+    animation: none;
+  }
+}
+
+/* —— Prompt suggestions —— */
+
+.prompt-suggestion__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.prompt-suggestion__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  min-width: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-background-surface);
+  padding: var(--spacing-2) var(--spacing-3);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.prompt-suggestion__item:hover {
+  background: var(--color-overlay-hover);
+  border-color: var(--color-border-emphasized);
+}
+
+.prompt-suggestion__item-end-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-icon-secondary);
+}
+
+/* —— Chain of thought: rail skin —— */
+
+.chain-of-thought-rail {
+  min-width: 0;
+  font-size: var(--font-size-base);
+}
+
+.chain-of-thought-rail__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-height: var(--size-element-md);
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chain-of-thought-rail__trigger:hover {
+    color: var(--color-text-primary);
+  }
+}
+
+.chain-of-thought-rail__trigger-chevron {
+  display: inline-flex;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.chain-of-thought-rail__trigger[data-panel-open] .chain-of-thought-rail__trigger-chevron {
+  transform: rotate(90deg);
+}
+
+.chain-of-thought-rail__panel {
+  margin-block-start: var(--spacing-2);
+}
+
+.chain-of-thought-rail__track {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.chain-of-thought-rail__round-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin-block-end: var(--spacing-1);
+}
+
+.chain-of-thought-rail__round-label {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-disabled);
+}
+
+.chain-of-thought-rail__nodes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.chain-of-thought-rail__node {
+  position: relative;
+  padding-inline-start: var(--spacing-3);
+  min-width: 0;
+}
+
+/* the rail line — starts just below each node's marker */
+.chain-of-thought-rail__node::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 3.5px;
+  top: 18px;
+  bottom: -8px;
+  width: var(--border-width);
+  background: var(--color-border);
+}
+
+.chain-of-thought-rail__node[data-kind="tool"]::before {
+  top: 22px;
+}
+
+.chain-of-thought-rail__node:last-child::before {
+  display: none;
+}
+
+/* Markers center on their node's first text line: thinking label line
+   (~24px tall, center 12px) vs. tool row (32px centered, center 16px). */
+.chain-of-thought-rail__marker {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-border-emphasized);
+  pointer-events: none;
+}
+
+.chain-of-thought-rail__node[data-kind="tool"] .chain-of-thought-rail__marker {
+  top: 12px;
+}
+
+.chain-of-thought-rail__marker[data-kind="thinking"] {
+  background: transparent;
+  border: var(--border-width) solid var(--color-border-emphasized);
+}
+
+.chain-of-thought-rail__marker[data-state="output-error"] {
+  background: var(--color-danger);
+}
+
+.chain-of-thought-rail__marker[data-state="input-streaming"],
+.chain-of-thought-rail__marker[data-state="input-available"] {
+  background: var(--color-text-secondary);
+  animation: chain-of-thought-rail-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chain-of-thought-rail-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.chain-of-thought-rail__node-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+
+.chain-of-thought-rail__thinking-label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.chain-of-thought-rail__thinking-text {
+  margin: var(--spacing-0-5) 0 0;
+  max-width: 65ch;
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.chain-of-thought-rail__node-meta {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-1-5);
+  flex-shrink: 0;
+}
+
+.chain-of-thought-rail__duration {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-disabled);
+  font-variant-numeric: tabular-nums;
+}
+
+.chain-of-thought-rail__tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-height: var(--size-element-sm);
+  padding-block: var(--spacing-0-5);
+  border-radius: var(--radius-inner);
+  cursor: pointer;
+  min-width: 0;
+  list-style: none;
+  touch-action: manipulation;
+}
+
+.chain-of-thought-rail__tool-row::-webkit-details-marker {
+  display: none;
+}
+
+.chain-of-thought-rail__tool-row[data-static="true"] {
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  details > .chain-of-thought-rail__tool-row:hover {
+    background: var(--color-overlay-hover);
+    margin-inline: calc(-1 * var(--spacing-1-5));
+    padding-inline: var(--spacing-1-5);
+  }
+}
+
+.chain-of-thought-rail__disclosure {
+  display: inline-flex;
+  color: var(--color-icon-secondary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+  flex-shrink: 0;
+}
+
+.chain-of-thought-rail__disclosure[data-hidden="true"] {
+  visibility: hidden;
+}
+
+details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclosure {
+  transform: rotate(90deg);
+}
+
+.chain-of-thought-rail__tool-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.chain-of-thought-rail__tool-target {
+  font-family: var(--font-family-code);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.chain-of-thought-rail__badge {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chain-of-thought-rail__badge[data-tone="error"] {
+  color: var(--color-danger);
+}
+
+.chain-of-thought-rail__badge[data-tone="running"] {
+  color: var(--color-text-secondary);
+}
+
+.chain-of-thought-rail__tool-detail {
+  padding: var(--spacing-1) 0 var(--spacing-1) calc(12px + var(--spacing-1-5));
+}
+
+.chain-of-thought-rail__pre {
+  margin: 0;
+  padding: var(--spacing-1-5) var(--spacing-2);
+  font-family: var(--font-family-code);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  background: var(--color-background-muted);
+  border-radius: var(--radius-inner);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.chain-of-thought-rail__pre::before {
+  content: attr(data-label);
+  display: block;
+  margin-block-end: var(--spacing-0-5);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-disabled);
+  user-select: none;
+}
+
+.chain-of-thought-rail__pre[data-tone="error"] {
+  color: var(--color-danger);
+}
+
+.chain-of-thought-rail__pre + .chain-of-thought-rail__pre {
+  margin-block-start: var(--spacing-1);
+}
+
+/* Scoped scrollbar for payload blocks only (never the page). */
+.chain-of-thought-rail__pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.chain-of-thought-rail__pre::-webkit-scrollbar-thumb {
+  background: var(--color-border-emphasized);
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chain-of-thought-rail__trigger-chevron,
+  .chain-of-thought-rail__disclosure {
+    transition: none;
+  }
+
+  .chain-of-thought-rail__marker {
+    animation: none !important;
+  }
+}
+
+/* —— Queued messages ——
+   Enter is user-caused inserts only (`data-presence="enter"` + @starting-style).
+   First paint of an already-queued row stays idle. */
+
+.chat-queued-message {
+  position: relative;
+  opacity: 1;
+  transition:
+    opacity 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.chat-queued-message[data-dragging] {
+  opacity: 0.45;
+}
+
+.chat-queued-message[data-drop-target="before"]::before,
+.chat-queued-message[data-drop-target="after"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: var(--spacing-0-5);
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.chat-queued-message[data-drop-target="before"]::before {
+  top: 0;
+}
+
+.chat-queued-message[data-drop-target="after"]::after {
+  bottom: 0;
+}
+
+.chat-queued-message__body {
+  color: var(--color-text-primary);
+  transition:
+    color 150ms var(--ease-standard),
+    opacity 150ms var(--ease-standard);
+}
+
+.chat-queued-message[data-withdrawn] .chat-queued-message__body,
+.chat-queued-message[data-steered] .chat-queued-message__body {
+  color: var(--color-text-secondary);
+}
+
+@starting-style {
+  .chat-queued-message[data-presence="enter"] {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.chat-queued-message[data-presence="exit"] {
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition:
+    opacity 150ms ease-in,
+    transform 150ms ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-queued-message,
+  .chat-queued-message__body {
+    transition: none;
+  }
+
+  @starting-style {
+    .chat-queued-message[data-presence="enter"] {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { checkoutOf, homeOf, type HostIndex, organize, type Project, type WorktreeCheckout } from "../src/organization.ts";
+import { checkoutOf, findConversation, homeOf, type HostIndex, organize, type Project, type WorktreeCheckout } from "../src/organization.ts";
 import type { ConversationSummary } from "../src/view.ts";
 
 const project = (path: string, addedAt = 1): Project => ({ path, name: path.split("/").at(-1)!, addedAt });
@@ -69,6 +69,20 @@ describe("organize", () => {
     const index: HostIndex = { projects: [], conversations: [chat(10, 1)] };
     const organized = organize(index, [summary(10), summary(9, 10), summary(8, 10)]);
     expect(organized.chats[0]!.children.map((node) => node.summary.id)).toEqual([8, 9]);
+  });
+});
+
+describe("findConversation", () => {
+  const index: HostIndex = { projects: [project("/work/a")], conversations: [chat(10, 1), inProject(11, "/work/a", 2)] };
+  const summaries = [summary(10), summary(11), { ...summary(30, 10), kind: "subagent" as const }, summary(21, 10)];
+
+  it("finds top-level and nested nodes across chats and projects", () => {
+    const organized = organize(index, summaries);
+    expect(findConversation(organized, 10 as ConversationId)?.summary.id).toBe(10);
+    expect(findConversation(organized, 11 as ConversationId)?.summary.id).toBe(11);
+    expect(findConversation(organized, 30 as ConversationId)?.summary.kind).toBe("subagent");
+    expect(findConversation(organized, 21 as ConversationId)?.summary.parent).toBe(10);
+    expect(findConversation(organized, 99 as ConversationId)).toBeUndefined();
   });
 });
 

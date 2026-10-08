@@ -1,0 +1,63 @@
+import type { ComponentProps, ReactNode } from "react";
+
+const TOKEN = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+
+function dropUnclosedMarkers(text: string) {
+  if (/^\*{1,2}$/.test(text)) {
+    return "";
+  }
+  const parts = text.split("**");
+  if (parts.length % 2 === 0) {
+    return parts.slice(0, -1).join("**") + parts[parts.length - 1];
+  }
+  return text;
+}
+
+function unwrapWholeLineEmphasis(text: string) {
+  return text.replace(/(^|\n)\*\*([^*\n]+)\*\*(?=\n|$)/g, "$1$2");
+}
+
+function renderInline(text: string): ReactNode[] {
+  return text.split(TOKEN).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2 && !part.startsWith("**")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+/** Lightweight inline markdown for thinking. Streaming-safe: unclosed ** is hidden. */
+type ChatThoughtMarkdownOwnProps = {
+  text: string;
+  unwrapLines?: boolean;
+};
+
+export type ChatThoughtMarkdownProps = Omit<
+  ComponentProps<"span">,
+  keyof ChatThoughtMarkdownOwnProps | "children"
+> &
+  ChatThoughtMarkdownOwnProps;
+
+export function ChatThoughtMarkdown({
+  text,
+  unwrapLines = false,
+  className,
+  ...rest
+}: ChatThoughtMarkdownProps) {
+  let source = dropUnclosedMarkers(text);
+  if (unwrapLines) {
+    source = unwrapWholeLineEmphasis(source);
+  }
+
+  return (
+    <span className={`chat-thought-md ${className ?? ""}`.trim()} {...rest}>
+      {renderInline(source)}
+    </span>
+  );
+}

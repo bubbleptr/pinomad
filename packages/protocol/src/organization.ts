@@ -121,6 +121,19 @@ export function organize(index: HostIndex, summaries: readonly ConversationSumma
   };
 }
 
+/** The organized node for a conversation id, wherever it nests (forks and subagents live under their ancestor). */
+export function findConversation(organized: Organized, id: ConversationId): ConversationNode | undefined {
+  const visit = (nodes: readonly ConversationNode[]): ConversationNode | undefined => {
+    for (const node of nodes) {
+      if (node.summary.id === id) return node;
+      const found = visit(node.children);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  return visit([...organized.chats, ...organized.projects.flatMap((entry) => entry.conversations)]);
+}
+
 /**
  * The worktree a conversation works in: its own record, else the nearest
  * ancestor's — a subagent shares the checkout of the conversation owning it.
