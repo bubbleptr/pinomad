@@ -281,10 +281,10 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
           <ChatLayout
             style={chatColumn}
             composer={
-            <div className="mx-auto w-full max-w-[44rem]">
-              <DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />
-            </div>
-          }
+              <div className="mx-auto w-full max-w-[44rem]">
+                <DraftComposer remote={remote} home={draft} connected={view.connection === "connected"} />
+              </div>
+            }
             emptyState={
               <EmptyState title={draftLabel} description="The first message creates the conversation." />
             }

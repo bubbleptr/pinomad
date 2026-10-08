@@ -52,10 +52,11 @@ MCP 本身的后续，都等有明确需求再做：
 
 1. 视觉基础：Tailwind v4、token 桥、Montserrat、Hugeicons、`@/` 别名；现有界面不改结构，只换底子。
 2. 对话流（已完成）：思维链（工具 step 行、思考行、状态行）、Markdown 和代码块；从 Durable 的 `ConversationView` 推导 `CotView`。edit / write 的 diff、codemode 的嵌套调用、工具结果图片、fork 按钮都保留；子代理卡片能点进子对话（运行中也能点），卡片标题用 `subagent` 新增的可选参数 `description`，查看子对话时能回到父对话。
-3. Composer：Pace 的 ChatPromptInput、排队消息、运行失败恢复。
-4. 外框和首页：侧栏结构、首页 hero、带"模型 · 思考等级"选择的 Composer；新建对话可以选模型（`createConversation` 加 `model`，协议 v4）。保留窄屏布局。
+3. 外框（已完成）：Astryx AppShell，侧栏是 wash 底色、主区是白色；顶栏 40px，显示对话标题，子代理对话显示成"父对话 › 子对话"面包屑；右侧 Dock 默认收起，由顶栏按钮开关，有运行中的任务或排队消息时按钮上亮一个点；cwd 和分支移进 Dock 的 Workspace。侧栏按 Pace 分成 New chat、Chats、Projects，操作悬停时才出现，Devices 放在底部。窄屏只有一行顶栏。
+4. 首页和 Composer：首页 hero 和项目选择；Pace 的 ChatPromptInput，带"模型 · 思考等级"胶囊；排队消息、运行失败恢复；新建对话可以选模型（`createConversation` 加 `model`，协议 v4）。
 
 之后接着做（细节到时再定）：
+- 侧栏行显示运行中标记和更新时间：对话摘要要先加 `updatedAt` 和是否在跑。
 - 子代理在侧栏的位置（现在挂在父对话下，标题是任务描述开头，分不清）。
 - 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
 - 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
