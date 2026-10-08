@@ -100,20 +100,26 @@ export function ModelSelector({
             ))}
           </List>
           {levels.length > 1 ? (
-            <List aria-label="Thinking" density="compact">
-              {levels.map((level) => (
-                <ListItem
-                  endContent={
-                    level === selected.level
-                      ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                      : undefined
-                  }
-                  key={level}
-                  label={thinkingLevelLabels[level]}
-                  onClick={() => onLevelChange(level)}
-                />
-              ))}
-            </List>
+            // Astryx List doesn't forward aria-label (0.3.0), so the section
+            // gets a visible heading plus a role="group" wrapper.
+            <div aria-label="Thinking" role="group">
+              <p className="px-2 pt-1 text-xs text-muted">Thinking</p>
+              <List density="compact">
+                {levels.map((level) => (
+                  <ListItem
+                    endContent={
+                      level === selected.level
+                        ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+                        : undefined
+                    }
+                    isDisabled={isDisabled}
+                    key={level}
+                    label={thinkingLevelLabels[level]}
+                    onClick={() => onLevelChange(level)}
+                  />
+                ))}
+              </List>
+            </div>
           ) : null}
         </div>
       }
@@ -128,11 +134,10 @@ export function ModelSelector({
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate">
-            {selectedSummary === undefined
-              ? "No model"
-              : levels.length > 1
-                ? `${selectedSummary.name} · ${thinkingLevelLabels[selected.level]}`
-                : selectedSummary.name}
+            {(() => {
+              const name = selectedSummary?.name ?? selected.model?.modelId ?? "No model";
+              return levels.length > 1 ? `${name} · ${thinkingLevelLabels[selected.level]}` : name;
+            })()}
           </span>
           <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
         </span>

@@ -500,14 +500,14 @@ it("changes the model and thinking level from the composer capsule", async () =>
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
   await capsule.click();
   // Non-reasoning model: no Thinking section (no level rows at all).
-  expect(await page.getByRole("button", { name: "High", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("group", { name: "Thinking" }).count()).toBe(0);
   expect(await page.getByRole("button", { name: "Faux Thinker", exact: false }).textContent()).not.toContain("·");
 
   // Picking the reasoning model reveals its levels once the setModel call
   // round-trips; picking one relabels the trigger.
   await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
-  await page.getByRole("button", { name: "High", exact: true }).waitFor();
-  await page.getByRole("button", { name: "High", exact: true }).click();
+  const thinking = page.getByRole("group", { name: "Thinking" });
+  await thinking.getByRole("button", { name: "High", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · High");
   await expect.poll(async () => {
