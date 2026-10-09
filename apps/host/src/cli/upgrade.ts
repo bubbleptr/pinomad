@@ -36,7 +36,8 @@ export async function main(argv: readonly string[]): Promise<void> {
       if (code !== 0) process.exit(code);
     }
   } else {
-    // Dependencies ship inside the package; `npm i -g` is the whole upgrade.
+    // npm replaces the package in place (same path the service points at) and
+    // installs its exact third-party versions; nothing else to rebuild.
     const code = await step("npm", ["install", "-g", "pinomad@latest"]);
     if (code !== 0) process.exit(code);
   }

@@ -1,7 +1,7 @@
 # ADR-0016：分发——单个 npm 包 `pinomad`，GitHub Actions 按 tag 发布
 
 - 状态：Accepted
-- 日期：2026-10-10
+- 日期：2026-10-09
 
 ## 背景
 
@@ -17,7 +17,7 @@ ADR-0009 §2 定过"安装就是源码检出"，把打包发布留到以后：No
 
 4. **打包安装的升级 = `npm i -g pinomad@latest` + 等空闲重启。** `pinomad upgrade` 在打包模式跳过 git/bun 步骤（检出可能根本不干净或不存在），复用 ADR-0009 §5 的 restart 路径。源码检出照旧 `git pull && bun install && bun run build`。
 
-5. **打 tag 走 GitHub Actions 发布（`.github/workflows/release.yml`）。** 全套门禁（typecheck、test、build）+ `bun run package` + `npm pack` + `smoke.ts`（真安装 tgz、跑 `--version`/`relay-id`/host/relay 冒烟）之后才 `npm publish`。发布用 trusted publishing（OIDC，`id-token: write`），仓库里不放长期 token。两个前提：仓库先公开（private 仓库的 Action 也能跑，但 npm 包必须是公开范围语义下的包）；首个版本要手动 `npm publish` 一次，trusted publisher 只能在已存在的包上配置，且配置项要选允许 `npm publish`（不是只允许 `npm stage publish`）。
+5. **打 tag 走 GitHub Actions 发布（`.github/workflows/release.yml`）。** 全套门禁（typecheck、test、build）+ `bun run package` + `npm pack` + `smoke.ts`（真安装 tgz、跑 `--version`/`relay-id`/host/relay 冒烟）之后才 `npm publish`。发布用 trusted publishing（OIDC，`id-token: write`），仓库里不放长期 token。两个前提：仓库先转公开并以 Apache-2.0 开源（公开的 npm 包本来就让任何人拿到打包后的完整代码；private 仓库发布的包也生成不了 provenance）；首个版本要手动 `npm publish` 一次，trusted publisher 只能在已存在的包上配置，且配置项要选允许 `npm publish`（不是只允许 `npm stage publish`）。
 
 6. **`bun run start` 不进包。** 它依赖 vite 开发服务器，是开发路径；npm 包里宿主自己提供 Web 客户端（ADR-0009 §7），不需要它。源码检出继续是唯一的开发方式，`bun run host|relay|service|upgrade|link|pair|relay-id|start` 不变。
 
@@ -31,7 +31,7 @@ ADR-0009 §2 定过"安装就是源码检出"，把打包发布留到以后：No
 ## 后果
 
 - 这条取代 ADR-0009 §2（不再只是源码检出安装）并修订 §6（打包安装升级走 npm）；§9 的日志约束不变。
-- `pinomad service install` 在打包模式下写进服务定义的是 `<npm prefix>/node_modules/pinomad/dist/pinomad.js` + `host` 参数；升级后新装/重装服务会指向新包路径。
+- `pinomad service install` 在打包模式下写进服务定义的是 `$(npm root -g)/pinomad/dist/pinomad.js` + `host` 参数。`npm i -g` 原地替换同一路径，升级后服务定义不用重写；换了 Node 版本管理器或全局前缀时要重新 `install`（和 ADR-0009 §4 固定 Node 路径的道理一样）。
 - 依赖该包的机器只需要 Node 25+，不需要 Bun、不需要仓库；Omarchy 那台宿主上 `npm i -g pinomad` 装的运行实例和任何开发检出互不相干。
 - 发布前置条件：仓库公开、首个版本手动发布、trusted publisher 配置允许 `npm publish`。
 - 源码路径仍是开发主场：`bun run test` 不跑 smoke（smoke 要真连 npm registry，只在 release 流水线里跑）。

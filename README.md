@@ -9,7 +9,7 @@
 
 ## 运行
 
-安装只需要 Node 25+（宿主依赖 `node:sqlite` 和原生 TS 类型剥离）：
+安装只需要 Node 25+（宿主依赖 `node:sqlite`），不需要 Bun：
 
 ```sh
 npm i -g pinomad
