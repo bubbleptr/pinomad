@@ -7,7 +7,7 @@
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { packagedVersion } from "../distribution.ts";
+import { globalPrefixOf, packageDir, packagedVersion } from "../distribution.ts";
 import { serviceManager } from "../service/manager.ts";
 import { restartService } from "./service.ts";
 
@@ -37,8 +37,16 @@ export async function main(argv: readonly string[]): Promise<void> {
     }
   } else {
     // npm replaces the package in place (same path the service points at) and
-    // installs its exact third-party versions; nothing else to rebuild.
-    const code = await step("npm", ["install", "-g", "pinomad@latest"]);
+    // installs its exact third-party versions; nothing else to rebuild. Aim
+    // the install at the prefix that owns this package — the ambient npm
+    // prefix may be another one, and the service would keep restarting the
+    // old version.
+    const prefix = globalPrefixOf(packageDir);
+    if (prefix === undefined) {
+      console.error(`upgrade: pinomad isn't a global npm install (${packageDir}); upgrade it the way it was installed`);
+      process.exit(1);
+    }
+    const code = await step("npm", ["install", "-g", "--prefix", prefix, "pinomad@latest"]);
     if (code !== 0) process.exit(code);
   }
   // A source checkout / global install without the service still upgrades

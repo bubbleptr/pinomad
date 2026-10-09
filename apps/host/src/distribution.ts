@@ -23,3 +23,15 @@ export const hostEntry: { readonly script: string; readonly args: readonly strin
 
 /** How to spell a subcommand in user-facing hints: `pinomad pair` vs `bun run pair`. */
 export const commandHint = (name: string): string => (packagedVersion === undefined ? `bun run ${name}` : `pinomad ${name}`);
+
+// The installed package directory (<pkg>/, parent of the flat dist/); only meaningful when packaged.
+export const packageDir = fileURLToPath(new URL("../", import.meta.url));
+
+/**
+ * npm's global prefix owning `<prefix>/lib/node_modules/pinomad`, or undefined
+ * for a non-global (npm link, local) install. An unqualified `npm install -g`
+ * would target the caller's *current* npm prefix — possibly not the one the
+ * service points at — and the restart would keep running the old version.
+ */
+export const globalPrefixOf = (dir: string): string | undefined =>
+  /^(.+)\/lib\/node_modules\/pinomad\/?$/.exec(dir)?.[1];

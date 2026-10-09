@@ -32,5 +32,6 @@ jobs:
         working-directory: apps/cli/out
       - run: bun apps/cli/smoke.ts "$RUNNER_TEMP"/pinomad-*.tgz
       - if: startsWith(github.ref, 'refs/tags/v')
-        run: npm publish
+        # Prereleases (v1.2.0-beta.1) go to `next` so `pinomad upgrade` (pinomad@latest) never picks them up.
+        run: npm publish --tag "${{ contains(github.ref_name, '-') && 'next' || 'latest' }}"
         working-directory: apps/cli/out

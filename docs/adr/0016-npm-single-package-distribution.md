@@ -15,9 +15,9 @@ ADR-0009 §2 定过"安装就是源码检出"，把打包发布留到以后：No
 
 3. **`PINOMAD_VERSION` 是唯一的"源码 vs 打包"开关。** `Bun.build` 的 `define` 注入版本号；源码检出里它未定义，`typeof` 判别。所有差异集中在 `apps/host/src/distribution.ts`：Web 根（包内 `web/` vs 检出 `apps/web/dist`）、服务入口（`dist/pinomad.js host` vs `src/main.ts`）、命令拼写（`pinomad pair` vs `bun run pair`）。每个 CLI 模块导出 `main(argv)`，入口文件底部 `if (import.meta.main)` 触发；打进 bundle 的 chunk 里 `import.meta.main` 为假，源码直跑时为真。
 
-4. **打包安装的升级 = `npm i -g pinomad@latest` + 等空闲重启。** `pinomad upgrade` 在打包模式跳过 git/bun 步骤（检出可能根本不干净或不存在），复用 ADR-0009 §5 的 restart 路径。源码检出照旧 `git pull && bun install && bun run build`。
+4. **打包安装的升级 = `npm i -g pinomad@latest` + 等空闲重启。** `pinomad upgrade` 在打包模式跳过 git/bun 步骤（检出可能根本不干净或不存在），复用 ADR-0009 §5 的 restart 路径。安装目标显式带上 `--prefix`——装进当前运行包所属的那个 npm 全局前缀（调用者当前的 prefix 可能是另一个，重启后跑的还是旧版）；包不在某个全局前缀下（`npm link`、本地依赖）时拒绝升级，提示按原方式装。源码检出照旧 `git pull && bun install && bun run build`。
 
-5. **打 tag 走 GitHub Actions 发布（`.github/workflows/release.yml`）。** 全套门禁（typecheck、test、build）+ `bun run package` + `npm pack` + `smoke.ts`（真安装 tgz、跑 `--version`/`relay-id`/host/relay 冒烟）之后才 `npm publish`。发布用 trusted publishing（OIDC，`id-token: write`），仓库里不放长期 token。两个前提：仓库先转公开并以 Apache-2.0 开源（公开的 npm 包本来就让任何人拿到打包后的完整代码；private 仓库发布的包也生成不了 provenance）；首个版本要手动 `npm publish` 一次，trusted publisher 只能在已存在的包上配置，且配置项要选允许 `npm publish`（不是只允许 `npm stage publish`）。
+5. **打 tag 走 GitHub Actions 发布（`.github/workflows/release.yml`）。** 全套门禁（typecheck、test、build）+ `bun run package` + `npm pack` + `smoke.ts`（真安装 tgz、跑 `--version`/`relay-id`/host/relay 冒烟）之后才 `npm publish`；预发布 tag（`v1.2.0-beta.1`）发到 `next` dist-tag，`latest` 只给正式版，`pinomad upgrade` 不会撞上测试版本。发布用 trusted publishing（OIDC，`id-token: write`），仓库里不放长期 token。两个前提：仓库先转公开并以 Apache-2.0 开源（公开的 npm 包本来就让任何人拿到打包后的完整代码；private 仓库发布的包也生成不了 provenance）；首个版本要手动 `npm publish` 一次，trusted publisher 只能在已存在的包上配置，且配置项要选允许 `npm publish`（不是只允许 `npm stage publish`）。
 
 6. **`bun run start` 不进包。** 它依赖 vite 开发服务器，是开发路径；npm 包里宿主自己提供 Web 客户端（ADR-0009 §7），不需要它。源码检出继续是唯一的开发方式，`bun run host|relay|service|upgrade|link|pair|relay-id|start` 不变。
 
