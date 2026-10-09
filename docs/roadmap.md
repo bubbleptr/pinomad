@@ -20,7 +20,8 @@
 - MCP 接入：`~/.agents/mcp.json` 全局 `mcpServers` 配置，每个 server 在宿主里只连一份、所有对话共用；工具以 `mcp__<server>__<tool>` 直接声明，`tools/list_changed` 跟随；状态和配置错误经 `mcp` 流推到客户端右侧面板；结果图片显示在工具卡片里（ADR-0012；协议 v3）
 - codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用并能展开 edit / write 的 diff（ADR-0013）
 - 远程访问第二期：自部署中继 `apps/relay`，宿主 `--relay` 主动连出，每台设备一条数据连接拼接到同一个 IK 握手；宿主用独立 Ed25519 密钥签名登记，中继按 `--allow-host` 白名单接受；中继用 HTTPS 提供 Web 客户端，配对链接优先指向中继（ADR-0008、0015）
-- npm 单包分发：一个公开的 `pinomad` 包装宿主、中继和构建好的 Web 客户端（Bun.build 打我们自己的代码，第三方依赖外置）；`pinomad` 单入口分发子命令；打包安装升级走 `npm i -g`；tag 触发 GitHub Actions 发布（OIDC trusted publishing）（ADR-0016）
+- npm 单包分发：一个公开的 `pinomad` 包装宿主、中继和构建好的 Web 客户端（Bun.build 打我们自己的代码，第三方依赖外置）；`pinomad` 单入口分发子命令；打包安装升级走 `npm i -g`；tag 触发 GitHub Actions 发布（OIDC trusted publishing）（ADR-0016）。仓库已公开，`pinomad@0.1.0` 已手动首发
+- Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
@@ -70,10 +71,10 @@ MCP 本身的后续，都等有明确需求再做：
 
 ## M3：在哪都能连（进行中）
 
-场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。自部署中继已完成（见"已完成"）。
+场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。自部署中继和 Omarchy 真机常驻都已完成（见"已完成"）。
 
-- 在 Omarchy 上真机跑一遍：systemd 用户单元 + linger、`--relay` 常驻、VPS 上的中继和 Caddy（顺带清掉技术债里"systemd 未真机验证"）
-- npm 包发布前置条件（ADR-0016）：仓库转公开；首个 `pinomad` 版本手动 `npm publish`；之后在 npm 上配 trusted publisher（要选允许 `npm publish`，不是只允许 `npm stage publish`）；此后 `v*` tag 触发 release 流水线自动发包
+- 在 npm 上给 `pinomad` 配 trusted publisher（`bubbleptr` / `pinomad` / `release.yml`，要选允许 `npm publish`，不是只允许 `npm stage publish`），然后用第一个 `v*` tag 验证 release 流水线自动发包（ADR-0016）
+- 宿主在中继上登记成功、断线重连时写日志：现在只有失败会进日志，确认登记要从外面连 `/c/<hostId>` 看会不会被 `4604` 关掉
 - 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
@@ -109,7 +110,8 @@ ADR-0005 的候选 `progress`、`table`、`log`、`status` 不单独排期，等
 
 ## 技术债
 
-- Linux systemd 用户单元还没在真机上验证（ADR-0009）
+- 宿主 `ready` 日志的 `web` 字段写死成开发服务器 `http://127.0.0.1:5199/`（`apps/host/src/main.ts`），npm 安装和服务模式下都是错的
+- npm 上的 `0.0.0-stage` 占位版本可以 `npm deprecate` 掉（要 2FA），不影响安装
 - 远程配对测试偶发 `UnauthorizedError`，原因未查明
 - Skills 只扫描 `<cwd>/.agents/skills`，在仓库子目录启动时看不到仓库根目录的 Skills；格式有误的 Skill 被直接忽略，不提示用户（ADR-0006）
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）

@@ -138,9 +138,39 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-容器平台（Zeabur 等）：镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`PINOMAD_VERSION`）。环境变量 `PINOMAD_PUBLIC_ORIGIN`（客户端打开的 https origin）和 `PINOMAD_ALLOW_HOST`（空格分隔的 hostId）；平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy。中继把转接状态放在内存里，**只能跑一个实例**。Zeabur 上：从 GitHub 仓库部署，Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，绑定自定义域名；升级就是把 `PINOMAD_VERSION` 调大再重新部署。
+#### 容器平台（Zeabur 等）
 
-升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继（容器部署则是调大 `PINOMAD_VERSION` 后重新部署）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy。中继把转接状态放在内存里，**只能跑一个实例**，不要开扩容。
+
+| 环境变量 | 含义 |
+|---|---|
+| `PINOMAD_PUBLIC_ORIGIN` | 客户端打开的 https origin，比如 `https://nomad.example.com` |
+| `PINOMAD_ALLOW_HOST` | 允许登记的 hostId，多个用空格分隔（每台宿主上跑 `pinomad relay-id`） |
+| `ZBPACK_DOCKERFILE_PATH=Dockerfile` | **Zeabur 必加**：目录里只有一个 Dockerfile 时，Zeabur 会把它识别成静态站点、用 Caddy 托管文件，中继根本没启动；这个变量强制按 Dockerfile 构建（部署日志里应是 `PLANTYPE=docker`） |
+
+Zeabur 上的步骤（在 Dedicated Server 上部署，用 CLI 上传目录，不接 GitHub）：
+
+```sh
+cd deploy/relay
+zeabur deploy --project-id <项目 id> --create --name pinomad-relay   # 首次：在项目里建出服务
+# 之后重新部署同一个服务：
+zeabur deploy --service-id <服务 id>
+```
+
+然后在服务上配好上面的环境变量（`PORT` 由平台注入，不用自己设），在 Domains 里绑定自定义域名，到 DNS 加一条记录：Dedicated Server 用 **A 记录指向服务器 IP**；Cloudflare 上建议**关掉代理（灰云）**，橙云会让国内访问多绕一圈，证书也由 Zeabur 自己签。域名状态变成 `PROVISIONED` 后，验证：
+
+```sh
+curl -sI https://nomad.example.com/          # 200，中继托管的 Web 客户端
+pinomad service install --relay https://nomad.example.com …   # 宿主接上中继
+```
+
+宿主登记成功时目前不写日志，确认方法是用浏览器扫 `pinomad pair` 的二维码，或者直接连设备入口 `wss://<origin>/c/<hostId>`：宿主在线时连接保持打开（等握手），宿主没登记会立刻以 `4604`（hostOffline）关闭。
+
+也可以从 GitHub 仓库部署：Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，其余同上。
+
+#### 升级
+
+中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
 
 npm 装的实例和本机任何开发检出互不相干（各自的数据目录、进程、包路径都独立），所以在同一台机器上开发 PiNomad 不会碰到正在跑的服务。
 
@@ -162,8 +192,9 @@ pinomad upgrade [--force]
 - `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。打包安装时 `upgrade` 把 `pinomad@latest` 装进运行包所在的 npm 全局前缀（非全局安装会拒绝执行）+ 同样的 restart；源码检出里（`bun run upgrade`）依次 `git pull --ff-only`、`bun install`、`bun run build`，工作区有未提交改动时拒绝执行。前面任何一步失败都直接停下，不重启，服务继续跑旧代码。
 - `uninstall` 只卸载服务，不动数据目录。
 - macOS：宿主以登录会话运行，机器重启后要能自动起来需在系统设置里打开自动登录，并为这台机器关掉睡眠。日志写到 `<数据目录>/logs/host.log`。
-- Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。
-- 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**。`pinomad link` 打印的链接按顺序探测：正在跑的 vite 开发服务器（5199）优先；否则宿主自己提供 Web 的端口；都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
+- Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。开着 ufw 时，局域网设备访问 `--remote-port` 要先放行，比如 `sudo ufw allow from 192.168.0.0/24 to any port 7422 proto tcp`（只走中继就不用开）。
+- **服务绑定安装时的 node 路径**：单元里写的是 node 和包的绝对路径。用 mise / nvm 管理 Node 时，路径里带着具体版本号（`…/node/26.8.2/…`）；换了 Node 版本、旧目录被删后服务就起不来，要用新版本重新 `npm i -g pinomad`，再跑一次 `pinomad service install …`。`pinomad upgrade` 只升 pinomad，装回原来的前缀，不受影响。
+- 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**。npm 安装时 `pinomad link` 总是指向宿主自己提供的 Web；源码检出里按顺序探测：正在跑的 vite 开发服务器（5199）优先，否则宿主提供 Web 的端口，都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
 - 服务在跑时 `bun run start` 会因为目录锁拿不到而失败（同一数据目录只有一个宿主）；开发时用另一个 `--data-dir`，或先 `uninstall`。
 
 Windows 不在支持范围；其他平台跑 `service` 会直接报错退出。
@@ -175,3 +206,15 @@ bun run typecheck
 bun run test    # vitest + Playwright，首次跑前先 bunx playwright install chromium
 bun run build
 ```
+
+## 发布（ADR-0016）
+
+推 `v*` tag 触发 `.github/workflows/release.yml`：跑完 typecheck / test / build、打包、`npm pack`、装包冒烟后才 `npm publish`。带 `-` 的预发布 tag（`v0.2.0-beta.1`）发到 `next`，正式版发到 `latest`。发布用 npm trusted publishing（OIDC），仓库里没有 npm token。
+
+```sh
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+- 手动发布（流水线不可用时）：`bun run build && bun run package -- --version <v>`，再在 `apps/cli/out` 里 `npm publish`。终端里的 npm 要先 `npm login`（`npm whoami` 能报出用户名）；没登录时 npm 回的是 `404 Not Found` 而不是 401，容易误判成包名问题。
+- 发布后几分钟内 registry 可能还没处理完（新包还会先出现一个 `0.0.0-stage` 占位版本）；这期间查过的机器缓存了旧元数据，安装报 `ETARGET` / "No matching version" 时加 `--prefer-online`。
