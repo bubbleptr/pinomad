@@ -9,16 +9,29 @@
 
 ## 运行
 
-需要 Bun（安装依赖、跑脚本）和 Node 25+（宿主依赖 `node:sqlite` 和原生 TS 类型剥离，不能用 Bun 跑）。
+安装只需要 Node 25+（宿主依赖 `node:sqlite`），不需要 Bun：
+
+```sh
+npm i -g pinomad
+
+# 起宿主：真实模型需要先在 pi 里配好认证（读 ~/.pi/agent）；
+# 没有认证可以用脚本化的假模型冒烟：
+pinomad host --faux "hi"
+
+# 打印带 token 的浏览器链接，打开即用（Web 客户端由宿主自己提供）：
+pinomad link
+```
+
+### 开发 / 从源码运行
+
+检出仓库，需要 Bun（装依赖、跑脚本）+ Node 25+：
 
 ```sh
 bun install
 
-# 起宿主：真实模型需要先在 pi 里配好认证（读 ~/.pi/agent）；
-# 没有认证可以用脚本化的假模型冒烟：
 bun run host -- --faux "hi"
 
-# 另一个终端起 Web 客户端（http://127.0.0.1:5199），并打印带 token 的浏览器链接：
+# 另一个终端起 Web 客户端开发服务器（http://127.0.0.1:5199）：
 bun run web
 bun run link
 ```
@@ -87,16 +100,17 @@ bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 宿主这边：先打印中继身份（Ed25519 公钥，存在 `<dataDir>/relay-key`）：
 
 ```sh
-bun run relay-id [--data-dir DIR]     # 输出 hostId，把它加进中继的 --allow-host
-bun run host -- --relay https://relay.example.com
-# 常驻：bun run service -- install --relay https://relay.example.com
-bun run pair                          # 打出的二维码指向中继
+pinomad relay-id [--data-dir DIR]        # 输出 hostId，把它加进中继的 --allow-host
+pinomad host --relay https://relay.example.com
+# 常驻：pinomad service install --relay https://relay.example.com
+pinomad pair                             # 打出的二维码指向中继
 ```
 
-VPS 这边：检出仓库，`bun install`、`bun run build`（需要 Node 25+ 和 Bun），然后：
+VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来自同一个 `pinomad` 安装，版本天然一致：
 
 ```sh
-bun run relay -- --public-origin https://relay.example.com --allow-host <hostId>
+npm i -g pinomad
+pinomad relay --public-origin https://relay.example.com --allow-host <hostId>
 # 默认只监听 127.0.0.1:7430，--port / --listen 可改；多台宿主就写多个 --allow-host
 ```
 
@@ -108,7 +122,7 @@ relay.example.com {
 }
 ```
 
-systemd 单元示例（VPS 上的系统级单元，`node` 写 `which node` 给出的绝对路径）：
+systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）：
 
 ```ini
 [Unit]
@@ -117,35 +131,37 @@ After=network-online.target
 
 [Service]
 User=pinomad
-ExecStart=/usr/bin/node /opt/pinomad/apps/relay/src/main.ts --public-origin https://relay.example.com --allow-host <hostId>
+ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --allow-host <hostId>
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `bun run upgrade`，VPS 上 `git pull && bun install && bun run build` 后重启中继。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+
+npm 装的实例和本机任何开发检出互不相干（各自的数据目录、进程、包路径都独立），所以在同一台机器上开发 PiNomad 不会碰到正在跑的服务。
 
 ## 常驻运行（ADR-0009）
 
-把宿主装成当前用户的系统服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起：
+把宿主装成当前用户的系统服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起（从源码检出跑时用 `bun run service -- …`，下同）：
 
 ```sh
-bun run service -- install [--data-dir DIR --port N --remote-port N --project DIR …]
-bun run service -- status [--data-dir D] [--url U]
-bun run service -- restart [--force] [--data-dir D] [--url U]
-bun run service -- logs [--follow] [-n N] [--data-dir D]
-bun run service -- uninstall
-bun run upgrade [--force]
+pinomad service install [--data-dir DIR --port N --remote-port N --relay URL --project DIR …]
+pinomad service status [--data-dir D] [--url U]
+pinomad service restart [--force] [--data-dir D] [--url U]
+pinomad service logs [--follow] [-n N] [--data-dir D]
+pinomad service uninstall
+pinomad upgrade [--force]
 ```
 
-- `install` 把宿主参数原样写进服务定义；`--data-dir`（或 `PINOMAD_DATA_DIR`，默认 `~/.pinomad`）展开成显式的绝对路径。改参数就是带新参数再跑一次 `install`。装好后用 `bun run link` 拿本机浏览器链接、`bun run pair` 发手机配对码。
+- `install` 把宿主参数原样写进服务定义；`--data-dir`（或 `PINOMAD_DATA_DIR`，默认 `~/.pinomad`）展开成显式的绝对路径。改参数就是带新参数再跑一次 `install`。装好后用 `pinomad link` 拿本机浏览器链接、`pinomad pair` 发手机配对码。
 - **PATH 在安装时固定**：服务里 agent 的 bash 继承的是安装那一刻终端的 PATH（已经剥掉 `node_modules/.bin` 和 Bun 注入的临时目录）。后来装了新工具、PATH 变了，重新跑一次 `install` 刷新。
-- `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。`upgrade` 依次 `git pull --ff-only`、`bun install`、`bun run build`，全部成功后才执行同样的 restart；工作区有未提交改动时拒绝执行。
+- `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。打包安装时 `upgrade` 把 `pinomad@latest` 装进运行包所在的 npm 全局前缀（非全局安装会拒绝执行）+ 同样的 restart；源码检出里（`bun run upgrade`）依次 `git pull --ff-only`、`bun install`、`bun run build`，工作区有未提交改动时拒绝执行。前面任何一步失败都直接停下，不重启，服务继续跑旧代码。
 - `uninstall` 只卸载服务，不动数据目录。
 - macOS：宿主以登录会话运行，机器重启后要能自动起来需在系统设置里打开自动登录，并为这台机器关掉睡眠。日志写到 `<数据目录>/logs/host.log`。
 - Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。
-- 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**（`apps/web/dist`）。`bun run link` 打印的链接按顺序探测：正在跑的 vite 开发服务器（5199）优先；否则宿主自己提供 Web 的端口；都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
+- 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**。`pinomad link` 打印的链接按顺序探测：正在跑的 vite 开发服务器（5199）优先；否则宿主自己提供 Web 的端口；都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
 - 服务在跑时 `bun run start` 会因为目录锁拿不到而失败（同一数据目录只有一个宿主）；开发时用另一个 `--data-dir`，或先 `uninstall`。
 
 Windows 不在支持范围；其他平台跑 `service` 会直接报错退出。

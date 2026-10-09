@@ -18,8 +18,8 @@ export async function printPairing({ url, token }: { url: string; token: string 
   }
 }
 
-if (import.meta.main) {
-  const { url, token } = await hostAddress(process.argv.slice(2));
+export async function main(argv: readonly string[]): Promise<void> {
+  const { url, token } = await hostAddress(argv);
   try {
     await printPairing({ url, token });
   } catch (error) {
@@ -27,3 +27,5 @@ if (import.meta.main) {
     process.exit(1);
   }
 }
+
+if (import.meta.main) await main(process.argv.slice(2));

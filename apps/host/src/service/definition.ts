@@ -7,8 +7,10 @@ import { join, resolve } from "node:path";
 export interface ServiceSpec {
   /** `process.execPath` at install: nvm/fnm Nodes are not on the service PATH. */
   readonly nodePath: string;
-  /** Absolute path to `apps/host/src/main.ts` in this checkout. */
+  /** The script node runs: the checkout's `main.ts`, or the package's `dist/pinomad.js` (ADR-0016). */
   readonly mainPath: string;
+  /** Arguments between script and host args — `["host"]` on the packaged bundle, empty from source. */
+  readonly entryArgs: readonly string[];
   readonly dataDir: string;
   /** Host arguments verbatim, minus `--data-dir` (re-emitted explicitly). */
   readonly hostArgs: readonly string[];
@@ -28,6 +30,7 @@ export interface ServiceInputs {
   readonly home: string;
   readonly cwd: string;
   readonly mainPath: string;
+  readonly entryArgs?: readonly string[];
 }
 
 /**
@@ -67,6 +70,7 @@ export function installSpec(argv: readonly string[], inputs: ServiceInputs): Ser
   return {
     nodePath: inputs.execPath,
     mainPath: inputs.mainPath,
+    entryArgs: inputs.entryArgs ?? [],
     dataDir: dir,
     hostArgs,
     env: {
@@ -91,7 +95,7 @@ const xmlEscape = (value: string): string =>
     .replace(/'/g, "&apos;");
 
 export function launchdPlist(spec: ServiceSpec): string {
-  const program = [spec.nodePath, spec.mainPath, "--data-dir", spec.dataDir, ...spec.hostArgs];
+  const program = [spec.nodePath, spec.mainPath, ...spec.entryArgs, "--data-dir", spec.dataDir, ...spec.hostArgs];
   const log = join(spec.dataDir, "logs", "host.log");
   const env = Object.entries(spec.env).map(([key, value]) => `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`);
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -128,7 +132,7 @@ const specifier = (value: string): string => value.replace(/[%$]/g, (char) => ch
 const execQuote = (value: string): string => `"${specifier(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 export function systemdUnit(spec: ServiceSpec): string {
-  const program = [spec.nodePath, spec.mainPath, "--data-dir", spec.dataDir, ...spec.hostArgs];
+  const program = [spec.nodePath, spec.mainPath, ...spec.entryArgs, "--data-dir", spec.dataDir, ...spec.hostArgs];
   const environment = Object.entries(spec.env).map(([key, value]) => `"${key}=${specifier(value)}"`);
   return `[Unit]
 Description=PiNomad host

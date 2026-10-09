@@ -1,3 +1,4 @@
+import { packagedVersion } from "../distribution.ts";
 import { hostAddress } from "./host-address.ts";
 
 /** The vite dev server's fixed port. */
@@ -22,14 +23,21 @@ export async function linkBase(url: string, answers200: (base: string) => Promis
   return DEV_WEB;
 }
 
-if (import.meta.main) {
-  const { url, token } = await hostAddress(process.argv.slice(2));
-  const base = await linkBase(url, (probe) =>
-    fetch(probe, { signal: AbortSignal.timeout(1000) }).then(
-      (response) => response.status === 200,
-      () => false,
-    ),
-  );
+export async function main(argv: readonly string[]): Promise<void> {
+  const { url, token } = await hostAddress(argv);
+  // Packaged: the host always serves the bundled client on its own port — a
+  // vite dev server on 5199 would hand out a mismatched checkout build.
+  const base =
+    packagedVersion !== undefined
+      ? url.replace(/^ws/, "http")
+      : await linkBase(url, (probe) =>
+          fetch(probe, { signal: AbortSignal.timeout(1000) }).then(
+            (response) => response.status === 200,
+            () => false,
+          ),
+        );
   // Deliberately requested by the operator, never emitted by the host's routine logs.
   console.log(webLink(url, token, base));
 }
+
+if (import.meta.main) await main(process.argv.slice(2));

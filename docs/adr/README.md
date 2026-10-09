@@ -38,6 +38,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0008](0008-remote-access-pairing-and-secure-channel.md) | 远程访问：协议层 Noise 端到端加密、扫码配对、中继分期 |
 | [0009](0009-host-lifecycle.md) | 宿主作为用户级系统服务常驻，源码检出升级，等空闲重启 |
 | [0015](0015-relay-splicing-and-host-registration.md) | 自部署中继按设备连接拼接 WebSocket，宿主用独立 Ed25519 密钥签名登记，中继用 HTTPS 提供 Web 客户端 |
+| [0016](0016-npm-single-package-distribution.md) | 分发：单个 npm 包 `pinomad`（宿主+中继+Web 客户端打包成 JS bundle，第三方依赖外置），tag 触发 GitHub Actions 发布 |
 
 ## 遗留项的去向
 
@@ -50,4 +51,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0006：做远程访问前先定认证和审批策略 | 认证已由 0008 决定；审批闸门由 0011 决定不做 |
 | 0005：`pinomad.approval` | 由 0011 换成 `pinomad.question` |
 | 0012 §5：MCP 工具直接声明，codemode 以后再说 | 由 0013 取代：MCP 默认 `codemode` 暴露 |
+| 0009 §2 安装方式、§6 升级命令 | 由 0016 修订：分发改为 npm 包，打包安装升级走 `npm i -g`；源码检出仍是开发路径 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |
