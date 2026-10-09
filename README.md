@@ -164,7 +164,7 @@ curl -sI https://nomad.example.com/          # 200，中继托管的 Web 客户�
 pinomad service install --relay https://nomad.example.com …   # 宿主接上中继
 ```
 
-宿主登记成功时目前不写日志，确认方法是用浏览器扫 `pinomad pair` 的二维码，或者直接连设备入口 `wss://<origin>/c/<hostId>`：宿主在线时连接保持打开（等握手），宿主没登记会立刻以 `4604`（hostOffline）关闭。
+宿主登记成功会在日志里写一行 `{"event":"relay","status":"registered",…}`，掉线重连时写 `"status":"connecting"`（`pinomad service logs` 查看）；也可以从外面连设备入口 `wss://<origin>/c/<hostId>` 确认：宿主在线时连接保持打开（等握手），没登记会立刻以 `4604`（hostOffline）关闭。
 
 也可以从 GitHub 仓库部署：Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，其余同上。
 

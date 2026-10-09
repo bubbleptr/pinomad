@@ -220,6 +220,45 @@ describe("loadRelayKey", () => {
 });
 
 describe("relay link resilience", () => {
+  it("reports state transitions: registered, connecting on relay loss, registered again", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const { relay, port, origin } = await startTestRelay(dir.path);
+    const states: RelayLinkState["status"][] = [];
+    const link = startRelayLink({
+      origin,
+      signingKey: await loadRelayKey(dir.path),
+      accept: () => {},
+      onStateChange: (state) => states.push(state.status),
+      reconnectDelayMs: { min: 20, max: 50 },
+    });
+    defer(() => link.close());
+    await until(() => states.length === 1);
+
+    await relay.close();
+    await until(() => states.length === 2);
+
+    // Hold the port so at least two reconnect dials fail before the relay
+    // comes back; destroy-on-accept fails the ws upgrade immediately.
+    let dials = 0;
+    const blocker = createServer((socket) => {
+      dials += 1;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => blocker.listen(port, "127.0.0.1", resolve));
+    await until(() => dials >= 2);
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+
+    const restarted = await startRelay({
+      port,
+      publicOrigin: origin,
+      allowedHosts: [relayHostId((await loadRelayKey(dir.path)).publicKey)],
+    });
+    defer(() => restarted.close());
+    await until(() => states.length === 3);
+    expect(states).toEqual(["registered", "connecting", "registered"]);
+  });
+
   it("times out a dial that never answers the upgrade and reconnects", async () => {
     // A server that accepts TCP and stays silent: the ws handshake hangs.
     const sockets: Socket[] = [];

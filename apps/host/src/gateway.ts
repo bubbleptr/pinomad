@@ -181,17 +181,29 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   remote = await startRemote(options, register);
   const secure = options.secure;
   if (secure?.relay !== undefined) {
-    relay = startRelayLink({
+    // `link` is assigned before any state change can fire — transitions only
+    // ever happen from async socket events.
+    let link!: RelayLink;
+    link = startRelayLink({
       origin: secure.relay.origin,
       signingKey: secure.relay.signingKey,
       accept: (socket) => secureHandshake(socket, secure, options.harness, register),
-      onRejected: (reason) => {
-        broadcast("warning", reason);
-        console.error(reason);
+      onStateChange: (state) => {
+        // stdout JSON lines in the same style as main.ts's `ready` event, so
+        // journalctl shows whether the host is registered with its relay.
+        if (state.status === "registered") {
+          console.log(JSON.stringify({ event: "relay", status: "registered", origin: link.origin, hostId: link.hostId }));
+        } else if (state.status === "connecting") {
+          console.log(JSON.stringify({ event: "relay", status: "connecting", origin: link.origin }));
+        } else {
+          broadcast("warning", state.reason);
+          console.error(state.reason);
+        }
       },
       ...(secure.relay.reconnectDelayMs === undefined ? {} : { reconnectDelayMs: secure.relay.reconnectDelayMs }),
       ...(secure.relay.pingIntervalMs === undefined ? {} : { pingIntervalMs: secure.relay.pingIntervalMs }),
     });
+    relay = link;
   }
   return {
     url: `ws://127.0.0.1:${port}`,
