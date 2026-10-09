@@ -19,6 +19,7 @@
 - 前台子代理工具 `subagent`：子对话归调用任务所有，中止连带、重启不重复派活；共用父对话检出，并行写只靠工具描述约束；子代理里禁用 `ask_user_question`；模型和思考等级默认沿用父对话，可用 `model` / `thinkingLevel` 参数指定；调用结束后卡片仍能链到子对话（ADR-0010 §5）
 - MCP 接入：`~/.agents/mcp.json` 全局 `mcpServers` 配置，每个 server 在宿主里只连一份、所有对话共用；工具以 `mcp__<server>__<tool>` 直接声明，`tools/list_changed` 跟随；状态和配置错误经 `mcp` 流推到客户端右侧面板；结果图片显示在工具卡片里（ADR-0012；协议 v3）
 - codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用并能展开 edit / write 的 diff（ADR-0013）
+- 远程访问第二期：自部署中继 `apps/relay`，宿主 `--relay` 主动连出，每台设备一条数据连接拼接到同一个 IK 握手；宿主用独立 Ed25519 密钥签名登记，中继按 `--allow-host` 白名单接受；中继用 HTTPS 提供 Web 客户端，配对链接优先指向中继（ADR-0008、0015）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
@@ -66,11 +67,13 @@ MCP 本身的后续，都等有明确需求再做：
 - 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
 - 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
 
-## M3：在哪都能连（下一步）
+## M3：在哪都能连（进行中）
 
-先做中继。场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。
+场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。自部署中继已完成（见"已完成"）。
 
-- 可以自己部署的中继（ADR-0008 第二期）；同时按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
+- 在 Omarchy 上真机跑一遍：systemd 用户单元 + linger、`--relay` 常驻、VPS 上的中继和 Caddy（顺带清掉技术债里"systemd 未真机验证"）
+- 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
+- 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
 - 官方中继、推送通知（ADR-0008 第三期）
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）

@@ -16,6 +16,7 @@ import {
   verifyRelayChallenge,
   type HostToRelay,
 } from "@pinomad/protocol/relay.ts";
+import { serveWebClient } from "@pinomad/host/src/web-client.ts";
 
 export interface RelayOptions {
   /** 0 in tests. */
@@ -28,6 +29,8 @@ export interface RelayOptions {
   readonly acceptTimeoutMs?: number;
   readonly registerTimeoutMs?: number;
   readonly pingIntervalMs?: number;
+  /** Serve the built web client over plain HTTP on the same port; unset → 404. */
+  readonly webRoot?: string;
 }
 
 export interface Relay {
@@ -225,7 +228,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     for (const { data, isBinary } of entry.buffered) socket.send(data, { binary: isBinary });
   }
 
-  const httpServer = createServer((_request, response) => {
+  const httpServer = createServer((request, response) => {
+    // Behind Caddy this port also is where phones load the web client from.
+    if (options.webRoot !== undefined) {
+      void serveWebClient(request, response, options.webRoot).catch(() => {
+        if (!response.headersSent) response.writeHead(500);
+        response.end();
+      });
+      return;
+    }
     response.writeHead(404);
     response.end();
   });

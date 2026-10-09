@@ -13,7 +13,8 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, type ConversationDefaults, ensureIndex, IndexDoc } from "./organization.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
-import { ensureDevices, loadHostKey, pairingOffers } from "./devices.ts";
+import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
+import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
 import type { ScriptTool } from "./script-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -66,6 +67,16 @@ export interface OpenHostOptions {
     /** How long a new socket may sit before handshake message 1; default 10 s. */
     readonly handshakeTimeoutMs?: number;
   };
+  /**
+   * Dial a self-hosted relay for secure-channel devices (ADR-0008 phase 2).
+   * Independent of `remote` — the relay alone works from any network.
+   */
+  readonly relay?: {
+    /** The relay's public origin, e.g. https://relay.example.com. */
+    readonly origin: string;
+    readonly reconnectDelayMs?: { readonly min: number; readonly max: number };
+    readonly pingIntervalMs?: number;
+  };
 }
 
 export interface OpenedHost {
@@ -74,6 +85,8 @@ export interface OpenedHost {
   readonly harness: Harness;
   /** Present when remote access is on. `hostKey` is the public half. */
   readonly remote?: { readonly url: string; readonly advertiseUrl: string; readonly hostKey: Uint8Array };
+  /** Present when a relay link is up. `hostId` is the relay-side identity. */
+  readonly relay?: { readonly origin: string; readonly hostId: string; state(): RelayLinkState };
   close(): Promise<void>;
 }
 
@@ -161,9 +174,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     await ensureIndex(harness, context);
     await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
-    // The host identity exists only while remote access is on.
-    const hostKey = options.remote === undefined ? undefined : await loadHostKey(options.dataDir);
-    const offers = options.remote === undefined ? undefined : pairingOffers(options.remote.pairingTtlMs);
+    // The host identity exists only while remote access is on — LAN or relay.
+    const remoteAccess = options.remote !== undefined || options.relay !== undefined;
+    const hostKey = remoteAccess ? await loadHostKey(options.dataDir) : undefined;
+    const offers = remoteAccess ? pairingOffers(options.remote?.pairingTtlMs) : undefined;
+    const relayKey = options.relay === undefined ? undefined : await loadRelayKey(options.dataDir);
     const defaults: ConversationDefaults =
       initialModel === undefined
         ? {}
@@ -185,15 +200,35 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
-      ...(hostKey === undefined || offers === undefined || options.remote === undefined
+      ...(hostKey === undefined || offers === undefined
         ? {}
         : {
-            remote: {
-              port: options.remote.port,
+            secure: {
               hostKey,
               offers,
-              ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
-              ...(options.remote.handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs: options.remote.handshakeTimeoutMs }),
+              ...(options.remote?.handshakeTimeoutMs === undefined
+                ? {}
+                : { handshakeTimeoutMs: options.remote.handshakeTimeoutMs }),
+              ...(options.remote === undefined
+                ? {}
+                : {
+                    lan: {
+                      port: options.remote.port,
+                      ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
+                    },
+                  }),
+              ...(options.relay === undefined || relayKey === undefined
+                ? {}
+                : {
+                    relay: {
+                      origin: options.relay.origin,
+                      signingKey: relayKey,
+                      ...(options.relay.reconnectDelayMs === undefined
+                        ? {}
+                        : { reconnectDelayMs: options.relay.reconnectDelayMs }),
+                      ...(options.relay.pingIntervalMs === undefined ? {} : { pingIntervalMs: options.relay.pingIntervalMs }),
+                    },
+                  }),
             },
           }),
     });
@@ -211,6 +246,9 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}
         : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),
+      ...(gateway.relay === undefined
+        ? {}
+        : { relay: { origin: gateway.relay.origin, hostId: gateway.relay.hostId, state: () => gateway.relay!.state() } }),
       close() {
         closing ??= (async () => {
           try {

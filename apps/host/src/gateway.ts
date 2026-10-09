@@ -1,8 +1,7 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { networkInterfaces } from "node:os";
-import { readFile, stat } from "node:fs/promises";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
@@ -46,6 +45,8 @@ import {
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchSuffix, changesOf, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreeExists, worktreePath } from "./checkout.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
+import { serveWebClient } from "./web-client.ts";
 import {
   addProject,
   archive,
@@ -58,17 +59,22 @@ import {
 
 const context: Context = BACKGROUND_CONTEXT;
 
-/** The remote listener: encrypted WebSocket + HTTP file serving on all interfaces. */
-export interface RemoteGatewayOptions {
-  /** 0 picks a free port. */
-  readonly port: number;
+/** Secure-channel access: the IK handshake gate plus where sockets come from. */
+export interface SecureGatewayOptions {
   /** The host's long-term X25519 identity (server side of the IK handshake). */
   readonly hostKey: KeyPair;
-  /** Public address advertised in pairing URLs; defaults to the detected LAN IP. */
-  readonly publicUrl?: string;
   readonly offers: PairingOffers;
   /** How long a new socket may sit before message 1 arrives; default 10 s. */
   readonly handshakeTimeoutMs?: number;
+  /** The 0.0.0.0 listener (LAN direct; user's own tunnel via publicUrl). */
+  readonly lan?: { readonly port: number; readonly publicUrl?: string };
+  /** Outbound link to a self-hosted relay (ADR-0008 phase 2). */
+  readonly relay?: {
+    readonly origin: string;
+    readonly signingKey: { readonly secretKey: Uint8Array; readonly publicKey: Uint8Array };
+    readonly reconnectDelayMs?: { readonly min: number; readonly max: number };
+    readonly pingIntervalMs?: number;
+  };
 }
 
 export interface GatewayOptions {
@@ -92,14 +98,16 @@ export interface GatewayOptions {
   readonly toolPresentations?: Record<string, PresentationType>;
   /** Built web client served over plain HTTP on both listeners; absent → 503. */
   readonly webRoot?: string;
-  /** Set to also listen for secure-channel clients on all interfaces. */
-  readonly remote?: RemoteGatewayOptions;
+  /** Set to accept secure-channel clients, on LAN and/or via a relay. */
+  readonly secure?: SecureGatewayOptions;
 }
 
 export interface Gateway {
   readonly url: string;
   /** Present when the remote listener is on. */
   readonly remote?: { readonly url: string; readonly advertiseUrl: string };
+  /** Present when the host dialed out to a relay. */
+  readonly relay?: RelayLink;
   /** Tell every client, for example a Harness report. */
   broadcast(level: Notice["level"], message: string): void;
   close(): Promise<void>;
@@ -126,7 +134,11 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // port can be ephemeral, so the origin is computed after listen.
   const browserOrigins = [...(options.browserOrigins ?? []), `http://127.0.0.1:${port}`];
   const clients = new Set<GatewayClient>();
+  const broadcast = (level: Notice["level"], message: string): void => {
+    for (const client of clients) client.send({ type: "notice", level, message });
+  };
   let remote: { url: string; advertiseUrl: string; close(): Promise<void> } | undefined;
+  let relay: RelayLink | undefined;
   const register = (connection: GatewayConnection, devicePublicKey?: string): void => {
     const client = new GatewayClient(connection, options, conversations, {
       devicePublicKey,
@@ -140,10 +152,17 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         }
       },
       createPairing: () => {
-        const spec = options.remote;
-        if (remote === undefined || spec === undefined) return undefined;
+        const spec = options.secure;
+        if (spec === undefined || (remote === undefined && relay === undefined)) return undefined;
         const { secret, expiresAt } = spec.offers.create();
-        return { url: `${remote.advertiseUrl}/#pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`, expiresAt };
+        const pair = `pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`;
+        // The relay wins: a link through it works from any network, while the
+        // LAN URL only reaches devices that can already see the host.
+        if (relay !== undefined) {
+          const target = `${relayWsBase(relay.origin)}/c/${relay.hostId}`;
+          return { url: `${relay.origin}/#${pair}&url=${encodeURIComponent(target)}`, expiresAt };
+        }
+        return { url: `${remote!.advertiseUrl}/#${pair}`, expiresAt };
       },
     });
     clients.add(client);
@@ -160,13 +179,27 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
 
   remote = await startRemote(options, register);
+  const secure = options.secure;
+  if (secure?.relay !== undefined) {
+    relay = startRelayLink({
+      origin: secure.relay.origin,
+      signingKey: secure.relay.signingKey,
+      accept: (socket) => secureHandshake(socket, secure, options.harness, register),
+      onRejected: (reason) => {
+        broadcast("warning", reason);
+        console.error(reason);
+      },
+      ...(secure.relay.reconnectDelayMs === undefined ? {} : { reconnectDelayMs: secure.relay.reconnectDelayMs }),
+      ...(secure.relay.pingIntervalMs === undefined ? {} : { pingIntervalMs: secure.relay.pingIntervalMs }),
+    });
+  }
   return {
     url: `ws://127.0.0.1:${port}`,
     ...(remote === undefined ? {} : { remote: { url: remote.url, advertiseUrl: remote.advertiseUrl } }),
-    broadcast: (level, message) => {
-      for (const client of clients) client.send({ type: "notice", level, message });
-    },
+    ...(relay === undefined ? {} : { relay }),
+    broadcast,
     async close() {
+      await relay?.close();
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
       for (const socket of server.clients) socket.terminate();
@@ -266,86 +299,23 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
   return fallback;
 }
 
-const WEB_TYPES: Readonly<Record<string, string>> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".json": "application/json",
-  ".map": "application/json",
-  ".woff2": "font/woff2",
-};
-
-const NOT_BUILT = "Web client not built: run bun run build";
-
-/** The remote listener's HTTP side: the built web client, nothing else. */
-async function serveWebClient(request: IncomingMessage, response: import("node:http").ServerResponse, webRoot: string | undefined): Promise<void> {
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    response.writeHead(405).end();
-    return;
-  }
-  if (webRoot === undefined) {
-    response.writeHead(503, { "content-type": "text/plain" }).end(NOT_BUILT);
-    return;
-  }
-  const root = resolve(webRoot);
-  const index = join(root, "index.html");
-  if (!(await stat(index).catch(() => undefined))?.isFile()) {
-    response.writeHead(503, { "content-type": "text/plain" }).end(NOT_BUILT);
-    return;
-  }
-  // Reject traversal on the raw target — URL parsing already normalizes ".."
-  // away, so the check has to run on the undecoded segments.
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
-  } catch {
-    response.writeHead(404).end();
-    return;
-  }
-  if (decoded.split("/").includes("..")) {
-    response.writeHead(404).end();
-    return;
-  }
-  const inside = resolve(join(root, decoded));
-  if (!inside.startsWith(root + sep) && inside !== root) {
-    response.writeHead(404).end();
-    return;
-  }
-  // Extensionless routes are the SPA's own paths → index.html.
-  const file = extname(inside) === "" ? index : inside;
-  const body = await readFile(file).catch(() => undefined);
-  if (body === undefined) {
-    response.writeHead(404).end();
-    return;
-  }
-  // index.html must not be cached: after a host upgrade a reload has to fetch
-  // the bundle matching the new protocol. Hashed assets keep the default.
-  const headers: Record<string, string> = { "content-type": WEB_TYPES[extname(file)] ?? "application/octet-stream" };
-  if (file === index) headers["cache-control"] = "no-cache";
-  response.writeHead(200, headers);
-  response.end(request.method === "HEAD" ? undefined : body);
-}
-
 /**
- * The IK handshake gate on a fresh remote socket. Anything but one binary
- * message 1 — text frames, a second message while admission is pending — is a
- * protocol violation closed with 1008. Registered devices pass directly; new
+ * The IK handshake gate on a fresh secure socket — LAN listener or relay
+ * accept. Anything but one binary message 1 — text frames, a second message
+ * while admission is pending — is a protocol violation closed with 1008. Registered devices pass directly; new
  * devices must present a live pairing offer.
  */
 function secureHandshake(
   socket: WebSocket,
-  remote: RemoteGatewayOptions,
+  secure: SecureGatewayOptions,
   harness: Harness,
   register: (connection: GatewayConnection, devicePublicKey: string) => void,
 ): void {
   socket.on("error", () => socket.terminate());
-  const responder = respondIK({ prologue: SECURE_PROLOGUE, static: remote.hostKey });
+  const responder = respondIK({ prologue: SECURE_PROLOGUE, static: secure.hostKey });
   let settled = false;
   let deciding = false;
-  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), remote.handshakeTimeoutMs ?? 10_000);
+  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), secure.handshakeTimeoutMs ?? 10_000);
   socket.once("close", () => clearTimeout(timeout));
 
   socket.on("message", (data: Buffer, isBinary: boolean) => {
@@ -383,7 +353,7 @@ function secureHandshake(
       if (!(await isRegistered(harness, deviceKey, context))) {
         // A registered device with `pair` present still passes above — a retry
         // after a lost message 2 must not spend another offer.
-        if (hello.pair === undefined || !remote.offers.consume(hello.pair.secret)) {
+        if (hello.pair === undefined || !secure.offers.consume(hello.pair.secret)) {
           socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
           return undefined;
         }
@@ -400,8 +370,9 @@ async function startRemote(
   options: GatewayOptions,
   register: (connection: GatewayConnection, devicePublicKey: string) => void,
 ): Promise<{ url: string; advertiseUrl: string; close(): Promise<void> } | undefined> {
-  const remote = options.remote;
-  if (remote === undefined) return undefined;
+  const spec = options.secure;
+  const remote = spec?.lan;
+  if (spec === undefined || remote === undefined) return undefined;
   const http = createServer((request, response) => {
     void serveWebClient(request, response, options.webRoot).catch(() => {
       if (!response.headersSent) response.writeHead(500);
@@ -409,7 +380,7 @@ async function startRemote(
     });
   });
   const secure = new WebSocketServer({ server: http });
-  secure.on("connection", (socket) => secureHandshake(socket, remote, options.harness, register));
+  secure.on("connection", (socket) => secureHandshake(socket, spec, options.harness, register));
   await new Promise<void>((resolveListen, reject) => {
     http.once("listening", resolveListen);
     http.once("error", reject);
@@ -786,7 +757,7 @@ class GatewayClient {
       }
       case "createPairing": {
         const pairing = this.#hooks.createPairing();
-        if (pairing === undefined) throw new Error("Remote access is off; start the host with --remote-port");
+        if (pairing === undefined) throw new Error("Remote access is off; start the host with --remote-port or --relay");
         return pairing;
       }
       case "revokeDevice": {

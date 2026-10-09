@@ -1,4 +1,8 @@
 import { once } from "node:events";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket, type ClientOptions } from "ws";
@@ -316,5 +320,81 @@ describe("relay", () => {
     await flushedP;
     await allP;
     expect(index).toBe(CHUNKS);
+  });
+});
+
+describe("relay web client serving", () => {
+  /** A minimal GET against the relay's HTTP port. */
+  function get(relay: Relay, path: string, options?: { method?: string }): Promise<{ status: number; headers: Record<string, unknown>; body: string }> {
+    return new Promise((resolve, reject) => {
+      const request = httpRequest(
+        // Options form, not a URL string: `path` goes into the request line
+        // verbatim so "/../…" actually reaches the server's traversal check.
+        { host: "127.0.0.1", port: relay.port, path, method: options?.method ?? "GET" },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString() }));
+        },
+      );
+      request.on("error", reject);
+      request.end();
+    });
+  }
+
+  async function webRoot(files: Record<string, string>): Promise<{ path: string }> {
+    const dir = await mkdtemp(join(tmpdir(), "pinomad-relay-web-"));
+    afterEach(() => rm(dir, { recursive: true, force: true }));
+    for (const [name, body] of Object.entries(files)) {
+      await mkdir(join(dir, name, ".."), { recursive: true });
+      await writeFile(join(dir, name), body);
+    }
+    return { path: dir };
+  }
+
+  it("serves index.html and hashed assets, SPA fallback, on the same port as sockets", async () => {
+    const root = await webRoot({ "index.html": "<html>app</html>", "assets/app.js": "console.log(1)" });
+    const relay = await start({ webRoot: root.path });
+
+    const index = await get(relay, "/");
+    expect(index.status).toBe(200);
+    expect(index.body).toBe("<html>app</html>");
+    expect(index.headers["cache-control"]).toBe("no-cache");
+    expect(index.headers["content-type"]).toContain("text/html");
+
+    const asset = await get(relay, "/assets/app.js");
+    expect(asset.status).toBe(200);
+    expect(asset.headers["content-type"]).toContain("text/javascript");
+
+    const spa = await get(relay, "/chat/some-id");
+    expect(spa.status).toBe(200);
+    expect(spa.body).toBe("<html>app</html>");
+
+    // Device sockets still route on the same port: a valid but offline hostId.
+    const device = connect(relay, `/c/${"A".repeat(43)}`);
+    await once(device, "open");
+    expect(await closeEvent(device)).toEqual([RELAY_CLOSE.hostOffline, ""]);
+  });
+
+  it("rejects path traversal on the raw target", async () => {
+    const root = await webRoot({ "index.html": "<html>app</html>" });
+    const relay = await start({ webRoot: root.path });
+    const response = await get(relay, "/../package.json");
+    expect(response.status).toBe(404);
+  });
+
+  it("answers 405 to non-GET and 503 when there is no build", async () => {
+    const root = await webRoot({ "index.html": "<html>app</html>" });
+    const relay = await start({ webRoot: root.path });
+    expect((await get(relay, "/", { method: "POST" })).status).toBe(405);
+
+    const empty = await webRoot({});
+    const bare = await start({ webRoot: empty.path });
+    expect((await get(bare, "/")).status).toBe(503);
+  });
+
+  it("keeps plain 404s when webRoot is unset", async () => {
+    const relay = await start();
+    expect((await get(relay, "/")).status).toBe(404);
   });
 });
