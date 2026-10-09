@@ -23,7 +23,10 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
       - run: bun install --frozen-lockfile
+      # Run from apps/web so bunx uses its locked @playwright/test; at the root
+      # bunx fetches the latest playwright and installs a mismatched browser build.
       - run: bunx playwright install --with-deps chromium
+        working-directory: apps/web
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build

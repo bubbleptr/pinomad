@@ -10,7 +10,7 @@ Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`export
 
 ## 验证
 
-`bun run typecheck`、`bun run test`、`bun run build` 都要绿。测试含 Playwright，缺浏览器先 `bunx playwright install chromium`。
+`bun run typecheck`、`bun run test`、`bun run build` 都要绿。测试含 Playwright，缺浏览器先在 `apps/web` 下跑 `bunx playwright install chromium`（在根目录跑会拉最新版 playwright，装上的浏览器版本对不上）。
 
 打包 npm 包用 `bun run package -- --version <v>`（产物在 `apps/cli/out/`，不入库）；装包冒烟 `bun apps/cli/smoke.ts <tgz>` 要连真 registry，不进 `bun run test`。
 
