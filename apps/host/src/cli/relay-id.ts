@@ -18,6 +18,8 @@ export async function relayId(argv: readonly string[]): Promise<string> {
   return relayHostId((await loadRelayKey(dataDir)).publicKey);
 }
 
-if (import.meta.main) {
-  console.log(await relayId(process.argv.slice(2)));
+export async function main(argv: readonly string[]): Promise<void> {
+  console.log(await relayId(argv));
 }
+
+if (import.meta.main) await main(process.argv.slice(2));

@@ -1,5 +1,5 @@
 {
-  "name": "pinomad",
+  "name": "pinomad-workspace",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web && tsc --noEmit -p apps/relay",
+    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web && tsc --noEmit -p apps/relay && tsc --noEmit -p apps/cli",
     "test": "vitest run",
     "build": "cd apps/web && bun run build",
     "host": "node apps/host/src/main.ts",
@@ -19,7 +19,8 @@
     "pair": "node apps/host/src/cli/pair.ts",
     "service": "node apps/host/src/cli/service.ts",
     "upgrade": "node apps/host/src/cli/upgrade.ts",
-    "start": "node apps/host/src/cli/start.ts"
+    "start": "node apps/host/src/cli/start.ts",
+    "package": "bun apps/cli/build.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// `bun run service -- <cmd>` — the user-level host service (ADR-0009):
+// `pinomad service <cmd>` / `bun run service -- <cmd>` — the user-level host
+// service (ADR-0009):
 //   install [host args…]   write the service definition and start the host
 //   uninstall              stop and remove the definition (keeps the data dir)
 //   status [--data-dir D] [--url U]
@@ -16,10 +17,10 @@ import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remo
 import { installSpec } from "../service/definition.ts";
 import { waitForIdle } from "../service/idle.ts";
 import { serviceManager } from "../service/manager.ts";
+import { commandHint, hostEntry, packagedVersion } from "../distribution.ts";
 import { DEFAULT_DATA_DIR, hostAddress } from "./host-address.ts";
 
 const run = promisify(execFile);
-const mainTs = fileURLToPath(new URL("../main.ts", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -47,22 +48,27 @@ async function install(argv: readonly string[]): Promise<void> {
     env: process.env,
     home: homedir(),
     cwd: process.cwd(),
-    mainPath: mainTs,
+    mainPath: hostEntry.script,
+    entryArgs: hostEntry.args,
   });
   const path = await serviceManager().install(spec);
   console.log(`installed ${path}`);
   console.log(`data dir: ${spec.dataDir}`);
-  console.log("browser link: bun run link    pairing QR: bun run pair");
+  console.log(`browser link: ${commandHint("link")}    pairing QR: ${commandHint("pair")}`);
 }
 
 async function status(argv: readonly string[]): Promise<void> {
   const state = await serviceManager().state();
   console.log(`service: ${state.installed ? state.detail : "not installed"}`);
-  const head = await run("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot }).then(
-    ({ stdout }) => stdout.trim(),
-    () => "unknown",
-  );
-  console.log(`checkout: ${head}`);
+  if (packagedVersion === undefined) {
+    const head = await run("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot }).then(
+      ({ stdout }) => stdout.trim(),
+      () => "unknown",
+    );
+    console.log(`checkout: ${head}`);
+  } else {
+    console.log(`version: ${packagedVersion}`);
+  }
   try {
     const { url, token } = await hostAddress(argv);
     const remote = await connect(url, token);
@@ -83,7 +89,7 @@ async function status(argv: readonly string[]): Promise<void> {
 export async function restartService({ force, argv }: { force: boolean; argv: readonly string[] }): Promise<number> {
   const manager = serviceManager();
   if (!(await manager.state()).installed) {
-    console.log("service not installed (bun run service -- install)");
+    console.log(`service not installed (${commandHint("service")} install)`);
     return 1;
   }
   const address = await hostAddress(argv).catch(() => undefined);
@@ -137,30 +143,30 @@ async function logs(argv: readonly string[]): Promise<void> {
   await serviceManager().logs(dataDir, Number(values.lines), values.follow);
 }
 
-if (import.meta.main) {
-  const [command, ...argv] = process.argv.slice(2);
+export async function main(argv: readonly string[]): Promise<void> {
+  const [command, ...args] = argv;
   try {
     switch (command) {
       case "install":
-        await install(argv);
+        await install(args);
         break;
       case "uninstall":
         await serviceManager().uninstall();
         console.log("uninstalled");
         break;
       case "status":
-        await status(argv);
+        await status(args);
         break;
       case "restart": {
-        const force = argv.includes("--force");
-        process.exitCode = await restartService({ force, argv: argv.filter((arg) => arg !== "--force") });
+        const force = args.includes("--force");
+        process.exitCode = await restartService({ force, argv: args.filter((arg) => arg !== "--force") });
         break;
       }
       case "logs":
-        await logs(argv);
+        await logs(args);
         break;
       default:
-        console.error("usage: bun run service -- install|uninstall|status|restart|logs");
+        console.error(`usage: ${commandHint("service")} install|uninstall|status|restart|logs`);
         process.exitCode = 1;
     }
   } catch (error) {
@@ -168,3 +174,5 @@ if (import.meta.main) {
     process.exitCode = 1;
   }
 }
+
+if (import.meta.main) await main(process.argv.slice(2));

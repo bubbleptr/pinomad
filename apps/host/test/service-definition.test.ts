@@ -46,11 +46,43 @@ describe("sanitizePath", () => {
   });
 });
 
+describe("entry args", () => {
+  // Packaged installs run `node <bundle> host <args>`: the subcommand goes
+  // right after the script and before host args, in both renderers.
+  it("emits entryArgs between the script and host args in launchd and systemd", () => {
+    const spec: ServiceSpec = {
+      nodePath: "/opt/node/bin/node",
+      mainPath: "/pkg/dist/pinomad.js",
+      entryArgs: ["host"],
+      dataDir: "/data/d",
+      hostArgs: ["--port", "7431"],
+      env: { PATH: "/usr/bin" },
+      home: "/home/u",
+    };
+    const plist = launchdPlist(spec);
+    const array = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/)![1]!;
+    const plistArgs = [...array.matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1]);
+    expect(plistArgs).toEqual([
+      "/opt/node/bin/node",
+      "/pkg/dist/pinomad.js",
+      "host",
+      "--data-dir",
+      "/data/d",
+      "--port",
+      "7431",
+    ]);
+
+    const exec = systemdUnit(spec).match(/^ExecStart=(.+)$/m)![1]!;
+    expect(exec).toBe('"/opt/node/bin/node" "/pkg/dist/pinomad.js" "host" "--data-dir" "/data/d" "--port" "7431"');
+  });
+});
+
 describe("launchdPlist", () => {
   it("xml-escapes arguments and paths", () => {
     const spec: ServiceSpec = {
       nodePath: "/opt/node/bin/node",
       mainPath: "/repo/apps/host/src/main.ts",
+      entryArgs: [],
       dataDir: "/data/a&b",
       hostArgs: ["--faux", 'say "hi" <there>'],
       env: { PATH: "/usr/bin" },
@@ -69,6 +101,7 @@ describe("systemdUnit", () => {
     const spec: ServiceSpec = {
       nodePath: "/opt/node dir/bin/node",
       mainPath: "/repo/main.ts",
+      entryArgs: [],
       dataDir: "/data/100%\\sure",
       hostArgs: ['say "hi"', "$HOME"],
       env: { PATH: "/usr/bin:/opt/x$bin", LANG: "en_US.UTF-8" },
