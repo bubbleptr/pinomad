@@ -138,7 +138,9 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+容器平台（Zeabur 等）：镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`PINOMAD_VERSION`）。环境变量 `PINOMAD_PUBLIC_ORIGIN`（客户端打开的 https origin）和 `PINOMAD_ALLOW_HOST`（空格分隔的 hostId）；平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy。中继把转接状态放在内存里，**只能跑一个实例**。Zeabur 上：从 GitHub 仓库部署，Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，绑定自定义域名；升级就是把 `PINOMAD_VERSION` 调大再重新部署。
+
+升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继（容器部署则是调大 `PINOMAD_VERSION` 后重新部署）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
 
 npm 装的实例和本机任何开发检出互不相干（各自的数据目录、进程、包路径都独立），所以在同一台机器上开发 PiNomad 不会碰到正在跑的服务。
 
