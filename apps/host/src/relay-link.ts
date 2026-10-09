@@ -71,8 +71,12 @@ export function startRelayLink(options: {
   // half-open GatewayClients on sockets that will never see another byte.
   const watched = new Set<WebSocket>();
   const ponged = new WeakMap<WebSocket, boolean>();
+  const pingIntervalMs = options.pingIntervalMs ?? 30_000;
   const pingTimer = setInterval(() => {
     for (const socket of watched) {
+      // ws ping() throws on a CONNECTING socket; those are bounded by
+      // handshakeTimeout instead — a socket must open within one interval.
+      if (socket.readyState !== WebSocket.OPEN) continue;
       if (ponged.get(socket) === true) {
         ponged.set(socket, false);
         socket.ping();
@@ -80,7 +84,7 @@ export function startRelayLink(options: {
         socket.terminate();
       }
     }
-  }, options.pingIntervalMs ?? 30_000);
+  }, pingIntervalMs);
 
   function watch(socket: WebSocket): void {
     watched.add(socket);
@@ -93,7 +97,7 @@ export function startRelayLink(options: {
 
   function connectControl(): void {
     if (stopped) return;
-    const socket = new WebSocket(`${wsBase}/host`);
+    const socket = new WebSocket(`${wsBase}/host`, { handshakeTimeout: pingIntervalMs });
     control = socket;
     watch(socket);
     // Attached synchronously on purpose: the relay sends `challenge` the
@@ -139,7 +143,7 @@ export function startRelayLink(options: {
         // host keeps its accept budget instead of hoarding dying sockets.
         if (pendingAccepts >= maxPendingAccepts) break;
         pendingAccepts += 1;
-        const data = new WebSocket(`${wsBase}/accept/${frame.connId}`);
+        const data = new WebSocket(`${wsBase}/accept/${frame.connId}`, { handshakeTimeout: pingIntervalMs });
         watch(data);
         // "Pending" approximation: until the socket closes or 10 s pass — by
         // then a live handshake has long settled or the socket is dead anyway.
@@ -184,8 +188,8 @@ export function startRelayLink(options: {
       stopped = true;
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       clearInterval(pingTimer);
-      control?.terminate();
-      // Data sockets stay with the gateway's clients.
+      // Terminating fires each socket's close, which disposes its GatewayClient.
+      for (const socket of watched) socket.terminate();
       return Promise.resolve();
     },
   };

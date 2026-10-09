@@ -1,5 +1,8 @@
 import { stat } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { describe, expect, it } from "vitest";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
@@ -9,10 +12,19 @@ import { transcript } from "@pinomad/protocol/transcript.ts";
 import { startRelay } from "@pinomad/relay/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
-import type { RelayLinkState } from "../src/relay-link.ts";
+import { startRelayLink, type RelayLinkState } from "../src/relay-link.ts";
 import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
+
+/** Poll a getter until it holds — for things with no event to await. */
+async function until(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 /** Poll the link's state getter — there is no event to wait on. */
 async function waitForRelayState(
@@ -204,5 +216,72 @@ describe("loadRelayKey", () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     const written = await loadRelayKey(dir.path);
     expect(toBase64Url(written.secretKey)).toBe(toBase64Url(a.secretKey));
+  });
+});
+
+describe("relay link resilience", () => {
+  it("times out a dial that never answers the upgrade and reconnects", async () => {
+    // A server that accepts TCP and stays silent: the ws handshake hangs.
+    const sockets: Socket[] = [];
+    let dials = 0;
+    const server = createServer((socket) => {
+      dials += 1;
+      sockets.push(socket);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    defer(async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    const link = startRelayLink({
+      origin: `http://127.0.0.1:${port}`,
+      signingKey: ed25519.keygen(),
+      accept: () => {},
+      reconnectDelayMs: { min: 10, max: 10 },
+      pingIntervalMs: 20,
+    });
+    defer(() => link.close());
+    // Without a handshake deadline + open-state guard the ping interval throws
+    // on the CONNECTING socket and the dial hangs forever; with them the link
+    // abandons it inside one interval and redials.
+    await until(() => dials >= 2);
+    await link.close();
+  });
+
+  it("terminates spliced relay sockets when the host closes", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const { origin, deviceUrl } = await startTestRelay(dir.path);
+    const host = await startFauxHost(defer, {
+      dataDir: dir.path,
+      relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
+    });
+    await waitForRelayState(host, "registered");
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await tokenClient.controller.createPairing();
+    const { hostKey, secret } = pairParams(url);
+
+    // Drive the transport directly so the socket's own close is observable.
+    const device = generateKeyPair();
+    const closed = new Promise<number>((resolve) => {
+      secureWebSocketTransport({
+        url: deviceUrl,
+        hostKey: fromBase64Url(hostKey),
+        device,
+        pairing: { secret, name: "phone" },
+      }).open({ message: () => {}, closed: (code) => resolve(code) });
+    });
+    // Registration lands after the splice, so the accept socket is watched.
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+
+    await host.close();
+    const code = await Promise.race([
+      closed,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("device socket never closed")), 2000)),
+    ]);
+    // The link terminates the data socket; the relay forwards that as 1001.
+    expect(code).toBe(1001);
   });
 });

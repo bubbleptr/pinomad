@@ -271,6 +271,56 @@ describe("relay", () => {
     const [code] = await closeEvent(socket);
     expect(code).toBe(1008);
   });
+
+  it("applies backpressure: a stalled device stalls the host's sends until it resumes", async () => {
+    const relay = await start();
+    const control = await registerHost(relay);
+    const incomingP = once(control, "message");
+    const device = connect(relay, `/c/${hostId}`);
+    await once(device, "open");
+    const incoming = decodeRelayToHost(asText((await incomingP)[0]));
+    if (incoming.t !== "incoming") throw new Error("expected incoming");
+    const host = connect(relay, `/accept/${incoming.connId}`);
+    await once(host, "open");
+
+    // The device stops reading. If the relay just buffers, the host's last
+    // send callback fires quickly; with backpressure it must not.
+    device.pause();
+    const CHUNK = 64 * 1024;
+    const CHUNKS = 512; // 32 MiB — beyond kernel buffers even on loopback.
+    let flushed = false;
+    const flushedP = new Promise<void>((resolve) => {
+      for (let index = 0; index < CHUNKS; index += 1) {
+        const chunk = Buffer.alloc(CHUNK);
+        chunk[0] = index & 0xff;
+        host.send(chunk, index === CHUNKS - 1 ? () => resolve() : undefined);
+      }
+    }).then(() => {
+      flushed = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(flushed).toBe(false);
+
+    // Once the device reads again, everything arrives in order.
+    let total = 0;
+    let index = 0;
+    const allP = new Promise<void>((resolve, reject) => {
+      device.on("message", (data: Buffer) => {
+        if (data[0] !== (index & 0xff)) {
+          reject(new Error(`chunk ${index} arrived out of order`));
+          return;
+        }
+        index += 1;
+        total += data.length;
+        if (total === CHUNK * CHUNKS) resolve();
+      });
+    });
+    device.resume();
+    await flushedP;
+    await allP;
+    expect(index).toBe(CHUNKS);
+  });
 });
 
 describe("relay web client serving", () => {
