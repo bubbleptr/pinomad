@@ -4,6 +4,7 @@
 // native TS stripping — same as the host.
 //
 //   node apps/relay/src/main.ts --public-origin https://relay.example.com --allow-host HOST_ID...
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { startRelay } from "./relay.ts";
 
@@ -29,6 +30,9 @@ const relay = await startRelay({
   listenHost: values.listen,
   publicOrigin: values["public-origin"],
   allowedHosts,
+  // The relay serves its own checkout's build; version skew with the host is
+  // covered by the client's `outdated` state + one reload.
+  webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
 });
 console.log(
   JSON.stringify({ event: "ready", url: relay.url, publicOrigin: values["public-origin"], allowedHosts: allowedHosts.length }),
