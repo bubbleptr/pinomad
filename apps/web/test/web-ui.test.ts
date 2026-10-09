@@ -887,7 +887,12 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
 
   const browser = await chromium.launch();
   defer(() => browser.close());
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  // Pin the UA so the derived device name doesn't depend on the OS running the test.
+  const page = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    userAgent:
+      "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+  });
   // A phone on http://<lan-ip> is not a secure context: crypto.randomUUID is
   // absent there, so every client code path must survive without it.
   await page.addInitScript(() => {
@@ -904,7 +909,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   expect(page.url()).not.toContain("#pair=");
 
   await waitForView(tokenClient.view, (view) => view.devices.length === 1);
-  expect(tokenClient.view.current().devices[0]!.name).toBe("Mac Chrome");
+  expect(tokenClient.view.current().devices[0]!.name).toBe("Android Chrome");
 
   // The stored device reconnects without a fragment.
   await page.goto(`${webOrigin}/`);
