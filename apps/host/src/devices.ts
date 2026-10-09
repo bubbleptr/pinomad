@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
 import type { DeviceEntry, HostDevices } from "@pinomad/protocol/devices.ts";
 import { generateKeyPair, type KeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
@@ -63,6 +64,32 @@ export async function loadHostKey(dataDir: string): Promise<KeyPair> {
     const pair = generateKeyPair();
     await writeFile(path, `${toBase64Url(pair.privateKey)}\n`, { mode: 0o600 });
     return pair;
+  }
+}
+
+/**
+ * The host's relay identity at `<dataDir>/relay-key` (base64url Ed25519 secret,
+ * mode 0600). Deliberately a separate key from the X25519 `host-key` — no
+ * cross-protocol key reuse: this one only signs relay challenges (proving the
+ * right to a hostId); end-to-end security still rests on the Noise host key.
+ * `wx` + EEXIST re-read keeps `relay-id` beside a live host single-writer safe.
+ */
+export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8Array; publicKey: Uint8Array }> {
+  const path = join(dataDir, "relay-key");
+  try {
+    const secretKey = fromBase64Url((await readFile(path, "utf8")).trim());
+    if (secretKey.length !== 32) throw new Error(`bad relay key in ${path}`);
+    return { secretKey, publicKey: ed25519.getPublicKey(secretKey) };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw error;
+    const { secretKey, publicKey } = ed25519.keygen();
+    try {
+      await writeFile(path, `${toBase64Url(secretKey)}\n`, { flag: "wx", mode: 0o600 });
+    } catch (race) {
+      if ((race as { code?: string }).code !== "EEXIST") throw race;
+      return loadRelayKey(dataDir);
+    }
+    return { secretKey, publicKey };
   }
 }
 

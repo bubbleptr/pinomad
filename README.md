@@ -80,6 +80,52 @@ bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 
 </details>
 
+### 经自部署中继访问
+
+宿主在家里局域网、手机在外面时，把中继跑在一台有公网地址的 VPS 上：宿主和手机都只往外连中继，中继按宿主身份把两端的连接接起来，只转发密文、不存东西；Web 客户端也由中继用 HTTPS 提供，手机扫二维码直接打开。
+
+宿主这边：先打印中继身份（Ed25519 公钥，存在 `<dataDir>/relay-key`）：
+
+```sh
+bun run relay-id [--data-dir DIR]     # 输出 hostId，把它加进中继的 --allow-host
+bun run host -- --relay https://relay.example.com
+# 常驻：bun run service -- install --relay https://relay.example.com
+bun run pair                          # 打出的二维码指向中继
+```
+
+VPS 这边：检出仓库，`bun install`、`bun run build`（需要 Node 25+ 和 Bun），然后：
+
+```sh
+bun run relay -- --public-origin https://relay.example.com --allow-host <hostId>
+# 默认只监听 127.0.0.1:7430，--port / --listen 可改；多台宿主就写多个 --allow-host
+```
+
+Caddy 终止 TLS（自动签证书，WebSocket 无需额外配置）：
+
+```
+relay.example.com {
+  reverse_proxy 127.0.0.1:7430
+}
+```
+
+systemd 单元示例（VPS 上的系统级单元，`node` 写 `which node` 给出的绝对路径）：
+
+```ini
+[Unit]
+Description=PiNomad relay
+After=network-online.target
+
+[Service]
+User=pinomad
+ExecStart=/usr/bin/node /opt/pinomad/apps/relay/src/main.ts --public-origin https://relay.example.com --allow-host <hostId>
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+升级：中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `bun run upgrade`，VPS 上 `git pull && bun install && bun run build` 后重启中继。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+
 ## 常驻运行（ADR-0009）
 
 把宿主装成当前用户的系统服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起：

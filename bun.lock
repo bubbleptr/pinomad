@@ -20,6 +20,7 @@
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@earendil-works/pi-durable": "1.0.4",
         "@earendil-works/pi-mcp": "1.0.4",
+        "@noble/curves": "2.4.0",
         "@pinomad/protocol": "workspace:*",
         "diff": "8.0.4",
         "proper-lockfile": "4.1.2",
@@ -29,7 +30,21 @@
         "ws": "8.22.0",
       },
       "devDependencies": {
+        "@pinomad/relay": "workspace:*",
         "@types/proper-lockfile": "4.1.4",
+        "@types/ws": "8.18.2",
+      },
+    },
+    "apps/relay": {
+      "name": "@pinomad/relay",
+      "version": "0.0.0",
+      "dependencies": {
+        "@pinomad/host": "workspace:*",
+        "@pinomad/protocol": "workspace:*",
+        "ws": "8.22.0",
+      },
+      "devDependencies": {
+        "@noble/curves": "2.4.0",
         "@types/ws": "8.18.2",
       },
     },
@@ -316,6 +331,8 @@
     "@pinomad/host": ["@pinomad/host@workspace:apps/host"],
 
     "@pinomad/protocol": ["@pinomad/protocol@workspace:packages/protocol"],
+
+    "@pinomad/relay": ["@pinomad/relay@workspace:apps/relay"],
 
     "@pinomad/web": ["@pinomad/web@workspace:apps/web"],
 

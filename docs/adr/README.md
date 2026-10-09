@@ -37,6 +37,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0008](0008-remote-access-pairing-and-secure-channel.md) | 远程访问：协议层 Noise 端到端加密、扫码配对、中继分期 |
 | [0009](0009-host-lifecycle.md) | 宿主作为用户级系统服务常驻，源码检出升级，等空闲重启 |
+| [0015](0015-relay-splicing-and-host-registration.md) | 自部署中继按设备连接拼接 WebSocket，宿主用独立 Ed25519 密钥签名登记，中继用 HTTPS 提供 Web 客户端 |
 
 ## 遗留项的去向
 

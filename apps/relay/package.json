@@ -1,0 +1,19 @@
+{
+  "name": "@pinomad/relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./src/*": "./src/*",
+    "./test/*": "./test/*"
+  },
+  "dependencies": {
+    "@pinomad/host": "workspace:*",
+    "@pinomad/protocol": "workspace:*",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@noble/curves": "2.4.0",
+    "@types/ws": "8.18.2"
+  }
+}
