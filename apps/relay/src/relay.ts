@@ -41,6 +41,10 @@ const MAX_PAYLOAD = 128 * 1024;
 // Cap on bytes buffered from a device that hasn't been accepted yet — the
 // first Noise handshake message arrives before accept, so it must be held.
 const MAX_BUFFERED = 64 * 1024;
+// Per-direction splice water marks: pause reading the source once the
+// destination owes it more than HIGH_WATER, resume below LOW_WATER.
+const HIGH_WATER = 1024 * 1024;
+const LOW_WATER = 256 * 1024;
 
 const HOST_PATH = "/host";
 const DEVICE_PATH = /^\/c\/([A-Za-z0-9_-]{43})$/;
@@ -96,7 +100,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   function splice(a: WebSocket, b: WebSocket): void {
     const forward = (from: WebSocket, to: WebSocket): void => {
       from.on("message", (data: RawData, isBinary: boolean) => {
-        if (to.readyState === WebSocket.OPEN) to.send(data, { binary: isBinary });
+        if (to.readyState !== WebSocket.OPEN) return;
+        to.send(data, { binary: isBinary }, () => {
+          if (from.isPaused && to.bufferedAmount <= LOW_WATER) from.resume();
+        });
+        // Pausing stops reading the peer, so TCP backpressure reaches the
+        // sender instead of piling up in relay memory; a peer that never
+        // drains is reaped by the ping/terminate loop. (pause/resume are
+        // no-ops on CONNECTING/CLOSED sockets in ws 8.x.)
+        if (to.bufferedAmount > HIGH_WATER) from.pause();
       });
       from.on("close", (code: number, reason: Buffer) => {
         if (to.readyState !== WebSocket.OPEN) return;
@@ -240,8 +252,16 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     }
   });
 
+  await new Promise<void>((resolveListen, reject) => {
+    httpServer.once("listening", resolveListen);
+    httpServer.once("error", reject);
+    httpServer.listen(options.port, listenHost);
+  });
+  const { port } = httpServer.address() as AddressInfo;
+
   // Browsers and Node ws auto-pong; a peer that stays silent across a whole
   // interval is dead and gets terminated, which propagates as 1001 (rule 5).
+  // Created only after listen() succeeded — a failed bind must not leak it.
   const pingTimer = setInterval(() => {
     for (const socket of sockets) {
       if (alive.get(socket) === true) {
@@ -253,16 +273,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     }
   }, pingIntervalMs);
 
-  await new Promise<void>((resolveListen, reject) => {
-    httpServer.once("listening", resolveListen);
-    httpServer.once("error", reject);
-    httpServer.listen(options.port, listenHost);
-  });
-  const { port } = httpServer.address() as AddressInfo;
-
   return {
     port,
-    url: `ws://${listenHost}:${port}`,
+    url: `ws://${listenHost.includes(":") ? `[${listenHost}]` : listenHost}:${port}`,
     async close() {
       clearInterval(pingTimer);
       for (const entry of pending.values()) clearTimeout(entry.timer);
