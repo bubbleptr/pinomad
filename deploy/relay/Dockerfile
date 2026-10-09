@@ -2,7 +2,7 @@
 # pinned, so the relay serves the same web client build as that release.
 # Bump PINOMAD_VERSION together with the hosts (README "升级").
 FROM node:26-slim
-ARG PINOMAD_VERSION=0.1.0
+ARG PINOMAD_VERSION=0.1.1
 RUN npm install -g pinomad@${PINOMAD_VERSION} && npm cache clean --force
 USER node
 ENV PORT=8080
