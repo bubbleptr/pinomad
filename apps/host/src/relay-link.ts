@@ -48,7 +48,12 @@ export function startRelayLink(options: {
   readonly signingKey: { readonly secretKey: Uint8Array; readonly publicKey: Uint8Array };
   /** Hand each freshly opened data socket to the gateway's secure handshake. */
   accept(socket: WebSocket): void;
-  onRejected?(reason: string): void;
+  /**
+   * Fires only when the state actually changes: a different `status`, or a
+   * `rejected` with a different `reason` (the same rejection on retry doesn't
+   * fire again). The initial `connecting` state doesn't fire.
+   */
+  onStateChange?(state: RelayLinkState): void;
   readonly reconnectDelayMs?: { readonly min: number; readonly max: number };
   readonly pingIntervalMs?: number;
   readonly maxPendingAccepts?: number;
@@ -66,6 +71,17 @@ export function startRelayLink(options: {
   let delay = minDelay;
   let retryTimer: NodeJS.Timeout | undefined;
   let pendingAccepts = 0;
+
+  // Every state assignment goes through here so observers see each real
+  // transition exactly once — reconnecting while already `connecting`, or the
+  // same rejection reason on retry, is not news.
+  function setState(next: RelayLinkState): void {
+    const changed =
+      state.status !== next.status ||
+      (state.status === "rejected" && next.status === "rejected" && state.reason !== next.reason);
+    state = next;
+    if (changed) options.onStateChange?.(next);
+  }
 
   // Liveness for control and data sockets alike: a dead relay must not leave
   // half-open GatewayClients on sockets that will never see another byte.
@@ -136,7 +152,7 @@ export function startRelayLink(options: {
         break;
       case "registered":
         delay = minDelay;
-        state = { status: "registered" };
+        setState({ status: "registered" });
         break;
       case "incoming": {
         // Past the cap the device just times out at the relay (4610) — the
@@ -166,14 +182,12 @@ export function startRelayLink(options: {
     const rejection = REJECTION_REASONS[code];
     if (rejection !== undefined) {
       const reason = `relay ${origin}: ${rejection(hostId)} (${code})`;
-      // Fire onRejected once per distinct rejection, not every 30 s retry.
-      if (state.status !== "rejected" || state.reason !== reason) options.onRejected?.(reason);
-      state = { status: "rejected", reason };
+      setState({ status: "rejected", reason });
       delay = maxDelay;
       reconnect(maxDelay);
       return;
     }
-    state = { status: "connecting" };
+    setState({ status: "connecting" });
     reconnect(delay);
     delay = Math.min(maxDelay, delay * 2);
   }

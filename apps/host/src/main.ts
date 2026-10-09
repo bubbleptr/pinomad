@@ -14,7 +14,7 @@ import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@eare
 import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
-import { webRoot } from "./distribution.ts";
+import { packagedVersion, webRoot } from "./distribution.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { question } from "./extensions/question.ts";
 import { coding } from "./extensions/coding.ts";
@@ -134,7 +134,10 @@ export async function main(argv: readonly string[]): Promise<void> {
   const host = await openHost(options);
   const model = options.initialModel === undefined ? null : `${options.initialModel.provider}/${options.initialModel.modelId}`;
   // Credentials stay in the local token file; generating a browser link is an explicit CLI action.
-  const web = "http://127.0.0.1:5199/";
+  // Source checkouts have the vite dev server on 5199; a packaged install
+  // serves the bundled client on the host's own loopback port instead.
+  const web =
+    packagedVersion === undefined ? "http://127.0.0.1:5199/" : new URL(host.url.replace(/^ws/, "http")).href;
   console.log(
     JSON.stringify({
       event: "ready",

@@ -74,7 +74,6 @@ MCP 本身的后续，都等有明确需求再做：
 场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。自部署中继和 Omarchy 真机常驻都已完成（见"已完成"）。
 
 - 在 npm 上给 `pinomad` 配 trusted publisher（`bubbleptr` / `pinomad` / `release.yml`，要选允许 `npm publish`，不是只允许 `npm stage publish`），然后用第一个 `v*` tag 验证 release 流水线自动发包（ADR-0016）
-- 宿主在中继上登记成功、断线重连时写日志：现在只有失败会进日志，确认登记要从外面连 `/c/<hostId>` 看会不会被 `4604` 关掉
 - 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
@@ -110,7 +109,6 @@ ADR-0005 的候选 `progress`、`table`、`log`、`status` 不单独排期，等
 
 ## 技术债
 
-- 宿主 `ready` 日志的 `web` 字段写死成开发服务器 `http://127.0.0.1:5199/`（`apps/host/src/main.ts`），npm 安装和服务模式下都是错的
 - npm 上的 `0.0.0-stage` 占位版本可以 `npm deprecate` 掉（要 2FA），不影响安装
 - 远程配对测试偶发 `UnauthorizedError`，原因未查明
 - Skills 只扫描 `<cwd>/.agents/skills`，在仓库子目录启动时看不到仓库根目录的 Skills；格式有误的 Skill 被直接忽略，不提示用户（ADR-0006）
