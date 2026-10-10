@@ -25,8 +25,9 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { DEVICE_KEY, deviceName, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
+import { DEVICE_KEY, deviceName, pairingFragment, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
+import { hostWindowChrome } from "./shared/host-chrome.ts";
 
 const page: CSSProperties = {
   height: "100dvh",
@@ -41,22 +42,78 @@ export function App() {
     () => resolveAddress(window.location.hash, window.location, localStorage.getItem(DEVICE_KEY)),
     [],
   );
+  // A same-document hash hop (a pinomad:// deep link into an open window, a
+  // pasted hash edit) changes no React state — reload to re-resolve the
+  // address. onPaired's replaceState fires no hashchange, so this can't loop.
+  useEffect(() => {
+    const onHashChange = (): void => {
+      if (window.location.hash !== "") window.location.reload();
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   if (address === undefined) {
     return (
       <Centered>
-        <EmptyState
-          title="No host link"
-          description="Open the token link the host printed, or scan a pairing QR on this device."
-        />
+        <NoHostLink />
       </Centered>
     );
   }
   return <Connected address={address} />;
 }
 
+/** Where a client with no stored pairing lands: paste a pairing link to pair. */
+function NoHostLink() {
+  const [pasted, setPasted] = useState("");
+  const [error, setError] = useState<string>();
+  const connect = (): void => {
+    const fragment = pairingFragment(pasted);
+    if (fragment === undefined) {
+      // Token links deserve the specific hint: they exist, they just can't pair.
+      setError(
+        /[#?&]token=/.test(pasted)
+          ? "Token links can't pair a device — paste a pairing link instead (pinomad pair, or Devices → Pair a device)."
+          : "That isn't a pairing link — paste one like http://<host>/#pair=… or pinomad://pair#pair=…",
+      );
+      return;
+    }
+    window.location.hash = fragment;
+    window.location.reload();
+  };
+  return (
+    <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
+      <EmptyState
+        title="No host link"
+        description="Paste a pairing link from pinomad pair or Devices → Pair a device."
+      />
+      <HStack gap={2} vAlign="end" style={{ width: "100%" }}>
+        <div className="min-w-0 flex-1">
+          <TextInput
+            label="Pairing link"
+            isLabelHidden
+            placeholder="http://…/#pair=… or pinomad://pair#…"
+            value={pasted}
+            onChange={(value) => {
+              setError(undefined);
+              setPasted(value);
+            }}
+            onEnter={connect}
+            width="100%"
+          />
+        </div>
+        <Button label="Connect" variant="primary" isDisabled={pasted.trim() === ""} onClick={connect} />
+      </HStack>
+      {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
+    </VStack>
+  );
+}
+
 export function Centered({ children }: { children: ReactNode }) {
+  // These screens have no header to drag the hidden-title-bar window by.
+  const reserveStrip = hostWindowChrome().reserveMacTrafficLights;
   return (
     <VStack style={page} isScrollable>
+      {reserveStrip ? <div aria-hidden="true" className="pinomad-drag fixed inset-x-0 top-0 h-10" /> : null}
       <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
         {children}
       </VStack>
@@ -68,7 +125,47 @@ function Connected({ address }: { address: ResolvedAddress }) {
   if (address.kind === "token") {
     return <RemoteWorkbench options={address} connectionKey={`${address.url} ${address.token}`} label={address.url} />;
   }
+  if (address.kind === "pair") return <PairConfirm address={address} />;
   return <SecureClient address={address} />;
+}
+
+/**
+ * A pair link opens a socket only after the user has seen which host it is:
+ * pairing with an attacker-controlled host would register this device and
+ * (while the client keeps one key) replace its stored pairing — for every
+ * pair link, browser QR or pasted, one uniform rule.
+ */
+function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "pair" }> }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
+  const replacing = stored !== undefined && stored.hostKey !== address.hostKey;
+  const cancel = (): void => {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    window.location.reload();
+  };
+  if (confirmed) return <SecureClient address={address} />;
+  const target = new URL(address.url);
+  return (
+    <Centered>
+      <VStack gap={4} hAlign="center" style={{ maxWidth: 420 }}>
+        <EmptyState title="Pair with this host?" description={`This device will pair with ${target.host}.`} />
+        {replacing ? (
+          <Banner
+            status="warning"
+            title="Replaces your current pairing"
+            description="This device is already paired with a different host — pairing again replaces it."
+          />
+        ) : null}
+        <Text type="supporting" style={{ wordBreak: "break-all" }}>
+          {address.url}
+        </Text>
+        <HStack gap={2}>
+          <Button label="Cancel" variant="secondary" onClick={cancel} />
+          <Button label="Pair" variant="primary" onClick={() => setConfirmed(true)} />
+        </HStack>
+      </VStack>
+    </Centered>
+  );
 }
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */

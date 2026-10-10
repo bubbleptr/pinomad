@@ -1,4 +1,7 @@
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { parsePairParam } from "@pinomad/protocol/pairing-link.ts";
+
+export { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 
 export const DEFAULT_HOST_URL = "ws://127.0.0.1:7420";
 
@@ -47,18 +50,10 @@ export function resolveAddress(
   }
   const pair = params.get("pair");
   if (pair !== null) {
-    // <hostKey>.<secret>, both base64url; the host key must be 32 bytes of X25519.
-    const dot = pair.indexOf(".");
-    if (dot <= 0 || pair.indexOf(".", dot + 1) !== -1) return undefined;
-    const hostKey = pair.slice(0, dot);
-    const secret = pair.slice(dot + 1);
-    try {
-      if (fromBase64Url(hostKey).length !== 32 || fromBase64Url(secret).length === 0) return undefined;
-    } catch {
-      return undefined;
-    }
+    const parsed = parsePairParam(pair);
+    if (parsed === undefined) return undefined;
     const url = params.get("url") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
-    return { kind: "pair", url, hostKey, secret };
+    return { kind: "pair", url, hostKey: parsed.hostKey, secret: parsed.secret };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
   const device = storedDevice(stored);

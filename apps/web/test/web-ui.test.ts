@@ -900,7 +900,9 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   });
   await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
 
-  // Pairing completes: the composer is usable and the secret leaves the URL.
+  // Pairing completes after the confirmation: the composer is usable and the
+  // secret leaves the URL.
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
   const composer = page.getByRole("textbox");
   await composer.waitFor();
   await composer.fill("hello from phone");
@@ -969,6 +971,94 @@ it("explains a loopback pairing link instead of drawing an unusable QR", async (
   await expect.poll(() => dialog.getByText(/#pair=/, { exact: false }).count()).toBeGreaterThan(0);
 });
 
+it("pairs a device by pasting the loopback link on the no-link screen", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["pasted-link hello"] });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  // No remote access: the offer targets the loopback /secure path.
+  expect(pairingUrl).toContain("%2Fsecure");
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(webOrigin);
+  await page.getByText("No host link").waitFor();
+
+  await page.getByLabel("Pairing link").fill(pairingUrl);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  const composer = page.getByRole("textbox");
+  await composer.waitFor();
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("pasted-link hello").waitFor();
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+});
+
+it("names the host and opens no socket until a pair link is confirmed", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+
+  // The link names its host; the offer stays unconsumed while it waits.
+  await page.getByText("Pair with this host?").waitFor();
+  await page.getByText(`pair with ${new URL(host.remote!.url).host}`, { exact: false }).waitFor();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  expect(tokenClient.view.current().devices).toHaveLength(0);
+
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await page.getByRole("textbox").waitFor();
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+});
+
+it("drops a pair link back to the no-link screen on Cancel", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByText("Pair with this host?").waitFor();
+
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByText("No host link").waitFor();
+  expect(tokenClient.view.current().devices).toHaveLength(0);
+});
+
+it("re-resolves the address when the hash changes in place", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const pair = pairingUrl.split("#pair=")[1]!;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(webOrigin);
+  await page.getByText("No host link").waitFor();
+
+  // What a deep link into an open window does: a same-document hash change.
+  await page.evaluate((fragment) => {
+    window.location.hash = fragment;
+  }, `pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByText("Pair with this host?").waitFor();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await page.getByRole("textbox").waitFor();
+});
+
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
@@ -980,6 +1070,7 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
   await page.getByRole("textbox").waitFor();
 
   // Host dies; the stored device mode must not claim the pairing is bad.
@@ -1009,6 +1100,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   // Pair once in this context — the device identity lands in localStorage.
   const first = await context.newPage();
   await first.goto(pairLink);
+  await first.getByRole("button", { name: "Pair", exact: true }).click();
   await first.getByRole("textbox").waitFor();
   await first.getByRole("textbox").fill("hello");
   await first.getByRole("textbox").press("Enter");
@@ -1020,6 +1112,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   // Same context, the now-spent link: a fresh load like scanning the QR again.
   const again = await context.newPage();
   await again.goto(pairLink);
+  await again.getByRole("button", { name: "Pair", exact: true }).click();
   await again.getByRole("textbox").waitFor();
   expect(again.url()).not.toContain("#pair=");
   const afterKey = await again.evaluate(
@@ -1046,6 +1139,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   // Consume the offer with one pairing first.
   const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await first.getByRole("button", { name: "Pair", exact: true }).click();
   await first.getByRole("textbox").waitFor();
   await first.close();
 
@@ -1054,6 +1148,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   defer(() => context.close());
   const fresh = await context.newPage();
   await fresh.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await fresh.getByRole("button", { name: "Pair", exact: true }).click();
   await fresh.getByText("used or has expired", { exact: false }).waitFor();
   expect(await fresh.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
   expect(await fresh.getByRole("button", { name: "Use saved pairing" }).count()).toBe(0);
@@ -1071,6 +1166,7 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   // Consume the offer with one pairing so the link is rejected next time.
   const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await first.getByRole("button", { name: "Pair", exact: true }).click();
   await first.getByRole("textbox").waitFor();
   await first.close();
 
@@ -1088,6 +1184,7 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   }, { url: host.remote!.url, hostKey: toBase64Url(generateKeyPair().publicKey), privateKey: toBase64Url(saved.privateKey) });
   const page = await context.newPage();
   await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
   const message = page.getByText("used or has expired", { exact: false });
   await message.waitFor();
   const button = page.getByRole("button", { name: "Use saved pairing", exact: true });

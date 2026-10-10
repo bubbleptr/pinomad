@@ -57,6 +57,8 @@ describe("resolveAddress", () => {
   });
 });
 
+// pairingFragment's cases live with the shared rule in
+// packages/protocol/test/pairing-link.test.ts.
 describe("servedByHost", () => {
   it("is true only when the page and the gateway share host:port", () => {
     expect(servedByHost("ws://127.0.0.1:7420", { host: "127.0.0.1:7420" })).toBe(true);

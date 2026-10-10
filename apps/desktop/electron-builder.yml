@@ -1,0 +1,40 @@
+appId: com.bubbleptr.pinomad
+productName: PiNomad
+asar: true
+compression: normal
+npmRebuild: false
+
+directories:
+  output: dist
+  buildResources: build
+
+# Main, preload and renderer are all bundled by electron-vite; node_modules
+# never ship inside the package.
+files:
+  - out/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+# Unsigned local builds: no signing identity is configured yet (ADR-0020 §5
+# ships signing/notarization with the release pipeline).
+forceCodeSigning: false
+
+# `pinomad://pair#…` deep links land on the no-host-link screen's pairing flow.
+protocols:
+  - name: PiNomad
+    schemes:
+      - pinomad
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  identity: null
+  minimumSystemVersion: "12.0"

@@ -11,6 +11,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { taskRows } from "../../presentation/chat.ts";
+import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
@@ -62,6 +63,10 @@ export function AppFrame({
   const [dockOpen, setDockOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  // Under the desktop shell on macOS, the traffic lights own the top-left
+  // corner: whichever band sits there reserves the inset and drags the window.
+  const chrome = hostWindowChrome();
+  const sidebarOwnsCorner = chrome.reserveMacTrafficLights && !narrow && sidebarOpen;
   const toggleSidebar = (): void => {
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
@@ -92,7 +97,13 @@ export function AppFrame({
           narrow || !sidebarOpen ? undefined : (
             <SideNav
               resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
-              header={<SidebarHeaderBand connection={view.connection} onCollapse={toggleSidebar} />}
+              header={
+                <SidebarHeaderBand
+                  connection={view.connection}
+                  onCollapse={toggleSidebar}
+                  safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
+                />
+              }
               footer={<SidebarFooter view={view} onOpenDevices={() => setDevicesOpen(true)} />}
             >
               {sidebar}
@@ -104,6 +115,7 @@ export function AppFrame({
           <FrameHeader
             narrow={narrow}
             sidebarOpen={sidebarOpen}
+            safeLeft={chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined}
             onToggleSidebar={toggleSidebar}
             onOpenNav={() => setNavOpen(true)}
             title={drafting ? draftLabel : (summary?.title ?? "New conversation")}
@@ -193,6 +205,7 @@ function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
 function FrameHeader({
   narrow,
   sidebarOpen,
+  safeLeft,
   onToggleSidebar,
   onOpenNav,
   title,
@@ -206,6 +219,8 @@ function FrameHeader({
 }: {
   narrow: boolean;
   sidebarOpen: boolean;
+  /** Left inset reserved for the macOS traffic lights; absent off-desktop. */
+  safeLeft?: string;
   onToggleSidebar: () => void;
   onOpenNav: () => void;
   title: string;
@@ -218,7 +233,10 @@ function FrameHeader({
   liveActivity: boolean;
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-3">
+    <div
+      className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3"
+      style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
+    >
       {narrow ? (
         <IconButton
           icon={<AnimatedSidebar className="size-4" />}
