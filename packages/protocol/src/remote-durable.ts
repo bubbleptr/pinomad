@@ -154,7 +154,7 @@ class RemoteClient {
     if (this.#closed) return;
     if (code === UNAUTHORIZED_CLOSE_CODE) {
       this.#closed = true;
-      this.#update({ connection: "closed" });
+      this.#update({ connection: "closed", unauthorized: true });
       this.#notice("error", new UnauthorizedError().message);
       return;
     }

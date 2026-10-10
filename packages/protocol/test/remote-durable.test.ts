@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, type ClientFrame, type ServerFrame } from "../src/frames.ts";
+import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame } from "../src/frames.ts";
 import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { ConversationDefaults, DurableView } from "../src/view.ts";
@@ -146,6 +146,25 @@ describe("RemoteDurable reconnect", () => {
       expect(opened).toHaveLength(2);
     } finally {
       remote.close();
+    }
+  });
+
+  it("flags a post-ready 4401 close as unauthorized; a 4400 close is not", async () => {
+    // The distinction decides the UI: 4401 shows the revoked-pairing screen,
+    // 4400 must fall through to the plain disconnect banner and its notice.
+    for (const [code, unauthorized] of [
+      [UNAUTHORIZED_CLOSE_CODE, true],
+      [INVALID_FRAME_CLOSE_CODE, undefined],
+    ] as const) {
+      const { transport, opened } = fakeTransport([{}]);
+      const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
+      try {
+        opened[0]!.closed(code);
+        await waitForView(remote, (view) => view.connection === "closed");
+        expect(remote.view.current().unauthorized).toBe(unauthorized);
+      } finally {
+        remote.close();
+      }
     }
   });
 });

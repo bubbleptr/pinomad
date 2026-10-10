@@ -264,8 +264,9 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   useEffect(() => {
     if (view.connection === "connected") sessionStorage.removeItem(RELOADED_KEY);
   }, [view.connection]);
-  // A revoked device is closed with 4401; hooks above stay mounted either way.
-  if (view.connection === "closed" && rejected !== undefined) return <Centered>{rejected}</Centered>;
+  // Only a 4401 close means the pairing itself is bad — other terminal closes
+  // (4400's rejected frame, say) keep the disconnect banner and their notice.
+  if (view.unauthorized === true && rejected !== undefined) return <Centered>{rejected}</Centered>;
   return (
     <>
       <AppFrame

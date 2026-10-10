@@ -87,6 +87,8 @@ export interface DurableView {
   readonly connection: ConnectionState;
   /** The mismatch a post-ready hello announced; set exactly when `connection` is `"outdated"`. */
   readonly protocolMismatch?: ProtocolMismatch;
+  /** Set when the host closed this device with 4401 (pairing failed or revoked); terminal. */
+  readonly unauthorized?: true;
   /** The shown conversation's extension documents, in the host's order. */
   readonly docs: readonly ExtensionDocView[];
   /** How the host wants each tool's result `details` rendered (ADR-0005). */
