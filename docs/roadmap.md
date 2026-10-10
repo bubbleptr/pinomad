@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-10
+最后更新：2026-10-11
 
 ## 已完成
 
@@ -25,6 +25,7 @@
 - 回环安全通道（ADR-0020）：宿主每次启动都加载密钥、能签发配对邀请；回环端口的 `/secure` 路径走 Noise 握手，不校验 token 和 Origin；没开远程访问时配对链接指向回环地址，Web 的 Devices 对话框和 `pinomad pair` 遇到回环链接不画二维码，提示只能给本机客户端用
 - Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
 - tailnet 直连试用：Mac 和 Omarchy 都装官方 Tailscale 客户端，和 sing-box 共存。共用的 sing-box 配置要改两处：DNS 规则让 `tailscale.com` / `tailscale.io` 不走 FakeIP，否则控制面连不上；tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。`tailscale ping` 显示经局域网直连，2–7ms，没走 DERP。Omarchy 开了 Tailscale SSH，tailnet 策略加了一条 SSH 规则（成员登录自己的设备，非 root）。宿主带 `--remote-port 7422` 和 `--relay` 同时跑：tailnet 内的设备直连，不在 tailnet 里的设备仍走中继。Mac 已经配对上并通过直连使用（2026-10-10）
+- fork 和子代理的呈现：侧栏只放顶层对话，行首状态点按整个家族汇总（等回答 > 失败 > 运行中），行尾显示更新时间；右侧面板分 Threads / Tasks / Live 三个 tab，fork 能在面板里对话或"在主区打开"（顶栏面包屑回父对话），子代理只读；父对话里分叉点显示"N forks"胶囊、子代理调用显示成任务卡片（fork 的检出和层数见 ADR-0019；PR #34、#40、#42）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
@@ -62,12 +63,6 @@ MCP 本身的后续，都等有明确需求再做：
 4. 首页和 Composer（已完成）：草稿态变成 Pace 的首页——hero（"Build something useful with PiNomad"）、项目选择器、四条建议提示；新建对话可以选模型和思考等级（`createConversation` 加 `model` / `thinkingLevel`，hello 带默认模型，协议 v4）。Composer 换成 Pace 的 ChatPromptInput：左侧是"+"菜单和"模型 · 思考等级"胶囊，运行中带文字的草稿可以排队为 Follow-up 或 Steer，排队消息显示在输入框上方；footer 是位置行（Chat / Git worktree 加分支 / Project folder，草稿里项目可以选 worktree 还是直接在目录里跑）。Dock 的 Queue 区块撤掉，圆点只算运行中的任务。
 
 之后接着做（细节到时再定）：
-- **优先：fork 和子代理的呈现**。方向在 2026-10-10 用原型定下来了（原型在本地分支 `proto/conversation-family`，不合并）。
-  - 侧栏只放顶层对话，不加 Show more。行首的状态点汇总整个家族，优先级是等回答 > 失败 > 运行中 > 空闲；行尾显示更新时间。
-  - fork 是父对话的 thread，子代理是父对话的 task（术语见 `CONTEXT.md`）。主区始终显示顶层对话。右侧面板取代现在的 Dock，默认 440px，可以拖到 360–720，分 Threads / Tasks / Live 三个 tab。Threads 里的 fork 可以直接对话，也可以"在主区打开"（顶栏用面包屑回到父对话）。Tasks 按归属分组列出子代理，只读。父对话里，分叉点那条消息上显示"1 fork"；子代理调用直接显示成任务卡片，带标签、状态、模型、耗时和正在做的事。点任何一个都在右侧面板打开。窄屏上右侧面板是全屏对话框。
-  - fork 的检出、层数和数量见 ADR-0019：共用父对话的检出，只有一层，每条消息最多一个。消息上已经有 fork 时，Fork 按钮换成"1 fork"标记，点开在面板里打开它。
-  - 放弃的方案：侧栏里的分型树（家族一大侧栏就太长）；子代理只在对话里出现、fork 仍留在侧栏（侧栏还是长，而且 fork 和子代理不对称）；顶栏下面的家族标签栏（切过去就看不到父对话，不符合 thread 的用法）；fork 时让用户选检出方式（见 ADR-0019）。
-  - 要补的数据：对话摘要的 `forkedAt`（fork 的分叉点）、`status`（等回答 > 运行中 > 失败，没有就是空闲）、`updatedAt`（最新一条自己的用户/助手消息的时间）、子代理的 `label`（`subagent` 的 `description`，宿主存在子对话的 `pinomad.subagent` 文档里）已经加上，都是可选字段。侧栏已改成只放顶层对话，状态点和更新时间按家族汇总；fork 在主区打开时也有面包屑；子代理没有 `label` 时，客户端去掉任务开头 "In the working directory …," 这类套话。`RemoteDurable` 能在主对话之外再显示一条侧边对话（`showSide`，视图里的 `side`），提交、回答、中止可以指定目标对话；两条显示同一对话时共用订阅。右侧面板已取代 Dock：Threads / Tasks / Live 三个 tab，可拖宽（360–720），窄屏是全屏对话框；fork 和子代理都在面板里打开，fork 只显示自己的内容并能直接对话，子代理只读。主区锚点也已完成：已有 fork 的消息显示"N forks"胶囊代替 Fork 按钮，点开进面板的 Threads；子代理调用显示成任务卡片，带标签、状态、模型、耗时和运行中的当前动作——模型和开始时间由宿主写进 `SubagentDoc` 并经工具调用 details 透出，当前动作走摘要里新增的 `activity` 可选字段。
 - 上下文用量指示（Pace 的位置行右侧有 context meter；我们的宿主还没暴露用量）。
 - 附件：ChatPromptInput 已经留好接口（drawer、onFiles），需要协议里能带附件的消息。
 - 斜杠命令和 @ 文件补全：Pace 的 trigger 菜单方案（leading token + typeahead）。
@@ -104,14 +99,12 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 客户端形态已定（ADR-0017）：桌面端 Electron 只做 macOS arm64，页面打包进 App；Linux 用 Web；移动端 Expo。按顺序：
 
 1. 桌面端 `apps/desktop`（ADR-0020）。外壳、electron-updater、签名公证从 Pace 复制，提交信息注明来源 commit；后端子进程、终端、内嵌浏览器和 Pi 打包相关的 Vite 插件不搬。按堆叠 PR 分步：
-   已完成：宿主侧的回环安全通道。外壳：electron-vite 的 renderer 以 `apps/web` 为根目录（共用 `webViteBase()`），页面经 `app://pinomad` 加载、带 CSP；只放行 http(s) 链接到系统浏览器；粘贴配对链接或 `pinomad://pair#…` 深链配对，两者都经 `packages/protocol` 的 `pairingFragment` 规范化成只含 `pair` 和 `url` 的片段；macOS 隐藏标题栏，Web 端按 `data-pinomad-platform` 给红绿灯留位、提供拖拽区；`bun run desktop:package` 打不签名的 dmg/zip，`bun run desktop:e2e` 在本机跑 Electron 端到端（手动，不进 `bun run test`）。暂时和浏览器一样，在页面的 `localStorage` 里只存一个设备；还没有 App 图标。
+   已完成：宿主侧的回环安全通道。外壳：electron-vite 的 renderer 以 `apps/web` 为根目录（共用 `webViteBase()`），页面经 `app://pinomad` 加载、带 CSP；只放行 http(s) 链接到系统浏览器；粘贴配对链接或 `pinomad://pair#…` 深链配对，两者都经 `packages/protocol` 的 `pairingFragment` 规范化成只含 `pair` 和 `url` 的片段；macOS 隐藏标题栏，Web 端按 `data-pinomad-platform` 给红绿灯留位、提供拖拽区；`bun run desktop:package` 打不签名的 dmg/zip，`bun run desktop:e2e` 在本机跑 Electron 端到端（手动，不进 `bun run test`）。多宿主：宿主列表由 main 用 `safeStorage` 加密成单个 `hosts.bin`，经 preload 的 `pinomad:hosts:*` 通道交给 renderer；浏览器照旧在 `localStorage` 存单个设备；侧栏底部切换宿主（记下选择后重载页面，一次只连一台），连不上或被拒的失败页面也能换宿主；新配对不覆盖已有宿主。还没有 App 图标。
 
-   **暂停（2026-10-10）**：剩下几步等 M2.5 的"fork 和子代理的呈现"做完再继续，从多宿主开始。那项工作要改侧栏、右侧面板和 `RemoteDurable` 的订阅，多宿主也要改侧栏和连接的建立，先后做可以避免互相冲突。
-   1. 多宿主：宿主列表由 main 用 `safeStorage` 加密存放，经 preload 交给 renderer（这时再抽设备存储接口，浏览器照旧 `localStorage` 存单个设备）；侧边栏切换宿主，一次只连一台；新的配对不覆盖已有的宿主。
-   2. 自动更新，加上 `release.yml` 的 macOS job（签名、公证、传到 GitHub Release）。需要先在仓库里配好 Apple 的 secrets。主版本不一致时：客户端旧了就触发一次更新检查，宿主旧了就提示 `pinomad upgrade`。
-   3. 通知：用 renderer 里的 Web Notification API，窗口不在前台时，有待回答的问题或一轮运行结束就通知。
+   1. 自动更新，加上 `release.yml` 的 macOS job（签名、公证、传到 GitHub Release）。需要先在仓库里配好 Apple 的 secrets。主版本不一致时：客户端旧了就触发一次更新检查，宿主旧了就提示 `pinomad upgrade`。
+   2. 通知：用 renderer 里的 Web Notification API，窗口不在前台时，有待回答的问题或一轮运行结束就通知。
 
-   以后再说：同时保持多台宿主的连接（后台宿主也能发通知）；内嵌浏览器（宿主可能在别的机器上，预览要经安全通道转发端口）。
+   以后再说：同时保持多台宿主的连接（后台宿主也能发通知）；内嵌浏览器（宿主可能在别的机器上，预览要经安全通道转发端口）；侧栏里还没有"忘记宿主"的入口（只在被拒页面上有 Forget this host）。
 2. 移动端 Expo：先验证 `packages/protocol` 能在 Hermes 上跑（`getRandomValues`、`TextEncoder`、`WebSocket`）、能和 Bun workspaces 一起用；界面用 React Native 重写，不依赖 DOM 的视图推导（如 `CotView`）挪到共享的位置；设计 token 怎么在两端共享还没定。iOS 构建和分发走 EAS / TestFlight。
 - 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）。设置存在哪还没定，候选：写 pi 的 `settings.json`、存进 Durable 的 session 级文档、新建 `~/.pinomad/settings.json`。客户端偏好存在设备本地；宿主启动参数和 `mcp.json` 第一版只读展示。
 - 以后可能有：TUI 客户端（TS，能直接复用 `packages/protocol`）。
