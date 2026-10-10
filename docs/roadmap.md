@@ -105,6 +105,8 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 1. 桌面端 `apps/desktop`（ADR-0020）。外壳、electron-updater、签名公证从 Pace 复制，提交信息注明来源 commit；后端子进程、终端、内嵌浏览器和 Pi 打包相关的 Vite 插件不搬。按堆叠 PR 分步：
    已完成：宿主侧的回环安全通道。外壳：electron-vite 的 renderer 以 `apps/web` 为根目录（共用 `webViteBase()`），页面经 `app://pinomad` 加载、带 CSP；只放行 http(s) 链接到系统浏览器；粘贴配对链接或 `pinomad://pair#…` 深链配对，两者都经 `packages/protocol` 的 `pairingFragment` 规范化成只含 `pair` 和 `url` 的片段；macOS 隐藏标题栏，Web 端按 `data-pinomad-platform` 给红绿灯留位、提供拖拽区；`bun run desktop:package` 打不签名的 dmg/zip，`bun run desktop:e2e` 在本机跑 Electron 端到端（手动，不进 `bun run test`）。暂时和浏览器一样，在页面的 `localStorage` 里只存一个设备；还没有 App 图标。
+
+   **暂停（2026-10-10）**：剩下几步等 M2.5 的"fork 和子代理的呈现"做完再继续，从多宿主开始。那项工作要改侧栏、右侧面板和 `RemoteDurable` 的订阅，多宿主也要改侧栏和连接的建立，先后做可以避免互相冲突。
    1. 多宿主：宿主列表由 main 用 `safeStorage` 加密存放，经 preload 交给 renderer（这时再抽设备存储接口，浏览器照旧 `localStorage` 存单个设备）；侧边栏切换宿主，一次只连一台；新的配对不覆盖已有的宿主。
    2. 自动更新，加上 `release.yml` 的 macOS job（签名、公证、传到 GitHub Release）。需要先在仓库里配好 Apple 的 secrets。主版本不一致时：客户端旧了就触发一次更新检查，宿主旧了就提示 `pinomad upgrade`。
    3. 通知：用 renderer 里的 Web Notification API，窗口不在前台时，有待回答的问题或一轮运行结束就通知。
