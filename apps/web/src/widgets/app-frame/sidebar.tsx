@@ -8,6 +8,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "../../entities/conversation/family.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
@@ -159,6 +160,31 @@ function SessionGlyphSlot() {
   return <span className="pigui-session-glyph" data-testid="session-glyph" />;
 }
 
+/**
+ * The whole family's most urgent status in the glyph slot. The dot
+ * is decorative inside the row's <button> — aria-hidden so the accessible name
+ * stays exactly the title; the status itself is machine-readable on the row.
+ */
+function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
+  const variant = status === "needs-answer" ? "warning" : status === "failed" ? "error" : "success";
+  const tooltip = status === "needs-answer" ? "Waiting for your answer" : status === "failed" ? "Failed" : "Running";
+  return (
+    <span className="pigui-session-glyph" aria-hidden="true">
+      <StatusDot variant={variant} label={tooltip} tooltip={tooltip} isPulsing={status !== "failed"} />
+    </span>
+  );
+}
+
+/** One shared clock for every row's relative time — not one interval per row. */
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
 function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
   const StateIcon = expanded ? FolderOpenState : FolderClosed;
   return (
@@ -173,55 +199,64 @@ function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
   );
 }
 
+/**
+ * One root conversation row: forks and subagents never get rows of their own —
+ * the row stands for the whole family, so its status dot, recency, and
+ * selection all aggregate the node's descendants.
+ */
 function ConversationRow({
   node,
-  depth,
   shown,
   disabled,
   remote,
+  now,
   onSelect,
 }: {
   node: ConversationNode;
-  depth: number;
   shown: ConversationId | undefined;
   disabled: boolean;
   remote: RemoteDurable;
+  now: number;
   onSelect?: () => void;
 }) {
   const { summary } = node;
+  const status = familyStatus(node);
+  const updatedAt = familyUpdatedAt(node);
+  // Selected while the root or any of its descendants is shown.
+  const selected = shown !== undefined && flattenNodes([node]).some((each) => each.summary.id === shown);
   const item = (
     <SideNavItem
-      icon={<SessionGlyphSlot />}
+      icon={status === undefined ? <SessionGlyphSlot /> : <FamilyStatusGlyph status={status} />}
       label={summary.title ?? "New conversation"}
-      isSelected={summary.id === shown}
+      isSelected={selected}
       isDisabled={disabled}
-      // Reserve the overlay actions' width so the label truncates before them.
-      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
+      // The meta sits before the actions spacer; on hover the row's actions
+      // fade it out (the CSS already swaps the two slots).
+      endContent={
+        <>
+          {updatedAt === undefined ? null : (
+            // Decorative inside the button, like the dot: the accessible name
+            // stays exactly the title (tests match rows by name verbatim).
+            <span aria-hidden="true" className="pigui-sidenav-session-meta ms-2 text-xs text-muted">
+              {relativeTime(updatedAt, now)}
+            </span>
+          )}
+          <span aria-hidden="true" className="pigui-sidenav-actions-spacer" />
+        </>
+      }
       onClick={() => {
         void remote.controller.switchConversation(summary.id);
         onSelect?.();
       }}
-    >
-      {node.children.length === 0
-        ? undefined
-        : node.children.map((child) => (
-            <ConversationRow
-              key={child.summary.id}
-              node={child}
-              depth={depth + 1}
-              shown={shown}
-              disabled={disabled}
-              remote={remote}
-              onSelect={onSelect}
-            />
-          ))}
-    </SideNavItem>
+    />
   );
-  if (depth > 0) return item;
   // Same overlay-sibling pattern as the project row: the actions menu cannot
   // live inside the SideNavItem <button>.
   return (
-    <div className="pigui-sidenav-row-with-actions pigui-sidenav-session-row">
+    <div
+      className="pigui-sidenav-row-with-actions pigui-sidenav-session-row"
+      {...(status === undefined ? {} : { "data-status": status })}
+    >
       {item}
       <HStack className="pigui-sidenav-row-actions pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
         <DropdownMenu
@@ -268,6 +303,7 @@ export function SidebarContent({
   onSelect?: () => void;
 }) {
   const disabled = view.connection !== "connected";
+  const now = useNow(60_000);
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const [expandedProjects, setExpandedProjects] = useState(readExpandedProjects);
@@ -341,10 +377,10 @@ export function SidebarContent({
                 <ConversationRow
                   key={node.summary.id}
                   node={node}
-                  depth={0}
                   shown={shownId}
                   disabled={disabled}
                   remote={remote}
+                  now={now}
                   onSelect={onSelect}
                 />
               ))
@@ -393,10 +429,10 @@ export function SidebarContent({
                           <ConversationRow
                             key={node.summary.id}
                             node={node}
-                            depth={0}
                             shown={shownId}
                             disabled={disabled}
                             remote={remote}
+                            now={now}
                             onSelect={onSelect}
                           />
                         ))

@@ -393,6 +393,36 @@ it("shows interruption without a text bubble and never offers a fork for streami
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 });
 
+it("rolls a subagent's failure up to the family's root row", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+      createSubagent({ models, modelSummaries, exclude: [] }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("boom", { errorMessage: "child blew up", stopReason: "error" }),
+      "parent final",
+    ],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("textbox").fill("delegate");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  // The child failed; the root's own run ended cleanly.
+  const parent = allNodes(observer.view.current()).find((node) => node.summary.kind === "conversation")!;
+  expect(parent.children[0]!.summary.status).toBe("failed");
+  expect(parent.summary.status).toBeUndefined();
+
+  const row = page.getByRole("group", { name: "Chats" }).locator(".pigui-sidenav-session-row", {
+    has: page.getByRole("button", { name: "delegate", exact: true }),
+  });
+  await expect.poll(() => row.getAttribute("data-status")).toBe("failed");
+});
+
 it("opens a subagent's conversation from its card and returns to the parent", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
@@ -680,6 +710,19 @@ it("organizes conversations under projects and chats", async () => {
     .organized.projects[0]!.conversations.find((node) => node.children.length > 0)!;
   expect(parentNode.children[0]!.summary.kind).toBe("fork");
   await page.getByText("fork answer", { exact: true }).waitFor();
+
+  // The sidebar lists roots only: the fork is never a row, and its root stays
+  // selected while the fork is shown (aria-current from SideNavItem isSelected).
+  expect(await projectSection.getByRole("button", { name: "Continue from here.", exact: true }).count()).toBe(0);
+  const rootRow = projectSection.getByRole("button", { name: "project work", exact: true });
+  await expect.poll(() => rootRow.getAttribute("aria-current")).toBe("page");
+  // The row's trailing meta is the family's freshest update, compact.
+  await expect.poll(async () => await projectSection.locator(".pigui-sidenav-session-meta").textContent()).toBe("now");
+
+  // Forks get the same breadcrumb subagents always had.
+  await page.getByRole("button", { name: "Back to project work", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "Back to project work", exact: true }).count()).toBe(0);
+  await page.getByText("project answer", { exact: true }).waitFor();
 });
 
 it("keeps the dock closed until asked and keeps it open across conversations", async () => {

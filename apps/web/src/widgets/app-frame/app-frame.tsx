@@ -12,6 +12,7 @@ import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { taskRows } from "../../presentation/chat.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
+import { displayName } from "../../entities/conversation/family.ts";
 import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
@@ -118,7 +119,7 @@ export function AppFrame({
             safeLeft={chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined}
             onToggleSidebar={toggleSidebar}
             onOpenNav={() => setNavOpen(true)}
-            title={drafting ? draftLabel : (summary?.title ?? "New conversation")}
+            title={drafting ? draftLabel : displayName(summary)}
             parentSummary={parentSummary}
             onBackToParent={openConversation}
             showChanges={conversation !== undefined}
@@ -260,8 +261,8 @@ function FrameHeader({
         ) : (
           <span className="flex items-center gap-1">
             <Button
-              label={parentSummary.title ?? "New conversation"}
-              aria-label={`Back to ${parentSummary.title ?? "New conversation"}`}
+              label={displayName(parentSummary)}
+              aria-label={`Back to ${displayName(parentSummary)}`}
               variant="ghost"
               size="sm"
               onClick={() => onBackToParent(parentSummary.id)}

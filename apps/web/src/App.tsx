@@ -339,12 +339,13 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     [conversation, view.toolPresentations, busy],
   );
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
-  // A shown subagent conversation offers a breadcrumb back to the run that owns it.
+  // Any conversation with a parent — fork or subagent — offers a breadcrumb
+  // back to the conversation it belongs to.
   const shownSummary =
     conversation === undefined
       ? undefined
       : findConversation(view.organized, conversation.conversation.id)?.summary;
-  const parentId = shownSummary?.kind === "subagent" ? shownSummary.parent : undefined;
+  const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
   const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
