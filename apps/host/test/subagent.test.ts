@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { AgentDoc, type ConversationId, type ConversationView, type JsonObject } from "@earendil-works/pi-durable";
+import { AgentDoc, type ConversationId, type ConversationView, type JsonObject, LiveDoc } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -99,7 +99,42 @@ describe("subagent tool", () => {
     const result = toolResult(client.view.current().conversation!);
     expect(result.isError).not.toBe(true);
     expect(resultText(result)).toBe("child answer");
-    expect(result.details).toEqual({ conversationId: child!.id });
+    // Model and start time ride the details so clients can label the card.
+    const details = result.details as { conversationId: number; model?: string; startedAt?: number };
+    expect(details.conversationId).toBe(child!.id);
+    const shown = client.view.current().models[0]!;
+    expect(details.model).toBe(`${shown.provider}/${shown.modelId}`);
+    expect(typeof details.startedAt).toBe("number");
+  });
+
+  it("reports an explicit child model and its start time in details and the live slot", async () => {
+    let finishChild!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const childGate = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (finishChild = resolve));
+    const host = await startFauxHost(defer, {
+      extensions,
+      fauxModels: [
+        { id: "faux-1", name: "Faux Model" },
+        { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+      ],
+      answers: [delegates({ task: "count the lines", model: "faux/faux-thinker" }), () => childGate, "parent final"],
+    });
+    const client = await connectTo(defer, host);
+    const parentId = await startChat(client, "delegate");
+    const childId = await childIdOf(client);
+
+    // While the call runs, the live slot carries the same details clients will
+    // read off the settled tool result.
+    const live = await host.harness.snapshot(LiveDoc, parentId, context);
+    const slot = live?.tools?.find((candidate) => candidate.name === "subagent" && candidate.status === "running");
+    expect(slot).not.toBeUndefined();
+    const liveDetails = slot!.details as { model?: string; startedAt?: number };
+    expect(liveDetails.model).toBe("faux/faux-thinker");
+    expect(typeof liveDetails.startedAt).toBe("number");
+
+    finishChild(fauxAssistantMessage("child answer"));
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+    const details = toolResult(client.view.current().conversation!).details as { model?: string; startedAt?: number };
+    expect(details).toEqual({ conversationId: childId, model: "faux/faux-thinker", startedAt: liveDetails.startedAt });
   });
 
   it("labels the child with the trimmed description the delegating agent gave", async () => {
@@ -246,6 +281,10 @@ describe("subagent tool", () => {
     const parentId = await startChat(client, "delegate");
     const childId = await childIdOf(client);
     // The child is mid-generation: its run will resume when the host reopens.
+    const liveState = await first.harness.snapshot(LiveDoc, parentId, context);
+    const firstStartedAt = (liveState?.tools?.[0]?.details as { startedAt?: number } | undefined)?.startedAt;
+    // The equality check below proves nothing if the slot carried no details.
+    expect(typeof firstStartedAt).toBe("number");
     await watchUntil(first, childId, (view) => (streamingText(view)?.length ?? 0) > 0);
     // openHost.close() writes no outcome, so the turn resumes on the next open.
     await first.close();
@@ -277,5 +316,7 @@ describe("subagent tool", () => {
     const result = toolResult(client.view.current().conversation!);
     expect(result.isError).not.toBe(true);
     expect(resultText(result)).toBe("child answer after restart");
+    // A rerun after restart reports the same start time the creation recorded.
+    expect((result.details as { startedAt?: number }).startedAt).toBe(firstStartedAt);
   });
 });

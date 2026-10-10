@@ -21,6 +21,7 @@ import {
   type JsonObject,
   LiveDoc,
   type LiveState,
+  type ToolSlot,
   type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { WebSocket, WebSocketServer } from "ws";
@@ -52,6 +53,7 @@ import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
 import {
@@ -508,6 +510,7 @@ class ConversationList {
     const facts: ConversationFacts = { pending: new Set(), ...history };
     const live = await harness.snapshot(LiveDoc, record.id, context);
     facts.running = live?.run !== undefined;
+    facts.tools = live?.tools;
     for (const token of this.#questionTokens) {
       const value = await harness.snapshot(token, record.id, context);
       if (Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined)) {
@@ -547,12 +550,15 @@ class ConversationList {
         // timestamp or nothing — never a stale earlier message's.
         facts.updatedAt = typeof message?.timestamp === "number" ? message.timestamp : undefined;
         facts.failed = entry.kind === "pi.assistant" && message?.role === "assistant" && message.stopReason === "error";
+        facts.calls = entry.kind === "pi.assistant" ? callsOf(message) : undefined;
       } else if (change.type === "document") {
         const id = change.conversationId;
         if (id === undefined) continue;
         const facts = this.#fact(id);
         if (change.record.kind === "pi.live") {
-          facts.running = (change.value as LiveState | null)?.run !== undefined;
+          const live = change.value as LiveState | null;
+          facts.running = live?.run !== undefined;
+          facts.tools = live?.tools;
           touched.add(id);
         } else if (this.#questionKinds.has(change.record.kind)) {
           const value = change.value;
@@ -630,6 +636,10 @@ type ConversationFacts = {
   failed?: boolean;
   /** A run is in flight (pi.live has `run`). */
   running?: boolean;
+  /** callId → target, from the newest own assistant entry's tool calls. */
+  calls?: ReadonlyMap<string, string | undefined>;
+  /** The current tool round, kept verbatim from pi.live. */
+  tools?: readonly ToolSlot[];
   /** Question doc kinds that currently hold an unresolved request. */
   pending: Set<string>;
   label?: string;
@@ -639,6 +649,16 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts): Conver
   const parent = record.parent?.conversationId ?? record.owner?.conversationId;
   const status =
     facts.pending.size > 0 ? "needs-answer" : facts.running === true ? "running" : facts.failed === true ? "failed" : undefined;
+  // The tool call in flight, named by the first running slot; its target comes
+  // from the newest assistant entry's arguments, not the slot (they carry none).
+  const runningSlot = facts.running === true ? facts.tools?.find((slot) => slot.status === "running") : undefined;
+  const activity =
+    runningSlot === undefined
+      ? undefined
+      : {
+          tool: runningSlot.name,
+          ...(facts.calls?.get(runningSlot.callId) === undefined ? {} : { target: facts.calls.get(runningSlot.callId) }),
+        };
   return {
     id: record.id,
     kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
@@ -649,6 +669,7 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts): Conver
     ...(status === undefined ? {} : { status }),
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
+    ...(activity === undefined ? {} : { activity }),
   };
 }
 
@@ -662,6 +683,8 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
     && a.status === b.status
     && a.updatedAt === b.updatedAt
     && a.label === b.label
+    && a.activity?.tool === b.activity?.tool
+    && a.activity?.target === b.activity?.target
   );
 }
 
@@ -681,7 +704,10 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
  * an inherited one), updatedAt and failed come from the newest own user/assistant
  * entry. Entries scan newest-first, so the newest match is the first hit.
  */
-async function historyFacts(harness: Harness, id: ConversationId): Promise<Pick<ConversationFacts, "title" | "newest" | "updatedAt" | "failed">> {
+async function historyFacts(
+  harness: Harness,
+  id: ConversationId,
+): Promise<Pick<ConversationFacts, "title" | "newest" | "updatedAt" | "failed" | "calls">> {
   const conversation = (await harness.conversation(id, context))!;
   let first: EntryRecord | undefined;
   let newest: EntryRecord | undefined;
@@ -706,8 +732,21 @@ async function historyFacts(harness: Harness, id: ConversationId): Promise<Pick<
           newest: newest.id,
           ...(typeof message?.timestamp === "number" ? { updatedAt: message.timestamp } : {}),
           failed: newest.kind === "pi.assistant" && message?.role === "assistant" && message.stopReason === "error",
+          ...(newest.kind === "pi.assistant" ? { calls: callsOf(message) } : {}),
         }),
   };
+}
+
+/** callId → target, of an assistant message's tool call blocks. */
+function callsOf(message: unknown): ReadonlyMap<string, string | undefined> | undefined {
+  if ((message as { role?: string } | undefined)?.role !== "assistant") return undefined;
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const calls = new Map<string, string | undefined>();
+  for (const block of content as { type?: string; id?: string; arguments?: unknown }[]) {
+    if (block?.type === "toolCall" && typeof block.id === "string") calls.set(block.id, toolTarget(block.arguments));
+  }
+  return calls.size === 0 ? undefined : calls;
 }
 
 type Subscription = { stop(): Promise<unknown> | void };
