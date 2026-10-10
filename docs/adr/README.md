@@ -10,6 +10,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0001](0001-own-the-ui-contract.md) | PiNomad 拥有自己的 UI 契约，不兼容 Pi CLI 的扩展、配置和会话格式 |
 | [0003](0003-self-hosted-host-remote-clients.md) | 以 coding 为核心：自托管宿主执行，桌面 / Web / 移动端都只是客户端 |
+| [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行 |
 | [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议 |
 
 ## 运行时与呈现
@@ -39,6 +40,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0009](0009-host-lifecycle.md) | 宿主作为用户级系统服务常驻，源码检出升级，等空闲重启 |
 | [0015](0015-relay-splicing-and-host-registration.md) | 自部署中继按设备连接拼接 WebSocket，宿主用独立 Ed25519 密钥签名登记，中继用 HTTPS 提供 Web 客户端 |
 | [0016](0016-npm-single-package-distribution.md) | 分发：单个 npm 包 `pinomad`（宿主+中继+Web 客户端打包成 JS bundle，第三方依赖外置），tag 触发 GitHub Actions 发布 |
+| [0018](0018-protocol-compatibility.md) | 协议兼容：hello 带 `{ major, minor }`，同一主版本内只增不删；两端对不认识的内容回错误或忽略，不断开；上游数据结构靠契约快照盯着；宿主只支持当前主版本 |
 
 ## 遗留项的去向
 
@@ -52,4 +54,6 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0005：`pinomad.approval` | 由 0011 换成 `pinomad.question` |
 | 0012 §5：MCP 工具直接声明，codemode 以后再说 | 由 0013 取代：MCP 默认 `codemode` 暴露 |
 | 0009 §2 安装方式、§6 升级命令 | 由 0016 修订：分发改为 npm 包，打包安装升级走 `npm i -g`；源码检出仍是开发路径 |
+| 0009 §8 协议版本严格相等 | 由 0018 修订：主版本相等即可连接，次版本号用来决定用哪些功能 |
+| 0008 后果：移动端形态（PWA 还是 Expo）、浏览器客户端代码可信 | 由 0017 决定：移动端 Expo，桌面端和移动端都打包代码 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |

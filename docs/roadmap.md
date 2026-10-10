@@ -78,7 +78,6 @@ MCP 本身的后续，都等有明确需求再做：
 - tailnet 直连的后续：同时开着中继时，`pinomad pair` 只给出中继链接，要走直连得取出其中的 `pair=…`，拼到 tailnet 地址后面（现在由本机脚本完成）。用一段时间后，再决定是给 `pair` 加一个选地址的参数，还是并入上面的"二维码带多个候选地址"。另外 `--remote-port` 监听的是 `0.0.0.0`，局域网也能访问到；连上后仍要过 IK 握手，所以暂不限制
 - 长期：账号绑定中继，宿主登记到账号下，客户端用账号找到并连上自己的宿主（类似 Lody）。还没定：账号只管发现和路由、信任仍落在设备密钥上（新设备由已有设备批准，或账号密码走 PAKE 直接和宿主认证），还是由中继背书授权（等于放弃 ADR-0008 的端到端保证）。定了要写新 ADR，修订 ADR-0008 的配对和握手，同步改 `CONTEXT.md` 的"设备"
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
-- 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
 - 官方中继、推送通知（ADR-0008 第三期）
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
 - 对话列表里提示"有问题等你回答"，和推送通知一起做（ADR-0011）
@@ -96,8 +95,18 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 ## M4：客户端完善
 
-- 桌面端（Electron 外壳，按 ADR-0001 从 Pace 复制）
-- 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）
+客户端形态已定（ADR-0017）：桌面端 Electron 只做 macOS arm64，页面打包进 App；Linux 用 Web；移动端 Expo。按顺序：
+
+1. 实现协议兼容（ADR-0018），任何一个打包客户端发布前都要先做完：
+   - hello 带 `protocol: { major: 5, minor: 0 }` 和宿主版本号；客户端只比较主版本号；功能对应的次版本号集中记录在 `packages/protocol`。
+   - `isClientFrame` 区分"不认识"和"格式错误"：宿主对不认识的调用回 unsupported 错误，对不认识的流回 `ended`，忽略不认识的帧类型；格式错误照旧 `close(1008)`。
+   - 客户端忽略不认识的帧类型和字段；收到 1008 关闭时不再重连。
+   - 契约快照：从宿主录一组真实的 snapshot 和 ops 帧作为基准文件，加进 `bun run test`；升级 `@earendil-works/*` 时重新录制并评审变化。
+   - 主版本不一致时，按"客户端太旧"和"宿主太旧"分别提示。
+2. 桌面端 `apps/desktop`：renderer 复用 `apps/web` 的构建；外壳、electron-updater、签名公证从 Pace 复制（注明来源 commit）；私钥存进 `safeStorage`；同时连多台宿主；`pinomad://` 深链配对；通知。内嵌浏览器不搬（宿主可能在别的机器上，预览要经安全通道转发端口），等有需要再说。
+3. 移动端 Expo：先验证 `packages/protocol` 能在 Hermes 上跑（`getRandomValues`、`TextEncoder`、`WebSocket`）、能和 Bun workspaces 一起用；界面用 React Native 重写，不依赖 DOM 的视图推导（如 `CotView`）挪到共享的位置；设计 token 怎么在两端共享还没定。iOS 构建和分发走 EAS / TestFlight。
+- 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）。设置存在哪还没定，候选：写 pi 的 `settings.json`、存进 Durable 的 session 级文档、新建 `~/.pinomad/settings.json`。客户端偏好存在设备本地；宿主启动参数和 `mcp.json` 第一版只读展示。
+- 以后可能有：TUI 客户端（TS，能直接复用 `packages/protocol`）。
 
 ## 等上游
 
@@ -115,7 +124,7 @@ ADR-0005 的候选 `progress`、`table`、`log`、`status` 不单独排期，等
 - 远程配对测试偶发 `UnauthorizedError`，原因未查明
 - Skills 只扫描 `<cwd>/.agents/skills`，在仓库子目录启动时看不到仓库根目录的 Skills；格式有误的 Skill 被直接忽略，不提示用户（ADR-0006）
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）
-- 协议版本号靠人工在破坏性变更时加一，没有机器检查（ADR-0009）
+- 协议版本号靠人工判断该加哪个，没有机器检查（ADR-0009、0018）；契约快照只盯得住上游的数据结构，我们自己的帧仍靠评审
 - macOS 日志不轮转（ADR-0009）
 
 ## 不在计划内
