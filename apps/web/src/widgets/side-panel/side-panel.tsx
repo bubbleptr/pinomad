@@ -18,7 +18,7 @@ import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
-import { displayName, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../../entities/conversation/family.ts";
+import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../../entities/conversation/family.ts";
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
@@ -282,6 +282,9 @@ function SideTranscript({
       ownOnly={ownOnly}
       forkSource={forkSource}
       summaryOf={(id) => findConversation(view.organized, id)?.summary}
+      // Legacy trees nest forks inside forks: the side's own children may
+      // still anchor a chip back to another thread.
+      forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
     />
   );
 }

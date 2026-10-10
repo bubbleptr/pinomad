@@ -254,6 +254,51 @@ it("replaces the Fork action with a 1 fork chip once a message is forked", async
   await panel.getByRole("button", { name: "Open in main", exact: true }).waitFor();
 });
 
+it("shows the 1 fork chip for a legacy nested fork inside the panel's thread", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  const parentId = await followFirst(observer);
+  await page.getByText("first answer", { exact: true }).waitFor();
+
+  // Fork A through the API, then seed the pre-ADR-0019 shape directly: a fork
+  // B anchored at A's own answer — the depth-of-one rule forbids it today.
+  const parentEntryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(parentEntryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+  const forkA = allNodes(observer.view.current()).find((node) => node.summary.kind === "fork")!.summary.id;
+  await waitForView(
+    observer.view,
+    (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "fork answer",
+  );
+  const aEntryId = observer.view.current().conversation!.entries.filter((entry) => entry.conversationId === forkA).at(-1)!.id;
+  await host.harness.commit(
+    async (tx) => tx.forkConversation(forkA, aEntryId, { ownership: { kind: "ownerless" } }),
+    BACKGROUND_CONTEXT,
+  );
+  await observer.controller.switchConversation(parentId);
+  await waitForView(
+    observer.view,
+    (view) =>
+      allNodes(view).filter((node) => node.summary.kind === "fork").length === 2 &&
+      allNodes(view).some((node) => node.summary.parent === forkA),
+  );
+
+  // The chip on A's forked-from message (in the main column) opens A's thread.
+  await page.getByRole("button", { name: "1 fork", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+
+  // A's own run anchored B: the chip inside the panel opens B's thread too.
+  await panel.getByRole("button", { name: "1 fork", exact: true }).click();
+  await panel.getByRole("button", { name: "Open in main", exact: true }).waitFor();
+  await panel.getByText(/Forked from/, { exact: false }).waitFor();
+});
+
 it("opens the existing fork instead of the dialog when a message was already forked", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });

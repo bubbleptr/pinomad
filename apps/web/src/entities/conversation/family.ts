@@ -98,3 +98,14 @@ export function taskGroupsOf(root: ConversationNode): { owner: ConversationSumma
   }
   return groups;
 }
+
+/** The forks anchored at one of a conversation's entries — the "N forks" chip's targets. */
+export function forksAt(
+  organized: Organized,
+  conversationId: ConversationSummary["id"],
+  entryId: string,
+): ConversationSummary["id"][] {
+  return (findConversation(organized, conversationId)?.children ?? [])
+    .filter((child) => child.summary.forkedAt === entryId)
+    .map((child) => child.summary.id);
+}

@@ -10,7 +10,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
-import { displayName, rootOf } from "./entities/conversation/family.ts";
+import { displayName, forksAt, rootOf } from "./entities/conversation/family.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -381,13 +381,9 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   const canFork = shownSummary?.kind === "conversation";
   // A forked message shows the "N forks" chip instead of the Fork button —
   // legacy data can hold several per message (ADR-0019 §3).
-  const forksAt = useCallback(
+  const forksAtForShown = useCallback(
     (entryId: string): ConversationId[] =>
-      shownSummary === undefined
-        ? []
-        : (findConversation(view.organized, shownSummary.id)?.children ?? [])
-            .filter((child) => child.summary.forkedAt === entryId)
-            .map((child) => child.summary.id),
+      shownSummary === undefined ? [] : forksAt(view.organized, shownSummary.id, entryId),
     [view.organized, shownSummary],
   );
   // Live summaries power the subagent cards in the transcript.
@@ -463,7 +459,7 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
               canFork={canFork}
               openInPanel={openInPanel}
               onFork={setForkTarget}
-              forksAt={forksAt}
+              forksAt={forksAtForShown}
               summaryOf={summaryOf}
             />
           </ChatLayout>

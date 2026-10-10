@@ -495,20 +495,38 @@ export function deriveChat(
  * identified by tool name (a still-streaming call has no details yet), their
  * order is preserved, and a tools step emptied by the lift is dropped.
  */
-export function splitSubagentCalls(view: CotView): { view: CotView; subagents: ChatToolItem[] } {
-  const subagents: ChatToolItem[] = [];
+export function splitSubagentCalls(view: CotView): { view: CotView; subagents: { key: string; tool: ChatToolItem }[] } {
+  const subagents: { key: string; tool: ChatToolItem }[] = [];
   const steps: CotStep[] = [];
   for (const step of view.steps) {
     if (step.kind !== "tools") {
       steps.push(step);
       continue;
     }
-    const rest = step.tools.filter((tool) => {
-      if (tool.toolName !== "subagent") return true;
-      subagents.push(tool);
-      return false;
+    const rest: ChatToolItem[] = [];
+    step.tools.forEach((tool, index) => {
+      if (tool.toolName !== "subagent") {
+        rest.push(tool);
+        return;
+      }
+      // Call ids only have to be unique within one message — providers reuse
+      // them — so the key scopes each card to its step.
+      subagents.push({ key: `${step.id}/${tool.toolCallId ?? index}`, tool });
     });
-    if (rest.length > 0) steps.push({ ...step, tools: rest });
+    if (rest.length === 0) continue;
+    // The lifted call may have been the step's active one: a live row would
+    // keep naming it (or worse, fall back to the last tool).
+    if (step.activeToolCallId !== undefined && !rest.some((tool) => tool.toolCallId === step.activeToolCallId)) {
+      const nextActive = rest.find((tool) => tool.state === "input-streaming" || tool.state === "input-available");
+      if (nextActive === undefined) {
+        const { activeToolCallId: _, ...settled } = step;
+        steps.push({ ...settled, tools: rest, live: false });
+      } else {
+        steps.push({ ...step, tools: rest, ...(nextActive.toolCallId === undefined ? {} : { activeToolCallId: nextActive.toolCallId }) });
+      }
+    } else {
+      steps.push({ ...step, tools: rest });
+    }
   }
   return { view: { ...view, steps }, subagents };
 }

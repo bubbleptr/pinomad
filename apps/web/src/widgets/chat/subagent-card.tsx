@@ -95,18 +95,18 @@ export function SubagentCards({
   summaryOf,
   openInPanel,
 }: {
-  tools: readonly ChatToolItem[];
+  tools: readonly { key: string; tool: ChatToolItem }[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
 }) {
   if (tools.length === 0) return null;
   return (
     <VStack gap={2} className="pigui-subagent-cards">
-      {tools.map((tool, index) => {
+      {tools.map(({ key, tool }) => {
         const pinomad = pinomadOf(tool);
         return (
           <SubagentCard
-            key={tool.toolCallId ?? index}
+            key={key}
             tool={tool}
             summary={pinomad?.kind === "subagent" ? summaryOf?.(pinomad.conversationId) : undefined}
             openInPanel={openInPanel}
