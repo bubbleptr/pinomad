@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-09
+最后更新：2026-10-10
 
 ## 已完成
 
@@ -22,6 +22,7 @@
 - 远程访问第二期：自部署中继 `apps/relay`，宿主 `--relay` 主动连出，每台设备一条数据连接拼接到同一个 IK 握手；宿主用独立 Ed25519 密钥签名登记，中继按 `--allow-host` 白名单接受；中继用 HTTPS 提供 Web 客户端，配对链接优先指向中继（ADR-0008、0015）
 - npm 单包分发：一个公开的 `pinomad` 包装宿主、中继和构建好的 Web 客户端（Bun.build 打我们自己的代码，第三方依赖外置）；`pinomad` 单入口分发子命令；打包安装升级走 `npm i -g`；tag 触发 GitHub Actions 发布（OIDC trusted publishing）（ADR-0016）。仓库已公开，`pinomad@0.1.0` 已手动首发；trusted publisher 已配置（只允许 `npm publish`，不开 `npm dist-tag`），`v0.1.1` 由 tag 流水线经 OIDC 自动发布并带 provenance
 - Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
+- tailnet 直连试用：Mac 和 Omarchy 都装官方 Tailscale 客户端，和 sing-box 共存。共用的 sing-box 配置要改两处：DNS 规则让 `tailscale.com` / `tailscale.io` 不走 FakeIP，否则控制面连不上；tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。`tailscale ping` 显示经局域网直连，2–7ms，没走 DERP。Omarchy 开了 Tailscale SSH，tailnet 策略加了一条 SSH 规则（成员登录自己的设备，非 root）。宿主带 `--remote-port 7422` 和 `--relay` 同时跑：tailnet 内的设备直连，不在 tailnet 里的设备仍走中继。Mac 已经配对上并通过直连使用（2026-10-10）
 
 ## M1：并行任务的审阅与对齐（已完成）
 
@@ -74,7 +75,7 @@ MCP 本身的后续，都等有明确需求再做：
 场景：一台 7x24 常驻的 Linux 机器（Omarchy）当宿主跑任务，出门在外也能连上。自部署中继和 Omarchy 真机常驻都已完成（见"已完成"）。
 
 - 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
-- 短期试用 tailnet 直连：Mac 和 Omarchy 都装官方 Tailscale（Omarchy 用 `tailscale up --ssh` 顺带解决 SSH），共用的 sing-box 配置只在 tun 里加 `route_exclude_address` 排除 tailnet 网段；Mac 上若官方 App 和 SFM 冲突（`tailscale ping` 走 DERP），退回 SFM 内置 Tailscale 节点。宿主加开 `--remote-port` 并用 tailnet 地址作 `--public-url`，Mac 走直连拿局域网速度、手机在外仍走中继。现在同时开中继时 `pinomad pair` 只给中继链接，直连链接要手动改；用顺了再决定要不要给 `pair` 加选候选地址的参数
+- tailnet 直连的后续：同时开着中继时，`pinomad pair` 只给出中继链接，要走直连得取出其中的 `pair=…`，拼到 tailnet 地址后面（现在由本机脚本完成）。用一段时间后，再决定是给 `pair` 加一个选地址的参数，还是并入上面的"二维码带多个候选地址"。另外 `--remote-port` 监听的是 `0.0.0.0`，局域网也能访问到；连上后仍要过 IK 握手，所以暂不限制
 - 长期：账号绑定中继，宿主登记到账号下，客户端用账号找到并连上自己的宿主（类似 Lody）。还没定：账号只管发现和路由、信任仍落在设备密钥上（新设备由已有设备批准，或账号密码走 PAKE 直接和宿主认证），还是由中继背书授权（等于放弃 ADR-0008 的端到端保证）。定了要写新 ADR，修订 ADR-0008 的配对和握手，同步改 `CONTEXT.md` 的"设备"
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 移动端形态：PWA 还是 Expo。这一项也决定浏览器客户端代码可信的问题怎么解决（需要新 ADR；ADR-0008 后果）
