@@ -64,12 +64,18 @@ export function ConnectionDot({ connection }: { connection: DurableView["connect
 export function SidebarHeaderBand({
   connection,
   onCollapse,
+  safeLeft,
 }: {
   connection: DurableView["connection"];
   onCollapse?: () => void;
+  /** Left inset reserved for the macOS traffic lights when the sidebar owns the corner. */
+  safeLeft?: string;
 }) {
   return (
-    <div className="flex h-6 items-center justify-between px-2">
+    <div
+      className="pinomad-drag flex h-6 items-center justify-between px-2"
+      style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
+    >
       <IconButton
         icon={<AnimatedSidebar className="size-4" />}
         label="Collapse sidebar"

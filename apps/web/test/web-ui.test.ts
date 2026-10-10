@@ -969,6 +969,30 @@ it("explains a loopback pairing link instead of drawing an unusable QR", async (
   await expect.poll(() => dialog.getByText(/#pair=/, { exact: false }).count()).toBeGreaterThan(0);
 });
 
+it("pairs a device by pasting the loopback link on the no-link screen", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["pasted-link hello"] });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  // No remote access: the offer targets the loopback /secure path.
+  expect(pairingUrl).toContain("%2Fsecure");
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage();
+  await page.goto(webOrigin);
+  await page.getByText("No host link").waitFor();
+
+  await page.getByLabel("Pairing link").fill(pairingUrl);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  const composer = page.getByRole("textbox");
+  await composer.waitFor();
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("pasted-link hello").waitFor();
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+});
+
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });

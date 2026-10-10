@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_HOST_URL, deviceName, resolveAddress, servedByHost } from "../src/address.ts";
+import { DEFAULT_HOST_URL, deviceName, pairingFragment, resolveAddress, servedByHost } from "../src/address.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
@@ -54,6 +54,45 @@ describe("resolveAddress", () => {
     expect(resolveAddress("", http, "not json")).toBeUndefined();
     expect(resolveAddress("", http, JSON.stringify({ url: "w" }))).toBeUndefined();
     expect(resolveAddress("", http, JSON.stringify({ url: "w", hostKey: "!!", privateKey: deviceKey }))).toBeUndefined();
+  });
+});
+
+describe("pairingFragment", () => {
+  it("normalizes a pasted LAN link, resolving the socket against its origin", () => {
+    expect(pairingFragment(`http://192.168.1.10:7420/#pair=${hostKey}.sec`)).toBe(
+      `pair=${hostKey}.sec&url=${encodeURIComponent("ws://192.168.1.10:7420/")}`,
+    );
+    expect(pairingFragment(`https://pinomad.example.com/#pair=${hostKey}.sec`)).toBe(
+      `pair=${hostKey}.sec&url=${encodeURIComponent("wss://pinomad.example.com/")}`,
+    );
+  });
+
+  it("keeps an explicit url param (relay, loopback /secure)", () => {
+    const relayTarget = encodeURIComponent("wss://relay.example.com/c/abc");
+    expect(pairingFragment(`https://relay.example.com/#pair=${hostKey}.sec&url=${relayTarget}`)).toBe(
+      `pair=${hostKey}.sec&url=${relayTarget}`,
+    );
+    const loopback = encodeURIComponent("ws://127.0.0.1:7420/secure");
+    expect(pairingFragment(`http://127.0.0.1:7420/#pair=${hostKey}.sec&url=${loopback}`)).toBe(
+      `pair=${hostKey}.sec&url=${loopback}`,
+    );
+  });
+
+  it("accepts a pinomad:// deep link, which must carry its own url", () => {
+    const target = encodeURIComponent("ws://127.0.0.1:7420/secure");
+    expect(pairingFragment(`pinomad://pair#pair=${hostKey}.sec&url=${target}`)).toBe(
+      `pair=${hostKey}.sec&url=${target}`,
+    );
+    // pinomad:// has no usable origin to resolve a socket against.
+    expect(pairingFragment(`pinomad://pair#pair=${hostKey}.sec`)).toBeUndefined();
+  });
+
+  it("rejects token links and non-pairing text", () => {
+    expect(pairingFragment(`http://127.0.0.1:5199/#token=abc`)).toBeUndefined();
+    expect(pairingFragment("#pair=unlinked")).toBeUndefined();
+    expect(pairingFragment("hello")).toBeUndefined();
+    expect(pairingFragment("")).toBeUndefined();
+    expect(pairingFragment(`http://127.0.0.1:7420/#pair=`)).toBeUndefined();
   });
 });
 

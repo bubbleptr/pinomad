@@ -25,7 +25,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { DEVICE_KEY, deviceName, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
+import { DEVICE_KEY, deviceName, pairingFragment, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 
 const page: CSSProperties = {
@@ -44,14 +44,55 @@ export function App() {
   if (address === undefined) {
     return (
       <Centered>
-        <EmptyState
-          title="No host link"
-          description="Open the token link the host printed, or scan a pairing QR on this device."
-        />
+        <NoHostLink />
       </Centered>
     );
   }
   return <Connected address={address} />;
+}
+
+/** Where a client with no stored pairing lands: paste a pairing link to pair. */
+function NoHostLink() {
+  const [pasted, setPasted] = useState("");
+  const [error, setError] = useState<string>();
+  const connect = (): void => {
+    const fragment = pairingFragment(pasted);
+    if (fragment === undefined) {
+      // Token links deserve the specific hint: they exist, they just can't pair.
+      setError(
+        /[#?&]token=/.test(pasted)
+          ? "Token links can't pair a device — paste a pairing link instead (pinomad pair, or Devices → Pair a device)."
+          : "That isn't a pairing link — paste one like http://<host>/#pair=… or pinomad://pair#pair=…",
+      );
+      return;
+    }
+    window.location.hash = fragment;
+    window.location.reload();
+  };
+  return (
+    <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
+      <EmptyState
+        title="No host link"
+        description="Paste a pairing link from pinomad pair or Devices → Pair a device."
+      />
+      <HStack gap={2} vAlign="end" style={{ width: "100%" }}>
+        <TextInput
+          label="Pairing link"
+          isLabelHidden
+          placeholder="http://…/#pair=… or pinomad://pair#…"
+          value={pasted}
+          onChange={(value) => {
+            setError(undefined);
+            setPasted(value);
+          }}
+          onEnter={connect}
+          style={{ flex: 1 }}
+        />
+        <Button label="Connect" variant="primary" isDisabled={pasted.trim() === ""} onClick={connect} />
+      </HStack>
+      {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
+    </VStack>
+  );
 }
 
 export function Centered({ children }: { children: ReactNode }) {

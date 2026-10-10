@@ -65,6 +65,34 @@ export function resolveAddress(
   return device === undefined ? undefined : { kind: "device", ...device };
 }
 
+/**
+ * A pasted pairing link → the fragment resolveAddress reads. Links without a
+ * `url` param (LAN) resolve the socket against the PASTED link's origin —
+ * never this page's: under the desktop app the page origin is `app://pinomad`
+ * and would produce a meaningless ws:// URL. Token links are rejected: the
+ * desktop (and any pasted-link flow) authenticates as a paired device
+ * (ADR-0020 §1), never with the shared secret.
+ */
+export function pairingFragment(pasted: string): string | undefined {
+  let link: URL;
+  try {
+    link = new URL(pasted.trim());
+  } catch {
+    return undefined;
+  }
+  const fragment = link.hash.replace(/^#/, "");
+  const params = new URLSearchParams(fragment);
+  const pair = params.get("pair");
+  if (pair === null || pair === "") return undefined;
+  let url = params.get("url");
+  if (url === null || url === "") {
+    if (link.protocol === "http:") url = `ws://${link.host}/`;
+    else if (link.protocol === "https:") url = `wss://${link.host}/`;
+    else return undefined;
+  }
+  return `pair=${pair}&url=${encodeURIComponent(url)}`;
+}
+
 /** Whether this page was served by the host it talks to — then a reload picks up a matching bundle. */
 export function servedByHost(wsUrl: string, location: { host: string }): boolean {
   return new URL(wsUrl).host === location.host;

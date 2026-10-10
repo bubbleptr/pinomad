@@ -621,3 +621,13 @@ body {
   82% { d: path("M8.3 3.02V20.98"); }
   92% { d: path("M9.25 3V21"); }
 }
+
+/* The Electron preload sets data-pinomad-platform before page scripts. On
+   macOS the hidden title bar parks its traffic lights over the top-left band;
+   that band is the window's drag surface, and its controls opt out. */
+[data-pinomad-platform="darwin"] .pinomad-drag {
+  -webkit-app-region: drag;
+}
+[data-pinomad-platform="darwin"] .pinomad-drag :is(button, a, input, select, textarea, [role="button"]) {
+  -webkit-app-region: no-drag;
+}
