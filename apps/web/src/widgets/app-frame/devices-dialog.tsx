@@ -122,12 +122,21 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
       </HStack>
     );
   }
+  // A loopback link only reaches clients on this machine: the QR would send a
+  // phone to an address it cannot open (ADR-0020 §4), so show the hint instead.
+  const loopback = new URL(url).hostname === "127.0.0.1";
   return (
     <VStack gap={3} hAlign="center">
-      <QrImage text={url} />
+      {loopback ? null : <QrImage text={url} />}
       <Text type="supporting" style={{ wordBreak: "break-all", userSelect: "all" }}>
         {url}
       </Text>
+      {loopback ? (
+        <Text type="supporting">
+          This link only works on this machine — paste it into the desktop app. To pair a phone, start the host with
+          --remote-port or --relay.
+        </Text>
+      ) : null}
       <Text type="supporting">
         Expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
       </Text>
