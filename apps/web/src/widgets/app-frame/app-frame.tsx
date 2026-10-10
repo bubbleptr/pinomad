@@ -17,6 +17,7 @@ import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
+import { PairHostDialog } from "./host-switcher.tsx";
 import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
@@ -76,6 +77,7 @@ export function AppFrame({
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [pairHostOpen, setPairHostOpen] = useState(false);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
@@ -117,7 +119,13 @@ export function AppFrame({
                   safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
                 />
               }
-              footer={<SidebarFooter view={view} onOpenDevices={() => setDevicesOpen(true)} />}
+              footer={
+                <SidebarFooter
+                  view={view}
+                  onOpenDevices={() => setDevicesOpen(true)}
+                  onPairHost={() => setPairHostOpen(true)}
+                />
+              }
             >
               {sidebar}
             </SideNav>
@@ -177,7 +185,12 @@ export function AppFrame({
           }
         >
           {sidebar}
-          <SidebarFooter view={view} onOpenDevices={() => setDevicesOpen(true)} onSelect={() => setNavOpen(false)} />
+          <SidebarFooter
+            view={view}
+            onOpenDevices={() => setDevicesOpen(true)}
+            onPairHost={() => setPairHostOpen(true)}
+            onSelect={() => setNavOpen(false)}
+          />
         </MobileNav>
       ) : null}
       {narrow ? (
@@ -197,6 +210,7 @@ export function AppFrame({
       {devicesOpen ? (
         <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
       ) : null}
+      {pairHostOpen ? <PairHostDialog onClose={() => setPairHostOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
           that lists them starts closed. isTopLayer lifts it above dialogs. */}

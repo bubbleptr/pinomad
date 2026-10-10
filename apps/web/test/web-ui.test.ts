@@ -1648,3 +1648,100 @@ it("opens a switched conversation at its latest answer instead of the old scroll
     })
     .toBeLessThan(8);
 });
+
+it("switches between paired hosts on the desktop bridge", async () => {
+  const webOrigin = await startWeb();
+  const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const hostB = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host B answer"] });
+  const tokenA = await connectTo(defer, hostA);
+  const tokenB = await connectTo(defer, hostB);
+  const { url: pairA } = await tokenA.controller.createPairing();
+  const { url: pairB } = await tokenB.controller.createPairing();
+  // The stored url is the loopback /secure target; its host:port is the label.
+  const labelA = new URL(hostA.url).host;
+  const labelB = new URL(hostB.url).host;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  // A localStorage-backed stand-in for the Electron preload bridge, so the
+  // paired-host list survives the page reloads that switch hosts.
+  await context.addInitScript(() => {
+    const KEY = "test.desktopHosts";
+    const read = (): { hostKey: string }[] => JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const write = (hosts: { hostKey: string }[]): void => {
+      localStorage.setItem(KEY, JSON.stringify(hosts));
+    };
+    (window as unknown as { pinomadDesktop: unknown }).pinomadDesktop = {
+      hosts: {
+        list: () => Promise.resolve(read()),
+        save: (host: { hostKey: string }) => {
+          write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
+          return Promise.resolve();
+        },
+        remove: (hostKey: string) => {
+          write(read().filter((each) => each.hostKey !== hostKey));
+          return Promise.resolve();
+        },
+      },
+    };
+  });
+  const page = await context.newPage();
+  // Pairing must mount the client exactly once: saving the host clears the
+  // fragment, and re-resolving the address mid-flight would mount a second
+  // client. StrictMode double-runs the mount effect in dev, so one mount is
+  // two sockets here (the first is cancelled); a remount doubles that again.
+  const sockets = { a: 0, b: 0 };
+  page.on("websocket", (ws) => {
+    if (ws.url() === `${hostA.url}/secure`) sockets.a += 1;
+    if (ws.url() === `${hostB.url}/secure`) sockets.b += 1;
+  });
+
+  // Pair host A by pasting its loopback link.
+  await page.goto(webOrigin);
+  await page.getByText("No host link").waitFor();
+  await page.getByLabel("Pairing link").fill(pairA);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  const composer = page.getByRole("textbox");
+  await composer.waitFor();
+  await composer.fill("hello A");
+  await composer.press("Enter");
+  await page.getByText("host A answer", { exact: true }).waitFor();
+  expect(sockets.a).toBe(2);
+
+  // Pair host B through the sidebar switcher — a second pairing never warns
+  // about replacing in multi-host mode.
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Pairing link").fill(pairB);
+  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByText("Pair with this host?").waitFor();
+  expect(await page.getByText("Replaces your current pairing").count()).toBe(0);
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await composer.waitFor();
+  await composer.fill("hello B");
+  await composer.press("Enter");
+  await page.getByText("host B answer", { exact: true }).waitFor();
+  await waitForView(tokenB.view, (view) => view.devices.length === 1);
+  expect(sockets.b).toBe(2);
+
+  // The switcher lists both hosts; selecting A reconnects to it (the "hello A"
+  // conversation only exists on A).
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
+  expect(sockets.a).toBe(4);
+
+  // A dead host lands on a failure screen that still offers the switcher.
+  await hostB.close();
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelB, exact: true }).click();
+  await page.getByText("Could not connect to the host", { exact: true }).waitFor();
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
+  expect(sockets.a).toBe(6);
+});
