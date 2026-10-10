@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, type ClientFrame, type ServerFrame } from "../src/frames.ts";
+import { PROTOCOL, type ClientFrame, type ProtocolVersion, type ServerFrame } from "../src/frames.ts";
 import { connectRemoteDurable, ProtocolMismatchError, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { DurableView } from "../src/view.ts";
@@ -21,20 +21,21 @@ interface Fake {
 }
 
 /** A transport that answers each connection with a hello for `protocols[i]` (last repeats) and snapshots on subscribe. */
-function fakeTransport(protocols: readonly number[]): Fake {
+function fakeTransport(protocols: readonly (ProtocolVersion | number)[], helloExtras?: Record<string, unknown>): Fake {
   const opened: FrameHandlers[] = [];
   let closedCount = 0;
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
       opened.push(handlers);
-      const hello: ServerFrame = {
+      const hello = {
         type: "hello",
         protocol: protocols[Math.min(opened.length - 1, protocols.length - 1)]!,
         session: { id: "fake", directory: "" },
         models: [],
         docs: [],
         toolPresentations: {},
+        ...helloExtras,
       };
       queueMicrotask(() => handlers.message(JSON.stringify(hello)));
       return {
@@ -75,22 +76,54 @@ function waitForView(remote: RemoteDurable, predicate: (view: DurableView) => bo
   });
 }
 
+async function connectError(fake: Fake): Promise<unknown> {
+  return connectRemoteDurable({ transport: fake.transport }).then(
+    () => {
+      throw new Error("connected");
+    },
+    (error: unknown) => error,
+  );
+}
+
 describe("protocol version check", () => {
-  it("rejects the initial connect when the hello's protocol does not match", async () => {
-    const fake = fakeTransport([PROTOCOL_VERSION + 1]);
-    const error = await connectRemoteDurable({ transport: fake.transport }).then(
-      () => {
-        throw new Error("connected");
-      },
-      (error: unknown) => error,
-    );
+  it("connects when only the minor version differs", async () => {
+    for (const minor of [0, 3]) {
+      const fake = fakeTransport([{ major: PROTOCOL.major, minor }]);
+      const remote = await connectRemoteDurable({ transport: fake.transport });
+      expect(remote.view.current().connection).toBe("connected");
+      remote.close();
+    }
+  });
+
+  it("rejects the initial connect when the hello's major does not match", async () => {
+    const fake = fakeTransport([{ major: PROTOCOL.major + 1, minor: 0 }]);
+    const error = await connectError(fake);
     expect(error).toBeInstanceOf(ProtocolMismatchError);
-    expect(error).toMatchObject({ host: PROTOCOL_VERSION + 1, client: PROTOCOL_VERSION });
+    expect(error).toMatchObject({
+      hostMajor: PROTOCOL.major + 1,
+      clientMajor: PROTOCOL.major,
+      direction: "client-older",
+    });
     expect(fake.closedCount()).toBe(1);
   });
 
+  it("reads a legacy integer protocol as the host's major", async () => {
+    // Hosts up to v4 announced a bare integer; 4 < 5 means the host is older.
+    const fake = fakeTransport([4]);
+    const error = await connectError(fake);
+    expect(error).toBeInstanceOf(ProtocolMismatchError);
+    expect(error).toMatchObject({ hostMajor: 4, clientMajor: PROTOCOL.major, direction: "host-older" });
+    expect(fake.closedCount()).toBe(1);
+  });
+
+  it("carries the announced hostVersion into the mismatch error", async () => {
+    const fake = fakeTransport([{ major: PROTOCOL.major + 1, minor: 0 }], { hostVersion: "9.9.9" });
+    const error = await connectError(fake);
+    expect(error).toMatchObject({ hostMajor: PROTOCOL.major + 1, hostVersion: "9.9.9" });
+  });
+
   it("marks the view outdated and stops reconnecting when a reconnect's hello mismatches", async () => {
-    const fake = fakeTransport([PROTOCOL_VERSION, PROTOCOL_VERSION + 1]);
+    const fake = fakeTransport([PROTOCOL, { major: PROTOCOL.major + 1, minor: 2 }]);
     const remote = await connectRemoteDurable({
       transport: fake.transport,
       reconnectDelayMs: { min: 1, max: 1 },
@@ -99,6 +132,11 @@ describe("protocol version check", () => {
     fake.opened[0]!.closed(1006);
     await waitForView(remote, (view) => view.connection === "outdated");
     expect(fake.opened).toHaveLength(2);
+    expect(remote.view.current().protocolMismatch).toMatchObject({
+      hostMajor: PROTOCOL.major + 1,
+      clientMajor: PROTOCOL.major,
+      direction: "client-older",
+    });
     // The closed socket is dropped; no further reconnect may be scheduled. The
     // delay is only an assertion bound — the client has no timer left to fire.
     fake.opened[1]!.closed(1006);

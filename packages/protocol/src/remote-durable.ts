@@ -10,7 +10,8 @@ import {
   type ClientFrame,
   conversationStream,
   docStream,
-  PROTOCOL_VERSION,
+  INVALID_FRAME_CLOSE_CODE,
+  PROTOCOL,
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
@@ -64,18 +65,30 @@ export class UnauthorizedError extends Error {
 }
 
 /**
- * The host's hello announced a protocol this client does not speak. Before the
- * first view the ready promise rejects with it; after, the view's connection
- * goes "outdated" and no calls are sent — a host-served page reloads instead.
+ * The host's hello announced a major this client does not speak (ADR-0018).
+ * Before the first view the ready promise rejects with it; after, the view's
+ * connection goes "outdated" and no calls are sent — a host-served page
+ * reloads instead.
  */
 export class ProtocolMismatchError extends Error {
-  readonly host: number;
-  readonly client: number;
-  constructor(host: number, client: number) {
-    super(`Host protocol mismatch: host speaks ${host}, this client speaks ${client}`);
+  readonly hostMajor: number;
+  readonly clientMajor: number;
+  /** Packaged release version the host announced; absent for a source checkout. */
+  readonly hostVersion?: string;
+  /** Which side is behind: `client-older` → update the app; `host-older` → upgrade the host. */
+  readonly direction: "client-older" | "host-older";
+  constructor(hostMajor: number, clientMajor: number, hostVersion?: string) {
+    const direction = hostMajor > clientMajor ? ("client-older" as const) : ("host-older" as const);
+    super(
+      direction === "client-older"
+        ? `Client out of date: the host speaks protocol major ${hostMajor}, this client speaks ${clientMajor}`
+        : `Host out of date: this client speaks protocol major ${clientMajor}, the host speaks ${hostMajor}`,
+    );
     this.name = "ProtocolMismatchError";
-    this.host = host;
-    this.client = client;
+    this.hostMajor = hostMajor;
+    this.clientMajor = clientMajor;
+    if (hostVersion !== undefined) this.hostVersion = hostVersion;
+    this.direction = direction;
   }
 }
 
@@ -141,8 +154,20 @@ class RemoteClient {
     if (this.#closed) return;
     if (code === UNAUTHORIZED_CLOSE_CODE) {
       this.#closed = true;
-      this.#update({ connection: "closed" });
+      this.#update({ connection: "closed", unauthorized: true });
       this.#notice("error", new UnauthorizedError().message);
+      return;
+    }
+    // 4400 is terminal like 4401 (ADR-0018 §4): the host rejected a malformed
+    // frame from this client, and a reconnect would send the same ones. A
+    // plain 1008 (a failed secure handshake, say) still reconnects below.
+    if (code === INVALID_FRAME_CLOSE_CODE) {
+      this.#closed = true;
+      this.#update({ connection: "closed" });
+      this.#notice(
+        "error",
+        `The host rejected a malformed frame from this client${reason === undefined ? "" : `: ${reason}`}`,
+      );
       return;
     }
     this.#update({ connection: "reconnecting" });
@@ -158,18 +183,42 @@ class RemoteClient {
   }
 
   #receive(frame: ServerFrame): void {
+    // ADR-0018 §4: a newer host's frames — including types and shapes this
+    // build does not know — are ignored, never fatal.
+    if (frame === null || typeof frame !== "object") return;
     switch (frame.type) {
       case "hello": {
-        if (frame.protocol !== PROTOCOL_VERSION) {
+        // Hosts up to v4 announced a bare integer; the frame type says
+        // ProtocolVersion, so read it defensively rather than widen the type.
+        const announced: unknown = frame.protocol;
+        const hostMajor =
+          typeof announced === "number"
+            ? announced
+            : announced !== null && typeof announced === "object"
+              ? (announced as { major?: unknown }).major
+              : undefined;
+        if (hostMajor !== PROTOCOL.major) {
           // Reconnecting would loop on the same mismatch; mark closed first so
           // the close below stays terminal, then surface it the way the view
           // can tell it from a lost connection.
-          const mismatch = new ProtocolMismatchError(frame.protocol, PROTOCOL_VERSION);
+          const mismatch = new ProtocolMismatchError(
+            typeof hostMajor === "number" ? hostMajor : Number.NaN,
+            PROTOCOL.major,
+            frame.hostVersion,
+          );
           this.#closed = true;
           if (this.#state === undefined) {
             this.#rejectReady(mismatch);
           } else {
-            this.#update({ connection: "outdated" });
+            this.#update({
+              connection: "outdated",
+              protocolMismatch: {
+                hostMajor: mismatch.hostMajor,
+                clientMajor: mismatch.clientMajor,
+                ...(mismatch.hostVersion === undefined ? {} : { hostVersion: mismatch.hostVersion }),
+                direction: mismatch.direction,
+              },
+            });
             this.#notice("error", mismatch.message);
           }
           this.#connection?.close();

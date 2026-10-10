@@ -26,8 +26,9 @@ import {
   type CallMethod,
   type CallMethods,
   type ClientFrame,
-  isClientFrame,
-  PROTOCOL_VERSION,
+  parseClientFrame,
+  INVALID_FRAME_CLOSE_CODE,
+  PROTOCOL,
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
@@ -44,6 +45,7 @@ import {
 } from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchSuffix, changesOf, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreeExists, worktreePath } from "./checkout.ts";
+import { packagedVersion } from "./distribution.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -541,24 +543,40 @@ class GatewayClient {
     this.devicePublicKey = hooks.devicePublicKey;
     connection.handle({
       message: (text) => {
-        let frame: unknown;
+        let parsed: ReturnType<typeof parseClientFrame>;
         try {
-          frame = JSON.parse(text);
+          parsed = parseClientFrame(JSON.parse(text));
         } catch {
-          connection.close(1008, "Invalid client frame");
+          connection.close(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
           return;
         }
-        if (!isClientFrame(frame)) {
-          connection.close(1008, "Invalid client frame");
-          return;
+        // ADR-0018 §3: unknown content gets an answer or silence so a newer
+        // client keeps its connection; only a malformed frame is a bug.
+        switch (parsed.kind) {
+          case "frame":
+            void this.#receive(parsed.frame).catch(() => connection.close(1011, "Gateway request failed"));
+            return;
+          case "unsupportedCall":
+            void this.send({ type: "result", id: parsed.id, ok: false, error: `Unsupported method: ${parsed.method}` });
+            return;
+          case "unsupportedStream":
+            if (parsed.type === "subscribe") {
+              void this.send({ type: "ended", stream: parsed.stream as StreamName, reason: "Unsupported stream" });
+            }
+            return;
+          case "unknownType":
+            return;
+          case "malformed":
+            connection.close(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
+            return;
         }
-        void this.#receive(frame).catch(() => connection.close(1011, "Gateway request failed"));
       },
       closed: () => hooks.closed(this),
     });
     void this.send({
       type: "hello",
-      protocol: PROTOCOL_VERSION,
+      protocol: PROTOCOL,
+      ...(packagedVersion === undefined ? {} : { hostVersion: packagedVersion }),
       session: options.session,
       models: options.modelSummaries(),
       defaults: options.defaults,

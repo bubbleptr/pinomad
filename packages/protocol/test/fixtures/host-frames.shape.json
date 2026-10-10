@@ -1,0 +1,450 @@
+{
+  "frames": {
+    "hello": {
+      "defaults": {
+        "model": {
+          "modelId": "string",
+          "provider": "string"
+        }
+      },
+      "docs": [],
+      "models": [
+        {
+          "contextWindow": "number",
+          "modelId": "string",
+          "name": "string",
+          "provider": "string",
+          "thinkingLevels": [
+            "string"
+          ]
+        }
+      ],
+      "protocol": {
+        "major": "number",
+        "minor": "number"
+      },
+      "session": {
+        "directory": "string",
+        "id": "string"
+      },
+      "toolPresentations": {
+        "edit": "string",
+        "write": "string"
+      },
+      "type": "=hello"
+    },
+    "result": {
+      "id": "number",
+      "ok": "boolean",
+      "type": "=result",
+      "value": {
+        "conversationId": "number"
+      }
+    }
+  },
+  "streams": {
+    "conversation:*": {
+      "value": {
+        "conversation": {
+          "id": "number"
+        },
+        "docs": {
+          "pi.agent": {
+            "cwd": "string",
+            "model": {
+              "modelId": "string",
+              "provider": "string"
+            },
+            "thinkingLevel": "string"
+          },
+          "pi.inbox": {
+            "items": []
+          },
+          "pi.live": {
+            "generation": {
+              "attempt": "number"
+            },
+            "run": {
+              "inputs": [
+                "number"
+              ],
+              "taskId": "number"
+            },
+            "tools": [
+              {
+                "callId": "string",
+                "entry": "number",
+                "name": "string",
+                "status": "string",
+                "taskId": "number"
+              },
+              {
+                "callId": "string",
+                "name": "string",
+                "status": "string",
+                "taskId": "number"
+              }
+            ]
+          },
+          "pi.provider": {
+            "sessionId": "string"
+          },
+          "pi.usage": {
+            "models": {
+              "faux/faux-1": {
+                "cacheRead": "number",
+                "cacheWrite": "number",
+                "cost": {
+                  "cacheRead": "number",
+                  "cacheWrite": "number",
+                  "input": "number",
+                  "output": "number",
+                  "total": "number"
+                },
+                "input": "number",
+                "output": "number",
+                "totalTokens": "number"
+              }
+            },
+            "tools": {}
+          }
+        },
+        "entries": [
+          {
+            "byTaskId": "number",
+            "conversationId": "number",
+            "data": {
+              "diagnostics": []
+            },
+            "id": "number",
+            "kind": "=pi.tool-result",
+            "model": [
+              {
+                "content": [
+                  {
+                    "text": "string",
+                    "type": "=text"
+                  }
+                ],
+                "details": {
+                  "patch": "string"
+                },
+                "isError": "boolean",
+                "role": "=toolResult",
+                "timestamp": "number",
+                "toolCallId": "string",
+                "toolName": "string"
+              }
+            ]
+          },
+          {
+            "byTaskId": "number",
+            "conversationId": "number",
+            "id": "number",
+            "kind": "=pi.assistant",
+            "model": [
+              {
+                "api": "string",
+                "content": [
+                  {
+                    "arguments": {
+                      "content": "string",
+                      "path": "string"
+                    },
+                    "id": "string",
+                    "name": "string",
+                    "type": "=toolCall"
+                  }
+                ],
+                "model": "string",
+                "provider": "string",
+                "role": "=assistant",
+                "stopReason": "string",
+                "timestamp": "number",
+                "usage": {
+                  "cacheRead": "number",
+                  "cacheWrite": "number",
+                  "cost": {
+                    "cacheRead": "number",
+                    "cacheWrite": "number",
+                    "input": "number",
+                    "output": "number",
+                    "total": "number"
+                  },
+                  "input": "number",
+                  "output": "number",
+                  "totalTokens": "number"
+                }
+              }
+            ]
+          },
+          {
+            "byTaskId": "number",
+            "conversationId": "number",
+            "id": "number",
+            "kind": "=pi.assistant",
+            "model": [
+              {
+                "api": "string",
+                "content": [
+                  {
+                    "text": "string",
+                    "type": "=text"
+                  }
+                ],
+                "model": "string",
+                "provider": "string",
+                "role": "=assistant",
+                "stopReason": "string",
+                "timestamp": "number",
+                "usage": {
+                  "cacheRead": "number",
+                  "cacheWrite": "number",
+                  "cost": {
+                    "cacheRead": "number",
+                    "cacheWrite": "number",
+                    "input": "number",
+                    "output": "number",
+                    "total": "number"
+                  },
+                  "input": "number",
+                  "output": "number",
+                  "totalTokens": "number"
+                }
+              }
+            ]
+          },
+          {
+            "byTaskId": "number",
+            "conversationId": "number",
+            "id": "number",
+            "kind": "=pi.system",
+            "model": [
+              {
+                "content": "string",
+                "role": "=system",
+                "timestamp": "number",
+                "toolsAdded": [
+                  {
+                    "description": "string",
+                    "name": "string",
+                    "parameters": {
+                      "properties": {
+                        "command": {
+                          "description": "string",
+                          "type": "=string"
+                        },
+                        "timeout": {
+                          "description": "string",
+                          "type": "=number"
+                        }
+                      },
+                      "required": [
+                        "string"
+                      ],
+                      "type": "=object"
+                    }
+                  },
+                  {
+                    "description": "string",
+                    "name": "string",
+                    "parameters": {
+                      "properties": {
+                        "content": {
+                          "description": "string",
+                          "type": "=string"
+                        },
+                        "path": {
+                          "description": "string",
+                          "type": "=string"
+                        }
+                      },
+                      "required": [
+                        "string"
+                      ],
+                      "type": "=object"
+                    }
+                  },
+                  {
+                    "description": "string",
+                    "name": "string",
+                    "parameters": {
+                      "properties": {
+                        "edits": {
+                          "description": "string",
+                          "items": {
+                            "properties": {
+                              "newText": {
+                                "description": "string",
+                                "type": "=string"
+                              },
+                              "oldText": {
+                                "description": "string",
+                                "type": "=string"
+                              }
+                            },
+                            "required": [
+                              "string"
+                            ],
+                            "type": "=object"
+                          },
+                          "type": "=array"
+                        },
+                        "path": {
+                          "description": "string",
+                          "type": "=string"
+                        }
+                      },
+                      "required": [
+                        "string"
+                      ],
+                      "type": "=object"
+                    }
+                  },
+                  {
+                    "description": "string",
+                    "name": "string",
+                    "parameters": {
+                      "properties": {
+                        "limit": {
+                          "description": "string",
+                          "type": "=number"
+                        },
+                        "offset": {
+                          "description": "string",
+                          "type": "=number"
+                        },
+                        "path": {
+                          "description": "string",
+                          "type": "=string"
+                        }
+                      },
+                      "required": [
+                        "string"
+                      ],
+                      "type": "=object"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "conversationId": "number",
+            "id": "number",
+            "kind": "=pi.user",
+            "model": [
+              {
+                "content": "string",
+                "role": "=user",
+                "timestamp": "number"
+              }
+            ]
+          }
+        ]
+      },
+      "ops": [
+        "=d",
+        "=p",
+        "=s"
+      ]
+    },
+    "conversations": {
+      "value": [
+        {
+          "id": "number",
+          "kind": "=conversation",
+          "title": "string"
+        },
+        {
+          "id": "number",
+          "kind": "=conversation"
+        }
+      ],
+      "ops": []
+    },
+    "devices": {
+      "value": {
+        "devices": []
+      },
+      "ops": []
+    },
+    "index": {
+      "value": {
+        "conversations": [
+          {
+            "createdAt": "number",
+            "home": {
+              "kind": "=chat"
+            },
+            "id": "number",
+            "requestId": "string"
+          }
+        ],
+        "projects": []
+      },
+      "ops": [
+        "=p"
+      ]
+    },
+    "mcp": {
+      "value": "null",
+      "ops": []
+    },
+    "tasks": {
+      "value": {
+        "tasks": {
+          "<key>": {
+            "<or>": [
+              {
+                "abortRequested": "boolean",
+                "background": "boolean",
+                "conversationId": "number",
+                "conversations": [],
+                "id": "number",
+                "kind": "=pi.generation",
+                "state": {
+                  "on": [
+                    "number"
+                  ],
+                  "phase": "string",
+                  "policy": "string",
+                  "status": "string"
+                }
+              },
+              {
+                "abortRequested": "boolean",
+                "background": "boolean",
+                "conversationId": "number",
+                "conversations": [],
+                "id": "number",
+                "kind": "=pi.generation",
+                "state": {
+                  "phase": "string",
+                  "status": "string"
+                }
+              },
+              {
+                "abortRequested": "boolean",
+                "background": "boolean",
+                "conversationId": "number",
+                "conversations": [],
+                "id": "number",
+                "kind": "=pi.tool",
+                "owner": "number",
+                "state": {
+                  "phase": "string",
+                  "status": "string"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ops": [
+        "=d",
+        "=s"
+      ]
+    }
+  }
+}

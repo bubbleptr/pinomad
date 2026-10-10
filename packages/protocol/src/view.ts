@@ -45,8 +45,18 @@ export interface SessionInfo {
   readonly directory: string;
 }
 
-/** `outdated`: the host's hello announced a newer protocol; terminal like `closed`, no reconnect. */
+/** `outdated`: the host's hello announced a different protocol major; terminal like `closed`, no reconnect. */
 export type ConnectionState = "connected" | "reconnecting" | "closed" | "outdated";
+
+/** The version split behind an `outdated` connection, for the UI's upgrade hint. */
+export interface ProtocolMismatch {
+  readonly hostMajor: number;
+  readonly clientMajor: number;
+  /** Packaged release version; absent for a source checkout. */
+  readonly hostVersion?: string;
+  /** Which side is behind: `client-older` → update the app; `host-older` → upgrade the host. */
+  readonly direction: "client-older" | "host-older";
+}
 
 /** One extension document of the shown conversation, as the host declared it. */
 export interface ExtensionDocView {
@@ -75,6 +85,10 @@ export interface DurableView {
   /** The live task graph while the task panel is open. */
   readonly tasks?: TaskGraph;
   readonly connection: ConnectionState;
+  /** The mismatch a post-ready hello announced; set exactly when `connection` is `"outdated"`. */
+  readonly protocolMismatch?: ProtocolMismatch;
+  /** Set when the host closed this device with 4401 (pairing failed or revoked); terminal. */
+  readonly unauthorized?: true;
   /** The shown conversation's extension documents, in the host's order. */
   readonly docs: readonly ExtensionDocView[];
   /** How the host wants each tool's result `details` rendered (ADR-0005). */
