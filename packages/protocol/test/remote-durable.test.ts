@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame } from "../src/frames.ts";
 import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
@@ -12,17 +13,34 @@ const SNAPSHOTS: Record<string, unknown> = {
   mcp: null,
 };
 
+const id = (n: number): ConversationId => n as ConversationId;
+
+/** A doc kind the fake's hello advertises, so conversations have doc streams too. */
+const DOC = { kind: "pinomad.question", presentation: "pinomad.question" as const };
+
+function snapshotFor(stream: string): unknown {
+  if (stream in SNAPSHOTS) return SNAPSHOTS[stream];
+  // A minimal ConversationView; the client only stores and re-reads it.
+  if (stream.startsWith("conversation:")) return { conversation: { id: Number(stream.slice("conversation:".length)) }, entries: [] };
+  if (stream.startsWith("doc:")) return { requests: [] };
+  return null;
+}
+
 /**
- * A transport whose n-th connection says hello with `defaultsList[n]` (last
- * repeats) and answers subscribes with empty snapshots. `disconnect()` closes
- * the latest connection server-side so the client reconnects.
+ * A transport that answers every subscribe with a snapshot (per-conversation
+ * and doc streams included), answers calls ok, records every client frame in
+ * `sent`, and says hello with `defaultsList[n]` for connection n (last repeats).
+ * `disconnect()` closes the latest connection server-side so the client
+ * reconnects.
  */
 function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
   transport: FrameTransport;
   opened: FrameHandlers[];
+  sent: ClientFrame[];
   disconnect: () => void;
 } {
   const opened: FrameHandlers[] = [];
+  const sent: ClientFrame[] = [];
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
@@ -33,7 +51,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
         protocol: PROTOCOL,
         session: { id: "fake", directory: "" },
         models: [],
-        docs: [],
+        docs: [DOC],
         toolPresentations: {},
         defaults,
       };
@@ -41,9 +59,14 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
       return {
         send(data) {
           const frame = JSON.parse(data) as ClientFrame;
-          if (frame.type !== "subscribe" || !(frame.stream in SNAPSHOTS)) return;
-          const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: SNAPSHOTS[frame.stream] };
-          queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
+          sent.push(frame);
+          if (frame.type === "subscribe") {
+            const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) };
+            queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
+          } else if (frame.type === "call") {
+            const result: ServerFrame = { type: "result", id: frame.id, ok: true, value: undefined };
+            queueMicrotask(() => handlers.message(JSON.stringify(result)));
+          }
         },
         close() {
           queueMicrotask(() => handlers.closed(1000));
@@ -54,6 +77,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
   return {
     transport,
     opened,
+    sent,
     disconnect: () => opened.at(-1)?.closed(1000),
   };
 }
@@ -165,6 +189,119 @@ describe("RemoteDurable reconnect", () => {
       } finally {
         remote.close();
       }
+    }
+  });
+});
+
+describe("RemoteDurable side conversation", () => {
+  const subscribes = (sent: readonly ClientFrame[]): string[] =>
+    sent.flatMap((frame) => (frame.type === "subscribe" ? [frame.stream] : []));
+  const unsubscribes = (sent: readonly ClientFrame[]): string[] =>
+    sent.flatMap((frame) => (frame.type === "unsubscribe" ? [frame.stream] : []));
+
+  it("shows a second conversation beside the main one and closes it", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+
+      expect(subscribes(sent)).toContain("conversation:2");
+      expect(subscribes(sent)).toContain(`doc:${DOC.kind}:2`);
+      const view = remote.view.current();
+      expect(view.side?.id).toBe(id(2));
+      expect((view.side?.conversation as { conversation: { id: number } }).conversation.id).toBe(2);
+      expect(view.side?.docs.map((doc) => doc.kind)).toEqual([DOC.kind]);
+      // The main conversation is untouched.
+      expect((view.conversation as { conversation: { id: number } }).conversation.id).toBe(1);
+      expect(view.docs.map((doc) => doc.kind)).toEqual([DOC.kind]);
+
+      await remote.controller.showSide(undefined);
+      expect(unsubscribes(sent)).toContain("conversation:2");
+      expect(unsubscribes(sent)).toContain(`doc:${DOC.kind}:2`);
+      expect(remote.view.current().side).toBeUndefined();
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("shares streams between the main and side slots without double-subscribing", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      const subscribed = subscribes(sent).length;
+      // The side may be the main conversation: nothing new to subscribe.
+      await remote.controller.showSide(id(1));
+      expect(subscribes(sent)).toHaveLength(subscribed);
+      expect(remote.view.current().side?.id).toBe(id(1));
+      // Closing it keeps the main's streams and conversation.
+      await remote.controller.showSide(undefined);
+      expect(unsubscribes(sent)).toHaveLength(0);
+      expect((remote.view.current().conversation as { conversation: { id: number } }).conversation.id).toBe(1);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("keeps the side's streams when the main switches onto and away from it", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+      // Switching onto the side's conversation shares its streams.
+      const subscribed = subscribes(sent).length;
+      await remote.controller.switchConversation(id(2));
+      expect(subscribes(sent)).toHaveLength(subscribed);
+      // Switching away does not unsubscribe the streams the side still needs.
+      await remote.controller.switchConversation(id(3));
+      expect(unsubscribes(sent)).not.toContain("conversation:2");
+      expect(unsubscribes(sent)).not.toContain(`doc:${DOC.kind}:2`);
+      const view = remote.view.current();
+      expect(view.side?.id).toBe(id(2));
+      expect((view.side?.conversation as { conversation: { id: number } }).conversation.id).toBe(2);
+      // The previous main's streams were released.
+      expect(unsubscribes(sent)).toContain("conversation:1");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("targets submit, answer and abort at a chosen conversation", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.submit("to the side", "followUp", id(2));
+      await remote.controller.answer(DOC.kind, "req-1", [{ selected: ["yes"] }], id(2));
+      await remote.controller.abort(id(2));
+      await remote.controller.submit("to the main", "followUp");
+      const calls = sent.flatMap((frame) => (frame.type === "call" ? [frame] : []));
+      expect(calls.map((frame) => frame.method)).toEqual(["submit", "answer", "abort", "submit"]);
+      expect(calls.map((frame) => (frame.args as { conversationId: number }).conversationId)).toEqual([2, 2, 2, 1]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("resubscribes the side's streams after a reconnect", async () => {
+    const { transport, sent, disconnect } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+      const before = subscribes(sent).length;
+
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected" && subscribes(sent).length > before);
+      expect(subscribes(sent).slice(before)).toEqual(
+        expect.arrayContaining(["conversation:2", `doc:${DOC.kind}:2`]),
+      );
+      await waitForView(remote, (view) => view.side?.conversation !== undefined);
+      expect((remote.view.current().side?.conversation as { conversation: { id: number } }).conversation.id).toBe(2);
+    } finally {
+      remote.close();
     }
   });
 });

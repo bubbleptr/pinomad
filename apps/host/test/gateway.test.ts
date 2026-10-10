@@ -174,6 +174,28 @@ describe("gateway", () => {
     );
   });
 
+  it("runs a side conversation beside the main one", async () => {
+    const host = await startFauxHost(defer, { answers: ["parent answer", "side answer"] });
+    const client = await connectTo(defer, host);
+    const parentId = await startChat(client, "parent");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "parent answer");
+
+    // Fork the parent's answer so the side slot shows a different conversation.
+    const at = client.view.current().conversation!.entries.at(-1)!.id;
+    const forkId = await host.harness.commit(
+      async (tx) => (await tx.forkConversation(parentId, at, { ownership: { kind: "ownerless" } })).id,
+      BACKGROUND_CONTEXT,
+    );
+
+    await client.controller.showSide(forkId);
+    await waitForView(client.view, (view) => view.side?.id === forkId && view.side.conversation !== undefined);
+
+    // A targeted submit talks to the side; the main transcript is untouched.
+    await client.controller.submit("side question", "followUp", forkId);
+    await waitForView(client.view, (view) => transcript(view.side!.conversation!).at(-1)?.text === "side answer");
+    expect(transcript(client.view.current().conversation!).at(-1)?.text).toBe("parent answer");
+  });
+
   it("reports no updatedAt on a fork that has no own messages yet", async () => {
     const host = await startFauxHost(defer, { answers: ["parent done"] });
     const client = await connectTo(defer, host);

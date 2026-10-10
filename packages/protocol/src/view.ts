@@ -75,11 +75,22 @@ export interface ExtensionDocView {
   readonly value: JsonObject | null;
 }
 
+/** A second conversation shown beside the main one, with its documents. */
+export interface SideConversationView {
+  readonly id: ConversationId;
+  /** Undefined until its snapshot arrives, or after the host ended its stream. */
+  readonly conversation?: ConversationView;
+  /** Its extension documents, in the host's order; a doc joins once its snapshot arrived. */
+  readonly docs: readonly ExtensionDocView[];
+}
+
 /** Everything a client renders. Plain values; no Harness objects cross this boundary. */
 export interface DurableView {
   readonly session: SessionInfo;
   /** The conversation shown and talked to; undefined until one is shown. */
   readonly conversation?: ConversationView;
+  /** The side conversation, while one is shown. */
+  readonly side?: SideConversationView;
   /** Chats and projects with their conversations, grouped for navigation. */
   readonly organized: Organized;
   /** The shown conversation's home, inherited from its index ancestor. */
@@ -130,20 +141,23 @@ export interface DurableController {
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
-  /** Prompt when idle; otherwise steer or queue a follow-up. */
-  submit(text: string, whenBusy: "steer" | "followUp"): Promise<void>;
+  /** Prompt when idle; otherwise steer or queue a follow-up. `target` defaults to the main shown conversation. */
+  submit(text: string, whenBusy: "steer" | "followUp", target?: ConversationId): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
-  abort(): Promise<void>;
+  /** Abort `target`'s run (the main shown conversation's by default). */
+  abort(target?: ConversationId): Promise<void>;
   /** Set the shown conversation's thinking level; rejects when the model can't take it. */
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setModel(model: ModelRef): Promise<void>;
   toggleTasks(): Promise<void>;
   /** Show and talk to another conversation. */
   switchConversation(id: ConversationId): Promise<void>;
+  /** Show a conversation beside the main one, or close the side with `undefined`; resolves once its snapshots arrived. */
+  showSide(id: ConversationId | undefined): Promise<void>;
   /** Fork the shown conversation at an entry, switch to the fork, and send it `prompt`. */
   fork(entryId: string, prompt: string, removeTools?: readonly string[]): Promise<void>;
-  /** Answer a pending `pinomad.question` request; failures surface as notices. */
-  answer(kind: string, requestId: string, answers: QuestionAnswer[]): Promise<void>;
+  /** Answer a pending `pinomad.question` request on `target` (the main shown conversation by default); failures surface as notices. */
+  answer(kind: string, requestId: string, answers: QuestionAnswer[], target?: ConversationId): Promise<void>;
   /** The shown conversation's file changes; unavailable for Chat and non-git checkouts. */
   changes(): Promise<{ available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean }>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */

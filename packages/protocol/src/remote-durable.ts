@@ -108,6 +108,7 @@ class RemoteClient {
   #connection: FrameConnection | undefined;
   #state: DurableView | undefined;
   #current: ConversationId | undefined;
+  #side: ConversationId | undefined;
   #nextCall = 1;
   #nextNotice = 1;
   #attempt = 0;
@@ -228,6 +229,7 @@ class RemoteClient {
         this.#docs = frame.docs;
         this.#toolPresentations = frame.toolPresentations;
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
+        if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) {
           this.#update({
@@ -306,32 +308,67 @@ class RemoteClient {
     return [conversationStream(id), ...this.#docs.map((doc) => docStream(doc.kind, id))];
   }
 
+  /**
+   * Subscribe to the streams a conversation slot needs. Streams another slot
+   * already wants stay put — subscribing again would be a no-op on the host,
+   * and their live values carry over (no snapshot wait).
+   */
+  async #acquire(id: ConversationId): Promise<void> {
+    const missing = this.#conversationStreams(id).filter((stream) => !this.#wanted.has(stream));
+    const shown = Promise.all(missing.map((stream) => this.#snapshot(stream)));
+    for (const stream of missing) {
+      this.#wanted.add(stream);
+      this.#send({ type: "subscribe", stream });
+    }
+    await shown;
+  }
+
+  /** Release the streams of one slot's conversation the other slot does not still need. */
+  #release(id: ConversationId, other: ConversationId | undefined): void {
+    const keep = new Set<StreamName>(other === undefined ? [] : this.#conversationStreams(other));
+    for (const stream of this.#conversationStreams(id)) {
+      if (keep.has(stream)) continue;
+      this.#wanted.delete(stream);
+      this.#values.delete(stream);
+      this.#send({ type: "unsubscribe", stream });
+    }
+  }
+
+  /** One shown conversation's extension docs, in the host's order. */
+  #docsOf(id: ConversationId): ExtensionDocView[] {
+    return this.#docs.flatMap((doc) => {
+      const stream = docStream(doc.kind, id);
+      return this.#values.has(stream)
+        ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
+        : [];
+    });
+  }
+
   #refresh(): void {
     if (this.#state === undefined) return;
     const current = this.#current;
+    const side = this.#side;
     const conversation =
       current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
     const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
     const index = (this.#values.get("index") as HostIndex | undefined) ?? { projects: [], conversations: [] };
     const devices = (this.#values.get("devices") as HostDevices | undefined)?.devices ?? [];
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
-    // In the host's order; a doc joins once its snapshot arrived.
-    const docs: ExtensionDocView[] =
-      current === undefined
-        ? []
-        : this.#docs.flatMap((doc) => {
-            const stream = docStream(doc.kind, current);
-            return this.#values.has(stream)
-              ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
-              : [];
-          });
     this.#update({
       conversation,
       organized: organize(index, summaries),
       home: current === undefined ? undefined : homeOf(index, summaries, current),
       checkout: current === undefined ? undefined : checkoutOf(index, summaries, current),
       tasks,
-      docs,
+      docs: current === undefined ? [] : this.#docsOf(current),
+      side:
+        side === undefined
+          ? undefined
+          : {
+              id: side,
+              conversation: this.#values.get(conversationStream(side)) as ConversationView | undefined,
+              docs: this.#docsOf(side),
+            },
       devices,
       mcp: (this.#values.get("mcp") as McpStatus | null | undefined) ?? null,
     });
@@ -413,20 +450,24 @@ class RemoteClient {
         this.#command(async () => {
           await this.#call("archive", { conversationId: id, archived });
           if (archived && id === this.#current) this.#unshow();
+          if (archived && id === this.#side) await this.#showSide(undefined);
         }),
-      submit: (text, whenBusy) =>
-        this.#command(() => this.#call("submit", { conversationId: conversationId(), text, whenBusy, requestId: newRequestId() })),
+      submit: (text, whenBusy, target) =>
+        this.#command(() =>
+          this.#call("submit", { conversationId: target ?? conversationId(), text, whenBusy, requestId: newRequestId() }),
+        ),
       compact: (instructions) =>
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
         ),
       // Not queued: it resolves once the conversation is idle.
-      abort: () => {
-        if (this.#current === undefined) {
+      abort: (target) => {
+        const targetConversation = target ?? this.#current;
+        if (targetConversation === undefined) {
           this.#notice("error", "No conversation selected");
           return Promise.resolve();
         }
-        return this.#call("abort", { conversationId: conversationId() }).then(
+        return this.#call("abort", { conversationId: targetConversation }).then(
             () => {},
             (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
           );
@@ -447,6 +488,7 @@ class RemoteClient {
           await shown;
         }),
       switchConversation: (id) => this.#command(() => this.#switch(id)),
+      showSide: (id) => this.#command(() => this.#showSide(id)),
       fork: (entryId, prompt, removeTools) =>
         this.#command(async () => {
           const { conversationId: forked } = await this.#call("fork", {
@@ -458,8 +500,8 @@ class RemoteClient {
           await this.#switch(forked);
           await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: newRequestId() });
         }),
-      answer: (kind, requestId, answers) =>
-        this.#command(() => this.#call("answer", { conversationId: conversationId(), kind, requestId, answers })),
+      answer: (kind, requestId, answers, target) =>
+        this.#command(() => this.#call("answer", { conversationId: target ?? conversationId(), kind, requestId, answers })),
       // Queued like other commands, but the caller needs the result: queue it
       // the way createPairing does and return the promise.
       changes: () => {
@@ -487,17 +529,9 @@ class RemoteClient {
   async #switch(id: ConversationId): Promise<void> {
     const previous = this.#current;
     if (id === previous) return;
-    const next = this.#conversationStreams(id);
-    for (const stream of next) this.#wanted.add(stream);
-    const shown = Promise.all(next.map((stream) => this.#snapshot(stream)));
-    for (const stream of next) this.#send({ type: "subscribe", stream });
-    await shown;
+    await this.#acquire(id);
     this.#current = id;
-    for (const stream of previous === undefined ? [] : this.#conversationStreams(previous)) {
-      this.#wanted.delete(stream);
-      this.#values.delete(stream);
-      this.#send({ type: "unsubscribe", stream });
-    }
+    if (previous !== undefined) this.#release(previous, this.#side);
     this.#refresh();
   }
 
@@ -506,11 +540,17 @@ class RemoteClient {
     const previous = this.#current;
     if (previous === undefined) return;
     this.#current = undefined;
-    for (const stream of this.#conversationStreams(previous)) {
-      this.#wanted.delete(stream);
-      this.#values.delete(stream);
-      this.#send({ type: "unsubscribe", stream });
-    }
+    this.#release(previous, this.#side);
+    this.#refresh();
+  }
+
+  /** Show a second conversation beside the main one, or close it. */
+  async #showSide(id: ConversationId | undefined): Promise<void> {
+    const previous = this.#side;
+    if (id === previous) return;
+    if (id !== undefined) await this.#acquire(id);
+    this.#side = id;
+    if (previous !== undefined) this.#release(previous, this.#current);
     this.#refresh();
   }
 
