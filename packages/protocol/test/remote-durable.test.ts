@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame } from "../src/frames.ts";
+import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame, type StreamName } from "../src/frames.ts";
 import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { ConversationDefaults, DurableView } from "../src/view.ts";
@@ -38,9 +38,13 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
   opened: FrameHandlers[];
   sent: ClientFrame[];
   disconnect: () => void;
+  /** Subscribes to a held stream get no snapshot until `release` sends one. */
+  hold: (stream: StreamName) => void;
+  release: (stream: StreamName, value: unknown) => void;
 } {
   const opened: FrameHandlers[] = [];
   const sent: ClientFrame[] = [];
+  const held = new Set<StreamName>();
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
@@ -61,6 +65,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
           const frame = JSON.parse(data) as ClientFrame;
           sent.push(frame);
           if (frame.type === "subscribe") {
+            if (held.has(frame.stream)) return;
             const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) };
             queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
           } else if (frame.type === "call") {
@@ -79,6 +84,13 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
     opened,
     sent,
     disconnect: () => opened.at(-1)?.closed(1000),
+    hold: (stream) => {
+      held.add(stream);
+    },
+    release: (stream, value) => {
+      const snapshot: ServerFrame = { type: "snapshot", stream, value };
+      queueMicrotask(() => opened.at(-1)?.message(JSON.stringify(snapshot)));
+    },
   };
 }
 
@@ -300,6 +312,57 @@ describe("RemoteDurable side conversation", () => {
       );
       await waitForView(remote, (view) => view.side?.conversation !== undefined);
       expect((remote.view.current().side?.conversation as { conversation: { id: number } }).conversation.id).toBe(2);
+    } finally {
+      remote.close();
+    }
+  });
+it("closes the side when the archive removes it or its root", async () => {
+    const previous = SNAPSHOTS.conversations;
+    SNAPSHOTS.conversations = [
+      { id: 1, kind: "conversation" },
+      { id: 2, kind: "fork", parent: 1 },
+      { id: 3, kind: "conversation" },
+    ];
+    const { transport } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.switchConversation(id(3));
+      await remote.controller.showSide(id(2));
+      // Archiving an unrelated conversation leaves the side alone.
+      await remote.controller.archive(id(3), true);
+      expect(remote.view.current().side?.id).toBe(id(2));
+      // Archiving the side's own root drops the side too — the fork went with it.
+      await remote.controller.archive(id(1), true);
+      expect(remote.view.current().side).toBeUndefined();
+    } finally {
+      SNAPSHOTS.conversations = previous;
+      remote.close();
+    }
+  });
+
+  it("waits for a shared stream's fresh snapshot when switching onto it after reconnect", async () => {
+    const { transport, hold, release, disconnect } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.showSide(id(2));
+      expect((remote.view.current().side?.conversation as { conversation: { id: number } }).conversation.id).toBe(2);
+
+      // Reconnect with conversation:2's fresh snapshot held back: the stream
+      // stays wanted for the side but its value is stale until the host answers.
+      hold("conversation:2" as StreamName);
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected");
+
+      const switching = remote.controller.switchConversation(id(2));
+      await expect(
+        Promise.race([switching.then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("pending"), 50))]),
+      ).resolves.toBe("pending");
+
+      release("conversation:2" as StreamName, { conversation: { id: 2, marker: "new" }, entries: [] });
+      await switching;
+      const main = remote.view.current().conversation as { conversation: { id: number; marker?: string } };
+      expect(main.conversation.id).toBe(2);
+      expect(main.conversation.marker).toBe("new");
     } finally {
       remote.close();
     }
