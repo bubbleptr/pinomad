@@ -349,8 +349,10 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
   const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
   // Fork depth is one (ADR-0019 §2): inside a fork or a subagent's conversation
-  // no run offers the Fork action.
-  const canFork = shownSummary === undefined || shownSummary.kind === "conversation";
+  // no run offers the Fork action. An unknown summary — the shown conversation
+  // fell out of `organized` (e.g. its root was archived by another client) —
+  // also hides it: the host only accepts forks of known root conversations.
+  const canFork = shownSummary?.kind === "conversation";
   // One fork per message (ADR-0019 §3): a run whose entry was already forked
   // reopens that fork instead of the dialog.
   const forkAt = useCallback(

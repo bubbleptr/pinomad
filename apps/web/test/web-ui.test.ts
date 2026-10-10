@@ -257,6 +257,34 @@ it("opens the existing fork instead of the dialog when a message was already for
   expect(allNodes(observer.view.current()).filter((node) => node.summary.kind === "fork")).toHaveLength(1);
 });
 
+it("shows no Fork action when the shown fork's root left navigation", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  const parentId = await followFirst(observer);
+  await page.getByRole("button", { name: "Fork", exact: true }).waitFor();
+
+  // Fork through the observer, then show the fork in the page.
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+  const forkId = allNodes(observer.view.current()).find((node) => node.summary.kind === "fork")!.summary.id;
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
+  await page.getByRole("button", { name: "start", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Fork", exact: true }).click();
+  await page.getByText("fork answer", { exact: true }).waitFor();
+
+  // Another client archives the root: the fork leaves `organized`, and the
+  // action must stay gone rather than reappearing.
+  await observer.controller.archive(parentId, true);
+  await waitForView(observer.view, (view) => !allNodes(view).some((node) => node.summary.id === parentId));
+  await expect.poll(() => page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
+});
+
 it("renders todo and a pending question card on every page and shares one answer", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {

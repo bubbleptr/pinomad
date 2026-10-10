@@ -43,7 +43,7 @@ import {
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import { branchSuffix, changesOf, checkoutAt, gitBase, snapshotOf, worktreeBranch, worktreeExists, worktreePath } from "./checkout.ts";
+import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
