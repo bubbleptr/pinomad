@@ -235,16 +235,54 @@ describe("gateway boundaries", () => {
     }
     expect(url).toBeDefined();
     const token = (await readFile(join(dir.path, "token"), "utf8")).trim();
-    for (const malformed of ["{", "null", '{"type":"subscribe","stream":null}', '{"type":"call","id":1,"method":"submit","args":{}}']) {
+    for (const malformed of [
+      "{",
+      "null",
+      '{"type":"subscribe","stream":null}',
+      '{"type":"subscribe","stream":"conversation:abc"}',
+      '{"type":"call","id":1,"method":"submit","args":{}}',
+      '{"type":"call","method":"submit","args":{"conversationId":1,"text":"x","whenBusy":"steer","requestId":"r"}}',
+    ]) {
       const { socket } = await socketTo(url!, token);
       const closed = once(socket, "close");
       socket.send(malformed);
-      expect((await closed)[0]).toBe(1008);
+      expect((await closed)[0]).toBe(4400);
       expect(child.exitCode).toBeNull();
     }
     const healthy = await socketTo(url!, token);
     healthy.socket.send(JSON.stringify({ type: "subscribe", stream: "conversations" }));
     while (!healthy.frames.some((frame) => frame.type === "snapshot")) await once(healthy.socket, "message");
     expect(healthy.frames.some((frame) => frame.type === "snapshot")).toBe(true);
+  });
+
+  // ADR-0018 §3: a newer client's unknown calls, streams, and frame types get
+  // an answer or silence — never a disconnect.
+  it("answers unknown methods and streams without closing the socket", async () => {
+    const { host, gateway } = await fixture();
+    const client = await socketTo(gateway.url, host.token);
+    while (!client.frames.some((frame) => frame.type === "hello")) await once(client.socket, "message");
+    const hello = client.frames.find((frame) => frame.type === "hello")!;
+    expect(hello).toMatchObject({ protocol: { major: 5, minor: 0 } });
+
+    client.socket.send(JSON.stringify({ type: "call", id: 41, method: "futureMethod", args: {} }));
+    client.socket.send(JSON.stringify({ type: "subscribe", stream: "settings" }));
+    client.socket.send(JSON.stringify({ type: "unsubscribe", stream: "settings" }));
+    client.socket.send(JSON.stringify({ type: "ping" }));
+    client.socket.send(JSON.stringify({ type: "subscribe", stream: "conversations" }));
+
+    const arrived = (frame: ServerFrame) =>
+      (frame.type === "result" && frame.id === 41)
+      || (frame.type === "ended" && (frame.stream as string) === "settings")
+      || (frame.type === "snapshot" && frame.stream === "conversations");
+    while (client.frames.filter(arrived).length < 3) await once(client.socket, "message");
+    expect(client.frames.find((frame) => frame.type === "result" && frame.id === 41)).toMatchObject({
+      ok: false,
+      error: "Unsupported method: futureMethod",
+    });
+    expect(client.frames.find((frame) => frame.type === "ended")).toMatchObject({ reason: "Unsupported stream" });
+    // The unknown-type frame and the unknown unsubscribe drew no response;
+    // every frame sent is hello or one of the three answers above.
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    expect(client.frames.filter((frame) => frame.type !== "hello" && !arrived(frame))).toEqual([]);
   });
 });

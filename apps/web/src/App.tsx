@@ -22,7 +22,7 @@ import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { DEVICE_KEY, deviceName, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
@@ -179,7 +179,7 @@ export function RemoteWorkbench({
     return (
       <Centered>
         {state.mismatch !== undefined ? (
-          <VersionMismatch wsUrl={label} host={state.mismatch.host} />
+          <VersionMismatch wsUrl={label} mismatch={state.mismatch} />
         ) : rejected !== undefined && state.unauthorized ? (
           rejected
         ) : (
@@ -199,21 +199,29 @@ export function RemoteWorkbench({
  */
 const RELOADED_KEY = "pinomad.reloadedForProtocol";
 
-function VersionMismatch({ wsUrl, host }: { wsUrl: string; host: number | string }) {
+function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: ProtocolMismatch }) {
   const [reloading] = useState(() => {
     if (!servedByHost(wsUrl, window.location)) return false;
-    if (sessionStorage.getItem(RELOADED_KEY) === String(host)) return false;
-    sessionStorage.setItem(RELOADED_KEY, String(host));
+    if (sessionStorage.getItem(RELOADED_KEY) === String(mismatch.hostMajor)) return false;
+    sessionStorage.setItem(RELOADED_KEY, String(mismatch.hostMajor));
     window.location.reload();
     return true;
   });
   if (reloading) return null;
-  return (
+  const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
+  return mismatch.direction === "client-older" ? (
     <Banner
       status="error"
       container="section"
-      title="Host version mismatch"
-      description="The host was upgraded past this client. Reload the page, or update the client you're using."
+      title="Client out of date"
+      description={`The host speaks a newer protocol. Reload the page, or update the app.${version}`}
+    />
+  ) : (
+    <Banner
+      status="error"
+      container="section"
+      title="Host out of date"
+      description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
     />
   );
 }
@@ -417,7 +425,9 @@ function ChangesDialog({ view, remote, busy, onClose }: { view: DurableView; rem
 }
 
 function ConnectionBanner({ view, wsUrl }: { view: DurableView; wsUrl: string }) {
-  if (view.connection === "outdated") return <VersionMismatch wsUrl={wsUrl} host="outdated" />;
+  if (view.connection === "outdated") {
+    return view.protocolMismatch === undefined ? null : <VersionMismatch wsUrl={wsUrl} mismatch={view.protocolMismatch} />;
+  }
   if (view.connection === "reconnecting") {
     return (
       <Banner

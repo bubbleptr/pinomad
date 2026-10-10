@@ -1,0 +1,951 @@
+[
+  {
+    "type": "hello",
+    "protocol": {
+      "major": 5,
+      "minor": 0
+    },
+    "session": {
+      "id": "<sessionId>",
+      "directory": "<dataDir>"
+    },
+    "models": [
+      {
+        "provider": "faux",
+        "modelId": "faux-1",
+        "name": "Faux Model",
+        "contextWindow": 128000,
+        "thinkingLevels": [
+          "off"
+        ]
+      }
+    ],
+    "defaults": {
+      "model": {
+        "provider": "faux",
+        "modelId": "faux-1"
+      }
+    },
+    "docs": [],
+    "toolPresentations": {
+      "edit": "pinomad.diff",
+      "write": "pinomad.diff"
+    }
+  },
+  {
+    "type": "snapshot",
+    "stream": "conversations",
+    "value": []
+  },
+  {
+    "type": "snapshot",
+    "stream": "mcp",
+    "value": null
+  },
+  {
+    "type": "snapshot",
+    "stream": "index",
+    "value": {
+      "projects": [],
+      "conversations": []
+    }
+  },
+  {
+    "type": "snapshot",
+    "stream": "devices",
+    "value": {
+      "devices": []
+    }
+  },
+  {
+    "type": "snapshot",
+    "stream": "tasks",
+    "value": {
+      "tasks": {}
+    }
+  },
+  {
+    "type": "ops",
+    "stream": "index",
+    "ops": [
+      [
+        "p",
+        [
+          "conversations"
+        ],
+        0,
+        0,
+        [
+          {
+            "id": 4,
+            "home": {
+              "kind": "chat"
+            },
+            "createdAt": 1791624259001,
+            "requestId": "contract-1"
+          }
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "snapshot",
+    "stream": "conversations",
+    "value": [
+      {
+        "id": 4,
+        "kind": "conversation"
+      }
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "12"
+        ],
+        {
+          "id": 12,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "result",
+    "id": 1,
+    "ok": true,
+    "value": {
+      "conversationId": 4
+    }
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "12"
+        ],
+        {
+          "id": 12,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "snapshot",
+    "stream": "conversations",
+    "value": [
+      {
+        "id": 4,
+        "kind": "conversation",
+        "title": "contract run"
+      }
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "12"
+        ],
+        {
+          "id": 12,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "request"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "snapshot",
+    "stream": "conversation:4",
+    "value": {
+      "conversation": {
+        "id": 4
+      },
+      "entries": [
+        {
+          "model": [
+            {
+              "role": "user",
+              "content": "contract run",
+              "timestamp": 1791624259004
+            }
+          ],
+          "kind": "pi.user",
+          "id": 10,
+          "conversationId": 4
+        },
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "Read the contents of a text file. Output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to read (relative or absolute)"
+                      },
+                      "offset": {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      "limit": {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "content"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to write (relative or absolute)"
+                      },
+                      "content": {
+                        "type": "string",
+                        "description": "Content to write to the file"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "edit",
+                  "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "edits"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit (relative or absolute)"
+                      },
+                      "edits": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "oldText",
+                            "newText"
+                          ],
+                          "properties": {
+                            "oldText": {
+                              "type": "string",
+                              "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                            },
+                            "newText": {
+                              "type": "string",
+                              "description": "Replacement text for this targeted edit."
+                            }
+                          }
+                        },
+                        "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "bash",
+                  "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "description": "Bash command to execute"
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "description": "Timeout in seconds (optional, no default timeout)"
+                      }
+                    }
+                  }
+                }
+              ],
+              "timestamp": 1791624259007
+            }
+          ],
+          "kind": "pi.system",
+          "id": 13,
+          "conversationId": 4,
+          "byTaskId": 12
+        }
+      ],
+      "docs": {
+        "pi.agent": {
+          "model": {
+            "provider": "faux",
+            "modelId": "faux-1"
+          },
+          "thinkingLevel": "off",
+          "cwd": "<dataDir>/chats/4"
+        },
+        "pi.live": {
+          "run": {
+            "taskId": 12,
+            "inputs": [
+              11
+            ]
+          },
+          "generation": {
+            "attempt": 1
+          }
+        },
+        "pi.inbox": {
+          "items": []
+        },
+        "pi.provider": {
+          "sessionId": "01a12520-a5b8-72fc-a2ec-44f4a14ffe65"
+        },
+        "pi.usage": {
+          "models": {},
+          "tools": {}
+        }
+      }
+    }
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "12"
+        ],
+        {
+          "id": 12,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "waiting",
+            "phase": "tools",
+            "on": [
+              15
+            ],
+            "policy": "allSettled"
+          },
+          "conversations": []
+        }
+      ],
+      [
+        "s",
+        [
+          "tasks",
+          "15"
+        ],
+        {
+          "id": 15,
+          "kind": "pi.tool",
+          "conversationId": 4,
+          "owner": 12,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "phase": "call"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "tools"
+        ],
+        [
+          {
+            "callId": "tool:1791624258981:wwtvgjkdbeo",
+            "name": "write",
+            "taskId": 15,
+            "status": "pending"
+          }
+        ]
+      ],
+      [
+        "d",
+        [
+          "docs",
+          "pi.live",
+          "generation"
+        ]
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1"
+        ],
+        {
+          "input": 668,
+          "output": 12,
+          "cacheRead": 0,
+          "cacheWrite": 668,
+          "totalTokens": 1348,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        }
+      ],
+      [
+        "p",
+        [
+          "entries"
+        ],
+        2,
+        0,
+        [
+          {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "tool:1791624258981:wwtvgjkdbeo",
+                    "name": "write",
+                    "arguments": {
+                      "path": "note.txt",
+                      "content": "contract\n"
+                    }
+                  }
+                ],
+                "api": "faux:1791624258982:eetgn16mc2r",
+                "provider": "faux",
+                "model": "faux-1",
+                "usage": {
+                  "input": 668,
+                  "output": 12,
+                  "cacheRead": 0,
+                  "cacheWrite": 668,
+                  "totalTokens": 1348,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1791624258981
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 14,
+            "conversationId": 4,
+            "byTaskId": 12
+          }
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "15"
+        ],
+        {
+          "id": 15,
+          "kind": "pi.tool",
+          "conversationId": 4,
+          "owner": 12,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "call"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "tools",
+          0,
+          "status"
+        ],
+        "running"
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "15"
+        ],
+        {
+          "id": 15,
+          "kind": "pi.tool",
+          "conversationId": 4,
+          "owner": 12,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "execute"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "d",
+        [
+          "tasks",
+          "15"
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "tools",
+          0,
+          "status"
+        ],
+        "done"
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "tools",
+          0,
+          "entry"
+        ],
+        16
+      ],
+      [
+        "p",
+        [
+          "entries"
+        ],
+        3,
+        0,
+        [
+          {
+            "model": [
+              {
+                "role": "toolResult",
+                "toolCallId": "tool:1791624258981:wwtvgjkdbeo",
+                "toolName": "write",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Successfully wrote to note.txt"
+                  }
+                ],
+                "details": {
+                  "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
+                },
+                "isError": false,
+                "timestamp": 1791624259085
+              }
+            ],
+            "data": {
+              "diagnostics": []
+            },
+            "kind": "pi.tool-result",
+            "id": 16,
+            "conversationId": 4,
+            "byTaskId": 15
+          }
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "12"
+        ],
+        {
+          "id": 12,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "tools"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "d",
+        [
+          "docs",
+          "pi.live",
+          "tools"
+        ]
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "run",
+          "taskId"
+        ],
+        17
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "17"
+        ],
+        {
+          "id": 17,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
+      ],
+      [
+        "d",
+        [
+          "tasks",
+          "12"
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "17"
+        ],
+        {
+          "id": 17,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "s",
+        [
+          "tasks",
+          "17"
+        ],
+        {
+          "id": 17,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "request"
+          },
+          "conversations": []
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "generation"
+        ],
+        {
+          "attempt": 1
+        }
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "tasks",
+    "ops": [
+      [
+        "d",
+        [
+          "tasks",
+          "17"
+        ]
+      ]
+    ]
+  },
+  {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "d",
+        [
+          "docs",
+          "pi.live",
+          "run"
+        ]
+      ],
+      [
+        "d",
+        [
+          "docs",
+          "pi.live",
+          "generation"
+        ]
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1",
+          "input"
+        ],
+        695
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1",
+          "output"
+        ],
+        16
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1",
+          "cacheRead"
+        ],
+        668
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1",
+          "cacheWrite"
+        ],
+        696
+      ],
+      [
+        "s",
+        [
+          "docs",
+          "pi.usage",
+          "models",
+          "faux/faux-1",
+          "totalTokens"
+        ],
+        2075
+      ],
+      [
+        "p",
+        [
+          "entries"
+        ],
+        4,
+        0,
+        [
+          {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "contract done"
+                  }
+                ],
+                "api": "faux:1791624258982:eetgn16mc2r",
+                "provider": "faux",
+                "model": "faux-1",
+                "usage": {
+                  "input": 27,
+                  "output": 4,
+                  "cacheRead": 668,
+                  "cacheWrite": 28,
+                  "totalTokens": 727,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1791624258982
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 18,
+            "conversationId": 4,
+            "byTaskId": 17
+          }
+        ]
+      ]
+    ]
+  }
+]

@@ -21,6 +21,7 @@
 - codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用并能展开 edit / write 的 diff（ADR-0013）
 - 远程访问第二期：自部署中继 `apps/relay`，宿主 `--relay` 主动连出，每台设备一条数据连接拼接到同一个 IK 握手；宿主用独立 Ed25519 密钥签名登记，中继按 `--allow-host` 白名单接受；中继用 HTTPS 提供 Web 客户端，配对链接优先指向中继（ADR-0008、0015）
 - npm 单包分发：一个公开的 `pinomad` 包装宿主、中继和构建好的 Web 客户端（Bun.build 打我们自己的代码，第三方依赖外置）；`pinomad` 单入口分发子命令；打包安装升级走 `npm i -g`；tag 触发 GitHub Actions 发布（OIDC trusted publishing）（ADR-0016）。仓库已公开，`pinomad@0.1.0` 已手动首发；trusted publisher 已配置（只允许 `npm publish`，不开 `npm dist-tag`），`v0.1.1` 由 tag 流水线经 OIDC 自动发布并带 provenance
+- 协议兼容（ADR-0018）：hello 带 `protocol: { major: 5, minor: 0 }` 和 `hostVersion`，客户端只比较主版本号，不一致时按"客户端太旧 / 宿主太旧"分别提示。`parseClientFrame` 区分"不认识"和"格式错误"：不认识的调用回 `result ok:false`，不认识的流回 `ended`，不认识的帧类型忽略；格式错误用 4400 断开，客户端收到 4400 不再重连（1008 留给安全通道，照旧重连）。契约快照的测试在 `apps/host/test/protocol-contract.test.ts`，基准文件在 `packages/protocol/test/fixtures/`；升级 `@earendil-works/*` 时用 `PINOMAD_UPDATE_CONTRACT=1` 重新录制并评审变化。遗留：第一次涨次版本号时，在 `packages/protocol` 里加功能对应次版本号的 `since` 表
 - Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
 - tailnet 直连试用：Mac 和 Omarchy 都装官方 Tailscale 客户端，和 sing-box 共存。共用的 sing-box 配置要改两处：DNS 规则让 `tailscale.com` / `tailscale.io` 不走 FakeIP，否则控制面连不上；tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。`tailscale ping` 显示经局域网直连，2–7ms，没走 DERP。Omarchy 开了 Tailscale SSH，tailnet 策略加了一条 SSH 规则（成员登录自己的设备，非 root）。宿主带 `--remote-port 7422` 和 `--relay` 同时跑：tailnet 内的设备直连，不在 tailnet 里的设备仍走中继。Mac 已经配对上并通过直连使用（2026-10-10）
 
@@ -97,14 +98,8 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 客户端形态已定（ADR-0017）：桌面端 Electron 只做 macOS arm64，页面打包进 App；Linux 用 Web；移动端 Expo。按顺序：
 
-1. 实现协议兼容（ADR-0018），任何一个打包客户端发布前都要先做完：
-   - hello 带 `protocol: { major: 5, minor: 0 }` 和宿主版本号；客户端只比较主版本号；功能对应的次版本号集中记录在 `packages/protocol`。
-   - `isClientFrame` 区分"不认识"和"格式错误"：宿主对不认识的调用回 unsupported 错误，对不认识的流回 `ended`，忽略不认识的帧类型；格式错误照旧 `close(1008)`。
-   - 客户端忽略不认识的帧类型和字段；收到 1008 关闭时不再重连。
-   - 契约快照：从宿主录一组真实的 snapshot 和 ops 帧作为基准文件，加进 `bun run test`；升级 `@earendil-works/*` 时重新录制并评审变化。
-   - 主版本不一致时，按"客户端太旧"和"宿主太旧"分别提示。
-2. 桌面端 `apps/desktop`：renderer 复用 `apps/web` 的构建；外壳、electron-updater、签名公证从 Pace 复制（注明来源 commit）；私钥存进 `safeStorage`；同时连多台宿主；`pinomad://` 深链配对；通知。内嵌浏览器不搬（宿主可能在别的机器上，预览要经安全通道转发端口），等有需要再说。
-3. 移动端 Expo：先验证 `packages/protocol` 能在 Hermes 上跑（`getRandomValues`、`TextEncoder`、`WebSocket`）、能和 Bun workspaces 一起用；界面用 React Native 重写，不依赖 DOM 的视图推导（如 `CotView`）挪到共享的位置；设计 token 怎么在两端共享还没定。iOS 构建和分发走 EAS / TestFlight。
+1. 桌面端 `apps/desktop`：renderer 复用 `apps/web` 的构建；外壳、electron-updater、签名公证从 Pace 复制（注明来源 commit）；私钥存进 `safeStorage`；同时连多台宿主；`pinomad://` 深链配对；通知。内嵌浏览器不搬（宿主可能在别的机器上，预览要经安全通道转发端口），等有需要再说。
+2. 移动端 Expo：先验证 `packages/protocol` 能在 Hermes 上跑（`getRandomValues`、`TextEncoder`、`WebSocket`）、能和 Bun workspaces 一起用；界面用 React Native 重写，不依赖 DOM 的视图推导（如 `CotView`）挪到共享的位置；设计 token 怎么在两端共享还没定。iOS 构建和分发走 EAS / TestFlight。
 - 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）。设置存在哪还没定，候选：写 pi 的 `settings.json`、存进 Durable 的 session 级文档、新建 `~/.pinomad/settings.json`。客户端偏好存在设备本地；宿主启动参数和 `mcp.json` 第一版只读展示。
 - 以后可能有：TUI 客户端（TS，能直接复用 `packages/protocol`）。
 

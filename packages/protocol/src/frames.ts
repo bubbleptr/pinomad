@@ -25,8 +25,28 @@ export const docStream = (kind: string, id: ConversationId): StreamName => `doc:
 /** Close code for a rejected token; clients must not reconnect after it. */
 export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
-/** Bumped on breaking frame/stream changes; compared against the hello frame's `protocol`. */
-export const PROTOCOL_VERSION = 4;
+/**
+ * Close code for a malformed client frame, an application-range code;
+ * clients must not reconnect after it — the next attempt sends the same
+ * frames. Deliberately not 1008: secure-channel failures (handshake timeout,
+ * corrupt record) also close with 1008 and must stay reconnectable.
+ */
+export const INVALID_FRAME_CLOSE_CODE = 4400;
+
+/** The version a hello announces: `major` decides compatibility, `minor` the features the host has. */
+export interface ProtocolVersion {
+  readonly major: number;
+  readonly minor: number;
+}
+
+/**
+ * The protocol this build speaks (ADR-0018). Within a major version only
+ * additive changes are allowed — optional fields, new calls, streams, frame
+ * and presentation types — and each addition bumps `minor`; a client gates a
+ * feature on the host's `minor` covering it (a `since` table is added here
+ * with the first minor bump). `major` differs → the two cannot talk.
+ */
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 0 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -94,7 +114,9 @@ export type CallMethod = keyof CallMethods;
 export type ServerFrame =
   | {
       readonly type: "hello";
-      readonly protocol: number;
+      readonly protocol: ProtocolVersion;
+      /** Packaged release version; absent in a source checkout. */
+      readonly hostVersion?: string;
       readonly session: SessionInfo;
       readonly models: readonly ModelSummary[];
       /** New-conversation defaults; absent means the host has none. */
@@ -124,28 +146,84 @@ export type ClientFrame =
       };
     }[CallMethod];
 
-/** JSON from a socket has no TypeScript guarantees; reject it before dispatch. */
-export function isClientFrame(value: unknown): value is ClientFrame {
-  if (!record(value)) return false;
+/**
+ * What an inbound client frame turned out to be (ADR-0018 §3): a frame to
+ * dispatch, something this host predates (`unsupported*`, answered with an
+ * error instead of a disconnect), a frame type to ignore, or `malformed` —
+ * malformed means the sender is buggy, so the socket is closed.
+ */
+export type ParsedClientFrame =
+  | { readonly kind: "frame"; readonly frame: ClientFrame }
+  | { readonly kind: "unsupportedCall"; readonly id: number; readonly method: string }
+  | { readonly kind: "unsupportedStream"; readonly type: "subscribe" | "unsubscribe"; readonly stream: string }
+  | { readonly kind: "unknownType" }
+  | { readonly kind: "malformed" };
+
+/** JSON from a socket has no TypeScript guarantees; classify it before dispatch. */
+export function parseClientFrame(value: unknown): ParsedClientFrame {
+  if (!record(value) || typeof value.type !== "string") return { kind: "malformed" };
   if (value.type === "subscribe" || value.type === "unsubscribe") {
     const stream = value.stream;
-    return (
-      typeof stream === "string"
-      && (
-        stream === "tasks"
-        || stream === "conversations"
-        || stream === "index"
-        || stream === "devices"
-        || stream === "mcp"
-        || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
-      )
-    );
+    if (typeof stream !== "string") return { kind: "malformed" };
+    if (isStreamName(stream)) {
+      return { kind: "frame", frame: { type: value.type, stream } };
+    }
+    // A name under a known stream kind is a malformed frame; anything else is
+    // a stream this host predates.
+    const prefix = stream.slice(0, stream.indexOf(":") === -1 ? undefined : stream.indexOf(":"));
+    if (STREAM_KINDS.has(prefix)) return { kind: "malformed" };
+    return { kind: "unsupportedStream", type: value.type, stream };
   }
-  if (value.type !== "call" || !Number.isSafeInteger(value.id) || !record(value.args)) return false;
-  const args = value.args;
+  if (value.type !== "call") return { kind: "unknownType" };
+  const { id, method, args } = value;
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || !record(args) || typeof method !== "string") {
+    return { kind: "malformed" };
+  }
+  if (!isCallMethod(method)) return { kind: "unsupportedCall", id, method };
+  return validCallArgs(method, args)
+    ? { kind: "frame", frame: { type: "call", id, method, args } as ClientFrame }
+    : { kind: "malformed" };
+}
+
+/** Every stream name's kind: fixed names plus the `conversation:`/`doc:` prefixes. */
+const STREAM_KINDS = new Set(["conversation", "doc", "tasks", "conversations", "index", "devices", "mcp"]);
+
+function isStreamName(stream: string): stream is StreamName {
+  return (
+    stream === "tasks"
+    || stream === "conversations"
+    || stream === "index"
+    || stream === "devices"
+    || stream === "mcp"
+    || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
+  );
+}
+
+const isCallMethod = (method: string): method is CallMethod =>
+  (CALL_METHODS as readonly string[]).includes(method);
+
+/** Call names kept in sync with CallMethods; the switch below validates their args. */
+const CALL_METHODS = [
+  "addProject",
+  "removeProject",
+  "createConversation",
+  "archive",
+  "submit",
+  "abort",
+  "compact",
+  "setModel",
+  "setThinkingLevel",
+  "fork",
+  "answer",
+  "changes",
+  "createPairing",
+  "revokeDevice",
+] as const satisfies readonly CallMethod[];
+
+function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
   const conversationId = (): boolean =>
     typeof args.conversationId === "number" && Number.isSafeInteger(args.conversationId) && args.conversationId >= 1;
-  switch (value.method) {
+  switch (method) {
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
@@ -192,8 +270,6 @@ export function isClientFrame(value: unknown): value is ClientFrame {
       return Object.keys(args).length === 0;
     case "revokeDevice":
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
-    default:
-      return false;
   }
 }
 

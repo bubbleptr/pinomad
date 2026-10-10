@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ClientFrame, ServerFrame } from "../src/frames.ts";
+import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, type ClientFrame, type ServerFrame } from "../src/frames.ts";
 import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { ConversationDefaults, DurableView } from "../src/view.ts";
@@ -19,6 +19,7 @@ const SNAPSHOTS: Record<string, unknown> = {
  */
 function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
   transport: FrameTransport;
+  opened: FrameHandlers[];
   disconnect: () => void;
 } {
   const opened: FrameHandlers[] = [];
@@ -29,7 +30,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
       const defaults = defaultsList[Math.min(opened.length - 1, defaultsList.length - 1)]!;
       const hello: ServerFrame = {
         type: "hello",
-        protocol: 4,
+        protocol: PROTOCOL,
         session: { id: "fake", directory: "" },
         models: [],
         docs: [],
@@ -52,6 +53,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
   };
   return {
     transport,
+    opened,
     disconnect: () => opened.at(-1)?.closed(1000),
   };
 }
@@ -94,6 +96,54 @@ describe("RemoteDurable reconnect", () => {
         remote,
         (view) => view.defaults.model?.modelId === "faux-2" && view.defaults.thinkingLevel === "low",
       );
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("ignores frames of a type it does not know and keeps applying later ones", async () => {
+    const { transport, opened } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      // A newer host may send frame types this bundle predates (ADR-0018 §4);
+      // they must not break the stream handling around them.
+      opened[0]!.message(JSON.stringify({ type: "from-the-future", data: 1 }));
+      opened[0]!.message(JSON.stringify({ type: "snapshot", stream: "mcp", value: { servers: [] } }));
+      await waitForView(remote, (view) => view.mcp !== null);
+      expect(remote.view.current().connection).toBe("connected");
+      expect(remote.view.current().mcp).toEqual({ servers: [] });
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("treats a 4400 close after ready as terminal: closed, noticed, no reconnect", async () => {
+    const { transport, opened } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
+    try {
+      opened[0]!.closed(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
+      await waitForView(remote, (view) => view.connection === "closed");
+      expect(remote.view.current().notices.at(-1)).toMatchObject({
+        level: "error",
+        message: expect.stringContaining("malformed"),
+      });
+      expect(remote.view.current().notices.at(-1)!.message).toContain("Invalid client frame");
+      // Reconnecting would loop on the same rejection; give it room to fire.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(opened).toHaveLength(1);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("reconnects after a plain 1008 close: secure-channel failures are not terminal", async () => {
+    const { transport, opened } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
+    try {
+      opened[0]!.closed(1008, "handshake timeout");
+      await waitForView(remote, (view) => view.connection === "reconnecting");
+      await waitForView(remote, (view) => view.connection === "connected");
+      expect(opened).toHaveLength(2);
     } finally {
       remote.close();
     }
