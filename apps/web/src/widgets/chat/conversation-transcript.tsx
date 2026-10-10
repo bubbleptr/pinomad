@@ -7,6 +7,7 @@ import type { ConversationId, ConversationView } from "@earendil-works/pi-durabl
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat } from "../../entities/conversation/cot-view.ts";
+import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { ChatEntryView } from "./chat-entries.tsx";
 
 export function ConversationTranscript({
@@ -16,7 +17,8 @@ export function ConversationTranscript({
   canFork,
   openInPanel,
   onFork,
-  forkAt,
+  forksAt,
+  summaryOf,
   ownOnly,
   forkSource,
 }: {
@@ -27,7 +29,9 @@ export function ConversationTranscript({
   /** Threads/tasks inside a transcript open beside the main area, not in it. */
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   onFork: (entryId: string) => void;
-  forkAt?: (entryId: string) => ConversationId | undefined;
+  forksAt?: (entryId: string) => ConversationId[];
+  /** Live summaries for subagent cards inside the transcript. */
+  summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   /**
    * A fork beside its parent: render only the fork's own entries — the
    * inherited prefix already fills the main column — opened by a
@@ -61,7 +65,8 @@ export function ConversationTranscript({
             openInPanel={openInPanel}
             onFork={onFork}
             canFork={canFork}
-            forkAt={forkAt}
+            forksAt={forksAt}
+            summaryOf={summaryOf}
           />
         ))}
       </div>

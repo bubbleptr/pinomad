@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { displayName, familyStatus, familyUpdatedAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "./family.ts";
+import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "./family.ts";
 
 const summary = (over: Partial<ConversationSummary> = {}): ConversationSummary => ({
   id: 0 as ConversationSummary["id"],
@@ -70,6 +70,24 @@ describe("displayName", () => {
 });
 
 const organizedOf = (chats: ConversationNode[]): Organized => ({ chats, projects: [] });
+
+describe("forksAt", () => {
+  it("returns the direct fork children anchored at an entry — including legacy nested forks", () => {
+    const id = (value: number) => value as ConversationSummary["id"];
+    // Legacy trees can nest a fork inside a fork (pre-depth-of-one data).
+    const nested = node({ id: id(3), kind: "fork", parent: id(2), forkedAt: "11" });
+    const fork = node({ id: id(2), kind: "fork", parent: id(1), forkedAt: "10" }, [nested]);
+    const root = node({ id: id(1) }, [fork, node({ id: id(4), kind: "subagent", parent: id(1) })]);
+    const organized = organizedOf([root]);
+
+    expect(forksAt(organized, id(1), "10")).toEqual([id(2)]);
+    // A fork shown in the panel resolves its own children the same way.
+    expect(forksAt(organized, id(2), "11")).toEqual([id(3)]);
+    // Only direct children anchor: B's entry does not belong to the root.
+    expect(forksAt(organized, id(1), "11")).toEqual([]);
+    expect(forksAt(organized, id(42), "10")).toEqual([]);
+  });
+});
 
 describe("rootOf", () => {
   const subInFork = node({

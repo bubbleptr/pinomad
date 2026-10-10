@@ -67,8 +67,16 @@ export function createSubagent(options: {
     replay: "safe",
     execute: async (args, api, context) => {
       const child = await api.commit(async (tx) => {
+        // A rerun reads the facts the creation recorded, so details agree.
         const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
-        if (existing !== undefined) return existing.id;
+        if (existing !== undefined) {
+          const doc = await tx.doc(SubagentDoc, existing.id);
+          return {
+            id: existing.id,
+            ...(doc?.model === undefined ? {} : { model: doc.model }),
+            ...(doc?.startedAt === undefined ? {} : { startedAt: doc.startedAt }),
+          };
+        }
         let model: ModelRef | undefined;
         let thinkingLevel: ModelThinkingLevel | undefined;
         let override: ReturnType<Models["getModel"]>;
@@ -100,16 +108,26 @@ export function createSubagent(options: {
         };
         const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
         await configure(tx, created.id, change);
+        // The model the child will actually run: its own AgentDoc after
+        // configure, else the override, else the caller's — absent for a child
+        // with no model at all.
+        const childAgent = await tx.doc(AgentDoc, created.id);
+        const ref = childAgent.model ?? model ?? (await tx.doc(AgentDoc, api.conversationId)).model;
+        const startedAt = Date.now();
+        const doc = await tx.doc(SubagentDoc, created.id);
+        doc.startedAt = startedAt;
+        if (ref !== undefined) doc.model = `${ref.provider}/${ref.modelId}`;
         const label = args.description?.trim();
-        if (label !== undefined && label !== "") {
-          (await tx.doc(SubagentDoc, created.id)).label = label;
-        }
-        return created.id;
+        if (label !== undefined && label !== "") doc.label = label;
+        return { id: created.id, ...(ref === undefined ? {} : { model: doc.model }), startedAt };
       }, context);
       // Lets clients attach to the child while the call runs (and after, via the result details).
-      await api.details({ conversationId: child }, context);
-      const handle = await api.conversation(child, context);
-      if (handle === undefined) throw new Error(`Subagent conversation ${child} does not exist`);
+      await api.details(
+        { conversationId: child.id, ...(child.model === undefined ? {} : { model: child.model }), ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }) },
+        context,
+      );
+      const handle = await api.conversation(child.id, context);
+      if (handle === undefined) throw new Error(`Subagent conversation ${child.id} does not exist`);
       const request = { type: "input", content: args.task, requestId: `subagent:${api.taskId}` } as const;
       const settled = await (await handle.submit(request, context)).wait(context);
       if (settled.status !== "done" || settled.type !== "input") throw new Error(`Subagent failed: ${settled.status}`);
@@ -120,7 +138,11 @@ export function createSubagent(options: {
         message?.role === "assistant" ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("") : "";
       const result: ToolExecutionResult = {
         content: [{ type: "text", text: text === "" ? "(The subagent returned no text.)" : text }],
-        details: { conversationId: child },
+        details: {
+          conversationId: child.id,
+          ...(child.model === undefined ? {} : { model: child.model }),
+          ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }),
+        },
       };
       return result;
     },

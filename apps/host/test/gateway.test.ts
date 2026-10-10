@@ -1,9 +1,15 @@
+import { once } from "node:events";
+import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { streamingText, transcript } from "@pinomad/protocol/transcript.ts";
+import type { Models } from "@earendil-works/pi-ai/models";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { question } from "../src/extensions/question.ts";
+import { createSubagent } from "../src/extensions/subagent.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -146,6 +152,64 @@ describe("gateway", () => {
       client.view,
       (view) => view.organized.chats[0]?.summary.status === undefined && transcript(view.conversation!).at(-1)?.text === "done",
     );
+  });
+
+  it("exposes the in-flight tool call as the summary's activity, without list churn", async () => {
+    let finishChild!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const childGate = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (finishChild = resolve));
+    let finishRun!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const runGate = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (finishRun = resolve));
+    const host = await startFauxHost(defer, {
+      extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+        createSubagent({ models, modelSummaries, exclude: [] }),
+      ],
+      answers: [
+        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around", description: "Check files" }), {
+          stopReason: "toolUse",
+        }),
+        () => childGate,
+        "parent final",
+        () => runGate,
+      ],
+    });
+    const client = await connectTo(defer, host);
+
+    // Frame-level count: pi.live republishes per streamed token; the
+    // conversations stream may only republish when a summary really changes.
+    const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+    defer(() => socket.terminate());
+    const frames: ServerFrame[] = [];
+    socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
+    await once(socket, "open");
+    socket.send(JSON.stringify({ type: "subscribe", stream: "conversations" }));
+    const conversationFrames = () => frames.filter((frame) => frame.type === "snapshot" && frame.stream === "conversations");
+
+    const chats = () => client.view.current().organized.chats;
+    await startChat(client, "delegate");
+    // The parent's subagent slot is running while the child is stalled: the
+    // summary reports what it is doing.
+    await waitForView(client.view, (view) => chats()[0]?.summary.activity !== undefined);
+    expect(chats()[0]!.summary.activity).toEqual({ tool: "subagent", target: "Check files" });
+
+    finishChild(fauxAssistantMessage("child answer"));
+    await waitForView(
+      client.view,
+      (view) => transcript(view.conversation!).at(-1)?.text === "parent final" && chats()[0]?.summary.activity === undefined,
+    );
+
+    // A generating-only run has status running but nothing in flight.
+    await client.controller.submit("again", "followUp");
+    await waitForView(client.view, (view) => chats()[0]?.summary.status === "running");
+    expect(chats()[0]!.summary.activity).toBeUndefined();
+    finishRun(fauxAssistantMessage("done"));
+    await waitForView(client.view, (view) => chats()[0]?.summary.status === undefined);
+
+    // The whole flow — creation, entries, two run starts and ends, activity
+    // appearing and clearing — republished the list a handful of times, not
+    // once per live token.
+    const republished = conversationFrames();
+    expect(republished.length).toBeGreaterThan(0);
+    expect(republished.length).toBeLessThan(20);
   });
 
   it("marks a conversation failed after a run error, surviving restart, until the next message", async () => {

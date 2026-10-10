@@ -10,7 +10,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
-import { displayName, rootOf } from "./entities/conversation/family.ts";
+import { displayName, forksAt, rootOf } from "./entities/conversation/family.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -379,15 +379,17 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   // fell out of `organized` (e.g. its root was archived by another client) —
   // also hides it: the host only accepts forks of known root conversations.
   const canFork = shownSummary?.kind === "conversation";
-  // One fork per message (ADR-0019 §3): a run whose entry was already forked
-  // reopens that fork instead of the dialog.
-  const forkAt = useCallback(
-    (entryId: string): ConversationId | undefined =>
-      shownSummary === undefined
-        ? undefined
-        : findConversation(view.organized, shownSummary.id)?.children.find((child) => child.summary.forkedAt === entryId)
-            ?.summary.id,
+  // A forked message shows the "N forks" chip instead of the Fork button —
+  // legacy data can hold several per message (ADR-0019 §3).
+  const forksAtForShown = useCallback(
+    (entryId: string): ConversationId[] =>
+      shownSummary === undefined ? [] : forksAt(view.organized, shownSummary.id, entryId),
     [view.organized, shownSummary],
+  );
+  // Live summaries power the subagent cards in the transcript.
+  const summaryOf = useCallback(
+    (id: ConversationId) => findConversation(view.organized, id)?.summary,
+    [view.organized],
   );
   const startDraft = (home: Home): void => {
     setDraft(home);
@@ -457,7 +459,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
               canFork={canFork}
               openInPanel={openInPanel}
               onFork={setForkTarget}
-              forkAt={forkAt}
+              forksAt={forksAtForShown}
+              summaryOf={summaryOf}
             />
           </ChatLayout>
         )}

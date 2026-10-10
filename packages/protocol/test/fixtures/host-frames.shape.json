@@ -352,6 +352,17 @@
     "conversations": {
       "value": [
         {
+          "activity": {
+            "target": "string",
+            "tool": "string"
+          },
+          "id": "number",
+          "kind": "=conversation",
+          "status": "string",
+          "title": "string",
+          "updatedAt": "number"
+        },
+        {
           "id": "number",
           "kind": "=conversation",
           "status": "string",

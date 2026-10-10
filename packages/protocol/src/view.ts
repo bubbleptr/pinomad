@@ -46,6 +46,8 @@ export interface ConversationSummary {
   readonly updatedAt?: number;
   /** Subagents only: the `description` the delegating agent gave the call. */
   readonly label?: string;
+  /** Running only: the tool call in flight, e.g. { tool: "read", target: "src/a.ts" }; absent while thinking/writing or idle. */
+  readonly activity?: { readonly tool: string; readonly target?: string };
 }
 
 export interface SessionInfo {

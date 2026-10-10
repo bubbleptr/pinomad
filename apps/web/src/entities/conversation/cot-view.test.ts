@@ -1,7 +1,7 @@
 // The Durable→CotView adapter: same fixture style as apps/web/test/presentation.test.ts.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { deriveChat, pinomadOf, type ChatEntry } from "./cot-view.ts";
+import { deriveChat, pinomadOf, splitSubagentCalls, type ChatEntry, type CotView } from "./cot-view.ts";
 
 let nextId = 1;
 const entry = (kind: string, message?: unknown): EntryRecord =>
@@ -218,25 +218,32 @@ describe("deriveChat", () => {
     const live = deriveChat(
       view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse")], {
         run: {},
-        tools: [{ callId: "c1", name: "subagent", status: "running", details: { conversationId: 7 } }],
+        tools: [{ callId: "c1", name: "subagent", status: "running", details: { conversationId: 7, model: "faux/faux-1", startedAt: 1000 } }],
       }),
       {},
       true,
     );
     const liveStep = runs(live)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    expect(pinomadOf(liveStep.tools[0]!)).toEqual({ kind: "subagent", conversationId: 7 });
+    expect(pinomadOf(liveStep.tools[0]!)).toEqual({ kind: "subagent", conversationId: 7, model: "faux/faux-1", startedAt: 1000 });
 
     const done = deriveChat(
       view([
         user("go"),
         assistant([call("c1", "subagent", { task: "survey" })], "toolUse"),
-        result("c1", "subagent", "report", false, { conversationId: 9 }),
+        result("c1", "subagent", "report", false, { conversationId: 9, model: "faux/faux-1", startedAt: 1000 }, 4000),
       ]),
       {},
       false,
     );
     const doneStep = runs(done)[0]!.cot.steps[0] as typeof liveStep;
-    expect(pinomadOf(doneStep.tools[0]!)).toEqual({ kind: "subagent", conversationId: 9, output: "report" });
+    expect(pinomadOf(doneStep.tools[0]!)).toEqual({
+      kind: "subagent",
+      conversationId: 9,
+      output: "report",
+      model: "faux/faux-1",
+      startedAt: 1000,
+      endedAt: 4000,
+    });
   });
 
   it("collects result images onto the tool item", () => {
@@ -251,6 +258,100 @@ describe("deriveChat", () => {
     const entries = deriveChat(view([user("go"), assistant([call("c1", "mcp__shot__capture", {})], "toolUse"), withImage]), {}, false);
     const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
     expect(step.tools[0]!.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+  });
+
+  it("lifts subagent calls out of tools steps, keeping order and dropping emptied steps", () => {
+    const tool = (id: string, name: string) => ({ toolCallId: id, toolName: name, state: "output-available" as const });
+    const cot = {
+      phase: "settled" as const,
+      steps: [
+        { kind: "tools" as const, tools: [tool("c1", "subagent"), tool("c2", "read")] },
+        { kind: "interim" as const, text: "looking" },
+        { kind: "tools" as const, tools: [tool("c3", "subagent")] },
+      ],
+      answer: { text: "done", streaming: false },
+    } as CotView;
+    const { view: next, subagents } = splitSubagentCalls(cot);
+    expect(subagents.map((item) => item.tool.toolCallId)).toEqual(["c1", "c3"]);
+    expect(next.steps.map((step) => step.kind)).toEqual(["tools", "interim"]);
+    const kept = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
+    expect(kept.tools.map((item) => item.toolCallId)).toEqual(["c2"]);
+  });
+
+  it("settles the surviving tools step when the lifted call was the active one", () => {
+    // Live run: read already answered, the subagent is the in-flight call.
+    const cot = runs(
+      deriveChat(
+        view(
+          [
+            user("go"),
+            assistant([call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" })], "toolUse"),
+            result("c1", "read", "done"),
+          ],
+          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
+        ),
+        {},
+        true,
+      ),
+    )[0]!.cot;
+    const before = cot.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
+    expect(before.live).toBe(true);
+    expect(before.activeToolCallId).toBe("c2");
+
+    const { view: next } = splitSubagentCalls(cot);
+    const step = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
+    expect(step.tools.map((item) => item.toolCallId)).toEqual(["c1"]);
+    // Nothing is still in flight: the row must not keep showing a stale call.
+    expect(step.live).toBe(false);
+    expect(step.activeToolCallId).toBeUndefined();
+  });
+
+  it("hands the active slot to a still-pending call when the active one was lifted", () => {
+    const cot = runs(
+      deriveChat(
+        view(
+          [
+            user("go"),
+            assistant(
+              [call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" }), call("c3", "read", { path: "b.ts" })],
+              "toolUse",
+            ),
+            result("c1", "read", "done"),
+          ],
+          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
+        ),
+        {},
+        true,
+      ),
+    )[0]!.cot;
+
+    const { view: next } = splitSubagentCalls(cot);
+    const step = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
+    expect(step.tools.map((item) => item.toolCallId)).toEqual(["c1", "c3"]);
+    // c3 is queued but unstarted: it becomes the step's active call.
+    expect(step.live).toBe(true);
+    expect(step.activeToolCallId).toBe("c3");
+  });
+
+  it("keys lifted subagent calls by their step so a reused call id stays distinct", () => {
+    const cot = runs(
+      deriveChat(
+        view([
+          user("go"),
+          assistant([call("c1", "subagent", { task: "one" })], "toolUse"),
+          result("c1", "subagent", "r1"),
+          assistant([call("c1", "subagent", { task: "two" })], "toolUse"),
+          result("c1", "subagent", "r2"),
+        ]),
+        {},
+        false,
+      ),
+    )[0]!.cot;
+    const { subagents } = splitSubagentCalls(cot);
+    expect(subagents).toHaveLength(2);
+    expect(subagents[0]!.tool.toolCallId).toBe("c1");
+    expect(subagents[1]!.tool.toolCallId).toBe("c1");
+    expect(subagents[0]!.key).not.toBe(subagents[1]!.key);
   });
 
   it("splits runs at compaction and reset boundaries", () => {

@@ -71,7 +71,17 @@ export type ChatEntry =
  */
 export type PinomadToolDetail =
   | { kind: "diff"; patch: string }
-  | { kind: "subagent"; conversationId: ConversationId; output?: string };
+  | {
+      kind: "subagent";
+      conversationId: ConversationId;
+      output?: string;
+      /** "provider/modelId" the child ran, recorded by the host. */
+      model?: string;
+      /** Epoch ms the child was created, recorded by the host. */
+      startedAt?: number;
+      /** The tool result's timestamp — the run's end for elapsed time. */
+      endedAt?: number;
+    };
 
 /** A tool item that may carry a `pinomad` render payload; what deriveChat produces. */
 export type ConversationToolItem = ChatToolItem & { pinomad?: PinomadToolDetail };
@@ -253,7 +263,15 @@ function toolItem(
   if (classified?.type === "pinomad.diff") {
     pinomad = { kind: "diff", patch: classified.value.patch };
   } else if (child !== undefined) {
-    pinomad = { kind: "subagent", conversationId: child, ...(output === undefined ? {} : { output }) };
+    const detail = details as { model?: unknown; startedAt?: unknown };
+    pinomad = {
+      kind: "subagent",
+      conversationId: child,
+      ...(output === undefined ? {} : { output }),
+      ...(typeof detail.model === "string" ? { model: detail.model } : {}),
+      ...(typeof detail.startedAt === "number" ? { startedAt: detail.startedAt } : {}),
+      ...(typeof result?.timestamp === "number" ? { endedAt: result.timestamp } : {}),
+    };
   }
   if (classified?.type === "pinomad.codemode") {
     const running = result === undefined;
@@ -470,4 +488,45 @@ export function deriveChat(
   draft ??= busy ? { assistants: [], orphans: new Map() } : undefined;
   flush(busy);
   return items;
+}
+
+/**
+ * Lift subagent calls out of a run's CoT steps for the anchor cards: calls are
+ * identified by tool name (a still-streaming call has no details yet), their
+ * order is preserved, and a tools step emptied by the lift is dropped.
+ */
+export function splitSubagentCalls(view: CotView): { view: CotView; subagents: { key: string; tool: ChatToolItem }[] } {
+  const subagents: { key: string; tool: ChatToolItem }[] = [];
+  const steps: CotStep[] = [];
+  for (const step of view.steps) {
+    if (step.kind !== "tools") {
+      steps.push(step);
+      continue;
+    }
+    const rest: ChatToolItem[] = [];
+    step.tools.forEach((tool, index) => {
+      if (tool.toolName !== "subagent") {
+        rest.push(tool);
+        return;
+      }
+      // Call ids only have to be unique within one message — providers reuse
+      // them — so the key scopes each card to its step.
+      subagents.push({ key: `${step.id}/${tool.toolCallId ?? index}`, tool });
+    });
+    if (rest.length === 0) continue;
+    // The lifted call may have been the step's active one: a live row would
+    // keep naming it (or worse, fall back to the last tool).
+    if (step.activeToolCallId !== undefined && !rest.some((tool) => tool.toolCallId === step.activeToolCallId)) {
+      const nextActive = rest.find((tool) => tool.state === "input-streaming" || tool.state === "input-available");
+      if (nextActive === undefined) {
+        const { activeToolCallId: _, ...settled } = step;
+        steps.push({ ...settled, tools: rest, live: false });
+      } else {
+        steps.push({ ...step, tools: rest, ...(nextActive.toolCallId === undefined ? {} : { activeToolCallId: nextActive.toolCallId }) });
+      }
+    } else {
+      steps.push({ ...step, tools: rest });
+    }
+  }
+  return { view: { ...view, steps }, subagents };
 }

@@ -4,6 +4,7 @@ import {
   type ChatToolCallStatus,
 } from "@astryxdesign/core";
 import type { ComponentProps, ReactNode } from "react";
+import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { ChatToolKindIcon, toolKindFromName } from "@/shared/ui/chat/chat-tool-kind";
 
 /**
@@ -60,49 +61,15 @@ const statusMap: Record<ToolPartState, ChatToolCallStatus> = {
 };
 
 /** Argument keys that name what a tool acted on, most specific first. */
-const TARGET_KEYS = [
-  "path",
-  "file_path",
-  "filePath",
-  "command",
-  "cmd",
-  "query",
-  "pattern",
-  "url",
-  "name",
-  // PiNomad: subagent calls label their card with the short description, then the task.
-  "description",
-  "task",
-] as const;
-
-const TARGET_MAX_LENGTH = 120;
-
 export function toolTargetFromArgs(argsText: string | undefined): string | undefined {
-  if (!argsText) {
-    return undefined;
-  }
-
+  if (!argsText) return undefined;
   let args: unknown;
   try {
     args = JSON.parse(argsText);
   } catch {
     return undefined;
   }
-
-  if (typeof args !== "object" || args === null) {
-    return undefined;
-  }
-
-  for (const key of TARGET_KEYS) {
-    const value = (args as Record<string, unknown>)[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value.length > TARGET_MAX_LENGTH
-        ? `${value.slice(0, TARGET_MAX_LENGTH)}…`
-        : value;
-    }
-  }
-
-  return undefined;
+  return toolTarget(args);
 }
 
 export function formatToolDuration(durationMs: number | undefined): string | undefined {
