@@ -21,11 +21,17 @@ export function ChatEntryView({
   connected,
   openConversation,
   onFork,
+  canFork = true,
+  forkAt,
 }: {
   entry: ChatEntry;
   connected: boolean;
   openConversation: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
+  /** False inside a fork or subagent conversation: depth is one (ADR-0019 §2). */
+  canFork?: boolean;
+  /** Resolves the fork already anchored at an entry, if the message has one (ADR-0019 §3). */
+  forkAt?: (entryId: string) => ConversationId | undefined;
 }) {
   switch (entry.kind) {
     case "user":
@@ -49,7 +55,14 @@ export function ChatEntryView({
       );
     case "run":
       return (
-        <RunEntry entry={entry} connected={connected} openConversation={openConversation} onFork={onFork} />
+        <RunEntry
+          entry={entry}
+          connected={connected}
+          openConversation={openConversation}
+          onFork={onFork}
+          canFork={canFork}
+          forkAt={forkAt}
+        />
       );
     case "compaction":
       return <ChatSystemMessage variant="divider">Earlier context summarized</ChatSystemMessage>;
@@ -63,17 +76,23 @@ function RunEntry({
   connected,
   openConversation,
   onFork,
+  canFork = true,
+  forkAt,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
   openConversation: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
+  canFork?: boolean;
+  forkAt?: (entryId: string) => ConversationId | undefined;
 }) {
   const cot = useMemo(() => fillToolDetails(entry.cot, openConversation), [entry.cot, openConversation]);
   const answer = cot.answer;
+  // A message already forked reopens that fork rather than starting a second one.
+  const existingFork = entry.forkEntryId === undefined ? undefined : forkAt?.(entry.forkEntryId);
   // A settled run's actions ride on its answer when it has one; a textless tail
   // (thinking-only or tool-only last message) still gets Fork from forkEntryId.
-  const showActions = cot.phase === "settled" && (answer !== undefined || entry.forkEntryId !== undefined);
+  const showActions = cot.phase === "settled" && (answer !== undefined || (canFork && entry.forkEntryId !== undefined));
   return (
     <ChatMessage.Assistant>
       <ChatMessage.Body>
@@ -104,12 +123,14 @@ function RunEntry({
                 }}
               />
             )}
-            {entry.forkEntryId === undefined ? null : (
+            {entry.forkEntryId === undefined || !canFork ? null : (
               <ChatMessage.Action
                 aria-label="Fork"
-                tooltip="Continue from here in a new conversation"
+                tooltip={existingFork === undefined ? "Continue from here in a new conversation" : "Open the fork from here"}
                 disabled={!connected}
-                onPress={() => onFork(entry.forkEntryId!)}
+                onPress={() =>
+                  existingFork === undefined ? onFork(entry.forkEntryId!) : openConversation(existingFork)
+                }
               >
                 <GitBranch aria-hidden="true" className="size-4" />
               </ChatMessage.Action>

@@ -26,6 +26,7 @@ import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
+import type { Harness } from "@earendil-works/pi-durable";
 import type { ScriptTool } from "./script-tools.ts";
 
 export async function main(argv: readonly string[]): Promise<void> {
@@ -51,9 +52,15 @@ export async function main(argv: readonly string[]): Promise<void> {
   // form hands codemode the script-tool catalog (MCP `codemode` exposure, ADR-0013).
   const extensionsFor =
     (models: Models, summaries: () => readonly ModelSummary[]) =>
-    (host: { readonly scriptTools: () => readonly ScriptTool[] }): readonly BuiltinExtension[] => {
+    (host: {
+      readonly scriptTools: () => readonly ScriptTool[];
+      readonly harness: () => Harness;
+    }): readonly BuiltinExtension[] => {
       const others: BuiltinExtension[] = [
-        createContext({ agentsHome: join(homedir(), ".agents"), checkout: checkoutInfo }),
+        createContext({
+          agentsHome: join(homedir(), ".agents"),
+          checkout: (input, context) => checkoutInfo(host.harness(), input, context),
+        }),
         coding,
         todo,
         question,

@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
@@ -64,6 +64,8 @@ export async function startFauxHost(
           models: Models;
           modelSummaries: () => readonly ModelSummary[];
           scriptTools: () => readonly ScriptTool[];
+          /** Resolves to the open harness — lazy because extensions out-preface it. */
+          harness: () => Harness;
         }) => readonly BuiltinExtension[]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
@@ -110,8 +112,8 @@ export async function startFauxHost(
       : {
           extensions:
             typeof extensions === "function"
-              ? (host: { scriptTools: () => readonly ScriptTool[] }) =>
-                  extensions({ models, modelSummaries, scriptTools: host.scriptTools })
+              ? (host: { scriptTools: () => readonly ScriptTool[]; harness: () => Harness }) =>
+                  extensions({ models, modelSummaries, scriptTools: host.scriptTools, harness: host.harness })
               : extensions,
         }),
     ...(projects === undefined ? {} : { projects }),

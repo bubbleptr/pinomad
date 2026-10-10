@@ -102,6 +102,49 @@ describe("subagent tool", () => {
     expect(result.details).toEqual({ conversationId: child!.id });
   });
 
+  it("labels the child with the trimmed description the delegating agent gave", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const host = await startFauxHost(defer, {
+      dataDir: dir.path,
+      extensions,
+      answers: [
+        delegates({ task: "count the lines", description: "  Audit auth middleware  " }),
+        "child answer",
+        "parent final",
+        delegates({ task: "look around" }),
+        "second child answer",
+        "parent final again",
+      ],
+    });
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+
+    const childrenOf = (view: ReturnType<typeof client.view.current>) =>
+      view.organized.chats.flatMap((node) => node.children).map((node) => node.summary);
+    expect(childrenOf(client.view.current())[0]).toMatchObject({ kind: "subagent", label: "Audit auth middleware" });
+
+    // A call without `description` leaves the label off the summary.
+    await client.controller.submit("delegate again", "followUp");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final again",
+    );
+    expect(childrenOf(client.view.current())[1]).toMatchObject({ kind: "subagent" });
+    expect(childrenOf(client.view.current())[1]!.label).toBeUndefined();
+
+    // The labels persist through a host restart — the doc is read at open.
+    const before = childrenOf(client.view.current());
+    const dataDir = client.view.current().session.directory;
+    client.close();
+    await host.close();
+    const second = await startFauxHost(defer, { dataDir });
+    const after = await connectTo(defer, second);
+    await waitForView(after.view, (view) => view.organized.chats.some((node) => node.children.length === 2));
+    expect(childrenOf(after.view.current()).map((summary) => summary.label)).toEqual(before.map((summary) => summary.label));
+  });
+
   it("configures the child without subagent or question and with subagent instructions", async () => {
     const host = await startFauxHost(defer, {
       extensions,

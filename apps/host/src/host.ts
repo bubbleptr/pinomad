@@ -33,11 +33,15 @@ export interface OpenHostOptions {
   /**
    * Built-in extensions installed before the Harness opens; their docs reach the gateway.
    * The function form is resolved once before MCP starts — `scriptTools()` stays
-   * lazy so codemode sees servers that connect later (ADR-0013 §2).
+   * lazy so codemode sees servers that connect later (ADR-0013 §2), and `harness()`
+   * resolves only when an extension's wiring runs after open (prompt renderers).
    */
   readonly extensions?:
     | readonly BuiltinExtension[]
-    | ((host: { readonly scriptTools: () => readonly ScriptTool[] }) => readonly BuiltinExtension[]);
+    | ((host: {
+        readonly scriptTools: () => readonly ScriptTool[];
+        readonly harness: () => Harness;
+      }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
   readonly settings?: HarnessSettings;
@@ -125,7 +129,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const registry = createRegistry();
     const extensions =
       typeof options.extensions === "function"
-        ? options.extensions({ scriptTools: () => mcp?.scriptTools() ?? [] })
+        ? options.extensions({
+            scriptTools: () => mcp?.scriptTools() ?? [],
+            harness: () => {
+              // Resolves after openHost assigns it — render-time wiring only.
+              if (harness === undefined) throw new Error("harness is not open yet");
+              return harness;
+            },
+          })
         : (options.extensions ?? []);
     for (const { extension } of extensions) registry.install(extension);
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.

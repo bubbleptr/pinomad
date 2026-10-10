@@ -22,6 +22,7 @@ import {
 import { Type } from "typebox";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "../builtin-extension.ts";
+import { SubagentDoc } from "../subagent-doc.ts";
 
 const INSTRUCTIONS =
   "You are a subagent working on one delegated task. You cannot ask the user questions; if you need a decision or clarification, stop and state exactly what you need in your final answer. Your final message is returned to the delegating agent as the result, so make it a complete, self-contained report.";
@@ -99,6 +100,10 @@ export function createSubagent(options: {
         };
         const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
         await configure(tx, created.id, change);
+        const label = args.description?.trim();
+        if (label !== undefined && label !== "") {
+          (await tx.doc(SubagentDoc, created.id)).label = label;
+        }
         return created.id;
       }, context);
       // Lets clients attach to the child while the call runs (and after, via the result details).

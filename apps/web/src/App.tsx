@@ -348,13 +348,28 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
   const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
+  // Fork depth is one (ADR-0019 §2): inside a fork or a subagent's conversation
+  // no run offers the Fork action. An unknown summary — the shown conversation
+  // fell out of `organized` (e.g. its root was archived by another client) —
+  // also hides it: the host only accepts forks of known root conversations.
+  const canFork = shownSummary?.kind === "conversation";
+  // One fork per message (ADR-0019 §3): a run whose entry was already forked
+  // reopens that fork instead of the dialog.
+  const forkAt = useCallback(
+    (entryId: string): ConversationId | undefined =>
+      shownSummary === undefined
+        ? undefined
+        : findConversation(view.organized, shownSummary.id)?.children.find((child) => child.summary.forkedAt === entryId)
+            ?.summary.id,
+    [view.organized, shownSummary],
+  );
   const startDraft = (home: Home): void => {
     setDraft(home);
     setDrafting(true);
   };
   // Below this the chat column would be squeezed; the dock opens as a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
-  const [forkAt, setForkAt] = useState<string>();
+  const [forkTarget, setForkTarget] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host
   // upgrade may auto-reload again.
@@ -417,7 +432,9 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
                       entry={item}
                       connected={view.connection === "connected"}
                       openConversation={openConversation}
-                      onFork={setForkAt}
+                      onFork={setForkTarget}
+                      canFork={canFork}
+                      forkAt={forkAt}
                     />
                   ))}
                 </div>
@@ -426,8 +443,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
           </ChatLayout>
         )}
       </AppFrame>
-      {forkAt === undefined ? null : (
-        <ForkDialog entryId={forkAt} remote={remote} connected={view.connection === "connected"} onClose={() => setForkAt(undefined)} />
+      {forkTarget === undefined ? null : (
+        <ForkDialog entryId={forkTarget} remote={remote} connected={view.connection === "connected"} onClose={() => setForkTarget(undefined)} />
       )}
       {changesOpen && conversation !== undefined && (
         <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
@@ -448,7 +465,7 @@ function ForkDialog({ entryId, remote, connected, onClose }: { entryId: string; 
         header={
           <DialogHeader
             title="Fork from this answer"
-            subtitle="The fork sees the conversation up to here and gets its own copy of the files as of now."
+            subtitle="The fork sees the conversation up to here and works in the same files."
             onOpenChange={() => onClose()}
           />
         }
