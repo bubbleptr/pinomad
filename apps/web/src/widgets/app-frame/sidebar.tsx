@@ -3,6 +3,7 @@ import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
@@ -160,6 +161,8 @@ function SessionGlyphSlot() {
   return <span className="pigui-session-glyph" data-testid="session-glyph" />;
 }
 
+const FAMILY_STATUS_TEXT = { "needs-answer": "Waiting for your answer", failed: "Failed", running: "Running" } as const;
+
 /**
  * The whole family's most urgent status in the glyph slot. The dot
  * is decorative inside the row's <button> — aria-hidden so the accessible name
@@ -167,7 +170,7 @@ function SessionGlyphSlot() {
  */
 function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
   const variant = status === "needs-answer" ? "warning" : status === "failed" ? "error" : "success";
-  const tooltip = status === "needs-answer" ? "Waiting for your answer" : status === "failed" ? "Failed" : "Running";
+  const tooltip = FAMILY_STATUS_TEXT[status];
   return (
     <span className="pigui-session-glyph" aria-hidden="true">
       <StatusDot variant={variant} label={tooltip} tooltip={tooltip} isPulsing={status !== "failed"} />
@@ -258,6 +261,12 @@ function ConversationRow({
       {...(status === undefined ? {} : { "data-status": status })}
     >
       {item}
+      {status === undefined ? null : (
+        // Not aria-describedby: Astryx SideNavItem drops aria props. A hidden
+        // sibling after the button puts the status right after the title in
+        // reading order while the button's name stays exactly the title.
+        <VisuallyHidden>{FAMILY_STATUS_TEXT[status]}</VisuallyHidden>
+      )}
       <HStack className="pigui-sidenav-row-actions pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
         <DropdownMenu
           hasChevron={false}

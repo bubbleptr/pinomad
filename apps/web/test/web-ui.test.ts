@@ -421,6 +421,14 @@ it("rolls a subagent's failure up to the family's root row", async () => {
     has: page.getByRole("button", { name: "delegate", exact: true }),
   });
   await expect.poll(() => row.getAttribute("data-status")).toBe("failed");
+
+  // The dot is decorative (aria-hidden inside the button); the status reaches
+  // screen readers as a hidden sibling AFTER it in reading order, and the row
+  // button's accessible name stays exactly the title.
+  await row.locator("xpath=./span[normalize-space()='Failed']").waitFor({ state: "attached" });
+  await expect.poll(() =>
+    row.getByRole("button", { name: "delegate", exact: true }).count(),
+  ).toBe(1);
 });
 
 it("opens a subagent's conversation from its card and returns to the parent", async () => {
