@@ -212,6 +212,51 @@ it.each([
   });
 });
 
+it("shows no Fork action inside a fork's transcript", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  const fork = page.getByRole("button", { name: "Fork", exact: true });
+  await fork.waitFor();
+  await fork.click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
+  // The client switches to the fork; its settled run offers no way to fork again.
+  await page.getByText("fork answer", { exact: true }).waitFor();
+  await expect.poll(() => fork.count()).toBe(0);
+});
+
+it("opens the existing fork instead of the dialog when a message was already forked", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  const parentId = await followFirst(observer);
+  await page.getByRole("button", { name: "Fork", exact: true }).waitFor();
+
+  // A fork already exists at the run's last entry — created through the observer.
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+  const forkId = allNodes(observer.view.current()).find((node) => node.summary.kind === "fork")!.summary.id;
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
+  await observer.controller.switchConversation(parentId);
+
+  const fork = page.getByRole("button", { name: "Fork", exact: true });
+  await expect.poll(async () => await fork.getAttribute("title")).toBe("Open the fork from here");
+  await fork.click();
+  // The page switches to the existing fork — its transcript shows — and no
+  // dialog or second fork appears (switchConversation is per-remote).
+  await page.getByText("fork answer", { exact: true }).waitFor();
+  expect(await page.getByRole("dialog").count()).toBe(0);
+  expect(allNodes(observer.view.current()).filter((node) => node.summary.kind === "fork")).toHaveLength(1);
+});
+
 it("renders todo and a pending question card on every page and shares one answer", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
@@ -347,6 +392,8 @@ it("opens a subagent's conversation from its card and returns to the parent", as
   // The header breadcrumb is <parent title> › <child title>.
   await page.getByRole("button", { name: "Back to delegate", exact: true }).waitFor();
   await page.getByText("child answer", { exact: true }).waitFor();
+  // A subagent's conversation is read-only and terminal — no Fork action on its runs.
+  expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
   await page.getByRole("button", { name: "Back to delegate", exact: true }).click();
   await expect.poll(() => page.getByRole("button", { name: "Back to delegate", exact: true }).count()).toBe(0);

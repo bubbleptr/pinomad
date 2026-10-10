@@ -18,6 +18,14 @@ export interface ContextCheckout {
   readonly repo: string;
   /** The worktree's own root directory. */
   readonly worktreeRoot: string;
+  /** False when the record belongs to another conversation sharing this cwd — a fork or a subagent. */
+  readonly own: boolean;
+}
+
+/** What the resolver knows beyond the checkout record: whether this conversation is a fork. */
+export interface ContextResolution {
+  readonly checkout?: ContextCheckout;
+  readonly fork: boolean;
 }
 
 export interface ContextOptions {
@@ -29,8 +37,13 @@ export interface ContextOptions {
   readonly checkout?: (
     input: { readonly conversationId: ConversationId; readonly read: DocumentReader },
     context: Context,
-  ) => Promise<ContextCheckout | undefined>;
+  ) => Promise<ContextResolution | undefined>;
 }
+
+// ADR-0019: a fork shares its parent's working directory; isolation is the
+// agent's choice, made explicit here because nothing else enforces it.
+const FORK_SHARED_DIR =
+  "This conversation is a fork: it shares this working directory with the conversation it was forked from, which may be editing the same files. If your task needs isolation, create your own git worktree (for example `git worktree add <dir> -b <branch>`) and use absolute paths inside it for every read, write, edit and bash command.";
 
 /**
  * System prompt sections rendered from the filesystem at every request, so edits to
@@ -49,19 +62,28 @@ export function createContext(options: ContextOptions): BuiltinExtension {
         section("environment", async (input, context) => {
           const cwd = input.agent.cwd;
           if (cwd === undefined) return undefined;
-          const checkout = await resolveCheckout({ conversationId: input.conversationId, read: input.read }, context);
-          if (checkout === undefined) return `Working directory: ${cwd}`;
+          const resolved = await resolveCheckout({ conversationId: input.conversationId, read: input.read }, context);
+          const checkout = resolved?.checkout;
+          // The fork line covers every checkout kind — a fork that still owns a
+          // pre-ADR-0019 worktree record renders like a plain conversation.
+          const forkLine = resolved?.fork === true && checkout?.own !== true ? [FORK_SHARED_DIR] : [];
+          if (checkout === undefined) {
+            return [`Working directory: ${cwd}`, ...forkLine].join("\n");
+          }
           return [
             `Working directory: ${cwd}`,
-            `This directory is a git worktree PiNomad created for this conversation, on branch ${checkout.branch} starting from commit ${checkout.base.slice(0, 12)}.`,
+            checkout.own
+              ? `This directory is a git worktree PiNomad created for this conversation, on branch ${checkout.branch} starting from commit ${checkout.base.slice(0, 12)}.`
+              : `This directory is a git worktree PiNomad created for the conversation this one belongs to, on branch ${checkout.branch} starting from commit ${checkout.base.slice(0, 12)}.`,
             `The user's project directory is ${checkout.projectPath} and must not be modified.`,
             "This is a fresh checkout: ignored files (dependencies such as node_modules, or .env) are absent — install dependencies per AGENTS.md when needed.",
+            ...forkLine,
           ].join("\n");
         }),
         section("project_context", async (input, context) => {
           const cwd = input.agent.cwd;
           if (cwd === undefined) return undefined;
-          const checkout = await resolveCheckout({ conversationId: input.conversationId, read: input.read }, context);
+          const checkout = (await resolveCheckout({ conversationId: input.conversationId, read: input.read }, context))?.checkout;
           let files: { path: string; content: string }[];
           if (checkout === undefined) {
             files = loadProjectContextFiles({ cwd, agentDir: agentsHome });

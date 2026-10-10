@@ -36,6 +36,8 @@ export interface ConversationSummary {
   readonly kind: "conversation" | "fork" | "subagent";
   /** Fork source conversation, or the conversation owning the subagent's task. */
   readonly parent?: ConversationId;
+  /** Forks only: the parent entry the fork inherits through. */
+  readonly forkedAt?: string;
   /** The first user message, for a subagent its task. */
   readonly title?: string;
 }

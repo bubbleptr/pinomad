@@ -218,37 +218,69 @@ export interface CheckoutPromptInfo {
   readonly projectPath: string;
   readonly repo: string;
   readonly worktreeRoot: string;
+  /** False when the record belongs to another conversation sharing this cwd — a fork or a subagent (ADR-0019 §1). */
+  readonly own: boolean;
+}
+
+// `parent` is fixed at creation: once a record is read, its fork flag never
+// needs another trip onto the Session mutation line — prompt sections would
+// otherwise take one commit per model request.
+const forkFlags = new WeakMap<Harness, Map<ConversationId, boolean>>();
+
+async function forkFlagOf(harness: Harness, id: ConversationId, context: Context): Promise<boolean> {
+  const cached = forkFlags.get(harness)?.get(id);
+  if (cached !== undefined) return cached;
+  const record = await harness.commit((tx) => tx.conversation(id), context);
+  // Unknown conversations may exist later; only a found record is safe to cache.
+  if (record === undefined) return false;
+  let flags = forkFlags.get(harness);
+  if (flags === undefined) forkFlags.set(harness, (flags = new Map()));
+  flags.set(id, record.parent !== undefined);
+  return record.parent !== undefined;
 }
 
 /**
- * The checkout behind a conversation's agent cwd, for the context extension.
- * Subagents inherit the owner's cwd, so matching the path against the records
- * covers them without walking the conversation graph.
+ * The checkout behind a conversation's agent cwd, plus whether the conversation
+ * is a fork, for the context extension. Subagents and forks inherit the
+ * parent's cwd, so matching the path against the records covers both without
+ * walking the conversation graph; the fork flag needs the record itself, which
+ * only the session's transaction surface exposes.
  */
 export async function checkoutInfo(
+  harness: Harness,
   input: { readonly conversationId: ConversationId; readonly read: DocumentReader },
   context: Context,
-): Promise<CheckoutPromptInfo | undefined> {
+): Promise<{ readonly checkout?: CheckoutPromptInfo; readonly fork: boolean } | undefined> {
   const agent = await input.read.snapshot(AgentDoc, input.conversationId, context);
   const cwd = agent?.cwd;
   if (cwd === undefined) return undefined;
-  const index = await input.read.snapshot(IndexDoc, context);
-  const record = checkoutAt(index?.checkouts, cwd);
-  if (record === undefined) return undefined;
+  const [index, fork] = await Promise.all([
+    input.read.snapshot(IndexDoc, context),
+    forkFlagOf(harness, input.conversationId, context),
+  ]);
+  const checkout = checkoutAt(index?.checkouts, cwd);
   return {
-    branch: record.branch,
-    base: record.base,
-    projectPath: join(record.repo, record.subdir),
-    repo: record.repo,
-    worktreeRoot: record.path,
+    fork,
+    ...(checkout === undefined
+      ? {}
+      : {
+          checkout: {
+            branch: checkout.branch,
+            base: checkout.base,
+            projectPath: join(checkout.repo, checkout.subdir),
+            repo: checkout.repo,
+            worktreeRoot: checkout.path,
+            own: checkout.conversationId === input.conversationId,
+          },
+        }),
   };
 }
 
 /**
  * After `archive(...)`: remove the worktree directories of the conversation and
- * everything nested under it (forks own their own worktrees; subagents share
- * their owner's and carry no record). Directories git refuses to remove are
- * kept and returned so the caller can warn — the branch is never deleted.
+ * everything nested under it (pre-ADR-0019 forks own worktrees; new forks and
+ * subagents share the parent's and carry no record). Directories git refuses to
+ * remove are kept and returned so the caller can warn — the branch is never deleted.
  */
 export async function cleanupArchivedWorktrees(
   harness: Harness,

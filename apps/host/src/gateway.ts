@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { networkInterfaces } from "node:os";
-import { join, relative, sep } from "node:path";
+import { join, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
@@ -11,7 +11,6 @@ import {
   type AgentState,
   type Conversation,
   type ConversationId,
-  type ConversationInit,
   type ConversationRecord,
   type Cursor,
   type EntryId,
@@ -60,6 +59,26 @@ import {
 } from "./organization.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
+
+/**
+ * Fork calls on one host serialize here (ADR-0019 §3): the one-fork-per-message
+ * check reads records inside a fresh commit, which is only safe if no second
+ * fork can land between the check and the create.
+ */
+const forkTails = new WeakMap<Harness, Promise<unknown>>();
+
+function serializedFork<T>(harness: Harness, work: () => Promise<T>): Promise<T> {
+  const next = (forkTails.get(harness) ?? Promise.resolve()).then(work, work);
+  const settled = next.then(
+    () => {},
+    () => {},
+  );
+  forkTails.set(harness, settled);
+  void settled.then(() => {
+    if (forkTails.get(harness) === settled) forkTails.delete(harness);
+  });
+  return next;
+}
 
 /** Secure-channel access: the IK handshake gate plus where sockets come from. */
 export interface SecureGatewayOptions {
@@ -504,6 +523,8 @@ function summaryOf(record: ConversationRecord): ConversationSummary {
     id: record.id,
     kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
     ...(parent === undefined ? {} : { parent }),
+    // The client's forkable-entry ids are the string form of EntryId.
+    ...(record.parent === undefined ? {} : { forkedAt: String(record.parent.at) }),
   };
 }
 
@@ -874,20 +895,45 @@ class GatewayClient {
       }
       case "fork": {
         const { entryId, removeTools = [] } = args as CallMethods["fork"]["args"];
-        // Tools are stored by name; the fork's agent drops these from what its parent offered.
-        const agent = await conversation.agent(context);
-        const remove = agent.tools.filter((tool) => removeTools.includes(tool.name));
-        const init = await this.#forkCheckout(agent.cwd);
-        const fork = await conversation.fork(
-          Number(entryId) as EntryId,
-          {
-            ownership: { kind: "ownerless" },
-            ...(remove.length === 0 ? {} : { agent: { tools: { remove } } }),
-            ...(init === undefined ? {} : { init }),
-          },
-          context,
-        );
-        return { conversationId: fork.id };
+        // ADR-0019: fork calls serialize — the checks below must observe every
+        // landed fork, across every connected client.
+        return await serializedFork(this.#options.harness, async () => {
+          const at = Number(entryId) as EntryId;
+          // Read the records inside a fresh commit: they are guaranteed current,
+          // unlike the publication-fed ConversationList a resolved fork only
+          // updates asynchronously.
+          await this.#options.harness.commit(async (tx) => {
+            const record = await tx.conversation(conversation.id);
+            if (record === undefined) throw new Error(`Conversation ${conversation.id} does not exist`);
+            if (record.parent !== undefined || record.owner !== undefined) {
+              throw new Error("Only top-level conversations can be forked");
+            }
+            let cursor: Cursor | undefined;
+            do {
+              const page = await tx.scanConversations({}, 256, cursor);
+              for (const candidate of page.items) {
+                if (candidate.parent?.conversationId === conversation.id && candidate.parent.at === at) {
+                  throw new Error("This message already has a fork");
+                }
+              }
+              cursor = page.next;
+            } while (cursor !== undefined);
+          }, context);
+          // Tools are stored by name; the fork's agent drops these from what its parent offered.
+          const agent = await conversation.agent(context);
+          const remove = agent.tools.filter((tool) => removeTools.includes(tool.name));
+          // No init: the fork inherits the parent's agent — same cwd, the same
+          // execution checkout (ADR-0019 §1).
+          const fork = await conversation.fork(
+            at,
+            {
+              ownership: { kind: "ownerless" },
+              ...(remove.length === 0 ? {} : { agent: { tools: { remove } } }),
+            },
+            context,
+          );
+          return { conversationId: fork.id };
+        });
       }
       case "answer": {
         const { kind, requestId, answers } = args as CallMethods["answer"]["args"];
@@ -982,47 +1028,6 @@ class GatewayClient {
     const base = await gitBase(cwd);
     if (base === undefined) return { available: false as const, reason: "Not in a git repository" };
     return { available: true as const, ...(await changesOf(base.repo, base.base)) };
-  }
-
-  /**
-   * The fork's worktree record and cwd, or undefined for Chat and non-git
-   * parents that keep sharing the parent's directory (ADR-0010 §4). The
-   * snapshot of the parent's checkout must be taken before the fork commit —
-   * it captures the files as of now, not as of the forked entry.
-   */
-  async #forkCheckout(cwd: string | undefined): Promise<ConversationInit | undefined> {
-    if (cwd === undefined) return undefined;
-    const index = await this.#options.harness.snapshot(IndexDoc, context);
-    const existing = checkoutAt(index?.checkouts, cwd);
-    let source: { readonly repo: string; readonly dir: string; readonly subdir: string } | undefined;
-    if (existing !== undefined) {
-      // The parent works in a worktree: snapshot that tree, keep its repo and
-      // position inside it (forks of forks and subagents resolve the same way).
-      source = { repo: existing.repo, dir: existing.path, subdir: relative(existing.path, cwd) };
-    } else {
-      if (cwd.startsWith(this.#chatsPrefix)) return undefined;
-      const base = await gitBase(cwd);
-      if (base === undefined) return undefined;
-      source = { repo: base.repo, dir: base.repo, subdir: base.subdir };
-    }
-    const { base, snapshot } = await snapshotOf(source.dir);
-    const suffix = branchSuffix();
-    return async (tx, id) => {
-      const path = worktreePath(this.#options.dataDir, id);
-      const doc = await tx.doc(IndexDoc);
-      // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.
-      if (doc.checkouts === undefined) doc.checkouts = [];
-      doc.checkouts.push({
-        conversationId: id,
-        path,
-        repo: source.repo,
-        subdir: source.subdir,
-        branch: worktreeBranch(id, suffix),
-        base,
-        snapshot,
-      });
-      (await tx.doc(AgentDoc, id)).cwd = join(path, source.subdir);
-    };
   }
 
   async #agent(id: ConversationId): Promise<Readonly<AgentState>> {

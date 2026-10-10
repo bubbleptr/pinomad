@@ -63,40 +63,6 @@ export async function gitBase(projectPath: string): Promise<RepoBase | undefined
   return { repo, subdir: relative(repo, projectPath), base };
 }
 
-const SNAPSHOT_IDENTITY = {
-  GIT_AUTHOR_NAME: "PiNomad",
-  GIT_AUTHOR_EMAIL: "pinomad@localhost",
-  GIT_COMMITTER_NAME: "PiNomad",
-  GIT_COMMITTER_EMAIL: "pinomad@localhost",
-};
-
-/**
- * One commit capturing the full working tree of `sourceDir` (a worktree or repo
- * root): modified, deleted, and untracked-but-not-ignored files. A scratch
- * index file keeps the user's real index untouched. commit-tree needs an
- * identity and users may have none configured, so one is injected for it.
- */
-export async function snapshotOf(sourceDir: string): Promise<{ base: string; snapshot: string }> {
-  const indexFile = join(tmpdir(), `pinomad-index-${randomBytes(8).toString("hex")}`);
-  const env = { GIT_INDEX_FILE: indexFile };
-  try {
-    const { stdout: head } = await git(sourceDir, ["rev-parse", "--verify", "HEAD"], env);
-    const base = head.trim();
-    await git(sourceDir, ["read-tree", base], env);
-    // `add -A` without a pathspec covers the whole working tree.
-    await git(sourceDir, ["add", "-A"], env);
-    const { stdout: tree } = await git(sourceDir, ["write-tree"], env);
-    const { stdout: commit } = await git(
-      sourceDir,
-      ["commit-tree", tree.trim(), "-p", base, "-m", "pinomad fork snapshot"],
-      { ...env, ...SNAPSHOT_IDENTITY },
-    );
-    return { base, snapshot: commit.trim() };
-  } finally {
-    await rm(indexFile, { force: true });
-  }
-}
-
 /** Git mutations on one repo serialize here: worktree add/remove take .git lock files. */
 const repoLocks = new Map<string, Promise<void>>();
 
