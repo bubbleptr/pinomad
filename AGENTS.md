@@ -1,6 +1,6 @@
 # PiNomad — Agent 说明
 
-架构决策和背景在 `docs/adr/`（0001-0019，索引见 `docs/adr/README.md`），领域术语在 `CONTEXT.md`，改动前先读。计划和待办只记在 `docs/roadmap.md`：做完一项就更新它。
+架构决策和背景在 `docs/adr/`（0001-0020，索引见 `docs/adr/README.md`），领域术语在 `CONTEXT.md`，改动前先读。计划和待办只记在 `docs/roadmap.md`：做完一项就更新它。
 
 新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 roadmap，用法进 README，不写进 ADR。新增 ADR 时同步更新索引。
 

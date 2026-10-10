@@ -102,7 +102,14 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 客户端形态已定（ADR-0017）：桌面端 Electron 只做 macOS arm64，页面打包进 App；Linux 用 Web；移动端 Expo。按顺序：
 
-1. 桌面端 `apps/desktop`：renderer 复用 `apps/web` 的构建；外壳、electron-updater、签名公证从 Pace 复制（注明来源 commit）；私钥存进 `safeStorage`；同时连多台宿主；`pinomad://` 深链配对；通知。内嵌浏览器不搬（宿主可能在别的机器上，预览要经安全通道转发端口），等有需要再说。
+1. 桌面端 `apps/desktop`（ADR-0020）。外壳、electron-updater、签名公证从 Pace 复制，提交信息注明来源 commit；后端子进程、终端、内嵌浏览器和 Pi 打包相关的 Vite 插件不搬。按堆叠 PR 分步：
+   1. 宿主：回环端口在 `/secure` 上接受安全通道；宿主总是加载密钥、能签发配对邀请；没开远程访问时，配对链接用回环地址。
+   2. Web：抽出设备存储接口，浏览器里照旧用 `localStorage` 存单个设备，行为不变。
+   3. 外壳：electron-vite 的 renderer 以 `apps/web` 为根目录，页面经自定义协议 `app://` 加载；宿主列表由 main 用 `safeStorage` 加密存放；粘贴配对链接或 `pinomad://` 深链添加宿主；侧边栏切换宿主，一次只连一台；本地能打不签名的包。
+   4. 自动更新，加上 `release.yml` 的 macOS job（签名、公证、传到 GitHub Release）。需要先在仓库里配好 Apple 的 secrets。主版本不一致时：客户端旧了就触发一次更新检查，宿主旧了就提示 `pinomad upgrade`。
+   5. 通知：用 renderer 里的 Web Notification API，窗口不在前台时，有待回答的问题或一轮运行结束就通知。
+
+   以后再说：同时保持多台宿主的连接（后台宿主也能发通知）；内嵌浏览器（宿主可能在别的机器上，预览要经安全通道转发端口）。
 2. 移动端 Expo：先验证 `packages/protocol` 能在 Hermes 上跑（`getRandomValues`、`TextEncoder`、`WebSocket`）、能和 Bun workspaces 一起用；界面用 React Native 重写，不依赖 DOM 的视图推导（如 `CotView`）挪到共享的位置；设计 token 怎么在两端共享还没定。iOS 构建和分发走 EAS / TestFlight。
 - 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）。设置存在哪还没定，候选：写 pi 的 `settings.json`、存进 Durable 的 session 级文档、新建 `~/.pinomad/settings.json`。客户端偏好存在设备本地；宿主启动参数和 `mcp.json` 第一版只读展示。
 - 以后可能有：TUI 客户端（TS，能直接复用 `packages/protocol`）。
