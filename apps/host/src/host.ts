@@ -174,10 +174,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     await ensureIndex(harness, context);
     await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
-    // The host identity exists only while remote access is on — LAN or relay.
-    const remoteAccess = options.remote !== undefined || options.relay !== undefined;
-    const hostKey = remoteAccess ? await loadHostKey(options.dataDir) : undefined;
-    const offers = remoteAccess ? pairingOffers(options.remote?.pairingTtlMs) : undefined;
+    // The host identity exists on every start (ADR-0020 §3): the loopback
+    // listener's /secure path also speaks the Noise channel, so a same-machine
+    // paired device never needs the token. The key file is created on first run.
+    const hostKey = await loadHostKey(options.dataDir);
+    const offers = pairingOffers(options.remote?.pairingTtlMs);
     const relayKey = options.relay === undefined ? undefined : await loadRelayKey(options.dataDir);
     const defaults: ConversationDefaults =
       initialModel === undefined
@@ -200,37 +201,33 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
-      ...(hostKey === undefined || offers === undefined
-        ? {}
-        : {
-            secure: {
-              hostKey,
-              offers,
-              ...(options.remote?.handshakeTimeoutMs === undefined
-                ? {}
-                : { handshakeTimeoutMs: options.remote.handshakeTimeoutMs }),
-              ...(options.remote === undefined
-                ? {}
-                : {
-                    lan: {
-                      port: options.remote.port,
-                      ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
-                    },
-                  }),
-              ...(options.relay === undefined || relayKey === undefined
-                ? {}
-                : {
-                    relay: {
-                      origin: options.relay.origin,
-                      signingKey: relayKey,
-                      ...(options.relay.reconnectDelayMs === undefined
-                        ? {}
-                        : { reconnectDelayMs: options.relay.reconnectDelayMs }),
-                      ...(options.relay.pingIntervalMs === undefined ? {} : { pingIntervalMs: options.relay.pingIntervalMs }),
-                    },
-                  }),
-            },
-          }),
+      secure: {
+        hostKey,
+        offers,
+        ...(options.remote?.handshakeTimeoutMs === undefined
+          ? {}
+          : { handshakeTimeoutMs: options.remote.handshakeTimeoutMs }),
+        ...(options.remote === undefined
+          ? {}
+          : {
+              lan: {
+                port: options.remote.port,
+                ...(options.remote.publicUrl === undefined ? {} : { publicUrl: options.remote.publicUrl }),
+              },
+            }),
+        ...(options.relay === undefined || relayKey === undefined
+          ? {}
+          : {
+              relay: {
+                origin: options.relay.origin,
+                signingKey: relayKey,
+                ...(options.relay.reconnectDelayMs === undefined
+                  ? {}
+                  : { reconnectDelayMs: options.relay.reconnectDelayMs }),
+                ...(options.relay.pingIntervalMs === undefined ? {} : { pingIntervalMs: options.relay.pingIntervalMs }),
+              },
+            }),
+      },
     });
     report = (error) => gateway.broadcast("warning", error instanceof Error ? error.message : String(error));
     for (const error of reports.splice(0)) report(error);

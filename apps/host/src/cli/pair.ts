@@ -1,6 +1,8 @@
 // `bun run pair` — print a pairing QR for a new device. Connects to the local
 // host with its token, asks for a one-time offer, and shows the link. The QR
-// scans into the web client served by the host's remote listener (ADR-0008).
+// scans into the web client served by the host's remote listener (ADR-0008);
+// a host without remote access prints a loopback link instead, usable only by
+// clients on this machine (ADR-0020).
 import { renderUnicodeCompact } from "uqr";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { hostAddress } from "./host-address.ts";

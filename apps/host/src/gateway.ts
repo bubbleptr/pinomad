@@ -115,6 +115,13 @@ export interface Gateway {
   close(): Promise<void>;
 }
 
+/**
+ * The loopback listener's secure-channel path (ADR-0020 §2): requests here
+ * get the IK handshake instead of the token + Origin gate, so a paired device
+ * on this machine never needs the token.
+ */
+export const LOOPBACK_SECURE_PATH = "/secure";
+
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const conversations = await ConversationList.open(options.harness);
   // The loopback port also serves the built web client: in service mode there
@@ -155,7 +162,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       },
       createPairing: () => {
         const spec = options.secure;
-        if (spec === undefined || (remote === undefined && relay === undefined)) return undefined;
+        if (spec === undefined) return undefined;
         const { secret, expiresAt } = spec.offers.create();
         const pair = `pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`;
         // The relay wins: a link through it works from any network, while the
@@ -164,14 +171,30 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           const target = `${relayWsBase(relay.origin)}/c/${relay.hostId}`;
           return { url: `${relay.origin}/#${pair}&url=${encodeURIComponent(target)}`, expiresAt };
         }
-        return { url: `${remote!.advertiseUrl}/#${pair}`, expiresAt };
+        if (remote !== undefined) return { url: `${remote.advertiseUrl}/#${pair}`, expiresAt };
+        // ADR-0020 §4: no remote listener — the last resort is the loopback
+        // /secure path, which only a client on this machine can use.
+        const target = `ws://127.0.0.1:${port}${LOOPBACK_SECURE_PATH}`;
+        return { url: `http://127.0.0.1:${port}/#${pair}&url=${encodeURIComponent(target)}`, expiresAt };
       },
     });
     clients.add(client);
   };
   server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     socket.on("error", () => socket.terminate());
-    const token = new URL(request.url ?? "/", "ws://127.0.0.1").searchParams.get("token");
+    const url = new URL(request.url ?? "/", "ws://127.0.0.1");
+    if (url.pathname === LOOPBACK_SECURE_PATH) {
+      // The Noise handshake is the authentication; the token and Origin gate
+      // below must not touch this path (ADR-0020 §2).
+      const secure = options.secure;
+      if (secure === undefined) {
+        socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+        return;
+      }
+      secureHandshake(socket, secure, options.harness, register);
+      return;
+    }
+    const token = url.searchParams.get("token");
     const origin = request.headers.origin;
     if (token !== options.token || (origin !== undefined && !browserOrigins.includes(origin))) {
       socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");

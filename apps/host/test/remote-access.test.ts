@@ -24,11 +24,19 @@ function devicesOf(client: RemoteDurable) {
 }
 
 function connectDevice(host: OpenedHost, device: KeyPair, pairing?: { secret: string; name: string }): Promise<RemoteDurable> {
-  const remote = host.remote!;
+  return connectDeviceAt(host.remote!.url, host.remote!.hostKey, device, pairing);
+}
+
+function connectDeviceAt(
+  target: string,
+  hostKey: Uint8Array,
+  device: KeyPair,
+  pairing?: { secret: string; name: string },
+): Promise<RemoteDurable> {
   const client = connectRemoteDurable({
     transport: secureWebSocketTransport({
-      url: remote.url,
-      hostKey: remote.hostKey,
+      url: target,
+      hostKey,
       device,
       ...(pairing === undefined ? {} : { pairing }),
     }),
@@ -50,11 +58,50 @@ function pairFrom(url: string): { hostKey: Uint8Array; secret: string } {
 }
 
 describe("remote access", () => {
-  it("is off by default: no remote listener and createPairing fails", async () => {
-    const host = await startFauxHost(defer);
+  // ADR-0020 §§2–4: no LAN listener, yet a paired device reaches the Noise
+  // channel on the loopback port's /secure path — a same-machine client like
+  // the desktop app never needs the token.
+  it("pairs a device over the loopback secure channel when remote access is off", async () => {
+    const host = await startFauxHost(defer, { answers: ["paired locally"] });
     expect(host.remote).toBeUndefined();
-    const client = await connectTo(defer, host);
-    await expect(client.controller.createPairing()).rejects.toThrow("--remote-port");
+    const tokenClient = await connectTo(defer, host);
+
+    const { url } = await createPairing(tokenClient);
+    const port = new URL(host.url).port;
+    expect(url.startsWith(`http://127.0.0.1:${port}/#pair=`)).toBe(true);
+    const params = new URLSearchParams(url.slice(url.indexOf("#") + 1));
+    const target = params.get("url");
+    expect(target).toBe(`ws://127.0.0.1:${port}/secure`);
+    // pair= isn't the fragment's last field here, so a naive split would
+    // swallow the url param into the secret.
+    const [key, secret] = params.get("pair")!.split(".");
+    const hostKey = fromBase64Url(key!);
+
+    const device = generateKeyPair();
+    const remote = await connectDeviceAt(target!, hostKey, device, { secret, name: "desktop" });
+    expect(remote.view.current().connection).toBe("connected");
+
+    await remote.controller.createConversation({ kind: "chat" }, "hello from desktop");
+    await waitForView(remote.view, (view) => transcript(view.conversation!).at(-1)?.text === "paired locally");
+
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    expect(devicesOf(tokenClient)[0]!.name).toBe("desktop");
+
+    // A registered device reconnects without a pairing secret.
+    await remote.close();
+    const again = await connectDeviceAt(target!, hostKey, device);
+    expect(again.view.current().connection).toBe("connected");
+  });
+
+  it("runs the Noise handshake on /secure without a token or an Origin check", async () => {
+    const host = await startFauxHost(defer);
+    const port = new URL(host.url).port;
+    // An Origin the token path would reject must not matter here: the close
+    // comes from the handshake (1008), not the admission gate (4401).
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/secure`, { origin: "app://pinomad" });
+    const closed = once(socket, "close");
+    socket.on("open", () => socket.send(new Uint8Array([1, 2, 3, 4])));
+    expect((await closed)[0]).toBe(1008);
   });
 
   it("pairs a device and the client can drive conversations", async () => {
