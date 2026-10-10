@@ -23,7 +23,10 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { DEVICE_KEY, deviceName, pairingFragment, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
+import { deviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
+import { ACTIVE_HOST_KEY, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
+import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
+import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { hostWindowChrome } from "./shared/host-chrome.ts";
 
@@ -36,10 +39,38 @@ const page: CSSProperties = {
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
 export function App() {
-  const address = useMemo(
-    () => resolveAddress(window.location.hash, window.location, localStorage.getItem(DEVICE_KEY)),
-    [],
-  );
+  const [store] = useState(hostStore);
+  // The host list resolves once: switching hosts reloads the page, so nothing
+  // downstream reacts to store changes after this load.
+  const [loaded, setLoaded] = useState<{
+    hosts: readonly StoredHost[];
+    activeHostKey: string | null;
+    address: ResolvedAddress | undefined;
+  }>();
+  useEffect(() => {
+    let live = true;
+    void store
+      .list()
+      .catch((error: unknown) => {
+        console.error("Could not load the paired-host list", error);
+        return [] as readonly StoredHost[];
+      })
+      .then((hosts) => {
+        if (!live) return;
+        const activeHostKey = localStorage.getItem(ACTIVE_HOST_KEY);
+        setLoaded({
+          hosts,
+          activeHostKey,
+          // Resolve exactly once: pairing clears the fragment before it updates
+          // the list, so re-resolving on render would flip a pair address into
+          // a device one and remount the client — a second connection.
+          address: resolveAddress(window.location.hash, window.location, hosts, activeHostKey),
+        });
+      });
+    return () => {
+      live = false;
+    };
+  }, [store]);
   // A same-document hash hop (a pinomad:// deep link into an open window, a
   // pasted hash edit) changes no React state — reload to re-resolve the
   // address. onPaired's replaceState fires no hashchange, so this can't loop.
@@ -50,58 +81,54 @@ export function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
-  if (address === undefined) {
-    return (
-      <Centered>
-        <NoHostLink />
-      </Centered>
-    );
-  }
-  return <Connected address={address} />;
+  const state = useMemo<HostsState>(
+    () =>
+      loaded === undefined
+        ? { store, hosts: [], activeHostKey: null, paired: () => Promise.resolve() }
+        : {
+            store,
+            hosts: loaded.hosts,
+            activeHostKey: loaded.activeHostKey,
+            paired: async (host) => {
+              await store.save(host);
+              localStorage.setItem(ACTIVE_HOST_KEY, host.hostKey);
+              setLoaded((prev) =>
+                prev === undefined
+                  ? prev
+                  : {
+                      ...prev,
+                      hosts: [...prev.hosts.filter((each) => each.hostKey !== host.hostKey), host],
+                      activeHostKey: host.hostKey,
+                    },
+              );
+            },
+          },
+    [store, loaded],
+  );
+  if (loaded === undefined) return <Centered>{null}</Centered>;
+  const { address } = loaded;
+  return (
+    <HostsContext.Provider value={state}>
+      {address === undefined ? (
+        <Centered>
+          <NoHostLink />
+        </Centered>
+      ) : (
+        <Connected address={address} />
+      )}
+    </HostsContext.Provider>
+  );
 }
 
 /** Where a client with no stored pairing lands: paste a pairing link to pair. */
 function NoHostLink() {
-  const [pasted, setPasted] = useState("");
-  const [error, setError] = useState<string>();
-  const connect = (): void => {
-    const fragment = pairingFragment(pasted);
-    if (fragment === undefined) {
-      // Token links deserve the specific hint: they exist, they just can't pair.
-      setError(
-        /[#?&]token=/.test(pasted)
-          ? "Token links can't pair a device — paste a pairing link instead (pinomad pair, or Devices → Pair a device)."
-          : "That isn't a pairing link — paste one like http://<host>/#pair=… or pinomad://pair#pair=…",
-      );
-      return;
-    }
-    window.location.hash = fragment;
-    window.location.reload();
-  };
   return (
     <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
       <EmptyState
         title="No host link"
         description="Paste a pairing link from pinomad pair or Devices → Pair a device."
       />
-      <HStack gap={2} vAlign="end" style={{ width: "100%" }}>
-        <div className="min-w-0 flex-1">
-          <TextInput
-            label="Pairing link"
-            isLabelHidden
-            placeholder="http://…/#pair=… or pinomad://pair#…"
-            value={pasted}
-            onChange={(value) => {
-              setError(undefined);
-              setPasted(value);
-            }}
-            onEnter={connect}
-            width="100%"
-          />
-        </div>
-        <Button label="Connect" variant="primary" isDisabled={pasted.trim() === ""} onClick={connect} />
-      </HStack>
-      {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
+      <PairingLinkForm />
     </VStack>
   );
 }
@@ -135,8 +162,10 @@ function Connected({ address }: { address: ResolvedAddress }) {
  */
 function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "pair" }> }) {
   const [confirmed, setConfirmed] = useState(false);
-  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
-  const replacing = stored !== undefined && stored.hostKey !== address.hostKey;
+  const { store, hosts } = useHosts();
+  // Only a single-device store is overwritten by pairing; the desktop keeps
+  // every host it has paired.
+  const replacing = !store.multiHost && hosts[0] !== undefined && hosts[0].hostKey !== address.hostKey;
   const cancel = (): void => {
     history.replaceState(null, "", window.location.pathname + window.location.search);
     window.location.reload();
@@ -168,11 +197,12 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
 function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
-  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
+  const { store, hosts, paired } = useHosts();
+  const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   const device = useMemo<KeyPair>(() => {
     // A stored key for the same host survives a spent pairing link: the host
     // admits a registered device without consuming the offer.
-    if (address.kind === "pair" && stored !== undefined && stored.hostKey === address.hostKey) {
+    if (address.kind === "pair" && stored !== undefined) {
       return keyPairFromPrivate(fromBase64Url(stored.privateKey));
     }
     return address.kind === "device" ? keyPairFromPrivate(fromBase64Url(address.privateKey)) : generateKeyPair();
@@ -187,10 +217,11 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           ? {
               pairing: { secret: address.secret, name: deviceName(navigator.userAgent) },
               onPaired: () => {
-                localStorage.setItem(
-                  DEVICE_KEY,
-                  JSON.stringify({ url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) }),
-                );
+                void paired({
+                  url: address.url,
+                  hostKey: address.hostKey,
+                  privateKey: toBase64Url(device.privateKey),
+                }).catch((error: unknown) => console.error("Could not save the paired host", error));
                 // The fragment held a one-time secret; it must not linger in history.
                 history.replaceState(null, "", window.location.pathname + window.location.search);
               },
@@ -198,7 +229,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           : {}),
       }),
     }),
-    [address, device],
+    [address, device, paired],
   );
   const rejected =
     address.kind === "pair" ? (
@@ -209,7 +240,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           title="This pairing code was used or has expired"
           description="Generate a new QR on the host: run bun run pair, or open Devices → Pair a device."
         />
-        {stored === undefined ? null : (
+        {hosts.length === 0 ? null : (
           <Button
             label="Use saved pairing"
             variant="secondary"
@@ -227,8 +258,12 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           label="Forget this host"
           variant="secondary"
           onClick={() => {
-            localStorage.removeItem(DEVICE_KEY);
-            window.location.reload();
+            // Reload lands on another stored host, or the no-link screen when
+            // none remain; a stale active key falls back to the first host.
+            if (localStorage.getItem(ACTIVE_HOST_KEY) === address.hostKey) {
+              localStorage.removeItem(ACTIVE_HOST_KEY);
+            }
+            void store.remove(address.hostKey).finally(() => window.location.reload());
           }}
         />
       </VStack>
@@ -270,7 +305,8 @@ export function RemoteWorkbench({
   }
   if (state.status === "failed") {
     // Only a 4401 rejection means the pairing itself is bad — an unreachable
-    // host keeps the key and the banner.
+    // host keeps the key and the banner. These screens have no sidebar, so
+    // multi-host gets its switcher inline (a no-op in the browser).
     return (
       <Centered>
         {state.mismatch !== undefined ? (
@@ -280,6 +316,7 @@ export function RemoteWorkbench({
         ) : (
           <Banner status="error" title="Could not connect to the host" description={state.error} />
         )}
+        <HostSwitcherFallback />
       </Centered>
     );
   }
@@ -404,7 +441,14 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   }, [view.connection]);
   // Only a 4401 close means the pairing itself is bad — other terminal closes
   // (4400's rejected frame, say) keep the disconnect banner and their notice.
-  if (view.unauthorized === true && rejected !== undefined) return <Centered>{rejected}</Centered>;
+  if (view.unauthorized === true && rejected !== undefined) {
+    return (
+      <Centered>
+        {rejected}
+        <HostSwitcherFallback />
+      </Centered>
+    );
+  }
   return (
     <>
       <AppFrame

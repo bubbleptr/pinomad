@@ -3,7 +3,7 @@
 // pasted loopback link, and saves screenshots to /tmp.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,77 @@ try {
   await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+
+  // Multi-host: a second faux host pairs through the sidebar switcher, which
+  // then swaps between the two — one connection at a time.
+  const hostB = await startFauxHost(defer, { answers: ["hello from host B"] });
+  const tokenB = await connectTo(defer, hostB);
+  const { url: pairB } = await tokenB.controller.createPairing();
+  const labelA = new URL(host.url).host;
+  const labelB = new URL(hostB.url).host;
+
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
+  const pairDialog = page.getByRole("dialog");
+  await pairDialog.getByLabel("Pairing link").fill(pairB);
+  await pairDialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
+  // Multi-host never warns about replacing — every pairing is kept.
+  if ((await page.getByText("Replaces your current pairing").count()) !== 0) {
+    throw new Error("multi-host pairing showed the replace warning");
+  }
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  const composerB = page.getByRole("textbox");
+  await composerB.waitFor({ timeout: 30_000 });
+  await composerB.fill("hello from electron on B");
+  await composerB.press("Enter");
+  await page.getByText("hello from host B").waitFor({ timeout: 30_000 });
+
+  // The menu fades in on open; wait for the entry animation so screenshots
+  // don't catch a mid-fade menu that reads as disabled items.
+  const settleMenu = (): Promise<void> =>
+    page
+      .getByRole("menu")
+      .evaluate(async (el) => {
+        await Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => {
+              const target = (animation.effect as KeyframeEffect | null)?.target;
+              return target instanceof Element && (target === el || target.contains(el));
+            })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+      })
+      .then(() => undefined);
+
+  // The switcher lists both hosts; selecting A reloads onto it.
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).waitFor();
+  await settleMenu();
+  await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+
+  // A dead host lands on a failure screen that still offers the switcher.
+  await hostB.close();
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelB, exact: true }).click();
+  await page.getByText("Could not connect to the host", { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).waitFor();
+  await settleMenu();
+  await page.screenshot({ path: "/tmp/pinomad-desktop-failure-switcher.png" });
+  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+
+  // The list is one encrypted blob: neither hostKey appears in plaintext.
+  const blob = await readFile(join(env["PINOMAD_USER_DATA_DIR"]!, "hosts.bin"));
+  const hostKeyA = pairingUrl.split("#pair=")[1]!.split(".")[0]!;
+  const hostKeyB = pairB.split("#pair=")[1]!.split(".")[0]!;
+  if (blob.includes(hostKeyA) || blob.includes(hostKeyB)) {
+    throw new Error("hosts.bin contains a hostKey in plaintext");
+  }
 
   try {
     await captureWindow("/tmp/pinomad-desktop-window-sidebar-open.png");

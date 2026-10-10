@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installAppMenu } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
+import { createHostStore, type StoredHost } from "./host-store.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
@@ -68,6 +69,36 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+/**
+ * The paired-host list lives in the main process behind safeStorage; the
+ * sandboxed renderer reaches it only through these invoke channels. Each
+ * handler fails closed: a frame that isn't our own bundle (or the dev server)
+ * is refused, and without keychain encryption nothing is stored — never
+ * plaintext on disk.
+ */
+function installHostStoreIpc(): void {
+  const hosts = createHostStore(app.getPath("userData"), {
+    encrypt: (plain) => safeStorage.encryptString(plain),
+    decrypt: (data) => safeStorage.decryptString(data),
+  });
+  const devEntry = process.env.ELECTRON_RENDERER_URL;
+  const ours = (event: IpcMainInvokeEvent): boolean => {
+    const url = event.senderFrame?.url ?? "";
+    if (url === APP_ORIGIN || url.startsWith(`${APP_ORIGIN}/`)) return true;
+    return devEntry !== undefined && (url === devEntry || url.startsWith(`${devEntry}/`));
+  };
+  const handle = <A, R>(fn: (arg: A) => Promise<R>) => {
+    return (event: IpcMainInvokeEvent, arg: A): Promise<R> => {
+      if (!ours(event)) return Promise.reject(new Error("host store is only reachable from the bundled renderer"));
+      if (!safeStorage.isEncryptionAvailable()) return Promise.reject(new Error("safeStorage encryption is unavailable"));
+      return fn(arg);
+    };
+  };
+  ipcMain.handle("pinomad:hosts:list", handle(() => hosts.list()));
+  ipcMain.handle("pinomad:hosts:save", handle((host: StoredHost) => hosts.save(host)));
+  ipcMain.handle("pinomad:hosts:remove", handle((hostKey: string) => hosts.remove(hostKey)));
+}
+
 function openPairingLink(fragment: string): void {
   if (mainWindow === null) {
     pendingFragment = fragment;
@@ -120,6 +151,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     installAppMenu(Menu);
+    installHostStoreIpc();
     protocol.handle(APP_SCHEME, async (request) => {
       const file = rendererFilePath(rendererDirectory, request.url);
       if (file === undefined) return new Response("Not found", { status: 404 });
