@@ -1,6 +1,8 @@
 // `bun run desktop:e2e` — launches the electron-vite build (not the packaged
 // .app) with Playwright's Electron driver, pairs with a faux host through a
 // pasted loopback link, and saves screenshots to /tmp.
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "@playwright/test";
@@ -27,6 +29,9 @@ try {
     if (key === "ELECTRON_RUN_AS_NODE" || value === undefined) continue;
     env[key] = value;
   }
+  // The renderer's paired device lives in userData localStorage; isolate it
+  // so a previous run's pairing can't skip the no-link screen.
+  env["PINOMAD_USER_DATA_DIR"] = await mkdtemp(join(tmpdir(), "pinomad-desktop-e2e-"));
   const app = await electron.launch({ args: ["."], cwd: appDir, env });
   defer(() => app.close());
   const page = await app.firstWindow();

@@ -85,6 +85,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.setName("PiNomad");
+  // E2E isolation: the renderer's paired device lives in userData localStorage;
+  // macOS derives it from the system Library, not $HOME, so tests need this.
+  if (process.env.PINOMAD_USER_DATA_DIR !== undefined) {
+    app.setPath("userData", process.env.PINOMAD_USER_DATA_DIR);
+  }
   // Inside the .app the Info.plist registration does this; the call only
   // matters for unpackaged launches, where it may not stick.
   if (app.isPackaged) app.setAsDefaultProtocolClient("pinomad");
