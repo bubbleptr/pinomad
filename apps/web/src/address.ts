@@ -1,4 +1,7 @@
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { parsePairParam } from "@pinomad/protocol/pairing-link.ts";
+
+export { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 
 export const DEFAULT_HOST_URL = "ws://127.0.0.1:7420";
 
@@ -47,50 +50,14 @@ export function resolveAddress(
   }
   const pair = params.get("pair");
   if (pair !== null) {
-    // <hostKey>.<secret>, both base64url; the host key must be 32 bytes of X25519.
-    const dot = pair.indexOf(".");
-    if (dot <= 0 || pair.indexOf(".", dot + 1) !== -1) return undefined;
-    const hostKey = pair.slice(0, dot);
-    const secret = pair.slice(dot + 1);
-    try {
-      if (fromBase64Url(hostKey).length !== 32 || fromBase64Url(secret).length === 0) return undefined;
-    } catch {
-      return undefined;
-    }
+    const parsed = parsePairParam(pair);
+    if (parsed === undefined) return undefined;
     const url = params.get("url") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
-    return { kind: "pair", url, hostKey, secret };
+    return { kind: "pair", url, hostKey: parsed.hostKey, secret: parsed.secret };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
   const device = storedDevice(stored);
   return device === undefined ? undefined : { kind: "device", ...device };
-}
-
-/**
- * A pasted pairing link → the fragment resolveAddress reads. Links without a
- * `url` param (LAN) resolve the socket against the PASTED link's origin —
- * never this page's: under the desktop app the page origin is `app://pinomad`
- * and would produce a meaningless ws:// URL. Token links are rejected: the
- * desktop (and any pasted-link flow) authenticates as a paired device
- * (ADR-0020 §1), never with the shared secret.
- */
-export function pairingFragment(pasted: string): string | undefined {
-  let link: URL;
-  try {
-    link = new URL(pasted.trim());
-  } catch {
-    return undefined;
-  }
-  const fragment = link.hash.replace(/^#/, "");
-  const params = new URLSearchParams(fragment);
-  const pair = params.get("pair");
-  if (pair === null || pair === "") return undefined;
-  let url = params.get("url");
-  if (url === null || url === "") {
-    if (link.protocol === "http:") url = `ws://${link.host}/`;
-    else if (link.protocol === "https:") url = `wss://${link.host}/`;
-    else return undefined;
-  }
-  return `pair=${pair}&url=${encodeURIComponent(url)}`;
 }
 
 /** Whether this page was served by the host it talks to — then a reload picks up a matching bundle. */

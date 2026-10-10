@@ -22,6 +22,7 @@
       "name": "@pinomad/desktop",
       "version": "0.0.0",
       "devDependencies": {
+        "@pinomad/protocol": "workspace:*",
         "@playwright/test": "^1.61.1",
         "@tailwindcss/vite": "4.3.1",
         "@vitejs/plugin-react": "^4.3.1",

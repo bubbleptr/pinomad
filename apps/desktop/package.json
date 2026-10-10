@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@pinomad/protocol": "workspace:*",
     "@tailwindcss/vite": "4.3.1",
     "@vitejs/plugin-react": "^4.3.1",
     "electron": "42.5.0",

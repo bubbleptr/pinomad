@@ -1,7 +1,10 @@
+import { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
+
 /**
- * `pinomad://pair#<fragment>` — the only deep link the app accepts — carries
- * the same fragment a printed pairing URL carries; anything else is dropped
- * before it can touch the window.
+ * `pinomad://pair#<fragment>` — the only deep link the app accepts — is
+ * normalized through the shared pairing-link rule: the window loads the
+ * emitted `pair=…&url=…` fragment and nothing else (a `token=` smuggled in
+ * the raw hash is dropped, never reaching resolveAddress's token branch).
  */
 export function pairingFragmentFromDeepLink(link: string): string | undefined {
   let url: URL;
@@ -11,8 +14,5 @@ export function pairingFragmentFromDeepLink(link: string): string | undefined {
     return undefined;
   }
   if (url.protocol !== "pinomad:" || url.hostname !== "pair") return undefined;
-  const fragment = url.hash.replace(/^#/, "");
-  const pair = new URLSearchParams(fragment).get("pair");
-  if (pair === null || pair === "") return undefined;
-  return fragment;
+  return pairingFragment(link);
 }
