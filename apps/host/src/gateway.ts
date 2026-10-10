@@ -9,13 +9,18 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import {
   AgentDoc,
   type AgentState,
+  type CommitPublication,
   type Conversation,
+  type ConversationDocToken,
   type ConversationId,
   type ConversationRecord,
   type Cursor,
   type EntryId,
   type EntryRecord,
   type Harness,
+  type JsonObject,
+  LiveDoc,
+  type LiveState,
   type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { WebSocket, WebSocketServer } from "ws";
@@ -45,6 +50,7 @@ import {
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
+import { SubagentDoc } from "./subagent-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -142,7 +148,7 @@ export interface Gateway {
 export const LOOPBACK_SECURE_PATH = "/secure";
 
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
-  const conversations = await ConversationList.open(options.harness);
+  const conversations = await ConversationList.open(options.harness, options.docs);
   // The loopback port also serves the built web client: in service mode there
   // is no vite dev server to reach it through (ADR-0009 §7).
   const http = createServer((request, response) => {
@@ -459,37 +465,135 @@ async function startRemote(
 /** The conversation list, kept from commit publications rather than polled. */
 class ConversationList {
   readonly #listeners = new Set<(list: readonly ConversationSummary[]) => void>();
-  #list: readonly ConversationSummary[];
+  /** Conversation-doc tokens carrying pinomad.question requests; supplied by the composition root, not hardcoded. */
+  readonly #questionTokens: readonly ConversationDocToken<JsonObject>[];
+  readonly #questionKinds: ReadonlySet<string>;
+  readonly #records = new Map<ConversationId, ConversationRecord>();
+  readonly #facts = new Map<ConversationId, ConversationFacts>();
+  /** Slot of each summary in #list; in-place updates keep positions stable. */
+  readonly #index = new Map<ConversationId, number>();
+  #list: readonly ConversationSummary[] = [];
   #unsubscribe: () => void = () => {};
   #notifying = false;
 
-  private constructor(list: readonly ConversationSummary[]) {
-    this.#list = list;
+  private constructor(docs: readonly ExtensionDoc[] | undefined) {
+    this.#questionTokens = (docs ?? []).filter((doc) => doc.presentation === "pinomad.question").map((doc) => doc.token);
+    this.#questionKinds = new Set(this.#questionTokens.map((token) => token.definition.kind));
   }
 
-  static async open(harness: Harness): Promise<ConversationList> {
+  static async open(harness: Harness, docs: readonly ExtensionDoc[] | undefined): Promise<ConversationList> {
+    const list = new ConversationList(docs);
     const summaries: ConversationSummary[] = [];
     let cursor: Cursor | undefined;
     do {
       const page = await harness.commit((tx) => tx.scanConversations({}, 256, cursor), context);
-      for (const record of page.items) summaries.push({ ...summaryOf(record), ...(await firstInput(harness, record.id)) });
+      for (const record of page.items) {
+        list.#records.set(record.id, record);
+        const facts = await list.#load(harness, record);
+        list.#facts.set(record.id, facts);
+        list.#index.set(record.id, summaries.length);
+        summaries.push(summaryOf(record, facts));
+      }
       cursor = page.next;
     } while (cursor !== undefined);
-    const list = new ConversationList(summaries);
+    list.#list = summaries;
     // A commit listener only records; it calls no Session API.
-    list.#unsubscribe = harness.subscribeCommits((publication) => {
-      let next = list.#list;
-      for (const change of publication.changes) {
-        if (change.type === "conversation") {
-          next = [...next, summaryOf(change.value)];
-        } else if (change.type === "entry" && change.value.kind === "pi.user") {
-          const id = change.value.conversationId;
-          next = next.map((summary) => (summary.id === id && summary.title === undefined ? { ...summary, ...titleOf(change.value) } : summary));
+    list.#unsubscribe = harness.subscribeCommits((publication) => list.#observe(publication));
+    return list;
+  }
+
+  /** Startup facts for one record: entry history plus non-creating doc snapshots. */
+  async #load(harness: Harness, record: ConversationRecord): Promise<ConversationFacts> {
+    const history = await historyFacts(harness, record.id);
+    const facts: ConversationFacts = { pending: new Set(), ...history };
+    const live = await harness.snapshot(LiveDoc, record.id, context);
+    facts.running = live?.run !== undefined;
+    for (const token of this.#questionTokens) {
+      const value = await harness.snapshot(token, record.id, context);
+      if (Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined)) {
+        facts.pending.add(token.definition.kind);
+      }
+    }
+    if (record.owner !== undefined) {
+      const label = (await harness.snapshot(SubagentDoc, record.id, context))?.label;
+      if (typeof label === "string" && label !== "") facts.label = label;
+    }
+    return facts;
+  }
+
+  #observe(publication: CommitPublication): void {
+    const touched = new Set<ConversationId>();
+    // Records first: a doc change and the record for a new subagent land in one
+    // publication, whose change order is unspecified.
+    for (const change of publication.changes) {
+      if (change.type === "conversation") {
+        this.#records.set(change.value.id, change.value);
+        touched.add(change.value.id);
+      }
+    }
+    for (const change of publication.changes) {
+      if (change.type === "entry") {
+        const entry = change.value;
+        if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant") continue;
+        const facts = this.#fact(entry.conversationId);
+        if (entry.kind === "pi.user" && facts.title === undefined) Object.assign(facts, titleOf(entry));
+        // Entries only append: the largest id is the newest own message, whatever
+        // order this publication lists it in.
+        if (facts.newest !== undefined && entry.id <= facts.newest) continue;
+        touched.add(entry.conversationId);
+        facts.newest = entry.id;
+        const message = entry.model?.[0];
+        // Same rule as the startup scan: updatedAt is the newest entry's
+        // timestamp or nothing — never a stale earlier message's.
+        facts.updatedAt = typeof message?.timestamp === "number" ? message.timestamp : undefined;
+        facts.failed = entry.kind === "pi.assistant" && message?.role === "assistant" && message.stopReason === "error";
+      } else if (change.type === "document") {
+        const id = change.conversationId;
+        if (id === undefined) continue;
+        const facts = this.#fact(id);
+        if (change.record.kind === "pi.live") {
+          facts.running = (change.value as LiveState | null)?.run !== undefined;
+          touched.add(id);
+        } else if (this.#questionKinds.has(change.record.kind)) {
+          const value = change.value;
+          const pending = Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined);
+          const next = new Set(facts.pending);
+          if (pending) next.add(change.record.kind);
+          else next.delete(change.record.kind);
+          facts.pending = next;
+          touched.add(id);
+        } else if (change.record.kind === SubagentDoc.definition.kind) {
+          const label = (change.value as { label?: unknown } | null)?.label;
+          facts.label = typeof label === "string" && label !== "" ? label : undefined;
+          touched.add(id);
         }
       }
-      if (next !== list.#list) list.#set(next);
-    });
-    return list;
+      // document.copy is definition-free — a fork's initialized docs carry no new facts.
+    }
+    // pi.live republishes on every streamed token: only conversations a change
+    // touched are re-derived, and only a real difference allocates a new list.
+    let next: ConversationSummary[] | undefined;
+    for (const id of touched) {
+      const record = this.#records.get(id);
+      if (record === undefined) continue;
+      const summary = summaryOf(record, this.#fact(id));
+      const index = this.#index.get(id);
+      if (index === undefined) {
+        next ??= this.#list.slice();
+        this.#index.set(id, next.length);
+        next.push(summary);
+      } else if (!sameSummary(this.#list[index]!, summary)) {
+        next ??= this.#list.slice();
+        next[index] = summary;
+      }
+    }
+    if (next !== undefined) this.#set(next);
+  }
+
+  #fact(id: ConversationId): ConversationFacts {
+    let facts = this.#facts.get(id);
+    if (facts === undefined) this.#facts.set(id, (facts = { pending: new Set() }));
+    return facts;
   }
 
   get value(): readonly ConversationSummary[] {
@@ -517,15 +621,48 @@ class ConversationList {
   }
 }
 
-function summaryOf(record: ConversationRecord): ConversationSummary {
+/** Per-conversation state the summary derives from, filled at open and kept by the commit listener. */
+type ConversationFacts = {
+  title?: string;
+  /** Newest own user/assistant entry seen; guards out-of-order changes within one publication. */
+  newest?: EntryId;
+  updatedAt?: number;
+  failed?: boolean;
+  /** A run is in flight (pi.live has `run`). */
+  running?: boolean;
+  /** Question doc kinds that currently hold an unresolved request. */
+  pending: Set<string>;
+  label?: string;
+};
+
+function summaryOf(record: ConversationRecord, facts: ConversationFacts): ConversationSummary {
   const parent = record.parent?.conversationId ?? record.owner?.conversationId;
+  const status =
+    facts.pending.size > 0 ? "needs-answer" : facts.running === true ? "running" : facts.failed === true ? "failed" : undefined;
   return {
     id: record.id,
     kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
     ...(parent === undefined ? {} : { parent }),
     // The client's forkable-entry ids are the string form of EntryId.
     ...(record.parent === undefined ? {} : { forkedAt: String(record.parent.at) }),
+    ...(facts.title === undefined ? {} : { title: facts.title }),
+    ...(status === undefined ? {} : { status }),
+    ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
+    ...(facts.label === undefined ? {} : { label: facts.label }),
   };
+}
+
+function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
+  return (
+    a.id === b.id
+    && a.kind === b.kind
+    && a.parent === b.parent
+    && a.forkedAt === b.forkedAt
+    && a.title === b.title
+    && a.status === b.status
+    && a.updatedAt === b.updatedAt
+    && a.label === b.label
+  );
 }
 
 function titleOf(entry: EntryRecord | undefined): { title?: string } {
@@ -539,20 +676,38 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
 }
 
 /**
- * The oldest user message of a conversation, a subagent's task. Unlike upstream, main gets
- * one too: the commit listener titles it live, and a restarted host must list the same.
- * A fork's own first message, not one it inherits, as the listener sees it.
+ * What a scan of the conversation's own entries teaches the summary: the title is
+ * the oldest own user message (a subagent's task; a fork's own first message, not
+ * an inherited one), updatedAt and failed come from the newest own user/assistant
+ * entry. Entries scan newest-first, so the newest match is the first hit.
  */
-async function firstInput(harness: Harness, id: ConversationId): Promise<{ title?: string }> {
+async function historyFacts(harness: Harness, id: ConversationId): Promise<Pick<ConversationFacts, "title" | "newest" | "updatedAt" | "failed">> {
   const conversation = (await harness.conversation(id, context))!;
   let first: EntryRecord | undefined;
+  let newest: EntryRecord | undefined;
   let cursor: Cursor | undefined;
   do {
     const page = await conversation.entries({}, 256, cursor, context);
     first = page.items.findLast((entry) => entry.kind === "pi.user" && entry.conversationId === id) ?? first;
+    newest ??= page.items.find(
+      (entry) => entry.conversationId === id && (entry.kind === "pi.user" || entry.kind === "pi.assistant"),
+    );
     cursor = page.next;
   } while (cursor !== undefined);
-  return titleOf(first);
+  const message = newest?.model?.[0];
+  return {
+    ...titleOf(first),
+    // A newest entry without a numeric timestamp still marks newest and
+    // failed — only updatedAt needs the timestamp. The commit listener
+    // derives exactly the same three.
+    ...(newest === undefined
+      ? {}
+      : {
+          newest: newest.id,
+          ...(typeof message?.timestamp === "number" ? { updatedAt: message.timestamp } : {}),
+          failed: newest.kind === "pi.assistant" && message?.role === "assistant" && message.stopReason === "error",
+        }),
+  };
 }
 
 type Subscription = { stop(): Promise<unknown> | void };

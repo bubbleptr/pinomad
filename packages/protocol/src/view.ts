@@ -40,6 +40,12 @@ export interface ConversationSummary {
   readonly forkedAt?: string;
   /** The first user message, for a subagent its task. */
   readonly title?: string;
+  /** Absent means idle. Precedence: needs-answer (a pinomad.question request is unresolved) > running (a run is in flight) > failed (the newest run ended in an error). */
+  readonly status?: "needs-answer" | "running" | "failed";
+  /** Epoch ms of the conversation's newest own user/assistant message; absent before its first. */
+  readonly updatedAt?: number;
+  /** Subagents only: the `description` the delegating agent gave the call. */
+  readonly label?: string;
 }
 
 export interface SessionInfo {

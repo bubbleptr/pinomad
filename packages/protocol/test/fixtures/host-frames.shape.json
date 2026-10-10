@@ -354,7 +354,9 @@
         {
           "id": "number",
           "kind": "=conversation",
-          "title": "string"
+          "status": "string",
+          "title": "string",
+          "updatedAt": "number"
         },
         {
           "id": "number",
