@@ -42,6 +42,16 @@ export function App() {
     () => resolveAddress(window.location.hash, window.location, localStorage.getItem(DEVICE_KEY)),
     [],
   );
+  // A same-document hash hop (a pinomad:// deep link into an open window, a
+  // pasted hash edit) changes no React state — reload to re-resolve the
+  // address. onPaired's replaceState fires no hashchange, so this can't loop.
+  useEffect(() => {
+    const onHashChange = (): void => {
+      if (window.location.hash !== "") window.location.reload();
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   if (address === undefined) {
     return (
       <Centered>
@@ -115,7 +125,47 @@ function Connected({ address }: { address: ResolvedAddress }) {
   if (address.kind === "token") {
     return <RemoteWorkbench options={address} connectionKey={`${address.url} ${address.token}`} label={address.url} />;
   }
+  if (address.kind === "pair") return <PairConfirm address={address} />;
   return <SecureClient address={address} />;
+}
+
+/**
+ * A pair link opens a socket only after the user has seen which host it is:
+ * pairing with an attacker-controlled host would register this device and
+ * (while the client keeps one key) replace its stored pairing — for every
+ * pair link, browser QR or pasted, one uniform rule.
+ */
+function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "pair" }> }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const stored = useMemo(() => storedDevice(localStorage.getItem(DEVICE_KEY)), []);
+  const replacing = stored !== undefined && stored.hostKey !== address.hostKey;
+  const cancel = (): void => {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    window.location.reload();
+  };
+  if (confirmed) return <SecureClient address={address} />;
+  const target = new URL(address.url);
+  return (
+    <Centered>
+      <VStack gap={4} hAlign="center" style={{ maxWidth: 420 }}>
+        <EmptyState title="Pair with this host?" description={`This device will pair with ${target.host}.`} />
+        {replacing ? (
+          <Banner
+            status="warning"
+            title="Replaces your current pairing"
+            description="This device is already paired with a different host — pairing again replaces it."
+          />
+        ) : null}
+        <Text type="supporting" style={{ wordBreak: "break-all" }}>
+          {address.url}
+        </Text>
+        <HStack gap={2}>
+          <Button label="Cancel" variant="secondary" onClick={cancel} />
+          <Button label="Pair" variant="primary" onClick={() => setConfirmed(true)} />
+        </HStack>
+      </VStack>
+    </Centered>
+  );
 }
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */

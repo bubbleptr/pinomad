@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "@playwright/test";
+import { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 import { connectTo, startFauxHost } from "../../host/test/support.ts";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
@@ -52,6 +53,11 @@ try {
   await page.getByLabel("Pairing link").fill(pairingUrl);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
 
+  // The pair link lands on the confirmation screen — no socket until "Pair".
+  await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
+  await page.screenshot({ path: "/tmp/pinomad-desktop-confirm.png" });
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+
   // Pairing runs, the page reloads into the workbench, and the channel works.
   const composer = page.getByRole("textbox");
   await composer.waitFor({ timeout: 30_000 });
@@ -72,6 +78,22 @@ try {
     ]);
     console.log(`window capture: ${path}`);
   };
+  // A pinomad:// deep link into the already-open window: the same-document
+  // hash hop reloads and lands on the confirmation, not a silent pairing.
+  const { url: link2 } = await tokenClient.controller.createPairing();
+  const fragment2 = pairingFragment(link2);
+  await app.evaluate(
+    ({ app: electronApp }, url) =>
+      electronApp.emit("open-url", { preventDefault() {
+        // open-url's event arg isn't a real event here; preventDefault is all
+        // the handler calls on it.
+      } }, url),
+    `pinomad://pair#${fragment2}`,
+  );
+  await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+
   try {
     await captureWindow("/tmp/pinomad-desktop-window-sidebar-open.png");
     await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();

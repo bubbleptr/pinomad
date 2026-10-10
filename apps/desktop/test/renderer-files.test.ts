@@ -29,6 +29,12 @@ describe("rendererFilePath", () => {
     expect(rendererFilePath(dir, "not a url")).toBeUndefined();
   });
 
+  it("serves only the app's own host, not other app:// authorities", () => {
+    expect(rendererFilePath(dir, "app://evil/index.html")).toBeUndefined();
+    expect(rendererFilePath(dir, "app://pinomad.evil.com/index.html")).toBeUndefined();
+    expect(rendererFilePath(dir, "app://pinomad:1234/index.html")).toBeUndefined();
+  });
+
   it("keeps URL-normalized dots inside the dir", () => {
     // The URL parser collapses literal `..` and plain `%2e%2e` before we see
     // them; the result is a path inside the renderer dir, which a missing

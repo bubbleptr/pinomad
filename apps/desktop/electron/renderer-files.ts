@@ -8,6 +8,9 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 export const RENDERER_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss:";
 
+export const APP_SCHEME = "app";
+export const APP_HOST = "pinomad";
+
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -34,7 +37,9 @@ export function rendererFilePath(rendererDir: string, rawUrl: string): string | 
   let pathname: string;
   try {
     const url = new URL(rawUrl);
-    if (url.protocol !== "app:") return undefined;
+    // Only the app's own origin may read the bundle — any other app:// host
+    // (or a typo'd authority) is a 404, same as a missing file.
+    if (url.protocol !== `${APP_SCHEME}:` || url.host !== APP_HOST) return undefined;
     pathname = decodeURIComponent(url.pathname);
   } catch {
     return undefined;

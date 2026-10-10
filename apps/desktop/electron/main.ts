@@ -4,11 +4,10 @@ import { fileURLToPath } from "node:url";
 import { installAppMenu } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
-import { contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
+import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
 
-const APP_SCHEME = "app";
-const APP_ORIGIN = "app://pinomad";
+const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
