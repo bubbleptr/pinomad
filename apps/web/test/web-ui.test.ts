@@ -954,6 +954,21 @@ it("manages paired devices from the Devices dialog", async () => {
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
 });
 
+it("explains a loopback pairing link instead of drawing an unusable QR", async () => {
+  const webOrigin = await startWeb();
+  // No remote access: the offer points at 127.0.0.1, which a phone's camera
+  // could never reach — the dialog must say so instead of showing a QR.
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await dialog.getByText("only works on this machine", { exact: false }).waitFor();
+  expect(await dialog.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
+  await expect.poll(() => dialog.getByText(/#pair=/, { exact: false }).count()).toBeGreaterThan(0);
+});
+
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
