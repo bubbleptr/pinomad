@@ -1,6 +1,8 @@
 // `bun run desktop:e2e` — launches the electron-vite build (not the packaged
 // .app) with Playwright's Electron driver, pairs with a faux host through a
 // pasted loopback link, and saves screenshots to /tmp.
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +11,7 @@ import { _electron as electron } from "@playwright/test";
 import { connectTo, startFauxHost } from "../../host/test/support.ts";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
+const run = promisify(execFile);
 const cleanups: (() => Promise<void> | void)[] = [];
 const defer = (cleanup: () => Promise<void> | void): void => void cleanups.push(cleanup);
 const done = async (code: number): Promise<never> => {
@@ -56,6 +59,27 @@ try {
   await composer.press("Enter");
   await page.getByText("hello from the desktop").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: "/tmp/pinomad-desktop-connected.png" });
+
+  // Native-chrome check: capture the real window — traffic lights included —
+  // with the sidebar open and collapsed. Needs Screen Recording permission;
+  // report and move on when it's denied.
+  const captureWindow = async (path: string): Promise<void> => {
+    const bounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getBounds());
+    await run("screencapture", [
+      "-x",
+      `-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`,
+      path,
+    ]);
+    console.log(`window capture: ${path}`);
+  };
+  try {
+    await captureWindow("/tmp/pinomad-desktop-window-sidebar-open.png");
+    await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+    await page.getByRole("button", { name: "Expand sidebar", exact: true }).waitFor();
+    await captureWindow("/tmp/pinomad-desktop-window-sidebar-closed.png");
+  } catch (error) {
+    console.log(`window capture skipped: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   if (cspViolations.length > 0) {
     throw new Error(`CSP violations:\n${cspViolations.join("\n")}`);

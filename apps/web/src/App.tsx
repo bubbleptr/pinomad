@@ -27,6 +27,7 @@ import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/prot
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { DEVICE_KEY, deviceName, pairingFragment, resolveAddress, servedByHost, storedDevice, type ResolvedAddress } from "./address.ts";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
+import { hostWindowChrome } from "./shared/host-chrome.ts";
 
 const page: CSSProperties = {
   height: "100dvh",
@@ -76,18 +77,20 @@ function NoHostLink() {
         description="Paste a pairing link from pinomad pair or Devices → Pair a device."
       />
       <HStack gap={2} vAlign="end" style={{ width: "100%" }}>
-        <TextInput
-          label="Pairing link"
-          isLabelHidden
-          placeholder="http://…/#pair=… or pinomad://pair#…"
-          value={pasted}
-          onChange={(value) => {
-            setError(undefined);
-            setPasted(value);
-          }}
-          onEnter={connect}
-          style={{ flex: 1 }}
-        />
+        <div className="min-w-0 flex-1">
+          <TextInput
+            label="Pairing link"
+            isLabelHidden
+            placeholder="http://…/#pair=… or pinomad://pair#…"
+            value={pasted}
+            onChange={(value) => {
+              setError(undefined);
+              setPasted(value);
+            }}
+            onEnter={connect}
+            width="100%"
+          />
+        </div>
         <Button label="Connect" variant="primary" isDisabled={pasted.trim() === ""} onClick={connect} />
       </HStack>
       {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
@@ -96,8 +99,11 @@ function NoHostLink() {
 }
 
 export function Centered({ children }: { children: ReactNode }) {
+  // These screens have no header to drag the hidden-title-bar window by.
+  const reserveStrip = hostWindowChrome().reserveMacTrafficLights;
   return (
     <VStack style={page} isScrollable>
+      {reserveStrip ? <div aria-hidden="true" className="pinomad-drag fixed inset-x-0 top-0 h-10" /> : null}
       <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
         {children}
       </VStack>
