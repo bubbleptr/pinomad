@@ -35,7 +35,7 @@
 子代理第一版之后可能的后续，都等有明确需求再做：
 - 后台子代理（Durable 例 23：spawn / message / wait / stop / list，回答作为 follow-up 回帖给父对话）。
 - 并行写冲突现在只靠工具描述约束；真出问题时再考虑只读子代理，或给写文件的子代理单独开 worktree（会改动 ADR-0010 §5）。
-- 子对话的呈现方式和位置要重新设计：现在作为普通对话挂在侧栏父对话下，标题取自父代理写的任务描述开头（真实模型冒烟里是 "In the working directory /tmp/…" 这种套话），分不清各子代理在干什么。工具卡片已能点进子对话（M2.5 第 2 步）。
+- 子代理在界面上怎么呈现已经定了，见 M2.5 的"fork 和子代理的呈现"。
 
 ### MCP 的后续
 
@@ -60,13 +60,17 @@ MCP 本身的后续，都等有明确需求再做：
 4. 首页和 Composer（已完成）：草稿态变成 Pace 的首页——hero（"Build something useful with PiNomad"）、项目选择器、四条建议提示；新建对话可以选模型和思考等级（`createConversation` 加 `model` / `thinkingLevel`，hello 带默认模型，协议 v4）。Composer 换成 Pace 的 ChatPromptInput：左侧是"+"菜单和"模型 · 思考等级"胶囊，运行中带文字的草稿可以排队为 Follow-up 或 Steer，排队消息显示在输入框上方；footer 是位置行（Chat / Git worktree 加分支 / Project folder，草稿里项目可以选 worktree 还是直接在目录里跑）。Dock 的 Queue 区块撤掉，圆点只算运行中的任务。
 
 之后接着做（细节到时再定）：
-- **优先**：fork 和子代理在界面上怎么体现，还没有方案。现在两者都作为普通对话挂在侧栏的父对话下；子代理标题是任务描述开头，分不清各自在干什么（另见 M2 子代理后续）。M3 中继之后回来做。
+- **优先：fork 和子代理的呈现**。方向在 2026-10-10 用原型定下来了（原型在本地分支 `proto/conversation-family`，不合并）。
+  - 侧栏只放顶层对话，不加 Show more。行首的状态点汇总整个家族，优先级是等回答 > 失败 > 运行中 > 空闲；行尾显示更新时间。
+  - fork 是父对话的 thread，子代理是父对话的 task（术语见 `CONTEXT.md`）。主区始终显示顶层对话。右侧面板取代现在的 Dock，默认 440px，可以拖到 360–720，分 Threads / Tasks / Live 三个 tab。Threads 里的 fork 可以直接对话，也可以"在主区打开"（顶栏用面包屑回到父对话）。Tasks 按归属分组列出子代理，只读。父对话里，分叉点那条消息上显示"1 fork"；子代理调用直接显示成任务卡片，带标签、状态、模型、耗时和正在做的事。点任何一个都在右侧面板打开。窄屏上右侧面板是全屏对话框。
+  - fork 的检出、层数和数量见 ADR-0019：共用父对话的检出，只有一层，每条消息最多一个。消息上已经有 fork 时，Fork 按钮直接打开它。
+  - 放弃的方案：侧栏里的分型树（家族一大侧栏就太长）；子代理只在对话里出现、fork 仍留在侧栏（侧栏还是长，而且 fork 和子代理不对称）；顶栏下面的家族标签栏（切过去就看不到父对话，不符合 thread 的用法）；fork 时让用户选检出方式（见 ADR-0019）。
+  - 要补的数据：对话摘要加 `status`、`updatedAt`、子代理的 `label`（即 `subagent` 的 `description`；没有时去掉任务开头 "In the working directory …," 这类套话）、fork 的分叉点 entry。客户端现在一次只订阅一个"当前对话"；右侧面板要同时显示另一条对话并能对它提交和回答，`RemoteDurable` 得支持第二个订阅，提交和回答也要能指定目标对话。
 - 上下文用量指示（Pace 的位置行右侧有 context meter；我们的宿主还没暴露用量）。
 - 附件：ChatPromptInput 已经留好接口（drawer、onFiles），需要协议里能带附件的消息。
 - 斜杠命令和 @ 文件补全：Pace 的 trigger 菜单方案（leading token + typeahead）。
 - 撤回或改写排队中的消息（需要协议新增调用；Pace 是 queued-message 行内的 Withdraw / Steer 操作）。
 - 运行失败后的重试入口（Pace 的 run-failure 恢复）。`ChatRunFailure` 已搬入并支持 `onRetry`，`chat-entries.tsx` 还没传，按钮不显示。
-- 侧栏行显示运行中标记和更新时间：对话摘要要先加 `updatedAt` 和是否在跑。
 - 查看和恢复已归档的对话。恢复后 worktree 由 `ensureWorktree` 从保留的分支重建。
 - 对话自动起名：用默认模型，标题跟着当前的工作实时变化；手动改名后不再自动覆盖。
 

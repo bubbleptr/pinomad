@@ -27,10 +27,11 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0006](0006-host-tools-and-context-sources.md) | 宿主默认提供编码工具、默认不审批，上下文只从项目和 `~/.agents` 读取 |
 | [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除 |
-| [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作，fork 得到新 worktree |
+| [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作（fork 部分由 0019 修订） |
 | [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval` |
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
 | [0013](0013-codemode-and-tool-exposure.md) | codemode 是默认开启的通用工具；工具按 `direct` / `model-only` / `codemode` 暴露，和来源正交，MCP 默认 `codemode` |
+| [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个 |
 
 ## 远程与运维
 
@@ -56,4 +57,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0009 §2 安装方式、§6 升级命令 | 由 0016 修订：分发改为 npm 包，打包安装升级走 `npm i -g`；源码检出仍是开发路径 |
 | 0009 §8 协议版本严格相等 | 由 0018 修订：主版本相等即可连接，次版本号用来决定用哪些功能 |
 | 0008 后果：移动端形态（PWA 还是 Expo）、浏览器客户端代码可信 | 由 0017 决定：移动端 Expo，桌面端和移动端都打包代码 |
+| 0010 §4：fork 得到新 worktree 和快照 | 由 0019 修订：fork 共用父对话的检出，只有一层，每条消息最多一个 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |

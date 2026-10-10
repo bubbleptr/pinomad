@@ -2,6 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-10-07
+- §4 已由 [ADR-0019](0019-fork-shares-parent-checkout.md) 修订：fork 共用父对话的检出，只有一层，每条消息最多一个
 
 ## 背景
 
