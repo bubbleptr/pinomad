@@ -100,6 +100,10 @@ class RemoteClient {
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
   readonly #wanted = new Set<StreamName>(["conversations", "index", "devices", "mcp"]);
+  // Streams whose CURRENT subscription delivered a snapshot. A wanted-but-not-
+  // fresh stream (after reconnect, before the host answers) has a stale value —
+  // #acquire must wait for it, never serve the old one.
+  readonly #fresh = new Set<StreamName>();
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   #toolPresentations: Record<string, PresentationType> = {};
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
@@ -108,6 +112,7 @@ class RemoteClient {
   #connection: FrameConnection | undefined;
   #state: DurableView | undefined;
   #current: ConversationId | undefined;
+  #side: ConversationId | undefined;
   #nextCall = 1;
   #nextNotice = 1;
   #attempt = 0;
@@ -227,7 +232,9 @@ class RemoteClient {
         this.#attempt = 0;
         this.#docs = frame.docs;
         this.#toolPresentations = frame.toolPresentations;
+        this.#fresh.clear();
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
+        if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) {
           this.#update({
@@ -244,6 +251,7 @@ class RemoteClient {
       case "snapshot":
         if (!this.#wanted.has(frame.stream)) return;
         this.#values.set(frame.stream, frame.value);
+        this.#fresh.add(frame.stream);
         this.#refresh();
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) waiter.resolve();
         return;
@@ -255,6 +263,7 @@ class RemoteClient {
       case "ended":
         this.#wanted.delete(frame.stream);
         this.#values.delete(frame.stream);
+        this.#fresh.delete(frame.stream);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
           waiter.reject(new Error(`Stream ${frame.stream} ended: ${frame.reason}`));
         }
@@ -306,32 +315,84 @@ class RemoteClient {
     return [conversationStream(id), ...this.#docs.map((doc) => docStream(doc.kind, id))];
   }
 
+  /**
+   * Subscribe to the streams a conversation slot needs. Streams another slot
+   * already wants stay put — subscribing again would be a no-op on the host,
+   * and their live values carry over (no snapshot wait).
+   */
+  async #acquire(id: ConversationId): Promise<void> {
+    const missing = this.#conversationStreams(id).filter((stream) => !this.#wanted.has(stream));
+    // Wanted but not fresh: already subscribed (the side may share it) yet the
+    // host has not answered this connection — waiting hands us its new value,
+    // never the stale one left over from before the reconnect.
+    const stale = this.#conversationStreams(id).filter((stream) => this.#wanted.has(stream) && !this.#fresh.has(stream));
+    const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
+    for (const stream of missing) {
+      this.#wanted.add(stream);
+      this.#send({ type: "subscribe", stream });
+    }
+    await shown;
+  }
+
+  /** Release the streams of one slot's conversation the other slot does not still need. */
+  #release(id: ConversationId, other: ConversationId | undefined): void {
+    const keep = new Set<StreamName>(other === undefined ? [] : this.#conversationStreams(other));
+    for (const stream of this.#conversationStreams(id)) {
+      if (keep.has(stream)) continue;
+      this.#wanted.delete(stream);
+      this.#values.delete(stream);
+      this.#fresh.delete(stream);
+      this.#send({ type: "unsubscribe", stream });
+    }
+  }
+
+  /** `id` is `ancestor` or sits under it via `parent` links in the summaries. */
+  #descendsFrom(id: ConversationId, ancestor: ConversationId): boolean {
+    const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
+    const parentOf = new Map(summaries.map((summary) => [summary.id, summary.parent]));
+    let cursor: ConversationId | undefined = id;
+    for (let depth = 0; cursor !== undefined && depth < 8; depth++) {
+      if (cursor === ancestor) return true;
+      cursor = parentOf.get(cursor);
+    }
+    return false;
+  }
+
+  /** One shown conversation's extension docs, in the host's order. */
+  #docsOf(id: ConversationId): ExtensionDocView[] {
+    return this.#docs.flatMap((doc) => {
+      const stream = docStream(doc.kind, id);
+      return this.#values.has(stream)
+        ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
+        : [];
+    });
+  }
+
   #refresh(): void {
     if (this.#state === undefined) return;
     const current = this.#current;
+    const side = this.#side;
     const conversation =
       current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
     const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
     const index = (this.#values.get("index") as HostIndex | undefined) ?? { projects: [], conversations: [] };
     const devices = (this.#values.get("devices") as HostDevices | undefined)?.devices ?? [];
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
-    // In the host's order; a doc joins once its snapshot arrived.
-    const docs: ExtensionDocView[] =
-      current === undefined
-        ? []
-        : this.#docs.flatMap((doc) => {
-            const stream = docStream(doc.kind, current);
-            return this.#values.has(stream)
-              ? [{ kind: doc.kind, presentation: doc.presentation, value: this.#values.get(stream) as JsonObject | null }]
-              : [];
-          });
     this.#update({
       conversation,
       organized: organize(index, summaries),
       home: current === undefined ? undefined : homeOf(index, summaries, current),
       checkout: current === undefined ? undefined : checkoutOf(index, summaries, current),
       tasks,
-      docs,
+      docs: current === undefined ? [] : this.#docsOf(current),
+      side:
+        side === undefined
+          ? undefined
+          : {
+              id: side,
+              conversation: this.#values.get(conversationStream(side)) as ConversationView | undefined,
+              docs: this.#docsOf(side),
+            },
       devices,
       mcp: (this.#values.get("mcp") as McpStatus | null | undefined) ?? null,
     });
@@ -413,20 +474,26 @@ class RemoteClient {
         this.#command(async () => {
           await this.#call("archive", { conversationId: id, archived });
           if (archived && id === this.#current) this.#unshow();
+          // Archiving a root takes its descendants with it — a side into that
+          // family is gone too.
+          if (archived && this.#side !== undefined && this.#descendsFrom(this.#side, id)) await this.#showSide(undefined);
         }),
-      submit: (text, whenBusy) =>
-        this.#command(() => this.#call("submit", { conversationId: conversationId(), text, whenBusy, requestId: newRequestId() })),
+      submit: (text, whenBusy, target) =>
+        this.#command(() =>
+          this.#call("submit", { conversationId: target ?? conversationId(), text, whenBusy, requestId: newRequestId() }),
+        ),
       compact: (instructions) =>
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
         ),
       // Not queued: it resolves once the conversation is idle.
-      abort: () => {
-        if (this.#current === undefined) {
+      abort: (target) => {
+        const targetConversation = target ?? this.#current;
+        if (targetConversation === undefined) {
           this.#notice("error", "No conversation selected");
           return Promise.resolve();
         }
-        return this.#call("abort", { conversationId: conversationId() }).then(
+        return this.#call("abort", { conversationId: targetConversation }).then(
             () => {},
             (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
           );
@@ -447,7 +514,8 @@ class RemoteClient {
           await shown;
         }),
       switchConversation: (id) => this.#command(() => this.#switch(id)),
-      fork: (entryId, prompt, removeTools) =>
+      showSide: (id) => this.#command(() => this.#showSide(id)),
+      fork: (entryId, prompt, removeTools, options) =>
         this.#command(async () => {
           const { conversationId: forked } = await this.#call("fork", {
             conversationId: conversationId(),
@@ -455,11 +523,12 @@ class RemoteClient {
             ...(removeTools === undefined ? {} : { removeTools }),
           });
           // The fork is listed once its creating commit reaches the conversation list; switching does not need that.
-          await this.#switch(forked);
+          if (options?.show === "side") await this.#showSide(forked);
+          else await this.#switch(forked);
           await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: newRequestId() });
         }),
-      answer: (kind, requestId, answers) =>
-        this.#command(() => this.#call("answer", { conversationId: conversationId(), kind, requestId, answers })),
+      answer: (kind, requestId, answers, target) =>
+        this.#command(() => this.#call("answer", { conversationId: target ?? conversationId(), kind, requestId, answers })),
       // Queued like other commands, but the caller needs the result: queue it
       // the way createPairing does and return the promise.
       changes: () => {
@@ -487,17 +556,9 @@ class RemoteClient {
   async #switch(id: ConversationId): Promise<void> {
     const previous = this.#current;
     if (id === previous) return;
-    const next = this.#conversationStreams(id);
-    for (const stream of next) this.#wanted.add(stream);
-    const shown = Promise.all(next.map((stream) => this.#snapshot(stream)));
-    for (const stream of next) this.#send({ type: "subscribe", stream });
-    await shown;
+    await this.#acquire(id);
     this.#current = id;
-    for (const stream of previous === undefined ? [] : this.#conversationStreams(previous)) {
-      this.#wanted.delete(stream);
-      this.#values.delete(stream);
-      this.#send({ type: "unsubscribe", stream });
-    }
+    if (previous !== undefined) this.#release(previous, this.#side);
     this.#refresh();
   }
 
@@ -506,11 +567,17 @@ class RemoteClient {
     const previous = this.#current;
     if (previous === undefined) return;
     this.#current = undefined;
-    for (const stream of this.#conversationStreams(previous)) {
-      this.#wanted.delete(stream);
-      this.#values.delete(stream);
-      this.#send({ type: "unsubscribe", stream });
-    }
+    this.#release(previous, this.#side);
+    this.#refresh();
+  }
+
+  /** Show a second conversation beside the main one, or close it. */
+  async #showSide(id: ConversationId | undefined): Promise<void> {
+    const previous = this.#side;
+    if (id === previous) return;
+    if (id !== undefined) await this.#acquire(id);
+    this.#side = id;
+    if (previous !== undefined) this.#release(previous, this.#current);
     this.#refresh();
   }
 

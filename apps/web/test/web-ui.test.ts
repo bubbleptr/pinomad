@@ -84,7 +84,8 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "hello", exact: true }).click();
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
-  await page.getByRole("button", { name: "Dock", exact: true }).click();
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Live", exact: true }).click();
   await page.getByRole("dialog").getByText("No live tasks").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -223,9 +224,10 @@ it("shows no Fork action inside a fork's transcript", async () => {
   await fork.waitFor();
   await fork.click();
   await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
-  // The client switches to the fork; its settled run offers no way to fork again.
-  await page.getByText("fork answer", { exact: true }).waitFor();
-  await expect.poll(() => fork.count()).toBe(0);
+  // The fork opens in the side panel; its settled run offers no way to fork again.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+  await expect.poll(() => panel.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 });
 
 it("opens the existing fork instead of the dialog when a message was already forked", async () => {
@@ -250,11 +252,171 @@ it("opens the existing fork instead of the dialog when a message was already for
   const fork = page.getByRole("button", { name: "Fork", exact: true });
   await expect.poll(async () => await fork.getAttribute("title")).toBe("Open the fork from here");
   await fork.click();
-  // The page switches to the existing fork — its transcript shows — and no
-  // dialog or second fork appears (switchConversation is per-remote).
-  await page.getByText("fork answer", { exact: true }).waitFor();
+  // The existing fork opens in the panel's Threads detail — no dialog, and the
+  // main column stays on the parent (showSide is per-remote).
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+  await panel.getByRole("button", { name: "Open in main", exact: true }).waitFor();
   expect(await page.getByRole("dialog").count()).toBe(0);
   expect(allNodes(observer.view.current()).filter((node) => node.summary.kind === "fork")).toHaveLength(1);
+  await expect.poll(() => page.locator("h1").textContent()).toBe("start");
+});
+
+it("forks into the panel's Threads detail and talks to it there", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["parent answer", "fork answer", "side answer"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  await page.getByText("parent answer", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Fork", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
+
+  // The main column stays on the parent; the fork answers inside the panel.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await expect.poll(() => page.locator("h1").textContent()).toBe("start");
+  await panel.getByRole("button", { name: "Threads", exact: true }).waitFor();
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+  // The detail shows only the fork's own entries behind a "Forked from"
+  // divider — the parent's prefix lives in the main column, not twice.
+  await panel.getByText("Forked from start", { exact: true }).waitFor();
+  expect(await panel.getByText("parent answer", { exact: true }).count()).toBe(0);
+
+  // The panel composer talks to the fork only.
+  await panel.getByRole("textbox").fill("side question");
+  await panel.getByRole("textbox").press("Enter");
+  await panel.getByText("side answer", { exact: true }).waitFor();
+  // It appears exactly once: inside the panel, never in the main transcript.
+  expect(await page.getByText("side answer", { exact: true }).count()).toBe(1);
+
+  // "Open in main" promotes the fork; the panel returns to its Threads list.
+  await panel.getByRole("button", { name: "Open in main", exact: true }).click();
+  await page.getByRole("button", { name: "Back to start", exact: true }).waitFor();
+  await expect.poll(() => panel.getByRole("button", { name: "Open in main", exact: true }).count()).toBe(0);
+  await panel.getByRole("button", { name: /Continue from here|side question/, exact: false }).waitFor();
+});
+
+it("closes the side detail when the main column switches to another family", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("first chat");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await startChat(observer, "second chat");
+
+  // Fork the first conversation and open it in the panel.
+  await page.getByRole("button", { name: "Fork", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+
+  // Switching to a different root conversation drops the side detail.
+  await page.getByRole("button", { name: "second chat", exact: true }).click();
+  await page.getByText("second answer", { exact: true }).waitFor();
+  await panel.getByText("No threads yet", { exact: true }).waitFor();
+});
+
+it("resets the thread composer when the panel switches to another fork", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["first answer", "second answer", "fork one answer", "fork two answer"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("one");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await composer.fill("two");
+  await composer.press("Enter");
+  await page.getByText("second answer", { exact: true }).waitFor();
+  const parentId = await followFirst(observer);
+
+  // One fork per run, created through the observer.
+  const assistantIds = observer.view
+    .current()
+    .conversation!.entries.filter((entry) => entry.kind === "pi.assistant")
+    .map((entry) => String(entry.id));
+  await observer.controller.fork(assistantIds[0]!, "fork one");
+  await observer.controller.switchConversation(parentId);
+  await observer.controller.fork(assistantIds[1]!, "fork two");
+  await observer.controller.switchConversation(parentId);
+  await waitForView(observer.view, (view) => allNodes(view).filter((node) => node.summary.kind === "fork").length === 2);
+
+  // Open fork A from the Threads list and draft a reply, unsent.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Threads", exact: true }).click();
+  await panel.getByRole("button", { name: "fork one", exact: true }).click();
+  const threadComposer = panel.getByRole("textbox");
+  await threadComposer.fill("draft");
+
+  // Opening fork B through its own message's Fork action replaces the side;
+  // the composer belongs to whichever thread is shown.
+  await page.getByRole("button", { name: "Fork", exact: true }).last().click();
+  await panel.getByText("fork two answer", { exact: true }).waitFor();
+  await expect.poll(() => threadComposer.textContent()).toBe("");
+});
+
+it("shows an empty family in the panel while drafting a new conversation", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await followFirst(observer);
+
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Threads", exact: true }).click();
+  await panel.getByRole("button", { name: "fork side", exact: true }).waitFor();
+
+  // The draft home has no family — the panel must not keep the previous one's.
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await panel.getByText("No threads yet", { exact: true }).waitFor();
+});
+
+it("on a phone, Open in main closes the panel dialog too", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 390, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await followFirst(observer);
+
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Threads", exact: true }).click();
+  await dialog.getByRole("button", { name: "fork side", exact: true }).click();
+  await dialog.getByText("fork answer", { exact: true }).waitFor();
+
+  // Promoting the thread takes over the whole screen — the dialog cannot stay on top.
+  await dialog.getByRole("button", { name: "Open in main", exact: true }).click();
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  await page.getByRole("button", { name: "Back to start", exact: true }).waitFor();
 });
 
 it("shows no Fork action when the shown fork's root left navigation", async () => {
@@ -315,7 +477,7 @@ it("renders todo and a pending question card on every page and shares one answer
   await b.getByRole("button", { name: "plan and deploy", exact: true }).click();
 
   for (const page of [a, b]) {
-    await page.getByRole("button", { name: "Dock", exact: true }).click();
+    await page.getByRole("button", { name: "Side panel", exact: true }).click();
     const panel = page.getByLabel("Live state");
     await panel.getByText("Investigate the report", { exact: true }).waitFor();
     // The pending question renders above the composer in the main column.
@@ -344,7 +506,7 @@ it("renders a document that fails its presentation schema as key-value fallback"
 
   const page = await openPage(host, 1280, webOrigin);
   await page.getByRole("button", { name: "has a bad doc", exact: true }).click();
-  await page.getByRole("button", { name: "Dock", exact: true }).click();
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
   const panel = page.getByLabel("Live state");
   await panel.getByText("todo.list", { exact: true }).waitFor();
   await panel.getByText("items", { exact: true }).waitFor();
@@ -393,7 +555,45 @@ it("shows interruption without a text bubble and never offers a fork for streami
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 });
 
-it("opens a subagent's conversation from its card and returns to the parent", async () => {
+it("rolls a subagent's failure up to the family's root row", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+      createSubagent({ models, modelSummaries, exclude: [] }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("boom", { errorMessage: "child blew up", stopReason: "error" }),
+      "parent final",
+    ],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("textbox").fill("delegate");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  // The child failed; the root's own run ended cleanly.
+  const parent = allNodes(observer.view.current()).find((node) => node.summary.kind === "conversation")!;
+  expect(parent.children[0]!.summary.status).toBe("failed");
+  expect(parent.summary.status).toBeUndefined();
+
+  const row = page.getByRole("group", { name: "Chats" }).locator(".pigui-sidenav-session-row", {
+    has: page.getByRole("button", { name: "delegate", exact: true }),
+  });
+  await expect.poll(() => row.getAttribute("data-status")).toBe("failed");
+
+  // The dot is decorative (aria-hidden inside the button); the status reaches
+  // screen readers as a hidden sibling AFTER it in reading order, and the row
+  // button's accessible name stays exactly the title.
+  await row.locator("xpath=./span[normalize-space()='Failed']").waitFor({ state: "attached" });
+  await expect.poll(() =>
+    row.getByRole("button", { name: "delegate", exact: true }).count(),
+  ).toBe(1);
+});
+
+it("opens a subagent's conversation from its card in the panel's Tasks detail", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -417,15 +617,20 @@ it("opens a subagent's conversation from its card and returns to the parent", as
   await page.getByRole("button", { name: /Worked for/, exact: false }).click();
   await page.getByRole("button", { name: /Used count the lines/, exact: false }).click();
   await page.getByRole("button", { name: "Open conversation", exact: true }).click();
-  // The header breadcrumb is <parent title> › <child title>.
-  await page.getByRole("button", { name: "Back to delegate", exact: true }).waitFor();
-  await page.getByText("child answer", { exact: true }).waitFor();
-  // A subagent's conversation is read-only and terminal — no Fork action on its runs.
-  expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
-  await page.getByRole("button", { name: "Back to delegate", exact: true }).click();
-  await expect.poll(() => page.getByRole("button", { name: "Back to delegate", exact: true }).count()).toBe(0);
-  await page.getByText("parent final", { exact: true }).waitFor();
+  // It opens beside the main column in the panel — read-only, no composer.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByRole("button", { name: "Tasks", exact: true }).waitFor();
+  await panel.getByText("child answer", { exact: true }).waitFor();
+  await panel.getByText("Read-only · subagent", { exact: true }).waitFor();
+  expect(await panel.getByRole("textbox").count()).toBe(0);
+  // The main column still shows the parent.
+  await expect.poll(() => page.locator("h1").textContent()).toBe("delegate");
+
+  // Back to the list: the task rows sit under their owner's group.
+  await panel.getByRole("button", { name: "Back to tasks", exact: true }).click();
+  await panel.getByText("This conversation", { exact: true }).waitFor();
+  await panel.getByRole("button", { name: /count the lines/, exact: false }).waitFor();
 });
 
 it("renders a real edit's diff inside the tool row instead of the raw args", async () => {
@@ -679,10 +884,26 @@ it("organizes conversations under projects and chats", async () => {
     .current()
     .organized.projects[0]!.conversations.find((node) => node.children.length > 0)!;
   expect(parentNode.children[0]!.summary.kind).toBe("fork");
-  await page.getByText("fork answer", { exact: true }).waitFor();
+  // The fork opens beside the main column in the panel's Threads detail.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+
+  // The sidebar lists roots only: the fork is never a row, and its root stays
+  // selected while the fork is shown (aria-current from SideNavItem isSelected).
+  expect(await projectSection.getByRole("button", { name: "Continue from here.", exact: true }).count()).toBe(0);
+  const rootRow = projectSection.getByRole("button", { name: "project work", exact: true });
+  await expect.poll(() => rootRow.getAttribute("aria-current")).toBe("page");
+  // The row's trailing meta is the family's freshest update, compact.
+  await expect.poll(async () => await projectSection.locator(".pigui-sidenav-session-meta").textContent()).toBe("now");
+
+  // "Open in main" promotes the fork: main shows it, the breadcrumb returns.
+  await panel.getByRole("button", { name: "Open in main", exact: true }).click();
+  await page.getByRole("button", { name: "Back to project work", exact: true }).click();
+  await expect.poll(() => page.getByRole("button", { name: "Back to project work", exact: true }).count()).toBe(0);
+  await page.getByText("project answer", { exact: true }).waitFor();
 });
 
-it("keeps the dock closed until asked and keeps it open across conversations", async () => {
+it("keeps the side panel closed until asked and keeps it open across conversations", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer"] });
   const observer = await connectTo(defer, host);
@@ -695,23 +916,23 @@ it("keeps the dock closed until asked and keeps it open across conversations", a
   await startChat(observer, "second chat");
   await page.getByRole("button", { name: "second chat", exact: true }).waitFor();
 
-  // Closed by default: nothing of the live state is mounted.
-  expect(await page.getByLabel("Live state").count()).toBe(0);
-  const dockToggle = page.getByRole("button", { name: "Dock", exact: true });
-  expect(await dockToggle.getAttribute("aria-pressed")).toBe("false");
-  await dockToggle.click();
+  // Closed by default: nothing of the panel is mounted.
+  expect(await page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
+  const panelToggle = page.getByRole("button", { name: "Side panel", exact: true });
+  expect(await panelToggle.getAttribute("aria-pressed")).toBe("false");
+  await panelToggle.click();
   const panel = page.getByLabel("Live state");
   await panel.getByText("No live tasks", { exact: true }).waitFor();
-  expect(await page.getByRole("button", { name: "Dock", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  expect(await page.getByRole("button", { name: "Side panel", exact: true }).getAttribute("aria-pressed")).toBe("true");
 
-  // Switching conversations keeps the dock open.
+  // Switching conversations keeps the panel open.
   await page.getByRole("button", { name: "second chat", exact: true }).click();
   await page.getByText("second answer", { exact: true }).waitFor();
   await panel.getByText("No live tasks", { exact: true }).waitFor();
 
   // And closes again.
-  await page.getByRole("button", { name: "Dock", exact: true }).click();
-  await expect.poll(() => page.getByLabel("Live state").count()).toBe(0);
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await expect.poll(() => page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
 });
 
 it("puts the conversation title in the header and the path inside the dock", async () => {
@@ -728,8 +949,8 @@ it("puts the conversation title in the header and the path inside the dock", asy
   await expect.poll(() => page.locator("h1").textContent()).toBe("title me");
   expect(await page.getByText("/chats/", { exact: false }).count()).toBe(0);
 
-  // The path moved into the dock's Workspace section.
-  await page.getByRole("button", { name: "Dock", exact: true }).click();
+  // The path moved into the panel's Workspace section, on the Live tab.
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
   const panel = page.getByLabel("Live state");
   await panel.getByText("Workspace", { exact: true }).waitFor();
   await panel.getByText("/chats/", { exact: false }).waitFor();
@@ -942,7 +1163,7 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   );
   const toastBox = (await toast.boundingBox())!;
   const composerBox = (await page.getByRole("textbox").boundingBox())!;
-  const dockBox = (await page.getByRole("button", { name: "Dock", exact: true }).boundingBox())!;
+  const dockBox = (await page.getByRole("button", { name: "Side panel", exact: true }).boundingBox())!;
   const intersects = (a: typeof toastBox, b: typeof toastBox) =>
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(toastBox, composerBox)).toBe(false);

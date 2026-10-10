@@ -1,9 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import {
-  ChatLayout,
-  ChatMessageList,
-} from "@astryxdesign/core/Chat";
+import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
@@ -13,11 +10,12 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
-import { deriveChat } from "./entities/conversation/cot-view.ts";
+import { displayName, rootOf } from "./entities/conversation/family.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
-import { ChatEntryView } from "./widgets/chat/chat-entries.tsx";
+import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
+import type { PanelTab } from "./widgets/side-panel/side-panel.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
@@ -334,20 +332,48 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
   const conversation = drafting ? undefined : view.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
-  const items = useMemo(
-    () => (conversation === undefined ? [] : deriveChat(conversation, view.toolPresentations, busy)),
-    [conversation, view.toolPresentations, busy],
+  // Below this the chat column would be squeezed; the panel opens as a dialog.
+  const narrow = useMediaQuery("(max-width: 1023px)");
+  // The side panel: open state and tab live here so chat entries can open it.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>("live");
+  const openInPanel = useCallback(
+    (id: ConversationId, tab: "threads" | "tasks") => {
+      setPanelTab(tab);
+      setPanelOpen(true);
+      void remote.controller.showSide(id);
+    },
+    [remote],
   );
+  // "Open in main" promotes a thread to the main column and closes the side —
+  // the family root stays the same, so the close rule below must not fire for it.
+  const openInMain = useCallback(
+    (id: ConversationId) => {
+      void remote.controller.switchConversation(id);
+      void remote.controller.showSide(undefined);
+      // On a phone the panel is a fullscreen dialog: leaving it up would hide
+      // the conversation it just promoted.
+      if (narrow) setPanelOpen(false);
+    },
+    [remote, narrow],
+  );
+  const familyRootId =
+    conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id)?.summary.id;
+  // A different family root — another sidebar row, a new conversation, the
+  // draft — ends whatever the side was showing.
+  useEffect(() => {
+    void remote.controller.showSide(undefined);
+  }, [familyRootId]);
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
-  // A shown subagent conversation offers a breadcrumb back to the run that owns it.
+  // Any conversation with a parent — fork or subagent — offers a breadcrumb
+  // back to the conversation it belongs to.
   const shownSummary =
     conversation === undefined
       ? undefined
       : findConversation(view.organized, conversation.conversation.id)?.summary;
-  const parentId = shownSummary?.kind === "subagent" ? shownSummary.parent : undefined;
+  const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
-  const openConversation = useCallback((id: ConversationId) => void remote.controller.switchConversation(id), [remote]);
   // Fork depth is one (ADR-0019 §2): inside a fork or a subagent's conversation
   // no run offers the Fork action. An unknown summary — the shown conversation
   // fell out of `organized` (e.g. its root was archived by another client) —
@@ -367,8 +393,6 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     setDraft(home);
     setDrafting(true);
   };
-  // Below this the chat column would be squeezed; the dock opens as a dialog.
-  const narrow = useMediaQuery("(max-width: 1023px)");
   const [forkTarget, setForkTarget] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host
@@ -395,6 +419,12 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
         banner={<ConnectionBanner view={view} wsUrl={wsUrl} />}
         onDraft={startDraft}
         onOpenChanges={() => setChangesOpen(true)}
+        panelOpen={panelOpen}
+        panelTab={panelTab}
+        onPanelOpen={setPanelOpen}
+        onPanelTab={setPanelTab}
+        openInPanel={openInPanel}
+        openInMain={openInMain}
       >
         {conversation === undefined ? (
           <DraftHome
@@ -413,38 +443,36 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
                 <VStack gap={1}>
-                  <PendingQuestions view={view} remote={remote} />
+                  <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
                   <ConversationComposer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
                 </VStack>
               </div>
             }
             emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
           >
-            {items.length === 0 ? null : (
-              <ChatMessageList isStreaming={busy} gap={0}>
-                {/* Pace's live-session-column gutter: centered column
-                    with horizontal padding; chat.css's CoT rail
-                    expects that breathing room at the left edge. */}
-                <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
-                  {items.map((item) => (
-                    <ChatEntryView
-                      key={item.id}
-                      entry={item}
-                      connected={view.connection === "connected"}
-                      openConversation={openConversation}
-                      onFork={setForkTarget}
-                      canFork={canFork}
-                      forkAt={forkAt}
-                    />
-                  ))}
-                </div>
-              </ChatMessageList>
-            )}
+            <ConversationTranscript
+              conversation={conversation}
+              toolPresentations={view.toolPresentations}
+              connected={view.connection === "connected"}
+              canFork={canFork}
+              openInPanel={openInPanel}
+              onFork={setForkTarget}
+              forkAt={forkAt}
+            />
           </ChatLayout>
         )}
       </AppFrame>
       {forkTarget === undefined ? null : (
-        <ForkDialog entryId={forkTarget} remote={remote} connected={view.connection === "connected"} onClose={() => setForkTarget(undefined)} />
+        <ForkDialog
+          entryId={forkTarget}
+          remote={remote}
+          connected={view.connection === "connected"}
+          onClose={() => setForkTarget(undefined)}
+          onForked={() => {
+            setPanelTab("threads");
+            setPanelOpen(true);
+          }}
+        />
       )}
       {changesOpen && conversation !== undefined && (
         <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
@@ -453,10 +481,24 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   );
 }
 
-function ForkDialog({ entryId, remote, connected, onClose }: { entryId: string; remote: RemoteDurable; connected: boolean; onClose: () => void }) {
+function ForkDialog({
+  entryId,
+  remote,
+  connected,
+  onClose,
+  onForked,
+}: {
+  entryId: string;
+  remote: RemoteDurable;
+  connected: boolean;
+  onClose: () => void;
+  /** The fork opens beside the main conversation — the caller opens the panel. */
+  onForked: () => void;
+}) {
   const [prompt, setPrompt] = useState("Continue from here.");
   const fork = (): void => {
-    void remote.controller.fork(entryId, prompt.trim());
+    void remote.controller.fork(entryId, prompt.trim(), undefined, { show: "side" });
+    onForked();
     onClose();
   };
   return (

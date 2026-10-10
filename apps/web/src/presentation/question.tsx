@@ -10,9 +10,10 @@ import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { classify, type QuestionAnswer, type QuestionRequest } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
 
 const card: CSSProperties = {
   border: "1px solid var(--color-border-primary, var(--color-background-muted))",
@@ -21,9 +22,21 @@ const card: CSSProperties = {
   backgroundColor: "var(--color-background-surface)",
 };
 
-/** Unresolved question requests across the shown conversation's docs, in doc order. */
-export function PendingQuestions({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
-  const pending = view.docs.flatMap((doc) => {
+/** Unresolved question requests across a conversation's doc views, in doc order.
+    `target` defaults the answers to the main shown conversation — the side
+    panel passes its own conversation so a fork can be answered in place. */
+export function PendingQuestions({
+  docs,
+  remote,
+  connected,
+  target,
+}: {
+  docs: readonly ExtensionDocView[];
+  remote: RemoteDurable;
+  connected: boolean;
+  target?: ConversationId;
+}) {
+  const pending = docs.flatMap((doc) => {
     const classified = classify(doc.presentation, doc.value);
     if (classified.type !== "pinomad.question") return [];
     return classified.value.requests
@@ -34,7 +47,7 @@ export function PendingQuestions({ view, remote }: { view: DurableView; remote: 
   return (
     <VStack gap={2} padding={2} data-testid="pending-questions">
       {pending.map(({ kind, request }) => (
-        <QuestionCard key={request.id} kind={kind} request={request} remote={remote} connected={view.connection === "connected"} />
+        <QuestionCard key={request.id} kind={kind} request={request} remote={remote} connected={connected} target={target} />
       ))}
     </VStack>
   );
@@ -45,11 +58,13 @@ function QuestionCard({
   request,
   remote,
   connected,
+  target,
 }: {
   kind: string;
   request: QuestionRequest;
   remote: RemoteDurable;
   connected: boolean;
+  target?: ConversationId;
 }) {
   const [selections, setSelections] = useState<string[][]>(() => request.questions.map(() => []));
   const [others, setOthers] = useState<string[]>(() => request.questions.map(() => ""));
@@ -63,7 +78,7 @@ function QuestionCard({
       selected: selections[index] ?? [],
       ...(others[index]?.trim() === "" ? {} : { other: others[index] }),
     }));
-    void remote.controller.answer(kind, request.id, answers);
+    void remote.controller.answer(kind, request.id, answers, target);
   };
 
   return (

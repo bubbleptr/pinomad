@@ -19,14 +19,15 @@ import { fillToolDetails } from "./tool-detail.tsx";
 export function ChatEntryView({
   entry,
   connected,
-  openConversation,
+  openInPanel,
   onFork,
   canFork = true,
   forkAt,
 }: {
   entry: ChatEntry;
   connected: boolean;
-  openConversation: (id: ConversationId) => void;
+  /** Threads and tasks reached from a transcript open in the side panel. */
+  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   onFork: (entryId: string) => void;
   /** False inside a fork or subagent conversation: depth is one (ADR-0019 §2). */
   canFork?: boolean;
@@ -58,7 +59,7 @@ export function ChatEntryView({
         <RunEntry
           entry={entry}
           connected={connected}
-          openConversation={openConversation}
+          openInPanel={openInPanel}
           onFork={onFork}
           canFork={canFork}
           forkAt={forkAt}
@@ -74,19 +75,20 @@ export function ChatEntryView({
 function RunEntry({
   entry,
   connected,
-  openConversation,
+  openInPanel,
   onFork,
   canFork = true,
   forkAt,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
-  openConversation: (id: ConversationId) => void;
+  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   onFork: (entryId: string) => void;
   canFork?: boolean;
   forkAt?: (entryId: string) => ConversationId | undefined;
 }) {
-  const cot = useMemo(() => fillToolDetails(entry.cot, openConversation), [entry.cot, openConversation]);
+  // Subagent cards always open as tasks; only the Fork action picks threads.
+  const cot = useMemo(() => fillToolDetails(entry.cot, (id) => openInPanel(id, "tasks")), [entry.cot, openInPanel]);
   const answer = cot.answer;
   // A message already forked reopens that fork rather than starting a second one.
   const existingFork = entry.forkEntryId === undefined ? undefined : forkAt?.(entry.forkEntryId);
@@ -129,7 +131,7 @@ function RunEntry({
                 tooltip={existingFork === undefined ? "Continue from here in a new conversation" : "Open the fork from here"}
                 disabled={!connected}
                 onPress={() =>
-                  existingFork === undefined ? onFork(entry.forkEntryId!) : openConversation(existingFork)
+                  existingFork === undefined ? onFork(entry.forkEntryId!) : openInPanel(existingFork, "threads")
                 }
               >
                 <GitBranch aria-hidden="true" className="size-4" />
