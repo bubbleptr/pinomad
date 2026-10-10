@@ -332,6 +332,8 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
   const conversation = drafting ? undefined : view.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
+  // Below this the chat column would be squeezed; the panel opens as a dialog.
+  const narrow = useMediaQuery("(max-width: 1023px)");
   // The side panel: open state and tab live here so chat entries can open it.
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("live");
@@ -349,8 +351,11 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     (id: ConversationId) => {
       void remote.controller.switchConversation(id);
       void remote.controller.showSide(undefined);
+      // On a phone the panel is a fullscreen dialog: leaving it up would hide
+      // the conversation it just promoted.
+      if (narrow) setPanelOpen(false);
     },
-    [remote],
+    [remote, narrow],
   );
   const familyRootId =
     conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id)?.summary.id;
@@ -388,8 +393,6 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
     setDraft(home);
     setDrafting(true);
   };
-  // Below this the chat column would be squeezed; the dock opens as a dialog.
-  const narrow = useMediaQuery("(max-width: 1023px)");
   const [forkTarget, setForkTarget] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host

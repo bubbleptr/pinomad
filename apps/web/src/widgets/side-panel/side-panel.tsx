@@ -49,6 +49,7 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 function PanelContent({
   view,
   remote,
+  conversation,
   tab,
   onTabChange,
   openInPanel,
@@ -56,6 +57,8 @@ function PanelContent({
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The draft-gated conversation — while drafting, the family is empty. */
+  conversation: DurableView["conversation"];
   tab: PanelTab;
   onTabChange: (tab: PanelTab) => void;
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
@@ -65,8 +68,7 @@ function PanelContent({
   const side = view.side;
   const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
   // The family is whatever the main column shows — the panel is its sibling.
-  const root =
-    view.conversation === undefined ? undefined : rootOf(view.organized, view.conversation.conversation.id);
+  const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
   const threads = root === undefined ? [] : threadsOf(root);
   const groups = root === undefined ? [] : taskGroupsOf(root);
   const taskCount = groups.reduce((total, group) => total + group.tasks.length, 0);
@@ -102,6 +104,9 @@ function PanelContent({
       {tab === "threads" ? (
         side !== undefined && sideSummary?.kind === "fork" ? (
           <ThreadDetail
+            // The draft lives inside the detail; a different fork means a
+            // different draft — remounting keeps a stale one from being sent.
+            key={side.id}
             view={view}
             remote={remote}
             side={side}
@@ -176,7 +181,7 @@ function PanelContent({
       ) : (
         <Scrollable label="Live state">
           <div className="p-3">
-            <LiveState view={view} remote={remote} conversation={view.conversation} />
+            <LiveState view={view} remote={remote} conversation={conversation} />
           </div>
         </Scrollable>
       )}
@@ -377,6 +382,7 @@ function TaskDetail({
 export function SidePanel({
   view,
   remote,
+  conversation,
   narrow,
   open,
   onOpenChange,
@@ -387,6 +393,8 @@ export function SidePanel({
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The draft-gated main conversation; the family comes from it, not view.conversation. */
+  conversation: DurableView["conversation"];
   narrow: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -411,6 +419,7 @@ export function SidePanel({
               <PanelContent
                 view={view}
                 remote={remote}
+                conversation={conversation}
                 tab={tab}
                 onTabChange={onTabChange}
                 openInPanel={openInPanel}
@@ -430,6 +439,7 @@ export function SidePanel({
         <PanelContent
           view={view}
           remote={remote}
+          conversation={conversation}
           tab={tab}
           onTabChange={onTabChange}
           openInPanel={openInPanel}

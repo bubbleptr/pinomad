@@ -324,6 +324,101 @@ it("closes the side detail when the main column switches to another family", asy
   await panel.getByText("No threads yet", { exact: true }).waitFor();
 });
 
+it("resets the thread composer when the panel switches to another fork", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["first answer", "second answer", "fork one answer", "fork two answer"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("one");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await composer.fill("two");
+  await composer.press("Enter");
+  await page.getByText("second answer", { exact: true }).waitFor();
+  const parentId = await followFirst(observer);
+
+  // One fork per run, created through the observer.
+  const assistantIds = observer.view
+    .current()
+    .conversation!.entries.filter((entry) => entry.kind === "pi.assistant")
+    .map((entry) => String(entry.id));
+  await observer.controller.fork(assistantIds[0]!, "fork one");
+  await observer.controller.switchConversation(parentId);
+  await observer.controller.fork(assistantIds[1]!, "fork two");
+  await observer.controller.switchConversation(parentId);
+  await waitForView(observer.view, (view) => allNodes(view).filter((node) => node.summary.kind === "fork").length === 2);
+
+  // Open fork A from the Threads list and draft a reply, unsent.
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Threads", exact: true }).click();
+  await panel.getByRole("button", { name: "fork one", exact: true }).click();
+  const threadComposer = panel.getByRole("textbox");
+  await threadComposer.fill("draft");
+
+  // Opening fork B through its own message's Fork action replaces the side;
+  // the composer belongs to whichever thread is shown.
+  await page.getByRole("button", { name: "Fork", exact: true }).last().click();
+  await panel.getByText("fork two answer", { exact: true }).waitFor();
+  await expect.poll(() => threadComposer.textContent()).toBe("");
+});
+
+it("shows an empty family in the panel while drafting a new conversation", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await followFirst(observer);
+
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Threads", exact: true }).click();
+  await panel.getByRole("button", { name: "fork side", exact: true }).waitFor();
+
+  // The draft home has no family — the panel must not keep the previous one's.
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await panel.getByText("No threads yet", { exact: true }).waitFor();
+});
+
+it("on a phone, Open in main closes the panel dialog too", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 390, webOrigin);
+  const composer = page.getByRole("textbox");
+  await composer.fill("start");
+  await composer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+  await followFirst(observer);
+
+  const entryId = String(observer.view.current().conversation!.entries.at(-1)!.id);
+  await observer.controller.fork(entryId, "fork side");
+  await waitForView(observer.view, (view) => allNodes(view).some((node) => node.summary.kind === "fork"));
+
+  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Threads", exact: true }).click();
+  await dialog.getByRole("button", { name: "fork side", exact: true }).click();
+  await dialog.getByText("fork answer", { exact: true }).waitFor();
+
+  // Promoting the thread takes over the whole screen — the dialog cannot stay on top.
+  await dialog.getByRole("button", { name: "Open in main", exact: true }).click();
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  await page.getByRole("button", { name: "Back to start", exact: true }).waitFor();
+});
+
 it("shows no Fork action when the shown fork's root left navigation", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });

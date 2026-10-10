@@ -112,6 +112,21 @@ describe("threadsOf / taskGroupsOf", () => {
     expect(threadsOf(bare)).toEqual([]);
     expect(taskGroupsOf(bare)).toEqual([]);
   });
+
+  it("walks legacy trees: several forks per message and forks nested inside forks", () => {
+    // Pre-ADR-0019 data: two forks on the same message, plus a fork of a fork.
+    const subagent = node({ id: 10 as ConversationSummary["id"], kind: "subagent", parent: 9 as ConversationSummary["id"], label: "Deep task" });
+    const nestedFork = node({ id: 9 as ConversationSummary["id"], kind: "fork", parent: 8 as ConversationSummary["id"], title: "nested" }, [subagent]);
+    const firstFork = node({ id: 8 as ConversationSummary["id"], kind: "fork", parent: 7 as ConversationSummary["id"], title: "first" }, [nestedFork]);
+    const secondFork = node({ id: 11 as ConversationSummary["id"], kind: "fork", parent: 7 as ConversationSummary["id"], title: "second" });
+    const legacy = node({ id: 7 as ConversationSummary["id"], kind: "conversation" }, [firstFork, secondFork]);
+
+    // Depth-first: a nested fork follows its parent fork, then siblings.
+    expect(threadsOf(legacy).map((n) => n.summary.id)).toEqual([8, 9, 11]);
+    const groups = taskGroupsOf(legacy);
+    expect(groups.map((group) => group.label)).toEqual(["nested"]);
+    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([10]);
+  });
 });
 
 describe("relativeTime", () => {

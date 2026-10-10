@@ -71,9 +71,20 @@ export function rootOf(organized: Organized, id: ConversationSummary["id"]): Con
   return found;
 }
 
-/** The family's forks — the side panel's Threads list. */
+/** The family's forks — the side panel's Threads list. Depth-first: legacy
+    trees predate the depth-of-one rule, so a fork of a fork follows its parent
+    fork rather than disappearing. */
 export function threadsOf(root: ConversationNode): readonly ConversationNode[] {
-  return root.children.filter((child) => child.summary.kind === "fork");
+  const threads: ConversationNode[] = [];
+  const visit = (node: ConversationNode): void => {
+    for (const child of node.children) {
+      if (child.summary.kind !== "fork") continue;
+      threads.push(child);
+      visit(child);
+    }
+  };
+  visit(root);
+  return threads;
 }
 
 /** The family's subagents grouped by owner: the root first, then each fork that has any. */
