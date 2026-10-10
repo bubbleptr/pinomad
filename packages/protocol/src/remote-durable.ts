@@ -515,7 +515,7 @@ class RemoteClient {
         }),
       switchConversation: (id) => this.#command(() => this.#switch(id)),
       showSide: (id) => this.#command(() => this.#showSide(id)),
-      fork: (entryId, prompt, removeTools) =>
+      fork: (entryId, prompt, removeTools, options) =>
         this.#command(async () => {
           const { conversationId: forked } = await this.#call("fork", {
             conversationId: conversationId(),
@@ -523,7 +523,8 @@ class RemoteClient {
             ...(removeTools === undefined ? {} : { removeTools }),
           });
           // The fork is listed once its creating commit reaches the conversation list; switching does not need that.
-          await this.#switch(forked);
+          if (options?.show === "side") await this.#showSide(forked);
+          else await this.#switch(forked);
           await this.#call("submit", { conversationId: forked, text: prompt, whenBusy: "followUp", requestId: newRequestId() });
         }),
       answer: (kind, requestId, answers, target) =>

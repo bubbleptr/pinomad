@@ -67,7 +67,7 @@ MCP 本身的后续，都等有明确需求再做：
   - fork 是父对话的 thread，子代理是父对话的 task（术语见 `CONTEXT.md`）。主区始终显示顶层对话。右侧面板取代现在的 Dock，默认 440px，可以拖到 360–720，分 Threads / Tasks / Live 三个 tab。Threads 里的 fork 可以直接对话，也可以"在主区打开"（顶栏用面包屑回到父对话）。Tasks 按归属分组列出子代理，只读。父对话里，分叉点那条消息上显示"1 fork"；子代理调用直接显示成任务卡片，带标签、状态、模型、耗时和正在做的事。点任何一个都在右侧面板打开。窄屏上右侧面板是全屏对话框。
   - fork 的检出、层数和数量见 ADR-0019：共用父对话的检出，只有一层，每条消息最多一个。消息上已经有 fork 时，Fork 按钮直接打开它。
   - 放弃的方案：侧栏里的分型树（家族一大侧栏就太长）；子代理只在对话里出现、fork 仍留在侧栏（侧栏还是长，而且 fork 和子代理不对称）；顶栏下面的家族标签栏（切过去就看不到父对话，不符合 thread 的用法）；fork 时让用户选检出方式（见 ADR-0019）。
-  - 要补的数据：对话摘要的 `forkedAt`（fork 的分叉点）、`status`（等回答 > 运行中 > 失败，没有就是空闲）、`updatedAt`（最新一条自己的用户/助手消息的时间）、子代理的 `label`（`subagent` 的 `description`，宿主存在子对话的 `pinomad.subagent` 文档里）已经加上，都是可选字段。侧栏已改成只放顶层对话，状态点和更新时间按家族汇总；fork 在主区打开时也有面包屑；子代理没有 `label` 时，客户端去掉任务开头 "In the working directory …," 这类套话。`RemoteDurable` 能在主对话之外再显示一条侧边对话（`showSide`，视图里的 `side`），提交、回答、中止可以指定目标对话；两条显示同一对话时共用订阅。还没做：右侧面板本身。
+  - 要补的数据：对话摘要的 `forkedAt`（fork 的分叉点）、`status`（等回答 > 运行中 > 失败，没有就是空闲）、`updatedAt`（最新一条自己的用户/助手消息的时间）、子代理的 `label`（`subagent` 的 `description`，宿主存在子对话的 `pinomad.subagent` 文档里）已经加上，都是可选字段。侧栏已改成只放顶层对话，状态点和更新时间按家族汇总；fork 在主区打开时也有面包屑；子代理没有 `label` 时，客户端去掉任务开头 "In the working directory …," 这类套话。`RemoteDurable` 能在主对话之外再显示一条侧边对话（`showSide`，视图里的 `side`），提交、回答、中止可以指定目标对话；两条显示同一对话时共用订阅。右侧面板已取代 Dock：Threads / Tasks / Live 三个 tab，可拖宽（360–720），窄屏是全屏对话框；fork 和子代理都在面板里打开，fork 只显示自己的内容并能直接对话，子代理只读。还没做：主区的锚点，也就是分叉点上的"1 fork"标记，以及带标签、状态、模型、耗时和当前动作的子代理任务卡片。做任务卡片时要注意，运行中的子代理调用要直接读 live 工具槽的 details（`cot-view.ts` 现在不把它合进 partial 消息）。
 - 上下文用量指示（Pace 的位置行右侧有 context meter；我们的宿主还没暴露用量）。
 - 附件：ChatPromptInput 已经留好接口（drawer、onFiles），需要协议里能带附件的消息。
 - 斜杠命令和 @ 文件补全：Pace 的 trigger 菜单方案（leading token + typeahead）。

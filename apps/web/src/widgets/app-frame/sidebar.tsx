@@ -10,6 +10,7 @@ import type { ConversationNode, Home, Project } from "@pinomad/protocol/organiza
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "../../entities/conversation/family.ts";
+import { useNow } from "../../shared/use-now.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
@@ -178,15 +179,7 @@ function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
   );
 }
 
-/** One shared clock for every row's relative time — not one interval per row. */
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
+
 
 function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
   const StateIcon = expanded ? FolderOpenState : FolderClosed;

@@ -69,7 +69,12 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
             const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) };
             queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
           } else if (frame.type === "call") {
-            const result: ServerFrame = { type: "result", id: frame.id, ok: true, value: undefined };
+            // Fork creates a new conversation; every other call resolves void.
+            const value =
+              frame.method === "fork"
+                ? { conversationId: (frame.args as { conversationId: number }).conversationId + 1 }
+                : undefined;
+            const result: ServerFrame = { type: "result", id: frame.id, ok: true, value };
             queueMicrotask(() => handlers.message(JSON.stringify(result)));
           }
         },
@@ -292,6 +297,27 @@ describe("RemoteDurable side conversation", () => {
       const calls = sent.flatMap((frame) => (frame.type === "call" ? [frame] : []));
       expect(calls.map((frame) => frame.method)).toEqual(["submit", "answer", "abort", "submit"]);
       expect(calls.map((frame) => (frame.args as { conversationId: number }).conversationId)).toEqual([2, 2, 2, 1]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("forks into the side panel when asked instead of switching the main", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      // The fake answers the fork call with the new conversation's id.
+      await remote.controller.fork("9", "continue here", undefined, { show: "side" });
+      const forkCall = sent.find((frame) => frame.type === "call" && frame.method === "fork")!;
+      const forked = (forkCall.args as { conversationId: number }).conversationId + 1;
+      expect(remote.view.current().side?.id).toBe(id(forked));
+      expect(remote.view.current().side?.conversation).not.toBeUndefined();
+      // The main conversation is untouched.
+      expect((remote.view.current().conversation as { conversation: { id: number } }).conversation.id).toBe(1);
+      // The prompt submitted to the fork, not the main.
+      const submitCall = sent.find((frame) => frame.type === "call" && frame.method === "submit")!;
+      expect((submitCall.args as { conversationId: number }).conversationId).toBe(forked);
     } finally {
       remote.close();
     }

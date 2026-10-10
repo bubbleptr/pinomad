@@ -1,5 +1,4 @@
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
@@ -7,51 +6,6 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, taskRows, usageRows } from "../../presentation/chat.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
-
-/** Desktop dock: the live-state panel docked to the right of the chat column. */
-export function DockPanel({
-  view,
-  remote,
-  conversation,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  conversation: DurableView["conversation"];
-}) {
-  return (
-    <div className="w-80 shrink-0 overflow-y-auto border-l border-border p-3" aria-label="Live state">
-      <LiveState view={view} remote={remote} conversation={conversation} />
-    </div>
-  );
-}
-
-/** Narrow dock: the same live state in a dialog. */
-export function DockDialog({
-  open,
-  onOpenChange,
-  view,
-  remote,
-  conversation,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  view: DurableView;
-  remote: RemoteDurable;
-  conversation: DurableView["conversation"];
-}) {
-  return (
-    <Dialog isOpen={open} onOpenChange={onOpenChange} width={360}>
-      <Layout
-        header={<DialogHeader title="Live state" onOpenChange={onOpenChange} />}
-        content={
-          <LayoutContent>
-            <LiveState view={view} remote={remote} conversation={conversation} />
-          </LayoutContent>
-        }
-      />
-    </Dialog>
-  );
-}
 
 export function LiveState({
   view,

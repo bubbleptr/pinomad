@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ConversationNode } from "@pinomad/protocol/organization.ts";
+import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { displayName, familyStatus, familyUpdatedAt, relativeTime } from "./family.ts";
+import { displayName, familyStatus, familyUpdatedAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "./family.ts";
 
 const summary = (over: Partial<ConversationSummary> = {}): ConversationSummary => ({
   id: 0 as ConversationSummary["id"],
@@ -66,6 +66,51 @@ describe("displayName", () => {
     expect(displayName(summary({ title: "what broke?" }))).toBe("what broke?");
     expect(displayName(summary({ kind: "fork" }))).toBe("New conversation");
     expect(displayName(undefined)).toBe("Conversation");
+  });
+});
+
+const organizedOf = (chats: ConversationNode[]): Organized => ({ chats, projects: [] });
+
+describe("rootOf", () => {
+  const subInFork = node({
+    id: 3 as ConversationSummary["id"],
+    kind: "subagent",
+    parent: 2 as ConversationSummary["id"],
+  });
+  const forkA = node({ id: 2 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"] }, [subInFork]);
+  const rootA = node({ id: 1 as ConversationSummary["id"], kind: "conversation" }, [forkA]);
+  const organized = organizedOf([rootA, node({ id: 9 as ConversationSummary["id"] })]);
+
+  it("walks parent links up to the top-level conversation", () => {
+    expect(rootOf(organized, 1 as ConversationSummary["id"])?.summary.id).toBe(1);
+    expect(rootOf(organized, 2 as ConversationSummary["id"])?.summary.id).toBe(1);
+    expect(rootOf(organized, 3 as ConversationSummary["id"])?.summary.id).toBe(1);
+    expect(rootOf(organized, 9 as ConversationSummary["id"])?.summary.id).toBe(9);
+    expect(rootOf(organized, 42 as ConversationSummary["id"])).toBeUndefined();
+  });
+});
+
+describe("threadsOf / taskGroupsOf", () => {
+  const subOnRoot = node({ id: 4 as ConversationSummary["id"], kind: "subagent", parent: 1 as ConversationSummary["id"], label: "Audit" });
+  const forkIdle = node({ id: 2 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"] });
+  const forkBusy = node(
+    { id: 5 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"], title: "worktree fork" },
+    [node({ id: 6 as ConversationSummary["id"], kind: "subagent", parent: 5 as ConversationSummary["id"] })],
+  );
+  const root = node({ id: 1 as ConversationSummary["id"], kind: "conversation" }, [subOnRoot, forkIdle, forkBusy]);
+
+  it("lists the family's forks and groups subagents by owner", () => {
+    expect(threadsOf(root).map((n) => n.summary.id)).toEqual([2, 5]);
+    const groups = taskGroupsOf(root);
+    expect(groups.map((group) => group.label)).toEqual(["This conversation", "worktree fork"]);
+    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([4]);
+    expect(groups[1]!.tasks.map((n) => n.summary.id)).toEqual([6]);
+  });
+
+  it("is empty for a conversation with no children", () => {
+    const bare = node({ id: 7 as ConversationSummary["id"] });
+    expect(threadsOf(bare)).toEqual([]);
+    expect(taskGroupsOf(bare)).toEqual([]);
   });
 });
 

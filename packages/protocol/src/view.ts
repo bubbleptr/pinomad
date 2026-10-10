@@ -154,8 +154,8 @@ export interface DurableController {
   switchConversation(id: ConversationId): Promise<void>;
   /** Show a conversation beside the main one, or close the side with `undefined`; resolves once its snapshots arrived. */
   showSide(id: ConversationId | undefined): Promise<void>;
-  /** Fork the shown conversation at an entry, switch to the fork, and send it `prompt`. */
-  fork(entryId: string, prompt: string, removeTools?: readonly string[]): Promise<void>;
+  /** Fork the shown conversation at an entry and send it `prompt`. `show` picks where it opens: the main slot (default) or the side panel. */
+  fork(entryId: string, prompt: string, removeTools?: readonly string[], options?: { show?: "main" | "side" }): Promise<void>;
   /** Answer a pending `pinomad.question` request on `target` (the main shown conversation by default); failures surface as notices. */
   answer(kind: string, requestId: string, answers: QuestionAnswer[], target?: ConversationId): Promise<void>;
   /** The shown conversation's file changes; unavailable for Chat and non-git checkouts. */

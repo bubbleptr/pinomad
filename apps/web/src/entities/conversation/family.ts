@@ -1,7 +1,7 @@
 // A conversation family's rolled-up presentation: root rows in the sidebar
 // speak for the whole family (forks and subagents never get rows of their
 // own), so status and recency aggregate across the root and every descendant.
-import type { ConversationNode } from "@pinomad/protocol/organization.ts";
+import { findConversation, type ConversationNode, type Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 
 /** A family's most urgent status; `undefined` means everything is idle. */
@@ -58,4 +58,32 @@ export function displayName(summary: ConversationSummary | undefined): string {
   if (summary.label !== undefined) return summary.label;
   const title = summary.title?.replace(SUBAGENT_TASK_PREFIX, "").trim();
   return title === undefined || title === "" ? "Subagent" : title;
+}
+
+/** The top-level node a conversation belongs to — `parent` links walked to the root. */
+export function rootOf(organized: Organized, id: ConversationSummary["id"]): ConversationNode | undefined {
+  let found = findConversation(organized, id);
+  // Fork depth is one and subagents sit one level below their owner, so this
+  // loop runs at most twice — a guard keeps a corrupt link from looping.
+  for (let depth = 0; found !== undefined && found.summary.parent !== undefined && depth < 4; depth++) {
+    found = findConversation(organized, found.summary.parent);
+  }
+  return found;
+}
+
+/** The family's forks — the side panel's Threads list. */
+export function threadsOf(root: ConversationNode): readonly ConversationNode[] {
+  return root.children.filter((child) => child.summary.kind === "fork");
+}
+
+/** The family's subagents grouped by owner: the root first, then each fork that has any. */
+export function taskGroupsOf(root: ConversationNode): { owner: ConversationSummary; label: string; tasks: ConversationNode[] }[] {
+  const groups: { owner: ConversationSummary; label: string; tasks: ConversationNode[] }[] = [];
+  const own = root.children.filter((child) => child.summary.kind === "subagent");
+  if (own.length > 0) groups.push({ owner: root.summary, label: "This conversation", tasks: [...own] });
+  for (const fork of threadsOf(root)) {
+    const tasks = fork.children.filter((child) => child.summary.kind === "subagent");
+    if (tasks.length > 0) groups.push({ owner: fork.summary, label: displayName(fork.summary), tasks: [...tasks] });
+  }
+  return groups;
 }

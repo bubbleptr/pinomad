@@ -17,7 +17,7 @@ import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
-import { DockPanel, DockDialog } from "../dock/dock.tsx";
+import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
 
@@ -26,8 +26,8 @@ const readSidebarOpen = (): boolean =>
 
 /**
  * The app frame: Astryx AppShell (wash sidebar vs elevated main) + in-flow
- * 40px header + optional dock panel, mirroring Pace's widgets/app-frame.
- * Owns frame chrome state (sidebar/dock/nav); Workbench owns content state.
+ * 40px header + optional side panel, mirroring Pace's widgets/app-frame.
+ * Owns frame chrome state (sidebar/panel/nav); Workbench owns content state.
  */
 export function AppFrame({
   view,
@@ -43,6 +43,12 @@ export function AppFrame({
   banner,
   onDraft,
   onOpenChanges,
+  panelOpen,
+  panelTab,
+  onPanelOpen,
+  onPanelTab,
+  openInPanel,
+  openInMain,
   children,
 }: {
   view: DurableView;
@@ -58,10 +64,16 @@ export function AppFrame({
   banner?: ReactNode;
   onDraft: (home: Home) => void;
   onOpenChanges: () => void;
+  /** The side panel's open state and tab live in Workbench — chat entries reach them too. */
+  panelOpen: boolean;
+  panelTab: PanelTab;
+  onPanelOpen: (open: boolean) => void;
+  onPanelTab: (tab: PanelTab) => void;
+  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInMain: (id: ConversationId) => void;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
-  const [dockOpen, setDockOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
   // Under the desktop shell on macOS, the traffic lights own the top-left
@@ -124,8 +136,8 @@ export function AppFrame({
             onBackToParent={openConversation}
             showChanges={conversation !== undefined}
             onOpenChanges={onOpenChanges}
-            dockOpen={dockOpen}
-            onDockChange={setDockOpen}
+            panelOpen={panelOpen}
+            onPanelChange={onPanelOpen}
             liveActivity={liveActivity}
           />
           {banner}
@@ -133,8 +145,18 @@ export function AppFrame({
             {/* ChatLayout's scroll area needs a flex column parent so its
                 flex-1/min-h-0 clips instead of stretching to content. */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-            {!narrow && dockOpen ? (
-              <DockPanel view={view} remote={remote} conversation={conversation} />
+            {!narrow ? (
+              <SidePanel
+                view={view}
+                remote={remote}
+                narrow={false}
+                open={panelOpen}
+                onOpenChange={onPanelOpen}
+                tab={panelTab}
+                onTabChange={onPanelTab}
+                openInPanel={openInPanel}
+                onOpenInMain={openInMain}
+              />
             ) : null}
           </div>
         </div>
@@ -158,19 +180,23 @@ export function AppFrame({
         </MobileNav>
       ) : null}
       {narrow ? (
-        <DockDialog
-          open={dockOpen}
-          onOpenChange={setDockOpen}
+        <SidePanel
           view={view}
           remote={remote}
-          conversation={conversation}
+          narrow
+          open={panelOpen}
+          onOpenChange={onPanelOpen}
+          tab={panelTab}
+          onTabChange={onPanelTab}
+          openInPanel={openInPanel}
+          onOpenInMain={openInMain}
         />
       ) : null}
       {devicesOpen ? (
         <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
       ) : null}
       {/* Every notice the workbench learns about also lands as a toast —
-          rejected commands only surface as notices otherwise, and the dock
+          rejected commands only surface as notices otherwise, and the panel
           that lists them starts closed. isTopLayer lifts it above dialogs. */}
       <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
         <NoticeToasts notices={view.notices} />
@@ -214,8 +240,8 @@ function FrameHeader({
   onBackToParent,
   showChanges,
   onOpenChanges,
-  dockOpen,
-  onDockChange,
+  panelOpen,
+  onPanelChange,
   liveActivity,
 }: {
   narrow: boolean;
@@ -229,8 +255,8 @@ function FrameHeader({
   onBackToParent: (id: ConversationId) => void;
   showChanges: boolean;
   onOpenChanges: () => void;
-  dockOpen: boolean;
-  onDockChange: (open: boolean) => void;
+  panelOpen: boolean;
+  onPanelChange: (open: boolean) => void;
   liveActivity: boolean;
 }) {
   return (
@@ -285,15 +311,15 @@ function FrameHeader({
       ) : null}
       <span className="relative">
         <IconButton
-          aria-pressed={dockOpen}
+          aria-pressed={panelOpen}
           icon={<AnimatedSidebarRight className="size-4" />}
-          label="Dock"
+          label="Side panel"
           size="sm"
-          tooltip={dockOpen ? "Hide dock" : "Show dock"}
+          tooltip={panelOpen ? "Hide side panel" : "Show side panel"}
           variant="ghost"
-          onClick={() => onDockChange(!dockOpen)}
+          onClick={() => onPanelChange(!panelOpen)}
         />
-        {!dockOpen && liveActivity ? (
+        {!panelOpen && liveActivity ? (
           <span
             aria-label="Live activity"
             className="pointer-events-none absolute right-1 top-1 size-2 rounded-full bg-primary"
