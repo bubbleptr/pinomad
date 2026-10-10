@@ -23,6 +23,7 @@ import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { toolDisplayName } from "../../shared/ui/chat/chat-tool.tsx";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { LiveState } from "./live-state.tsx";
 
@@ -210,6 +211,11 @@ function SideRow({
   return (
     <ListItem
       label={displayName(summary)}
+      description={
+        summary.status === "running" && summary.activity !== undefined
+          ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
+          : undefined
+      }
       startContent={<StatusGlyph status={summary.status} />}
       endContent={
         summary.updatedAt === undefined ? undefined : (
@@ -275,6 +281,7 @@ function SideTranscript({
       onFork={() => {}}
       ownOnly={ownOnly}
       forkSource={forkSource}
+      summaryOf={(id) => findConversation(view.organized, id)?.summary}
     />
   );
 }

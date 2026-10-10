@@ -4,7 +4,8 @@
 import { ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { ChatEntry, CotView } from "@/entities/conversation/cot-view";
+import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import { splitSubagentCalls, type ChatEntry, type CotView } from "@/entities/conversation/cot-view";
 import { useMemo } from "react";
 import { ChatChainOfThought as ChainOfThought } from "@/shared/ui/chat/chat-chain-of-thought";
 import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown";
@@ -14,6 +15,7 @@ import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
 import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
 import { ChatToolStep } from "@/shared/ui/chat/chat-tool-step";
 import { GitBranch } from "@/shared/ui/icons";
+import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 
 export function ChatEntryView({
@@ -22,7 +24,8 @@ export function ChatEntryView({
   openInPanel,
   onFork,
   canFork = true,
-  forkAt,
+  forksAt,
+  summaryOf,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -31,8 +34,10 @@ export function ChatEntryView({
   onFork: (entryId: string) => void;
   /** False inside a fork or subagent conversation: depth is one (ADR-0019 §2). */
   canFork?: boolean;
-  /** Resolves the fork already anchored at an entry, if the message has one (ADR-0019 §3). */
-  forkAt?: (entryId: string) => ConversationId | undefined;
+  /** Forks anchored at an entry — legacy data can hold more than one (ADR-0019 §3). */
+  forksAt?: (entryId: string) => ConversationId[];
+  /** Resolves a conversation's summary — powers the subagent cards' live status. */
+  summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
 }) {
   switch (entry.kind) {
     case "user":
@@ -62,7 +67,8 @@ export function ChatEntryView({
           openInPanel={openInPanel}
           onFork={onFork}
           canFork={canFork}
-          forkAt={forkAt}
+          forksAt={forksAt}
+          summaryOf={summaryOf}
         />
       );
     case "compaction":
@@ -78,23 +84,28 @@ function RunEntry({
   openInPanel,
   onFork,
   canFork = true,
-  forkAt,
+  forksAt,
+  summaryOf,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   onFork: (entryId: string) => void;
   canFork?: boolean;
-  forkAt?: (entryId: string) => ConversationId | undefined;
+  forksAt?: (entryId: string) => ConversationId[];
+  summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
 }) {
-  // Subagent cards always open as tasks; only the Fork action picks threads.
-  const cot = useMemo(() => fillToolDetails(entry.cot, (id) => openInPanel(id, "tasks")), [entry.cot, openInPanel]);
+  // Subagent calls anchor cards under the run instead of rows in the CoT.
+  const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
+  const cot = useMemo(() => fillToolDetails(cotWithoutSubagents), [cotWithoutSubagents]);
   const answer = cot.answer;
-  // A message already forked reopens that fork rather than starting a second one.
-  const existingFork = entry.forkEntryId === undefined ? undefined : forkAt?.(entry.forkEntryId);
+  // A forked message's chip opens the thread in the panel rather than the dialog.
+  const forks = entry.forkEntryId === undefined ? [] : (forksAt?.(entry.forkEntryId) ?? []);
   // A settled run's actions ride on its answer when it has one; a textless tail
-  // (thinking-only or tool-only last message) still gets Fork from forkEntryId.
-  const showActions = cot.phase === "settled" && (answer !== undefined || (canFork && entry.forkEntryId !== undefined));
+  // (thinking-only or tool-only last message) still gets the chip/Fork from
+  // forkEntryId — the chip shows even when canFork is false (legacy nesting).
+  const showActions =
+    cot.phase === "settled" && (answer !== undefined || (entry.forkEntryId !== undefined && (canFork || forks.length > 0)));
   return (
     <ChatMessage.Assistant>
       <ChatMessage.Body>
@@ -104,6 +115,7 @@ function RunEntry({
           </p>
         ) : null}
         <AssistantRunTrajectory view={cot} />
+        <SubagentCards tools={subagents} summaryOf={summaryOf} openInPanel={openInPanel} />
         {answer === undefined ? null : (
           <ChatMessage.Content>
             {answer.streaming ? (
@@ -125,18 +137,28 @@ function RunEntry({
                 }}
               />
             )}
-            {entry.forkEntryId === undefined || !canFork ? null : (
+            {entry.forkEntryId === undefined ? null : forks.length > 0 ? (
+              <button
+                type="button"
+                className="pigui-fork-chip"
+                aria-label={`${forks.length} ${forks.length === 1 ? "fork" : "forks"}`}
+                title="Open in Threads"
+                disabled={!connected}
+                onClick={() => openInPanel(forks[0]!, "threads")}
+              >
+                <GitBranch aria-hidden="true" />
+                {forks.length} {forks.length === 1 ? "fork" : "forks"}
+              </button>
+            ) : canFork ? (
               <ChatMessage.Action
                 aria-label="Fork"
-                tooltip={existingFork === undefined ? "Continue from here in a new conversation" : "Open the fork from here"}
+                tooltip="Continue from here in a new conversation"
                 disabled={!connected}
-                onPress={() =>
-                  existingFork === undefined ? onFork(entry.forkEntryId!) : openInPanel(existingFork, "threads")
-                }
+                onPress={() => onFork(entry.forkEntryId!)}
               >
                 <GitBranch aria-hidden="true" className="size-4" />
               </ChatMessage.Action>
-            )}
+            ) : null}
           </ChatMessageActions>
         )}
       </ChatMessage.Body>
