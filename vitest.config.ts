@@ -47,6 +47,13 @@ export default defineConfig({
         },
       },
       {
+        test: {
+          ...shared,
+          name: "desktop",
+          include: ["apps/desktop/test/**/*.test.ts"],
+        },
+      },
+      {
         resolve: {
           alias: {
             "@": webSrc,

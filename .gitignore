@@ -3,3 +3,4 @@ dist/
 test-results/
 .tmp/
 apps/cli/out/
+apps/desktop/out/
