@@ -26,6 +26,13 @@
           "recordAudioAndroid": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e00351f3-d9b2-4e74-8838-57560b9539c6"
+      }
+    },
+    "owner": "kieranx"
   }
 }
