@@ -36,6 +36,9 @@ protocols:
       - pinomad
 
 mac:
+  # Icon Composer asset: electron-builder compiles .icon to Assets.car with
+  # actool (Liquid Glass icon), which needs Xcode 26+.
+  icon: build/icon.icon
   category: public.app-category.developer-tools
   target:
     - target: dmg
