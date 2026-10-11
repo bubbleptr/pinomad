@@ -1,5 +1,6 @@
 import * as Device from "expo-device";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Card, Spinner } from "heroui-native";
@@ -7,10 +8,11 @@ import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/prot
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import type { ProtocolMismatch } from "@pinomad/protocol/view.ts";
-import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import { hostStore } from "../../entities/host/secure-host-store.ts";
 import type { StoredHost } from "../../entities/host/host-store.ts";
+import { clearActiveRemote, setActiveRemote } from "../../shared/lib/active-remote.ts";
 import { useDurableView, useRemoteDurable } from "../../shared/lib/use-remote.ts";
+import { ConversationList } from "../../widgets/conversation-list/conversation-list.tsx";
 
 /** What to connect with: a confirmed pairing offer, or a stored device key. */
 export type ConnectSpec =
@@ -207,6 +209,13 @@ function ConnectedView({
   onRetry(): void;
 }) {
   const view = useDurableView(remote);
+  const router = useRouter();
+
+  // Sibling Stack routes (conversation/[id], new) reach the remote here.
+  useEffect(() => {
+    setActiveRemote(remote);
+    return () => clearActiveRemote(remote);
+  }, [remote]);
 
   if (view.unauthorized === true) {
     return (
@@ -228,19 +237,18 @@ function ConnectedView({
     );
   }
 
-  // The sidebar's list: top-level conversations — chats, then per project.
-  const topLevel: readonly ConversationNode[] = [
-    ...view.organized.chats,
-    ...view.organized.projects.flatMap(({ conversations }) => conversations),
-  ];
-
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-background" edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
         <View style={{ gap: 4 }}>
-          <Text className="text-foreground" style={{ fontSize: 22, fontWeight: "700" }}>
-            PiNomad
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text className="text-foreground" style={{ flex: 1, fontSize: 22, fontWeight: "700" }}>
+              PiNomad
+            </Text>
+            <Button variant="secondary" onPress={() => router.push("/new")}>
+              New
+            </Button>
+          </View>
           <Text className="text-muted">{spec.url}</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             {view.connection === "reconnecting" ? <Spinner size="sm" /> : null}
@@ -267,21 +275,7 @@ function ConnectedView({
             </Card.Footer>
           </Card>
         )}
-        <Card>
-          <Card.Header>
-            <Card.Title>Conversations</Card.Title>
-            <Card.Description>
-              {topLevel.length === 0 ? "No conversations on this host yet" : `${topLevel.length} on this host`}
-            </Card.Description>
-          </Card.Header>
-          <Card.Body style={{ gap: 8 }}>
-            {topLevel.map((node) => (
-              <Text key={node.summary.id} className="text-foreground" numberOfLines={1}>
-                {node.summary.title ?? "Untitled conversation"}
-              </Text>
-            ))}
-          </Card.Body>
-        </Card>
+        <ConversationList view={view} />
       </ScrollView>
     </SafeAreaView>
   );

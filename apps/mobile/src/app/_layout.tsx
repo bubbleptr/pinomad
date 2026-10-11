@@ -12,7 +12,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <HeroUINativeProvider>
           <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }} />
+          <Stack screenOptions={{ headerShown: false }}>
+            {/* Title only — pushed screens show "‹ PiNomad" as their back label. */}
+            <Stack.Screen name="index" options={{ title: "PiNomad" }} />
+          </Stack>
         </HeroUINativeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
