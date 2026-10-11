@@ -10,8 +10,9 @@ import type { ConversationNode, Home, Project } from "@pinomad/protocol/organiza
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "../../entities/conversation/family.ts";
+import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
+import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { useHosts } from "../../entities/host/host-store.ts";
@@ -108,8 +109,19 @@ export function SidebarFooter({
   onSelect?: () => void;
 }) {
   const { store } = useHosts();
+  const update = useAppUpdate();
   return (
     <>
+      {update?.status.state === "ready" ? (
+        <SideNavItem
+          icon={<RefreshCw aria-hidden="true" />}
+          label="Restart to update"
+          // The accessible name must start with the visible label (WCAG 2.5.3)
+          // and then may add the version context.
+          aria-label={`Restart to update${update.status.availableVersion === undefined ? "" : ` to PiNomad ${update.status.availableVersion}`}`}
+          onClick={() => update.install()}
+        />
+      ) : null}
       {store.multiHost ? (
         <HostSwitcher
           onPairAnother={() => {
