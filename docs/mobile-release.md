@@ -1,24 +1,24 @@
 # 移动端发版（EAS + TestFlight）
 
-iOS 端走 EAS 云端构建 + 本地提交，只面向 TestFlight 内部测试。一切 eas 命令在 `apps/mobile` 下用 `bunx --bun eas-cli …` 运行；`eas.json` 已配好 `base`（`bun: 1.3.12`）、`simulator`（云端模拟器包）、`production`（`autoIncrement` 远端自增构建号）。
+iOS 端走 EAS 云端构建 + 本地提交，只面向 TestFlight 内部测试。一切 eas 命令在 `apps/mobile` 下用 `bunx eas-cli …` 运行，不要加 `--bun`：那样 eas-cli 跑在 Bun 运行时上，往 Google Cloud Storage 流式上传项目包时连接会被断开，`eas build` 报 “Failed to upload the project tarball … The operation timed out”；不加 `--bun` 就按 eas-cli 的 shebang 用 Node 跑。`eas.json` 已配好 `base`（`bun: 1.3.12`）、`simulator`（云端模拟器包）、`production`（`autoIncrement` 远端自增构建号）。
 
 ## 前置条件
 
 - Apple Developer Program 付费账号，账号加入的开发团队有分发权限。
-- Expo 账号 `kieranx`：`bunx --bun eas-cli login`（首次可用 `--device` 设备码流程）。`app.json` 已带 `owner: "kieranx"` 和 `extra.eas.projectId`，不用再跑 `eas init`。
+- Expo 账号 `kieranx`：`bunx eas-cli login`（首次可用 `--device` 设备码流程）。`app.json` 已带 `owner: "kieranx"` 和 `extra.eas.projectId`，不用再跑 `eas init`。
 - 该 Apple ID 在 App Store Connect 里有权限（App Manager 及以上）。
 
 ## 第一次发布
 
 ```sh
 cd apps/mobile
-bunx --bun eas-cli build -p ios --profile production
+bunx eas-cli build -p ios --profile production
 ```
 
 首次会问 Apple ID 登录 + 双因子验证码，然后由 EAS 托管创建分发证书和 provisioning profile（`credentialsSource: remote`）。
 
 ```sh
-bunx --bun eas-cli submit -p ios --latest
+bunx eas-cli submit -p ios --latest
 ```
 
 `submit` 会确保 App Store Connect 上的 App 记录存在：不存在则按 bundle id（`build.kieran.pinomad`，和维护者其他 Expo 项目同一前缀）创建，并交互询问 app 名称、公司名（首次必填）和 SKU；要跳过这一步可以在 `submit.production` 里配 `ascAppId`。`--auto-testflight-setup` 会自动建好一个内部 TestFlight 测试组并放行该构建。
