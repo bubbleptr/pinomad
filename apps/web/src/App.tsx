@@ -11,6 +11,7 @@ import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "./entities/conversation/family.ts";
+import { requestNotificationPermission } from "./entities/conversation/run-notifications.ts";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
@@ -433,7 +434,6 @@ function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
 
 function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode }) {
   const view = useDurableView(remote);
-  useRunNotifications(remote, view);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
   const [drafting, setDrafting] = useState(true);
@@ -441,6 +441,13 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
   // The shown conversation's identity decides drafting; creating or selecting one
   // leaves it, archiving the shown one or "New chat" enters it.
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
+  const openFromNotification = (id: ConversationId): void => {
+    // switchConversation is a no-op for the already-selected id, and "New chat"
+    // only flips local drafting — leave the draft explicitly in that case.
+    if (id === view.conversation?.conversation.id) setDrafting(false);
+    else void remote.controller.switchConversation(id);
+  };
+  useRunNotifications(view, openFromNotification);
   const conversation = drafting ? undefined : view.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
   // Below this the chat column would be squeezed; the panel opens as a dialog.
@@ -623,6 +630,7 @@ function ForkDialog({
 }) {
   const [prompt, setPrompt] = useState("Continue from here.");
   const fork = (): void => {
+    requestNotificationPermission();
     void remote.controller.fork(entryId, prompt.trim(), undefined, { show: "side" });
     onForked();
     onClose();

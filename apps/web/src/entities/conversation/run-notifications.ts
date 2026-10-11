@@ -26,22 +26,28 @@ const everySummary = (organized: Organized): ConversationSummary[] => {
 };
 
 /**
- * The notifications one `organized` update produces, plus the baseline it
- * leaves behind. `previous === undefined` seeds the baseline without
- * notifying — at connect time half the sidebar may be mid-run or waiting and
- * none of it is news. A conversation missing from `previous` counts as having
- * been idle; one gone from `organized` drops out of the baseline.
+ * The notifications one `organized` update produces, the ids whose status
+ * moved (`changed`, for retiring still-visible notifications), and the
+ * baseline it leaves behind. `previous === undefined` seeds the baseline
+ * without notifying — at connect time half the sidebar may be mid-run or
+ * waiting and none of it is news. A conversation missing from `previous`
+ * counts as having been idle; one gone from `organized` drops out of the
+ * baseline and counts as changed.
  */
 export function diffRunNotices(
   previous: StatusBaseline | undefined,
   organized: Organized,
-): { notices: RunNotice[]; baseline: StatusBaseline } {
+): { notices: RunNotice[]; changed: ConversationId[]; baseline: StatusBaseline } {
   const notices: RunNotice[] = [];
+  const changed: ConversationId[] = [];
   const baseline = new Map<ConversationId, ConversationSummary["status"]>();
   for (const summary of everySummary(organized)) {
     baseline.set(summary.id, summary.status);
     if (previous === undefined) continue;
     const before = previous.get(summary.id);
+    // `changed` isn't only about notices: a state move also retires whatever
+    // notification the previous state left on screen.
+    if (before !== summary.status) changed.push(summary.id);
     if (summary.status === "needs-answer" && before !== "needs-answer") {
       // Any kind, subagents included: a waiting question blocks until answered.
       notices.push({ id: summary.id, title: displayName(summary), body: "Waiting for your answer" });
@@ -54,7 +60,12 @@ export function diffRunNotices(
       notices.push({ id: summary.id, title: displayName(summary), body: summary.status === "failed" ? "Failed" : "Finished" });
     }
   }
-  return { notices, baseline };
+  if (previous !== undefined) {
+    for (const gone of previous.keys()) {
+      if (!baseline.has(gone)) changed.push(gone);
+    }
+  }
+  return { notices, changed, baseline };
 }
 
 /**

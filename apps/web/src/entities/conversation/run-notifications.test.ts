@@ -100,6 +100,27 @@ describe("diffRunNotices", () => {
     expect(next.has(id(1))).toBe(true);
     expect(next.has(id(2))).toBe(false);
   });
+
+  it("reports no changed ids on the first snapshot", () => {
+    const { changed } = diffRunNotices(undefined, organized(node({ status: "needs-answer" })));
+    expect(changed).toEqual([]);
+  });
+
+  it("reports exactly the ids whose status moved", () => {
+    const { changed } = diffRunNotices(
+      baseline([[1, "needs-answer"], [2, "running"], [3, undefined]]),
+      organized(node({ status: "running" }), node({ id: id(2), status: "running" }), node({ id: id(3) })),
+    );
+    expect(changed).toEqual([id(1)]);
+  });
+
+  it("reports a conversation gone from organized as changed", () => {
+    const { changed } = diffRunNotices(
+      baseline([[1, "needs-answer"], [2, "running"]]),
+      organized(node({ id: id(2), status: "running" })),
+    );
+    expect(changed).toEqual([id(1)]);
+  });
 });
 
 describe("requestNotificationPermission", () => {
