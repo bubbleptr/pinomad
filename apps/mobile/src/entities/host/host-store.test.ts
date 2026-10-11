@@ -123,4 +123,69 @@ describe("createHostStore", () => {
     await store.save(host(7));
     await expect(store.list()).resolves.toEqual([host(5), host(7)]);
   });
+
+  describe("active host", () => {
+    it("is undefined before any selection, then round-trips setActive", async () => {
+      const store = createHostStore(makeStorage());
+      await expect(store.activeKey()).resolves.toBeUndefined();
+      await store.setActive(key(1));
+      await expect(store.activeKey()).resolves.toBe(key(1));
+      await store.setActive(key(2));
+      await expect(store.activeKey()).resolves.toBe(key(2));
+    });
+
+    it("remove of the active host clears it", async () => {
+      const storage = makeStorage();
+      const store = createHostStore(storage);
+      await store.save(host(1));
+      await store.save(host(2));
+      await store.setActive(key(1));
+      await store.remove(key(1));
+      await expect(store.activeKey()).resolves.toBeUndefined();
+    });
+
+    it("remove of another host keeps it", async () => {
+      const storage = makeStorage();
+      const store = createHostStore(storage);
+      await store.save(host(1));
+      await store.save(host(2));
+      await store.setActive(key(2));
+      await store.remove(key(1));
+      await expect(store.activeKey()).resolves.toBe(key(2));
+    });
+
+    it("concurrent save + setActive both land", async () => {
+      const raw = new Map<string, string>([["pinomad.hosts", JSON.stringify([host(1)])]]);
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const storage = {
+        raw,
+        getItemAsync: (key: string) => gate.then(() => raw.get(key) ?? null),
+        setItemAsync: (key: string, value: string) => {
+          raw.set(key, value);
+          return Promise.resolve();
+        },
+        deleteItemAsync: (key: string) => {
+          raw.delete(key);
+          return Promise.resolve();
+        },
+      };
+      const store = createHostStore(storage);
+      const saveB = store.save(host(2));
+      const activate = store.setActive(key(2));
+      release();
+      await Promise.all([saveB, activate]);
+      await expect(store.list()).resolves.toEqual([host(1), host(2)]);
+      await expect(store.activeKey()).resolves.toBe(key(2));
+    });
+
+    it("a read failure resolves to undefined, like list()", async () => {
+      const storage = makeStorage();
+      storage.failReads = true;
+      const store = createHostStore(storage);
+      await expect(store.activeKey()).resolves.toBeUndefined();
+    });
+  });
 });

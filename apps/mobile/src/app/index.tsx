@@ -2,7 +2,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Spinner } from "heroui-native";
+import { Button, Spinner } from "heroui-native";
 import { hostStore } from "../entities/host/secure-host-store.ts";
 import type { StoredHost } from "../entities/host/host-store.ts";
 import { takePendingPair, type PendingPair } from "../shared/lib/pending-pair.ts";
@@ -16,15 +16,17 @@ export default function IndexScreen() {
   // The host to connect to once a pairing is saved — hosts[0] otherwise.
   const [activeKey, setActiveKey] = useState<string>();
 
-  // Every time this screen gains focus, pick up a confirmed pairing and the
-  // freshest host list — covers cold start, returning from /pair, and forgets.
+  // Every time this screen gains focus, pick up a confirmed pairing plus the
+  // freshest host list and persisted selection — covers cold start, returning
+  // from /pair, host switches on /hosts, and forgets.
   useFocusEffect(
     useCallback(() => {
       let live = true;
       const confirmed = takePendingPair();
-      hostStore.list().then((list) => {
+      void Promise.all([hostStore.list(), hostStore.activeKey()]).then(([list, activeKey]) => {
         if (!live) return;
         setHosts(list);
+        setActiveKey(activeKey);
         if (confirmed !== undefined) setPending(confirmed);
       });
       return () => {
@@ -64,15 +66,18 @@ export default function IndexScreen() {
       <HostConnection
         key={`${spec.kind} ${spec.hostKey}`}
         spec={spec}
+        hosts={hosts}
         stored={hosts.find((host) => host.hostKey === spec.hostKey)}
         onForget={forget}
         onCancelPair={() => setPending(undefined)}
         onPaired={(host) => {
           setHosts((previous) => [...(previous ?? []).filter((each) => each.hostKey !== host.hostKey), host]);
           // The one-time secret dies here: the spec flips to the stored key and
-          // the keyed remount reconnects with plain IK.
+          // the keyed remount reconnects with plain IK. Persist the selection
+          // so a restart lands on the just-paired host.
           setPending(undefined);
           setActiveKey(host.hostKey);
+          void hostStore.setActive(host.hostKey);
         }}
       />
     );
@@ -80,7 +85,10 @@ export default function IndexScreen() {
 
   return (
     <SafeAreaView className="bg-background" style={{ flex: 1 }}>
-      <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <View style={{ flex: 1, justifyContent: "center", padding: 24, gap: 16 }}>
+        <Button variant="secondary" onPress={() => router.push("/scan")}>
+          Scan QR code
+        </Button>
         <PairingForm onFragment={(fragment) => router.push({ pathname: "/pair", params: { fragment } })} />
       </View>
       <Text className="text-muted" style={{ textAlign: "center", paddingBottom: 24, fontSize: 12 }}>

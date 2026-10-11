@@ -1,13 +1,14 @@
 import * as Device from "expo-device";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Card, Spinner } from "heroui-native";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import type { ProtocolMismatch } from "@pinomad/protocol/view.ts";
+import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { hostStore } from "../../entities/host/secure-host-store.ts";
 import type { StoredHost } from "../../entities/host/host-store.ts";
 import { setActiveRemote } from "../../shared/lib/active-remote.ts";
@@ -55,6 +56,7 @@ function MismatchMessage({ mismatch }: { mismatch: ProtocolMismatch }) {
 export function HostConnection({
   spec,
   stored,
+  hosts,
   onForget,
   onCancelPair,
   onPaired,
@@ -62,12 +64,15 @@ export function HostConnection({
   spec: ConnectSpec;
   /** The stored host matching spec.hostKey, for key reuse on re-pairing. */
   stored: StoredHost | undefined;
+  /** All saved hosts, for the header label's hostKey disambiguation. */
+  hosts: StoredHost[];
   onForget(hostKey: string): void;
   /** Abandon the pairing offer: back to the saved host, or to the paste form if none. */
   onCancelPair(): void;
   onPaired(host: StoredHost): void;
 }) {
   const [attempt, setAttempt] = useState(0);
+  const router = useRouter();
   // Stable across renders: the active-remote store publishes it to routes.
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   // A pairing whose save failed: the device key would die with the process and
@@ -139,6 +144,14 @@ export function HostConnection({
           Cancel
         </Button>
       ) : null;
+    // Device-flow failures get a route to host management, so an offline or
+    // revoked saved host never blocks pairing another one (PR1 finding).
+    const openHosts =
+      spec.kind === "device" ? (
+        <Button variant="secondary" onPress={() => router.push("/hosts")}>
+          Hosts
+        </Button>
+      ) : null;
     if (state.unauthorized) {
       // A rejected pairing offer is the offer's problem; a rejected device key
       // means the device was revoked — only the device flow may forget a host.
@@ -160,9 +173,12 @@ export function HostConnection({
           <Text className="text-muted" style={{ textAlign: "center" }}>
             It isn't paired with the host, or was revoked on it.
           </Text>
-          <Button variant="danger-soft" onPress={() => onForget(spec.hostKey)}>
-            Forget this host
-          </Button>
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <Button variant="danger-soft" onPress={() => onForget(spec.hostKey)}>
+              Forget this host
+            </Button>
+            {openHosts}
+          </View>
         </Centered>
       );
     }
@@ -187,6 +203,7 @@ export function HostConnection({
           <Button variant="secondary" onPress={() => setAttempt((n) => n + 1)}>
             Retry
           </Button>
+          {openHosts}
         </View>
       </Centered>
     );
@@ -196,6 +213,7 @@ export function HostConnection({
     <ConnectedView
       remote={state.remote}
       spec={spec}
+      hosts={hosts}
       unsaved={unsaved}
       onRetrySave={(host) => void saveHost(host)}
       onForget={onForget}
@@ -207,6 +225,7 @@ export function HostConnection({
 function ConnectedView({
   remote,
   spec,
+  hosts,
   unsaved,
   onRetrySave,
   onForget,
@@ -214,6 +233,7 @@ function ConnectedView({
 }: {
   remote: RemoteDurable;
   spec: ConnectSpec;
+  hosts: StoredHost[];
   unsaved: StoredHost | undefined;
   onRetrySave(host: StoredHost): void;
   onForget(hostKey: string): void;
@@ -256,7 +276,15 @@ function ConnectedView({
               New
             </Button>
           </View>
-          <Text className="text-muted">{spec.url}</Text>
+          {/* Host label opens the hosts modal; disambiguated by hostKey when
+              two saved hosts share a URL host. */}
+          <Pressable
+            onPress={() => router.push("/hosts")}
+            style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text className="text-muted">{hostLabels(hosts).get(spec.hostKey) ?? spec.url}</Text>
+            <Text className="text-muted"> ›</Text>
+          </Pressable>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             {view.connection === "reconnecting" ? <Spinner size="sm" /> : null}
             <Text className="text-muted">

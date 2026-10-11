@@ -29,6 +29,16 @@ export default function PairScreen() {
     else router.replace("/");
   };
 
+  // After confirming, land on index explicitly: /pair may sit above the /hosts
+  // or /scan modals, and back() there would strand the pending pair behind the
+  // modal — index's focus effect only consumes it once index is on top.
+  const confirm = (): void => {
+    if (pending === undefined) return;
+    setPendingPair(pending);
+    if (router.canDismiss()) router.dismissTo("/");
+    else router.replace("/");
+  };
+
   return (
     <SafeAreaView className="bg-background" style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
@@ -47,11 +57,8 @@ export default function PairScreen() {
         ) : (
           <PairConfirm
             url={pending.url}
-            onPair={() => {
-              // The secret leaves the route here: it moves into memory only.
-              setPendingPair(pending);
-              leave();
-            }}
+            // The secret leaves the route here: it moves into memory only.
+            onPair={confirm}
             onCancel={leave}
           />
         )}

@@ -9,6 +9,9 @@ export interface HostStore {
   /** Upserts by hostKey. */
   save(host: StoredHost): Promise<void>;
   remove(hostKey: string): Promise<void>;
+  /** The host to connect to on launch; undefined → first saved host. */
+  activeKey(): Promise<string | undefined>;
+  setActive(hostKey: string): Promise<void>;
 }
 
 /** The async key/value pair expo-secure-store provides; injected for tests. */
@@ -20,6 +23,9 @@ export interface KeyValueStorage {
 
 /** Secure-store key holding the JSON array of paired hosts. */
 export const HOSTS_KEY = "pinomad.hosts";
+
+/** Secure-store key holding the active host's key (absent → first saved). */
+export const ACTIVE_KEY = "pinomad.activeHost";
 
 /**
  * Paired hosts in an async key/value store (expo-secure-store on device).
@@ -73,9 +79,24 @@ export function createHostStore(storage: KeyValueStorage): HostStore {
         const next = (await read()).filter((each) => each.hostKey !== hostKey);
         if (next.length === 0 && storage.deleteItemAsync !== undefined) {
           await storage.deleteItemAsync(HOSTS_KEY);
-          return;
+        } else {
+          await storage.setItemAsync(HOSTS_KEY, JSON.stringify(next));
         }
-        await storage.setItemAsync(HOSTS_KEY, JSON.stringify(next));
+        // Removing the active host falls the selection back to hosts[0].
+        const active = await storage.getItemAsync(ACTIVE_KEY);
+        if (active === hostKey) {
+          if (storage.deleteItemAsync !== undefined) await storage.deleteItemAsync(ACTIVE_KEY);
+          else await storage.setItemAsync(ACTIVE_KEY, "");
+        }
+      }),
+    activeKey: () =>
+      enqueue(async () => {
+        const value = await storage.getItemAsync(ACTIVE_KEY);
+        return value === null || value === "" ? undefined : value;
+      }).catch(() => undefined),
+    setActive: (hostKey) =>
+      enqueue(async () => {
+        await storage.setItemAsync(ACTIVE_KEY, hostKey);
       }),
   };
 }
