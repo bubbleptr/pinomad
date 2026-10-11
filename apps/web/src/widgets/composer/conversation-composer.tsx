@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
+import { requestNotificationPermission } from "../../entities/conversation/run-notifications.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, statusText } from "../../presentation/chat.ts";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
@@ -55,6 +56,7 @@ export function ConversationComposer({
   const submit = (whenBusy: "steer" | "followUp"): void => {
     const text = value.trim();
     if (text === "") return;
+    requestNotificationPermission();
     void remote.controller.submit(text, whenBusy);
     setValue("");
   };

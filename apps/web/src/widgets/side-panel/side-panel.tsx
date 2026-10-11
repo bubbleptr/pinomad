@@ -19,6 +19,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../../entities/conversation/family.ts";
+import { requestNotificationPermission } from "../../entities/conversation/run-notifications.ts";
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
@@ -313,6 +314,7 @@ function ThreadDetail({
   const submit = (): void => {
     const text = draft.trim();
     if (text === "") return;
+    requestNotificationPermission();
     void remote.controller.submit(text, "followUp", side.id);
     setDraft("");
   };
