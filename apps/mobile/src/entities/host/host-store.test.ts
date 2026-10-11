@@ -87,4 +87,40 @@ describe("createHostStore", () => {
     await store.remove(key(8));
     await expect(store.list()).resolves.toEqual([]);
   });
+
+  it("serializes read-modify-write: concurrent saves keep both hosts", async () => {
+    // getItemAsync resolves only when the test releases it: without a queue,
+    // save(B) and save(C) both read [A] and each write drops the other.
+    const raw = new Map<string, string>([["pinomad.hosts", JSON.stringify([host(1)])]]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const storage = {
+      raw,
+      getItemAsync: (key: string) => gate.then(() => raw.get(key) ?? null),
+      setItemAsync: (key: string, value: string) => {
+        raw.set(key, value);
+        return Promise.resolve();
+      },
+    };
+    const store = createHostStore(storage);
+    const saveB = store.save(host(2));
+    const saveC = store.save(host(3));
+    release();
+    await Promise.all([saveB, saveC]);
+    await expect(store.list()).resolves.toEqual([host(1), host(2), host(3)]);
+  });
+
+  it("a rejected op does not block the next one", async () => {
+    const storage = makeStorage(JSON.stringify([host(5)]));
+    const store = createHostStore(storage);
+    let writes = 0;
+    const setItemAsync = storage.setItemAsync;
+    storage.setItemAsync = (key, value) =>
+      ++writes === 1 ? Promise.reject(new Error("keychain write failed")) : setItemAsync(key, value);
+    await expect(store.save(host(6))).rejects.toThrow("keychain write failed");
+    await store.save(host(7));
+    await expect(store.list()).resolves.toEqual([host(5), host(7)]);
+  });
 });

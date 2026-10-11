@@ -43,6 +43,19 @@ function storedHost(value: unknown): StoredHost | undefined {
  * failed read must never turn into a write that wipes the stored list.
  */
 export function createHostStore(storage: KeyValueStorage): HostStore {
+  // Keychain calls are async; serialize read-modify-write so concurrent saves
+  // can't drop one (same pattern as the desktop host store). A rejected op
+  // still lets the queue continue.
+  let queue: Promise<void> = Promise.resolve();
+  const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = queue.then(fn);
+    queue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+
   const read = async (): Promise<StoredHost[]> => {
     const raw = await storage.getItemAsync(HOSTS_KEY);
     if (raw === null) return [];
@@ -60,18 +73,23 @@ export function createHostStore(storage: KeyValueStorage): HostStore {
   };
   return {
     multiHost: true,
-    list: () => read().catch(() => []),
-    save: async (host) => {
-      const hosts = await read();
-      await storage.setItemAsync(HOSTS_KEY, JSON.stringify([...hosts.filter((each) => each.hostKey !== host.hostKey), host]));
-    },
-    remove: async (hostKey) => {
-      const next = (await read()).filter((each) => each.hostKey !== hostKey);
-      if (next.length === 0 && storage.deleteItemAsync !== undefined) {
-        await storage.deleteItemAsync(HOSTS_KEY);
-        return;
-      }
-      await storage.setItemAsync(HOSTS_KEY, JSON.stringify(next));
-    },
+    list: () => enqueue(read).catch(() => []),
+    save: (host) =>
+      enqueue(async () => {
+        const hosts = await read();
+        await storage.setItemAsync(
+          HOSTS_KEY,
+          JSON.stringify([...hosts.filter((each) => each.hostKey !== host.hostKey), host]),
+        );
+      }),
+    remove: (hostKey) =>
+      enqueue(async () => {
+        const next = (await read()).filter((each) => each.hostKey !== hostKey);
+        if (next.length === 0 && storage.deleteItemAsync !== undefined) {
+          await storage.deleteItemAsync(HOSTS_KEY);
+          return;
+        }
+        await storage.setItemAsync(HOSTS_KEY, JSON.stringify(next));
+      }),
   };
 }

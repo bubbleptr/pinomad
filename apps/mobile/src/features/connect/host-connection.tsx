@@ -53,15 +53,15 @@ export function HostConnection({
   spec,
   stored,
   onForget,
-  onUseSaved,
+  onCancelPair,
   onPaired,
 }: {
   spec: ConnectSpec;
   /** The stored host matching spec.hostKey, for key reuse on re-pairing. */
   stored: StoredHost | undefined;
   onForget(hostKey: string): void;
-  /** Pairing offer failed while other hosts are stored: go back to them. */
-  onUseSaved(): void;
+  /** Abandon the pairing offer: back to the saved host, or to the paste form if none. */
+  onCancelPair(): void;
   onPaired(host: StoredHost): void;
 }) {
   const [attempt, setAttempt] = useState(0);
@@ -118,6 +118,14 @@ export function HostConnection({
   }
 
   if (state.status === "failed") {
+    // A failed pairing offer always gets a way out — a fresh install has no
+    // saved host to fall back to.
+    const cancelPair =
+      spec.kind === "pair" ? (
+        <Button variant="secondary" onPress={onCancelPair}>
+          Cancel
+        </Button>
+      ) : null;
     if (state.unauthorized) {
       // A rejected pairing offer is the offer's problem; a rejected device key
       // means the device was revoked — only the device flow may forget a host.
@@ -129,11 +137,7 @@ export function HostConnection({
           <Text className="text-muted" style={{ textAlign: "center" }}>
             Generate a new link on the host: run `pinomad pair`, or open Devices → Pair a device.
           </Text>
-          {stored === undefined ? null : (
-            <Button variant="secondary" onPress={onUseSaved}>
-              Use saved pairing
-            </Button>
-          )}
+          {cancelPair}
         </Centered>
       ) : (
         <Centered>
@@ -153,6 +157,7 @@ export function HostConnection({
       return (
         <Centered>
           <MismatchMessage mismatch={state.mismatch} />
+          {cancelPair}
         </Centered>
       );
     }
@@ -164,9 +169,12 @@ export function HostConnection({
         <Text className="text-muted" style={{ textAlign: "center" }}>
           {state.error}
         </Text>
-        <Button variant="secondary" onPress={() => setAttempt((n) => n + 1)}>
-          Retry
-        </Button>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          {cancelPair}
+          <Button variant="secondary" onPress={() => setAttempt((n) => n + 1)}>
+            Retry
+          </Button>
+        </View>
       </Centered>
     );
   }

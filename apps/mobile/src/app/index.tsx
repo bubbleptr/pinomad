@@ -66,7 +66,7 @@ export default function IndexScreen() {
         spec={spec}
         stored={hosts.find((host) => host.hostKey === spec.hostKey)}
         onForget={forget}
-        onUseSaved={() => setPending(undefined)}
+        onCancelPair={() => setPending(undefined)}
         onPaired={(host) => {
           setHosts((previous) => [...(previous ?? []).filter((each) => each.hostKey !== host.hostKey), host]);
           // The one-time secret dies here: the spec flips to the stored key and
