@@ -15,9 +15,19 @@ files:
   - package.json
   - "!node_modules/**/*"
 
-# Unsigned local builds: no signing identity is configured yet (ADR-0020 §5
-# ships signing/notarization with the release pipeline).
+# Local `bun run desktop:package` builds stay unsigned (it also sets
+# CSC_IDENTITY_AUTO_DISCOVERY=false). The release workflow turns signing and
+# notarization on with -c.forceCodeSigning=true -c.mac.notarize=true.
 forceCodeSigning: false
+
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+# electron-updater's app-update.yml/latest-mac.yml metadata — the CI still
+# passes --publish never; uploading the files is the workflow's job.
+publish:
+  provider: github
+  owner: bubbleptr
+  repo: pinomad
 
 # `pinomad://pair#…` deep links land on the no-host-link screen's pairing flow.
 protocols:
@@ -36,5 +46,5 @@ mac:
         - arm64
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
-  identity: null
+  entitlementsInherit: build/entitlements.mac.plist
   minimumSystemVersion: "12.0"
