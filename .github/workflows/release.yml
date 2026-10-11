@@ -40,7 +40,8 @@ jobs:
       - run: bun run package -- --version "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.0.0-dryrun' }}"
       - run: mkdir -p "$GITHUB_WORKSPACE/artifacts" && npm pack --pack-destination "$GITHUB_WORKSPACE/artifacts"
         working-directory: apps/cli/out
-      - run: bun apps/cli/smoke.ts artifacts/pinomad-*.tgz
+      # Absolute path: npm reads a relative `dir/name.tgz` as a GitHub owner/repo shorthand.
+      - run: bun apps/cli/smoke.ts "$GITHUB_WORKSPACE"/artifacts/pinomad-*.tgz
       - name: Upload the npm package for the publish job
         uses: actions/upload-artifact@v6
         with:
