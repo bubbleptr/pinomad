@@ -8,7 +8,7 @@
 import type { ConversationId, ConversationView, EntryRecord, LiveState } from "@earendil-works/pi-durable";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
-import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
+import type { ToolItem } from "./tool-item.ts";
 
 export type CotPhase = "hidden" | "thinking" | "acting" | "answering" | "settled";
 
@@ -27,7 +27,7 @@ export type CotStep =
   | {
       kind: "tools";
       id: string;
-      tools: ChatToolItem[];
+      tools: ToolItem[];
       live: boolean;
       /** The call currently streaming or executing, while the burst is live. */
       activeToolCallId?: string;
@@ -84,10 +84,10 @@ export type PinomadToolDetail =
     };
 
 /** A tool item that may carry a `pinomad` render payload; what deriveChat produces. */
-export type ConversationToolItem = ChatToolItem & { pinomad?: PinomadToolDetail };
+export type ConversationToolItem = ToolItem & { pinomad?: PinomadToolDetail };
 
 /** The `pinomad` payload a tool item may carry; absent on plain tools. */
-export function pinomadOf(tool: ChatToolItem): PinomadToolDetail | undefined {
+export function pinomadOf(tool: ToolItem): PinomadToolDetail | undefined {
   return (tool as ConversationToolItem).pinomad;
 }
 
@@ -185,13 +185,13 @@ function childConversationId(details: unknown): ConversationId | undefined {
   return typeof id === "number" ? (id as ConversationId) : undefined;
 }
 
-/** One `pinomad.codemode` nested call, as a child ChatToolItem of the parent card. */
+/** One `pinomad.codemode` nested call, as a child ToolItem of the parent card. */
 function codemodeChild(
   call: { name: string; args: string; status: string; durationMs?: number; error?: string; details?: unknown },
   parentRunning: boolean,
   toolPresentations: Record<string, PresentationType>,
 ): ConversationToolItem {
-  const state: ChatToolItem["state"] =
+  const state: ToolItem["state"] =
     call.status === "ok"
       ? "output-available"
       : call.status === "error"
@@ -231,7 +231,7 @@ function toolItem(
   const toolName = slot?.name ?? block.name;
   const argsText = argsTextOf(block.arguments, toolName);
 
-  let state: ChatToolItem["state"];
+  let state: ToolItem["state"];
   let output: string | undefined;
   if (result !== undefined) {
     state = result.isError === true ? "output-error" : "output-available";
@@ -259,7 +259,7 @@ function toolItem(
   const child = childConversationId(details);
 
   let pinomad: PinomadToolDetail | undefined;
-  let children: ChatToolItem[] | undefined;
+  let children: ToolItem[] | undefined;
   if (classified?.type === "pinomad.diff") {
     pinomad = { kind: "diff", patch: classified.value.patch };
   } else if (child !== undefined) {
@@ -495,15 +495,15 @@ export function deriveChat(
  * identified by tool name (a still-streaming call has no details yet), their
  * order is preserved, and a tools step emptied by the lift is dropped.
  */
-export function splitSubagentCalls(view: CotView): { view: CotView; subagents: { key: string; tool: ChatToolItem }[] } {
-  const subagents: { key: string; tool: ChatToolItem }[] = [];
+export function splitSubagentCalls(view: CotView): { view: CotView; subagents: { key: string; tool: ToolItem }[] } {
+  const subagents: { key: string; tool: ToolItem }[] = [];
   const steps: CotStep[] = [];
   for (const step of view.steps) {
     if (step.kind !== "tools") {
       steps.push(step);
       continue;
     }
-    const rest: ChatToolItem[] = [];
+    const rest: ToolItem[] = [];
     step.tools.forEach((tool, index) => {
       if (tool.toolName !== "subagent") {
         rest.push(tool);

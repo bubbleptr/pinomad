@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ChatToolStep, summarizeTools } from "@/shared/ui/chat/chat-tool-step";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
-import type { CotStep } from "@/entities/conversation/cot-view";
+import type { CotStep } from "@pinomad/client/cot-view.ts";
 
 type ToolsStep = Extract<CotStep, { kind: "tools" }>;
 

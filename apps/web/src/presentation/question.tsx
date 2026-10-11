@@ -11,7 +11,8 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { classify, type QuestionAnswer, type QuestionRequest } from "@pinomad/protocol/presentation.ts";
+import type { QuestionRequest } from "@pinomad/protocol/presentation.ts";
+import { pendingQuestions, questionAnswers } from "@pinomad/client/questions.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
 
@@ -36,13 +37,7 @@ export function PendingQuestions({
   connected: boolean;
   target?: ConversationId;
 }) {
-  const pending = docs.flatMap((doc) => {
-    const classified = classify(doc.presentation, doc.value);
-    if (classified.type !== "pinomad.question") return [];
-    return classified.value.requests
-      .filter((request) => request.resolution === undefined)
-      .map((request) => ({ kind: doc.kind, request }));
-  });
+  const pending = pendingQuestions(docs);
   if (pending.length === 0) return null;
   return (
     <VStack gap={2} padding={2} data-testid="pending-questions">
@@ -74,10 +69,7 @@ function QuestionCard({
     setOthers((prev) => prev.map((each, i) => (i === index ? other : each)));
 
   const submit = (): void => {
-    const answers: QuestionAnswer[] = request.questions.map((_, index) => ({
-      selected: selections[index] ?? [],
-      ...(others[index]?.trim() === "" ? {} : { other: others[index] }),
-    }));
+    const answers = questionAnswers(request.questions.length, selections, others);
     void remote.controller.answer(kind, request.id, answers, target);
   };
 

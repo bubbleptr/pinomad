@@ -7,7 +7,8 @@ import {
 } from "@astryxdesign/core/DropdownMenu";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { useState } from "react";
-import { ACTIVE_HOST_KEY, hostLabels, useHosts } from "../../entities/host/host-store.ts";
+import { hostLabels } from "@pinomad/client/stored-host.ts";
+import { ACTIVE_HOST_KEY, useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { Computer, Plus } from "../../shared/ui/icons.tsx";
 

@@ -4,7 +4,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import { classifyProviderFailure } from "@/shared/lib/provider-failure";
+import { classifyProviderFailure } from "@pinomad/client/provider-failure.ts";
 
 function describeFailure(error: string) {
   const kind = classifyProviderFailure(error);

@@ -1,4 +1,4 @@
-import type { QueueItem } from "../../presentation/chat.ts";
+import type { QueueItem } from "@pinomad/client/chat.ts";
 import { ChatQueuedMessage } from "../../shared/ui/chat/chat-queued-message.tsx";
 
 const TAGS: Record<QueueItem["mode"], string> = {

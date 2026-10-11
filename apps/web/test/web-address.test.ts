@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_HOST_URL, deviceName, resolveAddress, servedByHost } from "../src/address.ts";
-import { hostLabels } from "../src/entities/host/host-store.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
@@ -72,25 +71,6 @@ describe("servedByHost", () => {
     // Same host, different port: the vite dev server is not the host.
     expect(servedByHost("ws://127.0.0.1:7420", { host: "127.0.0.1:5199" })).toBe(false);
     expect(servedByHost("ws://192.168.1.5:7422", { host: "127.0.0.1:5199" })).toBe(false);
-  });
-});
-
-describe("hostLabels", () => {
-  it("labels each host by its URL host", () => {
-    const labels = hostLabels([storedA, storedB]);
-    expect(labels.get(storedA.hostKey)).toBe("10.0.0.2:7422");
-    expect(labels.get(storedB.hostKey)).toBe("10.0.0.3:7422");
-  });
-
-  it("disambiguates hosts sharing a host (two hosts on one relay)", () => {
-    const relayA = { url: "wss://relay.example.com/c/host-a", hostKey, privateKey: deviceKey };
-    const relayB = { url: "wss://relay.example.com/c/host-b", hostKey: hostKeyB, privateKey: deviceKeyB };
-    const labels = hostLabels([relayA, relayB]);
-    expect(labels.get(relayA.hostKey)).toBe(`relay.example.com · ${hostKey.slice(0, 6)}`);
-    expect(labels.get(relayB.hostKey)).toBe(`relay.example.com · ${hostKeyB.slice(0, 6)}`);
-    // A third host on its own URL keeps the plain label.
-    const labels3 = hostLabels([relayA, relayB, storedA]);
-    expect(labels3.get(storedA.hostKey)).toBe("10.0.0.2:7422");
   });
 });
 

@@ -4,7 +4,7 @@ import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
-import { requestNotificationPermission } from "../../entities/conversation/run-notifications.ts";
+import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";

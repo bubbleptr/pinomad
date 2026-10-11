@@ -9,6 +9,7 @@
     "build": "electron-vite build"
   },
   "devDependencies": {
+    "@pinomad/client": "workspace:*",
     "@pinomad/protocol": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "4.3.1",

@@ -1,6 +1,6 @@
 import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { queueItems, statusText, taskRows, usageRows } from "../src/presentation/chat.ts";
+import { queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
 
 const text = (value: string) => ({ type: "text", text: value });
 const view = (entries: EntryRecord[], live: object = {}, inbox: object[] = []): ConversationView =>

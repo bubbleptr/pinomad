@@ -8,7 +8,7 @@ import {
   formatWorkedFor,
 } from "@/shared/ui/chat/chat-chain-of-thought";
 import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
-import type { CotPhase } from "@/entities/conversation/cot-view";
+import type { CotPhase } from "@pinomad/client/cot-view.ts";
 
 describe("formatWorkedFor", () => {
   it("labels a failed run without implying completed work", () => {

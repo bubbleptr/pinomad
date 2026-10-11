@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { diffRunNotices, type StatusBaseline } from "./run-notifications.ts";
+import { diffRunNotices, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 
 export function useRunNotifications(view: DurableView, open: (id: ConversationId) => void): void {
   const baseline = useRef<StatusBaseline | undefined>(undefined);

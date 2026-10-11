@@ -6,7 +6,7 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/relay`（自部署中继，只转发密文，ADR-0008 第二期）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/relay`（自部署中继，只转发密文，ADR-0008 第二期）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）。
 
 ## 验证
 
@@ -15,6 +15,8 @@ Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`export
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 
 App 图标源文件是 `apps/desktop/build/icon.icon`，用 Xcode 自带的 Icon Composer（`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`）编辑，`/Applications` 下单独装的 1.5 版太旧；命令行预览用同目录的 `Contents/Executables/ictool`。Icon Composer 27 里图层和组的数组都是第一个在最上层。打包要 Xcode 26+ 的 actool。
+
+移动端：`cd apps/mobile && bunx expo run:ios -d "iPhone 17 Pro"` 构建开发包并在模拟器上跑（`ios/`、`android/` 由 CNG 生成，不入库）。改了移动端依赖版本后用 `bunx expo start --clear`，Metro 的旧转换缓存会让 App 启动时栈溢出。Expo 相关依赖锁精确版本，不用发布不到 7 天的；`package.json` 的 `expo.install.exclude` 让 `expo install --check` 跳过故意没升到最新补丁的包，升级时一并更新。heroui-native 只用 OSS 包。发版（EAS + TestFlight）见 `docs/mobile-release.md`；`--configuration Release` 跑 Release 包，检查不依赖 Metro 的情况。
 
 打包 npm 包用 `bun run package -- --version <v>`（产物在 `apps/cli/out/`，不入库）；装包冒烟 `bun apps/cli/smoke.ts <tgz>` 要连真 registry，不进 `bun run test`。
 

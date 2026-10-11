@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { ChatPixelLoader } from "@/shared/ui/chat/chat-pixel-loader";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
-import type { CotPhase } from "@/entities/conversation/cot-view";
+import type { CotPhase } from "@pinomad/client/cot-view.ts";
 
 /**
  * The last line of a live Chain of Thought: heartbeat, a shimmering status

@@ -28,6 +28,13 @@ export default defineConfig({
       {
         test: {
           ...shared,
+          name: "client",
+          include: ["packages/client/test/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...shared,
           name: "host",
           include: ["apps/host/test/**/*.test.ts"],
         },
@@ -51,6 +58,13 @@ export default defineConfig({
           ...shared,
           name: "desktop",
           include: ["apps/desktop/test/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...shared,
+          name: "mobile",
+          include: ["apps/mobile/src/**/*.test.ts"],
         },
       },
       {

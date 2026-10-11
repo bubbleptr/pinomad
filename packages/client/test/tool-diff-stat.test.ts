@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toolDiffStatFromResult } from "./tool-diff-stat";
+import { toolDiffStatFromResult } from "../src/tool-diff-stat.ts";
 
 // Pi's `edit` tool result carries the change twice: `details.patch` is a
 // standard single-file unified patch (the authority), `details.diff` is Pi's

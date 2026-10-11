@@ -5,7 +5,7 @@ import { ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { splitSubagentCalls, type ChatEntry, type CotView } from "@/entities/conversation/cot-view";
+import { splitSubagentCalls, type ChatEntry, type CotView } from "@pinomad/client/cot-view.ts";
 import { useMemo } from "react";
 import { ChatChainOfThought as ChainOfThought } from "@/shared/ui/chat/chat-chain-of-thought";
 import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown";
