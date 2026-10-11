@@ -11,6 +11,7 @@ import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "./entities/conversation/family.ts";
+import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -432,6 +433,7 @@ function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
 
 function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode }) {
   const view = useDurableView(remote);
+  useRunNotifications(remote, view);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
   const [drafting, setDrafting] = useState(true);
