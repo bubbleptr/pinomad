@@ -382,7 +382,8 @@ export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: 
   if (reloading) return null;
   const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
   return mismatch.direction === "client-older" ? (
-    <>
+    // Same gap the Centered screens use between the banner and the switcher.
+    <VStack gap={4}>
       <Banner
         status="error"
         container="section"
@@ -390,7 +391,7 @@ export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: 
         description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
       />
       {hasUpdater ? <UpdateStatusNote update={update} /> : null}
-    </>
+    </VStack>
   ) : (
     <Banner
       status="error"
