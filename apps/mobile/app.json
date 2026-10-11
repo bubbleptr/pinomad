@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "PiNomad",
+    "slug": "pinomad",
+    "version": "0.1.0",
+    "scheme": "pinomad",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bubbleptr.pinomad.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "PiNomad connects to a host on your local network or tailnet."
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-status-bar"
+    ]
+  }
+}
