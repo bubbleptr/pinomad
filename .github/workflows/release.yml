@@ -51,7 +51,9 @@ jobs:
           retention-days: 7
 
   macos:
-    runs-on: macos-15
+    # macos-26 for Xcode 26's actool: the .icon app icon compiles to Assets.car
+    # there; the macos-15 image's default Xcode 16 can't read the format.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -84,6 +86,8 @@ jobs:
           fi
           version="${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.0.0-dryrun' }}"
           echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+      # Surface the actool's Xcode in the log — the .icon compile needs 26+.
+      - run: xcodebuild -version
       - name: Build the desktop bundles
         working-directory: apps/desktop
         env:
