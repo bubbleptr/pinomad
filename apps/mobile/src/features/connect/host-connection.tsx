@@ -10,9 +10,10 @@ import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remo
 import type { ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { hostStore } from "../../entities/host/secure-host-store.ts";
 import type { StoredHost } from "../../entities/host/host-store.ts";
-import { clearActiveRemote, setActiveRemote } from "../../shared/lib/active-remote.ts";
+import { setActiveRemote } from "../../shared/lib/active-remote.ts";
 import { useDurableView, useRemoteDurable } from "../../shared/lib/use-remote.ts";
 import { ConversationList } from "../../widgets/conversation-list/conversation-list.tsx";
+import { NoticeToasts } from "../../widgets/notice-toasts/notice-toasts.tsx";
 
 /** What to connect with: a confirmed pairing offer, or a stored device key. */
 export type ConnectSpec =
@@ -67,6 +68,8 @@ export function HostConnection({
   onPaired(host: StoredHost): void;
 }) {
   const [attempt, setAttempt] = useState(0);
+  // Stable across renders: the active-remote store publishes it to routes.
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
   // A pairing whose save failed: the device key would die with the process and
   // the spent invite can't pair again — surface it, never lose it silently.
   const [unsaved, setUnsaved] = useState<StoredHost>();
@@ -109,6 +112,14 @@ export function HostConnection({
   );
 
   const state = useRemoteDurable(options, `${spec.kind} ${spec.url} ${spec.hostKey} ${attempt}`);
+
+  // Sibling Stack routes (conversation/[id], new) reach the remote here. The
+  // last ready remote stays published while a retry rebuilds the transport —
+  // clearing it would Redirect pushed conversation screens to the index.
+  useEffect(() => {
+    if (state.status === "ready") setActiveRemote({ remote: state.remote, reconnect: retry });
+  }, [state, retry]);
+  useEffect(() => () => setActiveRemote(undefined), []);
 
   if (state.status === "connecting") {
     return (
@@ -188,7 +199,7 @@ export function HostConnection({
       unsaved={unsaved}
       onRetrySave={(host) => void saveHost(host)}
       onForget={onForget}
-      onRetry={() => setAttempt((n) => n + 1)}
+      onRetry={retry}
     />
   );
 }
@@ -210,12 +221,6 @@ function ConnectedView({
 }) {
   const view = useDurableView(remote);
   const router = useRouter();
-
-  // Sibling Stack routes (conversation/[id], new) reach the remote here.
-  useEffect(() => {
-    setActiveRemote(remote);
-    return () => clearActiveRemote(remote);
-  }, [remote]);
 
   if (view.unauthorized === true) {
     return (
@@ -239,6 +244,8 @@ function ConnectedView({
 
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-background" edges={["top", "bottom"]}>
+      {/* Command failures surface as notices; mounted here so they toast over pushed routes too. */}
+      <NoticeToasts notices={view.notices} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
         <View style={{ gap: 4 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>

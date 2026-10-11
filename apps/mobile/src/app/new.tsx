@@ -1,6 +1,6 @@
 import { Redirect, Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { KeyboardAvoidingView, Platform, View } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { Select } from "heroui-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { useActiveRemote } from "../shared/lib/active-remote.ts";
 import { useDurableView } from "../shared/lib/use-remote.ts";
+import { createAndShow } from "../shared/lib/conversation-commands.ts";
 import { useKeyboardVisible } from "../shared/lib/use-keyboard-visible.ts";
 import { ComposeBar } from "../features/compose/composer.tsx";
 
@@ -34,17 +35,13 @@ function NewConversationBody({ remote }: { remote: RemoteDurable }) {
     ...projects.map((project) => ({ value: project.path, label: project.name || project.path })),
   ];
 
+  // Failure rejects so ComposeBar keeps the draft; the notice toast carries
+  // the host's reason.
   const send = async (text: string): Promise<void> => {
     setSending(true);
     try {
-      await remote.controller.createConversation(home, text);
-      const id = remote.view.current().conversation?.conversation.id;
-      if (id === undefined) return;
+      const id = await createAndShow(remote, home, text);
       router.replace(`/conversation/${id}`);
-    } catch (error) {
-      Alert.alert("Couldn't start the conversation", error instanceof Error ? error.message : String(error));
-      // Rethrow so ComposeBar keeps the draft.
-      throw error;
     } finally {
       setSending(false);
     }

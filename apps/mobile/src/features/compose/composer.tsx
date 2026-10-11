@@ -2,7 +2,7 @@
 // line, queued steers/follow-ups, abort); the bare ComposeBar is reused by
 // the new-conversation screen where there is no run to stop or queue.
 import { useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { ScrollView, Text, TextInput, View } from "react-native";
 import { Button } from "heroui-native";
 import { useCSSVariable } from "uniwind";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -82,11 +82,16 @@ export function ConversationComposer({ remote, view }: { remote: RemoteDurable; 
           {status}
         </Text>
       )}
-      {queued.map((item) => (
-        <Text key={item.id} className="text-muted" style={{ fontSize: 13 }} numberOfLines={1}>
-          {item.mode === "steer" ? "Steer" : item.mode === "followUp" ? "Follow-up" : "Queued"}: {item.text}
-        </Text>
-      ))}
+      {queued.length === 0 ? null : (
+        // Capped at a few rows so a long queue can't push Send/Stop off screen.
+        <ScrollView style={{ maxHeight: 80 }} contentContainerStyle={{ gap: 2 }}>
+          {queued.map((item) => (
+            <Text key={item.id} className="text-muted" style={{ fontSize: 13 }} numberOfLines={1}>
+              {item.mode === "steer" ? "Steer" : item.mode === "followUp" ? "Follow-up" : "Queued"}: {item.text}
+            </Text>
+          ))}
+        </ScrollView>
+      )}
       <ComposeBar
         disabled={!connected}
         busy={busy}

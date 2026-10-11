@@ -1,16 +1,18 @@
 import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { Button, Spinner } from "heroui-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import { displayName } from "@pinomad/client/family.ts";
-import { useActiveRemote } from "../../shared/lib/active-remote.ts";
+import { useActiveReconnect, useActiveRemote } from "../../shared/lib/active-remote.ts";
 import { useDurableView } from "../../shared/lib/use-remote.ts";
 import { useKeyboardVisible } from "../../shared/lib/use-keyboard-visible.ts";
+import { showConversation } from "../../shared/lib/conversation-commands.ts";
 import { Transcript } from "../../widgets/transcript/transcript.tsx";
 import { PendingQuestions } from "../../features/answer-question/pending-questions.tsx";
 import { ConversationComposer } from "../../features/compose/composer.tsx";
@@ -22,6 +24,78 @@ export default function ConversationScreen() {
   return <ConversationBody remote={remote} id={Number(id) as ConversationId} />;
 }
 
+/** Compact offline bar above the transcript; terminal states offer a way out. */
+function ConnectionBanner({
+  view,
+  reconnect,
+  onBackToHost,
+}: {
+  view: DurableView;
+  reconnect: (() => void) | undefined;
+  onBackToHost(): void;
+}) {
+  if (view.unauthorized === true) {
+    return (
+      <BannerRow>
+        <Text className="text-danger" style={{ flex: 1, fontSize: 13 }}>
+          This device was rejected or revoked
+        </Text>
+        <Button size="sm" variant="secondary" onPress={onBackToHost}>
+          Back to host
+        </Button>
+      </BannerRow>
+    );
+  }
+  if (view.connection === "outdated") {
+    return (
+      <BannerRow>
+        <Text className="text-danger" style={{ flex: 1, fontSize: 13 }}>
+          This host runs an incompatible version
+        </Text>
+        <Button size="sm" variant="secondary" onPress={onBackToHost}>
+          Back to host
+        </Button>
+      </BannerRow>
+    );
+  }
+  if (view.connection === "reconnecting") {
+    return (
+      <BannerRow>
+        <Spinner size="sm" />
+        <Text className="text-muted" style={{ flex: 1, fontSize: 13 }}>
+          Reconnecting…
+        </Text>
+      </BannerRow>
+    );
+  }
+  if (view.connection === "closed") {
+    return (
+      <BannerRow>
+        <Text className="text-danger" style={{ flex: 1, fontSize: 13 }}>
+          Disconnected
+        </Text>
+        {reconnect === undefined ? null : (
+          <Button size="sm" variant="secondary" onPress={reconnect}>
+            Reconnect
+          </Button>
+        )}
+      </BannerRow>
+    );
+  }
+  return null;
+}
+
+function BannerRow({ children }: { children: ReactNode }) {
+  return (
+    <View
+      className="bg-surface-tertiary"
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 12, marginTop: 8, borderRadius: 10, padding: 10 }}
+    >
+      {children}
+    </View>
+  );
+}
+
 function ConversationBody({ remote, id }: { remote: RemoteDurable; id: ConversationId }) {
   const view = useDurableView(remote);
   const headerHeight = useHeaderHeight();
@@ -30,18 +104,25 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
   // away while the keyboard is open or the composer floats above the keys.
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
-  const [switchError, setSwitchError] = useState<string | undefined>(undefined);
+  const reconnect = useActiveReconnect();
+  // Refused switches resolve with the previous conversation still shown
+  // (the reason lands as a notice) — detect via showConversation, not catch.
+  const [openFailed, setOpenFailed] = useState(false);
   useEffect(() => {
-    setSwitchError(undefined);
-    remote.controller.switchConversation(id).catch((error: unknown) => {
-      setSwitchError(error instanceof Error ? error.message : String(error));
+    let cancelled = false;
+    setOpenFailed(false);
+    void showConversation(remote, id).then((shown) => {
+      if (!cancelled && !shown) setOpenFailed(true);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [remote, id]);
 
   const summary = findConversation(view.organized, id)?.summary;
   const title = summary === undefined ? "Conversation" : displayName(summary);
 
-  if (switchError !== undefined) {
+  if (openFailed) {
     return (
       <>
         <Stack.Screen options={{ headerShown: true, title }} />
@@ -49,8 +130,8 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
           className="bg-background"
           style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}
         >
-          <Text className="text-danger" style={{ textAlign: "center" }}>
-            {switchError}
+          <Text className="text-foreground" style={{ textAlign: "center" }}>
+            Couldn't open this conversation
           </Text>
           <Button variant="secondary" onPress={() => router.back()}>
             Back
@@ -81,6 +162,7 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
         keyboardVerticalOffset={headerHeight}
       >
         <View style={{ flex: 1, paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
+          <ConnectionBanner view={view} reconnect={reconnect} onBackToHost={() => router.back()} />
           <Transcript
             conversation={view.conversation}
             toolPresentations={view.toolPresentations}
