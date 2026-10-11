@@ -14,6 +14,8 @@ import { useNow } from "../../shared/use-now.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
+import { useHosts } from "../../entities/host/host-store.ts";
+import { HostSwitcher } from "./host-switcher.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
@@ -91,28 +93,41 @@ export function SidebarHeaderBand({
   );
 }
 
-/** Footer slot: the Devices entry. The dialog itself is hoisted into
-    AppFrame — inside MobileNav it would render in the drawer that this click
-    just closed. */
+/** Footer slot: the host switcher (desktop only) and the Devices entry. The
+    pair-host dialog is hoisted into AppFrame like Devices' — inside MobileNav
+    it would render in the drawer that this click just closed. */
 export function SidebarFooter({
   view,
   onOpenDevices,
+  onPairHost,
   onSelect,
 }: {
   view: DurableView;
   onOpenDevices: () => void;
+  onPairHost: () => void;
   onSelect?: () => void;
 }) {
+  const { store } = useHosts();
   return (
-    <SideNavItem
-      icon={<Computer aria-hidden="true" />}
-      label="Devices"
-      isDisabled={view.connection !== "connected"}
-      onClick={() => {
-        onOpenDevices();
-        onSelect?.();
-      }}
-    />
+    <>
+      {store.multiHost ? (
+        <HostSwitcher
+          onPairAnother={() => {
+            onSelect?.();
+            onPairHost();
+          }}
+        />
+      ) : null}
+      <SideNavItem
+        icon={<Computer aria-hidden="true" />}
+        label="Devices"
+        isDisabled={view.connection !== "connected"}
+        onClick={() => {
+          onOpenDevices();
+          onSelect?.();
+        }}
+      />
+    </>
   );
 }
 

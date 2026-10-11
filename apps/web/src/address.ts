@@ -8,8 +8,11 @@ export const DEFAULT_HOST_URL = "ws://127.0.0.1:7420";
 /** localStorage key holding this browser's paired device identity. */
 export const DEVICE_KEY = "pinomad.device";
 
+/** One paired host and this device's identity on it; keys are base64url, 32 bytes. */
+export type StoredHost = { url: string; hostKey: string; privateKey: string };
+
 /** A validated stored device identity, or undefined. */
-export function storedDevice(stored: string | null): { url: string; hostKey: string; privateKey: string } | undefined {
+export function storedDevice(stored: string | null): StoredHost | undefined {
   if (stored === null) return undefined;
   try {
     const device = JSON.parse(stored) as { url?: unknown; hostKey?: unknown; privateKey?: unknown };
@@ -35,13 +38,16 @@ export type ResolvedAddress =
   | { readonly kind: "device"; readonly url: string; readonly hostKey: string; readonly privateKey: string };
 
 /**
- * Resolve where to connect from the fragment and stored device identity.
+ * Resolve where to connect from the fragment and the paired hosts.
  * The fragment wins: a QR link on an already-paired browser still pairs.
+ * Without one, the host the user last switched to (activeHostKey) connects,
+ * falling back to the first stored host.
  */
 export function resolveAddress(
   hash: string,
   location: { protocol: string; host: string },
-  stored: string | null,
+  hosts: readonly StoredHost[],
+  activeHostKey: string | null,
 ): ResolvedAddress | undefined {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const token = params.get("token");
@@ -56,8 +62,8 @@ export function resolveAddress(
     return { kind: "pair", url, hostKey: parsed.hostKey, secret: parsed.secret };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
-  const device = storedDevice(stored);
-  return device === undefined ? undefined : { kind: "device", ...device };
+  const host = hosts.find((each) => each.hostKey === activeHostKey) ?? hosts[0];
+  return host === undefined ? undefined : { kind: "device", ...host };
 }
 
 /** Whether this page was served by the host it talks to — then a reload picks up a matching bundle. */
