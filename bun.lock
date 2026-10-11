@@ -22,6 +22,7 @@
       "name": "@pinomad/desktop",
       "version": "0.0.0",
       "devDependencies": {
+        "@pinomad/client": "workspace:*",
         "@pinomad/protocol": "workspace:*",
         "@playwright/test": "^1.61.1",
         "@tailwindcss/vite": "4.3.1",
@@ -62,6 +63,7 @@
       "name": "@pinomad/mobile",
       "version": "0.0.0",
       "dependencies": {
+        "@pinomad/client": "workspace:*",
         "@pinomad/protocol": "workspace:*",
         "expo": "57.0.26",
         "expo-constants": "57.0.20",
@@ -116,6 +118,7 @@
         "@fontsource-variable/montserrat": "5.3.0",
         "@hugeicons/core-free-icons": "4.2.2",
         "@hugeicons/react": "1.1.9",
+        "@pinomad/client": "workspace:*",
         "@pinomad/protocol": "workspace:*",
         "@stylexjs/stylex": "^0.19.0",
         "react": "^19.2.7",
@@ -136,6 +139,14 @@
         "jsdom": "29.1.1",
         "tailwindcss": "4.3.1",
         "vite": "^5.4.2",
+      },
+    },
+    "packages/client": {
+      "name": "@pinomad/client",
+      "version": "0.0.0",
+      "dependencies": {
+        "@earendil-works/pi-durable": "1.0.4",
+        "@pinomad/protocol": "workspace:*",
       },
     },
     "packages/protocol": {
@@ -598,6 +609,8 @@
     "@peculiar/webcrypto": ["@peculiar/webcrypto@1.7.1", "", { "dependencies": { "@peculiar/asn1-schema": "^2.7.0", "@peculiar/json-schema": "^1.1.12", "@peculiar/utils": "^2.0.2", "tslib": "^2.8.1", "webcrypto-core": "^1.9.2" } }, "sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ=="],
 
     "@pinomad/cli": ["@pinomad/cli@workspace:apps/cli"],
+
+    "@pinomad/client": ["@pinomad/client@workspace:packages/client"],
 
     "@pinomad/desktop": ["@pinomad/desktop@workspace:apps/desktop"],
 

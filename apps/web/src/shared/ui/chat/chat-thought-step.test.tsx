@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
-import type { CotStep } from "@/entities/conversation/cot-view";
+import type { CotStep } from "@pinomad/client/cot-view.ts";
 
 type ThoughtStep = Extract<CotStep, { kind: "thinking" }>;
 

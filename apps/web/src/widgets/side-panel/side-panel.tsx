@@ -18,13 +18,13 @@ import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
-import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../../entities/conversation/family.ts";
-import { requestNotificationPermission } from "../../entities/conversation/run-notifications.ts";
+import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "@pinomad/client/family.ts";
+import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
-import { toolDisplayName } from "../../shared/ui/chat/chat-tool.tsx";
+import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { LiveState } from "./live-state.tsx";
 

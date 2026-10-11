@@ -4,7 +4,7 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { agentOf, taskRows, usageRows } from "../../presentation/chat.ts";
+import { agentOf, taskRows, usageRows } from "@pinomad/client/chat.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 
 export function LiveState({

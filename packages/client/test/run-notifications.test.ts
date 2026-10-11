@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { diffRunNotices, requestNotificationPermission, type StatusBaseline } from "./run-notifications.ts";
+import { diffRunNotices, type StatusBaseline } from "../src/run-notifications.ts";
 
 const id = (n: number): ConversationId => n as ConversationId;
 
@@ -22,10 +22,6 @@ const organized = (...chats: ConversationNode[]): Organized => ({ chats, project
 
 const baseline = (entries: readonly [number, ConversationSummary["status"]][]): StatusBaseline =>
   new Map(entries.map(([n, status]) => [id(n), status]));
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("diffRunNotices", () => {
   it("the first snapshot only seeds the baseline", () => {
@@ -120,22 +116,5 @@ describe("diffRunNotices", () => {
       organized(node({ id: id(2), status: "running" })),
     );
     expect(changed).toEqual([id(1)]);
-  });
-});
-
-describe("requestNotificationPermission", () => {
-  it("asks only while the answer is undecided", () => {
-    const requestPermission = vi.fn();
-    vi.stubGlobal("Notification", { permission: "default", requestPermission });
-    requestNotificationPermission();
-    expect(requestPermission).toHaveBeenCalledTimes(1);
-
-    vi.stubGlobal("Notification", { permission: "granted", requestPermission });
-    requestNotificationPermission();
-    expect(requestPermission).toHaveBeenCalledTimes(1);
-  });
-
-  it("does nothing where the API is missing", () => {
-    expect(() => requestNotificationPermission()).not.toThrow();
   });
 });

@@ -1,7 +1,6 @@
-import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
 
-/** One paired host and this device's identity on it; keys are base64url, 32 bytes. */
-export type StoredHost = { url: string; hostKey: string; privateKey: string };
+export type { StoredHost };
 
 /** Where paired hosts live; the device keeps every host it has paired. */
 export interface HostStore {
@@ -21,19 +20,6 @@ export interface KeyValueStorage {
 
 /** Secure-store key holding the JSON array of paired hosts. */
 export const HOSTS_KEY = "pinomad.hosts";
-
-/** A validated stored host entry, or undefined — same rule as the web client's storedDevice. */
-function storedHost(value: unknown): StoredHost | undefined {
-  if (value === null || typeof value !== "object") return undefined;
-  const { url, hostKey, privateKey } = value as { url?: unknown; hostKey?: unknown; privateKey?: unknown };
-  if (typeof url !== "string" || typeof hostKey !== "string" || typeof privateKey !== "string") return undefined;
-  try {
-    if (fromBase64Url(hostKey).length !== 32 || fromBase64Url(privateKey).length !== 32) return undefined;
-  } catch {
-    return undefined;
-  }
-  return { url, hostKey, privateKey };
-}
 
 /**
  * Paired hosts in an async key/value store (expo-secure-store on device).
@@ -67,7 +53,7 @@ export function createHostStore(storage: KeyValueStorage): HostStore {
     }
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((entry) => {
-      const host = storedHost(entry);
+      const host = parseStoredHost(entry);
       return host === undefined ? [] : [host];
     });
   };

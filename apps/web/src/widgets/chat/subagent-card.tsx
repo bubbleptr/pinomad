@@ -8,10 +8,10 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
-import { displayName } from "@/entities/conversation/family";
+import { displayName } from "@pinomad/client/family.ts";
 import { useNow } from "@/shared/use-now";
-import { toolDisplayName, toolTargetFromArgs } from "@/shared/ui/chat/chat-tool";
-import { pinomadOf } from "@/entities/conversation/cot-view";
+import { toolDisplayName, toolTargetFromArgs } from "@pinomad/client/tool-item.ts";
+import { pinomadOf } from "@pinomad/client/cot-view.ts";
 
 const STATUS_TEXT = { done: "Done", failed: "Failed", running: "Running" } as const;
 

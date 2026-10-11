@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import { deriveChat } from "../../entities/conversation/cot-view.ts";
+import { deriveChat } from "@pinomad/client/cot-view.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { ChatEntryView } from "./chat-entries.tsx";
 

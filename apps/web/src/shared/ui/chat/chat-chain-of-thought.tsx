@@ -2,7 +2,7 @@ import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { ChatStatusLine } from "@/shared/ui/chat/chat-status-line";
 import { ChevronRight } from "@/shared/ui/icons";
-import type { CotPhase } from "@/entities/conversation/cot-view";
+import type { CotPhase } from "@pinomad/client/cot-view.ts";
 
 /**
  * The settled header. "Worked", not "Thought": the number covers reasoning,

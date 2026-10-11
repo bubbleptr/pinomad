@@ -4,7 +4,7 @@ import { ChatInlinePager } from "@/shared/ui/chat/chat-inline-pager";
 import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
 import { ChevronRight } from "@/shared/ui/icons";
-import type { CotStep } from "@/entities/conversation/cot-view";
+import type { CotStep } from "@pinomad/client/cot-view.ts";
 
 /**
  * A Thinking part as one step row: "Thought 2s" when settled, a shimmering

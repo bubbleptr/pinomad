@@ -1,7 +1,7 @@
 // The Durable→CotView adapter: same fixture style as apps/web/test/presentation.test.ts.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { deriveChat, pinomadOf, splitSubagentCalls, type ChatEntry, type CotView } from "./cot-view.ts";
+import { deriveChat, pinomadOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
 
 let nextId = 1;
 const entry = (kind: string, message?: unknown): EntryRecord =>

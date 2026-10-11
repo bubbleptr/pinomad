@@ -8,6 +8,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@pinomad/client": "workspace:*",
     "@pinomad/protocol": "workspace:*",
     "expo": "57.0.26",
     "expo-constants": "57.0.20",

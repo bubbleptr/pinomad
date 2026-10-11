@@ -4,54 +4,23 @@ import {
   type ChatToolCallStatus,
 } from "@astryxdesign/core";
 import type { ComponentProps, ReactNode } from "react";
-import { toolTarget } from "@pinomad/protocol/tool-target.ts";
-import { ChatToolKindIcon, toolKindFromName } from "@/shared/ui/chat/chat-tool-kind";
+import {
+  formatToolDuration,
+  toolDisplayName,
+  toolKindFromName,
+  toolTargetFromArgs,
+  type ToolItem,
+  type ToolPartState,
+} from "@pinomad/client/tool-item.ts";
+import { ChatToolKindIcon } from "@/shared/ui/chat/chat-tool-kind";
 
-/**
- * Lifecycle of a tool invocation as rendered in the trace. Mirrors the state
- * union the runtime event pipeline produces (own type, not a vendor import).
- */
-export type ToolPartState =
-  | "input-streaming"
-  | "input-available"
-  | "output-available"
-  | "output-error";
-
-export type ChatToolItem = {
-  argsText?: string;
-  /** Nested Tool Executions this call started, in start order. */
+/** A transcript tool item plus this client's React detail pane. */
+export type ChatToolItem = Omit<ToolItem, "children"> & {
   children?: ChatToolItem[];
   // PiNomad: a ready-made detail pane (diff view, subagent card) replacing the
   // args and output panes; nested children still render.
   detail?: ReactNode;
-  /** Per-edit line counts; rendered as Astryx additions/deletions stats. */
-  diffStat?: { additions: number; deletions: number };
-  durationMs?: number;
-  // PiNomad: image blocks of the tool result, rendered after the output pane.
-  images?: readonly { data: string; mimeType: string }[];
-  output?: string;
-  state: ToolPartState;
-  toolCallId?: string;
-  toolName?: string;
 };
-
-/**
- * Display name for a tool call: `mcp__<server>__<tool>` reads as
- * `<server>/<tool>`, matching how Pi's TUI titles MCP calls. Anything else is
- * returned unchanged. Data layers keep the raw name; this is render-only.
- */
-export function toolDisplayName(name: string | undefined): string | undefined {
-  if (!name?.startsWith("mcp__")) {
-    return name;
-  }
-
-  const rest = name.slice("mcp__".length);
-  const separator = rest.indexOf("__");
-
-  return separator === -1
-    ? rest
-    : `${rest.slice(0, separator)}/${rest.slice(separator + 2)}`;
-}
 
 const statusMap: Record<ToolPartState, ChatToolCallStatus> = {
   "input-streaming": "running",
@@ -59,28 +28,6 @@ const statusMap: Record<ToolPartState, ChatToolCallStatus> = {
   "output-available": "complete",
   "output-error": "error",
 };
-
-/** Argument keys that name what a tool acted on, most specific first. */
-export function toolTargetFromArgs(argsText: string | undefined): string | undefined {
-  if (!argsText) return undefined;
-  let args: unknown;
-  try {
-    args = JSON.parse(argsText);
-  } catch {
-    return undefined;
-  }
-  return toolTarget(args);
-}
-
-export function formatToolDuration(durationMs: number | undefined): string | undefined {
-  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
-    return undefined;
-  }
-
-  return durationMs < 1000
-    ? `${Math.round(durationMs)}ms`
-    : `${(durationMs / 1000).toFixed(1)}s`;
-}
 
 export function hasToolDetail(tool: ChatToolItem) {
   return (

@@ -4,10 +4,9 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
 
-/** One paired host: where to dial and this device's identity on it (base64url, 32 bytes each). */
-export type StoredHost = { readonly url: string; readonly hostKey: string; readonly privateKey: string };
+export type { StoredHost };
 
 /** The encryption seam main.ts fills with safeStorage — injectable so tests need no keychain. */
 export type Cipher = {
@@ -23,32 +22,6 @@ export interface HostStore {
 }
 
 const FILE = "hosts.bin";
-
-const isKey = (value: unknown): value is string => {
-  if (typeof value !== "string") return false;
-  try {
-    return fromBase64Url(value).length === 32;
-  } catch {
-    return false;
-  }
-};
-
-const isHostUrl = (value: unknown): value is string => {
-  if (typeof value !== "string") return false;
-  try {
-    const protocol = new URL(value).protocol;
-    return protocol === "ws:" || protocol === "wss:";
-  } catch {
-    return false;
-  }
-};
-
-// The payload crosses IPC — main must not trust the renderer's shape.
-const isStoredHost = (value: unknown): value is StoredHost => {
-  if (typeof value !== "object" || value === null) return false;
-  const host = value as Record<string, unknown>;
-  return isHostUrl(host.url) && isKey(host.hostKey) && isKey(host.privateKey);
-};
 
 export function createHostStore(dir: string, cipher: Cipher): HostStore {
   const file = join(dir, FILE);
@@ -88,7 +61,11 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
     }
     const hosts = (parsed as { hosts?: unknown } | null)?.hosts;
     if (!Array.isArray(hosts)) return [];
-    return hosts.filter(isStoredHost);
+    return hosts.flatMap((entry) => {
+      // The payload crosses IPC — main must not trust the renderer's shape.
+      const host = parseStoredHost(entry);
+      return host === undefined ? [] : [host];
+    });
   };
 
   const writeAll = async (hosts: StoredHost[]): Promise<void> => {
@@ -102,7 +79,7 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
     list: () => enqueue(readAll),
     save: (host) =>
       enqueue(async () => {
-        if (!isStoredHost(host)) throw new Error("invalid host payload");
+        if (parseStoredHost(host) === undefined) throw new Error("invalid host payload");
         const hosts = await readAll();
         const index = hosts.findIndex((each) => each.hostKey === host.hostKey);
         if (index === -1) hosts.push(host);

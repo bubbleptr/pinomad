@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { toolKindFromName, toolKindFromTools } from "@/shared/ui/chat/chat-tool-kind";
-import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
+import { toolKindFromName, toolKindFromTools } from "../src/tool-item.ts";
+import type { ToolItem } from "../src/tool-item.ts";
 
-function tool(name?: string): ChatToolItem {
+function tool(name?: string): ToolItem {
   return { state: "output-available", ...(name ? { toolName: name } : {}) };
 }
 

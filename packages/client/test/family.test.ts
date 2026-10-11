@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "./family.ts";
+import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
 
 const summary = (over: Partial<ConversationSummary> = {}): ConversationSummary => ({
   id: 0 as ConversationSummary["id"],

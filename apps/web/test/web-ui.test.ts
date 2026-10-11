@@ -21,7 +21,7 @@ import { createServer } from "vite";
 import { expect, it } from "vitest";
 import { coding } from "@pinomad/host/src/extensions/coding.ts";
 import { createSubagent } from "@pinomad/host/src/extensions/subagent.ts";
-import { deriveChat } from "../src/entities/conversation/cot-view.ts";
+import { deriveChat } from "@pinomad/client/cot-view.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();

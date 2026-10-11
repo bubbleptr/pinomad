@@ -2,23 +2,23 @@ import { Collapsible } from "@base-ui-components/react/collapsible";
 import type { ComponentProps } from "react";
 import { ChatInlinePager } from "@/shared/ui/chat/chat-inline-pager";
 import {
+  formatToolDuration,
+  normalizeToolName,
+  toolDisplayName,
+  toolKindFromName,
+  toolKindFromTools,
+  toolTargetFromArgs,
+} from "@pinomad/client/tool-item.ts";
+import {
   ChatToolDetail,
   ChatToolGroup,
-  formatToolDuration,
   hasToolDetail,
-  toolDisplayName,
-  toolTargetFromArgs,
   type ChatToolItem,
 } from "@/shared/ui/chat/chat-tool";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
-import {
-  ChatToolKindIcon,
-  normalizeToolName,
-  toolKindFromName,
-  toolKindFromTools,
-} from "@/shared/ui/chat/chat-tool-kind";
+import { ChatToolKindIcon } from "@/shared/ui/chat/chat-tool-kind";
 import { ChevronRight } from "@/shared/ui/icons";
-import type { CotStep } from "@/entities/conversation/cot-view";
+import type { CotStep } from "@pinomad/client/cot-view.ts";
 
 /**
  * A burst of Tool Calls as one step row (ADR-0030 §3). Live it names the call

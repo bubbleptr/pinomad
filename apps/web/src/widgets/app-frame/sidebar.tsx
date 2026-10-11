@@ -9,7 +9,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "../../entities/conversation/family.ts";
+import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
