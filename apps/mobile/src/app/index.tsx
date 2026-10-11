@@ -4,7 +4,7 @@ import { Alert, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Spinner } from "heroui-native";
 import { hostStore } from "../entities/host/secure-host-store.ts";
-import type { StoredHost } from "../entities/host/host-store.ts";
+import { selectedHost, type StoredHost } from "../entities/host/host-store.ts";
 import { takePendingPair, type PendingPair } from "../shared/lib/pending-pair.ts";
 import { HostConnection, type ConnectSpec } from "../features/connect/host-connection.tsx";
 import { PairingForm } from "../features/connect/pairing-form.tsx";
@@ -35,10 +35,7 @@ export default function IndexScreen() {
     }, []),
   );
 
-  const device =
-    hosts === undefined
-      ? undefined
-      : ((activeKey === undefined ? undefined : hosts.find((host) => host.hostKey === activeKey)) ?? hosts[0]);
+  const device = hosts === undefined ? undefined : selectedHost(hosts, activeKey);
   const spec: ConnectSpec | undefined =
     pending !== undefined ? { kind: "pair", ...pending } : device === undefined ? undefined : { kind: "device", ...device };
 
@@ -77,7 +74,12 @@ export default function IndexScreen() {
           // so a restart lands on the just-paired host.
           setPending(undefined);
           setActiveKey(host.hostKey);
-          void hostStore.setActive(host.hostKey);
+          void hostStore.setActive(host.hostKey).catch(() =>
+            Alert.alert(
+              "Couldn't remember this host",
+              "PiNomad will open the previously selected host after a restart. Choose this host in Hosts to try again.",
+            ),
+          );
         }}
       />
     );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { createHostStore } from "./host-store.ts";
+import { ACTIVE_KEY, createHostStore, selectedHost } from "./host-store.ts";
 
 const key = (byte: number): string => toBase64Url(new Uint8Array(32).fill(byte));
 
@@ -17,8 +17,12 @@ function makeStorage(initial?: string) {
   const storage = {
     raw,
     failReads: false,
+    /** Keys that make getItemAsync throw — simulate a partially locked keychain. */
+    failKeys: new Set<string>(),
     getItemAsync: (key: string): Promise<string | null> =>
-      storage.failReads ? Promise.reject(new Error("keychain locked")) : Promise.resolve(raw.get(key) ?? null),
+      storage.failReads || storage.failKeys.has(key)
+        ? Promise.reject(new Error("keychain locked"))
+        : Promise.resolve(raw.get(key) ?? null),
     setItemAsync: (key: string, value: string): Promise<void> => {
       raw.set(key, value);
       return Promise.resolve();
@@ -187,5 +191,35 @@ describe("createHostStore", () => {
       const store = createHostStore(storage);
       await expect(store.activeKey()).resolves.toBeUndefined();
     });
+
+    it("remove still removes when the active-key cleanup can't touch storage", async () => {
+      const storage = makeStorage();
+      const store = createHostStore(storage);
+      await store.save(host(1));
+      await store.save(host(2));
+      await store.setActive(key(1));
+      storage.failKeys.add(ACTIVE_KEY);
+      await store.remove(key(1));
+      await expect(store.list()).resolves.toEqual([host(2)]);
+      storage.failKeys.delete(ACTIVE_KEY);
+      await expect(store.activeKey()).resolves.toBe(key(1));
+    });
+  });
+});
+
+describe("selectedHost", () => {
+  const a = host(1);
+  const b = host(2);
+  it("returns the stored selection when it is still saved", () => {
+    expect(selectedHost([a, b], b.hostKey)).toBe(b);
+  });
+  it("falls back to the first host when the stored key is stale", () => {
+    expect(selectedHost([a, b], "stale-key")).toBe(a);
+  });
+  it("falls back to the first host when nothing was ever selected", () => {
+    expect(selectedHost([a, b], undefined)).toBe(a);
+  });
+  it("returns undefined for an empty list", () => {
+    expect(selectedHost([], key(1))).toBeUndefined();
   });
 });

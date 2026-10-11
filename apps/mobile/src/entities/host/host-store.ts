@@ -27,6 +27,18 @@ export const HOSTS_KEY = "pinomad.hosts";
 /** Secure-store key holding the active host's key (absent → first saved). */
 export const ACTIVE_KEY = "pinomad.activeHost";
 
+/** The host to connect to: the stored selection if it is still saved, else the first saved host. */
+export function selectedHost(
+  hosts: readonly StoredHost[],
+  activeKey: string | undefined,
+): StoredHost | undefined {
+  if (activeKey !== undefined) {
+    const selected = hosts.find((host) => host.hostKey === activeKey);
+    if (selected !== undefined) return selected;
+  }
+  return hosts[0];
+}
+
 /**
  * Paired hosts in an async key/value store (expo-secure-store on device).
  * Bad entries — malformed JSON, wrong field types, keys that aren't 32 bytes —
@@ -83,10 +95,16 @@ export function createHostStore(storage: KeyValueStorage): HostStore {
           await storage.setItemAsync(HOSTS_KEY, JSON.stringify(next));
         }
         // Removing the active host falls the selection back to hosts[0].
-        const active = await storage.getItemAsync(ACTIVE_KEY);
-        if (active === hostKey) {
-          if (storage.deleteItemAsync !== undefined) await storage.deleteItemAsync(ACTIVE_KEY);
-          else await storage.setItemAsync(ACTIVE_KEY, "");
+        // Best-effort: a stale key is harmless because selectedHost ignores
+        // keys that aren't in the list, so this must not fail the remove.
+        try {
+          const active = await storage.getItemAsync(ACTIVE_KEY);
+          if (active === hostKey) {
+            if (storage.deleteItemAsync !== undefined) await storage.deleteItemAsync(ACTIVE_KEY);
+            else await storage.setItemAsync(ACTIVE_KEY, "");
+          }
+        } catch {
+          // Keychain read/write hiccup — the list is already written, keep it.
         }
       }),
     activeKey: () =>

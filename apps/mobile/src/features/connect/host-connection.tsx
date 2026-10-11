@@ -186,7 +186,10 @@ export function HostConnection({
       return (
         <Centered>
           <MismatchMessage mismatch={state.mismatch} />
-          {cancelPair}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            {cancelPair}
+            {openHosts}
+          </View>
         </Centered>
       );
     }
@@ -248,9 +251,14 @@ function ConnectedView({
         <Text className="text-foreground" style={{ fontSize: 17, fontWeight: "600" }}>
           This device was rejected or revoked
         </Text>
-        <Button variant="danger-soft" onPress={() => onForget(spec.hostKey)}>
-          Forget this host
-        </Button>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <Button variant="danger-soft" onPress={() => onForget(spec.hostKey)}>
+            Forget this host
+          </Button>
+          <Button variant="secondary" onPress={() => router.push("/hosts")}>
+            Hosts
+          </Button>
+        </View>
       </Centered>
     );
   }
@@ -258,6 +266,9 @@ function ConnectedView({
     return (
       <Centered>
         <MismatchMessage mismatch={view.protocolMismatch} />
+        <Button variant="secondary" onPress={() => router.push("/hosts")}>
+          Hosts
+        </Button>
       </Centered>
     );
   }

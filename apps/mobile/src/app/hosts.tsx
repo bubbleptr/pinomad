@@ -7,7 +7,7 @@ import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { Button, Spinner } from "heroui-native";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { hostStore } from "../entities/host/secure-host-store.ts";
-import type { StoredHost } from "../entities/host/host-store.ts";
+import { selectedHost, type StoredHost } from "../entities/host/host-store.ts";
 import { PairingForm } from "../features/connect/pairing-form.tsx";
 
 export default function HostsScreen() {
@@ -43,7 +43,10 @@ export default function HostsScreen() {
             .then((list) => {
               // Nothing left → index's empty state is the only sensible screen.
               if (list.length === 0) router.back();
-            }),
+            })
+            .catch((error: unknown) =>
+              Alert.alert("Couldn't forget this host", error instanceof Error ? error.message : String(error)),
+            ),
       },
     ]);
   };
@@ -58,13 +61,18 @@ export default function HostsScreen() {
         </View>
       ) : (
         hosts.map((host) => {
-          const isActive = host.hostKey === (active ?? hosts[0]?.hostKey);
+          const isActive = host.hostKey === selectedHost(hosts, active)?.hostKey;
           const label = labels.get(host.hostKey) ?? host.url;
           return (
             <Pressable
               key={host.hostKey}
               onPress={() => {
-                void hostStore.setActive(host.hostKey).then(() => router.back());
+                void hostStore
+                  .setActive(host.hostKey)
+                  .then(
+                    () => router.back(),
+                    () => Alert.alert("Couldn't switch hosts", "Try again."),
+                  );
               }}
               style={({ pressed }) => ({
                 flexDirection: "row",
