@@ -83,7 +83,10 @@ function installHostStoreIpc(): void {
   });
   const devEntry = process.env.ELECTRON_RENDERER_URL;
   const ours = (event: IpcMainInvokeEvent): boolean => {
-    const url = event.senderFrame?.url ?? "";
+    // Only the window's top-level frame may touch device keys. Subframes get no
+    // preload today; this keeps an embedded frame out even if that changes.
+    if (event.senderFrame === null || event.senderFrame !== event.sender.mainFrame) return false;
+    const url = event.senderFrame.url;
     if (url === APP_ORIGIN || url.startsWith(`${APP_ORIGIN}/`)) return true;
     return devEntry !== undefined && (url === devEntry || url.startsWith(`${devEntry}/`));
   };

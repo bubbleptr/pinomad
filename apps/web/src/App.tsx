@@ -199,6 +199,10 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
 function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
   const { store, hosts, paired } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
+  // A pairing whose save failed (e.g. locked keychain): the device key would
+  // die with the process, and the spent invite can't pair again — surface it
+  // instead of losing the identity silently.
+  const [unsaved, setUnsaved] = useState<StoredHost>();
   const device = useMemo<KeyPair>(() => {
     // A stored key for the same host survives a spent pairing link: the host
     // admits a registered device without consuming the offer.
@@ -217,11 +221,11 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           ? {
               pairing: { secret: address.secret, name: deviceName(navigator.userAgent) },
               onPaired: () => {
-                void paired({
-                  url: address.url,
-                  hostKey: address.hostKey,
-                  privateKey: toBase64Url(device.privateKey),
-                }).catch((error: unknown) => console.error("Could not save the paired host", error));
+                const host = { url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) };
+                void paired(host).catch((error: unknown) => {
+                  console.error("Could not save the paired host", error);
+                  setUnsaved(host);
+                });
                 // The fragment held a one-time secret; it must not linger in history.
                 history.replaceState(null, "", window.location.pathname + window.location.search);
               },
@@ -268,6 +272,27 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
         />
       </VStack>
     );
+  const notice =
+    unsaved === undefined ? undefined : (
+      <Banner
+        status="warning"
+        container="section"
+        title="This pairing wasn't saved"
+        description="It will be lost when the app restarts."
+        endContent={
+          <Button
+            label="Retry"
+            variant="ghost"
+            onClick={() => {
+              void paired(unsaved).then(
+                () => setUnsaved(undefined),
+                (error: unknown) => console.error("Could not save the paired host", error),
+              );
+            }}
+          />
+        }
+      />
+    );
   return (
     <RemoteWorkbench
       options={options}
@@ -275,6 +300,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       label={address.url}
       rejected={rejected}
       device={device}
+      notice={notice}
     />
   );
 }
@@ -286,6 +312,7 @@ export function RemoteWorkbench({
   label,
   rejected,
   device,
+  notice,
 }: {
   options: RemoteDurableOptions;
   connectionKey: string;
@@ -294,6 +321,8 @@ export function RemoteWorkbench({
   rejected?: ReactNode;
   /** This browser's device key, for marking "This device" in the devices list. */
   device?: KeyPair;
+  /** A persistent warning shown above the connection banner. */
+  notice?: ReactNode;
 }) {
   const state = useRemoteDurable(options, connectionKey);
   if (state.status === "connecting") {
@@ -320,7 +349,7 @@ export function RemoteWorkbench({
       </Centered>
     );
   }
-  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} />;
+  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} notice={notice} />;
 }
 
 /**
@@ -358,7 +387,7 @@ function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: Protoco
   );
 }
 
-function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair }) {
+function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode }) {
   const view = useDurableView(remote);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
@@ -462,7 +491,12 @@ function Workbench({ remote, wsUrl, rejected, device }: { remote: RemoteDurable;
         conversation={conversation}
         summary={shownSummary}
         parentSummary={parentSummary}
-        banner={<ConnectionBanner view={view} wsUrl={wsUrl} />}
+        banner={
+          <>
+            {notice}
+            <ConnectionBanner view={view} wsUrl={wsUrl} />
+          </>
+        }
         onDraft={startDraft}
         onOpenChanges={() => setChangesOpen(true)}
         panelOpen={panelOpen}

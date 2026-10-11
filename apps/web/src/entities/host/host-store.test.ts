@@ -14,13 +14,14 @@ const host = (url = "ws://127.0.0.1:7420/secure"): StoredHost => ({
 });
 
 /** An in-memory stand-in for the Electron preload bridge. */
-const fakeBridge = (): DesktopBridge & { saved: StoredHost[] } => {
+const fakeBridge = ({ failSaves = false }: { failSaves?: boolean } = {}): DesktopBridge & { saved: StoredHost[] } => {
   const saved: StoredHost[] = [];
   return {
     saved,
     hosts: {
       list: () => Promise.resolve([...saved]),
       save: (entry) => {
+        if (failSaves) return Promise.reject(new Error("save failed"));
         const index = saved.findIndex((each) => each.hostKey === entry.hostKey);
         if (index === -1) saved.push(entry);
         else saved[index] = entry;
@@ -67,29 +68,81 @@ describe("browser host store", () => {
 });
 
 describe("desktop host store", () => {
-  it("migrates a legacy localStorage device into the bridge once", async () => {
+  it("marks multiHost and migrates a legacy localStorage device into the bridge", async () => {
     const bridge = fakeBridge();
     window.pinomadDesktop = bridge;
     const legacy = host();
     localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
 
     const store = hostStore();
+    expect(store.multiHost).toBe(true);
     expect(await store.list()).toEqual([legacy]);
     expect(bridge.saved).toEqual([legacy]);
     expect(localStorage.getItem(DEVICE_KEY)).toBeNull();
   });
 
-  it("does not migrate when the bridge already holds hosts", async () => {
+  it("merges a legacy device into a bridge that already holds other hosts", async () => {
     const bridge = fakeBridge();
-    const existing = host();
+    const existing = host("ws://10.0.0.9:7420/secure");
     bridge.saved.push(existing);
     window.pinomadDesktop = bridge;
-    localStorage.setItem(DEVICE_KEY, JSON.stringify(host()));
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
 
     const store = hostStore();
-    expect(await store.list()).toEqual([existing]);
-    // The stale browser key stays put rather than silently dropping it — the
-    // desktop path never reads it again either way.
-    expect(bridge.saved).toEqual([existing]);
+    expect(await store.list()).toEqual([existing, legacy]);
+    expect(bridge.saved).toEqual([existing, legacy]);
+    expect(localStorage.getItem(DEVICE_KEY)).toBeNull();
+  });
+
+  it("keeps the bridge's copy of a host the legacy device also names", async () => {
+    const bridge = fakeBridge();
+    const newer = host();
+    bridge.saved.push(newer);
+    window.pinomadDesktop = bridge;
+    // Same hostKey, an older privateKey — the encrypted list's entry wins.
+    const legacy = { url: "ws://127.0.0.1:7420/secure", hostKey: newer.hostKey, privateKey: toBase64Url(generateKeyPair().privateKey) };
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    expect(await store.list()).toEqual([newer]);
+    expect(bridge.saved).toEqual([newer]);
+    expect(localStorage.getItem(DEVICE_KEY)).toBeNull();
+  });
+
+  it("runs the migration once even for concurrent list calls", async () => {
+    const bridge = fakeBridge();
+    window.pinomadDesktop = bridge;
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    const [first, second] = await Promise.all([store.list(), store.list()]);
+    expect(first).toEqual([legacy]);
+    expect(second).toEqual([legacy]);
+  });
+
+  it("serves an unsaveable legacy device for the session and keeps it for next launch", async () => {
+    const bridge = fakeBridge({ failSaves: true });
+    window.pinomadDesktop = bridge;
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    expect(await store.list()).toEqual([legacy]);
+    expect(bridge.saved).toEqual([]);
+    expect(localStorage.getItem(DEVICE_KEY)).toBe(JSON.stringify(legacy));
+  });
+
+  it("does not resurrect a migrated host that was removed", async () => {
+    const bridge = fakeBridge();
+    window.pinomadDesktop = bridge;
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    await store.list();
+    await store.remove(legacy.hostKey);
+    expect(await hostStore().list()).toEqual([]);
   });
 });

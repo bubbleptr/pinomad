@@ -13,7 +13,7 @@ import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { connectTo, followFirst, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import { generateKeyPair } from "@pinomad/protocol/noise.ts";
+import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -1744,4 +1744,77 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
   expect(sockets.a).toBe(6);
+});
+
+it("warns and retries when saving a pairing fails on the desktop bridge", async () => {
+  const webOrigin = await startWeb();
+  const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const tokenA = await connectTo(defer, hostA);
+  const { url: pairA } = await tokenA.controller.createPairing();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  // The preload-bridge stand-in, but save() rejects until the test allows it.
+  await context.addInitScript(() => {
+    const KEY = "test.desktopHosts";
+    let failSaves = true;
+    const read = (): { hostKey: string }[] => JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const write = (hosts: { hostKey: string }[]): void => {
+      localStorage.setItem(KEY, JSON.stringify(hosts));
+    };
+    (window as unknown as { pinomadDesktop: unknown }).pinomadDesktop = {
+      hosts: {
+        list: () => Promise.resolve(read()),
+        save: (host: { hostKey: string }) => {
+          if (failSaves) return Promise.reject(new Error("keychain locked"));
+          write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
+          return Promise.resolve();
+        },
+        remove: (hostKey: string) => {
+          write(read().filter((each) => each.hostKey !== hostKey));
+          return Promise.resolve();
+        },
+      },
+    };
+    (window as unknown as { testAllowSaves: () => void }).testAllowSaves = () => {
+      failSaves = false;
+    };
+  });
+  const page = await context.newPage();
+  const sockets = { a: 0 };
+  page.on("websocket", (ws) => {
+    if (ws.url() === `${hostA.url}/secure`) sockets.a += 1;
+  });
+
+  await page.goto(webOrigin);
+  await page.getByText("No host link").waitFor();
+  await page.getByLabel("Pairing link").fill(pairA);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  const composer = page.getByRole("textbox");
+  await composer.waitFor();
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("host A answer", { exact: true }).waitFor();
+
+  // The workbench stays connected — only persisting the pairing failed.
+  const banner = page.getByText("This pairing wasn't saved", { exact: true });
+  await banner.waitFor();
+  expect(sockets.a).toBe(2);
+
+  await page.evaluate(() => (window as unknown as { testAllowSaves: () => void }).testAllowSaves());
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => banner.count()).toBe(0);
+
+  // The retried save persisted the very identity the host registered.
+  const saved = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("test.desktopHosts") ?? "[]") as { privateKey: string }[],
+  );
+  expect(saved).toHaveLength(1);
+  await waitForView(tokenA.view, (view) => view.devices.length === 1);
+  expect(toBase64Url(keyPairFromPrivate(fromBase64Url(saved[0]!.privateKey)).publicKey)).toBe(
+    tokenA.view.current().devices[0]!.publicKey,
+  );
 });

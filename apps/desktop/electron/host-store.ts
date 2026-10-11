@@ -67,17 +67,23 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
     let data: Buffer;
     try {
       data = await readFile(file);
-    } catch {
-      return [];
+    } catch (error) {
+      // Only a missing file means "no hosts yet". Any other read failure must
+      // surface: returning [] here would let a save overwrite the real list.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(cipher.decrypt(data));
     } catch {
       // Never delete: move the blob aside so the next save can start over
-      // without losing whatever it was.
-      await rename(file, `${file}.unreadable`).catch(() => {});
-      console.error(`pinomad: ${FILE} could not be decrypted — moved aside to ${FILE}.unreadable`);
+      // without losing whatever it was. A timestamp keeps every backup, and a
+      // failed move must reject — returning [] would let a write replace the
+      // undecryptable original.
+      const backup = `${file}.unreadable-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      await rename(file, backup);
+      console.error(`pinomad: ${FILE} could not be decrypted — moved aside to ${backup}`);
       return [];
     }
     const hosts = (parsed as { hosts?: unknown } | null)?.hosts;

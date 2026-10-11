@@ -1,9 +1,9 @@
 // The paired-host list behind safeStorage, exercised with a fake cipher and a
 // temp dir — no Electron, no keychain.
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { createHostStore, type Cipher, type StoredHost } from "../electron/host-store.ts";
@@ -36,6 +36,9 @@ const host = (url = "ws://127.0.0.1:7420/secure"): StoredHost => ({
   hostKey: toBase64Url(generateKeyPair().publicKey),
   privateKey: toBase64Url(generateKeyPair().privateKey),
 });
+
+// Root ignores permission bits, so the chmod-based tests can't exercise errors.
+const isRoot = process.getuid?.() === 0;
 
 describe("createHostStore", () => {
   it("round-trips saved hosts, and the file holds no plaintext keys", async () => {
@@ -81,11 +84,61 @@ describe("createHostStore", () => {
     const { store, dir } = await tempStore();
     await writeFile(join(dir, "hosts.bin"), "not a ciphertext");
     expect(await store.list()).toEqual([]);
-    await stat(join(dir, "hosts.bin.unreadable"));
+
+    const backups = (await readdir(dir)).filter((name) => name.startsWith("hosts.bin.unreadable-"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(dir, backups[0]!), "utf8")).toBe("not a ciphertext");
 
     const a = host();
     await store.save(a);
     expect(await store.list()).toEqual([a]);
+  });
+
+  it("keeps a separate backup for every corruption", async () => {
+    const { store, dir } = await tempStore();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-11T00:00:00.000Z"));
+      await writeFile(join(dir, "hosts.bin"), "junk one");
+      expect(await store.list()).toEqual([]);
+      vi.setSystemTime(new Date("2026-10-11T00:00:01.000Z"));
+      await writeFile(join(dir, "hosts.bin"), "junk two");
+      expect(await store.list()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const backups = (await readdir(dir)).filter((name) => name.startsWith("hosts.bin.unreadable-")).sort();
+    expect(backups).toHaveLength(2);
+    expect(await readFile(join(dir, backups[0]!), "utf8")).toBe("junk one");
+    expect(await readFile(join(dir, backups[1]!), "utf8")).toBe("junk two");
+  });
+
+  it.skipIf(isRoot)("fails reads instead of letting a save overwrite the real list", async () => {
+    const { store, dir } = await tempStore();
+    const a = host();
+    await store.save(a);
+    const file = join(dir, "hosts.bin");
+    await chmod(file, 0o000);
+    try {
+      await expect(store.save(host("ws://10.0.0.9:7420/secure"))).rejects.toThrow();
+      await expect(store.list()).rejects.toThrow();
+    } finally {
+      await chmod(file, 0o644);
+    }
+    expect(await store.list()).toEqual([a]);
+  });
+
+  it.skipIf(isRoot)("fails instead of writing over an undecryptable file it cannot move aside", async () => {
+    const { store, dir } = await tempStore();
+    await writeFile(join(dir, "hosts.bin"), "junk bytes");
+    await chmod(dir, 0o555);
+    try {
+      await expect(store.list()).rejects.toThrow();
+    } finally {
+      await chmod(dir, 0o755);
+    }
+    expect(await readFile(join(dir, "hosts.bin"), "utf8")).toBe("junk bytes");
   });
 
   it("drops invalid entries from a readable file", async () => {

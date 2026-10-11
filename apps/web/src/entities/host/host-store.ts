@@ -38,25 +38,33 @@ const browserStore: HostStore = {
 };
 
 function desktopStore(bridge: DesktopBridge): HostStore {
-  // One-shot migration: a device paired before multi-host existed moves from
-  // localStorage into the encrypted list. Keeping the session usable even if
-  // the save fails — the next launch retries.
-  let migrated = false;
+  // One-shot migration, shared across concurrent list() calls: a device paired
+  // before multi-host existed merges into the encrypted list and its legacy
+  // key is retired. A failed save keeps the key so the next launch retries —
+  // for this session the entry is merged into every list() answer instead.
+  let migration: Promise<StoredHost | undefined> | undefined;
+  const migrate = async (): Promise<StoredHost | undefined> => {
+    const legacy = storedDevice(localStorage.getItem(DEVICE_KEY));
+    if (legacy === undefined) return undefined;
+    try {
+      const hosts = await bridge.hosts.list();
+      // The encrypted list wins for the same host: legacy may hold an older key.
+      if (!hosts.some((entry) => entry.hostKey === legacy.hostKey)) await bridge.hosts.save(legacy);
+      localStorage.removeItem(DEVICE_KEY);
+      return undefined;
+    } catch (error) {
+      console.error("Could not migrate the stored device into the desktop host list", error);
+      return legacy;
+    }
+  };
   return {
     multiHost: true,
     list: async () => {
+      const unsaved = await (migration ??= migrate());
       const hosts = await bridge.hosts.list();
-      if (migrated || hosts.length > 0) return hosts;
-      migrated = true;
-      const legacy = storedDevice(localStorage.getItem(DEVICE_KEY));
-      if (legacy === undefined) return hosts;
-      try {
-        await bridge.hosts.save(legacy);
-        localStorage.removeItem(DEVICE_KEY);
-      } catch (error) {
-        console.error("Could not migrate the stored device into the desktop host list", error);
-      }
-      return [legacy];
+      return unsaved === undefined || hosts.some((entry) => entry.hostKey === unsaved.hostKey)
+        ? hosts
+        : [...hosts, unsaved];
     },
     save: (host) => bridge.hosts.save(host),
     remove: (hostKey) => bridge.hosts.remove(hostKey),
