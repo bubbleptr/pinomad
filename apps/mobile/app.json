@@ -11,7 +11,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "build.kieran.pinomad",
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "PiNomad connects to a host on your local network or tailnet."
+        "NSLocalNetworkUsageDescription": "PiNomad connects to a host on your local network or tailnet.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "plugins": [
