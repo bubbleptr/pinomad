@@ -1,12 +1,15 @@
-import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
+import { autoUpdater } from "electron-updater";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { installAppMenu } from "./app-menu.ts";
+import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
 import { createHostStore, type StoredHost } from "./host-store.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
+import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
+import { updateEventChannel } from "../../web/src/entities/app-update/update-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
@@ -69,6 +72,18 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+const devEntry = process.env.ELECTRON_RENDERER_URL;
+
+/** Every privileged invoke channel shares this caller check. */
+function isOurRendererFrame(event: IpcMainInvokeEvent): boolean {
+  // Only the window's top-level frame may reach privileged IPC. Subframes get
+  // no preload today; this keeps an embedded frame out even if that changes.
+  if (event.senderFrame === null || event.senderFrame !== event.sender.mainFrame) return false;
+  const url = event.senderFrame.url;
+  if (url === APP_ORIGIN || url.startsWith(`${APP_ORIGIN}/`)) return true;
+  return devEntry !== undefined && (url === devEntry || url.startsWith(`${devEntry}/`));
+}
+
 /**
  * The paired-host list lives in the main process behind safeStorage; the
  * sandboxed renderer reaches it only through these invoke channels. Each
@@ -81,18 +96,9 @@ function installHostStoreIpc(): void {
     encrypt: (plain) => safeStorage.encryptString(plain),
     decrypt: (data) => safeStorage.decryptString(data),
   });
-  const devEntry = process.env.ELECTRON_RENDERER_URL;
-  const ours = (event: IpcMainInvokeEvent): boolean => {
-    // Only the window's top-level frame may touch device keys. Subframes get no
-    // preload today; this keeps an embedded frame out even if that changes.
-    if (event.senderFrame === null || event.senderFrame !== event.sender.mainFrame) return false;
-    const url = event.senderFrame.url;
-    if (url === APP_ORIGIN || url.startsWith(`${APP_ORIGIN}/`)) return true;
-    return devEntry !== undefined && (url === devEntry || url.startsWith(`${devEntry}/`));
-  };
   const handle = <A, R>(fn: (arg: A) => Promise<R>) => {
     return (event: IpcMainInvokeEvent, arg: A): Promise<R> => {
-      if (!ours(event)) return Promise.reject(new Error("host store is only reachable from the bundled renderer"));
+      if (!isOurRendererFrame(event)) return Promise.reject(new Error("host store is only reachable from the bundled renderer"));
       if (!safeStorage.isEncryptionAvailable()) return Promise.reject(new Error("safeStorage encryption is unavailable"));
       return fn(arg);
     };
@@ -100,6 +106,23 @@ function installHostStoreIpc(): void {
   ipcMain.handle("pinomad:hosts:list", handle(() => hosts.list()));
   ipcMain.handle("pinomad:hosts:save", handle((host: StoredHost) => hosts.save(host)));
   ipcMain.handle("pinomad:hosts:remove", handle((hostKey: string) => hosts.remove(hostKey)));
+}
+
+/**
+ * The updater's invoke channels share the host store's caller check but not
+ * its safeStorage requirement — read-only status and a restart ask for no
+ * keychain. Status changes are pushed over `pinomad:updates:event` instead.
+ */
+function installUpdateIpc(updater: AppUpdater): void {
+  const handle = (fn: () => unknown) => {
+    return (event: IpcMainInvokeEvent): Promise<unknown> => {
+      if (!isOurRendererFrame(event)) return Promise.reject(new Error("updates are only reachable from the bundled renderer"));
+      return Promise.resolve(fn());
+    };
+  };
+  ipcMain.handle("pinomad:updates:status", handle(() => updater.getStatus()));
+  ipcMain.handle("pinomad:updates:check", handle(() => updater.check()));
+  ipcMain.handle("pinomad:updates:install", handle(() => updater.install()));
 }
 
 function openPairingLink(fragment: string): void {
@@ -153,7 +176,32 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
-    installAppMenu(Menu);
+    // Unpackaged runs (today's desktop:e2e included) are already disabled by
+    // !isPackaged; PINOMAD_E2E exists in case an E2E ever drives a packaged
+    // build, where isPackaged is true and it would hit GitHub 10s in.
+    const updater = createAppUpdater({
+      // electron-updater's typed `on` only accepts its event map; the updater
+      // seam takes a stringly EventEmitter-shaped client so tests inject one.
+      autoUpdater: autoUpdater as AutoUpdaterLike,
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      disabledReason:
+        process.env.PINOMAD_E2E === "1" ? "Updates are disabled during end-to-end tests." : undefined,
+    });
+    updater.subscribe((status) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(updateEventChannel, status);
+      }
+    });
+    installUpdateIpc(updater);
+    installAppMenu({
+      menu: Menu,
+      updater,
+      onCheckForUpdates: () =>
+        reportUpdateCheck(updater, (message) => {
+          void dialog.showMessageBox({ type: "info", message });
+        }),
+    });
     installHostStoreIpc();
     protocol.handle(APP_SCHEME, async (request) => {
       const file = rendererFilePath(rendererDirectory, request.url);
@@ -171,5 +219,6 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     createMainWindow();
+    updater.start();
   });
 }

@@ -36,6 +36,9 @@ try {
   // The renderer's paired device lives in userData localStorage; isolate it
   // so a previous run's pairing can't skip the no-link screen.
   env["PINOMAD_USER_DATA_DIR"] = await mkdtemp(join(tmpdir(), "pinomad-desktop-e2e-"));
+  // The unpackaged build already disables the updater via !app.isPackaged;
+  // the flag is belt-and-braces for an E2E that ever drives a packaged app.
+  env["PINOMAD_E2E"] = "1";
   const app = await electron.launch({ args: ["."], cwd: appDir, env });
   defer(() => app.close());
   const page = await app.firstWindow();

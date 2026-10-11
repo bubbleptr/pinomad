@@ -25,6 +25,7 @@ import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/prot
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { deviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { ACTIVE_HOST_KEY, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
+import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
@@ -360,23 +361,37 @@ export function RemoteWorkbench({
  */
 const RELOADED_KEY = "pinomad.reloadedForProtocol";
 
-function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: ProtocolMismatch }) {
+export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: ProtocolMismatch }) {
+  const update = useAppUpdate();
+  const hasUpdater = window.pinomadDesktop?.updates !== undefined;
   const [reloading] = useState(() => {
+    // The desktop bundle is local: a reload cannot fetch a newer client, so a
+    // client-older host triggers an update check below instead. The browser
+    // keeps the reload-once self-heal for pages the host itself served.
+    if (mismatch.direction === "client-older" && hasUpdater) return false;
     if (!servedByHost(wsUrl, window.location)) return false;
     if (sessionStorage.getItem(RELOADED_KEY) === String(mismatch.hostMajor)) return false;
     sessionStorage.setItem(RELOADED_KEY, String(mismatch.hostMajor));
     window.location.reload();
     return true;
   });
+  useEffect(() => {
+    // check() itself dedupes an in-flight check or a finished download.
+    if (mismatch.direction === "client-older") void window.pinomadDesktop?.updates?.check();
+  }, [mismatch.direction]);
   if (reloading) return null;
   const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
   return mismatch.direction === "client-older" ? (
-    <Banner
-      status="error"
-      container="section"
-      title="Client out of date"
-      description={`The host speaks a newer protocol. Reload the page, or update the app.${version}`}
-    />
+    // Same gap the Centered screens use between the banner and the switcher.
+    <VStack gap={4}>
+      <Banner
+        status="error"
+        container="section"
+        title="Client out of date"
+        description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
+      />
+      {hasUpdater ? <UpdateStatusNote update={update} /> : null}
+    </VStack>
   ) : (
     <Banner
       status="error"
@@ -385,6 +400,34 @@ function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: Protoco
       description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
     />
   );
+}
+
+/** Live update status under the client-out-of-date banner, desktop only. */
+function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
+  if (update === undefined) return <Text type="supporting">Checking for updates…</Text>;
+  const { status } = update;
+  switch (status.state) {
+    case "checking":
+      return <Text type="supporting">Checking for updates…</Text>;
+    case "available":
+    case "downloading": {
+      const percent = status.progressPercent === undefined ? "" : ` ${Math.round(status.progressPercent)}%`;
+      return <Text type="supporting">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</Text>;
+    }
+    case "ready":
+      return <Button label="Restart to update" variant="primary" onClick={() => update.install()} />;
+    case "error":
+      return (
+        <HStack gap={2} vAlign="center">
+          <Text type="supporting">{status.message}</Text>
+          <Button label="Retry" variant="secondary" onClick={() => update.check()} />
+        </HStack>
+      );
+    case "disabled":
+      return <Text type="supporting">{status.reason ?? "Updates are unavailable in this build."}</Text>;
+    default:
+      return <Text type="supporting">{`PiNomad ${status.currentVersion} is up to date; no newer release found.`}</Text>;
+  }
 }
 
 function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode }) {

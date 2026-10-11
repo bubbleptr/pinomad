@@ -1818,3 +1818,158 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
     tokenA.view.current().devices[0]!.publicKey,
   );
 });
+
+// A preload-bridge stand-in with an `updates` member the test steers through
+// `__setUpdateStatus`; `__updateCalls` records every invoke.
+const fakeUpdatesBridge = `{
+  const KEY = "test.desktopHosts";
+  const calls = [];
+  const listeners = new Set();
+  let status = { state: "idle", currentVersion: "0.1.0" };
+  const w = window;
+  w.__updateCalls = calls;
+  w.__setUpdateStatus = (next) => {
+    status = next;
+    for (const listener of [...listeners]) listener(next);
+  };
+  const read = () => JSON.parse(localStorage.getItem(KEY) ?? "[]");
+  const write = (hosts) => {
+    localStorage.setItem(KEY, JSON.stringify(hosts));
+  };
+  w.pinomadDesktop = {
+    hosts: {
+      list: () => Promise.resolve(read()),
+      save: (host) => {
+        write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
+        return Promise.resolve();
+      },
+      remove: (hostKey) => {
+        write(read().filter((each) => each.hostKey !== hostKey));
+        return Promise.resolve();
+      },
+    },
+    updates: {
+      status: () => Promise.resolve().then(() => status),
+      check: () => {
+        calls.push("check");
+        return Promise.resolve().then(() => status);
+      },
+      install: () => {
+        calls.push("install");
+        return Promise.resolve().then(() => status);
+      },
+      onStatus: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  };
+}`;
+
+it("offers Restart to update in the sidebar when the desktop bridge has one downloaded", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  await context.addInitScript(fakeUpdatesBridge);
+  const page = await context.newPage();
+  await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
+  await page.getByRole("textbox").waitFor();
+
+  // Nothing until the download completes.
+  expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
+  await page.evaluate(
+    () => (window as unknown as { __setUpdateStatus: (s: unknown) => void }).__setUpdateStatus({
+      state: "ready",
+      currentVersion: "0.1.0",
+      availableVersion: "0.2.0",
+    }),
+  );
+  const restart = page.getByText("Restart to update", { exact: true });
+  await restart.waitFor();
+  await page.screenshot({ path: "/tmp/pinomad-update-ready-sidebar.png" });
+  await restart.click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls)).toContain(
+    "install",
+  );
+});
+
+it("checks for updates instead of reloading on a desktop client-older mismatch", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  await context.addInitScript(fakeUpdatesBridge);
+  // Bump the hello's protocol major so the host looks newer than this client.
+  // The token path sends frames in plaintext; the secure channel's encrypted
+  // blobs fail JSON.parse and pass through untouched.
+  await context.addInitScript(() => {
+    const Native = window.WebSocket;
+    class Rewriting extends Native {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+      }
+      set onmessage(fn: ((this: WebSocket, ev: MessageEvent) => unknown) | null) {
+        super.onmessage =
+          fn === null
+            ? null
+            : (event: MessageEvent) => {
+                let data = event.data;
+                if (typeof data === "string" && data.includes('"hello"')) {
+                  try {
+                    const frame = JSON.parse(data) as { type?: string; protocol?: { major: number } };
+                    if (frame.type === "hello" && frame.protocol) {
+                      frame.protocol = { ...frame.protocol, major: frame.protocol.major + 1 };
+                      data = JSON.stringify(frame);
+                    }
+                  } catch {
+                    // Not a JSON frame — pass it through.
+                  }
+                }
+                fn.call(this, new MessageEvent("message", { data }));
+              };
+      }
+      get onmessage() {
+        return super.onmessage;
+      }
+    }
+    window.WebSocket = Rewriting;
+  });
+  const page = await context.newPage();
+  await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
+
+  await page.getByText("Client out of date", { exact: true }).waitFor();
+  // The desktop bundle is local: an update check fires instead of the
+  // reload-once the browser would take, so the marker never lands.
+  expect(await page.evaluate(() => sessionStorage.getItem("pinomad.reloadedForProtocol"))).toBeNull();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls))
+    .toContain("check");
+
+  await page.evaluate(
+    () => (window as unknown as { __setUpdateStatus: (s: unknown) => void }).__setUpdateStatus({
+      state: "downloading",
+      currentVersion: "0.1.0",
+      availableVersion: "0.2.0",
+      progressPercent: 40,
+    }),
+  );
+  await page.getByText(/Downloading PiNomad 0\.2\.0/).waitFor();
+  await page.screenshot({ path: "/tmp/pinomad-mismatch-downloading.png" });
+
+  await page.evaluate(
+    () => (window as unknown as { __setUpdateStatus: (s: unknown) => void }).__setUpdateStatus({
+      state: "ready",
+      currentVersion: "0.1.0",
+      availableVersion: "0.2.0",
+    }),
+  );
+  await page.getByRole("button", { name: "Restart to update" }).waitFor();
+  await page.screenshot({ path: "/tmp/pinomad-mismatch-ready.png" });
+});

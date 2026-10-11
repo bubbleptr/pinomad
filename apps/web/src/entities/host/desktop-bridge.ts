@@ -1,3 +1,4 @@
+import type { UpdateStatus } from "../app-update/update-protocol.ts";
 import type { StoredHost } from "./host-store.ts";
 
 /**
@@ -11,6 +12,16 @@ export interface DesktopBridge {
     list(): Promise<StoredHost[]>;
     save(host: StoredHost): Promise<void>;
     remove(hostKey: string): Promise<void>;
+  };
+  /**
+   * Electron-updater control, owned by main. Optional only because the
+   * browser has no bridge at all — inside the desktop app it always exists.
+   */
+  readonly updates?: {
+    status(): Promise<UpdateStatus>;
+    check(): Promise<UpdateStatus>;
+    install(): Promise<UpdateStatus>;
+    onStatus(listener: (status: UpdateStatus) => void): () => void;
   };
 }
 
