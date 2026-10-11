@@ -21,7 +21,7 @@ bunx --bun eas-cli build -p ios --profile production
 bunx --bun eas-cli submit -p ios --latest
 ```
 
-`submit` 会确保 App Store Connect 上的 App 记录存在：不存在则按 bundle id（`com.bubbleptr.pinomad.mobile`）创建，并交互询问 app 名称、公司名（首次必填）和 SKU；要跳过这一步可以在 `submit.production` 里配 `ascAppId`。`--auto-testflight-setup` 会自动建好一个内部 TestFlight 测试组并放行该构建。
+`submit` 会确保 App Store Connect 上的 App 记录存在：不存在则按 bundle id（`build.kieran.pinomad`，和维护者其他 Expo 项目同一前缀）创建，并交互询问 app 名称、公司名（首次必填）和 SKU；要跳过这一步可以在 `submit.production` 里配 `ascAppId`。`--auto-testflight-setup` 会自动建好一个内部 TestFlight 测试组并放行该构建。
 
 构建出现在 TestFlight 后，在 App Store Connect → TestFlight → 内部测试里把测试员加入 App Store Connect Users 组即可（内部测试无需 Beta 审核）。
 

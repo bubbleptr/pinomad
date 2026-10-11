@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.bubbleptr.pinomad.mobile",
+      "bundleIdentifier": "build.kieran.pinomad",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "PiNomad connects to a host on your local network or tailnet."
       }
