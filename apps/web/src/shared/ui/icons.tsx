@@ -9,6 +9,7 @@ import {
   BarChartIcon,
   BotIcon,
   BoxIcon,
+  BubbleChatIcon,
   Cancel01Icon,
   ChatAddIcon,
   ChevronDownIcon,
@@ -31,6 +32,8 @@ import {
   GitBranchIcon,
   Globe02Icon,
   ImageIcon as HugeImageIcon,
+  InformationCircleIcon,
+  KeyIcon,
   LayoutAlignLeftIcon,
   LinkSquare02Icon,
   ListTreeIcon,
@@ -81,6 +84,7 @@ export const Bot = iconComponent(RobotIcon);
 export const Box = iconComponent(BoxIcon);
 export const Cancel = iconComponent(Cancel01Icon);
 export const ChatAdd = iconComponent(ChatAddIcon);
+export const ChatBubble = iconComponent(BubbleChatIcon);
 export const ChevronDown = iconComponent(ChevronDownIcon);
 export const ChevronRight = iconComponent(ChevronRightIcon);
 export const Check = iconComponent(Tick02Icon);
@@ -103,6 +107,8 @@ export const FolderOpenState = iconComponent(Folder02Icon);
 export const GitBranch = iconComponent(GitBranchIcon);
 export const Globe = iconComponent(Globe02Icon);
 export const ImageIcon = iconComponent(HugeImageIcon);
+export const Info = iconComponent(InformationCircleIcon);
+export const Key = iconComponent(KeyIcon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
 export const ListTree = iconComponent(ListTreeIcon);

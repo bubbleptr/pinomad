@@ -44,7 +44,14 @@ beforeEach(() => {
 });
 
 describe("SidebarFooter restart button", () => {
-  const footer = <SidebarFooter view={{ connection: "connected" } as never} onOpenDevices={() => {}} onPairHost={() => {}} />;
+  const footer = (
+    <SidebarFooter
+      view={{ connection: "connected" } as never}
+      onOpenDevices={() => {}}
+      onOpenSettings={() => {}}
+      onPairHost={() => {}}
+    />
+  );
 
   it("shows Restart to update only once an update is downloaded", async () => {
     const updates = fakeUpdates({ state: "idle", currentVersion: "0.1.0" });

@@ -513,4 +513,26 @@ describe("RemoteDurable minor-version gating", () => {
       remote.close();
     }
   });
+
+  it("exposes the hello's host identity as view.host; version is absent on a source checkout", async () => {
+    const { transport } = fakeTransport([{}], { hostVersion: "1.2.3" });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(remote.view.current().host).toEqual({
+        version: "1.2.3",
+        protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor },
+      });
+    } finally {
+      remote.close();
+    }
+
+    const source = await connectRemoteDurable({ transport: fakeTransport([{}]).transport });
+    try {
+      expect(source.view.current().host).toEqual({
+        protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor },
+      });
+    } finally {
+      source.close();
+    }
+  });
 });
