@@ -1,6 +1,6 @@
 # ADR 索引
 
-ADR 只记录同时满足三条的决策：难以回退、没有上下文会让人意外、确实有过取舍。分期计划和待办放在 [路线图](../roadmap.md)，用法放在仓库根目录的 README 和 `docs/` 下的使用文档（[使用说明](../usage.md)、[远程访问](../remote-access.md)、[常驻运行](../service.md)），术语放在 `CONTEXT.md`。
+ADR 只记录同时满足三条的决策：难以回退、没有上下文会让人意外、确实有过取舍。分期计划和待办放在 [路线图](../roadmap.md)，用法放在仓库根目录的 README 和 `docs/` 下的使用文档（[使用说明](../usage.md)、[远程访问](../remote-access.md)、[常驻运行](../service.md)），术语放在 `GLOSSARY.md`。
 
 已接受的 ADR 不改写决策；被后来的 ADR 取代或补全时，在原文标注并在这里记录。
 

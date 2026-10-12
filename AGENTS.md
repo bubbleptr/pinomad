@@ -1,6 +1,6 @@
 # PiNomad — Agent 说明
 
-架构决策和背景在 `docs/adr/`（0001-0021，索引见 `docs/adr/README.md`），领域术语在 `CONTEXT.md`，改动前先读。计划和待办只记在 `docs/roadmap.md`：做完一项就更新它。
+架构决策和背景在 `docs/adr/`（0001-0021，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办只记在 `docs/roadmap.md`：做完一项就更新它。
 
 新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 roadmap，用法进 README（中英两份 `README.md` / `README.zh-CN.md` 要同步）和 `docs/` 下的使用文档（`usage.md`、`remote-access.md`、`service.md`），不写进 ADR。新增 ADR 时同步更新索引。
 
@@ -34,3 +34,17 @@ App 图标源文件是 `apps/desktop/build/icon.icon`，用 Xcode 自带的 Icon
 - 一个数据目录（默认 `~/.pinomad`，`--data-dir` / `PINOMAD_DATA_DIR` 覆盖）同时只能有一个宿主进程；目录锁会拒绝第二个。
 - `@earendil-works/*` 锁精确版本（当前 `1.0.4`，ADR-0002），升级要显式评审。
 - 服务命令（`bun run service -- …`，ADR-0009）操作真实的服务管理器；测试里绝不要 `install` 真正的服务，开发用前台的 `bun run host` / `bun run start`。
+
+## Agent skills
+
+### Issue tracker
+
+Issue 记在 GitHub Issues（bubbleptr/pinomad），用 `gh` 操作。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+用默认的五个标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文：术语表是根目录的 `GLOSSARY.md`，ADR 在 `docs/adr/`。见 `docs/agents/domain.md`。

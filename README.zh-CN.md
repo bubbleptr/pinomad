@@ -87,7 +87,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | [常驻运行](docs/service.md) | `service` 和 `upgrade` 命令，各平台注意事项 |
 | [架构决策](docs/adr/README.md) | 为什么这样设计 |
 | [路线图](docs/roadmap.md) | 做完了什么、接下来做什么 |
-| [术语表](CONTEXT.md) | 领域术语 |
+| [术语表](GLOSSARY.md) | 领域术语 |
 
 ## 参与开发
 

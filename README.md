@@ -87,7 +87,7 @@ These docs are written in Chinese.
 | [Running as a service](docs/service.md) | `service` and `upgrade` commands, platform notes |
 | [Architecture decisions](docs/adr/README.md) | Why things are the way they are |
 | [Roadmap](docs/roadmap.md) | What's done and what's next |
-| [Glossary](CONTEXT.md) | Domain terms |
+| [Glossary](GLOSSARY.md) | Domain terms |
 
 ## Contributing
 

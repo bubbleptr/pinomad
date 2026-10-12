@@ -1,6 +1,6 @@
 # 参与开发
 
-架构决策见 [`docs/adr/`](docs/adr/README.md)，术语见 [`CONTEXT.md`](CONTEXT.md)，计划和待办见 [`docs/roadmap.md`](docs/roadmap.md)；给 agent 的约定在 [`AGENTS.md`](AGENTS.md)。
+架构决策见 [`docs/adr/`](docs/adr/README.md)，术语见 [`GLOSSARY.md`](GLOSSARY.md)，计划和待办见 [`docs/roadmap.md`](docs/roadmap.md)；给 agent 的约定在 [`AGENTS.md`](AGENTS.md)。
 
 ## 从源码运行
 
