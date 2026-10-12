@@ -424,4 +424,22 @@ describe("tool result details and changes", () => {
     expect(small.patch.length).toBeLessThanOrEqual(2000);
     expect(small.patch).toContain("big.txt");
   });
+
+  it("emits a/ b/ prefixes regardless of the user's diff prefix config", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    await git(repoDir, ["config", "diff.mnemonicPrefix", "true"]);
+    await git(repoDir, ["config", "diff.noprefix", "true"]);
+    const base = await git(repoDir, ["rev-parse", "HEAD"]);
+    await writeFile(join(repoDir, "tracked.txt"), "modified\n");
+    await writeFile(join(repoDir, "added.txt"), "added\n");
+
+    const { patch } = await changesOf(repoDir, base);
+    expect(patch).toContain("diff --git a/tracked.txt b/tracked.txt");
+    expect(patch).toContain("--- a/tracked.txt");
+    expect(patch).toContain("+++ b/tracked.txt");
+    expect(patch).toContain("diff --git a/added.txt b/added.txt");
+  });
 });

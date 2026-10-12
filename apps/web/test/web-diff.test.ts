@@ -38,7 +38,7 @@ async function realDiff(): Promise<string> {
     await writeFile(join(repo, "blob.dat"), Buffer.from([0, 1, 2, 3, 0, 255]));
     await writeFile(join(repo, "comments.sql"), "SELECT 1\n++ x\nSELECT 2\n");
     await git(repo, ["add", "-A"]);
-    return await git(repo, ["diff", "--cached", "--no-color", "--find-renames", "HEAD"]);
+    return await git(repo, ["diff", "--cached", "--no-color", "--find-renames", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"]);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

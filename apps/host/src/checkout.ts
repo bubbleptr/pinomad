@@ -150,7 +150,11 @@ export async function changesOf(dir: string, base: string, maxBytes = 1024 * 102
   try {
     await git(dir, ["read-tree", "HEAD"], env);
     await git(dir, ["add", "-A"], env);
-    const { stdout } = await git(dir, ["diff", "--cached", "--no-color", "--find-renames", base], env);
+    const { stdout } = await git(
+      dir,
+      ["diff", "--cached", "--no-color", "--find-renames", "--src-prefix=a/", "--dst-prefix=b/", base],
+      env,
+    );
     if (Buffer.byteLength(stdout) <= maxBytes) return { base, patch: stdout, truncated: false };
     // Cut at a line boundary so the patch stays parseable as far as it goes.
     const cut = stdout.slice(0, maxBytes);
