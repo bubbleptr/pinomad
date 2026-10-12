@@ -1,6 +1,7 @@
 // The client contract, after DurableView / DurableViewSource / DurableController in
 // pi's packages/coding-agent/src/experimental/durable/runtime.ts (MIT, Earendil Works).
 // `connection` is the one addition, since a remote view can lose its host.
+// See docs/licenses/pi.md for the upstream notice.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { DeviceEntry } from "./devices.ts";

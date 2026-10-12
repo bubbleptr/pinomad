@@ -1,5 +1,6 @@
 // After createHarnessSettings / configureHarnessHttp / findInitialAgentModel in pi's
 // packages/coding-agent/src/experimental/durable/harness-setup.ts (MIT, Earendil Works).
+// See docs/licenses/pi.md for the upstream notice.
 import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { ModelRef, HarnessSettings } from "@earendil-works/pi-durable";
 import type { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
