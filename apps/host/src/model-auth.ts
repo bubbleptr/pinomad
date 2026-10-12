@@ -6,7 +6,7 @@ import { basename, dirname } from "node:path";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { HostAuth, StoredLogin } from "@pinomad/protocol/auth.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import type { HostValue } from "./host-value.ts";
+import { Published, sameList, type HostValue } from "./host-value.ts";
 import { modelSummaries } from "./pi-setup.ts";
 
 /** Live sources behind the `models`/`auth` streams and the `logout` call. */
@@ -16,36 +16,6 @@ export interface ModelAuth {
   logout(providerId: string): Promise<void>;
   close(): void;
 }
-
-/** A `HostValue` that republishes only when `equal` reports a real change. */
-class Published<T> implements HostValue<T> {
-  readonly #listeners = new Set<(value: T) => void>();
-  readonly #equal: (a: T, b: T) => boolean;
-  #value: T;
-
-  constructor(value: T, equal: (a: T, b: T) => boolean) {
-    this.#value = value;
-    this.#equal = equal;
-  }
-
-  get value(): T {
-    return this.#value;
-  }
-
-  subscribe(listener: (value: T) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  set(next: T): void {
-    if (this.#equal(this.#value, next)) return;
-    this.#value = next;
-    for (const listener of this.#listeners) listener(next);
-  }
-}
-
-const sameList = <T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => boolean): boolean =>
-  a.length === b.length && a.every((entry, index) => same(entry, b[index]!));
 
 const sameModel = (a: ModelSummary, b: ModelSummary): boolean =>
   a.provider === b.provider

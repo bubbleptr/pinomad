@@ -104,7 +104,12 @@ export async function startFauxHost(
     dataDir: dir.path,
     models,
     modelSummaries,
-    initialModel: { provider: model.provider, modelId: model.id },
+    settingsFallback: {
+      defaultModel: () => ({ provider: model.provider, modelId: model.id }),
+      defaultThinkingLevel: () => null,
+      steeringMode: () => "one-at-a-time",
+      followUpMode: () => "one-at-a-time",
+    },
     port,
     ...(browserOrigins === undefined ? {} : { browserOrigins }),
     ...(extensions === undefined

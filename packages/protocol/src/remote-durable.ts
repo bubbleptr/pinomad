@@ -21,6 +21,7 @@ import {
 } from "./frames.ts";
 import { type FrameConnection, type FrameTransport, webSocketTransport } from "./transport.ts";
 import type {
+  ConversationDefaults,
   DurableController,
   DurableView,
   DurableViewSource,
@@ -124,6 +125,8 @@ class RemoteClient {
   #hostMinor = 0;
   /** The last hello's model list — `view.models` until the `models` stream's snapshot arrives. */
   #helloModels: readonly ModelSummary[] = [];
+  /** The last hello's defaults — `view.defaults` until the `settings` stream's snapshot arrives. */
+  #helloDefaults: ConversationDefaults = {};
   #attempt = 0;
   #closed = false;
   #notifying = false;
@@ -249,6 +252,7 @@ class RemoteClient {
         this.#docs = frame.docs;
         this.#toolPresentations = frame.toolPresentations;
         this.#helloModels = frame.models;
+        this.#helloDefaults = frame.defaults ?? {};
         this.#fresh.clear();
         // A host that got older between reconnects no longer covers every host
         // stream; drop the ones it predates together with their values.
@@ -269,7 +273,6 @@ class RemoteClient {
           this.#update({
             session: frame.session,
             toolPresentations: frame.toolPresentations,
-            defaults: frame.defaults ?? {},
             connection: "connected",
           });
           this.#refresh();
@@ -317,7 +320,7 @@ class RemoteClient {
         session: hello.session,
         organized: { chats: [], projects: [] },
         models: this.#host("models") ?? hello.models,
-        defaults: hello.defaults ?? {},
+        defaults: this.#effectiveDefaults(hello.defaults ?? {}),
         notices: [],
         connection: "connected",
         docs: [],
@@ -325,6 +328,7 @@ class RemoteClient {
         devices: [],
         mcp: null,
         auth: null,
+        settings: null,
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -381,6 +385,16 @@ class RemoteClient {
     return this.#values.get(name) as HostStreamValues[K] | undefined;
   }
 
+  /** `view.defaults`: derived from the `settings` stream once it arrived, never back to the hello's after. */
+  #effectiveDefaults(fallback: ConversationDefaults): ConversationDefaults {
+    const settings = this.#host("settings");
+    if (settings === undefined) return fallback;
+    return {
+      ...(settings.defaultModel === null ? {} : { model: settings.defaultModel }),
+      ...(settings.defaultThinkingLevel === null ? {} : { thinkingLevel: settings.defaultThinkingLevel }),
+    };
+  }
+
   /** `id` is `ancestor` or sits under it via `parent` links in the summaries. */
   #descendsFrom(id: ConversationId, ancestor: ConversationId): boolean {
     const summaries = this.#host("conversations") ?? [];
@@ -434,6 +448,8 @@ class RemoteClient {
       devices,
       mcp: this.#host("mcp") ?? null,
       auth: this.#host("auth") ?? null,
+      settings: this.#host("settings") ?? null,
+      defaults: this.#effectiveDefaults(this.#helloDefaults),
     });
   }
 
@@ -597,6 +613,15 @@ class RemoteClient {
             );
           }
           return this.#call("logout", { providerId });
+        }),
+      updateSettings: (patch) =>
+        this.#command(() => {
+          if (!hostSupportsCall(this.#hostMinor, "updateSettings")) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.2); run `pinomad upgrade` on the host",
+            );
+          }
+          return this.#call("updateSettings", { patch });
         }),
     };
   }

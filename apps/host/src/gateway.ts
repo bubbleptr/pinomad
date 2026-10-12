@@ -55,6 +55,7 @@ import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
+import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
@@ -65,7 +66,6 @@ import {
   addProject,
   archive,
   cleanupArchivedWorktrees,
-  type ConversationDefaults,
   createConversation,
   IndexDoc,
   removeProject,
@@ -122,8 +122,8 @@ export interface GatewayOptions {
   readonly browserOrigins?: readonly string[];
   /** Chat checkouts live under `<dataDir>/chats`. */
   readonly dataDir: string;
-  /** Agent settings applied to conversations created through the gateway. */
-  readonly defaults: ConversationDefaults;
+  /** Host settings store (ADR-0021): backs the `settings` stream, `hello.defaults`, `updateSettings`, and new-conversation defaults. */
+  readonly settings: HostSettingsStore;
   /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
   readonly mcp?: HostValue<McpStatus>;
   /**
@@ -793,6 +793,7 @@ class GatewayClient {
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
       models: options.modelAuth?.models ?? constantValue(options.modelSummaries()),
       auth: options.modelAuth?.auth ?? constantValue<HostAuth>({ logins: [] }),
+      settings: options.settings,
     };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
@@ -834,7 +835,7 @@ class GatewayClient {
       ...(packagedVersion === undefined ? {} : { hostVersion: packagedVersion }),
       session: options.session,
       models: options.modelSummaries(),
-      defaults: options.defaults,
+      defaults: settingsDefaults(options.settings.value),
       docs: (options.docs ?? []).map((doc) => ({
         kind: doc.token.definition.kind,
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
@@ -1023,7 +1024,7 @@ class GatewayClient {
             ...(create.model === undefined ? {} : { model: create.model }),
             ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
           },
-          this.#options.defaults,
+          settingsDefaults(this.#options.settings.value),
           this.#options.models,
           context,
         );
@@ -1057,6 +1058,10 @@ class GatewayClient {
         const modelAuth = this.#options.modelAuth;
         if (modelAuth === undefined) throw new Error("Logging out is not available on this host");
         await modelAuth.logout((args as CallMethods["logout"]["args"]).providerId);
+        return null;
+      }
+      case "updateSettings": {
+        await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
         return null;
       }
     }

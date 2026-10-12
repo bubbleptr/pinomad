@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 1
+      "minor": 2
     },
     "session": {
       "id": "<sessionId>",
@@ -66,6 +66,20 @@
   },
   {
     "type": "snapshot",
+    "stream": "settings",
+    "value": {
+      "defaultModel": {
+        "provider": "faux",
+        "modelId": "faux-1"
+      },
+      "defaultThinkingLevel": null,
+      "steeringMode": "one-at-a-time",
+      "followUpMode": "one-at-a-time",
+      "custom": []
+    }
+  },
+  {
+    "type": "snapshot",
     "stream": "index",
     "value": {
       "projects": [],
@@ -103,7 +117,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1791805484714,
+            "createdAt": 1791806572190,
             "requestId": "contract-1"
           }
         ]
@@ -187,7 +201,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791805484716
+        "updatedAt": 1791806572193
       }
     ]
   },
@@ -229,7 +243,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1791805484716
+              "timestamp": 1791806572193
             }
           ],
           "kind": "pi.user",
@@ -346,7 +360,7 @@
                   }
                 }
               ],
-              "timestamp": 1791805484719
+              "timestamp": 1791806572199
             }
           ],
           "kind": "pi.system",
@@ -379,7 +393,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a12fed-eea9-733d-9a31-d7f16599d36d"
+          "sessionId": "01a12ffe-869d-70f3-938f-67df09b2992d"
         },
         "pi.usage": {
           "models": {},
@@ -450,7 +464,7 @@
         ],
         [
           {
-            "callId": "tool:1791805484676:k7hlzyu2hp",
+            "callId": "tool:1791806572141:ewwpf35apzi",
             "name": "write",
             "taskId": 15,
             "status": "pending"
@@ -503,7 +517,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1791805484676:k7hlzyu2hp",
+                    "id": "tool:1791806572141:ewwpf35apzi",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -511,7 +525,7 @@
                     }
                   }
                 ],
-                "api": "faux:1791805484677:bpqp6zdvulp",
+                "api": "faux:1791806572142:dbs6qd6cxls",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -529,7 +543,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1791805484676
+                "timestamp": 1791806572141
               }
             ],
             "kind": "pi.assistant",
@@ -619,7 +633,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791805484676,
+        "updatedAt": 1791806572141,
         "activity": {
           "tool": "write",
           "target": "note.txt"
@@ -678,7 +692,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1791805484676:k7hlzyu2hp",
+                "toolCallId": "tool:1791806572141:ewwpf35apzi",
                 "toolName": "write",
                 "content": [
                   {
@@ -690,7 +704,7 @@
                   "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
                 },
                 "isError": false,
-                "timestamp": 1791805484788
+                "timestamp": 1791806572271
               }
             ],
             "data": {
@@ -820,7 +834,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791805484676
+        "updatedAt": 1791806572141
       }
     ]
   },
@@ -972,7 +986,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1791805484677:bpqp6zdvulp",
+                "api": "faux:1791806572142:dbs6qd6cxls",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -990,7 +1004,7 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1791805484677
+                "timestamp": 1791806572142
               }
             ],
             "kind": "pi.assistant",

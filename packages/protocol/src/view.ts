@@ -9,6 +9,7 @@ import type { DeviceEntry } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
+import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -103,7 +104,7 @@ export interface DurableView {
   readonly checkout?: WorktreeCheckout;
   /** The host's available models: the `models` stream once its snapshot arrived, else the hello's list (5.0 hosts). */
   readonly models: readonly ModelSummary[];
-  /** The host's new-conversation defaults, from the hello frame. */
+  /** The host's new-conversation defaults: derived from the `settings` stream when present, else the hello frame (pre-5.2 hosts). */
   readonly defaults: ConversationDefaults;
   readonly notices: readonly Notice[];
   /** The live task graph while the task panel is open. */
@@ -123,6 +124,8 @@ export interface DurableView {
   readonly mcp: McpStatus | null;
   /** Stored-credential logins on the host; `null` before its snapshot or when the host predates the `auth` stream (5.1). */
   readonly auth: HostAuth | null;
+  /** Effective host settings (ADR-0021); `null` before its snapshot or when the host predates the `settings` stream (5.2). */
+  readonly settings: HostSettings | null;
 }
 
 export interface DurableViewSource {
@@ -173,4 +176,6 @@ export interface DurableController {
   revokeDevice(publicKey: string): Promise<void>;
   /** Remove a provider's stored credential on the host; this also logs the Pi CLI on that machine out (ADR-0021 §5). Needs a 5.1 host. */
   logout(providerId: string): Promise<void>;
+  /** Patch the host's settings; each `null` resets that key to the pi/built-in fallback. Needs a 5.2 host. */
+  updateSettings(patch: HostSettingsPatch): Promise<void>;
 }

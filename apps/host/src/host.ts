@@ -2,21 +2,17 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import {
-  createRegistry,
-  Harness,
-  type HarnessSettings,
-  type ModelRef,
-} from "@earendil-works/pi-durable";
+import { createRegistry, Harness, type HarnessSettings } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { addProject, type ConversationDefaults, ensureIndex, IndexDoc } from "./organization.ts";
+import { addProject, ensureIndex, IndexDoc } from "./organization.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
 import type { ModelAuth } from "./model-auth.ts";
+import { type HostSettingsStore, openHostSettings, type SettingsFallback } from "./host-settings.ts";
+import { constantValue } from "./host-value.ts";
 import type { ScriptTool } from "./script-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
@@ -47,9 +43,13 @@ export interface OpenHostOptions {
   readonly mcpConfig?: string;
   /** Live `models`/`auth` sources and `logout` (ADR-0021 §5-6); absent → the streams serve static snapshots and `logout` fails. */
   readonly modelAuth?: ModelAuth;
-  readonly settings?: HarnessSettings;
-  /** Defaults applied to every conversation created on this host. */
-  readonly initialModel?: ModelRef & { readonly thinkingLevel?: ModelThinkingLevel };
+  /**
+   * Harness settings (pi-derived); the function form receives the settings
+   * store so queue-mode getters read the live effective value (ADR-0021).
+   */
+  readonly settings?: HarnessSettings | ((settings: HostSettingsStore) => HarnessSettings);
+  /** Where each host setting goes when settings.json does not set it (ADR-0021 §2). */
+  readonly settingsFallback: SettingsFallback;
   /** Directories registered as projects at open; a bad path fails startup. */
   readonly projects?: readonly string[];
   /** 0 picks a free port. A fixed port lets clients reconnect to a restarted host. */
@@ -94,6 +94,8 @@ export interface OpenedHost {
   readonly remote?: { readonly url: string; readonly advertiseUrl: string; readonly hostKey: Uint8Array };
   /** Present when a relay link is up. `hostId` is the relay-side identity. */
   readonly relay?: { readonly origin: string; readonly hostId: string; state(): RelayLinkState };
+  /** The effective host settings backing the `settings` stream and `updateSettings`. */
+  readonly settings: HostSettingsStore;
   close(): Promise<void>;
 }
 
@@ -144,6 +146,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const { extension } of extensions) registry.install(extension);
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
     mcp = options.mcpConfig === undefined ? undefined : startMcp({ configPath: options.mcpConfig, registry });
+    // Opened before the harness: `settings` may be a function reading its value.
+    const hostSettings = await openHostSettings({
+      path: join(options.dataDir, "settings.json"),
+      fallback: options.settingsFallback,
+      // Login/logout moves models in and out of the runnable list; the store
+      // re-evaluates a file-set default and the fallback against it (ADR-0021).
+      models: options.modelAuth?.models ?? constantValue(options.modelSummaries()),
+    });
     // One environment per working directory; conversations sharing a cwd share it.
     const environments = new Map<string, NodeExecutionEnv>();
     const chatsDir = join(options.dataDir, "chats");
@@ -179,12 +189,16 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           }
           return env;
         },
-        ...(options.settings === undefined ? {} : { settings: options.settings }),
+        ...(options.settings === undefined
+          ? {}
+          : {
+              settings:
+                typeof options.settings === "function" ? options.settings(hostSettings) : options.settings,
+            }),
         onReport: (error) => report(error),
       },
       context,
     );
-    const { initialModel } = options;
     await ensureIndex(harness, context);
     await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
@@ -194,20 +208,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const hostKey = await loadHostKey(options.dataDir);
     const offers = pairingOffers(options.remote?.pairingTtlMs);
     const relayKey = options.relay === undefined ? undefined : await loadRelayKey(options.dataDir);
-    const defaults: ConversationDefaults =
-      initialModel === undefined
-        ? {}
-        : {
-            model: { provider: initialModel.provider, modelId: initialModel.modelId },
-            ...(initialModel.thinkingLevel === undefined ? {} : { thinkingLevel: initialModel.thinkingLevel }),
-          };
     const gateway = await startGateway({
       harness,
       models: options.models,
       modelSummaries: options.modelSummaries,
       session: { id: basename(options.dataDir), directory: options.dataDir },
       dataDir: options.dataDir,
-      defaults,
+      settings: hostSettings,
       token,
       port: options.port,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
@@ -255,6 +262,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       url: gateway.url,
       token,
       harness,
+      settings: hostSettings,
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}
         : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),

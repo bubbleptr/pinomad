@@ -73,21 +73,36 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "logout", args: {} })).toBe("malformed");
   });
 
+  it("accepts updateSettings patches; rejects unknown keys and bad values", () => {
+    const call = (patch: unknown): unknown => ({ type: "call", id: 1, method: "updateSettings", args: { patch } });
+    expect(kinds(call({}))).toBe("frame");
+    expect(kinds(call({ defaultModel: { provider: "a", modelId: "b" }, steeringMode: "all" }))).toBe("frame");
+    expect(kinds(call({ defaultModel: null, defaultThinkingLevel: null, followUpMode: null }))).toBe("frame");
+    expect(kinds(call({ defaultThinkingLevel: "xhigh" }))).toBe("frame");
+    expect(kinds(call({ custom: [] }))).toBe("malformed");
+    expect(kinds(call({ bogus: 1 }))).toBe("malformed");
+    expect(kinds(call({ steeringMode: "sometimes" }))).toBe("malformed");
+    expect(kinds(call({ defaultThinkingLevel: "ludicrous" }))).toBe("malformed");
+    expect(kinds(call({ defaultModel: { provider: "a" } }))).toBe("malformed");
+    expect(kinds(call({ defaultModel: "a/b" }))).toBe("malformed");
+    expect(kinds(call("x"))).toBe("malformed");
+  });
+
   it("rejects a call without a valid id", () => {
     expect(kinds({ type: "call", method: "abort", args: { conversationId: 1 } })).toBe("malformed");
     expect(kinds({ type: "call", id: "1", method: "abort", args: { conversationId: 1 } })).toBe("malformed");
   });
 
   it("reports an unknown stream as unsupportedStream", () => {
-    expect(parseClientFrame({ type: "subscribe", stream: "settings" })).toEqual({
+    expect(parseClientFrame({ type: "subscribe", stream: "settingsx" })).toEqual({
       kind: "unsupportedStream",
       type: "subscribe",
-      stream: "settings",
+      stream: "settingsx",
     });
-    expect(parseClientFrame({ type: "unsubscribe", stream: "settings" })).toEqual({
+    expect(parseClientFrame({ type: "unsubscribe", stream: "settingsx" })).toEqual({
       kind: "unsupportedStream",
       type: "unsubscribe",
-      stream: "settings",
+      stream: "settingsx",
     });
   });
 

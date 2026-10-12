@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import type { ServerFrame } from "@pinomad/protocol/frames.ts";
+import { PROTOCOL, type ServerFrame } from "@pinomad/protocol/frames.ts";
 import { watchModelAuth } from "../src/model-auth.ts";
 import { startFauxHost, useCleanups } from "./support.ts";
 
@@ -79,7 +79,7 @@ describe("watchModelAuth", () => {
       && frames.some((frame) => frame.type === "snapshot" && frame.stream === "auth")
       && frames.some((frame) => frame.type === "result" && frame.id === 1),
     );
-    expect(frames.find((frame) => frame.type === "hello")).toMatchObject({ protocol: { major: 5, minor: 1 } });
+    expect(frames.find((frame) => frame.type === "hello")).toMatchObject({ protocol: PROTOCOL });
     expect(frames.find((frame) => frame.type === "snapshot" && frame.stream === "auth")).toMatchObject({
       value: { logins: [] },
     });
