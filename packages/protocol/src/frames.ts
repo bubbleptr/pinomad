@@ -1,5 +1,6 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
+import type { HostAuth } from "./auth.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, HostIndex, Project } from "./organization.ts";
@@ -19,13 +20,23 @@ export interface HostStreamValues {
   index: HostIndex;
   devices: HostDevices;
   mcp: McpStatus | null;
+  models: readonly ModelSummary[];
+  auth: HostAuth;
 }
 
 export type HostStreamName = keyof HostStreamValues;
 
-/** The first view waits for a snapshot of each (the object literal + satisfies keeps it exactly in sync with HostStreamValues). */
-const HOST_STREAMS = { conversations: true, index: true, devices: true, mcp: true } satisfies Record<HostStreamName, true>;
+/** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
+const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1 } satisfies Record<
+  HostStreamName,
+  number
+>;
 export const HOST_STREAM_NAMES = Object.keys(HOST_STREAMS) as readonly HostStreamName[];
+
+/** The host streams a host of the given minor version knows. */
+export function hostStreams(hostMinor: number): readonly HostStreamName[] {
+  return HOST_STREAM_NAMES.filter((name) => HOST_STREAMS[name] <= hostMinor);
+}
 
 /**
  * A subscribable value: a host-level stream from `HostStreamValues`, one
@@ -59,10 +70,11 @@ export interface ProtocolVersion {
  * The protocol this build speaks (ADR-0018). Within a major version only
  * additive changes are allowed — optional fields, new calls, streams, frame
  * and presentation types — and each addition bumps `minor`; a client gates a
- * feature on the host's `minor` covering it (a `since` table is added here
- * with the first minor bump). `major` differs → the two cannot talk.
+ * feature on the host's `minor` covering it (the `since` tables are
+ * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
+ * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 0 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 1 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -123,9 +135,19 @@ export interface CallMethods {
   createPairing: { args: Record<string, never>; result: { url: string; expiresAt: number } };
   /** Forget a paired device and drop its live connections. */
   revokeDevice: { args: { publicKey: string }; result: null };
+  /** Remove a provider's stored credential; also logs the Pi CLI on this machine out (ADR-0021 §5). */
+  logout: { args: { providerId: string }; result: null };
 }
 
 export type CallMethod = keyof CallMethods;
+
+/** Minor version that introduced each call; calls absent here date from 5.0. */
+const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1 };
+
+/** Whether a host of the given minor version knows `method`. */
+export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
+  return hostMinor >= (CALL_SINCE[method] ?? 0);
+}
 
 export type ServerFrame =
   | {
@@ -231,6 +253,7 @@ const CALL_METHODS = [
   "changes",
   "createPairing",
   "revokeDevice",
+  "logout",
 ] as const satisfies readonly CallMethod[];
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
@@ -283,6 +306,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return Object.keys(args).length === 0;
     case "revokeDevice":
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
+    case "logout":
+      return nonempty(args.providerId);
   }
 }
 

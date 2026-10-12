@@ -43,6 +43,12 @@
     }
   },
   "streams": {
+    "auth": {
+      "value": {
+        "logins": []
+      },
+      "ops": []
+    },
     "conversation:*": {
       "value": {
         "conversation": {
@@ -402,6 +408,20 @@
     },
     "mcp": {
       "value": "null",
+      "ops": []
+    },
+    "models": {
+      "value": [
+        {
+          "contextWindow": "number",
+          "modelId": "string",
+          "name": "string",
+          "provider": "string",
+          "thinkingLevels": [
+            "string"
+          ]
+        }
+      ],
       "ops": []
     },
     "tasks": {

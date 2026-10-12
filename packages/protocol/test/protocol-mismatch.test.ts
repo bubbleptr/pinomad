@@ -10,6 +10,8 @@ const SNAPSHOTS: Record<string, unknown> = {
   devices: { devices: [] },
   tasks: { tasks: {} },
   mcp: null,
+  models: [],
+  auth: { logins: [] },
 };
 
 interface Fake {

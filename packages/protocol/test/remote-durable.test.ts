@@ -11,6 +11,8 @@ const SNAPSHOTS: Record<string, unknown> = {
   devices: { devices: [] },
   tasks: { tasks: {} },
   mcp: null,
+  models: [{ provider: "streamp", modelId: "stream-1", name: "Stream One", contextWindow: 8000, thinkingLevels: ["off"] }],
+  auth: { logins: [{ providerId: "streamp", name: "Stream Provider", kind: "api_key", subscription: false }] },
 };
 
 const id = (n: number): ConversationId => n as ConversationId;
@@ -33,7 +35,10 @@ function snapshotFor(stream: string): unknown {
  * `disconnect()` closes the latest connection server-side so the client
  * reconnects.
  */
-function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
+function fakeTransport(
+  defaultsList: readonly ConversationDefaults[],
+  helloExtras?: Record<string, unknown>,
+): {
   transport: FrameTransport;
   opened: FrameHandlers[];
   sent: ClientFrame[];
@@ -50,7 +55,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
     open(handlers): FrameConnection {
       opened.push(handlers);
       const defaults = defaultsList[Math.min(opened.length - 1, defaultsList.length - 1)]!;
-      const hello: ServerFrame = {
+      const hello = {
         type: "hello",
         protocol: PROTOCOL,
         session: { id: "fake", directory: "" },
@@ -58,6 +63,7 @@ function fakeTransport(defaultsList: readonly ConversationDefaults[]): {
         docs: [DOC],
         toolPresentations: {},
         defaults,
+        ...helloExtras,
       };
       queueMicrotask(() => handlers.message(JSON.stringify(hello)));
       return {
@@ -389,6 +395,65 @@ it("closes the side when the archive removes it or its root", async () => {
       const main = remote.view.current().conversation as { conversation: { id: number; marker?: string } };
       expect(main.conversation.id).toBe(2);
       expect(main.conversation.marker).toBe("new");
+    } finally {
+      remote.close();
+    }
+  });
+});
+
+describe("RemoteDurable minor-version gating", () => {
+  const subscribes = (sent: readonly ClientFrame[]): string[] =>
+    sent.flatMap((frame) => (frame.type === "subscribe" ? [frame.stream] : []));
+
+  it("never subscribes to models/auth on a 5.0 host: auth is null, models comes from the hello", async () => {
+    const helloModel = { provider: "hp", modelId: "h-1", name: "Hello One", contextWindow: 8000, thinkingLevels: ["off"] };
+    const { transport, sent } = fakeTransport([{}], {
+      protocol: { major: PROTOCOL.major, minor: 0 },
+      models: [helloModel],
+    });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(subscribes(sent)).not.toContain("models");
+      expect(subscribes(sent)).not.toContain("auth");
+      const view = remote.view.current();
+      expect(view.connection).toBe("connected");
+      expect(view.models).toEqual([helloModel]);
+      expect(view.auth).toBeNull();
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("subscribes to models/auth on a 5.1 host; the stream value wins over the hello's models", async () => {
+    const { transport, sent, release } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(subscribes(sent)).toContain("models");
+      expect(subscribes(sent)).toContain("auth");
+      // hello.models is [] — the stream's snapshot must be what the view shows.
+      expect(remote.view.current().models).toEqual(SNAPSHOTS.models);
+      expect(remote.view.current().auth).toEqual(SNAPSHOTS.auth);
+
+      const updated = [{ provider: "p2", modelId: "m-2", name: "Two", contextWindow: 1, thinkingLevels: ["off"] }];
+      release("models", updated);
+      release("auth", { logins: [] });
+      await waitForView(remote, (view) => view.models[0]?.provider === "p2" && view.auth?.logins.length === 0);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("logout against a 5.0 host sends nothing and surfaces the upgrade notice", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 0 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.logout("streamp");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "logout")).toBe(false);
+      await waitForView(remote, (view) =>
+        view.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("pinomad upgrade"),
+        ),
+      );
     } finally {
       remote.close();
     }

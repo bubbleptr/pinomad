@@ -16,6 +16,7 @@ import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
+import type { ModelAuth } from "./model-auth.ts";
 import type { ScriptTool } from "./script-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
@@ -44,6 +45,8 @@ export interface OpenHostOptions {
       }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
+  /** Live `models`/`auth` sources and `logout` (ADR-0021 §5-6); absent → the streams serve static snapshots and `logout` fails. */
+  readonly modelAuth?: ModelAuth;
   readonly settings?: HarnessSettings;
   /** Defaults applied to every conversation created on this host. */
   readonly initialModel?: ModelRef & { readonly thinkingLevel?: ModelThinkingLevel };
@@ -211,6 +214,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       docs: extensions.flatMap((extension) => extension.docs ?? []),
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
+      ...(options.modelAuth === undefined ? {} : { modelAuth: options.modelAuth }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
       secure: {
         hostKey,
@@ -265,6 +269,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await opened.close(context);
             // MCP servers go down with the host (stdio children get the spec shutdown).
             await mcp?.close();
+            options.modelAuth?.close();
             await Promise.all([...environments.values()].map((env) => env.cleanup(context)));
           } finally {
             await release();
@@ -274,6 +279,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
     };
   } catch (error) {
+    options.modelAuth?.close();
     await mcp?.close().catch(() => {});
     await harness?.close(context).catch(() => {});
     await release().catch(() => {});

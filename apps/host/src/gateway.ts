@@ -31,6 +31,7 @@ import {
   type CallMethod,
   type CallMethods,
   type ClientFrame,
+  type HostStreamName,
   type HostStreamValues,
   parseClientFrame,
   INVALID_FRAME_CLOSE_CODE,
@@ -39,6 +40,7 @@ import {
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
 } from "@pinomad/protocol/frames.ts";
+import type { HostAuth } from "@pinomad/protocol/auth.ts";
 import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
@@ -53,6 +55,7 @@ import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
+import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
@@ -123,6 +126,12 @@ export interface GatewayOptions {
   readonly defaults: ConversationDefaults;
   /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
   readonly mcp?: HostValue<McpStatus>;
+  /**
+   * Live `models`/`auth` sources and the `logout` call. Absent (faux mode,
+   * tests) → `models` snapshots `modelSummaries()` once, `auth` snapshots an
+   * empty login list, and `logout` fails.
+   */
+  readonly modelAuth?: Pick<ModelAuth, "models" | "auth" | "logout">;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
@@ -772,7 +781,7 @@ class GatewayClient {
   readonly #hooks: ClientHooks;
   readonly #options: GatewayOptions;
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
-  readonly #hostValues: { [K in "conversations" | "mcp"]: HostValue<HostStreamValues[K]> };
+  readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
@@ -782,6 +791,8 @@ class GatewayClient {
     this.#hostValues = {
       conversations,
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
+      models: options.modelAuth?.models ?? constantValue(options.modelSummaries()),
+      auth: options.modelAuth?.auth ?? constantValue<HostAuth>({ logins: [] }),
     };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
@@ -875,10 +886,10 @@ class GatewayClient {
   }
 
   async #open(stream: StreamName, send: SendFrame): Promise<Subscription> {
-    if (stream === "conversations" || stream === "mcp") {
+    const source = this.#hostValue(stream);
+    if (source !== undefined) {
       // Snapshot, then subscribe, with no await between — a change landing in
       // the gap would be lost.
-      const source: HostValue<unknown> = this.#hostValues[stream];
       void send({ type: "snapshot", stream, value: source.value });
       return { stop: source.subscribe((value) => void send({ type: "snapshot", stream, value })) };
     }
@@ -899,6 +910,11 @@ class GatewayClient {
     }
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
     return this.#forward(stream, await conversation.watch(context), send);
+  }
+
+  /** The in-memory value source for a host stream, or undefined for the watch-/doc-backed ones. */
+  #hostValue(stream: StreamName): HostValue<unknown> | undefined {
+    return Object.hasOwn(this.#hostValues, stream) ? this.#hostValues[stream as HostStreamName] : undefined;
   }
 
   /** A document that does not exist yet streams `null`, then its value from the commit that creates it. */
@@ -1035,6 +1051,12 @@ class GatewayClient {
         const { publicKey } = args as CallMethods["revokeDevice"]["args"];
         await revokeDevice(this.#options.harness, publicKey, context);
         this.#hooks.closeDevice(publicKey);
+        return null;
+      }
+      case "logout": {
+        const modelAuth = this.#options.modelAuth;
+        if (modelAuth === undefined) throw new Error("Logging out is not available on this host");
+        await modelAuth.logout((args as CallMethods["logout"]["args"]).providerId);
         return null;
       }
     }

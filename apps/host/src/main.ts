@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
 import { packagedVersion, webRoot } from "./distribution.ts";
@@ -24,8 +24,9 @@ import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
+import { watchModelAuth } from "./model-auth.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { configureHarnessHttp, createHarnessSettings, defaultModel, modelSummaries } from "./pi-setup.ts";
+import { configureHarnessHttp, createHarnessSettings, defaultModel } from "./pi-setup.ts";
 import type { Harness } from "@earendil-works/pi-durable";
 import type { ScriptTool } from "./script-tools.ts";
 
@@ -123,14 +124,19 @@ export async function main(argv: readonly string[]): Promise<void> {
 
   async function piOptions(): Promise<OpenHostOptions> {
     const modelRuntime = await ModelRuntime.create();
+    // Watches pi's auth.json — a Pi CLI login/logout republishes `models`/`auth`
+    // to every connected device (ADR-0021 §5-6).
+    const modelAuth = await watchModelAuth(modelRuntime, { authPath: join(getAgentDir(), "auth.json") });
     const settingsManager = SettingsManager.create(process.cwd());
     configureHarnessHttp(settingsManager);
     const initialModel = defaultModel(settingsManager, modelRuntime);
-    const summaries = () => modelSummaries(modelRuntime);
+    // One source for hello.models, extension model lists, and the `models` stream.
+    const summaries = () => modelAuth.models.value;
     return {
       ...common,
       models: modelRuntime,
       modelSummaries: summaries,
+      modelAuth,
       extensions: extensionsFor(modelRuntime, summaries),
       settings: createHarnessSettings(settingsManager),
       ...(initialModel === undefined ? {} : { initialModel }),
