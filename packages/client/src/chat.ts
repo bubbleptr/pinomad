@@ -1,6 +1,7 @@
 // What a graphical client shows for a conversation view, as plain data. The
 // derivations follow pi's durable TUI (packages/coding-agent/src/experimental/durable/tui.ts,
 // MIT, Earendil Works) so every client tells the same story. Type-only imports keep it browser-safe.
+// See docs/licenses/pi.md for the upstream notice.
 import type {
   AgentState,
   ConversationView,

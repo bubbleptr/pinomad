@@ -2,6 +2,7 @@
 // at the 1.0.0 release, trimmed to what the host calls. It is outside pi-coding-agent's
 // package exports, and the upstream durable harness notes that without it some provider
 // streams break off.
+// See docs/licenses/pi.md for the upstream notice.
 import { EventEmitter } from "node:events";
 import * as undici from "undici";
 

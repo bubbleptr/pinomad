@@ -1,6 +1,6 @@
 # Relay image for container platforms (Zeabur etc.): the published npm package,
 # pinned, so the relay serves the same web client build as that release.
-# Bump PINOMAD_VERSION together with the hosts (README "升级").
+# Bump PINOMAD_VERSION together with the hosts (docs/remote-access.md "升级").
 FROM node:26-slim
 ARG PINOMAD_VERSION=0.1.1
 RUN npm install -g pinomad@${PINOMAD_VERSION} && npm cache clean --force
