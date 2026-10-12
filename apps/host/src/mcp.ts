@@ -21,14 +21,12 @@ import {
 import { defineExtension, defineTool, type Registry, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { McpServerStatus, McpStatus } from "@pinomad/protocol/mcp.ts";
+import type { HostValue } from "./host-value.ts";
 import type { ScriptTool } from "./script-tools.ts";
 
 export interface McpBridge {
   /** Latest status; subscribed listeners get every subsequent publication. */
-  readonly status: {
-    readonly value: McpStatus;
-    subscribe(listener: (value: McpStatus) => void): () => void;
-  };
+  readonly status: HostValue<McpStatus>;
   /** Every connected server's tools for codemode scripts — both exposures (ADR-0013 §3). */
   scriptTools(): readonly ScriptTool[];
   close(): Promise<void>;
@@ -311,7 +309,7 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
     }
   };
 
-  const status = {
+  const status: HostValue<McpStatus> = {
     get value(): McpStatus {
       return { configPath: options.configPath, errors, servers: [...servers.values()] };
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseClientFrame } from "../src/frames.ts";
+import { HOST_STREAM_NAMES, parseClientFrame } from "../src/frames.ts";
 
 // The gateway closes connections on "malformed", answers "unsupported*" with
 // an error, and ignores "unknownType" (ADR-0018 §3), so every call shape the
@@ -81,6 +81,17 @@ describe("parseClientFrame", () => {
       kind: "unsupportedStream",
       type: "unsubscribe",
       stream: "settings",
+    });
+  });
+
+  it("accepts every host stream and tasks; other bare names stay unsupported", () => {
+    for (const stream of [...HOST_STREAM_NAMES, "tasks"]) {
+      expect(kinds({ type: "subscribe", stream })).toBe("frame");
+    }
+    expect(parseClientFrame({ type: "subscribe", stream: "settingsx" })).toEqual({
+      kind: "unsupportedStream",
+      type: "subscribe",
+      stream: "settingsx",
     });
   });
 

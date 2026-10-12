@@ -50,7 +50,7 @@ PiNomad 的 secure channel 是 Noise IK 协议，用的都是标准算法：X255
 
 ## ATS 与 `ws://` 主机名
 
-生成的 `Info.plist` 是 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`，没有域名级例外。React Native 0.86 的 WebSocket 是 SocketRocket（基于 `NSStream`），ATS 管的是 `NSURLSession` 这一层，所以 `ws://` 连接不受 ATS 约束；App 里也没有别的远程请求（`fetch`、远程图片）。实测过的只有 Release 包用 `ws://` 连局域网 IP；`ws://` 连主机名（MagicDNS、`--public-url`）是按上面的代码路径推断能连，本机有代理拦截 DNS，没能实测，真机上第一次用主机名连时留意。以后如果引入走 `NSURLSession` 的明文请求，才需要动 ATS。
+生成的 `Info.plist` 是 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`，没有域名级例外。React Native 0.86 的 WebSocket 是 SocketRocket（基于 `NSStream`），ATS 管的是 `NSURLSession` 这一层，所以 `ws://` 连接不受 ATS 约束；App 里也没有别的远程请求（`fetch`、远程图片）。Release 包用 `ws://` 连局域网 IP 实测过；真机上用主机名连接也验证过（2026-10-12），和按上面代码路径的推断一致。以后如果引入走 `NSURLSession` 的明文请求，才需要动 ATS。
 
 ## 已知限制
 

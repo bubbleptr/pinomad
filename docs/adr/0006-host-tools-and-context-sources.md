@@ -17,6 +17,7 @@
    - AGENTS.md 读两类：`~/.agents/AGENTS.md`（全局），以及从文件系统根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md（项目，靠近 cwd 的排在后面）。
    - Skills 从 `<cwd>/.agents/skills` 和 `~/.agents/skills` 读取，同名时项目的生效。
    - AGENTS.md 和 Skills 不从 `~/.pi` 读（ADR-0001）。宿主仍然复用 pi 的两类设施（ADR-0002）：`~/.pi/agent` 下的模型认证，以及 pi 的 settings.json，用来读默认模型、思考等级、重试、压缩和代理配置（`SettingsManager.create(cwd)`，同时会读项目下的 `.pi/settings.json`）。PiNomad 要不要有自己的设置文件，等做设置界面时再决定。
+     - 已由 ADR-0021 决定：宿主设置存在数据目录的 `settings.json`，没设过的项回落到 pi 的设置；凭据暂时仍共用 pi 的 `auth.json`。
    - 文件加载复用 `pi-coding-agent` 导出的 `loadProjectContextFiles`、`loadSkills`、`formatSkillsForPrompt`。
 
 ## 后果
