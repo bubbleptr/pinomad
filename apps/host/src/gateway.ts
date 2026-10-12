@@ -31,6 +31,7 @@ import {
   type CallMethod,
   type CallMethods,
   type ClientFrame,
+  type HostStreamValues,
   parseClientFrame,
   INVALID_FRAME_CLOSE_CODE,
   PROTOCOL,
@@ -51,6 +52,7 @@ import {
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
+import { constantValue, type HostValue } from "./host-value.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
@@ -120,7 +122,7 @@ export interface GatewayOptions {
   /** Agent settings applied to conversations created through the gateway. */
   readonly defaults: ConversationDefaults;
   /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
-  readonly mcp?: { readonly value: McpStatus; subscribe(listener: (value: McpStatus) => void): () => void };
+  readonly mcp?: HostValue<McpStatus>;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
@@ -465,7 +467,7 @@ async function startRemote(
 }
 
 /** The conversation list, kept from commit publications rather than polled. */
-class ConversationList {
+class ConversationList implements HostValue<readonly ConversationSummary[]> {
   readonly #listeners = new Set<(list: readonly ConversationSummary[]) => void>();
   /** Conversation-doc tokens carrying pinomad.question requests; supplied by the composition root, not hardcoded. */
   readonly #questionTokens: readonly ConversationDocToken<JsonObject>[];
@@ -769,14 +771,18 @@ class GatewayClient {
   readonly #connection: GatewayConnection;
   readonly #hooks: ClientHooks;
   readonly #options: GatewayOptions;
-  readonly #conversations: ConversationList;
+  /** Streams backed by an in-memory value pushed whole to subscribers on change. */
+  readonly #hostValues: { [K in "conversations" | "mcp"]: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
   constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, hooks: ClientHooks) {
     this.#connection = connection;
     this.#options = options;
-    this.#conversations = conversations;
+    this.#hostValues = {
+      conversations,
+      mcp: options.mcp ?? constantValue<McpStatus | null>(null),
+    };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
     connection.handle({
@@ -869,10 +875,12 @@ class GatewayClient {
   }
 
   async #open(stream: StreamName, send: SendFrame): Promise<Subscription> {
-    if (stream === "conversations") {
-      void send({ type: "snapshot", stream, value: this.#conversations.value });
-      const unsubscribe = this.#conversations.subscribe((value) => void send({ type: "snapshot", stream, value }));
-      return { stop: unsubscribe };
+    if (stream === "conversations" || stream === "mcp") {
+      // Snapshot, then subscribe, with no await between — a change landing in
+      // the gap would be lost.
+      const source: HostValue<unknown> = this.#hostValues[stream];
+      void send({ type: "snapshot", stream, value: source.value });
+      return { stop: source.subscribe((value) => void send({ type: "snapshot", stream, value })) };
     }
     if (stream === "index") {
       const watch = await this.#options.harness.watchDoc(IndexDoc, context);
@@ -885,11 +893,6 @@ class GatewayClient {
       return this.#forward(stream, watch, send);
     }
     if (stream === "tasks") return this.#forward(stream, await this.#options.harness.watchTaskGraph(context), send);
-    if (stream === "mcp") {
-      await send({ type: "snapshot", stream, value: this.#options.mcp?.value ?? null });
-      const mcp = this.#options.mcp;
-      return mcp === undefined ? { stop: () => {} } : { stop: mcp.subscribe((value) => void send({ type: "snapshot", stream, value })) };
-    }
     if (stream.startsWith("doc:")) {
       const at = stream.lastIndexOf(":");
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);

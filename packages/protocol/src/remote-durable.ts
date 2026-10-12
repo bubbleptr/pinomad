@@ -1,8 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
-import type { HostDevices } from "./devices.ts";
-import type { McpStatus } from "./mcp.ts";
-import { checkoutOf, homeOf, type HostIndex, organize } from "./organization.ts";
+import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
   type CallMethod,
@@ -10,6 +8,9 @@ import {
   type ClientFrame,
   conversationStream,
   docStream,
+  HOST_STREAM_NAMES,
+  type HostStreamName,
+  type HostStreamValues,
   INVALID_FRAME_CLOSE_CODE,
   PROTOCOL,
   type ServerFrame,
@@ -18,7 +19,6 @@ import {
 } from "./frames.ts";
 import { type FrameConnection, type FrameTransport, webSocketTransport } from "./transport.ts";
 import type {
-  ConversationSummary,
   DurableController,
   DurableView,
   DurableViewSource,
@@ -99,7 +99,7 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
-  readonly #wanted = new Set<StreamName>(["conversations", "index", "devices", "mcp"]);
+  readonly #wanted = new Set<StreamName>(HOST_STREAM_NAMES);
   // Streams whose CURRENT subscription delivered a snapshot. A wanted-but-not-
   // fresh stream (after reconnect, before the host answers) has a stale value —
   // #acquire must wait for it, never serve the old one.
@@ -283,7 +283,7 @@ class RemoteClient {
   }
 
   #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>): void {
-    void Promise.all([this.#snapshot("conversations"), this.#snapshot("index"), this.#snapshot("devices"), this.#snapshot("mcp")]).then(() => {
+    void Promise.all(HOST_STREAM_NAMES.map((stream) => this.#snapshot(stream))).then(() => {
       this.#state = {
         session: hello.session,
         organized: { chats: [], projects: [] },
@@ -346,9 +346,14 @@ class RemoteClient {
     }
   }
 
+  /** A host-level stream's latest value, or undefined until its first snapshot lands. */
+  #host<K extends HostStreamName>(name: K): HostStreamValues[K] | undefined {
+    return this.#values.get(name) as HostStreamValues[K] | undefined;
+  }
+
   /** `id` is `ancestor` or sits under it via `parent` links in the summaries. */
   #descendsFrom(id: ConversationId, ancestor: ConversationId): boolean {
-    const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
+    const summaries = this.#host("conversations") ?? [];
     const parentOf = new Map(summaries.map((summary) => [summary.id, summary.parent]));
     let cursor: ConversationId | undefined = id;
     for (let depth = 0; cursor !== undefined && depth < 8; depth++) {
@@ -374,9 +379,9 @@ class RemoteClient {
     const side = this.#side;
     const conversation =
       current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
-    const summaries = (this.#values.get("conversations") as ConversationSummary[] | undefined) ?? [];
-    const index = (this.#values.get("index") as HostIndex | undefined) ?? { projects: [], conversations: [] };
-    const devices = (this.#values.get("devices") as HostDevices | undefined)?.devices ?? [];
+    const summaries = this.#host("conversations") ?? [];
+    const index = this.#host("index") ?? { projects: [], conversations: [] };
+    const devices = this.#host("devices")?.devices ?? [];
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
     this.#update({
       conversation,
@@ -394,7 +399,7 @@ class RemoteClient {
               docs: this.#docsOf(side),
             },
       devices,
-      mcp: (this.#values.get("mcp") as McpStatus | null | undefined) ?? null,
+      mcp: this.#host("mcp") ?? null,
     });
   }
 

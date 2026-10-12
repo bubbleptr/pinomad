@@ -1,23 +1,39 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
-import type { Home, Project } from "./organization.ts";
+import type { HostDevices } from "./devices.ts";
+import type { McpStatus } from "./mcp.ts";
+import type { Home, HostIndex, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
-import type { ConversationDefaults, ModelSummary, Notice, SessionInfo, ThinkingLevel } from "./view.ts";
+import type {
+  ConversationDefaults,
+  ConversationSummary,
+  ModelSummary,
+  Notice,
+  SessionInfo,
+  ThinkingLevel,
+} from "./view.ts";
+
+/** Value carried by each host-level stream every client subscribes to on connect. */
+export interface HostStreamValues {
+  conversations: readonly ConversationSummary[];
+  index: HostIndex;
+  devices: HostDevices;
+  mcp: McpStatus | null;
+}
+
+export type HostStreamName = keyof HostStreamValues;
+
+/** The first view waits for a snapshot of each (the object literal + satisfies keeps it exactly in sync with HostStreamValues). */
+const HOST_STREAMS = { conversations: true, index: true, devices: true, mcp: true } satisfies Record<HostStreamName, true>;
+export const HOST_STREAM_NAMES = Object.keys(HOST_STREAMS) as readonly HostStreamName[];
 
 /**
- * A subscribable value: one conversation's view, one of its documents (`null`
- * while absent), the task graph, or the conversation list. A subscription
- * starts with a snapshot; ops follow and apply to it with chord's
- * `applyImmutable`.
+ * A subscribable value: a host-level stream from `HostStreamValues`, one
+ * conversation's view, one of its documents (`null` while absent), or the
+ * task graph. A subscription starts with a snapshot; ops follow and apply
+ * to it with chord's `applyImmutable`.
  */
-export type StreamName =
-  | `conversation:${ConversationId}`
-  | `doc:${string}:${ConversationId}`
-  | "tasks"
-  | "conversations"
-  | "index"
-  | "devices"
-  | "mcp";
+export type StreamName = `conversation:${ConversationId}` | `doc:${string}:${ConversationId}` | "tasks" | HostStreamName;
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
 export const docStream = (kind: string, id: ConversationId): StreamName => `doc:${kind}:${id}`;
@@ -186,15 +202,12 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
 }
 
 /** Every stream name's kind: fixed names plus the `conversation:`/`doc:` prefixes. */
-const STREAM_KINDS = new Set(["conversation", "doc", "tasks", "conversations", "index", "devices", "mcp"]);
+const STREAM_KINDS = new Set(["conversation", "doc", "tasks", ...HOST_STREAM_NAMES]);
 
 function isStreamName(stream: string): stream is StreamName {
   return (
     stream === "tasks"
-    || stream === "conversations"
-    || stream === "index"
-    || stream === "devices"
-    || stream === "mcp"
+    || (HOST_STREAM_NAMES as readonly string[]).includes(stream)
     || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
   );
 }
