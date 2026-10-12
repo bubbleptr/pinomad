@@ -5,10 +5,11 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { SideNav, SideNavItem } from "@astryxdesign/core/SideNav";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { useState, type ReactNode } from "react";
@@ -17,19 +18,23 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { QueueMode } from "@pinomad/protocol/settings.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
-import { ArrowLeft, ChatBubble, ChevronRight, Info, Key, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
 
 const SECTIONS = [
-  { id: "providers", title: "Providers", icon: <Key /> },
-  { id: "models", title: "Models", icon: <Sparkles /> },
-  { id: "chats", title: "Chats", icon: <ChatBubble /> },
-  { id: "mcp", title: "MCP", icon: <Puzzle /> },
-  { id: "about", title: "About", icon: <Info /> },
+  { id: "providers", title: "Providers", icon: Key },
+  { id: "models", title: "Models", icon: Sparkles },
+  { id: "mcp", title: "MCP", icon: Puzzle },
+  { id: "chats", title: "Chats", icon: ChatBubble },
+  { id: "about", title: "About", icon: Info },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
+
+const sectionIcon = (Icon: (typeof SECTIONS)[number]["icon"]): ReactNode => (
+  <Icon aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
+);
 
 /**
  * The host's settings and stored logins (ADR-0021): a left section nav on wide
@@ -47,25 +52,27 @@ export function SettingsDialog({
   remote: RemoteDurable;
   onClose: () => void;
 }) {
-  const narrow = useMediaQuery("(max-width: 639px)");
+  const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
   const connected = view.connection === "connected";
   const active = section ?? "providers";
 
   const sectionNav = (
-    <VStack gap={0} style={{ width: 200, minWidth: 200, flexShrink: 0 }}>
-      <SideNavSection isHeaderHidden title="Settings">
-        {SECTIONS.map((entry) => (
-          <SideNavItem
-            key={entry.id}
-            label={entry.title}
-            icon={entry.icon}
-            isSelected={entry.id === active}
-            onClick={() => setSection(entry.id)}
-          />
-        ))}
-      </SideNavSection>
-    </VStack>
+    <LayoutPanel padding={2} width="calc(var(--spacing-10) * 7)" hasDivider>
+      <SideNav aria-label="Settings sections" style={{ width: "100%" }}>
+        <VStack gap={1}>
+          {SECTIONS.map((entry) => (
+            <SideNavItem
+              key={entry.id}
+              label={entry.title}
+              icon={sectionIcon(entry.icon)}
+              isSelected={entry.id === active}
+              onClick={() => setSection(entry.id)}
+            />
+          ))}
+        </VStack>
+      </SideNav>
+    </LayoutPanel>
   );
 
   const sectionList = (
@@ -74,8 +81,10 @@ export function SettingsDialog({
         <ListItem
           key={entry.id}
           label={entry.title}
-          startContent={entry.icon}
-          endContent={<ChevronRight />}
+          startContent={sectionIcon(entry.icon)}
+          endContent={
+            <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
+          }
           onClick={() => setSection(entry.id)}
         />
       ))}
@@ -84,18 +93,23 @@ export function SettingsDialog({
 
   return (
     <Dialog
+      aria-label="Settings"
       isOpen
       onOpenChange={(open) => (open ? undefined : onClose())}
-      width={880}
-      maxHeight={narrow ? "90vh" : "85vh"}
-      style={{ height: narrow ? "90vh" : "min(640px, 85vh)" }}
+      purpose="form"
+      width="calc(var(--spacing-10) * 22)"
+      maxHeight="90dvh"
+      variant={compact ? "fullscreen" : "standard"}
+      padding={4}
     >
       <Layout
+        padding={4}
+        style={{ height: compact ? "100dvh" : "min(85dvh, calc(var(--spacing-10) * 17))" }}
         header={
           <DialogHeader
-            title={narrow && section !== undefined ? sectionTitle(section) : "Settings"}
+            title={compact && section !== undefined ? sectionTitle(section) : "Settings"}
             startContent={
-              narrow && section !== undefined ? (
+              compact && section !== undefined ? (
                 <IconButton
                   label="Back"
                   icon={<ArrowLeft />}
@@ -108,15 +122,16 @@ export function SettingsDialog({
               ) : undefined
             }
             onOpenChange={() => onClose()}
+            hasDivider
           />
         }
-        start={narrow ? undefined : sectionNav}
+        start={compact ? undefined : sectionNav}
         content={
-          <LayoutContent>
-            {narrow && section === undefined ? (
+          <LayoutContent padding={compact ? 4 : 6}>
+            {compact && section === undefined ? (
               sectionList
             ) : (
-              <SectionPage view={view} remote={remote} connected={connected} section={active} showTitle={!narrow} />
+              <SectionPage view={view} remote={remote} connected={connected} section={active} showTitle={!compact} />
             )}
           </LayoutContent>
         }
@@ -139,11 +154,16 @@ function SectionPage({
   showTitle: boolean;
 }) {
   const { title, supporting, body } = sectionBody(view, remote, connected, section);
+  const headingId = `settings-${section}-heading`;
   return (
-    <VStack gap={4} padding={2}>
-      <VStack gap={1}>
-        {showTitle ? <Heading level={2}>{title}</Heading> : null}
-        {supporting === undefined ? null : <Text type="supporting">{supporting}</Text>}
+    <VStack
+      as="section"
+      {...(showTitle ? { "aria-labelledby": headingId } : { "aria-label": title })}
+      gap={3}
+    >
+      <VStack gap={2}>
+        {showTitle ? <Heading level={2} id={headingId}>{title}</Heading> : null}
+        {supporting}
       </VStack>
       {body}
     </VStack>
@@ -155,37 +175,40 @@ function sectionBody(
   remote: RemoteDurable,
   connected: boolean,
   section: SectionId,
-): { title: string; supporting?: string; body: ReactNode } {
+): { title: string; supporting?: ReactNode; body: ReactNode } {
   switch (section) {
     case "providers":
       return {
         title: "Providers",
-        supporting:
-          "Logins are stored on the host in Pi's auth.json. Log in with the Pi CLI on the host — logging out here signs the Pi CLI out too. Every device connected to this host sees the same logins.",
+        supporting: (
+          <Text as="p" type="supporting">
+            Logins are stored on the host in Pi's <code>auth.json</code>. Log in with the Pi CLI on the
+            host — logging out here signs the Pi CLI out too. Every device connected to this host sees
+            the same logins.
+          </Text>
+        ),
         body: <ProvidersSection view={view} remote={remote} connected={connected} />,
       };
     case "models":
       return {
         title: "Models",
-        supporting: "Used when a new conversation doesn't pick its own model.",
+        supporting: <Text as="p" type="supporting">Used when a new conversation doesn't pick its own model.</Text>,
         body: <ModelsSection view={view} remote={remote} connected={connected} />,
       };
+    case "mcp":
+      return { title: "MCP", body: <McpSection view={view} /> };
     case "chats":
       return {
         title: "Chats",
-        supporting: "How queued messages are delivered when the agent reaches the next turn.",
+        supporting: (
+          <Text as="p" type="supporting">
+            How queued messages are delivered when the agent reaches the next turn.
+          </Text>
+        ),
         body: <ChatsSection view={view} remote={remote} connected={connected} />,
       };
-    case "mcp":
-      return {
-        title: "MCP",
-        body: <McpSection view={view} />,
-      };
     case "about":
-      return {
-        title: "About",
-        body: <AboutSection view={view} />,
-      };
+      return { title: "About", body: <AboutSection view={view} /> };
   }
 }
 
@@ -196,12 +219,12 @@ function ProvidersSection({ view, remote, connected }: { view: DurableView; remo
   }
   const logins = auth.logins;
   return (
-    <VStack gap={2}>
+    <VStack gap={3}>
       {logins.length === 0 ? (
-        <Text type="supporting">No stored logins. Log in with the Pi CLI on the host.</Text>
+        <Text as="p" type="supporting">No stored logins. Log in with the Pi CLI on the host.</Text>
       ) : (
         <>
-          <Text type="supporting">{`${logins.length} provider${logins.length === 1 ? "" : "s"} logged in`}</Text>
+          <Text as="p" type="supporting">{`${logins.length} provider${logins.length === 1 ? "" : "s"} logged in`}</Text>
           {logins.map((login) => (
             <LoginCard key={login.providerId} login={login} connected={connected} remote={remote} />
           ))}
@@ -270,14 +293,14 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
 
 function McpSection({ view }: { view: DurableView }) {
   const mcp = view.mcp;
-  if (mcp === null) return <Text type="supporting">Loading…</Text>;
+  if (mcp === null) return <Text as="p" type="supporting">Loading…</Text>;
   return (
     <VStack gap={3}>
-      <Text type="supporting" style={{ userSelect: "all" }}>
+      <Text as="p" type="supporting" style={{ userSelect: "all" }}>
         {mcp.configPath}
       </Text>
       {mcp.servers.length === 0 ? (
-        <Text type="supporting">No servers configured.</Text>
+        <Text as="p" type="supporting">No servers configured.</Text>
       ) : (
         <List density="compact">
           {mcp.servers.map((server) => (
@@ -314,7 +337,7 @@ function AboutSection({ view }: { view: DurableView }) {
           }
         />
       </List>
-      <Text type="supporting">Edit the settings file by hand only while the host is stopped.</Text>
+      <Text as="p" type="supporting">Edit the settings file by hand only while the host is stopped.</Text>
     </VStack>
   );
 }
@@ -358,9 +381,12 @@ function ModeSetting({
 }
 
 const loginStatusLine = (login: StoredLogin): string =>
-  login.subscription ? "Subscription connected" : login.kind === "api_key" ? "API key" : "OAuth";
+  login.subscription ? "Subscription connected" : login.kind === "api_key" ? "API key configured" : "OAuth connected";
 
-/** Two clicks to sign out: the ghost button arms the card, then the real Log out appears — pi's CLI session goes with it. */
+/**
+ * The "…" menu arms an inline confirmation inside the card: signing out here
+ * also ends the Pi CLI's session on the host, so it needs a second step.
+ */
 function LoginCard({
   login,
   connected,
@@ -373,38 +399,39 @@ function LoginCard({
   const [confirming, setConfirming] = useState(false);
   return (
     <Card padding={4}>
-      <VStack gap={2}>
-        <HStack gap={2} justify="between" vAlign="start">
-          <VStack gap={1}>
-            <Text weight="semibold">{login.name}</Text>
-            <Text type="supporting">{loginStatusLine(login)}</Text>
-          </VStack>
-          {confirming ? null : (
+      <HStack gap={3} vAlign="start">
+        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
+          <Heading level={3}>{login.name}</Heading>
+          <Text as="p" type="supporting">{loginStatusLine(login)}</Text>
+        </VStack>
+        {confirming ? null : (
+          <HStack gap={1} vAlign="center">
+            <MoreMenu
+              icon={<MoreHorizontal aria-hidden="true" />}
+              label={`${login.name} actions`}
+              size="sm"
+              variant="ghost"
+              isDisabled={!connected}
+              items={[{ label: "Log out…", onClick: () => setConfirming(true) }]}
+            />
+          </HStack>
+        )}
+      </HStack>
+      {confirming ? (
+        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <Text as="p" type="supporting">{`This also signs the Pi CLI on the host out of ${login.name}.`}</Text>
+          <HStack gap={2} vAlign="center">
             <Button
               label="Log out"
-              variant="ghost"
+              variant="destructive"
               size="sm"
               isDisabled={!connected}
-              onClick={() => setConfirming(true)}
+              onClick={() => void remote.controller.logout(login.providerId)}
             />
-          )}
-        </HStack>
-        {confirming ? (
-          <VStack gap={2}>
-            <Text type="supporting">{`This also signs the Pi CLI on the host out of ${login.name}.`}</Text>
-            <HStack gap={2} vAlign="center">
-              <Button
-                label="Log out"
-                variant="destructive"
-                size="sm"
-                isDisabled={!connected}
-                onClick={() => void remote.controller.logout(login.providerId)}
-              />
-              <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
-            </HStack>
-          </VStack>
-        ) : null}
-      </VStack>
+            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+          </HStack>
+        </VStack>
+      ) : null}
     </Card>
   );
 }

@@ -11,11 +11,14 @@ import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
+import { constantValue, Published } from "@pinomad/host/src/host-value.ts";
+import type { ModelAuth } from "@pinomad/host/src/model-auth.ts";
 import { connectTo, followFirst, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
+import type { HostAuth } from "@pinomad/protocol/auth.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
@@ -129,6 +132,36 @@ it("opens Settings on Providers and shows host details under About", async () =>
   await dialog.getByText("Data directory", { exact: true }).waitFor();
   await dialog.getByText("settings.json", { exact: false }).waitFor();
   await dialog.getByText("Source checkout", { exact: true }).waitFor();
+});
+
+it("logs a stored login out from the Providers section", async () => {
+  const webOrigin = await startWeb();
+  // A fake ModelAuth: the real auth.json round trip lives in model-auth.test.ts;
+  // here the auth stream just needs a login to remove through the real gateway call.
+  const auth = new Published<HostAuth>(
+    { logins: [{ providerId: "anthropic", name: "Anthropic", kind: "api_key", subscription: false }] },
+    (a, b) => a.logins === b.logins,
+  );
+  const modelAuth: ModelAuth = {
+    models: constantValue([]),
+    auth,
+    async logout(providerId: string) {
+      auth.set({ logins: auth.value.logins.filter((login) => login.providerId !== providerId) });
+    },
+    close() {},
+  };
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], modelAuth });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("1 provider logged in").waitFor();
+  await dialog.getByRole("button", { name: "Anthropic actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Log out…", exact: true }).click();
+  // The menu only arms the card's confirmation; signing out is the second step.
+  await dialog.getByText("This also signs the Pi CLI on the host out of Anthropic.").waitFor();
+  await dialog.getByRole("button", { name: "Log out", exact: true }).click();
+  await dialog.getByText("No stored logins. Log in with the Pi CLI on the host.").waitFor();
 });
 
 it("keeps the chat usable on a phone with navigation and live state still reachable", async () => {
