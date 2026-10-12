@@ -50,7 +50,17 @@ async function fixture(options: Partial<GatewayOptions> = {}) {
     modelSummaries: () => [],
     session: { id: "boundary-test", directory: "" },
     dataDir: "",
-    defaults: {},
+    settings: {
+      value: {
+        defaultModel: null,
+        defaultThinkingLevel: null,
+        steeringMode: "one-at-a-time",
+        followUpMode: "one-at-a-time",
+        custom: [],
+      },
+      subscribe: () => () => {},
+      update: () => Promise.resolve(),
+    },
     port: 0,
     ...options,
   });
@@ -265,14 +275,14 @@ describe("gateway boundaries", () => {
     expect(hello).toMatchObject({ protocol: PROTOCOL });
 
     client.socket.send(JSON.stringify({ type: "call", id: 41, method: "futureMethod", args: {} }));
-    client.socket.send(JSON.stringify({ type: "subscribe", stream: "settings" }));
-    client.socket.send(JSON.stringify({ type: "unsubscribe", stream: "settings" }));
+    client.socket.send(JSON.stringify({ type: "subscribe", stream: "settingsx" }));
+    client.socket.send(JSON.stringify({ type: "unsubscribe", stream: "settingsx" }));
     client.socket.send(JSON.stringify({ type: "ping" }));
     client.socket.send(JSON.stringify({ type: "subscribe", stream: "conversations" }));
 
     const arrived = (frame: ServerFrame) =>
       (frame.type === "result" && frame.id === 41)
-      || (frame.type === "ended" && (frame.stream as string) === "settings")
+      || (frame.type === "ended" && (frame.stream as string) === "settingsx")
       || (frame.type === "snapshot" && frame.stream === "conversations");
     while (client.frames.filter(arrived).length < 3) await once(client.socket, "message");
     expect(client.frames.find((frame) => frame.type === "result" && frame.id === 41)).toMatchObject({

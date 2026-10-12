@@ -5,6 +5,14 @@ import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, HostIndex, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
+import {
+  HOST_SETTING_KEYS,
+  isQueueMode,
+  isThinkingLevel,
+  type HostSettingKey,
+  type HostSettings,
+  type HostSettingsPatch,
+} from "./settings.ts";
 import type {
   ConversationDefaults,
   ConversationSummary,
@@ -22,12 +30,13 @@ export interface HostStreamValues {
   mcp: McpStatus | null;
   models: readonly ModelSummary[];
   auth: HostAuth;
+  settings: HostSettings;
 }
 
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1 } satisfies Record<
+const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -74,7 +83,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 1 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 2 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -137,12 +146,14 @@ export interface CallMethods {
   revokeDevice: { args: { publicKey: string }; result: null };
   /** Remove a provider's stored credential; also logs the Pi CLI on this machine out (ADR-0021 §5). */
   logout: { args: { providerId: string }; result: null };
+  /** Patch the host's settings (ADR-0021); each key set lands in PiNomad's settings.json, each `null` resets to fallback. */
+  updateSettings: { args: { patch: HostSettingsPatch }; result: null };
 }
 
 export type CallMethod = keyof CallMethods;
 
 /** Minor version that introduced each call; calls absent here date from 5.0. */
-const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1 };
+const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1, updateSettings: 2 };
 
 /** Whether a host of the given minor version knows `method`. */
 export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
@@ -254,7 +265,15 @@ const CALL_METHODS = [
   "createPairing",
   "revokeDevice",
   "logout",
+  "updateSettings",
 ] as const satisfies readonly CallMethod[];
+
+const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
+  defaultModel: (value) => value === null || (record(value) && nonempty(value.provider) && nonempty(value.modelId)),
+  defaultThinkingLevel: (value) => value === null || isThinkingLevel(value),
+  steeringMode: (value) => value === null || isQueueMode(value),
+  followUpMode: (value) => value === null || isQueueMode(value),
+};
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
   const conversationId = (): boolean =>
@@ -308,6 +327,15 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
     case "logout":
       return nonempty(args.providerId);
+    case "updateSettings":
+      // An empty patch is valid; an unknown key is malformed, never silently dropped.
+      return (
+        record(args.patch)
+        && Object.keys(args.patch).every((key) => (HOST_SETTING_KEYS as readonly string[]).includes(key))
+        && Object.entries(args.patch).every(([key, value]) =>
+          (SETTING_VALIDATORS as Record<string, (value: unknown) => boolean>)[key]?.(value) === true,
+        )
+      );
   }
 }
 

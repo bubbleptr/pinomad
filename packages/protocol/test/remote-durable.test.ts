@@ -13,6 +13,13 @@ const SNAPSHOTS: Record<string, unknown> = {
   mcp: null,
   models: [{ provider: "streamp", modelId: "stream-1", name: "Stream One", contextWindow: 8000, thinkingLevels: ["off"] }],
   auth: { logins: [{ providerId: "streamp", name: "Stream Provider", kind: "api_key", subscription: false }] },
+  settings: {
+    defaultModel: { provider: "streamp", modelId: "stream-1" },
+    defaultThinkingLevel: "high",
+    steeringMode: "all",
+    followUpMode: "all",
+    custom: ["defaultModel", "defaultThinkingLevel", "steeringMode", "followUpMode"],
+  },
 };
 
 const id = (n: number): ConversationId => n as ConversationId;
@@ -132,7 +139,8 @@ describe("RemoteDurable reconnect", () => {
       model: { provider: "faux", modelId: "faux-2" },
       thinkingLevel: "low",
     };
-    const { transport, disconnect } = fakeTransport([{}, second]);
+    // A 5.1 host has no `settings` stream — hello.defaults is the source there.
+    const { transport, disconnect } = fakeTransport([{}, second], { protocol: { major: PROTOCOL.major, minor: 1 } });
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
     try {
       await waitForView(remote, (view) => view.connection === "connected");
@@ -454,6 +462,53 @@ describe("RemoteDurable minor-version gating", () => {
           (notice) => notice.level === "error" && notice.message.includes("pinomad upgrade"),
         ),
       );
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("never subscribes to settings on a 5.1 host: settings is null, defaults come from the hello", async () => {
+    const { transport, sent } = fakeTransport([{ model: { provider: "hp", modelId: "h-1" } }], {
+      protocol: { major: PROTOCOL.major, minor: 1 },
+    });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(subscribes(sent)).not.toContain("settings");
+      const view = remote.view.current();
+      expect(view.connection).toBe("connected");
+      expect(view.settings).toBeNull();
+      expect(view.defaults).toEqual({ model: { provider: "hp", modelId: "h-1" } });
+
+      await remote.controller.updateSettings({ defaultThinkingLevel: "high" });
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "updateSettings")).toBe(false);
+      await waitForView(remote, (v) =>
+        v.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.2"),
+        ),
+      );
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("subscribes to settings on a 5.2 host; the stream value derives defaults over the hello's", async () => {
+    const { transport, sent, release } = fakeTransport([{ model: { provider: "hp", modelId: "h-1" } }]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(subscribes(sent)).toContain("settings");
+      const view = remote.view.current();
+      expect(view.settings).toEqual(SNAPSHOTS.settings);
+      // hello.defaults has the hp model — the stream's values must win.
+      expect(view.defaults).toEqual({ model: { provider: "streamp", modelId: "stream-1" }, thinkingLevel: "high" });
+
+      release("settings", {
+        defaultModel: null,
+        defaultThinkingLevel: "low",
+        steeringMode: "all",
+        followUpMode: "one-at-a-time",
+        custom: ["defaultThinkingLevel"],
+      });
+      await waitForView(remote, (v) => v.defaults.thinkingLevel === "low" && v.defaults.model === undefined);
     } finally {
       remote.close();
     }

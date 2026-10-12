@@ -424,6 +424,19 @@
       ],
       "ops": []
     },
+    "settings": {
+      "value": {
+        "custom": [],
+        "defaultModel": {
+          "modelId": "string",
+          "provider": "string"
+        },
+        "defaultThinkingLevel": "null",
+        "followUpMode": "string",
+        "steeringMode": "string"
+      },
+      "ops": []
+    },
     "tasks": {
       "value": {
         "tasks": {

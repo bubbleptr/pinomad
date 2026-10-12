@@ -5,6 +5,7 @@ import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-w
 import type { ModelRef, HarnessSettings } from "@earendil-works/pi-durable";
 import type { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { HostSettingsStore } from "./host-settings.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./http-dispatcher.ts";
 
 export function configureHarnessHttp(settingsManager: SettingsManager): void {
@@ -12,8 +13,11 @@ export function configureHarnessHttp(settingsManager: SettingsManager): void {
   configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 }
 
-/** Harness settings read at every use from pi's settings as loaded at startup. */
-export function createHarnessSettings(settingsManager: SettingsManager): HarnessSettings {
+/** Harness settings read at every use from pi's settings as loaded at startup; queue modes come from the settings store (live). */
+export function createHarnessSettings(
+  settingsManager: SettingsManager,
+  modes: Pick<HostSettingsStore, "value">,
+): HarnessSettings {
   return {
     get stream() {
       const provider = settingsManager.getProviderRetrySettings();
@@ -31,10 +35,10 @@ export function createHarnessSettings(settingsManager: SettingsManager): Harness
       return settingsManager.getRetrySettings();
     },
     get steeringMode() {
-      return settingsManager.getSteeringMode();
+      return modes.value.steeringMode;
     },
     get followUpMode() {
-      return settingsManager.getFollowUpMode();
+      return modes.value.followUpMode;
     },
   };
 }

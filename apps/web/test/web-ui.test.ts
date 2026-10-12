@@ -601,7 +601,12 @@ it("shows interruption without a text bubble and never offers a fork for streami
     dataDir: directory.path,
     models,
     modelSummaries: () => [],
-    initialModel: { provider: model.provider, modelId: model.id },
+    settingsFallback: {
+      defaultModel: () => ({ provider: model.provider, modelId: model.id }),
+      defaultThinkingLevel: () => null,
+      steeringMode: () => "one-at-a-time",
+      followUpMode: () => "one-at-a-time",
+    },
     port: 0,
     browserOrigins: [webOrigin],
   });

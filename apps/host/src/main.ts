@@ -118,7 +118,12 @@ export async function main(argv: readonly string[]): Promise<void> {
       models,
       modelSummaries: summaries,
       extensions: extensionsFor(models, summaries),
-      initialModel: { provider: model.provider, modelId: model.id },
+      settingsFallback: {
+        defaultModel: () => ({ provider: model.provider, modelId: model.id }),
+        defaultThinkingLevel: () => null,
+        steeringMode: () => "one-at-a-time",
+        followUpMode: () => "one-at-a-time",
+      },
     };
   }
 
@@ -129,7 +134,6 @@ export async function main(argv: readonly string[]): Promise<void> {
     const modelAuth = await watchModelAuth(modelRuntime, { authPath: join(getAgentDir(), "auth.json") });
     const settingsManager = SettingsManager.create(process.cwd());
     configureHarnessHttp(settingsManager);
-    const initialModel = defaultModel(settingsManager, modelRuntime);
     // One source for hello.models, extension model lists, and the `models` stream.
     const summaries = () => modelAuth.models.value;
     return {
@@ -138,14 +142,24 @@ export async function main(argv: readonly string[]): Promise<void> {
       modelSummaries: summaries,
       modelAuth,
       extensions: extensionsFor(modelRuntime, summaries),
-      settings: createHarnessSettings(settingsManager),
-      ...(initialModel === undefined ? {} : { initialModel }),
+      settings: (store) => createHarnessSettings(settingsManager, store),
+      // Unset keys fall back to pi's settings (ADR-0021 §2).
+      settingsFallback: {
+        defaultModel: () => {
+          const model = defaultModel(settingsManager, modelRuntime);
+          return model === undefined ? null : { provider: model.provider, modelId: model.modelId };
+        },
+        defaultThinkingLevel: () => settingsManager.getDefaultThinkingLevel() ?? null,
+        steeringMode: () => settingsManager.getSteeringMode(),
+        followUpMode: () => settingsManager.getFollowUpMode(),
+      },
     };
   }
 
   const options = values.faux !== undefined ? fauxOptions(() => () => fauxAssistantMessage(values.faux!)) : await piOptions();
   const host = await openHost(options);
-  const model = options.initialModel === undefined ? null : `${options.initialModel.provider}/${options.initialModel.modelId}`;
+  const { defaultModel: effectiveModel } = host.settings.value;
+  const model = effectiveModel === null ? null : `${effectiveModel.provider}/${effectiveModel.modelId}`;
   // Credentials stay in the local token file; generating a browser link is an explicit CLI action.
   // Source checkouts have the vite dev server on 5199; a packaged install
   // serves the bundled client on the host's own loopback port instead.
