@@ -32,6 +32,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
 | [0013](0013-codemode-and-tool-exposure.md) | codemode 是默认开启的通用工具；工具按 `direct` / `model-only` / `codemode` 暴露，和来源正交，MCP 默认 `codemode` |
 | [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个 |
+| [0021](0021-host-settings-in-data-dir.md) | 宿主设置存在数据目录的 `settings.json`，不写 pi 的设置、不进 Durable；凭据暂时仍共用 pi 的 `auth.json` |
 
 ## 远程与运维
 
@@ -60,4 +61,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0008 后果：移动端形态（PWA 还是 Expo）、浏览器客户端代码可信 | 由 0017 决定：移动端 Expo，桌面端和移动端都打包代码 |
 | 0008 §7：回环地址只用 token | 由 0020 补充：回环端口在 `/secure` 上也接受安全通道，桌面端只走安全通道 |
 | 0010 §4：fork 得到新 worktree 和快照 | 由 0019 修订：fork 共用父对话的检出，只有一层，每条消息最多一个 |
+| 0006 §4：PiNomad 要不要有自己的设置文件 | 由 0021 决定：宿主设置存在数据目录的 `settings.json`，没设过的项回落到 pi 的设置 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |

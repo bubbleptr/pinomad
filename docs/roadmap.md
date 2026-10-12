@@ -106,8 +106,14 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
    已完成：骨架和 Hermes 验证。`packages/protocol` 原样在 Hermes 上跑通，Metro 用 `expo/metro-config` 默认配置就能解析 Bun 隔离链接器和包的 `exports`；Hermes 只缺 `crypto.getRandomValues`（入口先加载 `polyfills.ts`，用 `expo-crypto` 补），`TextEncoder` / `TextDecoder`、`URL` / `URLSearchParams`、`WebSocket` 都是原生的，typebox 和 chord delta 正常；局域网 `ws://` 不需要 ATS 例外。配对：粘贴链接或 `pinomad://pair#…` 深链（`+native-intent` 规范化）都先到确认页；宿主列表存 expo-secure-store（`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`，不进 iCloud）；连接页显示连接状态和顶层对话列表，处理被拒、版本不匹配、断线重连。共享推导：`packages/client` 收拢了不依赖 DOM 和 React 的推导（`cot-view`、`family`、`tool-diff-stat`、`run-notifications` 的 `diffRunNotices`、`chat`、`provider-failure`、工具名和工具类别、`StoredHost` 校验），Web 改从这里导入；Web、移动端、桌面端共用 `parseStoredHost`，三端都只接受 `ws:` / `wss:` 地址。浏览器专属的地址解析（`resolveAddress`、设备名）和通知权限留在 Web。对话界面：expo-router Stack，首页是对话列表（Chats 和各项目分组，显示状态和相对时间），点进对话页；连接的 `RemoteDurable` 经 `active-remote` 模块交给兄弟路由，对话页用 `switchConversation` 切过去。对话流用倒置 FlatList 渲染 `deriveChat` 的结果：运行中显示思维链，结束后折叠；工具行可展开参数和输出；子代理只读卡片；Markdown 用 `react-native-marked`（`useMarkdown`，按 HeroUI 主题变量上色）。Composer：空闲时发送，忙时 Send 是 steer、另有 Follow-up 和 Stop，上方显示状态和排队。待回答的 `ask_user_question` 卡片在 Composer 上方（`packages/client` 的 `pendingQuestions` / `questionAnswers`，Web 共用）。新建对话页可选 Chat 或项目。还没有模型和思考级别选择、fork、改动面板。命令失败在 `RemoteDurable` 里只变成 notice、promise 照常 resolve，移动端把 notice 弹成 toast，建对话和打开对话靠检查命令后显示的是哪个对话来判断成败（`conversation-commands.ts`）。多宿主：一次只连一台；`/hosts` 列出已存宿主（`hostLabels` 移到 `packages/client`，Web 共用），点选切换、确认后忘记，下面可扫码或粘贴再配对一台；当前宿主存在钥匙串的 `pinomad.activeHost`，重启后沿用。连不上或被撤销的页面也有 Hosts 入口，离线的宿主不再挡住配对新宿主。扫码用 `expo-camera`（只要相机权限，不要麦克风），扫到的内容按粘贴链接的同一规则（`pairingFragment`）解析后进确认页；确认后直接回首页（`dismissTo("/")`），不论是从 `/hosts` 还是 `/scan` 进来的。模拟器没有相机，扫码只在真机上能验证。
    发版准备：EAS 项目在 Expo 个人账号 `kieranx` 下，`apps/mobile/eas.json` 配了 `production`（构建号远端自增）和不需要 Apple 账号的 `simulator`；Release 包在模拟器上不依赖 Metro 跑通（内嵌 bundle、Hermes、polyfill、Noise 握手）。流程见 `docs/mobile-release.md`。bundle ID 是 `build.kieran.pinomad`；出口合规声明不使用需要申报的加密（`ITSAppUsesNonExemptEncryption: false`）。移动端版本号独立，不跟 npm 包和桌面端的 `v*` tag 一起发；兼容靠协议主次版本号（ADR-0018），只有主版本号升级时各端一起升，节奏写在发版文档的“版本和发版节奏”一节。
    第一个 TestFlight 构建 0.1.0（3）已经发出。
-   接下来：真机验证扫码配对和用主机名连接；正式图标。改动面板、fork、子代理只读展示放在 MVP 之后。
-- 设置界面，连带决定 PiNomad 要不要有自己的设置文件（ADR-0006 遗留）。设置存在哪还没定，候选：写 pi 的 `settings.json`、存进 Durable 的 session 级文档、新建 `~/.pinomad/settings.json`。客户端偏好存在设备本地；宿主启动参数和 `mcp.json` 第一版只读展示。
+   真机上扫码配对和用主机名连接都已验证（2026-10-12）。
+   接下来：正式图标（优先级不高）。改动面板、fork、子代理只读展示放在 MVP 之后。
+- 设置界面（进行中，ADR-0021）。宿主设置存在数据目录的 `settings.json`，没设过的项回落到 pi 的设置；凭据第一版仍共用 pi 的 `auth.json`。任一设备改了，其他在线设备立刻看到。第一版：默认模型 + 思考等级、steering / follow-up 模式可写；显示哪些订阅已登录、能 log out；宿主启动参数和 `mcp.json` 只读展示；只做 Web（桌面端随之带上），移动端以后再做；客户端偏好不做。按堆叠 PR 分步：
+  1. 宿主状态流的通用做法：宿主上一份登记表，每条流是"读当前值 + 订阅变化"、推完整快照，协议的流名、网关分支、客户端订阅都从它生成；现有的 `mcp`、`conversations` 迁过去，协议行为不变。
+  2. `models`、`auth` 两条流和 log out 调用，协议第一次涨次版本号（5.1），按 ADR-0018 在 `packages/protocol` 里加 `since` 表，客户端只订阅、等待宿主次版本号覆盖的流；宿主监视 `auth.json`，Pi CLI 里登录或退出后推给客户端；`hello.models` 保留给旧客户端。先核实：log out 后 `ModelRuntime` 是否把那家的模型从可用列表里去掉，现在 Pi CLI 登录后宿主是否要重启才认新凭据。
+  3. `settings` 流和修改调用；宿主的默认模型、思考等级、steering / follow-up 模式改从 PiNomad 的 `settings.json` 读，没设过的回落到 pi。
+  4. Web 设置界面。
+  之后：客户端内登录订阅（授权链接经客户端打开、回调回到宿主，和 MCP OAuth 是同一个难点），届时决定凭据是否分开存；移动端设置；客户端偏好。
 - 以后可能有：TUI 客户端（TS，能直接复用 `packages/protocol`）。
 
 ## 等上游
