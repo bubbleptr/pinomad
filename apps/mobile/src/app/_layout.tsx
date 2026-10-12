@@ -21,8 +21,8 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <HeroUINativeProvider>
           <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }}>
-            {/* Title only — pushed screens show "‹ PiNomad" as their back label. */}
+          <Stack screenOptions={{ headerShown: false, headerBackButtonDisplayMode: "minimal" }}>
+            {/* Title only — pushed screens show an icon-only back chevron. */}
             <Stack.Screen name="index" options={{ title: "PiNomad" }} />
             <Stack.Screen
               name="hosts"

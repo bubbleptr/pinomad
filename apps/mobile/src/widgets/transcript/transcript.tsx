@@ -239,10 +239,13 @@ export function Transcript({
   conversation,
   toolPresentations,
   organized,
+  bottomInset = 0,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
   organized: Organized;
+  /** Space under the newest message for the floating composer. */
+  bottomInset?: number;
 }) {
   const busy = isBusy(conversation);
   const items = useMemo(() => deriveChat(conversation, toolPresentations, busy), [conversation, toolPresentations, busy]);
@@ -256,7 +259,9 @@ export function Transcript({
       data={data}
       keyExtractor={(entry) => entry.id}
       renderItem={({ item }) => <EntryView entry={item} organized={organized} />}
-      contentContainerStyle={{ padding: 16, gap: 16 }}
+      // Inverted: contentContainerStyle's paddingTop renders at the visual
+      // bottom, so the floating composer never covers the newest message.
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, paddingTop: bottomInset, gap: 16 }}
       keyboardShouldPersistTaps="handled"
     />
   );

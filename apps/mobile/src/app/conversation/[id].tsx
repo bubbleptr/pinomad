@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { Button, Spinner } from "heroui-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
@@ -11,10 +11,8 @@ import { findConversation } from "@pinomad/protocol/organization.ts";
 import { displayName } from "@pinomad/client/family.ts";
 import { useActiveReconnect, useActiveRemote } from "../../shared/lib/active-remote.ts";
 import { useDurableView } from "../../shared/lib/use-remote.ts";
-import { useKeyboardVisible } from "../../shared/lib/use-keyboard-visible.ts";
 import { showConversation } from "../../shared/lib/conversation-commands.ts";
 import { Transcript } from "../../widgets/transcript/transcript.tsx";
-import { PendingQuestions } from "../../features/answer-question/pending-questions.tsx";
 import { ConversationComposer } from "../../features/compose/composer.tsx";
 
 export default function ConversationScreen() {
@@ -100,10 +98,9 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
   const view = useDurableView(remote);
   const headerHeight = useHeaderHeight();
   const router = useRouter();
-  // The bottom inset keeps the composer off the home indicator; it must go
-  // away while the keyboard is open or the composer floats above the keys.
-  const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardVisible();
+  // The composer floats over the transcript's tail; its measured height
+  // becomes the transcript's bottom inset so the last message stays clear.
+  const [composerHeight, setComposerHeight] = useState(0);
   const reconnect = useActiveReconnect();
   // Refused switches resolve with the previous conversation still shown
   // (the reason lands as a notice) — detect via showConversation, not catch.
@@ -161,15 +158,15 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={headerHeight}
       >
-        <View style={{ flex: 1, paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
+        <View style={{ flex: 1 }}>
           <ConnectionBanner view={view} reconnect={reconnect} onBackToHost={() => router.back()} />
           <Transcript
             conversation={view.conversation}
             toolPresentations={view.toolPresentations}
             organized={view.organized}
+            bottomInset={composerHeight + 8}
           />
-          <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
-          <ConversationComposer remote={remote} view={view} />
+          <ConversationComposer remote={remote} view={view} onHeightChange={setComposerHeight} />
         </View>
       </KeyboardAvoidingView>
     </>

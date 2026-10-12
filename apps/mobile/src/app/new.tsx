@@ -79,7 +79,9 @@ function NewConversationBody({ remote }: { remote: RemoteDurable }) {
           <View style={{ flex: 1 }} />
           <ComposeBar
             disabled={view.connection !== "connected" || sending}
-            placeholder="First message…"
+            expanded
+            autoFocus
+            placeholder="Do anything with Pi"
             onSubmit={(text) => send(text)}
           />
         </View>
