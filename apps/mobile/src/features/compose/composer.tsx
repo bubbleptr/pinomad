@@ -19,6 +19,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
 import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons.tsx";
+import { GlassBackdrop, liquidGlass } from "../../shared/ui/glass.tsx";
 import { useKeyboardVisible } from "../../shared/lib/use-keyboard-visible.ts";
 import { LocationChip, LocationRow } from "../../entities/checkout/location-row.tsx";
 import { ModelSheet } from "../../entities/model/model-sheet.tsx";
@@ -37,9 +38,15 @@ function Grabber({ onDismiss }: { onDismiss(): void }) {
       "worklet";
       if (e.translationY > 24 || e.velocityY > 500) scheduleOnRN(onDismiss);
     });
+  // The same strip doubles as a tap target: some users tap the handle rather
+  // than pull it, so either intent dismisses.
+  const tap = Gesture.Tap().onEnd(() => {
+    "worklet";
+    scheduleOnRN(onDismiss);
+  });
   return (
-    <GestureDetector gesture={pan}>
-      <View style={styles.grabberStrip}>
+    <GestureDetector gesture={Gesture.Exclusive(pan, tap)}>
+      <View accessible accessibilityRole="button" accessibilityLabel="Dismiss keyboard" style={styles.grabberStrip}>
         <View style={[styles.grabber, { backgroundColor: muted }]} />
       </View>
     </GestureDetector>
@@ -48,6 +55,7 @@ function Grabber({ onDismiss }: { onDismiss(): void }) {
 
 function PlusMenu({ remote, connected }: { remote: RemoteDurable; connected: boolean }) {
   const [surfaceTertiary, muted] = useCSSVariable(["--surface-tertiary", "--muted"]) as Array<string | undefined>;
+  const glass = liquidGlass();
   return (
     <Menu>
       <Menu.Trigger
@@ -55,8 +63,11 @@ function PlusMenu({ remote, connected }: { remote: RemoteDurable; connected: boo
         accessibilityLabel="More actions"
         hitSlop={4}
         isDisabled={!connected}
-        style={[styles.circle, { backgroundColor: surfaceTertiary, opacity: connected ? 1 : 0.4 }]}
+        style={[styles.circle, { backgroundColor: glass ? undefined : surfaceTertiary, opacity: connected ? 1 : 0.4 }]}
       >
+        {/* A fully opaque fill would read as a sticker on glass; 70% lets the
+            material tint it. */}
+        {glass ? <View style={[StyleSheet.absoluteFill, styles.circle, { backgroundColor: surfaceTertiary, opacity: 0.7 }]} /> : null}
         <Plus size={20} color={muted} />
       </Menu.Trigger>
       <Menu.Portal>
@@ -123,17 +134,21 @@ export function ComposeBar({
     );
   };
   const sendSlot = <SendSlot hasText={!empty} busy={busy} disabled={disabled} onSend={send} onStop={onStop} />;
+  const glass = liquidGlass();
   return (
     <Animated.View
       layout={LinearTransition.duration(200)}
-      className="bg-surface"
+      className={glass ? undefined : "bg-surface"}
       style={[
         styles.card,
-        { borderColor: border },
+        glass ? styles.cardGlass : { borderColor: border },
         isExpanded ? styles.cardExpanded : styles.cardCollapsed,
-        dark ? null : styles.cardShadow,
+        dark || glass ? null : styles.cardShadow,
       ]}
     >
+      {/* Liquid Glass carries the chrome — no surface, border or shadow — and
+          sits behind the fixed tree so the TextInput mount rule is untouched. */}
+      {glass ? <GlassBackdrop radius={isExpanded ? 28 : 26} /> : null}
       {isExpanded ? <Grabber onDismiss={() => inputRef.current?.blur()} /> : null}
       <View style={[styles.mainRow, isExpanded ? null : styles.mainRowCollapsed]}>
         {isExpanded ? null : startAction}
@@ -190,15 +205,16 @@ export function ConversationComposer({
   const agent = conversation === undefined ? undefined : agentOf(conversation);
   const isProject = view.home?.kind === "project";
   const checkout = view.checkout;
+  const glass = liquidGlass();
   return (
     <View
-      pointerEvents="box-none"
-      style={[styles.floating, { paddingBottom: 8 + (keyboardVisible ? 0 : insets.bottom) }]}
+      style={[styles.floating, { pointerEvents: "box-none" }, { paddingBottom: 8 + (keyboardVisible ? 0 : insets.bottom) }]}
       onLayout={(e) => onHeightChange?.(e.nativeEvent.layout.height)}
     >
       <PendingQuestions docs={view.docs} remote={remote} connected={connected} />
       {status === "" ? null : (
-        <View className="bg-surface" style={[styles.statusPill, { borderColor: border }]}>
+        <View className={glass ? undefined : "bg-surface"} style={[styles.statusPill, glass ? styles.noEdge : { borderColor: border }]}>
+          {glass ? <GlassBackdrop radius={999} /> : null}
           <Text className="text-muted" style={{ fontSize: 13 }}>
             {status}
           </Text>
@@ -208,7 +224,8 @@ export function ConversationComposer({
         // Capped at ~3 rows so a long queue can't push the composer off screen.
         <ScrollView style={styles.queueScroll} contentContainerStyle={{ gap: 4 }}>
           {queued.map((item) => (
-            <View key={item.id} className="bg-surface" style={[styles.queueRow, { borderColor: border }]}>
+            <View key={item.id} className={glass ? undefined : "bg-surface"} style={[styles.queueRow, glass ? styles.noEdge : { borderColor: border }]}>
+              {glass ? <GlassBackdrop radius={14} /> : null}
               <Text className="text-foreground" style={{ flex: 1, fontSize: 13 }} numberOfLines={1}>
                 {item.text}
               </Text>
@@ -276,6 +293,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     // The input card keeps its height; scrollables above it shrink first.
     flexShrink: 0,
+  },
+  // On the glass path the material provides the edge; the hairline would
+  // double-outline it.
+  cardGlass: {
+    borderWidth: 0,
+  },
+  noEdge: {
+    borderWidth: 0,
   },
   cardCollapsed: {
     height: 52,

@@ -4,6 +4,7 @@ import { HugeiconsIcon, type HugeiconsProps, type IconSvgElement } from "@hugeic
 import {
   Add01Icon,
   ArrowUp02Icon,
+  Cancel01Icon,
   ChatAddIcon,
   ChevronDownIcon,
   ComputerIcon,
@@ -44,3 +45,5 @@ export const Computer = iconComponent(ComputerIcon);
 export const FolderClosed = iconComponent(Folder01Icon);
 export const FolderLibrary = iconComponent(FolderLibraryIcon);
 export const GitBranch = iconComponent(GitBranchIcon);
+// Same glyph the web uses for cancel/close affordances.
+export const Cancel = iconComponent(Cancel01Icon);

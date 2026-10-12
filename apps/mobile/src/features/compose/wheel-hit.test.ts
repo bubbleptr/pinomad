@@ -1,36 +1,46 @@
 import { describe, expect, it } from "vitest";
 import { WHEEL_OPTIONS, wheelHit } from "./wheel-hit.ts";
 
+// Screen coords, y down, origin at the send button's center.
+const pointAt = (degrees: number, radius: number): [number, number] => {
+  const radians = (degrees * Math.PI) / 180;
+  return [radius * Math.cos(radians), -radius * Math.sin(radians)];
+};
+
 describe("wheelHit", () => {
-  it("returns the option index at each option's center", () => {
-    WHEEL_OPTIONS.forEach((option, index) => {
-      expect(wheelHit(option.dx, option.dy)).toBe(index);
+  it("hits each segment at its mid-angle, mid-radius point", () => {
+    const mid = 136 / 2 + 46 / 2;
+    WHEEL_OPTIONS.forEach((_option, index) => {
+      const span = 90 / WHEEL_OPTIONS.length;
+      const degrees = 90 + span * index + span / 2;
+      const [dx, dy] = pointAt(degrees, mid);
+      expect(wheelHit(dx, dy)).toBe(index);
     });
   });
 
-  it("returns -1 at the send button itself", () => {
+  it("cancels at the send button itself", () => {
     expect(wheelHit(0, 0)).toBe(-1);
   });
 
-  it("returns -1 between the options when outside both radii", () => {
-    // A point on the perpendicular bisector of the two option centers,
-    // pushed out along it until it clears both hit radii.
-    const [a, b] = [WHEEL_OPTIONS[0], WHEEL_OPTIONS[1]];
-    const midX = (a.dx + b.dx) / 2;
-    const midY = (a.dy + b.dy) / 2;
-    const vx = b.dx - a.dx;
-    const vy = b.dy - a.dy;
-    const len = Math.hypot(vx, vy);
-    const x = midX + (-vy / len) * 10;
-    const y = midY + (vx / len) * 10;
-    expect(Math.hypot(x - a.dx, y - a.dy)).toBeGreaterThan(36);
-    expect(Math.hypot(x - b.dx, y - b.dy)).toBeGreaterThan(36);
-    expect(wheelHit(x, y)).toBe(-1);
+  it("cancels inside the center even at a valid angle", () => {
+    const [dx, dy] = pointAt(112, 30);
+    expect(wheelHit(dx, dy)).toBe(-1);
   });
 
-  it("hits just inside the radius and misses just outside", () => {
-    const option = WHEEL_OPTIONS[0];
-    expect(wheelHit(option.dx + 35, option.dy)).toBe(0);
-    expect(wheelHit(option.dx + 37, option.dy)).toBe(-1);
+  it("splits the boundary between two segments", () => {
+    const [ax, ay] = pointAt(134, 90);
+    const [bx, by] = pointAt(136, 90);
+    expect(wheelHit(ax, ay)).toBe(0);
+    expect(wheelHit(bx, by)).toBe(1);
+  });
+
+  it("keeps a selection when the finger overshoots outward", () => {
+    const [dx, dy] = pointAt(112, 136 + 40);
+    expect(wheelHit(dx, dy)).toBe(0);
+  });
+
+  it("misses outside the fan's angular span", () => {
+    expect(wheelHit(90, 0)).toBe(-1); // straight right
+    expect(wheelHit(0, 90)).toBe(-1); // straight down
   });
 });
