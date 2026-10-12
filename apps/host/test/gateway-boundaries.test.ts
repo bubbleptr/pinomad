@@ -10,7 +10,7 @@ import { defineDoc, defineExtension } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { startGateway, type GatewayOptions } from "../src/gateway.ts";
-import type { ServerFrame } from "@pinomad/protocol/frames.ts";
+import { PROTOCOL, type ServerFrame } from "@pinomad/protocol/frames.ts";
 import { startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
@@ -262,7 +262,7 @@ describe("gateway boundaries", () => {
     const client = await socketTo(gateway.url, host.token);
     while (!client.frames.some((frame) => frame.type === "hello")) await once(client.socket, "message");
     const hello = client.frames.find((frame) => frame.type === "hello")!;
-    expect(hello).toMatchObject({ protocol: { major: 5, minor: 0 } });
+    expect(hello).toMatchObject({ protocol: PROTOCOL });
 
     client.socket.send(JSON.stringify({ type: "call", id: 41, method: "futureMethod", args: {} }));
     client.socket.send(JSON.stringify({ type: "subscribe", stream: "settings" }));

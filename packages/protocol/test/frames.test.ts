@@ -66,6 +66,13 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 9, method: "futureMethod", args: "x" })).toBe("malformed");
   });
 
+  it("accepts logout with a providerId; rejects a malformed one", () => {
+    expect(kinds({ type: "call", id: 1, method: "logout", args: { providerId: "anthropic" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "logout", args: { providerId: "" } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "logout", args: { providerId: 3 } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "logout", args: {} })).toBe("malformed");
+  });
+
   it("rejects a call without a valid id", () => {
     expect(kinds({ type: "call", method: "abort", args: { conversationId: 1 } })).toBe("malformed");
     expect(kinds({ type: "call", id: "1", method: "abort", args: { conversationId: 1 } })).toBe("malformed");

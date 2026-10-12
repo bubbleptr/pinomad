@@ -4,6 +4,7 @@
 // See docs/licenses/pi.md for the upstream notice.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
@@ -100,6 +101,7 @@ export interface DurableView {
   readonly home?: Home;
   /** The shown conversation's worktree checkout (ADR-0010); absent for project-dir and Chat checkouts. */
   readonly checkout?: WorktreeCheckout;
+  /** The host's available models: the `models` stream once its snapshot arrived, else the hello's list (5.0 hosts). */
   readonly models: readonly ModelSummary[];
   /** The host's new-conversation defaults, from the hello frame. */
   readonly defaults: ConversationDefaults;
@@ -119,6 +121,8 @@ export interface DurableView {
   readonly devices: readonly DeviceEntry[];
   /** MCP server status (ADR-0012); `null` while the snapshot has not arrived. */
   readonly mcp: McpStatus | null;
+  /** Stored-credential logins on the host; `null` before its snapshot or when the host predates the `auth` stream (5.1). */
+  readonly auth: HostAuth | null;
 }
 
 export interface DurableViewSource {
@@ -167,4 +171,6 @@ export interface DurableController {
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */
   revokeDevice(publicKey: string): Promise<void>;
+  /** Remove a provider's stored credential on the host; this also logs the Pi CLI on that machine out (ADR-0021 §5). Needs a 5.1 host. */
+  logout(providerId: string): Promise<void>;
 }

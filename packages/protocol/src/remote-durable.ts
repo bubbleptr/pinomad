@@ -11,6 +11,8 @@ import {
   HOST_STREAM_NAMES,
   type HostStreamName,
   type HostStreamValues,
+  hostStreams,
+  hostSupportsCall,
   INVALID_FRAME_CLOSE_CODE,
   PROTOCOL,
   type ServerFrame,
@@ -23,6 +25,7 @@ import type {
   DurableView,
   DurableViewSource,
   ExtensionDocView,
+  ModelSummary,
   Notice,
 } from "./view.ts";
 
@@ -99,7 +102,9 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
-  readonly #wanted = new Set<StreamName>(HOST_STREAM_NAMES);
+  // Filled at each hello from the announced minor — a 5.0 host never sees a
+  // `models`/`auth` subscribe (ADR-0018 §1).
+  readonly #wanted = new Set<StreamName>();
   // Streams whose CURRENT subscription delivered a snapshot. A wanted-but-not-
   // fresh stream (after reconnect, before the host answers) has a stale value —
   // #acquire must wait for it, never serve the old one.
@@ -115,6 +120,10 @@ class RemoteClient {
   #side: ConversationId | undefined;
   #nextCall = 1;
   #nextNotice = 1;
+  /** The connected host's minor version; gates minor-gated streams and calls. */
+  #hostMinor = 0;
+  /** The last hello's model list — `view.models` until the `models` stream's snapshot arrives. */
+  #helloModels: readonly ModelSummary[] = [];
   #attempt = 0;
   #closed = false;
   #notifying = false;
@@ -229,23 +238,43 @@ class RemoteClient {
           this.#connection?.close();
           return;
         }
+        // The minor decides which streams and calls this host knows (ADR-0018
+        // §1-2); hosts before the version object announced none.
+        const hostMinor =
+          announced !== null && typeof announced === "object" && typeof (announced as { minor?: unknown }).minor === "number"
+            ? (announced as { minor: number }).minor
+            : 0;
+        this.#hostMinor = hostMinor;
         this.#attempt = 0;
         this.#docs = frame.docs;
         this.#toolPresentations = frame.toolPresentations;
+        this.#helloModels = frame.models;
         this.#fresh.clear();
+        // A host that got older between reconnects no longer covers every host
+        // stream; drop the ones it predates together with their values.
+        const covered = new Set<StreamName>(hostStreams(hostMinor));
+        for (const name of HOST_STREAM_NAMES) {
+          if (covered.has(name)) {
+            this.#wanted.add(name);
+          } else {
+            this.#wanted.delete(name);
+            this.#values.delete(name);
+            this.#fresh.delete(name);
+          }
+        }
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
         for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
         if (this.#state !== undefined) {
           this.#update({
             session: frame.session,
-            models: frame.models,
             toolPresentations: frame.toolPresentations,
             defaults: frame.defaults ?? {},
             connection: "connected",
           });
+          this.#refresh();
         }
-        else this.#awaitFirstView(frame);
+        else this.#awaitFirstView(frame, hostMinor);
         return;
       }
       case "snapshot":
@@ -282,12 +311,12 @@ class RemoteClient {
     }
   }
 
-  #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>): void {
-    void Promise.all(HOST_STREAM_NAMES.map((stream) => this.#snapshot(stream))).then(() => {
+  #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>, hostMinor: number): void {
+    void Promise.all(hostStreams(hostMinor).map((stream) => this.#snapshot(stream))).then(() => {
       this.#state = {
         session: hello.session,
         organized: { chats: [], projects: [] },
-        models: hello.models,
+        models: this.#host("models") ?? hello.models,
         defaults: hello.defaults ?? {},
         notices: [],
         connection: "connected",
@@ -295,6 +324,7 @@ class RemoteClient {
         toolPresentations: hello.toolPresentations,
         devices: [],
         mcp: null,
+        auth: null,
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -385,6 +415,9 @@ class RemoteClient {
     const tasks = this.#wanted.has("tasks") ? (this.#values.get("tasks") as TaskGraph | undefined) : undefined;
     this.#update({
       conversation,
+      // The stream value wins once it arrived; it must not fall back to a
+      // reconnect hello's list, which the host may not have refreshed yet.
+      models: this.#host("models") ?? this.#helloModels,
       organized: organize(index, summaries),
       home: current === undefined ? undefined : homeOf(index, summaries, current),
       checkout: current === undefined ? undefined : checkoutOf(index, summaries, current),
@@ -400,6 +433,7 @@ class RemoteClient {
             },
       devices,
       mcp: this.#host("mcp") ?? null,
+      auth: this.#host("auth") ?? null,
     });
   }
 
@@ -555,6 +589,15 @@ class RemoteClient {
         return pairing;
       },
       revokeDevice: (publicKey) => this.#command(() => this.#call("revokeDevice", { publicKey })),
+      logout: (providerId) =>
+        this.#command(() => {
+          if (!hostSupportsCall(this.#hostMinor, "logout")) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.1); run `pinomad upgrade` on the host",
+            );
+          }
+          return this.#call("logout", { providerId });
+        }),
     };
   }
 
