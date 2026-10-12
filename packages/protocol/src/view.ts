@@ -6,6 +6,7 @@ import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph 
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
+import type { ProtocolVersion } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -126,6 +127,8 @@ export interface DurableView {
   readonly auth: HostAuth | null;
   /** Effective host settings (ADR-0021); `null` before its snapshot or when the host predates the `settings` stream (5.2). */
   readonly settings: HostSettings | null;
+  /** What the host announced in its hello; `version` is absent when the host runs from a source checkout. */
+  readonly host?: { readonly version?: string; readonly protocol: ProtocolVersion };
 }
 
 export interface DurableViewSource {

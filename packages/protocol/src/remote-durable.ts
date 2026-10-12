@@ -127,6 +127,8 @@ class RemoteClient {
   #helloModels: readonly ModelSummary[] = [];
   /** The last hello's defaults — `view.defaults` until the `settings` stream's snapshot arrives. */
   #helloDefaults: ConversationDefaults = {};
+  /** The last hello's packaged version, absent on source checkouts — `view.host.version`. */
+  #hostVersion: string | undefined;
   #attempt = 0;
   #closed = false;
   #notifying = false;
@@ -253,6 +255,7 @@ class RemoteClient {
         this.#toolPresentations = frame.toolPresentations;
         this.#helloModels = frame.models;
         this.#helloDefaults = frame.defaults ?? {};
+        this.#hostVersion = frame.hostVersion;
         this.#fresh.clear();
         // A host that got older between reconnects no longer covers every host
         // stream; drop the ones it predates together with their values.
@@ -274,6 +277,7 @@ class RemoteClient {
             session: frame.session,
             toolPresentations: frame.toolPresentations,
             connection: "connected",
+            host: this.#hostInfo(),
           });
           this.#refresh();
         }
@@ -329,6 +333,7 @@ class RemoteClient {
         mcp: null,
         auth: null,
         settings: null,
+        host: this.#hostInfo(),
       };
       this.#refresh();
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
@@ -383,6 +388,14 @@ class RemoteClient {
   /** A host-level stream's latest value, or undefined until its first snapshot lands. */
   #host<K extends HostStreamName>(name: K): HostStreamValues[K] | undefined {
     return this.#values.get(name) as HostStreamValues[K] | undefined;
+  }
+
+  /** `view.host`: the announced protocol and the packaged version, when there is one. */
+  #hostInfo(): NonNullable<DurableView["host"]> {
+    return {
+      protocol: { major: PROTOCOL.major, minor: this.#hostMinor },
+      ...(this.#hostVersion === undefined ? {} : { version: this.#hostVersion }),
+    };
   }
 
   /** `view.defaults`: derived from the `settings` stream once it arrived, never back to the hello's after. */
