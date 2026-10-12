@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -61,6 +61,50 @@ it("opens the Devices dialog from the phone drawer", async () => {
   // The drawer closed; only the Devices dialog remains.
   await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
   await page.getByRole("dialog").getByRole("button", { name: "Pair a device", exact: true }).waitFor();
+});
+
+it("opens the Settings dialog from the phone drawer", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 390, webOrigin);
+
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  // The drawer closed; only the Settings dialog remains.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
+  await page.getByRole("dialog").getByText("New conversations", { exact: true }).waitFor();
+});
+
+it("changes a queue-mode setting, then resets it to pi's default", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const followUp = page.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
+  await followUp.waitFor();
+  await followUp.getByRole("radio", { name: "All at once", exact: true }).click();
+
+  // The control only moves once the host's settings stream pushes the change.
+  await expect.poll(() => followUp.getByRole("radio", { name: "All at once", checked: true }).count()).toBe(1);
+  const reset = page.getByRole("button", { name: "Use pi's default", exact: true });
+  await reset.waitFor();
+  expect(JSON.parse(await readFile(join(dir.path, "settings.json"), "utf8"))).toMatchObject({ followUpMode: "all" });
+
+  await reset.click();
+  await expect.poll(() => followUp.getByRole("radio", { name: "One at a time", checked: true }).count()).toBe(1);
+  await expect.poll(() => page.getByRole("button", { name: "Use pi's default", exact: true }).count()).toBe(0);
+});
+
+it("shows the empty Logins state on a host without stored credentials", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("dialog").getByText("No stored logins. Log in with the Pi CLI on the host.").waitFor();
 });
 
 it("keeps the chat usable on a phone with navigation and live state still reachable", async () => {

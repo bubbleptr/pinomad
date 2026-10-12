@@ -12,7 +12,7 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
+import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { useHosts } from "../../entities/host/host-store.ts";
@@ -100,11 +100,13 @@ export function SidebarHeaderBand({
 export function SidebarFooter({
   view,
   onOpenDevices,
+  onOpenSettings,
   onPairHost,
   onSelect,
 }: {
   view: DurableView;
   onOpenDevices: () => void;
+  onOpenSettings: () => void;
   onPairHost: () => void;
   onSelect?: () => void;
 }) {
@@ -136,6 +138,15 @@ export function SidebarFooter({
         isDisabled={view.connection !== "connected"}
         onClick={() => {
           onOpenDevices();
+          onSelect?.();
+        }}
+      />
+      <SideNavItem
+        icon={<Settings aria-hidden="true" />}
+        label="Settings"
+        isDisabled={view.connection !== "connected"}
+        onClick={() => {
+          onOpenSettings();
           onSelect?.();
         }}
       />

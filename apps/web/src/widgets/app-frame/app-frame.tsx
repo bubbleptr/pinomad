@@ -17,6 +17,7 @@ import { FileDiff } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
+import { SettingsDialog } from "./settings-dialog.tsx";
 import { PairHostDialog } from "./host-switcher.tsx";
 import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 
@@ -77,6 +78,7 @@ export function AppFrame({
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [pairHostOpen, setPairHostOpen] = useState(false);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
@@ -123,6 +125,7 @@ export function AppFrame({
                 <SidebarFooter
                   view={view}
                   onOpenDevices={() => setDevicesOpen(true)}
+                  onOpenSettings={() => setSettingsOpen(true)}
                   onPairHost={() => setPairHostOpen(true)}
                 />
               }
@@ -188,6 +191,7 @@ export function AppFrame({
           <SidebarFooter
             view={view}
             onOpenDevices={() => setDevicesOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
             onPairHost={() => setPairHostOpen(true)}
             onSelect={() => setNavOpen(false)}
           />
@@ -210,6 +214,7 @@ export function AppFrame({
       {devicesOpen ? (
         <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
       ) : null}
+      {settingsOpen ? <SettingsDialog view={view} remote={remote} onClose={() => setSettingsOpen(false)} /> : null}
       {pairHostOpen ? <PairHostDialog onClose={() => setPairHostOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
