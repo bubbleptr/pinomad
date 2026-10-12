@@ -17,9 +17,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { queueItems, statusText } from "@pinomad/client/chat.ts";
-import { Plus } from "../../shared/ui/icons.tsx";
+import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
+import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons.tsx";
 import { useKeyboardVisible } from "../../shared/lib/use-keyboard-visible.ts";
+import { LocationChip, LocationRow } from "../../entities/checkout/location-row.tsx";
+import { ModelSheet } from "../../entities/model/model-sheet.tsx";
 import { PendingQuestions } from "../answer-question/pending-questions.tsx";
 import { SendSlot } from "./send-button.tsx";
 
@@ -78,6 +80,8 @@ export function ComposeBar({
   expanded = false,
   autoFocus = false,
   startAction,
+  modelAction,
+  footer,
 }: {
   disabled: boolean;
   busy?: boolean;
@@ -90,6 +94,10 @@ export function ComposeBar({
   autoFocus?: boolean;
   /** The leading + affordance; omitted where there is nothing to put behind it. */
   startAction?: ReactNode;
+  /** The model · thinking capsule; expanded only, right after startAction. */
+  modelAction?: ReactNode;
+  /** A row inside the card under the actions row (location chips); expanded only. */
+  footer?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
@@ -146,13 +154,17 @@ export function ComposeBar({
         />
         {isExpanded ? null : sendSlot}
       </View>
-      {isExpanded ? (
-        <View style={styles.actionsRow}>
-          {startAction}
-          <View style={styles.spacer} />
-          {sendSlot}
-        </View>
-      ) : null}
+      {/* The actions row stays mounted (display:none) while collapsed so the
+          model sheet inside modelAction survives Keyboard.dismiss() blurring
+          the input — blur collapses the card, and an unmount would kill the
+          open sheet. */}
+      <View style={[styles.actionsRow, isExpanded ? undefined : styles.hidden]}>
+        {startAction}
+        {modelAction}
+        <View style={styles.spacer} />
+        {sendSlot}
+      </View>
+      {isExpanded && footer !== undefined ? <View style={styles.footerRow}>{footer}</View> : null}
     </Animated.View>
   );
 }
@@ -175,6 +187,9 @@ export function ConversationComposer({
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
   const border = useCSSVariable("--border") as string | undefined;
+  const agent = conversation === undefined ? undefined : agentOf(conversation);
+  const isProject = view.home?.kind === "project";
+  const checkout = view.checkout;
   return (
     <View
       pointerEvents="box-none"
@@ -211,6 +226,35 @@ export function ConversationComposer({
         onSubmit={(text, whenBusy) => void remote.controller.submit(text, whenBusy)}
         onStop={() => void remote.controller.abort()}
         startAction={<PlusMenu remote={remote} connected={connected} />}
+        modelAction={
+          agent === undefined ? undefined : (
+            <ModelSheet
+              models={view.models}
+              selected={{ model: agent.model, level: agent.thinkingLevel ?? "off" }}
+              isDisabled={!connected}
+              onModelChange={(model) => void remote.controller.setModel(model)}
+              onLevelChange={(level) => void remote.controller.setThinkingLevel(level)}
+            />
+          )
+        }
+        footer={
+          // Static chips (web parity): the location is fixed once the
+          // conversation exists; only the draft screen offers pickers.
+          <LocationRow>
+            {isProject ? (
+              checkout === undefined ? (
+                <LocationChip icon={Computer} label="Project folder" testID="composer-location" />
+              ) : (
+                <>
+                  <LocationChip icon={FolderLibrary} label="Git worktree" testID="composer-location" />
+                  <LocationChip icon={GitBranch} label={checkout.branch} muted testID="composer-branch" />
+                </>
+              )
+            ) : (
+              <LocationChip icon={ChatAdd} label="Chat" testID="composer-location" />
+            )}
+          </LocationRow>
+        }
       />
     </View>
   );
@@ -288,6 +332,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     height: 36,
+    gap: 4,
+  },
+  hidden: {
+    display: "none",
+  },
+  footerRow: {
+    marginTop: 2,
   },
   spacer: {
     flex: 1,

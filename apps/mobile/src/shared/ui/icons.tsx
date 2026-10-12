@@ -1,7 +1,20 @@
 // Thin Hugeicons wrapper mirroring apps/web/src/shared/ui/icons.tsx: fixed
 // stroke width, currentColor default so the `color` prop drives everything.
 import { HugeiconsIcon, type HugeiconsProps, type IconSvgElement } from "@hugeicons/react-native";
-import { Add01Icon, ArrowUp02Icon, FlashIcon, Queue02Icon, StopIcon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  ArrowUp02Icon,
+  ChatAddIcon,
+  ChevronDownIcon,
+  ComputerIcon,
+  FlashIcon,
+  Folder01Icon,
+  FolderLibraryIcon,
+  GitBranchIcon,
+  Queue02Icon,
+  StopIcon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 
 type PinomadIconProps = Omit<HugeiconsProps, "icon" | "altIcon">;
 
@@ -23,3 +36,11 @@ export const Steer = iconComponent(FlashIcon);
 export const FollowUp = iconComponent(Queue02Icon);
 // A solid rounded square like the iOS stop glyph, not the stroked outline.
 export const Stop = iconComponent(StopIcon, { fill: "currentColor" });
+export const ChevronDown = iconComponent(ChevronDownIcon);
+export const Check = iconComponent(Tick02Icon);
+export const ChatAdd = iconComponent(ChatAddIcon);
+export const Computer = iconComponent(ComputerIcon);
+// Web maps its FolderClosed export to Folder01Icon — same glyph here.
+export const FolderClosed = iconComponent(Folder01Icon);
+export const FolderLibrary = iconComponent(FolderLibraryIcon);
+export const GitBranch = iconComponent(GitBranchIcon);

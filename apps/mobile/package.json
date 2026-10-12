@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-durable": "1.0.4",
+    "@gorhom/bottom-sheet": "5.2.14",
     "@hugeicons/core-free-icons": "4.2.2",
     "@hugeicons/react-native": "1.0.16",
     "@pinomad/client": "workspace:*",
