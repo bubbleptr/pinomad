@@ -13,16 +13,21 @@ import { SideNav, SideNavItem } from "@astryxdesign/core/SideNav";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { useState, type ReactNode } from "react";
+import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import type { StoredLogin } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { QueueMode } from "@pinomad/protocol/settings.ts";
+import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
-import { ArrowLeft, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, Bot, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
+import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 
 const SECTIONS = [
   { id: "providers", title: "Providers", icon: Key },
   { id: "models", title: "Models", icon: Sparkles },
+  { id: "agents", title: "Agents", icon: Bot },
   { id: "mcp", title: "MCP", icon: Puzzle },
   { id: "chats", title: "Chats", icon: ChatBubble },
   { id: "about", title: "About", icon: Info },
@@ -194,6 +199,19 @@ function sectionBody(
         title: "Models",
         supporting: <Text as="p" type="supporting">Used when a new conversation doesn't pick its own model.</Text>,
         body: <ModelsSection view={view} remote={remote} connected={connected} />,
+      };
+    case "agents":
+      return {
+        title: "Agents",
+        supporting: (
+          <Text as="p" type="supporting">
+            Named agents the model can delegate to with <code>subagent</code> — mention one with <code>@name</code>.{" "}
+            Each is a Markdown file in{" "}
+            <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/agents/</span>; edits
+            to those files apply immediately.
+          </Text>
+        ),
+        body: <AgentsSection view={view} remote={remote} connected={connected} />,
       };
     case "mcp":
       return { title: "MCP", body: <McpSection view={view} /> };
@@ -377,6 +395,206 @@ function ModeSetting({
         ) : null}
       </HStack>
     </VStack>
+  );
+}
+
+/**
+ * Named agents (ADR-0023): the roles and file problems come from the `agents`
+ * stream, so a hand-edited file or another device's change appears live; the
+ * editor dialog is the only local state.
+ */
+function AgentsSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
+  const agents = view.agents;
+  const [editor, setEditor] = useState<{ mode: "create" } | { mode: "edit"; role: AgentRole } | undefined>(undefined);
+  if (agents === null) {
+    return (
+      <Banner
+        status="warning"
+        title="This host is too old for named agents"
+        description="Run `pinomad upgrade` on the host."
+      />
+    );
+  }
+  return (
+    <VStack gap={3}>
+      <HStack gap={2} vAlign="center">
+        <Button
+          label="New agent"
+          variant="secondary"
+          size="sm"
+          isDisabled={!connected}
+          onClick={() => setEditor({ mode: "create" })}
+        />
+      </HStack>
+      {agents.roles.length === 0 && agents.problems.length === 0 ? (
+        <Text as="p" type="supporting">No named agents yet.</Text>
+      ) : null}
+      {agents.roles.map((role) => (
+        <AgentRoleCard
+          key={role.name}
+          role={role}
+          view={view}
+          remote={remote}
+          connected={connected}
+          onEdit={() => setEditor({ mode: "edit", role })}
+        />
+      ))}
+      {agents.problems.map((problem) => (
+        <AgentProblemCard key={problem.file} problem={problem} remote={remote} connected={connected} />
+      ))}
+      {editor === undefined ? null : (
+        <AgentEditorDialog
+          view={view}
+          remote={remote}
+          connected={connected}
+          {...(editor.mode === "edit" ? { role: editor.role } : {})}
+          onClose={() => setEditor(undefined)}
+        />
+      )}
+    </VStack>
+  );
+}
+
+/** `provider/modelId` split on the first `/`; the role file format pins this shape. */
+const refOfRoleModel = (model: string): ModelRef => {
+  const slash = model.indexOf("/");
+  return { provider: model.slice(0, slash), modelId: model.slice(slash + 1) };
+};
+
+function AgentRoleCard({
+  role,
+  view,
+  remote,
+  connected,
+  onEdit,
+}: {
+  role: AgentRole;
+  view: DurableView;
+  remote: RemoteDurable;
+  connected: boolean;
+  onEdit: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const modelSummary = role.model === undefined ? undefined : summaryOf(view.models, refOfRoleModel(role.model));
+  const remove = (): void => {
+    void remote.controller.deleteAgent(role.name).catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
+  };
+  return (
+    <Card padding={4}>
+      <HStack gap={3} vAlign="start">
+        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
+          <Heading level={3}>{role.name}</Heading>
+          <Text as="p" type="supporting">{role.description}</Text>
+          {role.model === undefined && role.thinkingLevel === undefined ? null : (
+            <HStack gap={1} wrap="wrap">
+              {role.model === undefined ? null : (
+                <Token label={modelSummary?.name ?? role.model} size="sm" />
+              )}
+              {role.thinkingLevel === undefined ? null : (
+                <Token label={thinkingLevelLabels[role.thinkingLevel]} size="sm" />
+              )}
+              {role.model !== undefined && modelSummary === undefined ? (
+                <Token label="Model not available" color="orange" size="sm" />
+              ) : null}
+            </HStack>
+          )}
+        </VStack>
+        {confirming ? null : (
+          <HStack gap={1} vAlign="center">
+            <MoreMenu
+              icon={<MoreHorizontal aria-hidden="true" />}
+              label={`${role.name} actions`}
+              size="sm"
+              variant="ghost"
+              isDisabled={!connected}
+              items={[
+                { label: "Edit…", onClick: onEdit },
+                { label: "Delete…", onClick: () => setConfirming(true) },
+              ]}
+            />
+          </HStack>
+        )}
+      </HStack>
+      {confirming ? (
+        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <Text as="p" type="supporting">Conversations already using this agent keep their copy.</Text>
+          <HStack gap={2} vAlign="center">
+            <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
+            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+          </HStack>
+        </VStack>
+      ) : null}
+      {error === undefined ? null : (
+        <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+          {error}
+        </Text>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * A file the loader could not use. A stem that still passes the name rule gets
+ * a Delete so the mistake is removable here; anything else is a hand fix.
+ */
+function AgentProblemCard({
+  problem,
+  remote,
+  connected,
+}: {
+  problem: AgentRoleProblem;
+  remote: RemoteDurable;
+  connected: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const deletable = agentNameProblem(problem.file.slice(0, -".md".length)) === undefined;
+  const remove = (): void => {
+    void remote.controller.deleteAgent(problem.file.slice(0, -".md".length)).catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
+  };
+  return (
+    <Card padding={4}>
+      <HStack gap={3} vAlign="start">
+        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
+          <Heading level={3}>{problem.file}</Heading>
+          <HStack gap={1} wrap="wrap">
+            <Token label="Not loaded" color="orange" size="sm" />
+          </HStack>
+          <Text as="p" type="supporting">{problem.reason}</Text>
+          <Text as="p" type="supporting">Fix this file on the host.</Text>
+        </VStack>
+        {confirming || !deletable ? null : (
+          <HStack gap={1} vAlign="center">
+            <MoreMenu
+              icon={<MoreHorizontal aria-hidden="true" />}
+              label={`${problem.file} actions`}
+              size="sm"
+              variant="ghost"
+              isDisabled={!connected}
+              items={[{ label: "Delete…", onClick: () => setConfirming(true) }]}
+            />
+          </HStack>
+        )}
+      </HStack>
+      {confirming ? (
+        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <HStack gap={2} vAlign="center">
+            <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
+            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+          </HStack>
+        </VStack>
+      ) : null}
+      {error === undefined ? null : (
+        <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+          {error}
+        </Text>
+      )}
+    </Card>
   );
 }
 

@@ -2433,3 +2433,132 @@ it("checks for updates instead of reloading on a desktop client-older mismatch",
   await page.getByRole("button", { name: "Restart to update" }).waitFor();
   await page.screenshot({ path: "/tmp/pinomad-mismatch-ready.png" });
 });
+
+it("manages named agents from the Agents settings section", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dir.path,
+    fauxModels: [
+      { id: "faux-1", name: "Faux Model" },
+      { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  await settings.getByText("No named agents yet.", { exact: true }).waitFor();
+
+  // Create: name, description, a pinned model and level, a prompt.
+  await settings.getByRole("button", { name: "New agent", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "New agent" });
+  await editor.getByRole("textbox", { name: "Name", exact: true }).fill("reviewer");
+  await editor.getByRole("textbox", { name: "Description", exact: true }).fill("Reviews code");
+  await editor.getByRole("combobox", { name: "Model", exact: true }).click();
+  await page.getByRole("option", { name: "Faux Thinker (faux/faux-thinker)", exact: true }).click();
+  await editor.getByRole("combobox", { name: "Thinking level", exact: true }).click();
+  await page.getByRole("option", { name: "High", exact: true }).click();
+  await editor.getByRole("textbox", { name: "Prompt", exact: true }).fill("Be strict.");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+
+  // The card appears only once the host's agents stream pushes the write.
+  const card = settings.getByRole("heading", { name: "reviewer", exact: true });
+  await card.waitFor();
+  const cardBox = settings.locator("div").filter({ has: card }).last();
+  const file = join(dir.path, "agents", "reviewer.md");
+  const text = await readFile(file, "utf8");
+  expect(text).toContain('description: "Reviews code"');
+  expect(text).toContain('model: "faux/faux-thinker"');
+  expect(text).toContain('thinkingLevel: "high"');
+  expect(text).toContain("Be strict.");
+  await settings.getByText("Faux Thinker", { exact: true }).waitFor();
+  await settings.getByText("High", { exact: true }).waitFor();
+
+  // Edit: the name stays the file name; the description updates the file and card.
+  await settings.getByRole("button", { name: "reviewer actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit…", exact: true }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit reviewer" });
+  expect(await editDialog.getByRole("textbox", { name: "Name", exact: true }).isDisabled()).toBe(true);
+  await editDialog.getByRole("textbox", { name: "Description", exact: true }).fill("Reviews pull requests");
+  await editDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await settings.getByText("Reviews pull requests", { exact: true }).waitFor();
+  expect(await readFile(file, "utf8")).toContain('description: "Reviews pull requests"');
+
+  // Delete: the menu arms the confirm inside the card, then both vanish.
+  await settings.getByRole("button", { name: "reviewer actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
+  await settings.getByText("Conversations already using this agent keep their copy.", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "Delete", exact: true }).click();
+  await settings.getByText("No named agents yet.", { exact: true }).waitFor();
+  await expect.poll(async () => (await import("node:fs")).existsSync(file)).toBe(false);
+});
+
+it("shows the agent editor's name rule and the host's already-exists error inline", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  await settings.getByRole("button", { name: "New agent", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "New agent" });
+
+  // A bad name trips the shared rule without touching the host.
+  await editor.getByRole("textbox", { name: "Name", exact: true }).fill("Reviewer");
+  await editor.getByRole("textbox", { name: "Description", exact: true }).fill("d");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByText("Name must be lowercase letters, digits and hyphens (max 32)", { exact: true }).waitFor();
+  await expect
+    .poll(async () => (await import("node:fs/promises")).readdir(join(dir.path, "agents")))
+    .toEqual([]);
+
+  // A duplicate name passes the shape check and surfaces the host's error.
+  await editor.getByRole("textbox", { name: "Name", exact: true }).fill("reviewer");
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Existing"\n---\n\nx\n');
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByText('Agent "reviewer" already exists', { exact: true }).waitFor();
+});
+
+it("lists a hand-written agent file live and reports a bad one as a problem", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dir.path,
+    fauxModels: [
+      { id: "faux-1", name: "Faux Model" },
+      { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  await settings.getByText("No named agents yet.", { exact: true }).waitFor();
+
+  // Hand-written files stream in without a reload.
+  await writeFile(
+    join(dir.path, "agents", "planner.md"),
+    '---\ndescription: "Plans work"\nmodel: "nope/missing"\n---\n\nPlan it.\n',
+  );
+  await settings.getByRole("heading", { name: "planner", exact: true }).waitFor();
+  await settings.getByText("Plans work", { exact: true }).waitFor();
+  await settings.getByText("Model not available", { exact: true }).waitFor();
+
+  await writeFile(join(dir.path, "agents", "bad-field.md"), '---\ndescription: "d"\ntools: read\n---\n\nx\n');
+  await settings.getByRole("heading", { name: "bad-field.md", exact: true }).waitFor();
+  await settings.getByText("Not loaded", { exact: true }).waitFor();
+  await settings.getByText('Unknown field "tools"', { exact: true }).waitFor();
+  await settings.getByText("Fix this file on the host.", { exact: true }).waitFor();
+});
