@@ -319,7 +319,7 @@ function ThreadDetail({
     const text = draft.trim();
     if (text === "") return;
     requestNotificationPermission();
-    void remote.controller.submit(text, "followUp", side.id);
+    void remote.controller.submit(text, "followUp", { target: side.id });
     setDraft("");
   };
   const parentSummary =
@@ -343,7 +343,7 @@ function ThreadDetail({
           forkSource={displayName(parentSummary)}
           onRetry={async ({ text, requestId }) => {
             requestNotificationPermission();
-            await remote.controller.submit(text, "followUp", side.id, requestId);
+            await remote.controller.submit(text, "followUp", { target: side.id, requestId });
           }}
         />
         <PendingQuestions

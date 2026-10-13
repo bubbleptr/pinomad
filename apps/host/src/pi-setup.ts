@@ -68,5 +68,6 @@ export function modelSummaries(modelRuntime: ModelRuntime): ModelSummary[] {
     // getSupportedThinkingLevels already returns ["off"] for non-reasoning
     // models and always leads with "off", matching the wire invariant.
     thinkingLevels: getSupportedThinkingLevels(model),
+    images: model.input.includes("image"),
   }));
 }

@@ -304,7 +304,7 @@ describe("RemoteDurable side conversation", () => {
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
     try {
       await remote.controller.switchConversation(id(1));
-      await remote.controller.submit("to the side", "followUp", id(2));
+      await remote.controller.submit("to the side", "followUp", { target: id(2) });
       await remote.controller.answer(DOC.kind, "req-1", [{ selected: ["yes"] }], id(2));
       await remote.controller.abort(id(2));
       await remote.controller.submit("to the main", "followUp");
@@ -321,14 +321,47 @@ describe("RemoteDurable side conversation", () => {
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
     try {
       await remote.controller.switchConversation(id(1));
-      await remote.controller.submit("retry", "followUp", id(1), "retry:run-4");
-      await remote.controller.submit("fresh", "followUp", id(1));
+      await remote.controller.submit("retry", "followUp", { target: id(1), requestId: "retry:run-4" });
+      await remote.controller.submit("fresh", "followUp", { target: id(1) });
       const submits = sent.filter((frame) => frame.type === "call" && frame.method === "submit");
       expect((submits[0]!.args as { requestId: string }).requestId).toBe("retry:run-4");
       const generated = (submits[1]!.args as { requestId: string }).requestId;
       expect(typeof generated).toBe("string");
       expect(generated.length).toBeGreaterThan(0);
       expect(generated).not.toBe("retry:run-4");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("sends submit images on a 5.5 host, notices and skips the call on 5.4", async () => {
+    const image = { data: "aGVsbG8=", mimeType: "image/png" as const };
+
+    const old = fakeTransport([{}], { protocol: { major: 5, minor: 4 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await remoteOld.controller.submit("look", "followUp", { images: [image] });
+      await waitForView(remoteOld, (view) =>
+        view.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.5"),
+        ),
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "submit")).toHaveLength(0);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.submit("look", "followUp", { images: [image] });
+      await remote.controller.submit("plain", "followUp");
+      const submits = sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      expect((submits[0]!.args as { images: unknown }).images).toEqual([image]);
+      // No images option → no `images` key on the wire.
+      expect("images" in (submits[1]!.args as object)).toBe(false);
     } finally {
       remote.close();
     }

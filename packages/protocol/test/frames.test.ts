@@ -131,6 +131,28 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "subscribe" })).toBe("malformed");
   });
 
+
+  it("accepts shaped images on submit and createConversation, rejects malformed ones", () => {
+    const image = { data: "aGVsbG8=", mimeType: "image/png" };
+    expect(
+      kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "hi", whenBusy: "followUp", requestId: "r", images: [image] } }),
+    ).toBe("frame");
+    expect(
+      kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "hi", whenBusy: "followUp", requestId: "r", images: "x" } }),
+    ).toBe("malformed");
+    expect(
+      kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "hi", whenBusy: "followUp", requestId: "r", images: [{ data: 1, mimeType: "image/png" }] } }),
+    ).toBe("malformed");
+
+    const base = { home: { kind: "chat" }, requestId: "req" };
+    // An image-only first message is valid; an empty one is not.
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "", images: [image] } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "", images: [] } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "" } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: "x" } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
+  });
+
   it("ignores frames whose type it does not know", () => {
     expect(kinds({ type: "ping" })).toBe("unknownType");
     expect(kinds({ type: "ping", extra: 1 })).toBe("unknownType");

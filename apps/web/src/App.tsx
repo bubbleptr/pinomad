@@ -597,7 +597,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
                   ? undefined
                   : async ({ text, requestId }) => {
                       requestNotificationPermission();
-                      await remote.controller.submit(text, "followUp", undefined, requestId);
+                      await remote.controller.submit(text, "followUp", { requestId });
                     }
               }
             />

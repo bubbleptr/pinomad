@@ -255,7 +255,7 @@ describe("gateway", () => {
     await waitForView(client.view, (view) => view.side?.id === forkId && view.side.conversation !== undefined);
 
     // A targeted submit talks to the side; the main transcript is untouched.
-    await client.controller.submit("side question", "followUp", forkId);
+    await client.controller.submit("side question", "followUp", { target: forkId });
     await waitForView(client.view, (view) => transcript(view.side!.conversation!).at(-1)?.text === "side answer");
     expect(transcript(client.view.current().conversation!).at(-1)?.text).toBe("parent answer");
   });
