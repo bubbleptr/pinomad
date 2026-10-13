@@ -1,8 +1,8 @@
-import { Redirect, Stack, useRouter } from "expo-router";
-import { useState } from "react";
+import { Redirect, Stack, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { Menu } from "heroui-native";
+import { Menu, Separator } from "heroui-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -10,6 +10,7 @@ import { useActiveRemote } from "../shared/lib/active-remote.ts";
 import { useDurableView } from "../shared/lib/use-remote.ts";
 import { createAndShow } from "../shared/lib/conversation-commands.ts";
 import { useKeyboardVisible } from "../shared/lib/use-keyboard-visible.ts";
+import { takeAddedProject } from "../shared/lib/pending-project.ts";
 import { ComposeBar } from "../features/compose/composer.tsx";
 import { LocationChip, LocationRow } from "../entities/checkout/location-row.tsx";
 import { ModelSheet } from "../entities/model/model-sheet.tsx";
@@ -37,6 +38,7 @@ function ProjectMenu({
   disabled: boolean;
   projects: readonly { path: string; name: string }[];
 }) {
+  const router = useRouter();
   const label =
     home.kind === "chat" ? "Chat" : (projects.find((project) => project.path === home.path)?.name || home.path);
   return (
@@ -60,6 +62,10 @@ function ProjectMenu({
               <Menu.ItemTitle>{project.name || project.path}</Menu.ItemTitle>
             </Menu.Item>
           ))}
+          <Separator style={{ marginVertical: 4 }} />
+          <Menu.Item onPress={() => router.push("/add-project")}>
+            <Menu.ItemTitle>Add project…</Menu.ItemTitle>
+          </Menu.Item>
         </Menu.Content>
       </Menu.Portal>
     </Menu>
@@ -108,6 +114,14 @@ function NewConversationBody({ remote }: { remote: RemoteDurable }) {
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
   const [home, setHome] = useState<Home>(CHAT);
+  // The picker hands its added project here in memory; landing back on /new
+  // with it selects that project for the draft.
+  useFocusEffect(
+    useCallback(() => {
+      const added = takeAddedProject();
+      if (added !== undefined) setHome({ kind: "project", path: added });
+    }, []),
+  );
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const [sending, setSending] = useState(false);
   const { pick, setModel, setLevel } = useDraftModelPick(view);

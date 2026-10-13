@@ -9,6 +9,8 @@ import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { displayName, familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useNow } from "../../shared/lib/use-now.ts";
+import { useCSSVariable } from "uniwind";
+import { ChevronRight, FolderClosed } from "../../shared/ui/icons.tsx";
 
 const STATUS_CHIP: Record<FamilyStatus, { color: "warning" | "danger" | "accent"; label: string }> = {
   "needs-answer": { color: "warning", label: "Waiting" },
@@ -64,8 +66,9 @@ function Section({ title, nodes, now }: { title: string; nodes: readonly Convers
   );
 }
 
-export function ConversationList({ view }: { view: DurableView }) {
+export function ConversationList({ view, onAddProject }: { view: DurableView; onAddProject?(): void }) {
   const now = useNow();
+  const muted = useCSSVariable("--muted") as string | undefined;
   const empty = view.organized.chats.length === 0 && view.organized.projects.every((entry) => entry.conversations.length === 0);
   return (
     <View style={{ gap: 16 }}>
@@ -78,6 +81,26 @@ export function ConversationList({ view }: { view: DurableView }) {
           now={now}
         />
       ))}
+      {view.organized.projects.length === 0 && onAddProject !== undefined ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onAddProject}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingVertical: 10,
+            paddingHorizontal: 4,
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <FolderClosed size={16} color={muted} />
+          <Text className="text-foreground" style={{ flex: 1, fontSize: 16 }}>
+            Add project
+          </Text>
+          <ChevronRight size={14} color={muted} />
+        </Pressable>
+      ) : null}
       {empty ? (
         <Text className="text-muted" style={{ textAlign: "center", paddingVertical: 24 }}>
           No conversations on this host yet.{"\n"}Tap New to start one.

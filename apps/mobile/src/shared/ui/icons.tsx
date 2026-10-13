@@ -7,6 +7,7 @@ import {
   Cancel01Icon,
   ChatAddIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ComputerIcon,
   FlashIcon,
   Folder01Icon,
@@ -38,6 +39,7 @@ export const FollowUp = iconComponent(Queue02Icon);
 // A solid rounded square like the iOS stop glyph, not the stroked outline.
 export const Stop = iconComponent(StopIcon, { fill: "currentColor" });
 export const ChevronDown = iconComponent(ChevronDownIcon);
+export const ChevronRight = iconComponent(ChevronRightIcon);
 export const Check = iconComponent(Tick02Icon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const Computer = iconComponent(ComputerIcon);
