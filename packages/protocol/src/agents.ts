@@ -33,6 +33,16 @@ export const MAX_AGENT_DESCRIPTION = 1024;
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
+ * Why a name can't name an agent file, or undefined when it can. Stands alone
+ * because `deleteAgent` joins it into a path — anything else could traverse.
+ */
+export function agentNameProblem(name: string): string | undefined {
+  return name.length > MAX_AGENT_NAME || !NAME_PATTERN.test(name)
+    ? `Name must be lowercase letters, digits and hyphens (max ${MAX_AGENT_NAME})`
+    : undefined;
+}
+
+/**
  * Why a role can't be saved or loaded, or undefined when it can. Shared by the
  * host loader, the gateway's calls, and client pre-checks — the same two-layer
  * split as `imageProblem` (shape on the wire, content here).
@@ -44,9 +54,8 @@ export function agentRoleProblem(role: {
   thinkingLevel?: string;
   prompt: string;
 }): string | undefined {
-  if (role.name.length > MAX_AGENT_NAME || !NAME_PATTERN.test(role.name)) {
-    return `Name must be lowercase letters, digits and hyphens (max ${MAX_AGENT_NAME})`;
-  }
+  const name = agentNameProblem(role.name);
+  if (name !== undefined) return name;
   const description = role.description.trim();
   if (description === "") return "description is required";
   if (description.length > MAX_AGENT_DESCRIPTION) return `description is too long (max ${MAX_AGENT_DESCRIPTION})`;

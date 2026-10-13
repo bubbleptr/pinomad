@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentRoleProblem, MAX_AGENT_DESCRIPTION } from "../src/agents.ts";
+import { agentNameProblem, agentRoleProblem, MAX_AGENT_DESCRIPTION } from "../src/agents.ts";
 
 const role = (overrides: object = {}) => ({
   name: "reviewer",
@@ -55,5 +55,12 @@ describe("agentRoleProblem", () => {
 
   it("reports the first problem only", () => {
     expect(agentRoleProblem(role({ name: "Bad Name", description: "" }))).toContain("Name must be");
+  });
+
+  it("agentNameProblem accepts a valid name and rejects traversal-shaped ones", () => {
+    expect(agentNameProblem("reviewer")).toBeUndefined();
+    expect(agentNameProblem("../outside")).toContain("lowercase letters, digits and hyphens");
+    expect(agentNameProblem("a/b")).toContain("lowercase letters");
+    expect(agentNameProblem(".")).toContain("lowercase letters");
   });
 });

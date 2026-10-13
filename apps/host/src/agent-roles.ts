@@ -9,6 +9,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
+  agentNameProblem,
   agentRoleProblem,
   type AgentRole,
   type AgentRoleProblem,
@@ -162,6 +163,10 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
     create: (role) => write(role, false),
     update: (role) => write(role, true),
     async remove(name) {
+      // The name joins into a path: validate it before touching the filesystem,
+      // otherwise "../outside" deletes a file outside the agents directory.
+      const problem = agentNameProblem(name);
+      if (problem !== undefined) throw new Error(problem);
       const target = join(dir, `${name}.md`);
       if (!existsSync(target)) throw new Error(`No such agent: "${name}"`);
       await rm(target);

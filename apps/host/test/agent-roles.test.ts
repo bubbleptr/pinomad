@@ -152,3 +152,15 @@ describe("agent-roles", () => {
 function serializeExpectation(): string {
   return `---\ndescription: "Reviews"\n---\n\nLook.\n`;
 }
+
+describe("agent-roles safety", () => {
+  it("rejects a remove whose name escapes the agents directory", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const store = await openStore(dir.path);
+    // A file next to agents/ must survive a deleteAgent for a traversal name.
+    await writeFile(join(dir.path, "outside.md"), "do not delete\n");
+    await expect(store.remove("../outside")).rejects.toThrow("lowercase letters, digits and hyphens");
+    expect(await readFile(join(dir.path, "outside.md"), "utf8")).toBe("do not delete\n");
+  });
+});

@@ -61,7 +61,7 @@ export function createSubagent(options: {
       "Delegate a self-contained task to a subagent that runs in its own conversation and returns its final answer. " +
       "The subagent starts with none of this conversation's context, so put everything it needs in `task`. " +
       "It works in the same files as you: subagents called in the same turn run concurrently, so give parallel subagents read-only work or non-overlapping files. " +
-      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `role` delegates to a named agent whose own pins take precedence; `description` only labels the call. " +
+      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `role` delegates to a named agent; a model or thinking level it pins cannot be overridden; `description` only labels the call. " +
       `Available models: ${available()}.`,
     parameters: Type.Object({
       task: Type.String({
