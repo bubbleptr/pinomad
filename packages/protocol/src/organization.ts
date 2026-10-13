@@ -10,6 +10,16 @@ export type Project = {
   readonly addedAt: number;
 };
 
+/** One `listFolders` page: a host directory and its visible subfolders. */
+export interface FolderListing {
+  /** Absolute, symlink-free path of the listed folder. */
+  readonly path: string;
+  /** The host user's home directory, resolved like `path`: the picker's starting point. */
+  readonly home: string;
+  /** Subfolders whose names don't start with ".", sorted by name. */
+  readonly folders: readonly { readonly name: string; readonly path: string }[];
+}
+
 /** Where a top-level conversation lives: inside a project, or a project-less Chat. */
 export type Home = { readonly kind: "project"; readonly path: string } | { readonly kind: "chat" };
 

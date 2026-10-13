@@ -505,6 +505,19 @@ class RemoteClient {
     return this.#commands;
   }
 
+  /**
+   * Queued behind #commands like #command, but the caller owns the result and
+   * the error — the promise is handed back and no notice is produced.
+   */
+  #request<T>(operation: () => Promise<T>): Promise<T> {
+    const request = this.#commands.then(operation);
+    this.#commands = request.then(
+      () => {},
+      () => {},
+    );
+    return request;
+  }
+
   #viewSource(): DurableViewSource {
     return {
       current: () => this.#state!,
@@ -524,7 +537,14 @@ class RemoteClient {
       return this.#current;
     };
     return {
-      addProject: (path) => this.#command(() => this.#call("addProject", { path })),
+      addProject: (path) => this.#request(() => this.#call("addProject", { path })),
+      listFolders: (path) =>
+        this.#request(() => {
+          if (!hostSupportsCall(this.#hostMinor, "listFolders")) {
+            throw new Error("The host is too old for this (needs protocol 5.3); run `pinomad upgrade` on the host");
+          }
+          return this.#call("listFolders", path === undefined ? {} : { path });
+        }),
       removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
       createConversation: (home, text, options) =>
         this.#command(async () => {
@@ -597,26 +617,8 @@ class RemoteClient {
         }),
       answer: (kind, requestId, answers, target) =>
         this.#command(() => this.#call("answer", { conversationId: target ?? conversationId(), kind, requestId, answers })),
-      // Queued like other commands, but the caller needs the result: queue it
-      // the way createPairing does and return the promise.
-      changes: () => {
-        const call = this.#commands.then(() => this.#call("changes", { conversationId: conversationId() }));
-        this.#commands = call.then(
-          () => {},
-          () => {},
-        );
-        return call;
-      },
-      // Queued like other commands, but the caller owns the error: the dialog
-      // shows it, so no notice.
-      createPairing: () => {
-        const pairing = this.#commands.then(() => this.#call("createPairing", {}));
-        this.#commands = pairing.then(
-          () => {},
-          () => {},
-        );
-        return pairing;
-      },
+      changes: () => this.#request(() => this.#call("changes", { conversationId: conversationId() })),
+      createPairing: () => this.#request(() => this.#call("createPairing", {})),
       revokeDevice: (publicKey) => this.#command(() => this.#call("revokeDevice", { publicKey })),
       logout: (providerId) =>
         this.#command(() => {

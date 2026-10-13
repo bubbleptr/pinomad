@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -53,6 +53,31 @@ const allNodes = (view: { organized: { chats: readonly ConversationNode[]; proje
     nodes.flatMap((node) => [node, ...flat(node.children)]);
   return flat(view.organized.chats.concat(...view.organized.projects.map((entry) => entry.conversations)));
 };
+
+/**
+ * Drive the folder picker to an absolute path: "Parent folder" climbs to "/",
+ * then each segment's row steps down. The footer's path is the settle check —
+ * the next row is only clicked once its parent listing has actually landed.
+ */
+async function pickFolder(page: Page, target: string): Promise<void> {
+  const dialog = page.getByRole("dialog");
+  const pathText = dialog.getByTestId("picker-path");
+  const up = dialog.getByRole("button", { name: "Parent folder", exact: true });
+  await pathText.waitFor();
+  for (;;) {
+    const current = await pathText.textContent();
+    if (current === "/") break;
+    await up.click();
+    await expect.poll(async () => await pathText.textContent()).not.toBe(current);
+  }
+  let walked = "";
+  for (const segment of target.split("/").filter(Boolean)) {
+    walked += `/${segment}`;
+    await dialog.getByRole("button", { name: segment, exact: true }).click();
+    const expected = walked;
+    await expect.poll(async () => await pathText.textContent()).toBe(expected);
+  }
+}
 
 it("opens the Devices dialog from the phone drawer", async () => {
   const webOrigin = await startWeb();
@@ -1024,16 +1049,23 @@ it("organizes conversations under projects and chats", async () => {
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // Add the project through the dialog.
-  await page.getByRole("button", { name: "Add project", exact: true }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill(project.path);
+  // With no projects the section's empty state is an Add project row; the
+  // section header's "+" is pinned — visible without hovering.
+  const addRow = page.locator("button.astryx-side-nav-item", { hasText: "Add project" });
+  await addRow.waitFor();
+  // waitFor's default state is "visible": the pinned "+" needs no hover.
+  await page
+    .locator(".pigui-sidenav-section-header")
+    .getByRole("button", { name: "Add project", exact: true })
+    .waitFor();
+
+  // Add the project through the folder picker; the draft for it opens right after.
+  await addRow.click();
+  await pickFolder(page, await realpath(project.path));
   await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
   await page.getByRole("group", { name: projectName }).waitFor();
-
-  // A new conversation in the project runs under it — and the header says so.
-  await page.getByRole("button", { name: projectName, exact: true }).hover();
-  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
+  await expect.poll(async () => await addRow.count()).toBe(0);
   await page.getByRole("textbox").fill("project work");
   await page.getByRole("textbox").press("Enter");
   await page.getByText("project answer", { exact: true }).waitFor();
@@ -1323,17 +1355,25 @@ it("shows the location row and honors the draft checkout picker", async () => {
 
 it("surfaces a failed command as a toast without opening the dock", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], projects: [project.path] });
+  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // The dock stays closed; a rejected command must still be visible.
-  await page.getByRole("button", { name: "Add project", exact: true }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill("/nonexistent/pinomad-nope");
-  await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
+  // The dock stays closed; a rejected command must still be visible. The
+  // draft keeps a removed project's path, so its createConversation call
+  // rejects "Unknown project" and the notice becomes a toast.
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
+  await observer.controller.removeProject(project.path);
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
   // Scope to the toast itself: the message also lands in Astryx's hidden
   // assertive live region, making a bare role=alert match ambiguous.
   const toast = page.locator("[data-toast-id]");
-  await toast.getByText("No such directory", { exact: false }).waitFor();
+  await toast.getByText("Unknown project", { exact: false }).waitFor();
 
   // An undismissed error toast must not sit over the composer or the header's
   // actions — it would block sending until dismissed. Settle the toast's own
@@ -1348,6 +1388,30 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(toastBox, composerBox)).toBe(false);
   expect(intersects(toastBox, dockBox)).toBe(false);
+});
+
+it("keeps the Add project picker open with the host's error on failure", async () => {
+  const webOrigin = await startWeb();
+  const parent = await tempDir();
+  defer(parent.remove);
+  await mkdir(join(parent.path, "victim"));
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.locator(".pigui-sidenav-section-header").getByRole("button", { name: "Add project", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  const victim = join(await realpath(parent.path), "victim");
+  await pickFolder(page, victim);
+
+  // The folder is gone by the time addProject reaches the host — the error
+  // stays inline in the dialog and never becomes a toast.
+  await rm(victim, { recursive: true, force: true });
+  await dialog.getByRole("button", { name: "Add project", exact: true }).click();
+  const alert = dialog.getByRole("alert");
+  await alert.waitFor();
+  expect(await alert.textContent()).toContain("No such directory");
+  await expect.poll(() => page.locator("[data-toast-id]").count()).toBe(0);
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {

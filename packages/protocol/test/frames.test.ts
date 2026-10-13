@@ -66,6 +66,13 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 9, method: "futureMethod", args: "x" })).toBe("malformed");
   });
 
+  it("accepts listFolders with or without a path; rejects malformed paths", () => {
+    expect(kinds({ type: "call", id: 1, method: "listFolders", args: {} })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "listFolders", args: { path: "/x" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "listFolders", args: { path: "" } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "listFolders", args: { path: 3 } })).toBe("malformed");
+  });
+
   it("accepts logout with a providerId; rejects a malformed one", () => {
     expect(kinds({ type: "call", id: 1, method: "logout", args: { providerId: "anthropic" } })).toBe("frame");
     expect(kinds({ type: "call", id: 1, method: "logout", args: { providerId: "" } })).toBe("malformed");

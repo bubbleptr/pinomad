@@ -491,6 +491,18 @@ describe("RemoteDurable minor-version gating", () => {
     }
   });
 
+  it("listFolders against a 5.2 host rejects with the upgrade message and sends no frame", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 2 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.listFolders()).rejects.toThrow("needs protocol 5.3");
+      await expect(remote.controller.listFolders("/x")).rejects.toThrow("pinomad upgrade");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "listFolders")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("subscribes to settings on a 5.2 host; the stream value derives defaults over the hello's", async () => {
     const { transport, sent, release } = fakeTransport([{ model: { provider: "hp", modelId: "h-1" } }]);
     const remote = await connectRemoteDurable({ transport });
