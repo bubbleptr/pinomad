@@ -134,7 +134,9 @@ export function PendingQuestions({
   return (
     // Capped so a long question set never pushes the composer off screen.
     <ScrollView
-      style={{ maxHeight: height * 0.45 }}
+      // flexShrink lets the composer's 100% cap take space from the question
+      // list first; the 45%-of-window cap still applies when there's room.
+      style={{ maxHeight: height * 0.45, flexShrink: 1 }}
       contentContainerStyle={{ gap: 8, paddingHorizontal: 12, paddingBottom: 4 }}
     >
       {pending.map(({ kind, request }) => (

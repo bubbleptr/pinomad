@@ -224,9 +224,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: 12,
     gap: 6,
+    // The stack sits inside the KeyboardAvoidingView's shrinking parent, so
+    // it can never exceed the space above the keyboard.
+    maxHeight: "100%",
   },
   card: {
     borderWidth: StyleSheet.hairlineWidth,
+    // The input card keeps its height; scrollables above it shrink first.
+    flexShrink: 0,
   },
   cardCollapsed: {
     height: 52,
@@ -303,6 +308,9 @@ const styles = StyleSheet.create({
   },
   queueScroll: {
     maxHeight: 104,
+    // Shares vertical space with the questions list; both shrink and scroll
+    // before the input card gives up any of its height.
+    flexShrink: 1,
   },
   queueRow: {
     flexDirection: "row",
