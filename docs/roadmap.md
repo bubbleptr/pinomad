@@ -38,8 +38,18 @@
    - 加完直接进入这个项目的新对话草稿；
    - 不做：新建目录、`git init`、从 Git 地址克隆（先让 agent 在 Chat 里做）、项目根目录设置。
 2. **顺手的小项**：运行失败后的重试入口（`ChatRunFailure` 已支持 `onRetry`，`chat-entries.tsx` 还没传）；对话自动起名（用默认模型，标题跟着当前的工作实时变化，手动改名后不再自动覆盖）。
-3. **推送通知**，连同对话列表里"有问题等你回答"的提示（ADR-0008、0011、0022；范围见 issue #69）。
-4. **图片**（范围见 issue #68）：先做用户 → agent，手机和 Web 贴截图或照片进对话（协议要能带图片的消息，ChatPromptInput 已留好 drawer、onFiles）；再做 agent → 用户的截图预览（移动端还不显示工具结果里的图片）。
+3. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
+   - 宿主直接调 Expo Push Service（`https://exp.host/--/api/v2/push/send`，默认不要鉴权），不经服务端，宿主上不放 Apple 密钥；APNs 密钥在 EAS 凭据里。移动端加 `expo-notifications`，要出新的 TestFlight 构建；
+   - 推送只带对话标题和事件（"等你回答"、"完成"、"失败"），不带问题和回复内容。标题会经过 Expo 和 Apple，这是推送不走安全通道的代价；真要加密得写 iOS Notification Service Extension 解密，现在不做；
+   - App 拿到权限后经安全通道把 Expo push token 报给当前宿主，存进这台设备在 `pinomad.devices` 里的记录；吊销设备、Expo 回执 `DeviceNotRegistered` 时删掉；App 里的通知开关是客户端偏好，关掉就注销；
+   - 宿主复用 `packages/client` 的 `diffRunNotices`（等回答，子代理也算；顶层对话一轮完成或失败），推给所有登记了 token 的设备；App 在前台时不弹横幅；推送带宿主身份和对话 id，点开后切到那台宿主、打开那条对话；
+   - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
+4. **图片**（issue #68）：
+   - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
+   - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
+   - 协议：`submit` / `createConversation` 加 `images`（base64 + mimeType），`ModelSummary` 加能否收图片（取 pi-ai 模型数据的 `input`），按 ADR-0018 涨次版本号；当前模型不收图片时附图入口变灰并提示，换模型后历史图片由上游换成占位文本；
+   - agent → 用户：不做内置截图工具，靠 Playwright MCP / Chrome DevTools MCP（`~/.agents/mcp.json`）；移动端工具卡片显示图片、点开看大图，codemode 卡片显示脚本输出的图片；`docs/usage.md` 写一段"怎么让 agent 截图"；
+   - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）接上 read 读图片：1.2.0 的 read 遇到 PNG / JPEG / GIF / WebP 返回图片块，还可以经 `createCodingTools({ images })` 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出，评审时一并看对我们的 codemode（ADR-0013）有什么影响。
 5. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
 6. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
@@ -110,7 +120,7 @@ MCP 本身的后续，都等有明确需求再做：
 - 服务端上的账号（ADR-0022，信任模型已定，实现未开始）：中继演进为服务端，环境变量创建唯一用户、不开放注册；Web / App "添加宿主"给出 `pinomad join` 命令，宿主加入账号，取代 `relay-id` + `--allow-host`；客户端登录后列出宿主，第一次进某台宿主时服务端经控制连接要邀请、走现有 IK 配对；宿主设置加"接受账号担保的设备"开关，设备列表标来源，账号加入时提示在线设备；移动端补出示二维码。排在 M5 之后。之后：`apps/relay` 改名 `apps/server`；开放注册、OAuth、配额和限流；账号层面一键把某台设备从所有宿主上踢掉；客户端同时连多台宿主、开始对话时选宿主
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
-- 推送通知和"有问题等你回答"的提示已挪进 M5
+- 推送通知已挪进 M5；"有问题等你回答"的提示已经有了
 
 ## 待定优先级：代码在别的机器上跑
 
@@ -149,7 +159,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 不自己实现，也不去上游提 issue，等官方版本带上后随升级（ADR-0002 锁精确版本，升级时顺带评审）接入。
 
-- read 读图片（ADR-0002、0006 遗留）：Pi CLI 的 read 能读图片，Durable 的 read 识别出图片后返回 `unsupported_image`，README 写的是 "not supported yet"。截至 2026-10-07，上游 main 和 CHANGELOG 的 Unreleased 都还没有，也没有对应的 issue 或 PR。Web 工具卡片已经能显示结果里的图片块（随 MCP 做的，ADR-0012），上游支持后接上 read 即可。
+- 目前没有。read 读图片已由上游 1.2.0 带上，升级排在 M5 第 4 项。
 
 ## 待定优先级：其余展示类型
 
@@ -163,6 +173,7 @@ ADR-0005 的候选 `progress`、`table`、`log`、`status` 不单独排期，等
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）
 - 协议版本号靠人工判断该加哪个，没有机器检查（ADR-0009、0018）；契约快照只盯得住上游的数据结构，我们自己的帧仍靠评审
 - macOS 日志不轮转（ADR-0009）
+- 消息里的图片以 base64 内联存进 SQLite，每次订阅或重连，宿主都把整段历史连同图片重发（M5 图片靠客户端压缩缓解）；以后可以把图片另存、按需加载
 
 ## 不在计划内
 
