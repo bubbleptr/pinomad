@@ -897,6 +897,28 @@ it("keeps at most four dropped images and lets one be removed", async () => {
   await expect.poll(() => attachments(page).count()).toBe(3);
 });
 
+it("lets a drop that carries only text reach the composer editor", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+
+  const prevented = await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "dropped words");
+    const editable = document.querySelector('[aria-multiline="true"]')!;
+    const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data });
+    editable.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  // A text drop is the editor's own paste-by-drag; only file drops are ours.
+  expect(prevented).toBe(false);
+  await expect.poll(() => page.locator('[data-testid="composer-attachments"]').count()).toBe(0);
+});
+
 it("creates a conversation from an image-only first message", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });

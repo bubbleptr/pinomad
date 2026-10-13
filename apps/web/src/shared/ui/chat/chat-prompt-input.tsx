@@ -222,7 +222,9 @@ export function ChatPromptInput({
     event.preventDefault();
   };
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-    if (onFiles === undefined) return;
+    // A text drop belongs to the editable's own drag-and-drop; only file
+    // drops are the composer's business.
+    if (onFiles === undefined || !event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     const files = [...event.dataTransfer.files];
     if (files.length > 0) onFiles(files);
