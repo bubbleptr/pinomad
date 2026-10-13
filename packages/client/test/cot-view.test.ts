@@ -1,7 +1,7 @@
 // The Durable→CotView adapter: same fixture style as apps/web/test/presentation.test.ts.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { deriveChat, pinomadOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { deriveChat, pinomadOf, retryPromptOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
 
 let nextId = 1;
 const entry = (kind: string, message?: unknown): EntryRecord =>
@@ -471,5 +471,53 @@ describe("deriveChat", () => {
     const run = runs(entries)[0]!;
     expect(run.cot.anchorMs).toBe(1000);
     expect(run.cot.elapsedMs).toBe(3000);
+  });
+});
+
+describe("retryPromptOf", () => {
+  const failed = (errorMessage = "HTTP 429 quota exceeded") =>
+    assistant([text("")], "error", 0, { errorMessage });
+
+  it("returns the user message a failed run answered", () => {
+    const entries = deriveChat(view([user("go"), failed()]), {}, false);
+    expect(retryPromptOf(entries)).toBe("go");
+  });
+
+  it("returns nothing once the failed run is no longer the newest entry", () => {
+    const entries = deriveChat(
+      view([user("go"), failed(), user("again"), assistant([text("recovered")])]),
+      {},
+      false,
+    );
+    expect(retryPromptOf(entries)).toBeUndefined();
+  });
+
+  it("returns nothing when the newest run succeeded", () => {
+    const entries = deriveChat(view([user("go"), assistant([text("done")])]), {}, false);
+    expect(retryPromptOf(entries)).toBeUndefined();
+  });
+
+  it("looks past a compaction between the user message and the failed run", () => {
+    const entries = deriveChat(
+      view([user("go"), entry("pi.compaction", { role: "user", content: "summary" }), failed()]),
+      {},
+      false,
+    );
+    expect(entries.map((item) => item.kind)).toEqual(["user", "compaction", "run"]);
+    expect(retryPromptOf(entries)).toBe("go");
+  });
+
+  it("returns nothing across a reset boundary", () => {
+    const entries = deriveChat(view([user("go"), entry("pi.reset"), failed()]), {}, false);
+    expect(retryPromptOf(entries)).toBeUndefined();
+  });
+
+  it("resolves a failed run after a steer to the steer text", () => {
+    const entries = deriveChat(
+      view([user("first"), assistant([text("one")]), user("steer"), failed()]),
+      {},
+      false,
+    );
+    expect(retryPromptOf(entries)).toBe("steer");
   });
 });

@@ -32,7 +32,7 @@
 
 衡量标准：一整天只用手机，能发起任务、知道它跑完了或在等你、看懂它改了什么、给它截图或看它的截图。主用手机和 Web；每项 Web 和移动端都要做，界面按端分 PR。按顺序：
 
-1. **顺手的小项**：运行失败后的重试入口（`ChatRunFailure` 已支持 `onRetry`，`chat-entries.tsx` 还没传）；对话自动起名（用默认模型，标题跟着当前的工作实时变化，手动改名后不再自动覆盖）。
+1. **顺手的小项**：运行失败后的重试入口——Web/桌面端已接上：重试是重发失败那一轮对应的用户消息（`packages/client` 的 `retryPromptOf` 负责找它；只有最后一次失败可重试；子代理对话不提供），移动端还没做；对话自动起名（用默认模型，标题跟着当前的工作实时变化，手动改名后不再自动覆盖）。
 2. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
    - 宿主直接调 Expo Push Service（`https://exp.host/--/api/v2/push/send`，默认不要鉴权），不经服务端，宿主上不放 Apple 密钥；APNs 密钥在 EAS 凭据里。移动端加 `expo-notifications`，要出新的 TestFlight 构建；
    - 推送只带对话标题和事件（"等你回答"、"完成"、"失败"），不带问题和回复内容。标题会经过 Expo 和 Apple，这是推送不走安全通道的代价；真要加密得写 iOS Notification Service Extension 解密，现在不做；

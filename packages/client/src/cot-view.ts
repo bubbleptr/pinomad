@@ -490,6 +490,20 @@ export function deriveChat(
   return items;
 }
 
+/** The prompt to resend for the transcript's tail failure: the user text the failed run answered. */
+export function retryPromptOf(entries: readonly ChatEntry[]): string | undefined {
+  const last = entries[entries.length - 1];
+  if (last?.kind !== "run" || last.failure === undefined) return undefined;
+  for (let i = entries.length - 2; i >= 0; i--) {
+    const entry = entries[i]!;
+    // A compaction between the prompt and the run doesn't break the reach
+    // back; a reset or another run does.
+    if (entry.kind === "compaction") continue;
+    return entry.kind === "user" && entry.text.trim() !== "" ? entry.text : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Lift subagent calls out of a run's CoT steps for the anchor cards: calls are
  * identified by tool name (a still-streaming call has no details yet), their

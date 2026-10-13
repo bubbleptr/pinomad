@@ -758,6 +758,31 @@ it("shows interruption without a text bubble and never offers a fork for streami
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 });
 
+it("retries a failed run by resubmitting the user message it answered", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [
+      fauxAssistantMessage("boom", { errorMessage: "provider blew up", stopReason: "error" }),
+      "recovered",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("textbox").fill("go");
+  await page.getByRole("textbox").press("Enter");
+
+  await page.getByText("Run failed", { exact: true }).waitFor();
+  const retry = page.getByRole("button", { name: "Retry request", exact: true });
+  await retry.waitFor();
+  await retry.click();
+
+  // The failed run is excluded from model context, so the transcript honestly
+  // reads "go" → failure → "go" → the retried run's answer.
+  await page.getByText("recovered", { exact: true }).waitFor();
+  await expect.poll(() => page.locator('[data-slot="chat-message-user"]', { hasText: "go" }).count()).toBe(2);
+  await expect.poll(() => page.getByRole("button", { name: "Retry request", exact: true }).count()).toBe(0);
+});
+
 it("rolls a subagent's failure up to the family's root row", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {

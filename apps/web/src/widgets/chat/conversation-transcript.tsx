@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import { deriveChat } from "@pinomad/client/cot-view.ts";
+import { deriveChat, retryPromptOf } from "@pinomad/client/cot-view.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { ChatEntryView } from "./chat-entries.tsx";
 
@@ -21,6 +21,7 @@ export function ConversationTranscript({
   summaryOf,
   ownOnly,
   forkSource,
+  onRetry,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -40,6 +41,11 @@ export function ConversationTranscript({
   ownOnly?: boolean;
   /** The parent conversation's display name, for the "Forked from" divider. */
   forkSource?: string;
+  /**
+   * Resubmits the user message the newest run answered, when that run failed.
+   * Absent on read-only transcripts (subagent conversations).
+   */
+  onRetry?: (text: string) => Promise<void>;
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(
@@ -50,6 +56,7 @@ export function ConversationTranscript({
     [conversation, ownOnly],
   );
   const items = useMemo(() => deriveChat(view, toolPresentations, busy), [view, toolPresentations, busy]);
+  const retry = useMemo(() => retryPromptOf(items), [items]);
   if (items.length === 0 && !ownOnly) return null;
   return (
     <ChatMessageList isStreaming={busy} gap={0}>
@@ -57,7 +64,7 @@ export function ConversationTranscript({
           padding; chat.css's CoT rail expects that breathing room. */}
       <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
         {ownOnly ? <ChatSystemMessage variant="divider">Forked from {forkSource}</ChatSystemMessage> : null}
-        {items.map((item) => (
+        {items.map((item, index) => (
           <ChatEntryView
             key={item.id}
             entry={item}
@@ -67,6 +74,11 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
+            onRetry={
+              onRetry !== undefined && connected && retry !== undefined && index === items.length - 1
+                ? () => onRetry(retry)
+                : undefined
+            }
           />
         ))}
       </div>

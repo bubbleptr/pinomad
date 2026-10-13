@@ -26,6 +26,7 @@ export function ChatEntryView({
   canFork = true,
   forksAt,
   summaryOf,
+  onRetry,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -38,6 +39,8 @@ export function ChatEntryView({
   forksAt?: (entryId: string) => ConversationId[];
   /** Resolves a conversation's summary — powers the subagent cards' live status. */
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
+  /** Only set on the newest entry when it is a failed run. */
+  onRetry?: () => Promise<void>;
 }) {
   switch (entry.kind) {
     case "user":
@@ -69,6 +72,7 @@ export function ChatEntryView({
           canFork={canFork}
           forksAt={forksAt}
           summaryOf={summaryOf}
+          onRetry={onRetry}
         />
       );
     case "compaction":
@@ -86,6 +90,7 @@ function RunEntry({
   canFork = true,
   forksAt,
   summaryOf,
+  onRetry,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
@@ -94,6 +99,7 @@ function RunEntry({
   canFork?: boolean;
   forksAt?: (entryId: string) => ConversationId[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
+  onRetry?: () => Promise<void>;
 }) {
   // Subagent calls anchor cards under the run instead of rows in the CoT.
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
@@ -125,7 +131,7 @@ function RunEntry({
             )}
           </ChatMessage.Content>
         )}
-        {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} />}
+        {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} onRetry={onRetry} />}
         {!showActions ? null : (
           <ChatMessageActions className="chat-message__actions--persist">
             {answer === undefined ? null : (
