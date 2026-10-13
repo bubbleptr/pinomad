@@ -67,6 +67,11 @@ export function AgentEditorDialog({
   const levelOptions = [
     { value: UNPINNED, label: "Don't pin" },
     ...levelValues.map((each) => ({ value: each, label: thinkingLevelLabels[each] })),
+    // A hand-written or stale pin the model can't take stays visible — leaving
+    // it out would show an empty picker while a save silently kept the pin.
+    ...(level !== UNPINNED && !levelValues.includes(level)
+      ? [{ value: level, label: `${thinkingLevelLabels[level]} (not supported by this model)` }]
+      : []),
   ];
   const changeModel = (next: string): void => {
     setModel(next);

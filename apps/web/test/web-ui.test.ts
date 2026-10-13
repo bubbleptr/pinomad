@@ -2562,3 +2562,44 @@ it("lists a hand-written agent file live and reports a bad one as a problem", as
   await settings.getByText('Unknown field "tools"', { exact: true }).waitFor();
   await settings.getByText("Fix this file on the host.", { exact: true }).waitFor();
 });
+
+it("keeps a pinned thinking level the model no longer supports visible in the editor", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  // faux-1 reports only "off" — the file pins a level it can't take.
+  await writeFile(
+    join(dir.path, "agents", "legacy.md"),
+    '---\ndescription: "Old pin"\nmodel: "faux/faux-1"\nthinkingLevel: "high"\n---\n\nPrompt.\n',
+  );
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dir.path,
+    fauxModels: [
+      { id: "faux-1", name: "Faux Model" },
+      { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  await settings.getByRole("heading", { name: "legacy", exact: true }).waitFor();
+
+  await settings.getByRole("button", { name: "legacy actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit…", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit legacy" });
+  // The pinned level is visible as an option it is, not silently dropped.
+  const levelPicker = editor.getByRole("combobox", { name: "Thinking level", exact: true });
+  await expect.poll(async () => levelPicker.textContent()).toContain("High (not supported by this model)");
+
+  // Saving an unrelated change keeps the pin the file had.
+  await editor.getByRole("textbox", { name: "Description", exact: true }).fill("New description");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await settings.getByText("New description", { exact: true }).waitFor();
+  const text = await readFile(join(dir.path, "agents", "legacy.md"), "utf8");
+  expect(text).toContain('description: "New description"');
+  expect(text).toContain('thinkingLevel: "high"');
+});
