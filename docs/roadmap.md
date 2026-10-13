@@ -26,32 +26,27 @@
 - Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
 - tailnet 直连试用：Mac 和 Omarchy 都装官方 Tailscale 客户端，和 sing-box 共存。共用的 sing-box 配置要改两处：DNS 规则让 `tailscale.com` / `tailscale.io` 不走 FakeIP，否则控制面连不上；tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。`tailscale ping` 显示经局域网直连，2–7ms，没走 DERP。Omarchy 开了 Tailscale SSH，tailnet 策略加了一条 SSH 规则（成员登录自己的设备，非 root）。宿主带 `--remote-port 7422` 和 `--relay` 同时跑：tailnet 内的设备直连，不在 tailnet 里的设备仍走中继。Mac 已经配对上并通过直连使用（2026-10-10）
 - fork 和子代理的呈现：侧栏只放顶层对话，行首状态点按整个家族汇总（等回答 > 失败 > 运行中），行尾显示更新时间；右侧面板分 Threads / Tasks / Live 三个 tab，fork 能在面板里对话或"在主区打开"（顶栏面包屑回父对话），子代理只读；父对话里分叉点显示"N forks"胶囊、子代理调用显示成任务卡片（fork 的检出和层数见 ADR-0019；PR #34、#40、#42）
+- 项目入口（M5 第 1 项，ADR-0007 §1、§7）：协议 5.3 新增 `listFolders`，从宿主家目录开始逐层列出子文件夹，不列 `.` 开头的，可以一直走到 `/`；`addProject` 改成返回登记好的项目、失败时由调用方显示错误。三端用同一套文件夹选择器（面包屑和上一级的推导在 `packages/client` 的 `folder-path`），去掉了手打路径；桌面端连本机宿主也用它。Web 和桌面端的 Projects "+" 常显，没有项目时侧栏给"Add project"；移动端在新建对话页的项目菜单底部和没有项目时的对话列表给入口。加完直接进入该项目的新对话草稿。移动端顺带给导航栈接上了深色主题，原来深色模式下原生标题栏仍是浅色（PR #77、#78 和移动端 PR）。不做：新建目录、`git init`、从 Git 地址克隆、项目根目录设置
 
 ## M5：离开电脑，用手机也能推进 side project（下一阶段）
 
 衡量标准：一整天只用手机，能发起任务、知道它跑完了或在等你、看懂它改了什么、给它截图或看它的截图。主用手机和 Web；每项 Web 和移动端都要做，界面按端分 PR。按顺序：
 
-1. **项目入口**（ADR-0007 §1、§7）：现在 Web 的 "+" 只在悬停时出现，要手打绝对路径，移动端完全没有入口。改成选宿主上已有的文件夹，参照 Pace 的 Add Project：
-   - 协议新增"列出某个目录下的子文件夹"的调用，从宿主的家目录开始，不列隐藏文件夹；
-   - 三端统一的文件夹选择器：面包屑、子文件夹列表、"选择"即登记；去掉手打路径的输入框。桌面端连本机宿主也用它，不调原生对话框；
-   - Web 和桌面端：Projects 标题的 "+" 一直显示，没有项目时空状态里放"添加项目"；移动端：新建对话页的项目菜单底部"添加项目…"，没有项目时对话列表也给入口；
-   - 加完直接进入这个项目的新对话草稿；
-   - 不做：新建目录、`git init`、从 Git 地址克隆（先让 agent 在 Chat 里做）、项目根目录设置。
-2. **顺手的小项**：运行失败后的重试入口（`ChatRunFailure` 已支持 `onRetry`，`chat-entries.tsx` 还没传）；对话自动起名（用默认模型，标题跟着当前的工作实时变化，手动改名后不再自动覆盖）。
-3. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
+1. **顺手的小项**：运行失败后的重试入口（`ChatRunFailure` 已支持 `onRetry`，`chat-entries.tsx` 还没传）；对话自动起名（用默认模型，标题跟着当前的工作实时变化，手动改名后不再自动覆盖）。
+2. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
    - 宿主直接调 Expo Push Service（`https://exp.host/--/api/v2/push/send`，默认不要鉴权），不经服务端，宿主上不放 Apple 密钥；APNs 密钥在 EAS 凭据里。移动端加 `expo-notifications`，要出新的 TestFlight 构建；
    - 推送只带对话标题和事件（"等你回答"、"完成"、"失败"），不带问题和回复内容。标题会经过 Expo 和 Apple，这是推送不走安全通道的代价；真要加密得写 iOS Notification Service Extension 解密，现在不做；
    - App 拿到权限后经安全通道把 Expo push token 报给当前宿主，存进这台设备在 `pinomad.devices` 里的记录；吊销设备、Expo 回执 `DeviceNotRegistered` 时删掉；App 里的通知开关是客户端偏好，关掉就注销；
    - 宿主复用 `packages/client` 的 `diffRunNotices`（等回答，子代理也算；顶层对话一轮完成或失败），推给所有登记了 token 的设备；App 在前台时不弹横幅；推送带宿主身份和对话 id，点开后切到那台宿主、打开那条对话；
    - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
-4. **图片**（issue #68）：
+3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
    - 协议：`submit` / `createConversation` 加 `images`（base64 + mimeType），`ModelSummary` 加能否收图片（取 pi-ai 模型数据的 `input`），按 ADR-0018 涨次版本号；当前模型不收图片时附图入口变灰并提示，换模型后历史图片由上游换成占位文本；
    - agent → 用户：不做内置截图工具，靠 Playwright MCP / Chrome DevTools MCP（`~/.agents/mcp.json`）；移动端工具卡片显示图片、点开看大图，codemode 卡片显示脚本输出的图片；`docs/usage.md` 写一段"怎么让 agent 截图"；
    - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）接上 read 读图片：1.2.0 的 read 遇到 PNG / JPEG / GIF / WebP 返回图片块，还可以经 `createCodingTools({ images })` 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出，评审时一并看对我们的 codemode（ADR-0013）有什么影响。
-5. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
-6. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
+4. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
+5. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
 服务端上的账号（ADR-0022）排在 M5 之后，见 M3。
 
@@ -159,7 +154,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
 
 不自己实现，也不去上游提 issue，等官方版本带上后随升级（ADR-0002 锁精确版本，升级时顺带评审）接入。
 
-- 目前没有。read 读图片已由上游 1.2.0 带上，升级排在 M5 第 4 项。
+- 目前没有。read 读图片已由上游 1.2.0 带上，升级排在 M5 的"图片"一项。
 
 ## 待定优先级：其余展示类型
 
