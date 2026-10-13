@@ -170,4 +170,37 @@ describe("auto-title", () => {
     await waitForView(client.view, (view) => summaryOf(view, forkId)?.title === "Fork Title");
     expect(summaryOf(client.view.current(), parentId)?.title).toBe("Parent Title");
   });
+
+  it("titles a run that ended while an earlier title attempt was in flight", async () => {
+    // The title call for run A parks on this gate; releasing it with an error
+    // message makes the attempt write nothing.
+    let release!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const gate = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (release = resolve));
+    let titleStarted!: () => void;
+    const started = new Promise<void>((resolve) => (titleStarted = resolve));
+    const gatedError: FauxResponseFactory = () => {
+      titleStarted();
+      return gate;
+    };
+    const host = await startFauxHost(defer, {
+      autoTitle: true,
+      answers: ["A done", gatedError, "B done", "Title after retry"],
+    });
+    const client = await connectTo(defer, host);
+    const id = await startChat(client, "first");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "A done");
+    // The title attempt consumed the gated answer before B's run may start.
+    await started;
+
+    await client.controller.submit("second", "followUp");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "B done",
+    );
+
+    // A's attempt fails and writes nothing; B's queued run-end re-enters and
+    // titles off the next faux answer.
+    release(fauxAssistantMessage("boom", { errorMessage: "title model blew up", stopReason: "error" }));
+    await waitForView(client.view, (view) => summaryOf(view, id)?.title === "Title after retry");
+  });
 });

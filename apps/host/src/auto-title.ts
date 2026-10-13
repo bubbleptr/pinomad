@@ -77,6 +77,15 @@ export function attachAutoTitle(
   deps: { harness: Harness; models: Models; settings: HostSettingsStore },
 ): () => void {
   const inFlight = new Set<ConversationId>();
+  /** A run that ended mid-attempt earns one re-entry once it settles. */
+  const pending = new Set<ConversationId>();
+
+  const start = (id: ConversationId): void => {
+    inFlight.add(id);
+    // Commit listeners may not touch Session APIs; the work starts once the
+    // listener has returned.
+    setImmediate(() => void title(id));
+  };
 
   const title = async (id: ConversationId): Promise<void> => {
     try {
@@ -141,14 +150,18 @@ export function attachAutoTitle(
       console.error(`auto-title: conversation ${id}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       inFlight.delete(id);
+      // A run that ended while this attempt ran would otherwise lose its
+      // title when the attempt wrote nothing; the TitleDoc re-check inside
+      // keeps the re-entry a no-op when it did.
+      if (pending.delete(id)) start(id);
     }
   };
 
   return runs.onRunEnd((id) => {
-    if (inFlight.has(id)) return;
-    inFlight.add(id);
-    // Commit listeners may not touch Session APIs; the work starts once the
-    // listener has returned.
-    setImmediate(() => void title(id));
+    if (inFlight.has(id)) {
+      pending.add(id);
+      return;
+    }
+    start(id);
   });
 }
