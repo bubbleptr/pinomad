@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { MAX_IMAGE_BYTES } from "@pinomad/protocol/images.ts";
-import { connectTo, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
+import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const PNG = { data: "aGVsbG8=", mimeType: "image/png" as const };
@@ -110,6 +110,26 @@ describe("message images", () => {
     // Nothing was admitted: the transcript is still just the first pair.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(transcript(client.view.current().conversation!).map((m) => m.text)).toEqual(["hi", "done"]);
+  });
+
+  it("keeps the text fallback title of an image-only-first conversation across a restart", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const first = await startFauxHost(defer, { dataDir: dir.path, answers: ["seen", "done"] });
+    const client = await connectTo(defer, first);
+    await client.controller.createConversation({ kind: "chat" }, "", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+
+    // The first message with text supplies the fallback title.
+    await client.controller.submit("Continue", "followUp");
+    await waitForView(client.view, (view) => view.organized.chats[0]?.summary.title === "Continue");
+    client.close();
+    await first.close();
+
+    // On restart the summary is derived from the entry scan — same rule.
+    const second = await startFauxHost(defer, { dataDir: dir.path });
+    const after = await connectTo(defer, second);
+    await waitForView(after.view, (view) => view.organized.chats[0]?.summary.title === "Continue");
   });
 
   it("reports model image support in the models stream", async () => {

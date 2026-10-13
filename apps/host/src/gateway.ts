@@ -768,7 +768,12 @@ async function historyFacts(
   let cursor: Cursor | undefined;
   do {
     const page = await conversation.entries({}, 256, cursor, context);
-    first = page.items.findLast((entry) => entry.kind === "pi.user" && entry.conversationId === id) ?? first;
+    // The fallback title comes from the oldest own user message with text —
+    // the live listener's titleOf gate; an image-only message yields none.
+    first =
+      page.items.findLast(
+        (entry) => entry.kind === "pi.user" && entry.conversationId === id && titleOf(entry).title !== undefined,
+      ) ?? first;
     newest ??= page.items.find(
       (entry) => entry.conversationId === id && (entry.kind === "pi.user" || entry.kind === "pi.assistant"),
     );
