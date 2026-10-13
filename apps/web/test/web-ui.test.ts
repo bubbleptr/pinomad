@@ -1140,6 +1140,35 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByText("project answer", { exact: true }).waitFor();
 });
 
+it("renames a conversation from its sidebar row menu", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("textbox").fill("hello");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+
+  const chats = page.getByRole("group", { name: "Chats" });
+  await chats.getByRole("button", { name: "hello", exact: true }).hover();
+  await chats.getByRole("button", { name: "Conversation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+
+  const dialog = page.getByRole("dialog");
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await expect.poll(() => input.inputValue()).toBe("hello");
+  const save = dialog.getByRole("button", { name: "Save", exact: true });
+  // Unchanged or blank is not a rename.
+  expect(await save.isDisabled()).toBe(true);
+  await input.fill("   ");
+  expect(await save.isDisabled()).toBe(true);
+
+  await input.fill("My better name");
+  await save.click();
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  await chats.getByRole("button", { name: "My better name", exact: true }).waitFor();
+  await expect.poll(() => page.locator("h1").textContent()).toBe("My better name");
+});
+
 it("keeps the side panel closed until asked and keeps it open across conversations", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer"] });

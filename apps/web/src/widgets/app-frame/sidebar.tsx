@@ -12,9 +12,10 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
+import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
+import { RenameConversationDialog } from "./rename-dialog.tsx";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { HostSwitcher } from "./host-switcher.tsx";
 
@@ -259,6 +260,7 @@ function ConversationRow({
   const { summary } = node;
   const status = familyStatus(node);
   const updatedAt = familyUpdatedAt(node);
+  const [renaming, setRenaming] = useState(false);
   // Selected while the root or any of its descendants is shown.
   const selected = shown !== undefined && flattenNodes([node]).some((each) => each.summary.id === shown);
   const item = (
@@ -314,6 +316,11 @@ function ConversationRow({
           }}
           items={[
             {
+              label: "Rename",
+              icon: <Pencil aria-hidden="true" size={16} />,
+              onClick: () => setRenaming(true),
+            },
+            {
               label: "Archive",
               icon: <Archive aria-hidden="true" size={16} />,
               onClick: () => void remote.controller.archive(summary.id, true),
@@ -321,6 +328,14 @@ function ConversationRow({
           ]}
         />
       </HStack>
+      {renaming ? (
+        <RenameConversationDialog
+          summary={summary}
+          remote={remote}
+          connected={!disabled}
+          onClose={() => setRenaming(false)}
+        />
+      ) : null}
     </div>
   );
 }

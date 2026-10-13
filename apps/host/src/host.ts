@@ -58,6 +58,11 @@ export interface OpenHostOptions {
   readonly browserOrigins?: readonly string[];
   /** Built web client served over HTTP on the gateway ports (ADR-0009 §7). */
   readonly webRoot?: string;
+  /**
+   * Name conversations after their first successful run; default on. Faux
+   * test hosts turn it off so the scripted answers go only to agent runs.
+   */
+  readonly autoTitle?: boolean;
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
   /**
@@ -223,6 +228,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.modelAuth === undefined ? {} : { modelAuth: options.modelAuth }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
+      ...(options.autoTitle === undefined ? {} : { autoTitle: options.autoTitle }),
       secure: {
         hostKey,
         offers,

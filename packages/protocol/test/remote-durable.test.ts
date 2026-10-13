@@ -334,6 +334,31 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("rejects renameConversation against a 5.3 host and sends it on 5.4", async () => {
+    const old = fakeTransport([{}], { protocol: { major: 5, minor: 3 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await expect(remoteOld.controller.renameConversation(id(1), "renamed")).rejects.toThrow(
+        "The host is too old for this (needs protocol 5.4)",
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "renameConversation")).toHaveLength(0);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.renameConversation(id(1), "renamed");
+      const call = sent.find((frame) => frame.type === "call" && frame.method === "renameConversation")!;
+      expect(call.args).toEqual({ conversationId: 1, title: "renamed" });
+    } finally {
+      remote.close();
+    }
+  });
+
   it("forks into the side panel when asked instead of switching the main", async () => {
     const { transport, sent } = fakeTransport([{}]);
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });

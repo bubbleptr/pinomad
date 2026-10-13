@@ -118,6 +118,8 @@ export async function main(argv: readonly string[]): Promise<void> {
       models,
       modelSummaries: summaries,
       extensions: extensionsFor(models, summaries),
+      // The scripted answers are the runs' — a title call must not eat them.
+      autoTitle: false,
       settingsFallback: {
         defaultModel: () => ({ provider: model.provider, modelId: model.id }),
         defaultThinkingLevel: () => null,

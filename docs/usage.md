@@ -10,6 +10,8 @@ Git 项目的对话默认在独立 worktree 里工作（ADR-0010）：宿主在 
 
 Chat 对话在 `<数据目录>/chats/<对话 id>` 里工作。fork 和子代理的对话显示在所属对话下面。归档只是隐藏，移除项目也不会删除目录和对话。
 
+对话标题：第一轮成功跑完后，宿主用自己的默认模型自动起一个名（顶层对话和 fork 都会，子代理保留委托时的任务名），只起一次、之后不再变。侧栏里会话行的 … 菜单点 Rename 可以手动改名——改名是永久的，自动起名不会再覆盖；没有"恢复自动起名"的操作。起名失败（没配模型、模型不可用、provider 报错）会静默跳过，标题仍是第一条消息。
+
 agent 用 read / write / edit / bash 工具，执行前不需要审批；拿不准方向时用 `ask_user_question` 向用户提 1–4 个带选项的问题，问题卡片显示在输入框上方，用户也可以不回卡片、直接在对话里回复（ADR-0011）。agent 还可以用 `subagent` 把一个自包含的任务交给子代理：子代理在自己的对话里从零开始（看不到父对话），和父对话共用同一个检出，同一轮里的多个子代理并发执行；它不能向用户提问，需要澄清时写进回答交回父代理；默认沿用父对话的模型和思考等级，也可以在调用时用 `model`（`provider/modelId`）和 `thinkingLevel` 指定。中止父对话会连带中止子代理。edit / write 的结果带 unified diff，渲染成 diff 而不是文本；对话标题栏的 Changes 按钮随时查看当前检出的全部改动（worktree 相对基线 commit，项目目录则是未提交的改动），busy 转空闲时自动刷新。agent 还有 `codemode`（ADR-0013）：写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文，适合并发读多个文件、先过滤大段 bash 输出再看、批量改文件，以及调用 MCP 工具。脚本里能调 read / bash / edit / write 和 MCP 工具，不能调 `ask_user_question`、`subagent` 和 `codemode` 自己；一次 codemode 调用在 Web 上是一张卡片，列出脚本、每次嵌套调用的状态和耗时（edit / write 的 diff 可以展开），以及脚本输出。嵌套调用不单独进 transcript，宿主崩溃时整段脚本按中断处理，已经执行的调用不会撤销。系统提示词会带上以下内容，每次请求都重新读取（ADR-0006）：
 
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；

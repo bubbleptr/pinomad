@@ -83,7 +83,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 3 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 4 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -112,6 +112,8 @@ export interface CallMethods {
     result: { conversationId: ConversationId };
   };
   archive: { args: { conversationId: ConversationId; archived: boolean }; result: null };
+  /** Set the conversation's name permanently: after a manual rename the host never auto-titles it again. */
+  renameConversation: { args: { conversationId: ConversationId; title: string }; result: null };
   submit: {
     args: {
       conversationId: ConversationId;
@@ -158,7 +160,12 @@ export interface CallMethods {
 export type CallMethod = keyof CallMethods;
 
 /** Minor version that introduced each call; calls absent here date from 5.0. */
-const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1, updateSettings: 2, listFolders: 3 };
+const CALL_SINCE: Partial<Record<CallMethod, number>> = {
+  logout: 1,
+  updateSettings: 2,
+  listFolders: 3,
+  renameConversation: 4,
+};
 
 /** Whether a host of the given minor version knows `method`. */
 export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
@@ -260,6 +267,7 @@ const CALL_METHODS = [
   "listFolders",
   "createConversation",
   "archive",
+  "renameConversation",
   "submit",
   "abort",
   "compact",
@@ -330,6 +338,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";
+    case "renameConversation":
+      return conversationId() && typeof args.title === "string";
     case "createPairing":
       return Object.keys(args).length === 0;
     case "revokeDevice":

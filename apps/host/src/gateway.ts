@@ -59,6 +59,8 @@ import { constantValue, type HostValue } from "./host-value.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
+import { attachAutoTitle } from "./auto-title.ts";
+import { TitleDoc } from "./title-doc.ts";
 import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -139,6 +141,8 @@ export interface GatewayOptions {
   readonly toolPresentations?: Record<string, PresentationType>;
   /** Built web client served over plain HTTP on both listeners; absent → 503. */
   readonly webRoot?: string;
+  /** Name conversations after their first successful run; default on. */
+  readonly autoTitle?: boolean;
   /** Set to accept secure-channel clients, on LAN and/or via a relay. */
   readonly secure?: SecureGatewayOptions;
 }
@@ -163,6 +167,14 @@ export const LOOPBACK_SECURE_PATH = "/secure";
 
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const conversations = await ConversationList.open(options.harness, options.docs);
+  const detachAutoTitle =
+    options.autoTitle === false
+      ? undefined
+      : attachAutoTitle(conversations, {
+          harness: options.harness,
+          models: options.models,
+          settings: options.settings,
+        });
   // The loopback port also serves the built web client: in service mode there
   // is no vite dev server to reach it through (ADR-0009 §7).
   const http = createServer((request, response) => {
@@ -276,6 +288,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     broadcast,
     async close() {
       await relay?.close();
+      detachAutoTitle?.();
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
       for (const socket of server.clients) socket.terminate();
@@ -486,6 +499,8 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
   readonly #facts = new Map<ConversationId, ConversationFacts>();
   /** Slot of each summary in #list; in-place updates keep positions stable. */
   readonly #index = new Map<ConversationId, number>();
+  /** Run-end listeners (auto-title); they fire inside the commit listener. */
+  readonly #runEnd = new Set<(id: ConversationId) => void>();
   #list: readonly ConversationSummary[] = [];
   #unsubscribe: () => void = () => {};
   #notifying = false;
@@ -533,11 +548,15 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       const label = (await harness.snapshot(SubagentDoc, record.id, context))?.label;
       if (typeof label === "string" && label !== "") facts.label = label;
     }
+    const named = (await harness.snapshot(TitleDoc, record.id, context))?.title;
+    if (typeof named === "string" && named !== "") facts.named = named;
     return facts;
   }
 
   #observe(publication: CommitPublication): void {
     const touched = new Set<ConversationId>();
+    // Conversations whose run ended in this commit (pi.live cleared `run`).
+    const ended = new Set<ConversationId>();
     // Records first: a doc change and the record for a new subagent land in one
     // publication, whose change order is unspecified.
     for (const change of publication.changes) {
@@ -569,9 +588,13 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
         const facts = this.#fact(id);
         if (change.record.kind === "pi.live") {
           const live = change.value as LiveState | null;
+          const wasRunning = facts.running === true;
           facts.running = live?.run !== undefined;
           facts.tools = live?.tools;
           touched.add(id);
+          // A subagent's run keeps its call-given label; only ownerless and
+          // forked conversations are candidates for a generated name.
+          if (wasRunning && !facts.running && this.#records.get(id)?.owner === undefined) ended.add(id);
         } else if (this.#questionKinds.has(change.record.kind)) {
           const value = change.value;
           const pending = Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined);
@@ -583,6 +606,10 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
         } else if (change.record.kind === SubagentDoc.definition.kind) {
           const label = (change.value as { label?: unknown } | null)?.label;
           facts.label = typeof label === "string" && label !== "" ? label : undefined;
+          touched.add(id);
+        } else if (change.record.kind === TitleDoc.definition.kind) {
+          const named = (change.value as { title?: unknown } | null)?.title;
+          facts.named = typeof named === "string" && named !== "" ? named : undefined;
           touched.add(id);
         }
       }
@@ -606,6 +633,15 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       }
     }
     if (next !== undefined) this.#set(next);
+    // Last: listeners must see the summaries this commit produced. They may
+    // not call Session APIs while the commit listener is still on the stack.
+    for (const id of ended) for (const listener of this.#runEnd) listener(id);
+  }
+
+  /** `listener` fires inside the commit listener — defer any Session work out of it. */
+  onRunEnd(listener: (id: ConversationId) => void): () => void {
+    this.#runEnd.add(listener);
+    return () => this.#runEnd.delete(listener);
   }
 
   #fact(id: ConversationId): ConversationFacts {
@@ -642,6 +678,8 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
 /** Per-conversation state the summary derives from, filled at open and kept by the commit listener. */
 type ConversationFacts = {
   title?: string;
+  /** The TitleDoc name — auto-generated or manual — winning over `title` when set. */
+  named?: string;
   /** Newest own user/assistant entry seen; guards out-of-order changes within one publication. */
   newest?: EntryId;
   updatedAt?: number;
@@ -677,7 +715,7 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts): Conver
     ...(parent === undefined ? {} : { parent }),
     // The client's forkable-entry ids are the string form of EntryId.
     ...(record.parent === undefined ? {} : { forkedAt: String(record.parent.at) }),
-    ...(facts.title === undefined ? {} : { title: facts.title }),
+    ...((facts.named ?? facts.title) === undefined ? {} : { title: facts.named ?? facts.title }),
     ...(status === undefined ? {} : { status }),
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
@@ -1088,6 +1126,23 @@ class GatewayClient {
           () => {},
         );
         return { submissionId: submission.id };
+      }
+      case "renameConversation": {
+        const { title } = args as CallMethods["renameConversation"]["args"];
+        const trimmed = title.trim();
+        if (trimmed === "") throw new Error("Title cannot be empty");
+        if (trimmed.length > 200) throw new Error("Title is too long (200 characters at most)");
+        await this.#options.harness.commit(async (tx) => {
+          const record = await tx.conversation(conversation.id);
+          if (record === undefined) throw new Error(`Conversation ${conversation.id} does not exist`);
+          if (record.owner !== undefined) {
+            throw new Error("Subagent conversations are named by the call that started them");
+          }
+          const doc = await tx.doc(TitleDoc, conversation.id);
+          doc.title = trimmed;
+          doc.source = "manual";
+        }, context);
+        return null;
       }
       case "abort":
         await conversation.abort(context);

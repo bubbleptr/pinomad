@@ -42,7 +42,7 @@ export interface ConversationSummary {
   readonly parent?: ConversationId;
   /** Forks only: the parent entry the fork inherits through. */
   readonly forkedAt?: string;
-  /** The first user message, for a subagent its task. */
+  /** The generated or manual name when set, else the first user message; for a subagent its task. */
   readonly title?: string;
   /** Absent means idle. Precedence: needs-answer (a pinomad.question request is unresolved) > running (a run is in flight) > failed (the newest run ended in an error). */
   readonly status?: "needs-answer" | "running" | "failed";
@@ -160,6 +160,8 @@ export interface DurableController {
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
+  /** Rename a conversation permanently; rejects with the host's error (the caller shows it). Needs a 5.4 host. */
+  renameConversation(id: ConversationId, title: string): Promise<void>;
   /**
    * Prompt when idle; otherwise steer or queue a follow-up. `target` defaults
    * to the main shown conversation. `requestId` is an idempotency key: the
