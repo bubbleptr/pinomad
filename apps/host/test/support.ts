@@ -45,6 +45,7 @@ export async function startFauxHost(
     fauxModels,
     mcpConfig,
     modelAuth,
+    autoTitle,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -82,6 +83,11 @@ export async function startFauxHost(
     mcpConfig?: string;
     /** Live models/auth sources, e.g. `watchModelAuth` on a seeded auth.json. */
     modelAuth?: OpenHostOptions["modelAuth"];
+    /**
+     * Auto-title calls `completeSimple` on the same faux provider — it would
+     * consume a queued `answers` step, so it stays off unless a test opts in.
+     */
+    autoTitle?: boolean;
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -130,6 +136,7 @@ export async function startFauxHost(
     ...(relay === undefined ? {} : { relay }),
     ...(mcpConfig === undefined ? {} : { mcpConfig }),
     ...(modelAuth === undefined ? {} : { modelAuth }),
+    autoTitle: autoTitle === true,
   });
   defer(() => host.close());
   return host;

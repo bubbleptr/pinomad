@@ -546,6 +546,13 @@ class RemoteClient {
           return this.#call("listFolders", path === undefined ? {} : { path });
         }),
       removeProject: (path) => this.#command(() => this.#call("removeProject", { path })),
+      renameConversation: (id, title) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "renameConversation")) {
+            throw new Error("The host is too old for this (needs protocol 5.4); run `pinomad upgrade` on the host");
+          }
+          await this.#call("renameConversation", { conversationId: id, title });
+        }),
       createConversation: (home, text, options) =>
         this.#command(async () => {
           const { conversationId } = await this.#call("createConversation", {
