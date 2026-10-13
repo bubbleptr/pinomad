@@ -47,6 +47,63 @@ async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   return page;
 }
 
+/** The conversation's own pi.user contents, oldest first, read off the harness. */
+async function userContentsOf(host: OpenedHost, id: ConversationId): Promise<unknown[]> {
+  const conversation = (await host.harness.conversation(id, BACKGROUND_CONTEXT))!;
+  const items = (await conversation.entries({}, 256, undefined, BACKGROUND_CONTEXT)).items;
+  return items
+    .filter((entry) => entry.kind === "pi.user")
+    .map((entry) => entry.model![0]!.content)
+    .reverse();
+}
+
+/** Build a PNG inside the page and dispatch a paste carrying it into the editable. */
+async function pasteImage(page: Page, width: number, height: number): Promise<void> {
+  await page.evaluate(async ([w, h]) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#2266cc";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(w / 4, h / 4, w / 2, h / 2);
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
+    const file = new File([blob], "shot.png", { type: "image/png" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    document.querySelector('[aria-multiline="true"]')!.dispatchEvent(event);
+  }, [width, height] as const);
+}
+
+/** Build `count` small PNGs inside the page and drop them on the composer. */
+async function dropImages(page: Page, count: number): Promise<void> {
+  await page.evaluate(async (n) => {
+    const data = new DataTransfer();
+    for (let i = 0; i < n; i++) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 40;
+      canvas.height = 40;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = i % 2 === 0 ? "#cc6622" : "#22cc66";
+      ctx.fillRect(0, 0, 40, 40);
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
+      data.items.add(new File([blob], `img${i}.png`, { type: "image/png" }));
+    }
+    document
+      .querySelector('[data-slot="prompt-input"]')!
+      .dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  }, count);
+}
+
+/** The staged-attachment row the composer drawer shows. */
+const attachments = (page: Page) => page.locator('[data-testid="composer-attachments"] [role="group"]');
+
+/** A staged image that finished preparing — the pending skeleton has no img. */
+const staged = (page: Page, index = 1) => attachments(page).getByRole("img", { name: `Image ${index}` });
+
 /** Every node in an organized view, top-level and nested. */
 const allNodes = (view: { organized: { chats: readonly ConversationNode[]; projects: readonly { conversations: readonly ConversationNode[] }[] } }): ConversationNode[] => {
   const flat = (nodes: readonly ConversationNode[]): ConversationNode[] =>
@@ -781,6 +838,125 @@ it("retries a failed run by resubmitting the user message it answered", async ()
   await page.getByText("recovered", { exact: true }).waitFor();
   await expect.poll(() => page.locator('[data-slot="chat-message-user"]', { hasText: "go" }).count()).toBe(2);
   await expect.poll(() => page.getByRole("button", { name: "Retry request", exact: true }).count()).toBe(0);
+});
+
+it("sends a pasted image with a message and shows it in the transcript", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  // One plain first message takes the page from draft into the conversation.
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+
+  await pasteImage(page, 3000, 1000);
+  await staged(page).waitFor();
+  await page.getByRole("textbox").fill("look at this");
+  await page.getByRole("textbox").press("Enter");
+  // The thumbnail renders off the user entry — its arrival means the
+  // host has written it.
+  const transcript = page.getByTestId("message-images");
+  await transcript.getByRole("button", { name: /Image 1/ }).waitFor();
+
+  const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
+  const contents = await userContentsOf(host, record.id);
+  const sent = contents[1] as { type: string; data?: string }[];
+  expect(sent.map((block) => block.type)).toEqual(["text", "image"]);
+  const size = await page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+    return { width: bitmap.width, height: bitmap.height };
+  }, sent[1]!.data!);
+  // The 3000×1000 source shrinks to the 1568px cap.
+  expect(size.width).toBe(1568);
+  expect(Math.abs(size.height - 523)).toBeLessThanOrEqual(1);
+
+  await transcript.getByRole("button", { name: /Image 1/ }).click();
+  await page.getByRole("dialog").waitFor();
+  await page.keyboard.press("Escape");
+});
+
+it("keeps at most four dropped images and lets one be removed", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+
+  await dropImages(page, 5);
+  await expect.poll(() => attachments(page).count()).toBe(4);
+  await page.getByRole("alert").waitFor();
+  await expect.poll(async () => (await page.getByRole("alert").textContent()) ?? "").toContain(
+    "At most 4 images per message",
+  );
+
+  await page.getByRole("group", { name: "Image 1" }).getByRole("button").click();
+  await expect.poll(() => attachments(page).count()).toBe(3);
+});
+
+it("creates a conversation from an image-only first message", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await pasteImage(page, 400, 300);
+  await staged(page).waitFor();
+  await page.getByRole("textbox").press("Enter");
+  await page.getByTestId("message-images").getByRole("button", { name: /Image 1/ }).waitFor();
+
+  const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
+  const contents = await userContentsOf(host, record.id);
+  expect((contents[0] as { type: string }[]).map((block) => block.type)).toEqual(["image"]);
+});
+
+it("resends the failed prompt's images on retry", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [
+      fauxAssistantMessage("boom", { errorMessage: "provider blew up", stopReason: "error" }),
+      "recovered",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await pasteImage(page, 400, 300);
+  await staged(page).waitFor();
+  await page.getByRole("textbox").fill("look");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByRole("button", { name: "Retry request", exact: true }).waitFor();
+
+  const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
+  const first = (await userContentsOf(host, record.id))[0];
+
+  await page.getByRole("button", { name: "Retry request", exact: true }).click();
+  await page.getByText("recovered", { exact: true }).waitFor();
+
+  await expect.poll(async () => (await userContentsOf(host, record.id)).length).toBe(2);
+  const contents = await userContentsOf(host, record.id);
+  expect(contents[1]).toEqual(first);
+});
+
+it("refuses images when the model doesn't accept them", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    fauxModels: [{ id: "faux-text", name: "Faux Text", input: ["text"] }],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Add images…", disabled: true }).waitFor();
+  await page.keyboard.press("Escape");
+
+  await pasteImage(page, 400, 300);
+  await expect.poll(async () => (await page.getByRole("alert").textContent()) ?? "").toContain(
+    "This model doesn't accept images",
+  );
+  await expect.poll(() => attachments(page).count()).toBe(0);
 });
 
 it("rolls a subagent's failure up to the family's root row", async () => {

@@ -6,6 +6,7 @@
 // pi.live doc) instead of Pace's session runtime model.
 
 import type { ConversationId, ConversationView, EntryRecord, LiveState } from "@earendil-works/pi-durable";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
@@ -52,7 +53,7 @@ export type CotView = {
 };
 
 export type ChatEntry =
-  | { kind: "user"; id: string; text: string }
+  | { kind: "user"; id: string; text: string; images: readonly MessageImage[] }
   | {
       kind: "run"; id: string;
       cot: CotView;
@@ -448,7 +449,8 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      items.push({ kind: "user", id, text: textOf(message.content) });
+      // The host admits images through imageProblem; the cast is that contract.
+      items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) as MessageImage[] });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });
@@ -491,7 +493,9 @@ export function deriveChat(
 }
 
 /** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
-export function retryOf(entries: readonly ChatEntry[]): { text: string; requestId: string } | undefined {
+export function retryOf(
+  entries: readonly ChatEntry[],
+): { text: string; images: readonly MessageImage[]; requestId: string } | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {
@@ -499,10 +503,11 @@ export function retryOf(entries: readonly ChatEntry[]): { text: string; requestI
     // A compaction between the prompt and the run doesn't break the reach
     // back; a reset or another run does.
     if (entry.kind === "compaction") continue;
-    if (entry.kind !== "user" || entry.text.trim() === "") return undefined;
+    // An image-only prompt has no text but is still worth resending.
+    if (entry.kind !== "user" || (entry.text.trim() === "" && entry.images.length === 0)) return undefined;
     // The run id (`run-<first assistant entry id>`) is stable across views, so
     // a second click or another client's retry dedupes on the host.
-    return { text: entry.text, requestId: `retry:${last.id}` };
+    return { text: entry.text, images: entry.images, requestId: `retry:${last.id}` };
   }
   return undefined;
 }

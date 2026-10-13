@@ -7,6 +7,7 @@ import type { ConversationId, ConversationView } from "@earendil-works/pi-durabl
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { ChatEntryView } from "./chat-entries.tsx";
 
@@ -42,12 +43,12 @@ export function ConversationTranscript({
   /** The parent conversation's display name, for the "Forked from" divider. */
   forkSource?: string;
   /**
-   * Resubmits the user message the newest run answered, when that run failed.
-   * The retry carries a requestId derived from the failed run, so a second
-   * click or another client's retry admits once on the host. Absent on
-   * read-only transcripts (subagent conversations).
+   * Resubmits the user message the newest run answered, when that run failed —
+   * its images go back too. The retry carries a requestId derived from the
+   * failed run, so a second click or another client's retry admits once on
+   * the host. Absent on read-only transcripts (subagent conversations).
    */
-  onRetry?: (retry: { text: string; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(

@@ -1,16 +1,21 @@
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
+import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useRef, useState } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
+import { imageSrc } from "../../entities/image/message-images.tsx";
+import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
-import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { ChatAdd, FileDiff, FolderClosed, ListTree, Plus, SquareTerminal, Wrench } from "@/shared/ui/icons";
 
 // Pace's four draft suggestions; representative first-touch prompts.
 const SUGGESTED_PROMPTS = [
@@ -48,6 +53,9 @@ export function DraftHome({
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const { pick, setModel, setLevel } = useDraftModelPick(view);
+  const accepts = summaryOf(view.models, pick.model)?.images === true;
+  const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const location =
     draft.kind === "project" ? (
@@ -92,6 +100,20 @@ export function DraftHome({
           />
         </div>
         <div className="flex w-full flex-col gap-3">
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            aria-hidden
+            tabIndex={-1}
+            onChange={(event) => {
+              add([...(event.target.files ?? [])]);
+              // Picking the same file twice must fire again.
+              event.target.value = "";
+            }}
+          />
           <ChatPromptInput
             accent="brand"
             accentFocusRing
@@ -101,7 +123,7 @@ export function DraftHome({
             status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
               const text = value.trim();
-              if (text === "" || submittingRef.current) return;
+              if ((text === "" && images.length === 0) || pending || submittingRef.current) return;
               requestNotificationPermission();
               submittingRef.current = true;
               setSubmitting(true);
@@ -110,6 +132,7 @@ export function DraftHome({
                   ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
                   ...(pick.model === undefined ? {} : { model: pick.model }),
                   thinkingLevel: pick.level,
+                  ...(images.length === 0 ? {} : { images }),
                 })
                 .finally(() => {
                   submittingRef.current = false;
@@ -118,14 +141,51 @@ export function DraftHome({
             }}
             isDisabled={!connected}
             placeholder="Do anything with Pi"
+            attachments={
+              images.length === 0 && !pending ? undefined : (
+                <div className="flex flex-wrap gap-2" data-testid="composer-attachments">
+                  {images.map((image, index) => (
+                    <Thumbnail
+                      key={index}
+                      src={imageSrc(image)}
+                      alt={`Image ${index + 1}`}
+                      onRemove={() => remove(index)}
+                    />
+                  ))}
+                  {pending ? <Thumbnail isLoading alt="Preparing image" /> : null}
+                </div>
+              )
+            }
+            hasAttachments={images.length > 0}
+            onFiles={add}
+            error={error}
             startActions={
-              <ModelSelector
-                models={view.models}
-                selected={{ model: pick.model, level: pick.level }}
-                isDisabled={!connected}
-                onModelChange={setModel}
-                onLevelChange={setLevel}
-              />
+              <>
+                <DropdownMenu
+                  button={{
+                    label: "More actions",
+                    variant: "ghost",
+                    size: "sm",
+                    isIconOnly: true,
+                    icon: <Plus aria-hidden="true" />,
+                    isDisabled: !connected,
+                  }}
+                  items={[
+                    {
+                      label: "Add images…",
+                      isDisabled: !connected || !accepts,
+                      onClick: () => fileInput.current?.click(),
+                    },
+                  ]}
+                />
+                <ModelSelector
+                  models={view.models}
+                  selected={{ model: pick.model, level: pick.level }}
+                  isDisabled={!connected}
+                  onModelChange={setModel}
+                  onLevelChange={setLevel}
+                />
+              </>
             }
             footer={<ComposerLocationRow location={location} />}
           />
