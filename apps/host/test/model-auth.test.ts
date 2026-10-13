@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { PROTOCOL, type ServerFrame } from "@pinomad/protocol/frames.ts";
 import { watchModelAuth } from "../src/model-auth.ts";
@@ -32,12 +32,22 @@ async function fixture(initialAuth?: Record<string, unknown>): Promise<{ authPat
 }
 
 describe("watchModelAuth", () => {
+  // pi also takes provider keys from the environment, so a developer's
+  // exported Anthropic key would make anthropic available with an empty
+  // auth.json and hide what these tests assert about the file.
+  beforeEach(() => {
+    for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"]) vi.stubEnv(name, undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("republishes models and auth when auth.json is written externally", async () => {
     const { authPath, runtime } = await fixture();
     const modelAuth = await watchModelAuth(runtime, { authPath, debounceMs: 20 });
     defer(() => modelAuth.close());
     expect(modelAuth.auth.value.logins).toEqual([]);
-    expect(modelAuth.models.value).toEqual([]);
+    expect(modelAuth.models.value.some((model) => model.provider === "anthropic")).toBe(false);
 
     // A Pi CLI login lands as a plain auth.json write on this machine.
     await writeFile(authPath, JSON.stringify(ANTHROPIC_KEY));
