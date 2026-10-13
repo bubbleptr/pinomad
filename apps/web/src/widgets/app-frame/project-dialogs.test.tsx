@@ -132,14 +132,42 @@ describe("AddProjectDialog", () => {
     const user = userEvent.setup();
     const fake = fakeRemote();
     const { dialog, onAdded } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, []));
-    await within(dialog()).findByText("No subfolders");
+    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
+    await within(dialog()).findByText("code");
 
     await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
     fake.nextAdd().reject(new Error("No such directory: /Users/v"));
     expect(await within(dialog()).findByText(/No such directory/)).toBeInTheDocument();
     expect(onAdded).not.toHaveBeenCalled();
+    // The add failure lands in the footer: the folder rows stay shown.
+    expect(within(dialog()).getByText("code")).toBeInTheDocument();
     // Still open: the host's error must not have closed the dialog.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Navigating after the failed add clears the footer error.
+    await user.click(within(dialog()).getByRole("button", { name: "Parent folder" }));
+    fake.listRequests.at(-1)!.resolve(listingAt("/Users", ["etc"]));
+    await within(dialog()).findByText("etc");
+    expect(within(dialog()).queryByText(/No such directory/)).toBeNull();
+  });
+
+  it("locks navigation while an add is pending", async () => {
+    const user = userEvent.setup();
+    const fake = fakeRemote();
+    const { dialog, onAdded } = renderPicker(fake.remote);
+    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
+    await within(dialog()).findByText("code");
+
+    await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
+    // Rows and Parent folder must not issue another listFolders mid-add.
+    await user.click(within(dialog()).getByText("code"));
+    await user.click(within(dialog()).getByRole("button", { name: "Parent folder" }));
+    expect(fake.listCalls).toEqual([undefined]);
+    // Astryx marks disabled buttons with aria-disabled, not the attribute.
+    expect(within(dialog()).getByRole("button", { name: "Parent folder" })).toHaveAttribute("aria-disabled", "true");
+
+    const project: Project = { path: HOME, name: "v", addedAt: 1 };
+    fake.nextAdd().resolve(project);
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith(project));
   });
 });

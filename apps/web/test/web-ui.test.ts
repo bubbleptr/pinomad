@@ -1408,7 +1408,9 @@ it("keeps the Add project picker open with the host's error on failure", async (
   // stays inline in the dialog and never becomes a toast.
   await rm(victim, { recursive: true, force: true });
   await dialog.getByRole("button", { name: "Add project", exact: true }).click();
-  await dialog.getByText("No such directory", { exact: false }).waitFor();
+  const alert = dialog.getByRole("alert");
+  await alert.waitFor();
+  expect(await alert.textContent()).toContain("No such directory");
   await expect.poll(() => page.locator("[data-toast-id]").count()).toBe(0);
 });
 

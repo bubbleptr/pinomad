@@ -31,7 +31,10 @@ export function AddProjectDialog({
 }) {
   const [listing, setListing] = useState<FolderListing | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  // `error` is browse-only (listFolders) and replaces the folder list; `addError`
+  // is the add failure shown in the footer so the list stays put.
   const [error, setError] = useState<string | undefined>(undefined);
+  const [addError, setAddError] = useState<string | undefined>(undefined);
   const [adding, setAdding] = useState(false);
   // A cancelled dialog must not close a reopened one or paint its error on it.
   // Set in the effect body, cleared in cleanup, so StrictMode's remount re-arms it.
@@ -49,6 +52,7 @@ export function AddProjectDialog({
       const gen = ++generation.current;
       setLoading(true);
       setError(undefined);
+      setAddError(undefined);
       void remote.controller.listFolders(path).then(
         (next) => {
           if (!mounted.current || gen !== generation.current) return;
@@ -70,7 +74,7 @@ export function AddProjectDialog({
   const add = (): void => {
     if (listing === undefined) return;
     setAdding(true);
-    setError(undefined);
+    setAddError(undefined);
     void remote.controller.addProject(listing.path).then(
       (project) => {
         if (mounted.current) onAdded(project);
@@ -78,7 +82,7 @@ export function AddProjectDialog({
       (reason: unknown) => {
         if (!mounted.current) return;
         setAdding(false);
-        setError(message(reason));
+        setAddError(message(reason));
       },
     );
   };
@@ -104,7 +108,7 @@ export function AddProjectDialog({
                 tooltip="Parent folder"
                 size="sm"
                 variant="ghost"
-                isDisabled={up === undefined}
+                isDisabled={up === undefined || adding}
                 onClick={() => go(up)}
               />
               {crumbs.length === 0 ? null : (
@@ -118,7 +122,7 @@ export function AddProjectDialog({
                     <BreadcrumbItem
                       key={crumb.path}
                       isCurrent={index === crumbs.length - 1}
-                      onClick={index === crumbs.length - 1 ? undefined : () => go(crumb.path)}
+                      onClick={index === crumbs.length - 1 || adding ? undefined : () => go(crumb.path)}
                     >
                       {crumb.label}
                     </BreadcrumbItem>
@@ -143,6 +147,7 @@ export function AddProjectDialog({
                       label={folder.name}
                       startContent={<FolderClosed aria-hidden="true" />}
                       endContent={<ChevronRight aria-hidden="true" />}
+                      isDisabled={adding}
                       onClick={() => go(folder.path)}
                     />
                   ))}
@@ -154,9 +159,20 @@ export function AddProjectDialog({
         footer={
           <LayoutFooter>
             <HStack gap={2} vAlign="center" hAlign="between">
-              <Text type="supporting" maxLines={1} wordBreak="break-all" data-testid="picker-path">
-                {listing?.path}
-              </Text>
+              {addError === undefined ? (
+                <Text type="supporting" maxLines={1} wordBreak="break-all" data-testid="picker-path">
+                  {listing?.path}
+                </Text>
+              ) : (
+                <Text
+                  type="supporting"
+                  role="alert"
+                  maxLines={1}
+                  style={{ color: "var(--danger)" }}
+                >
+                  {addError}
+                </Text>
+              )}
               <HStack gap={2} hAlign="end">
                 <Button label="Cancel" variant="secondary" onClick={onClose} />
                 <Button
