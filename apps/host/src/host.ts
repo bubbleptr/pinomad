@@ -11,6 +11,7 @@ import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devic
 import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
 import type { ModelAuth } from "./model-auth.ts";
+import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
 import { type HostSettingsStore, openHostSettings, type SettingsFallback } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
 import type { ScriptTool } from "./script-tools.ts";
@@ -38,6 +39,8 @@ export interface OpenHostOptions {
     | ((host: {
         readonly scriptTools: () => readonly ScriptTool[];
         readonly harness: () => Harness;
+        /** Named-agent files under `<dataDir>/agents` (ADR-0023); open before this runs so extensions can render it. */
+        readonly agentRoles: AgentRoleStore;
       }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
@@ -132,11 +135,15 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
 
   let harness: Harness | undefined;
   let mcp: McpBridge | undefined;
+  let agentRoles: AgentRoleStore | undefined;
   try {
     const token = await hostToken(options.dataDir);
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
     const registry = createRegistry();
+    // Opened before `extensions` resolves: the callback sees the live store,
+    // and `subagent` renders its section per request off it.
+    agentRoles = await openAgentRoles({ dir: join(options.dataDir, "agents") });
     const extensions =
       typeof options.extensions === "function"
         ? options.extensions({
@@ -146,6 +153,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               if (harness === undefined) throw new Error("harness is not open yet");
               return harness;
             },
+            agentRoles,
           })
         : (options.extensions ?? []);
     for (const { extension } of extensions) registry.install(extension);
@@ -222,6 +230,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       settings: hostSettings,
       token,
       port: options.port,
+      agents: agentRoles,
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: extensions.flatMap((extension) => extension.docs ?? []),
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
@@ -283,6 +292,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await opened.close(context);
             // MCP servers go down with the host (stdio children get the spec shutdown).
             await mcp?.close();
+            agentRoles?.close();
             options.modelAuth?.close();
             await Promise.all([...environments.values()].map((env) => env.cleanup(context)));
           } finally {
@@ -294,6 +304,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     };
   } catch (error) {
     options.modelAuth?.close();
+    agentRoles?.close();
     await mcp?.close().catch(() => {});
     await harness?.close(context).catch(() => {});
     await release().catch(() => {});

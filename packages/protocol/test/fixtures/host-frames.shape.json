@@ -44,6 +44,13 @@
     }
   },
   "streams": {
+    "agents": {
+      "value": {
+        "problems": [],
+        "roles": []
+      },
+      "ops": []
+    },
     "auth": {
       "value": {
         "logins": []

@@ -334,6 +334,7 @@ class RemoteClient {
         mcp: null,
         auth: null,
         settings: null,
+        agents: null,
         host: this.#hostInfo(),
       };
       this.#refresh();
@@ -463,6 +464,7 @@ class RemoteClient {
       mcp: this.#host("mcp") ?? null,
       auth: this.#host("auth") ?? null,
       settings: this.#host("settings") ?? null,
+      agents: this.#host("agents") ?? null,
       defaults: this.#effectiveDefaults(this.#helloDefaults),
     });
   }
@@ -660,6 +662,27 @@ class RemoteClient {
             );
           }
           return this.#call("updateSettings", { patch });
+        }),
+      createAgent: (role) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "createAgent")) {
+            throw new Error("The host is too old for this (needs protocol 5.6); run `pinomad upgrade` on the host");
+          }
+          await this.#call("createAgent", { role });
+        }),
+      updateAgent: (role) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "updateAgent")) {
+            throw new Error("The host is too old for this (needs protocol 5.6); run `pinomad upgrade` on the host");
+          }
+          await this.#call("updateAgent", { role });
+        }),
+      deleteAgent: (name) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "deleteAgent")) {
+            throw new Error("The host is too old for this (needs protocol 5.6); run `pinomad upgrade` on the host");
+          }
+          await this.#call("deleteAgent", { name });
         }),
     };
   }

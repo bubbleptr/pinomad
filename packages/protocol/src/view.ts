@@ -4,6 +4,7 @@
 // See docs/licenses/pi.md for the upstream notice.
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { ProtocolVersion } from "./frames.ts";
@@ -53,6 +54,8 @@ export interface ConversationSummary {
   readonly updatedAt?: number;
   /** Subagents only: the `description` the delegating agent gave the call. */
   readonly label?: string;
+  /** Subagents only: the named agent it ran as (ADR-0023). */
+  readonly role?: string;
   /** Running only: the tool call in flight, e.g. { tool: "read", target: "src/a.ts" }; absent while thinking/writing or idle. */
   readonly activity?: { readonly tool: string; readonly target?: string };
 }
@@ -130,6 +133,8 @@ export interface DurableView {
   readonly auth: HostAuth | null;
   /** Effective host settings (ADR-0021); `null` before its snapshot or when the host predates the `settings` stream (5.2). */
   readonly settings: HostSettings | null;
+  /** Named agents on the host (ADR-0023); `null` before its snapshot or when the host predates the `agents` stream (5.6). */
+  readonly agents: AgentRoles | null;
   /** What the host announced in its hello; `version` is absent when the host runs from a source checkout. */
   readonly host?: { readonly version?: string; readonly protocol: ProtocolVersion };
 }
@@ -207,4 +212,10 @@ export interface DurableController {
   logout(providerId: string): Promise<void>;
   /** Patch the host's settings; each `null` resets that key to the pi/built-in fallback. Needs a 5.2 host. */
   updateSettings(patch: HostSettingsPatch): Promise<void>;
+  /** Create a named agent on the host; rejects when `<name>.md` already exists. Needs a 5.6 host. */
+  createAgent(role: AgentRole): Promise<void>;
+  /** Overwrite an existing named agent — also the way a broken file gets fixed. Renaming is create + delete. Needs a 5.6 host. */
+  updateAgent(role: AgentRole): Promise<void>;
+  /** Delete a named agent's file; rejects when it does not exist. Needs a 5.6 host. */
+  deleteAgent(name: string): Promise<void>;
 }

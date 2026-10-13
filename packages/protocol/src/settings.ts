@@ -34,7 +34,11 @@ const THINKING_LEVEL_KEYS = { off: true, minimal: true, low: true, medium: true,
   true
 >;
 
+/** The levels in pi-ai's order; error messages and pickers list them. */
+export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as readonly ThinkingLevel[];
+
+// `in` would admit prototype keys like "constructor" and "__proto__".
 export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>
-  typeof value === "string" && value in THINKING_LEVEL_KEYS;
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(THINKING_LEVEL_KEYS, value);
 
 export const isQueueMode = (value: unknown): value is QueueMode => value === "all" || value === "one-at-a-time";

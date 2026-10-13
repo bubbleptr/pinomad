@@ -13,6 +13,7 @@ import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { AgentRoleStore } from "./agent-roles.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
 import { packagedVersion, webRoot } from "./distribution.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
@@ -56,6 +57,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     (host: {
       readonly scriptTools: () => readonly ScriptTool[];
       readonly harness: () => Harness;
+      readonly agentRoles: AgentRoleStore;
     }): readonly BuiltinExtension[] => {
       const others: BuiltinExtension[] = [
         createContext({
@@ -65,7 +67,12 @@ export async function main(argv: readonly string[]): Promise<void> {
         coding,
         todo,
         question,
-        createSubagent({ models, modelSummaries: summaries, exclude: [question.extension] }),
+        createSubagent({
+          models,
+          modelSummaries: summaries,
+          exclude: [question.extension],
+          roles: () => host.agentRoles.value.roles,
+        }),
       ];
       return [
         ...others,

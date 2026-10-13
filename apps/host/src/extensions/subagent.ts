@@ -17,9 +17,11 @@ import {
   defineTool,
   type Extension,
   type ModelRef,
+  section,
   type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
+import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "../builtin-extension.ts";
 import { SubagentDoc } from "../subagent-doc.ts";
@@ -34,10 +36,24 @@ export function createSubagent(options: {
   readonly models: Models;
   /** The models the host advertises — what `model` may select and what the description lists. */
   readonly modelSummaries: () => readonly ModelSummary[];
+  /** The named agents `role` may delegate to (ADR-0023); read per request so file edits apply immediately. */
+  readonly roles?: () => readonly AgentRole[];
   /** Extensions removed from the child besides this one, e.g. `question`. */
   readonly exclude: readonly Extension[];
 }): BuiltinExtension {
   const available = (): string => options.modelSummaries().map((model) => `${model.provider}/${model.modelId}`).join(", ");
+  const roles = options.roles ?? (() => [] as const);
+
+  const roleNamed = (name: string): AgentRole => {
+    const found = roles().find((each) => each.name === name);
+    if (found !== undefined) return found;
+    const defined = roles();
+    throw new Error(
+      defined.length === 0
+        ? "No named agents are defined"
+        : `Unknown agent "${name}". Available agents: ${defined.map((each) => each.name).join(", ")}`,
+    );
+  };
 
   const tool = defineTool({
     name: "subagent",
@@ -45,13 +61,19 @@ export function createSubagent(options: {
       "Delegate a self-contained task to a subagent that runs in its own conversation and returns its final answer. " +
       "The subagent starts with none of this conversation's context, so put everything it needs in `task`. " +
       "It works in the same files as you: subagents called in the same turn run concurrently, so give parallel subagents read-only work or non-overlapping files. " +
-      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `description` only labels the call. " +
+      "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `role` delegates to a named agent; a model or thinking level it pins cannot be overridden; `description` only labels the call. " +
       `Available models: ${available()}.`,
     parameters: Type.Object({
       task: Type.String({
         minLength: 1,
         description: "Complete, self-contained instructions. The subagent sees none of this conversation.",
       }),
+      role: Type.Optional(
+        Type.String({
+          description:
+            "Optional named agent to delegate to, from the Named agents list in your instructions. Its prompt applies, plus any model or thinking level it pins.",
+        }),
+      ),
       description: Type.Optional(
         Type.String({ description: 'A short 3-6 word label for the user, e.g. "Audit auth middleware".' }),
       ),
@@ -77,24 +99,41 @@ export function createSubagent(options: {
             ...(doc?.startedAt === undefined ? {} : { startedAt: doc.startedAt }),
           };
         }
+        const role = args.role === undefined ? undefined : roleNamed(args.role);
+        // A role's pins are authoritative; letting the call override them would
+        // defeat pinning (ADR-0023 §5).
+        if (role?.model !== undefined && args.model !== undefined) {
+          throw new Error(`Agent "${role.name}" pins model ${role.model}; omit \`model\``);
+        }
+        if (role?.thinkingLevel !== undefined && args.thinkingLevel !== undefined) {
+          throw new Error(`Agent "${role.name}" pins thinking level ${role.thinkingLevel}; omit \`thinkingLevel\``);
+        }
+        const modelString = role?.model ?? args.model;
+        const levelString = role?.thinkingLevel ?? args.thinkingLevel;
         let model: ModelRef | undefined;
         let thinkingLevel: ModelThinkingLevel | undefined;
         let override: ReturnType<Models["getModel"]>;
-        if (args.model !== undefined) {
-          const slash = args.model.indexOf("/");
-          const provider = slash === -1 ? "" : args.model.slice(0, slash);
-          const modelId = slash === -1 ? "" : args.model.slice(slash + 1);
+        if (modelString !== undefined) {
+          const slash = modelString.indexOf("/");
+          const provider = slash === -1 ? "" : modelString.slice(0, slash);
+          const modelId = slash === -1 ? "" : modelString.slice(slash + 1);
           override = provider === "" || modelId === "" ? undefined : options.models.getModel(provider, modelId);
           const listed = options.modelSummaries().some((each) => each.provider === provider && each.modelId === modelId);
-          if (override === undefined || !listed) throw new Error(`Unknown model "${args.model}". Available models: ${available()}`);
+          if (override === undefined || !listed) {
+            throw new Error(
+              role === undefined
+                ? `Unknown model "${modelString}". Available models: ${available()}`
+                : `Agent "${role.name}" uses model "${modelString}", which is not available. Available models: ${available()}`,
+            );
+          }
           model = { provider, modelId };
         }
-        if (args.thinkingLevel !== undefined || override !== undefined) {
+        if (levelString !== undefined || override !== undefined) {
           const parent = await tx.doc(AgentDoc, api.conversationId);
           // Clamp against the model the child will run; without any model there is nothing to clamp to.
           const effective = override ?? (parent.model === undefined ? undefined : options.models.getModel(parent.model.provider, parent.model.modelId));
-          if (args.thinkingLevel !== undefined) {
-            thinkingLevel = effective === undefined ? args.thinkingLevel : clampThinkingLevel(effective, args.thinkingLevel);
+          if (levelString !== undefined) {
+            thinkingLevel = effective === undefined ? levelString : clampThinkingLevel(effective, levelString);
           } else if (parent.thinkingLevel !== undefined) {
             // Model without a thinking level: the child keeps the caller's, clamped to the new model.
             thinkingLevel = clampThinkingLevel(override!, parent.thinkingLevel);
@@ -102,7 +141,8 @@ export function createSubagent(options: {
         }
         const change: AgentChange = {
           extensions: { remove: [extension, ...options.exclude] },
-          instructions: INSTRUCTIONS,
+          // The role's prompt is copied in at dispatch — later edits to the file do not reach this child (ADR-0023 §7).
+          instructions: role === undefined || role.prompt === "" ? INSTRUCTIONS : `${INSTRUCTIONS}\n\n${role.prompt}`,
           ...(model === undefined ? {} : { model }),
           ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
         };
@@ -117,6 +157,7 @@ export function createSubagent(options: {
         const doc = await tx.doc(SubagentDoc, created.id);
         doc.startedAt = startedAt;
         if (ref !== undefined) doc.model = `${ref.provider}/${ref.modelId}`;
+        if (role !== undefined) doc.role = role.name;
         const label = args.description?.trim();
         if (label !== undefined && label !== "") doc.label = label;
         return { id: created.id, ...(ref === undefined ? {} : { model: doc.model }), startedAt };
@@ -150,7 +191,22 @@ export function createSubagent(options: {
 
   // Declared after `tool` because execute captures it for the child's extension
   // removal; it is initialized before any call can run.
-  const extension = defineExtension({ name: "subagent", tools: [tool] });
+  const extension = defineExtension({
+    name: "subagent",
+    tools: [tool],
+    sections: [
+      // Rendered per request off the live store, so agent-file edits apply on
+      // the next turn; the child loses this extension, so it never sees it.
+      section("agent_roles", () => {
+        const defined = roles();
+        if (defined.length === 0) return undefined;
+        return [
+          "Named agents: pass one as `role` to `subagent` to delegate to it. When the user writes @name for one of these agents, delegate the relevant work to that agent with `subagent`, putting everything it needs in `task`.",
+          ...defined.map((each) => `- ${each.name}: ${each.description.replace(/\s+/g, " ")}`),
+        ].join("\n");
+      }),
+    ],
+  });
   // Nested in a script, memo/owner bookkeeping of a child conversation would go wrong (ADR-0013 §2).
   return { extension, modelOnly: ["subagent"] };
 }

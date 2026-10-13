@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 5
+      "minor": 6
     },
     "session": {
       "id": "<sessionId>",
@@ -82,6 +82,14 @@
   },
   {
     "type": "snapshot",
+    "stream": "agents",
+    "value": {
+      "roles": [],
+      "problems": []
+    }
+  },
+  {
+    "type": "snapshot",
     "stream": "index",
     "value": {
       "projects": [],
@@ -119,7 +127,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1791906178084,
+            "createdAt": 1791913916133,
             "requestId": "contract-1"
           }
         ]
@@ -203,7 +211,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791906178086
+        "updatedAt": 1791913916137
       }
     ]
   },
@@ -245,7 +253,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1791906178086
+              "timestamp": 1791913916137
             }
           ],
           "kind": "pi.user",
@@ -362,7 +370,7 @@
                   }
                 }
               ],
-              "timestamp": 1791906178090
+              "timestamp": 1791913916142
             }
           ],
           "kind": "pi.system",
@@ -395,7 +403,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a135ee-6423-7621-b04a-72b892c28548"
+          "sessionId": "01a13664-76e5-70b0-9d76-acccc65b1f5c"
         },
         "pi.usage": {
           "models": {},
@@ -466,7 +474,7 @@
         ],
         [
           {
-            "callId": "tool:1791906178049:ednrcp0csqp",
+            "callId": "tool:1791913916089:coc0znervem",
             "name": "write",
             "taskId": 15,
             "status": "pending"
@@ -519,7 +527,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1791906178049:ednrcp0csqp",
+                    "id": "tool:1791913916089:coc0znervem",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -527,7 +535,7 @@
                     }
                   }
                 ],
-                "api": "faux:1791906178050:n32mest63z",
+                "api": "faux:1791913916090:ypevunljdke",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -545,7 +553,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1791906178049
+                "timestamp": 1791913916089
               }
             ],
             "kind": "pi.assistant",
@@ -635,7 +643,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791906178049,
+        "updatedAt": 1791913916089,
         "activity": {
           "tool": "write",
           "target": "note.txt"
@@ -694,7 +702,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1791906178049:ednrcp0csqp",
+                "toolCallId": "tool:1791913916089:coc0znervem",
                 "toolName": "write",
                 "content": [
                   {
@@ -706,7 +714,7 @@
                   "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
                 },
                 "isError": false,
-                "timestamp": 1791906178156
+                "timestamp": 1791913916216
               }
             ],
             "data": {
@@ -836,7 +844,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791906178049
+        "updatedAt": 1791913916089
       }
     ]
   },
@@ -988,7 +996,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1791906178050:n32mest63z",
+                "api": "faux:1791913916090:ypevunljdke",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1006,7 +1014,7 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1791906178050
+                "timestamp": 1791913916090
               }
             ],
             "kind": "pi.assistant",

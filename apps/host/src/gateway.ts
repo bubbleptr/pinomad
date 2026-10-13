@@ -57,6 +57,8 @@ import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem } from "@pinomad/protocol/images.ts";
+import type { AgentRoleStore } from "./agent-roles.ts";
+import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
 import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
@@ -129,6 +131,8 @@ export interface GatewayOptions {
   readonly dataDir: string;
   /** Host settings store (ADR-0021): backs the `settings` stream, `hello.defaults`, `updateSettings`, and new-conversation defaults. */
   readonly settings: HostSettingsStore;
+  /** Named-agent store (ADR-0023): backs the `agents` stream and the create/update/delete calls. */
+  readonly agents?: AgentRoleStore;
   /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
   readonly mcp?: HostValue<McpStatus>;
   /**
@@ -547,8 +551,9 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       }
     }
     if (record.owner !== undefined) {
-      const label = (await harness.snapshot(SubagentDoc, record.id, context))?.label;
-      if (typeof label === "string" && label !== "") facts.label = label;
+      const subagent = await harness.snapshot(SubagentDoc, record.id, context);
+      if (typeof subagent?.label === "string" && subagent.label !== "") facts.label = subagent.label;
+      if (typeof subagent?.role === "string" && subagent.role !== "") facts.role = subagent.role;
     }
     const named = (await harness.snapshot(TitleDoc, record.id, context))?.title;
     if (typeof named === "string" && named !== "") facts.named = named;
@@ -606,8 +611,9 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
           facts.pending = next;
           touched.add(id);
         } else if (change.record.kind === SubagentDoc.definition.kind) {
-          const label = (change.value as { label?: unknown } | null)?.label;
-          facts.label = typeof label === "string" && label !== "" ? label : undefined;
+          const value = change.value as { label?: unknown; role?: unknown } | null;
+          facts.label = typeof value?.label === "string" && value.label !== "" ? value.label : undefined;
+          facts.role = typeof value?.role === "string" && value.role !== "" ? value.role : undefined;
           touched.add(id);
         } else if (change.record.kind === TitleDoc.definition.kind) {
           const named = (change.value as { title?: unknown } | null)?.title;
@@ -695,6 +701,8 @@ type ConversationFacts = {
   /** Question doc kinds that currently hold an unresolved request. */
   pending: Set<string>;
   label?: string;
+  /** The named agent the subagent ran as, if the call gave one. */
+  role?: string;
 };
 
 function summaryOf(record: ConversationRecord, facts: ConversationFacts): ConversationSummary {
@@ -721,6 +729,7 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts): Conver
     ...(status === undefined ? {} : { status }),
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
+    ...(facts.role === undefined ? {} : { role: facts.role }),
     ...(activity === undefined ? {} : { activity }),
   };
 }
@@ -735,6 +744,7 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
     && a.status === b.status
     && a.updatedAt === b.updatedAt
     && a.label === b.label
+    && a.role === b.role
     && a.activity?.tool === b.activity?.tool
     && a.activity?.target === b.activity?.target
   );
@@ -842,6 +852,7 @@ class GatewayClient {
       models: options.modelAuth?.models ?? constantValue(options.modelSummaries()),
       auth: options.modelAuth?.auth ?? constantValue<HostAuth>({ logins: [] }),
       settings: options.settings,
+      agents: options.agents ?? constantValue<AgentRoles>({ roles: [], problems: [] }),
     };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
@@ -1113,6 +1124,24 @@ class GatewayClient {
       }
       case "updateSettings": {
         await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
+        return null;
+      }
+      case "createAgent": {
+        const store = this.#options.agents;
+        if (store === undefined) throw new Error("Named agents are not available on this host");
+        await store.create((args as CallMethods["createAgent"]["args"]).role);
+        return null;
+      }
+      case "updateAgent": {
+        const store = this.#options.agents;
+        if (store === undefined) throw new Error("Named agents are not available on this host");
+        await store.update((args as CallMethods["updateAgent"]["args"]).role);
+        return null;
+      }
+      case "deleteAgent": {
+        const store = this.#options.agents;
+        if (store === undefined) throw new Error("Named agents are not available on this host");
+        await store.remove((args as CallMethods["deleteAgent"]["args"]).name);
         return null;
       }
       case "listFolders":
