@@ -19,6 +19,24 @@ agent 用 read / write / edit / bash 工具，执行前不需要审批；拿不�
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
 - Skills：`<cwd>/.agents/skills` 和 `~/.agents/skills`，同名时项目的生效。
 
+具名 Agent（ADR-0023）是宿主级的可复用角色配置：每个具名 Agent 一个 Markdown 文件，放在 `<数据目录>/agents/<名字>.md`（默认 `~/.pinomad/agents/`，跟着 `--data-dir` / `PINOMAD_DATA_DIR` 走），文件是 YAML frontmatter 加提示词正文：
+
+```markdown
+---
+description: "审代码改动"
+model: "anthropic/claude-opus-4"
+thinkingLevel: "high"
+---
+
+你是严格的代码审阅者……
+```
+
+`description` 必填（模型靠它判断什么时候用，最长 1024 字符）；`model`（`provider/modelId`）和 `thinkingLevel` 选填；正文是提示词，可以为空；frontmatter 里不能有其他字段。名字就是去掉 `.md` 的文件名：只能是小写字母、数字和连字符（不能以连字符开头结尾），最长 32 字符。
+
+`subagent` 工具多一个可选的 `role` 参数，主模型可以把任务派给某个具名 Agent；系统提示词的 `agent_roles` 小节会列出所有可用的名字和描述。定义里写了 `model` / `thinkingLevel` 的就以定义为准，调用时再传这两个参数直接报错；没写的可以照常传，不传就沿用父对话；定义里钉的模型不可用时报错，不回落。消息里写 `@name` 时，主模型会把相关工作派给对应的具名 Agent——宿主不做专门处理，固定规则就写在 `agent_roles` 小节里。具名 Agent 的提示词接在固定的子代理说明后面；派出那一刻抄一份进子代理自己的状态，之后再改或删文件都不影响已有的子代理。
+
+文件改动立即生效：宿主监视 `agents/` 目录，新建、手改、删除都会在下一轮提示词里体现，并即时推给所有在线客户端。解析不了或不合规的文件不会被当成具名 Agent——可用的名字里没有它，错误原因随 `agents` 列表一起给出。
+
 MCP server 在 `~/.agents/mcp.json` 里配置（ADR-0012），格式是各家客户端通用的 `mcpServers`：
 
 ```json

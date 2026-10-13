@@ -16,6 +16,7 @@ import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
+import type { AgentRoleStore } from "../src/agent-roles.ts";
 import type { BuiltinExtension } from "../src/builtin-extension.ts";
 import type { ScriptTool } from "../src/script-tools.ts";
 
@@ -68,6 +69,8 @@ export async function startFauxHost(
           scriptTools: () => readonly ScriptTool[];
           /** Resolves to the open harness — lazy because extensions out-preface it. */
           harness: () => Harness;
+          /** The host's live named-agent store (`<dataDir>/agents`, ADR-0023). */
+          agentRoles: AgentRoleStore;
         }) => readonly BuiltinExtension[]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
@@ -127,8 +130,8 @@ export async function startFauxHost(
       : {
           extensions:
             typeof extensions === "function"
-              ? (host: { scriptTools: () => readonly ScriptTool[]; harness: () => Harness }) =>
-                  extensions({ models, modelSummaries, scriptTools: host.scriptTools, harness: host.harness })
+              ? (host: { scriptTools: () => readonly ScriptTool[]; harness: () => Harness; agentRoles: AgentRoleStore }) =>
+                  extensions({ models, modelSummaries, scriptTools: host.scriptTools, harness: host.harness, agentRoles: host.agentRoles })
               : extensions,
         }),
     ...(projects === undefined ? {} : { projects }),

@@ -1,4 +1,6 @@
 import { once } from "node:events";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -316,5 +318,71 @@ describe("gateway", () => {
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "recovered");
     const texts = transcript(client.view.current().conversation!).filter((m) => m.role === "user").map((m) => m.text);
     expect(texts).toEqual(["go", "again"]);
+  });
+});
+
+describe("named agents", () => {
+  const ROLE_FILE = '---\ndescription: "Reviews code"\n---\n\nLook for mistakes.\n';
+
+  it("serves the agents stream snapshot and live updates through the three calls", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await mkdir(join(dir.path, "agents"), { recursive: true });
+    await writeFile(join(dir.path, "agents", "reviewer.md"), ROLE_FILE);
+    const host = await startFauxHost(defer, { dataDir: dir.path });
+    const client = await connectTo(defer, host);
+    await waitForView(client.view, (view) => view.agents !== null);
+    expect(client.view.current().agents).toEqual({
+      roles: [{ name: "reviewer", description: "Reviews code", prompt: "Look for mistakes." }],
+      problems: [],
+    });
+
+    await client.controller.createAgent({ name: "planner", description: "Plans work", prompt: "Plan it." });
+    await waitForView(client.view, (view) => view.agents?.roles.some((role) => role.name === "planner") === true);
+    expect(await readFile(join(dir.path, "agents", "planner.md"), "utf8")).toContain("Plans work");
+
+    await client.controller.updateAgent({ name: "planner", description: "Plans better", prompt: "Plan it." });
+    await waitForView(
+      client.view,
+      (view) => view.agents?.roles.find((role) => role.name === "planner")?.description === "Plans better",
+    );
+
+    await client.controller.deleteAgent("planner");
+    await waitForView(client.view, (view) => view.agents?.roles.every((role) => role.name !== "planner") === true);
+    await expect(access(join(dir.path, "agents", "planner.md"))).rejects.toThrow();
+  });
+
+  it("answers a bad createAgent with ok:false, writes nothing, and keeps the socket", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const host = await startFauxHost(defer, { dataDir: dir.path });
+    const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+    defer(() => socket.terminate());
+    const frames: ServerFrame[] = [];
+    socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
+    await once(socket, "open");
+
+    socket.send(
+      JSON.stringify({
+        type: "call",
+        id: 1,
+        method: "createAgent",
+        args: { role: { name: "Bad Name", description: "d", prompt: "p" } },
+      }),
+    );
+    await expect
+      .poll(() => frames.some((frame) => frame.type === "result" && frame.id === 1))
+      .toBe(true);
+    const bad = frames.find((frame) => frame.type === "result" && frame.id === 1);
+    expect(bad).toMatchObject({ ok: false });
+    expect((bad as { error: string }).error).toContain("lowercase letters, digits and hyphens");
+    await expect(access(join(dir.path, "agents", "Bad Name.md"))).rejects.toThrow();
+
+    // The connection lives on — a well-formed call still gets its result.
+    socket.send(JSON.stringify({ type: "call", id: 2, method: "deleteAgent", args: { name: "missing" } }));
+    await expect
+      .poll(() => frames.some((frame) => frame.type === "result" && frame.id === 2))
+      .toBe(true);
+    expect(frames.find((frame) => frame.type === "result" && frame.id === 2)).toMatchObject({ ok: false });
   });
 });

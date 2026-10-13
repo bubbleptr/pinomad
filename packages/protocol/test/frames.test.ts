@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOST_STREAM_NAMES, parseClientFrame } from "../src/frames.ts";
+import { HOST_STREAM_NAMES, hostStreams, hostSupportsCall, parseClientFrame } from "../src/frames.ts";
 
 // The gateway closes connections on "malformed", answers "unsupported*" with
 // an error, and ignores "unknownType" (ADR-0018 §3), so every call shape the
@@ -151,6 +151,30 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "" } })).toBe("malformed");
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: "x" } })).toBe("malformed");
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
+  });
+
+  it("introduces the agents stream and the three agent calls at minor 6", () => {
+    expect(hostStreams(5)).not.toContain("agents");
+    expect(hostStreams(6)).toContain("agents");
+    for (const method of ["createAgent", "updateAgent", "deleteAgent"] as const) {
+      expect(hostSupportsCall(5, method)).toBe(false);
+      expect(hostSupportsCall(6, method)).toBe(true);
+    }
+  });
+
+  it("accepts shaped roles on the agent calls and a name on deleteAgent, rejecting malformed ones", () => {
+    const role = { name: "reviewer", description: "Reviews code", prompt: "Look for mistakes." };
+    for (const method of ["createAgent", "updateAgent"]) {
+      expect(kinds({ type: "call", id: 1, method, args: { role } })).toBe("frame");
+      // Optional fields are checked for shape too; content rules are the host's.
+      expect(kinds({ type: "call", id: 1, method, args: { role: { ...role, model: "x", thinkingLevel: "y" } } })).toBe("frame");
+      expect(kinds({ type: "call", id: 1, method, args: { role: { ...role, name: 1 } } })).toBe("malformed");
+      expect(kinds({ type: "call", id: 1, method, args: { role: { ...role, prompt: 1 } } })).toBe("malformed");
+      expect(kinds({ type: "call", id: 1, method, args: { role: "x" } })).toBe("malformed");
+      expect(kinds({ type: "call", id: 1, method, args: {} })).toBe("malformed");
+    }
+    expect(kinds({ type: "call", id: 1, method: "deleteAgent", args: { name: "reviewer" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "deleteAgent", args: { name: 1 } })).toBe("malformed");
   });
 
   it("ignores frames whose type it does not know", () => {

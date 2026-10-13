@@ -13,6 +13,7 @@ const SNAPSHOTS: Record<string, unknown> = {
   models: [],
   auth: { logins: [] },
   settings: { defaultModel: null, defaultThinkingLevel: null, steeringMode: "one-at-a-time", followUpMode: "one-at-a-time", custom: [] },
+  agents: { roles: [], problems: [] },
 };
 
 interface Fake {

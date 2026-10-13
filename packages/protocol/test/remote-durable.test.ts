@@ -20,6 +20,7 @@ const SNAPSHOTS: Record<string, unknown> = {
     followUpMode: "all",
     custom: ["defaultModel", "defaultThinkingLevel", "steeringMode", "followUpMode"],
   },
+  agents: { roles: [], problems: [] },
 };
 
 const id = (n: number): ConversationId => n as ConversationId;
@@ -597,6 +598,38 @@ describe("RemoteDurable minor-version gating", () => {
         custom: ["defaultThinkingLevel"],
       });
       await waitForView(remote, (v) => v.defaults.thinkingLevel === "low" && v.defaults.model === undefined);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("refuses the agent calls on a 5.5 host: upgrade message, no frame, agents stays null", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 5 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      const role = { name: "reviewer", description: "Reviews code", prompt: "Look for mistakes." };
+      await expect(remote.controller.createAgent(role)).rejects.toThrow("needs protocol 5.6");
+      await expect(remote.controller.updateAgent(role)).rejects.toThrow("pinomad upgrade");
+      await expect(remote.controller.deleteAgent("reviewer")).rejects.toThrow("pinomad upgrade");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "createAgent")).toBe(false);
+      expect(remote.view.current().agents).toBeNull();
+      expect(subscribes(sent)).not.toContain("agents");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("subscribes to agents on a 5.6 host and mirrors the stream", async () => {
+    const { transport, sent, release } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      expect(subscribes(sent)).toContain("agents");
+      expect(remote.view.current().agents).toEqual(SNAPSHOTS.agents);
+      release("agents", {
+        roles: [{ name: "reviewer", description: "Reviews code", prompt: "Look for mistakes." }],
+        problems: [],
+      });
+      await waitForView(remote, (view) => view.agents?.roles.length === 1);
     } finally {
       remote.close();
     }

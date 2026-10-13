@@ -1,11 +1,15 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxToolCall, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc, type ConversationId, type ConversationView, type JsonObject, LiveDoc } from "@earendil-works/pi-durable";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { AgentRoleStore } from "../src/agent-roles.ts";
 import { question } from "../src/extensions/question.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
 import { connectTo, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
@@ -14,9 +18,18 @@ import type { OpenedHost } from "../src/host.ts";
 const defer = useCleanups();
 const context = BACKGROUND_CONTEXT;
 
-const extensions = (provided: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+const extensions = (provided: {
+  models: Models;
+  modelSummaries: () => readonly ModelSummary[];
+  agentRoles: AgentRoleStore;
+}) => [
   question,
-  createSubagent({ models: provided.models, modelSummaries: provided.modelSummaries, exclude: [question.extension] }),
+  createSubagent({
+    models: provided.models,
+    modelSummaries: provided.modelSummaries,
+    roles: () => provided.agentRoles.value.roles,
+    exclude: [question.extension],
+  }),
 ];
 
 const delegates = (args: JsonObject) => fauxAssistantMessage(fauxToolCall("subagent", args), { stopReason: "toolUse" });
@@ -318,5 +331,214 @@ describe("subagent tool", () => {
     expect(resultText(result)).toBe("child answer after restart");
     // A rerun after restart reports the same start time the creation recorded.
     expect((result.details as { startedAt?: number }).startedAt).toBe(firstStartedAt);
+  });
+});
+
+describe("subagent with a named agent", () => {
+  const REVIEWER = '---\ndescription: "Reviews code"\nmodel: "faux/faux-thinker"\nthinkingLevel: "high"\n---\n\nBe strict.\n';
+  const PINNED = { task: "review this", role: "reviewer" };
+
+  /** A host whose data dir carries the given agent files. */
+  async function hostWithRoles(files: Record<string, string>, options: Parameters<typeof startFauxHost>[1] & { answers: readonly (string | FauxResponseStep)[] }) {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await mkdir(join(dir.path, "agents"), { recursive: true });
+    for (const [file, text] of Object.entries(files)) await writeFile(join(dir.path, "agents", file), text);
+    const host = await startFauxHost(defer, { ...options, dataDir: dir.path });
+    return { host, dir };
+  }
+
+  it("pins the role's model and thinking level and appends its prompt to the instructions", async () => {
+    const { host } = await hostWithRoles(
+      { "reviewer.md": REVIEWER },
+      {
+        extensions,
+        fauxModels: [
+          { id: "faux-1", name: "Faux Model" },
+          { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+        ],
+        answers: [delegates(PINNED), "child answer", "parent final"],
+      },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    const childId = await childIdOf(client);
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+
+    const state = await host.harness.snapshot(AgentDoc, childId, context);
+    expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
+    expect(state?.thinkingLevel).toBe("high");
+    expect(state?.instructions).toBe(`You are a subagent working on one delegated task. You cannot ask the user questions; if you need a decision or clarification, stop and state exactly what you need in your final answer. Your final message is returned to the delegating agent as the result, so make it a complete, self-contained report.\n\nBe strict.`);
+
+    // The summary names the agent the child ran as.
+    const child = client.view.current().organized.chats.flatMap((node) => node.children)[0]?.summary;
+    expect(child?.role).toBe("reviewer");
+  });
+
+  it("rejects a model arg on a pinned role and a thinkingLevel arg on a pinned level", async () => {
+    const { host } = await hostWithRoles(
+      { "reviewer.md": REVIEWER },
+      {
+        extensions,
+        fauxModels: [
+          { id: "faux-1", name: "Faux Model" },
+          { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+        ],
+        answers: [
+          delegates({ ...PINNED, model: "faux/faux-1" }),
+          delegates({ ...PINNED, thinkingLevel: "low" }),
+          "parent final",
+        ],
+      },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+
+    const errors = (client.view.current().conversation!.entries ?? [])
+      .filter((entry) => entry.kind === "pi.tool-result")
+      .map((entry) => resultText(entry.model?.[0] as ToolResultMessageLike));
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain('pins model faux/faux-thinker; omit `model`');
+    expect(errors[1]).toContain('pins thinking level high; omit `thinkingLevel`');
+    // Neither rejected call created a child.
+    expect(client.view.current().organized.chats[0]!.children).toEqual([]);
+  });
+
+  it("allows explicit overrides on an unpinned role", async () => {
+    const { host } = await hostWithRoles(
+      { "loose.md": '---\ndescription: "No pins"\n---\n\nNo pins.\n' },
+      {
+        extensions,
+        fauxModels: [
+          { id: "faux-1", name: "Faux Model" },
+          { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+        ],
+        answers: [delegates({ task: "go", role: "loose", model: "faux/faux-thinker", thinkingLevel: "low" }), "child answer", "parent final"],
+      },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    const childId = await childIdOf(client);
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+    const state = await host.harness.snapshot(AgentDoc, childId, context);
+    expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
+    expect(state?.thinkingLevel).toBe("low");
+  });
+
+  it("rejects an unknown role listing the defined names", async () => {
+    const { host } = await hostWithRoles(
+      { "reviewer.md": REVIEWER },
+      { extensions, answers: [delegates({ task: "go", role: "ghost" }), "parent final"] },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+    const result = toolResult(client.view.current().conversation!);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain('Unknown agent "ghost"');
+    expect(resultText(result)).toContain("reviewer");
+  });
+
+  it("rejects a role whose pinned model is not available", async () => {
+    const { host } = await hostWithRoles(
+      { "reviewer.md": REVIEWER },
+      { extensions, answers: [delegates(PINNED), "parent final"] },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+    const result = toolResult(client.view.current().conversation!);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain('Agent "reviewer" uses model "faux/faux-thinker", which is not available');
+  });
+
+  it("keeps the child's pinned agent after the role file changes mid-run", async () => {
+    let finishChild!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const { host, dir } = await hostWithRoles(
+      { "reviewer.md": REVIEWER },
+      {
+        extensions,
+        fauxModels: [
+          { id: "faux-1", name: "Faux Model" },
+          { id: "faux-thinker", name: "Faux Thinker", reasoning: true },
+        ],
+        answers: [delegates(PINNED), () => new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (finishChild = resolve)), "parent final"],
+      },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    const childId = await childIdOf(client);
+
+    // Rewriting and then deleting the file mid-run must not touch the dispatched child.
+    await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Edited"\n---\n\nDifferent prompt.\n');
+    await writeFile(join(dir.path, "agents", "deleted.md"), REVIEWER);
+    const gone = join(dir.path, "agents", "deleted.md");
+    await writeFile(gone, REVIEWER);
+    const { rm } = await import("node:fs/promises");
+    await rm(gone);
+
+    finishChild(fauxAssistantMessage("child answer"));
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+    const state = await host.harness.snapshot(AgentDoc, childId, context);
+    expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
+    expect(state?.thinkingLevel).toBe("high");
+    expect(state?.instructions).toContain("Be strict.");
+    expect(state?.instructions).not.toContain("Different prompt");
+  });
+
+  it("shows the agent_roles section in the parent's prompt but never the child's", async () => {
+    const prompts: string[] = [];
+    const { host } = await hostWithRoles(
+      { "reviewer.md": REVIEWER, "planner.md": '---\ndescription: "Plans work"\n---\n\nPlan it.\n' },
+      {
+        extensions,
+        answers: [
+          (context) => {
+            prompts.push(getCurrentSystemPrompt(context.messages));
+            return delegates({ task: "go", role: "planner" });
+          },
+          (context) => {
+            prompts.push(getCurrentSystemPrompt(context.messages));
+            return fauxAssistantMessage("child answer");
+          },
+          (context) => {
+            prompts.push(getCurrentSystemPrompt(context.messages));
+            return fauxAssistantMessage("parent final");
+          },
+        ],
+      },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
+
+    expect(prompts).toHaveLength(3);
+    // Parent requests carry the section with every defined role; the child, whose
+    // subagent extension was removed, never sees it.
+    for (const parent of [prompts[0]!, prompts[2]!]) {
+      expect(parent).toContain("agent_roles");
+      expect(parent).toContain("- reviewer: Reviews code");
+      expect(parent).toContain("- planner: Plans work");
+    }
+    expect(prompts[1]).not.toContain("agent_roles");
+    expect(prompts[1]).toContain("Plan it."); // the role's prompt rides instructions instead
+  });
+
+  it("omits the section when no roles are defined", async () => {
+    const prompts: string[] = [];
+    const host = await startFauxHost(defer, {
+      extensions,
+      answers: [
+        (context) => {
+          prompts.push(getCurrentSystemPrompt(context.messages));
+          return fauxAssistantMessage("done");
+        },
+      ],
+    });
+    const client = await connectTo(defer, host);
+    await startChat(client, "hi");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+    expect(prompts[0]).not.toContain("agent_roles");
   });
 });

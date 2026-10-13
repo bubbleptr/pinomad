@@ -34,6 +34,9 @@ const THINKING_LEVEL_KEYS = { off: true, minimal: true, low: true, medium: true,
   true
 >;
 
+/** The levels in pi-ai's order; error messages and pickers list them. */
+export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as readonly ThinkingLevel[];
+
 export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>
   typeof value === "string" && value in THINKING_LEVEL_KEYS;
 

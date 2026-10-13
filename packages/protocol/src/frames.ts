@@ -1,5 +1,6 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
+import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
 import type { MessageImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
@@ -32,12 +33,14 @@ export interface HostStreamValues {
   models: readonly ModelSummary[];
   auth: HostAuth;
   settings: HostSettings;
+  /** Named agents (ADR-0023): `roles` and the `problems` of files that didn't parse. */
+  agents: AgentRoles;
 }
 
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2 } satisfies Record<
+const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -84,7 +87,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 5 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 6 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -160,6 +163,12 @@ export interface CallMethods {
   logout: { args: { providerId: string }; result: null };
   /** Patch the host's settings (ADR-0021); each key set lands in PiNomad's settings.json, each `null` resets to fallback. */
   updateSettings: { args: { patch: HostSettingsPatch }; result: null };
+  /** Create `<name>.md` under the host's agents dir; fails when it already exists. */
+  createAgent: { args: { role: AgentRole }; result: null };
+  /** Overwrite `<name>.md` — also how a broken file gets fixed. Renaming is create + delete; `role.name` must match the file. */
+  updateAgent: { args: { role: AgentRole }; result: null };
+  /** Delete `<name>.md`; fails when it does not exist. */
+  deleteAgent: { args: { name: string }; result: null };
 }
 
 export type CallMethod = keyof CallMethods;
@@ -170,6 +179,9 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
   updateSettings: 2,
   listFolders: 3,
   renameConversation: 4,
+  createAgent: 6,
+  updateAgent: 6,
+  deleteAgent: 6,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -294,6 +306,9 @@ const CALL_METHODS = [
   "revokeDevice",
   "logout",
   "updateSettings",
+  "createAgent",
+  "updateAgent",
+  "deleteAgent",
 ] as const satisfies readonly CallMethod[];
 
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
@@ -311,6 +326,14 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     args.images === undefined
     || (Array.isArray(args.images)
       && args.images.every((image) => record(image) && typeof image.data === "string" && typeof image.mimeType === "string"));
+  // Shape only — name/description/model rules are the host's check (agentRoleProblem).
+  const role = (): boolean =>
+    record(args.role)
+    && typeof args.role.name === "string"
+    && typeof args.role.description === "string"
+    && typeof args.role.prompt === "string"
+    && (args.role.model === undefined || typeof args.role.model === "string")
+    && (args.role.thinkingLevel === undefined || typeof args.role.thinkingLevel === "string");
   switch (method) {
     case "submit":
       return (
@@ -366,6 +389,11 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
     case "logout":
       return nonempty(args.providerId);
+    case "createAgent":
+    case "updateAgent":
+      return role();
+    case "deleteAgent":
+      return typeof args.name === "string";
     case "updateSettings":
       // An empty patch is valid; an unknown key is malformed, never silently dropped.
       return (
