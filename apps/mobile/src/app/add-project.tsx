@@ -50,9 +50,12 @@ function AddProjectBody({ remote }: { remote: RemoteDurable }) {
   }, []);
   // Only the newest navigation's response may land; a slower earlier answer is dropped.
   const generation = useRef(0);
+  // The path of the in-flight (or last) request — what "Try again" re-asks for.
+  const lastPath = useRef<string | undefined>(undefined);
   const go = useCallback(
     (path?: string): void => {
       const gen = ++generation.current;
+      lastPath.current = path;
       setLoading(true);
       setError(undefined);
       setAddError(undefined);
@@ -147,10 +150,15 @@ function AddProjectBody({ remote }: { remote: RemoteDurable }) {
             <Spinner />
           </View>
         ) : error !== undefined ? (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}>
             <Text className="text-danger" style={{ textAlign: "center" }}>
               {error}
             </Text>
+            {/* Browse errors leave no way forward without an explicit retry:
+                a dead first load has no crumbs to fall back on. */}
+            <Button variant="secondary" isDisabled={adding} onPress={() => go(lastPath.current)}>
+              Try again
+            </Button>
           </View>
         ) : listing === undefined ? null : listing.folders.length === 0 ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
