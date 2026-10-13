@@ -164,12 +164,15 @@ function SidebarSectionHeader({
   contentId,
   onToggle,
   actions,
+  pinnedActions = false,
 }: {
   title: string;
   expanded: boolean;
   contentId: string;
   onToggle: () => void;
   actions: ReactNode;
+  /** Actions always visible instead of hover-only. */
+  pinnedActions?: boolean;
 }) {
   return (
     <div className="pigui-sidenav-section-header">
@@ -188,7 +191,7 @@ function SidebarSectionHeader({
           data-expanded={expanded ? "true" : "false"}
         />
       </button>
-      <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+      <HStack className={pinnedActions ? undefined : "pigui-sidenav-hover-actions"} gap={0.5} vAlign="center">
         {actions}
       </HStack>
     </div>
@@ -434,6 +437,7 @@ export function SidebarContent({
           expanded={projects.expanded}
           contentId={projects.contentId}
           onToggle={projects.toggle}
+          pinnedActions
           actions={
             <IconButton
               icon={<Plus aria-hidden="true" />}
@@ -448,7 +452,15 @@ export function SidebarContent({
         />
         <VStack id={projects.contentId} gap={0.5}>
           {projects.expanded ? (
-            view.organized.projects.map(({ project, conversations }) => {
+            view.organized.projects.length === 0 ? (
+              <SideNavItem
+                icon={<FolderClosed aria-hidden="true" />}
+                label="Add project"
+                isDisabled={disabled}
+                onClick={() => setAddOpen(true)}
+              />
+            ) : (
+              view.organized.projects.map(({ project, conversations }) => {
                 const expanded = expandedProjects[project.path] ?? true;
                 return (
                   <div key={project.path} className="pigui-sidenav-row-with-actions">
@@ -511,10 +523,21 @@ export function SidebarContent({
                   </div>
                 );
               })
+            )
           ) : null}
         </VStack>
       </SideNavSection>
-      {addOpen ? <AddProjectDialog remote={remote} connected={!disabled} onClose={() => setAddOpen(false)} /> : null}
+      {addOpen ? (
+        <AddProjectDialog
+          remote={remote}
+          connected={!disabled}
+          onAdded={(project) => {
+            setAddOpen(false);
+            start({ kind: "project", path: project.path });
+          }}
+          onClose={() => setAddOpen(false)}
+        />
+      ) : null}
       {removing === undefined ? null : (
         <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
       )}
