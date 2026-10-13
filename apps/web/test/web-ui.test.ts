@@ -1323,17 +1323,25 @@ it("shows the location row and honors the draft checkout picker", async () => {
 
 it("surfaces a failed command as a toast without opening the dock", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], projects: [project.path] });
+  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // The dock stays closed; a rejected command must still be visible.
-  await page.getByRole("button", { name: "Add project", exact: true }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill("/nonexistent/pinomad-nope");
-  await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
+  // The dock stays closed; a rejected command must still be visible. The
+  // draft keeps a removed project's path, so its createConversation call
+  // rejects "Unknown project" and the notice becomes a toast.
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
+  await observer.controller.removeProject(project.path);
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
   // Scope to the toast itself: the message also lands in Astryx's hidden
   // assertive live region, making a bare role=alert match ambiguous.
   const toast = page.locator("[data-toast-id]");
-  await toast.getByText("No such directory", { exact: false }).waitFor();
+  await toast.getByText("Unknown project", { exact: false }).waitFor();
 
   // An undismissed error toast must not sit over the composer or the header's
   // actions — it would block sending until dismissed. Settle the toast's own
@@ -1348,6 +1356,20 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(toastBox, composerBox)).toBe(false);
   expect(intersects(toastBox, dockBox)).toBe(false);
+});
+
+it("keeps the Add project dialog open with the host's error on failure", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("button", { name: "Add project", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("/nonexistent/pinomad-nope");
+  await dialog.getByRole("button", { name: "Add project", exact: true }).click();
+  // The dialog stays open and shows the host's error inline — no toast.
+  await dialog.getByText("No such directory", { exact: false }).waitFor();
+  await expect.poll(() => page.locator("[data-toast-id]").count()).toBe(0);
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {
