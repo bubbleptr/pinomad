@@ -39,6 +39,6 @@ export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as readonly Thin
 
 // `in` would admit prototype keys like "constructor" and "__proto__".
 export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>
-  typeof value === "string" && Object.hasOwn(THINKING_LEVEL_KEYS, value);
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(THINKING_LEVEL_KEYS, value);
 
 export const isQueueMode = (value: unknown): value is QueueMode => value === "all" || value === "one-at-a-time";
