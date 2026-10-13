@@ -1,6 +1,7 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { HostAuth } from "./auth.ts";
+import type { MessageImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FolderListing, Home, HostIndex, Project } from "./organization.ts";
@@ -83,7 +84,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 4 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 5 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -108,6 +109,8 @@ export interface CallMethods {
       /** Overrides the host's defaults for the new agent; the level clamps to the model. */
       model?: ModelRef;
       thinkingLevel?: ThinkingLevel;
+      /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
+      images?: readonly MessageImage[];
     };
     result: { conversationId: ConversationId };
   };
@@ -121,6 +124,8 @@ export interface CallMethods {
       whenBusy: "steer" | "followUp";
       /** Makes a resend after a lost reply admit nothing new. */
       requestId: string;
+      /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
+      images?: readonly MessageImage[];
     };
     result: { submissionId: string };
   };
@@ -170,6 +175,15 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
 /** Whether a host of the given minor version knows `method`. */
 export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
   return hostMinor >= (CALL_SINCE[method] ?? 0);
+}
+
+/** Minor version that introduced each call-arg feature (ADR-0018 §2). */
+const FEATURE_SINCE = { images: 5 } as const;
+export type HostFeature = keyof typeof FEATURE_SINCE;
+
+/** Whether a host of the given minor version honors `feature`. */
+export function hostSupportsFeature(hostMinor: number, feature: HostFeature): boolean {
+  return hostMinor >= FEATURE_SINCE[feature];
 }
 
 export type ServerFrame =
@@ -292,11 +306,16 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
   const conversationId = (): boolean =>
     typeof args.conversationId === "number" && Number.isSafeInteger(args.conversationId) && args.conversationId >= 1;
+  // Shape only — count, mime type, base64 and size limits are the host's check (imageProblem).
+  const images = (): boolean =>
+    args.images === undefined
+    || (Array.isArray(args.images)
+      && args.images.every((image) => record(image) && typeof image.data === "string" && typeof image.mimeType === "string"));
   switch (method) {
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
-        && nonempty(args.requestId)
+        && nonempty(args.requestId) && images()
       );
     case "abort":
       return conversationId();
@@ -331,7 +350,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "createConversation":
       return (
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
-        && nonempty(args.text) && nonempty(args.requestId)
+        && typeof args.text === "string" && (nonempty(args.text) || (Array.isArray(args.images) && args.images.length > 0))
+        && nonempty(args.requestId) && images()
         && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
         && (args.model === undefined || (record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId)))
         && (args.thinkingLevel === undefined || nonempty(args.thinkingLevel))

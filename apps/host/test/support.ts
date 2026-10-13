@@ -108,6 +108,7 @@ export async function startFauxHost(
       name: each.name,
       contextWindow: each.contextWindow,
       thinkingLevels: getSupportedThinkingLevels(each),
+      images: each.input.includes("image"),
     }));
   const host = await openHost({
     dataDir: dir.path,

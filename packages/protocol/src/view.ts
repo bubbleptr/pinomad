@@ -11,6 +11,7 @@ import type { McpStatus } from "./mcp.ts";
 import type { FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
+import type { MessageImage } from "./images.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -20,6 +21,8 @@ export interface ModelSummary extends ModelRef {
   readonly contextWindow: number;
   /** Levels the model supports, always starting with "off"; a non-reasoning model reports ["off"]. */
   readonly thinkingLevels: readonly ThinkingLevel[];
+  /** Whether the model accepts image input (pi-ai `input` includes "image"); absent from pre-5.5 hosts. */
+  readonly images?: boolean;
 }
 
 /** What a new conversation starts with; the host's configured defaults. */
@@ -156,7 +159,13 @@ export interface DurableController {
   createConversation(
     home: Home,
     text: string,
-    options?: { checkout?: "worktree" | "project"; model?: ModelRef; thinkingLevel?: ThinkingLevel },
+    options?: {
+      checkout?: "worktree" | "project";
+      model?: ModelRef;
+      thinkingLevel?: ThinkingLevel;
+      /** Up to 4 attached images; needs a 5.5 host. */
+      images?: readonly MessageImage[];
+    },
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
@@ -165,9 +174,14 @@ export interface DurableController {
   /**
    * Prompt when idle; otherwise steer or queue a follow-up. `target` defaults
    * to the main shown conversation. `requestId` is an idempotency key: the
-   * host admits one submission per key and conversation; defaults to a fresh one.
+   * host admits one submission per key and conversation; defaults to a fresh
+   * one. `images` attaches up to 4 images; needs a 5.5 host.
    */
-  submit(text: string, whenBusy: "steer" | "followUp", target?: ConversationId, requestId?: string): Promise<void>;
+  submit(
+    text: string,
+    whenBusy: "steer" | "followUp",
+    options?: { target?: ConversationId; requestId?: string; images?: readonly MessageImage[] },
+  ): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */
   abort(target?: ConversationId): Promise<void>;

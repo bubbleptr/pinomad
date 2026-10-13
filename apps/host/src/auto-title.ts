@@ -114,10 +114,10 @@ export function attachAutoTitle(
       const model = ref === null ? undefined : deps.models.getModel(ref.provider, ref.modelId);
       if (model === undefined) return;
 
-      const firstText = textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "").slice(
-        0,
-        TITLE_INPUT_LIMIT,
-      );
+      const firstText = (
+        textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "") ||
+        "(images only)"
+      ).slice(0, TITLE_INPUT_LIMIT);
       const answer = textOf(last.content).slice(0, TITLE_INPUT_LIMIT);
       const request: ModelContext = {
         systemPrompt: TITLE_PROMPT,

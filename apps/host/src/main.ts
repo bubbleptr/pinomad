@@ -111,6 +111,7 @@ export async function main(argv: readonly string[]): Promise<void> {
         name: model.name,
         contextWindow: model.contextWindow,
         thinkingLevels: getSupportedThinkingLevels(model),
+        images: model.input.includes("image"),
       },
     ];
     return {

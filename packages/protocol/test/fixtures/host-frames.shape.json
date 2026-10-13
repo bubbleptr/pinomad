@@ -11,6 +11,7 @@
       "models": [
         {
           "contextWindow": "number",
+          "images": "boolean",
           "modelId": "string",
           "name": "string",
           "provider": "string",
@@ -414,6 +415,7 @@
       "value": [
         {
           "contextWindow": "number",
+          "images": "boolean",
           "modelId": "string",
           "name": "string",
           "provider": "string",

@@ -17,7 +17,9 @@ import {
   type ModelRef,
 } from "@earendil-works/pi-durable";
 import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protocol/organization.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { branchSuffix, checkoutAt, gitBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
+import { messageContent } from "./message-content.ts";
 
 export const IndexDoc = defineDoc<HostIndex>({
   kind: "pinomad.index",
@@ -95,6 +97,8 @@ export async function createConversation(
     readonly model?: ModelRef;
     /** Overrides the host default; clamps to the effective model's levels. */
     readonly thinkingLevel?: ModelThinkingLevel;
+    /** Attached images; validated by the caller (imageProblem). */
+    readonly images?: readonly MessageImage[];
   },
   defaults: ConversationDefaults,
   models: Models,
@@ -112,7 +116,7 @@ export async function createConversation(
     const existing = await harness.conversation(prior.id, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: input.text, whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }
@@ -182,7 +186,7 @@ export async function createConversation(
     );
     if (home.kind === "chat") await mkdir(join(dataDir, "chats", String(conversation.id)), { recursive: true });
     await conversation.submit(
-      { type: "input", content: input.text, whenBusy: "followUp", requestId: input.requestId },
+      { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
       context,
     );
     return conversation.id;
@@ -194,7 +198,7 @@ export async function createConversation(
     const existing = await harness.conversation(error.conversationId, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: input.text, whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }

@@ -56,7 +56,9 @@ import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
+import { imageProblem } from "@pinomad/protocol/images.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
+import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
@@ -745,7 +747,9 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
     typeof message.content === "string"
       ? message.content
       : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
-  return { title: text.replace(/\s+/g, " ").trim() };
+  // An image-only message has no text — no title rather than an empty one.
+  const title = text.replace(/\s+/g, " ").trim();
+  return title === "" ? {} : { title };
 }
 
 /**
@@ -764,7 +768,12 @@ async function historyFacts(
   let cursor: Cursor | undefined;
   do {
     const page = await conversation.entries({}, 256, cursor, context);
-    first = page.items.findLast((entry) => entry.kind === "pi.user" && entry.conversationId === id) ?? first;
+    // The fallback title comes from the oldest own user message with text —
+    // the live listener's titleOf gate; an image-only message yields none.
+    first =
+      page.items.findLast(
+        (entry) => entry.kind === "pi.user" && entry.conversationId === id && titleOf(entry).title !== undefined,
+      ) ?? first;
     newest ??= page.items.find(
       (entry) => entry.conversationId === id && (entry.kind === "pi.user" || entry.kind === "pi.assistant"),
     );
@@ -1052,6 +1061,8 @@ class GatewayClient {
         return null;
       case "createConversation": {
         const create = args as CallMethods["createConversation"]["args"];
+        const problem = imageProblem(create.images ?? []);
+        if (problem !== undefined) throw new Error(problem);
         const conversationId = await createConversation(
           this.#options.harness,
           this.#options.dataDir,
@@ -1059,6 +1070,7 @@ class GatewayClient {
             home: create.home,
             text: create.text,
             requestId: create.requestId,
+            ...(create.images === undefined ? {} : { images: create.images }),
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
             ...(create.model === undefined ? {} : { model: create.model }),
             ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
@@ -1109,12 +1121,14 @@ class GatewayClient {
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {
       case "submit": {
-        const { text, whenBusy, requestId } = args as CallMethods["submit"]["args"];
+        const { text, whenBusy, requestId, images } = args as CallMethods["submit"]["args"];
+        const problem = imageProblem(images ?? []);
+        if (problem !== undefined) throw new Error(problem);
         // A pending question never blocks the composer (ADR-0011 §4): mark it
         // dismissed so its wait task finishes, then steer regardless.
         const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
         const submission = await conversation.submit(
-          { type: "input", content: text, whenBusy: dismissed ? "steer" : whenBusy, requestId },
+          { type: "input", content: messageContent(text, images), whenBusy: dismissed ? "steer" : whenBusy, requestId },
           context,
         );
         void submission.wait(context).then(

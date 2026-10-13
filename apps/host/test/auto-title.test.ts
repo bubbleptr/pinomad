@@ -163,7 +163,7 @@ describe("auto-title", () => {
     // fork: "initial" on TitleDoc — nothing inherited, and no own message yet.
     expect(summaryOf(client.view.current(), forkId)?.title).toBeUndefined();
 
-    await client.controller.submit("fork work", "followUp", forkId);
+    await client.controller.submit("fork work", "followUp", { target: forkId });
     // The fork's own first message becomes the fallback title while its run ends.
     await waitForView(client.view, (view) => summaryOf(view, forkId)?.title === "fork work");
     release("Fork Title");

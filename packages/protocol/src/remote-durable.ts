@@ -13,6 +13,7 @@ import {
   type HostStreamValues,
   hostStreams,
   hostSupportsCall,
+  hostSupportsFeature,
   INVALID_FRAME_CLOSE_CODE,
   PROTOCOL,
   type ServerFrame,
@@ -555,6 +556,10 @@ class RemoteClient {
         }),
       createConversation: (home, text, options) =>
         this.#command(async () => {
+          const images = options?.images ?? [];
+          if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
+            throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
+          }
           const { conversationId } = await this.#call("createConversation", {
             home,
             text,
@@ -562,6 +567,7 @@ class RemoteClient {
             ...(options?.checkout === undefined ? {} : { checkout: options.checkout }),
             ...(options?.model === undefined ? {} : { model: options.model }),
             ...(options?.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
+            ...(images.length === 0 ? {} : { images }),
           });
           await this.#switch(conversationId);
         }),
@@ -573,15 +579,20 @@ class RemoteClient {
           // family is gone too.
           if (archived && this.#side !== undefined && this.#descendsFrom(this.#side, id)) await this.#showSide(undefined);
         }),
-      submit: (text, whenBusy, target, requestId) =>
-        this.#command(() =>
-          this.#call("submit", {
-            conversationId: target ?? conversationId(),
+      submit: (text, whenBusy, options) =>
+        this.#command(() => {
+          const images = options?.images ?? [];
+          if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
+            throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
+          }
+          return this.#call("submit", {
+            conversationId: options?.target ?? conversationId(),
             text,
             whenBusy,
-            requestId: requestId ?? newRequestId(),
-          }),
-        ),
+            requestId: options?.requestId ?? newRequestId(),
+            ...(images.length === 0 ? {} : { images }),
+          });
+        }),
       compact: (instructions) =>
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
