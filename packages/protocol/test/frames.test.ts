@@ -90,6 +90,9 @@ describe("parseClientFrame", () => {
     expect(kinds(call({ bogus: 1 }))).toBe("malformed");
     expect(kinds(call({ steeringMode: "sometimes" }))).toBe("malformed");
     expect(kinds(call({ defaultThinkingLevel: "ludicrous" }))).toBe("malformed");
+    // Inherited keys of the levels record are not levels.
+    expect(kinds(call({ defaultThinkingLevel: "constructor" }))).toBe("malformed");
+    expect(kinds(call({ defaultThinkingLevel: "__proto__" }))).toBe("malformed");
     expect(kinds(call({ defaultModel: { provider: "a" } }))).toBe("malformed");
     expect(kinds(call({ defaultModel: "a/b" }))).toBe("malformed");
     expect(kinds(call("x"))).toBe("malformed");

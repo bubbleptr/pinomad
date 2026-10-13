@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
@@ -154,6 +154,31 @@ function serializeExpectation(): string {
 }
 
 describe("agent-roles safety", () => {
+  it("serializes concurrent writes: a second create of the same name loses", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const store = await openStore(dir.path);
+    const a: AgentRole = { name: "reviewer", description: "A", prompt: "Prompt A" };
+    const b: AgentRole = { name: "reviewer", description: "B", prompt: "Prompt B" };
+    const settled = await Promise.allSettled([store.create(a), store.create(b)]);
+    expect(settled.map((each) => each.status)).toEqual(["fulfilled", "rejected"]);
+    expect((settled[1] as PromiseRejectedResult).reason.message).toContain('Agent "reviewer" already exists');
+    // The dir holds exactly one file with the first write's content, no temp leftover.
+    expect((await readdir(join(dir.path, "agents"))).sort()).toEqual(["reviewer.md"]);
+    expect(await readFile(join(dir.path, "agents", "reviewer.md"), "utf8")).toContain("Prompt A");
+    expect(store.value.roles[0]).toMatchObject({ name: "reviewer", prompt: "Prompt A" });
+  });
+
+  it("serializes create-then-remove into no file and no temp leftover", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const store = await openStore(dir.path);
+    const role: AgentRole = { name: "reviewer", description: "d", prompt: "p" };
+    await Promise.allSettled([store.create(role), store.remove("reviewer")]);
+    expect(await readdir(join(dir.path, "agents"))).toEqual([]);
+    expect(store.value).toEqual({ roles: [], problems: [] });
+  });
+
   it("rejects a remove whose name escapes the agents directory", async () => {
     const dir = await tempDir();
     defer(dir.remove);

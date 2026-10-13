@@ -4,6 +4,7 @@
 // store's own writes round through the same load path so `value` is always what
 // the disk says. A bad file lands in `problems`, never in `roles`, and never
 // kills the watcher.
+import { randomBytes } from "node:crypto";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -140,19 +141,42 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
     reported = true;
   });
 
+  // Existence checks and writes interleave: without this chain two concurrent
+  // creates of the same name both see the file absent and the second silently
+  // overwrites the first. Agent edits are rare, so one store-wide chain does.
+  let pending: Promise<void> = Promise.resolve();
+  const enqueue = (operation: () => Promise<void>): Promise<void> => {
+    const run = pending.then(operation, operation);
+    // The chain must settle on failure too; a rejected op hands off to the next.
+    pending = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  };
+
   const write = async (role: AgentRole, mustExist: boolean): Promise<void> => {
     const problem = agentRoleProblem(role);
     if (problem !== undefined) throw new Error(problem);
-    const target = join(dir, `${role.name}.md`);
-    const exists = existsSync(target);
-    if (mustExist && !exists) throw new Error(`No such agent: "${role.name}"`);
-    if (!mustExist && exists) throw new Error(`Agent "${role.name}" already exists`);
-    // Temp + rename: a reader never sees a half-written file.
-    const temp = join(dir, `.${role.name}.tmp`);
-    await writeFile(temp, serialize(role));
-    await rename(temp, target);
-    // Publish now; the watcher would, after its debounce.
-    await reload();
+    await enqueue(async () => {
+      const target = join(dir, `${role.name}.md`);
+      const exists = existsSync(target);
+      if (mustExist && !exists) throw new Error(`No such agent: "${role.name}"`);
+      if (!mustExist && exists) throw new Error(`Agent "${role.name}" already exists`);
+      // Temp + rename: a reader never sees a half-written file. A unique name
+      // per write keeps a concurrent op's temp apart (not *.md, so the loader
+      // ignores it either way).
+      const temp = join(dir, `.${role.name}.${randomBytes(6).toString("hex")}.tmp`);
+      try {
+        await writeFile(temp, serialize(role));
+        await rename(temp, target);
+      } catch (error) {
+        await rm(temp, { force: true }).catch(() => {});
+        throw error;
+      }
+      // Publish now; the watcher would, after its debounce.
+      await reload();
+    });
   };
 
   return {
@@ -167,10 +191,12 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
       // otherwise "../outside" deletes a file outside the agents directory.
       const problem = agentNameProblem(name);
       if (problem !== undefined) throw new Error(problem);
-      const target = join(dir, `${name}.md`);
-      if (!existsSync(target)) throw new Error(`No such agent: "${name}"`);
-      await rm(target);
-      await reload();
+      await enqueue(async () => {
+        const target = join(dir, `${name}.md`);
+        if (!existsSync(target)) throw new Error(`No such agent: "${name}"`);
+        await rm(target);
+        await reload();
+      });
     },
     close() {
       closed = true;

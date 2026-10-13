@@ -48,6 +48,9 @@ describe("agentRoleProblem", () => {
 
   it("rejects an unknown thinkingLevel and accepts every pi-ai level", () => {
     expect(agentRoleProblem(role({ thinkingLevel: "extreme" }))).toContain("thinkingLevel must be one of");
+    // Inherited keys of the levels record are not levels either.
+    expect(agentRoleProblem(role({ thinkingLevel: "constructor" }))).toContain("thinkingLevel must be one of");
+    expect(agentRoleProblem(role({ thinkingLevel: "__proto__" }))).toContain("thinkingLevel must be one of");
     for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
       expect(agentRoleProblem(role({ thinkingLevel: level }))).toBeUndefined();
     }
