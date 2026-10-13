@@ -1,13 +1,12 @@
 import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useRef, useState } from "react";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { imageSrc } from "../../entities/image/message-images.tsx";
+import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
@@ -43,9 +42,15 @@ export function ConversationComposer({
   const checkout = view.checkout;
   const isProject = view.home?.kind === "project";
 
-  const accepts = summaryOf(view.models, agent.model)?.images === true;
+  const model = summaryOf(view.models, agent.model);
+  const accepts = model?.images === true;
   const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
   const fileInput = useRef<HTMLInputElement>(null);
+  // No "why" slot on menu items: the reason goes into the label itself.
+  const addImages =
+    accepts || disconnected
+      ? "Add images…"
+      : `Add images… (${model?.name ?? agent.model?.modelId ?? "This model"} can't see images)`;
 
   const location = isProject ? (
     checkout !== undefined ? (
@@ -74,20 +79,7 @@ export function ConversationComposer({
     <>
       {status === "" ? null : <Text type="supporting">{status}</Text>}
       <QueuedList items={queue} />
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        aria-hidden
-        tabIndex={-1}
-        onChange={(event) => {
-          add([...(event.target.files ?? [])]);
-          // Picking the same file twice must fire again.
-          event.target.value = "";
-        }}
-      />
+      <ImageFileInput inputRef={fileInput} onFiles={add} />
       <ChatPromptInput
         value={value}
         status={busy ? "streaming" : "ready"}
@@ -96,21 +88,7 @@ export function ConversationComposer({
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
         onStop={busy ? () => void remote.controller.abort() : undefined}
-        attachments={
-          images.length === 0 && !pending ? undefined : (
-            <div className="flex flex-wrap gap-2" data-testid="composer-attachments">
-              {images.map((image, index) => (
-                <Thumbnail
-                  key={index}
-                  src={imageSrc(image)}
-                  alt={`Image ${index + 1}`}
-                  onRemove={() => remove(index)}
-                />
-              ))}
-              {pending ? <Thumbnail isLoading alt="Preparing image" /> : null}
-            </div>
-          )
-        }
+        attachments={attachmentDrawer({ images, pending, onRemove: remove })}
         hasAttachments={images.length > 0}
         onFiles={add}
         error={error}
@@ -127,7 +105,7 @@ export function ConversationComposer({
               }}
               items={[
                 {
-                  label: "Add images…",
+                  label: addImages,
                   isDisabled: disconnected || !accepts,
                   onClick: () => fileInput.current?.click(),
                 },

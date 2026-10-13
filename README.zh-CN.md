@@ -72,7 +72,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | 提问代替审批 | 工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题 |
 | codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
 | MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |
-| 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩转成 JPEG |
+| 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩放并转成 JPEG |
 | AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills |
 
 细节和 MCP 配置说明见[使用说明](docs/usage.md)。

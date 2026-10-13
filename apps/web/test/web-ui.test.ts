@@ -949,7 +949,9 @@ it("refuses images when the model doesn't accept them", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Add images…", disabled: true }).waitFor();
+  const item = page.getByRole("menuitem", { name: /Add images/, disabled: true });
+  await item.waitFor();
+  await expect.poll(async () => (await item.textContent()) ?? "").toContain("can't see images");
   await page.keyboard.press("Escape");
 
   await pasteImage(page, 400, 300);

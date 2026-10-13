@@ -1,13 +1,12 @@
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useRef, useState } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { imageSrc } from "../../entities/image/message-images.tsx";
+import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
@@ -53,9 +52,15 @@ export function DraftHome({
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const { pick, setModel, setLevel } = useDraftModelPick(view);
-  const accepts = summaryOf(view.models, pick.model)?.images === true;
-  const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
+  const model = summaryOf(view.models, pick.model);
+  const accepts = model?.images === true;
+  const { images, pending, error, add, remove } = useImageAttachments(accepts);
   const fileInput = useRef<HTMLInputElement>(null);
+  // No "why" slot on menu items: the reason goes into the label itself.
+  const addImages =
+    accepts || !connected
+      ? "Add images…"
+      : `Add images… (${model?.name ?? pick.model?.modelId ?? "This model"} can't see images)`;
 
   const location =
     draft.kind === "project" ? (
@@ -100,20 +105,7 @@ export function DraftHome({
           />
         </div>
         <div className="flex w-full flex-col gap-3">
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            aria-hidden
-            tabIndex={-1}
-            onChange={(event) => {
-              add([...(event.target.files ?? [])]);
-              // Picking the same file twice must fire again.
-              event.target.value = "";
-            }}
-          />
+          <ImageFileInput inputRef={fileInput} onFiles={add} />
           <ChatPromptInput
             accent="brand"
             accentFocusRing
@@ -141,21 +133,7 @@ export function DraftHome({
             }}
             isDisabled={!connected}
             placeholder="Do anything with Pi"
-            attachments={
-              images.length === 0 && !pending ? undefined : (
-                <div className="flex flex-wrap gap-2" data-testid="composer-attachments">
-                  {images.map((image, index) => (
-                    <Thumbnail
-                      key={index}
-                      src={imageSrc(image)}
-                      alt={`Image ${index + 1}`}
-                      onRemove={() => remove(index)}
-                    />
-                  ))}
-                  {pending ? <Thumbnail isLoading alt="Preparing image" /> : null}
-                </div>
-              )
-            }
+            attachments={attachmentDrawer({ images, pending, onRemove: remove })}
             hasAttachments={images.length > 0}
             onFiles={add}
             error={error}
@@ -172,7 +150,7 @@ export function DraftHome({
                   }}
                   items={[
                     {
-                      label: "Add images…",
+                      label: addImages,
                       isDisabled: !connected || !accepts,
                       onClick: () => fileInput.current?.click(),
                     },
