@@ -170,4 +170,39 @@ describe("AddProjectDialog", () => {
     fake.nextAdd().resolve(project);
     await waitFor(() => expect(onAdded).toHaveBeenCalledWith(project));
   });
+
+  it("offers Try again when the first load fails", async () => {
+    const user = userEvent.setup();
+    const fake = fakeRemote();
+    const { dialog } = renderPicker(fake.remote);
+    fake.listRequests[0]!.reject(new Error("Not connected to the host"));
+
+    expect(await within(dialog()).findByText(/Not connected/)).toBeInTheDocument();
+    // No listing means no crumbs to escape with — the button is the way out.
+    expect(within(dialog()).queryByText("~")).toBeNull();
+    const retry = within(dialog()).getByRole("button", { name: "Try again" });
+    await user.click(retry);
+    expect(fake.listCalls).toEqual([undefined, undefined]);
+
+    fake.listRequests[1]!.resolve(listingAt(HOME, ["code"]));
+    expect(await within(dialog()).findByText("code")).toBeInTheDocument();
+    expect(within(dialog()).queryByText(/Not connected/)).toBeNull();
+  });
+
+  it("Try again re-requests the folder that failed", async () => {
+    const user = userEvent.setup();
+    const fake = fakeRemote();
+    const { dialog } = renderPicker(fake.remote);
+    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
+    await within(dialog()).findByText("code");
+
+    await user.click(within(dialog()).getByText("code"));
+    fake.listRequests[1]!.reject(new Error("Permission denied: /Users/v/code"));
+    expect(await within(dialog()).findByText(/Permission denied/)).toBeInTheDocument();
+
+    await user.click(within(dialog()).getByRole("button", { name: "Try again" }));
+    expect(fake.listCalls.at(-1)).toBe(`${HOME}/code`);
+    fake.listRequests.at(-1)!.resolve(listingAt(`${HOME}/code`, ["sub"]));
+    expect(await within(dialog()).findByText("sub")).toBeInTheDocument();
+  });
 });

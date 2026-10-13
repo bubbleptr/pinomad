@@ -2,7 +2,7 @@ import { Breadcrumbs, BreadcrumbItem } from "@astryxdesign/core/Breadcrumbs";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { Layout, LayoutContent, LayoutFooter, HStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter, HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
@@ -47,9 +47,12 @@ export function AddProjectDialog({
   }, []);
   // Only the newest navigation's response may land; a slower earlier answer is dropped.
   const generation = useRef(0);
+  // The path of the in-flight (or last) request — what "Try again" re-asks for.
+  const lastPath = useRef<string | undefined>(undefined);
   const go = useCallback(
     (path?: string): void => {
       const gen = ++generation.current;
+      lastPath.current = path;
       setLoading(true);
       setError(undefined);
       setAddError(undefined);
@@ -136,7 +139,17 @@ export function AddProjectDialog({
                   <Spinner aria-label="Loading folders" />
                 </div>
               ) : error !== undefined ? (
-                <Text type="supporting">{error}</Text>
+                <VStack gap={2} hAlign="start">
+                  <Text type="supporting">{error}</Text>
+                  {/* A failed first load leaves no crumbs to escape with —
+                      the button is the way back to a working listing. */}
+                  <Button
+                    label="Try again"
+                    variant="secondary"
+                    isDisabled={adding}
+                    onClick={() => go(lastPath.current)}
+                  />
+                </VStack>
               ) : listing === undefined ? null : listing.folders.length === 0 ? (
                 <Text type="supporting">No subfolders</Text>
               ) : (
