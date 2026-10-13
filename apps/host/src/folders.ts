@@ -20,7 +20,8 @@ export async function listFolders(path: string | undefined, home: string): Promi
   if (path !== undefined && !isAbsolute(path)) throw new Error(`Not an absolute path: ${path}`);
   const given = path ?? home;
   // Same identity rule as project paths: realpath decides what a folder is.
-  const dir = await realpath(given).catch(() => {
+  const dir = await realpath(given).catch((error: unknown) => {
+    if (denied(error)) throw new Error(`Permission denied: ${given}`);
     throw new Error(`No such directory: ${given}`);
   });
   if (!(await stat(dir)).isDirectory()) throw new Error(`Not a directory: ${given}`);

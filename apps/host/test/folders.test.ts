@@ -72,6 +72,16 @@ describe("listFolders", () => {
       await mkdir(locked);
       await chmod(locked, 0o000);
       await expect(listFolders(locked, "home")).rejects.toThrow("locked");
+
+      // A blocked parent makes realpath itself fail with EACCES: still a
+      // permission error, not "No such directory". Restore before remove —
+      // cleanups run in reverse, so this chmod lands ahead of dir.remove.
+      const blocked = join(dir.path, "blocked");
+      await mkdir(join(blocked, "inner"), { recursive: true });
+      await chmod(blocked, 0o000);
+      defer(() => chmod(blocked, 0o755));
+      await expect(listFolders(join(blocked, "inner"), "home")).rejects.toThrow("Permission denied");
+      await expect(listFolders(join(blocked, "inner"), "home")).rejects.toThrow(join(blocked, "inner"));
     }
   });
 });

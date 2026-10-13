@@ -2,17 +2,34 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter, HStack } from "@astryxdesign/core/Layout";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 
 export function AddProjectDialog({ remote, connected, onClose }: { remote: RemoteDurable; connected: boolean; onClose: () => void }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
+  const [pending, setPending] = useState(false);
+  // A cancelled dialog must not close a reopened one or paint its error on it.
+  // Set in the effect body too: StrictMode's dev remount runs the cleanup once first.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const add = (): void => {
+    setPending(true);
     void remote.controller.addProject(path.trim()).then(
-      () => onClose(),
-      (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
+      () => {
+        if (mounted.current) onClose();
+      },
+      (reason: unknown) => {
+        if (!mounted.current) return;
+        setPending(false);
+        setError(reason instanceof Error ? reason.message : String(reason));
+      },
     );
   };
   return (
@@ -42,7 +59,12 @@ export function AddProjectDialog({ remote, connected, onClose }: { remote: Remot
           <LayoutFooter>
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Add project" variant="primary" isDisabled={!connected || path.trim() === ""} onClick={add} />
+              <Button
+                label="Add project"
+                variant="primary"
+                isDisabled={!connected || pending || path.trim() === ""}
+                onClick={add}
+              />
             </HStack>
           </LayoutFooter>
         }
