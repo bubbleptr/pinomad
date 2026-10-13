@@ -11,14 +11,21 @@ type Remote = Pick<RemoteDurable, "view" | "controller">;
 const shownId = (remote: Remote): ConversationId | undefined =>
   remote.view.current().conversation?.conversation.id;
 
+type CreateOptions = Parameters<RemoteDurable["controller"]["createConversation"]>[2];
+
 /**
  * Create, show, and resolve with the new conversation's id. Throws when the
  * shown conversation didn't change — the create failed and the caller keeps
  * its draft (the toast surfaces the host's reason).
  */
-export async function createAndShow(remote: Remote, home: Home, text: string): Promise<ConversationId> {
+export async function createAndShow(
+  remote: Remote,
+  home: Home,
+  text: string,
+  options?: CreateOptions,
+): Promise<ConversationId> {
   const before = shownId(remote);
-  await remote.controller.createConversation(home, text);
+  await remote.controller.createConversation(home, text, options);
   const after = shownId(remote);
   if (after === undefined || after === before) {
     throw new Error("Couldn't start the conversation");

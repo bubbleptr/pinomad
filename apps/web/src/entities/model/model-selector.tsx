@@ -10,20 +10,8 @@ import { Popover } from "@astryxdesign/core/Popover";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { Check, ChevronDown } from "@/shared/ui/icons";
-
-export const thinkingLevelLabels: Record<ThinkingLevel, string> = {
-  off: "Off",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "X-High",
-  max: "Max",
-};
-
-const sameModel = (a: ModelRef | undefined, b: ModelRef | undefined): boolean =>
-  a !== undefined && b !== undefined && a.provider === b.provider && a.modelId === b.modelId;
 
 /**
  * The composer model/thinking capsule: a ghost button showing
@@ -47,14 +35,7 @@ export function ModelSelector({
   const [query, setQuery] = useState("");
   const selectedSummary = models.find((each) => sameModel(each, selected.model));
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
-  const needle = query.trim().toLowerCase();
-  const filtered =
-    needle === ""
-      ? models
-      : models.filter(
-          (model) =>
-            model.name.toLowerCase().includes(needle) || `${model.provider}/${model.modelId}`.toLowerCase().includes(needle),
-        );
+  const filtered = filterModels(models, query);
 
   return (
     <Popover
@@ -133,12 +114,7 @@ export function ModelSelector({
         variant="ghost"
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate">
-            {(() => {
-              const name = selectedSummary?.name ?? selected.model?.modelId ?? "No model";
-              return levels.length > 1 ? `${name} · ${thinkingLevelLabels[selected.level]}` : name;
-            })()}
-          </span>
+          <span className="truncate">{modelLabel(models, selected)}</span>
           <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
         </span>
       </Button>
