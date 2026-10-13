@@ -72,6 +72,7 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | Questions, not approvals | Tools run without approval prompts; when the direction is unclear, the agent asks 1–4 multiple-choice questions |
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
 | MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |
+| Images | Paste, drop, or pick up to 4 images per message in the Web/desktop composer — resized to JPEG before sending |
 | AGENTS.md and skills | Reads `AGENTS.md` / `CLAUDE.md` and skills from `~/.agents` and the project, on every request |
 
 Details and the MCP config reference: [Usage](docs/usage.md).

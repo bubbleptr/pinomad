@@ -24,6 +24,11 @@ function textOf(content: Message["content"]): string {
   return content.flatMap((block) => (block.type === "text" && block.text !== undefined ? [block.text] : [])).join("");
 }
 
+function imageCountOf(content: Message["content"]): number {
+  if (typeof content === "string" || !Array.isArray(content)) return 0;
+  return content.filter((block) => block.type === "image").length;
+}
+
 const liveOf = (view: ConversationView): LiveState => (view.docs["pi.live"] ?? {}) as LiveState;
 
 /** The conversation's agent doc (model, thinking level, cwd). */
@@ -46,6 +51,8 @@ export interface QueueItem {
   readonly id: number;
   readonly mode: "steer" | "followUp" | "write";
   readonly text: string;
+  /** Image blocks attached to the queued input; 0 on "write" items. */
+  readonly imageCount: number;
 }
 
 export function queueItems(view: ConversationView): QueueItem[] {
@@ -54,6 +61,7 @@ export function queueItems(view: ConversationView): QueueItem[] {
     id: item.id as unknown as number,
     mode: item.mode,
     text: item.mode === "write" ? `<${String(item.entry.kind)}>` : textOf(item.content as Message["content"]),
+    imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Message["content"]),
   }));
 }
 

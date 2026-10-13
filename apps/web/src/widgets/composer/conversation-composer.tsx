@@ -1,13 +1,16 @@
 import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
+import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
@@ -39,6 +42,16 @@ export function ConversationComposer({
   const checkout = view.checkout;
   const isProject = view.home?.kind === "project";
 
+  const model = summaryOf(view.models, agent.model);
+  const accepts = model?.images === true;
+  const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // No "why" slot on menu items: the reason goes into the label itself.
+  const addImages =
+    accepts || disconnected
+      ? "Add images…"
+      : `Add images… (${model?.name ?? agent.model?.modelId ?? "This model"} can't see images)`;
+
   const location = isProject ? (
     checkout !== undefined ? (
       <ComposerStaticChip chrome="selector" icon={FolderLibrary} label="Git worktree" testId="composer-location-label" />
@@ -55,16 +68,18 @@ export function ConversationComposer({
 
   const submit = (whenBusy: "steer" | "followUp"): void => {
     const text = value.trim();
-    if (text === "") return;
+    if ((text === "" && images.length === 0) || pending) return;
     requestNotificationPermission();
-    void remote.controller.submit(text, whenBusy);
+    void remote.controller.submit(text, whenBusy, { images });
     setValue("");
+    clear();
   };
 
   return (
     <>
       {status === "" ? null : <Text type="supporting">{status}</Text>}
       <QueuedList items={queue} />
+      <ImageFileInput inputRef={fileInput} onFiles={add} />
       <ChatPromptInput
         value={value}
         status={busy ? "streaming" : "ready"}
@@ -73,6 +88,10 @@ export function ConversationComposer({
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
         onStop={busy ? () => void remote.controller.abort() : undefined}
+        attachments={attachmentDrawer({ images, pending, onRemove: remove })}
+        hasAttachments={images.length > 0}
+        onFiles={add}
+        error={error}
         startActions={
           <>
             <DropdownMenu
@@ -84,7 +103,14 @@ export function ConversationComposer({
                 icon: <Plus aria-hidden="true" />,
                 isDisabled: disconnected,
               }}
-              items={[{ label: "Compact conversation", isDisabled: disconnected, onClick: () => void remote.controller.compact(undefined) }]}
+              items={[
+                {
+                  label: addImages,
+                  isDisabled: disconnected || !accepts,
+                  onClick: () => fileInput.current?.click(),
+                },
+                { label: "Compact conversation", isDisabled: disconnected, onClick: () => void remote.controller.compact(undefined) },
+              ]}
             />
             <ModelSelector
               models={view.models}
@@ -96,13 +122,13 @@ export function ConversationComposer({
           </>
         }
         endActions={
-          busy && value.trim() !== "" ? (
+          busy && (value.trim() !== "" || images.length > 0) ? (
             <Button
               label="Follow-up"
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
-              isDisabled={disconnected}
+              isDisabled={disconnected || pending}
               onClick={() => submit("followUp")}
             />
           ) : null

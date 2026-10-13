@@ -6,7 +6,7 @@ import { deriveChat, pinomadOf, retryOf, splitSubagentCalls, type ChatEntry, typ
 let nextId = 1;
 const entry = (kind: string, message?: unknown): EntryRecord =>
   ({ id: nextId++, conversationId: 0, kind, ...(message === undefined ? {} : { model: [message] }) }) as unknown as EntryRecord;
-const user = (text: string) => entry("pi.user", { role: "user", content: text, timestamp: 0 });
+const user = (content: string | unknown[]) => entry("pi.user", { role: "user", content, timestamp: 0 });
 const assistant = (content: unknown[], stopReason = "stop", timestamp = 0, extra: object = {}) =>
   entry("pi.assistant", { role: "assistant", content, stopReason, timestamp, ...extra });
 const result = (callId: string, name: string, output: string, isError = false, details?: unknown, timestamp = 0) =>
@@ -42,7 +42,7 @@ describe("deriveChat", () => {
       {},
       false,
     );
-    expect(entries[0]).toMatchObject({ kind: "user", text: "go" });
+    expect(entries[0]).toMatchObject({ kind: "user", text: "go", images: [] });
     const run = runs(entries)[0]!;
     expect(run.cot.phase).toBe("settled");
     expect(run.cot.steps.map((step) => step.kind)).toEqual(["thinking", "tools", "interim", "tools"]);
@@ -354,6 +354,22 @@ describe("deriveChat", () => {
     expect(subagents[0]!.key).not.toBe(subagents[1]!.key);
   });
 
+  it("carries a user message's image blocks on its entry", () => {
+    const entries = deriveChat(
+      view([
+        user([text("look"), image("aGk=", "image/png")]),
+        assistant([text("seen")]),
+        user([image("aGk=", "image/png")]),
+        assistant([text("again")]),
+      ]),
+      {},
+      false,
+    );
+    expect(entries[0]).toMatchObject({ kind: "user", text: "look", images: [{ data: "aGk=", mimeType: "image/png" }] });
+    // An image-only message has no text but still renders.
+    expect(entries[2]).toMatchObject({ kind: "user", text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
+  });
+
   it("splits runs at compaction and reset boundaries", () => {
     const entries = deriveChat(
       view([
@@ -480,7 +496,26 @@ describe("retryOf", () => {
 
   it("returns the user message a failed run answered, keyed to that run", () => {
     const entries = deriveChat(view([user("go"), failed()]), {}, false);
-    expect(retryOf(entries)).toEqual({ text: "go", requestId: `retry:${entries.at(-1)!.id}` });
+    expect(retryOf(entries)).toEqual({ text: "go", images: [], requestId: `retry:${entries.at(-1)!.id}` });
+  });
+
+  it("returns a failed prompt's image blocks too", () => {
+    const entries = deriveChat(view([user([text("look"), image("aGk=", "image/png")]), failed()]), {}, false);
+    expect(retryOf(entries)).toEqual({
+      text: "look",
+      images: [{ data: "aGk=", mimeType: "image/png" }],
+      requestId: `retry:${entries.at(-1)!.id}`,
+    });
+  });
+
+  it("retries an image-only prompt", () => {
+    const entries = deriveChat(view([user([image("aGk=", "image/png")]), failed()]), {}, false);
+    expect(retryOf(entries)).toMatchObject({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
+  });
+
+  it("returns nothing when the prompt has neither text nor images", () => {
+    const entries = deriveChat(view([user(""), failed()]), {}, false);
+    expect(retryOf(entries)).toBeUndefined();
   });
 
   it("returns nothing once the failed run is no longer the newest entry", () => {

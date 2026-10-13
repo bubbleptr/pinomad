@@ -595,9 +595,9 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
               onRetry={
                 shownSummary?.kind === "subagent"
                   ? undefined
-                  : async ({ text, requestId }) => {
+                  : async ({ text, images, requestId }) => {
                       requestNotificationPermission();
-                      await remote.controller.submit(text, "followUp", { requestId });
+                      await remote.controller.submit(text, "followUp", { requestId, images });
                     }
               }
             />

@@ -1,12 +1,13 @@
 // Simplified port of Pace's shared/ui/chat/chat-prompt-input.tsx (PiGUI
-// commit 15b9084): tokens, triggers, attachments and leading-token rehydrate
-// are dropped. Kept: the caller-owned submit contract (the composer must not
-// force-clear a failed draft), focus/focusAtEnd handles, Pace's
-// allowSubmitWhileRunning behavior (always on — we steer), brand accent,
-// status, startActions/footer/endActions slots.
-import { type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
+// commit 15b9084): tokens, triggers and leading-token rehydrate are dropped.
+// Kept: the caller-owned submit contract (the composer must not force-clear
+// a failed draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning
+// behavior (always on — we steer), brand accent, status,
+// startActions/footer/endActions slots, and the attachments drawer.
+import { type ComponentProps, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import {
   ChatComposer,
+  ChatComposerDrawer,
   ChatComposerInput,
   type ChatComposerInputHandle,
   ChatSendButton,
@@ -37,6 +38,7 @@ function PromptComposerInput({
   onSubmitRequest,
   value,
   onValueChange,
+  onFiles,
 }: {
   disabled?: boolean;
   placeholder?: string;
@@ -44,6 +46,7 @@ function PromptComposerInput({
   onSubmitRequest: () => void;
   value: string;
   onValueChange?: (value: string) => void;
+  onFiles?: (files: File[]) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerInputHandle | null>(null);
@@ -130,6 +133,7 @@ function PromptComposerInput({
       value={value}
       onChange={(next) => onValueChange?.(next)}
       onKeyDown={handleKeyDown}
+      {...(onFiles === undefined ? {} : { onFiles })}
     />
   );
 }
@@ -141,6 +145,12 @@ type ChatPromptInputOwnProps = {
   inputRef?: RefObject<ChatPromptInputHandle | null>;
   /** Disable the editable; controls inside the slots take their own flags. */
   isDisabled?: boolean;
+  /** Staged content rendered above the input (attached images). */
+  attachments?: ReactNode;
+  /** Non-text content is staged, so an empty draft may still submit. */
+  hasAttachments?: boolean;
+  /** Pasted or dropped files, for the caller to stage as attachments. */
+  onFiles?: (files: File[]) => void;
   startActions?: ReactNode;
   endActions?: ReactNode;
   /**
@@ -180,6 +190,9 @@ export function ChatPromptInput({
   placeholder,
   inputRef,
   isDisabled = false,
+  attachments,
+  hasAttachments,
+  onFiles,
   startActions,
   endActions,
   footer,
@@ -192,16 +205,29 @@ export function ChatPromptInput({
   ...rest
 }: ChatPromptInputProps) {
   const isRunning = status === "streaming" || status === "submitted";
-  const isStopShown = isRunning && !value.trim() && Boolean(onStop);
+  const isStopShown = isRunning && !value.trim() && hasAttachments !== true && Boolean(onStop);
   // Pace's allowSubmitWhileRunning is always on here: typing mid-run steers
   // or queues, so a non-empty draft is always submittable.
-  const canSubmit = Boolean(value.trim());
+  const canSubmit = Boolean(value.trim()) || hasAttachments === true;
 
   const handleSubmit = () => {
     if (!canSubmit) {
       return;
     }
     onSubmit?.();
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (onFiles === undefined || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+  };
+  const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+    // A text drop belongs to the editable's own drag-and-drop; only file
+    // drops are the composer's business.
+    if (onFiles === undefined || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    const files = [...event.dataTransfer.files];
+    if (files.length > 0) onFiles(files);
   };
 
   return (
@@ -211,10 +237,13 @@ export function ChatPromptInput({
       data-accent-focus={accent && accentFocusRing ? "" : undefined}
       data-slot="prompt-input"
       data-status={status}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       {...rest}
     >
       <ChatComposer
         elevation="low"
+        {...(attachments === undefined ? {} : { drawer: <ChatComposerDrawer>{attachments}</ChatComposerDrawer> })}
         footerActions={startActions}
         input={
           <PromptComposerInput
@@ -224,6 +253,7 @@ export function ChatPromptInput({
             value={value}
             onValueChange={onValueChange}
             onSubmitRequest={handleSubmit}
+            onFiles={onFiles}
           />
         }
         // ChatSendButton never disables in stop mode (`!isStopShown &&

@@ -11,6 +11,7 @@ import { ChatChainOfThought as ChainOfThought } from "@/shared/ui/chat/chat-chai
 import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown";
 import { ChatMessage, ChatMessageActions } from "@/shared/ui/chat/chat-message";
 import { ChatRunFailure } from "@/shared/ui/chat/chat-run-failure";
+import { MessageImages } from "../../entities/image/message-images.tsx";
 import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
 import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
 import { ChatToolStep } from "@/shared/ui/chat/chat-tool-step";
@@ -47,18 +48,23 @@ export function ChatEntryView({
       return (
         <ChatMessage.User>
           <div className="flex flex-col items-end gap-1">
-            <ChatMessage.Bubble>
-              <ChatMessage.Content>{entry.text}</ChatMessage.Content>
-            </ChatMessage.Bubble>
-            <ChatMessageActions className="shrink-0">
-              <ChatMessageActions.Copy
-                aria-label="Copy"
-                tooltip="Copy"
-                onPress={() => {
-                  void navigator.clipboard?.writeText(entry.text);
-                }}
-              />
-            </ChatMessageActions>
+            {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
+            {entry.text === "" ? null : (
+              <>
+                <ChatMessage.Bubble>
+                  <ChatMessage.Content>{entry.text}</ChatMessage.Content>
+                </ChatMessage.Bubble>
+                <ChatMessageActions className="shrink-0">
+                  <ChatMessageActions.Copy
+                    aria-label="Copy"
+                    tooltip="Copy"
+                    onPress={() => {
+                      void navigator.clipboard?.writeText(entry.text);
+                    }}
+                  />
+                </ChatMessageActions>
+              </>
+            )}
           </div>
         </ChatMessage.User>
       );

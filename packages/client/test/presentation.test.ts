@@ -21,8 +21,26 @@ describe("statusText", () => {
 describe("queueItems", () => {
   it("lists queued inputs with their mode", () => {
     expect(queueItems(view([], {}, [{ id: 1, mode: "steer", content: "focus" }, { id: 2, mode: "followUp", content: [text("then this")] }]))).toEqual([
-      { id: 1, mode: "steer", text: "focus" },
-      { id: 2, mode: "followUp", text: "then this" },
+      { id: 1, mode: "steer", text: "focus", imageCount: 0 },
+      { id: 2, mode: "followUp", text: "then this", imageCount: 0 },
+    ]);
+  });
+
+  it("counts the image blocks a queued input carries", () => {
+    expect(
+      queueItems(
+        view([], {}, [
+          {
+            id: 1,
+            mode: "followUp",
+            content: [text("look"), { type: "image", data: "aGk=", mimeType: "image/png" }, { type: "image", data: "aGk=", mimeType: "image/png" }],
+          },
+          { id: 2, mode: "write", entry: { kind: "pi.note" } },
+        ]),
+      ),
+    ).toEqual([
+      { id: 1, mode: "followUp", text: "look", imageCount: 2 },
+      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0 },
     ]);
   });
 });

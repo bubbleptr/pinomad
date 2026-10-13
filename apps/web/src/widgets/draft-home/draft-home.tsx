@@ -1,3 +1,4 @@
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { useRef, useState } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -5,12 +6,15 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
+import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
-import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { ChatAdd, FileDiff, FolderClosed, ListTree, Plus, SquareTerminal, Wrench } from "@/shared/ui/icons";
 
 // Pace's four draft suggestions; representative first-touch prompts.
 const SUGGESTED_PROMPTS = [
@@ -48,6 +52,15 @@ export function DraftHome({
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const { pick, setModel, setLevel } = useDraftModelPick(view);
+  const model = summaryOf(view.models, pick.model);
+  const accepts = model?.images === true;
+  const { images, pending, error, add, remove } = useImageAttachments(accepts);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // No "why" slot on menu items: the reason goes into the label itself.
+  const addImages =
+    accepts || !connected
+      ? "Add images…"
+      : `Add images… (${model?.name ?? pick.model?.modelId ?? "This model"} can't see images)`;
 
   const location =
     draft.kind === "project" ? (
@@ -92,6 +105,7 @@ export function DraftHome({
           />
         </div>
         <div className="flex w-full flex-col gap-3">
+          <ImageFileInput inputRef={fileInput} onFiles={add} />
           <ChatPromptInput
             accent="brand"
             accentFocusRing
@@ -101,7 +115,7 @@ export function DraftHome({
             status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
               const text = value.trim();
-              if (text === "" || submittingRef.current) return;
+              if ((text === "" && images.length === 0) || pending || submittingRef.current) return;
               requestNotificationPermission();
               submittingRef.current = true;
               setSubmitting(true);
@@ -110,6 +124,7 @@ export function DraftHome({
                   ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
                   ...(pick.model === undefined ? {} : { model: pick.model }),
                   thinkingLevel: pick.level,
+                  ...(images.length === 0 ? {} : { images }),
                 })
                 .finally(() => {
                   submittingRef.current = false;
@@ -118,14 +133,37 @@ export function DraftHome({
             }}
             isDisabled={!connected}
             placeholder="Do anything with Pi"
+            attachments={attachmentDrawer({ images, pending, onRemove: remove })}
+            hasAttachments={images.length > 0}
+            onFiles={add}
+            error={error}
             startActions={
-              <ModelSelector
-                models={view.models}
-                selected={{ model: pick.model, level: pick.level }}
-                isDisabled={!connected}
-                onModelChange={setModel}
-                onLevelChange={setLevel}
-              />
+              <>
+                <DropdownMenu
+                  button={{
+                    label: "More actions",
+                    variant: "ghost",
+                    size: "sm",
+                    isIconOnly: true,
+                    icon: <Plus aria-hidden="true" />,
+                    isDisabled: !connected,
+                  }}
+                  items={[
+                    {
+                      label: addImages,
+                      isDisabled: !connected || !accepts,
+                      onClick: () => fileInput.current?.click(),
+                    },
+                  ]}
+                />
+                <ModelSelector
+                  models={view.models}
+                  selected={{ model: pick.model, level: pick.level }}
+                  isDisabled={!connected}
+                  onModelChange={setModel}
+                  onLevelChange={setLevel}
+                />
+              </>
             }
             footer={<ComposerLocationRow location={location} />}
           />

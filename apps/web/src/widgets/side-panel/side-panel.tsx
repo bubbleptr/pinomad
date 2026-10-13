@@ -14,6 +14,7 @@ import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -271,7 +272,7 @@ function SideTranscript({
   ownOnly?: boolean;
   forkSource?: string;
   /** Forks are talkable and pass one through; read-only details do not. */
-  onRetry?: (retry: { text: string; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -341,9 +342,9 @@ function ThreadDetail({
           openInPanel={openInPanel}
           ownOnly
           forkSource={displayName(parentSummary)}
-          onRetry={async ({ text, requestId }) => {
+          onRetry={async ({ text, images, requestId }) => {
             requestNotificationPermission();
-            await remote.controller.submit(text, "followUp", { target: side.id, requestId });
+            await remote.controller.submit(text, "followUp", { target: side.id, requestId, images });
           }}
         />
         <PendingQuestions
