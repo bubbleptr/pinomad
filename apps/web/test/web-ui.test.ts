@@ -897,6 +897,42 @@ it("keeps at most four dropped images and lets one be removed", async () => {
   await expect.poll(() => attachments(page).count()).toBe(3);
 });
 
+it("rejects a rapid second add once the four slots are taken", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await page.getByRole("textbox").fill("hi");
+  await page.getByRole("textbox").press("Enter");
+  await page.getByText("step-0", { exact: false }).waitFor();
+
+  await dropImages(page, 3);
+  await expect.poll(() => attachments(page).count()).toBe(3);
+  // Two drops in one dispatch pass: state hasn't flushed, so the second add
+  // must still see the slot the first just reserved.
+  await page.evaluate(async () => {
+    const root = document.querySelector('[data-slot="prompt-input"]')!;
+    const files: File[] = [];
+    for (const name of ["extra-1", "extra-2"]) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 40;
+      canvas.height = 40;
+      canvas.getContext("2d")!.fillRect(0, 0, 40, 40);
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
+      files.push(new File([blob], `${name}.png`, { type: "image/png" }));
+    }
+    for (const file of files) {
+      const data = new DataTransfer();
+      data.items.add(file);
+      root.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+    }
+  });
+  await expect.poll(() => attachments(page).count()).toBe(4);
+  await expect.poll(async () => (await page.getByRole("alert").textContent()) ?? "").toContain(
+    "At most 4 images per message",
+  );
+});
+
 it("lets a drop that carries only text reach the composer editor", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });

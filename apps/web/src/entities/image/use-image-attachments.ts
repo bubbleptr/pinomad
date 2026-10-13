@@ -21,6 +21,10 @@ export function useImageAttachments(accepts: boolean): {
   acceptsRef.current = accepts;
   // Bumps on clear() so an in-flight prepare can't resurrect a sent image.
   const generation = useRef(0);
+  // Staged + in-flight slots, reserved synchronously: two add() calls before a
+  // re-render would otherwise both see the same free room and the completion
+  // would drop the overflow without telling the user.
+  const taken = useRef(0);
 
   const add = (files: File[]): void => {
     if (!acceptsRef.current) {
@@ -29,23 +33,26 @@ export function useImageAttachments(accepts: boolean): {
     }
     const usable = files.filter((file) => file.type.startsWith("image/"));
     if (usable.length < files.length) setError("Only images can be attached");
-    const room = Math.max(0, MAX_IMAGES_PER_MESSAGE - images.length - preparing);
+    const room = Math.max(0, MAX_IMAGES_PER_MESSAGE - taken.current);
     const kept = usable.slice(0, room);
     if (usable.length > room) setError("At most 4 images per message");
     else if (usable.length === files.length) setError(null);
     if (kept.length === 0) return;
+    taken.current += kept.length;
     // Promise.all keeps file order; a file that fails drops the batch with
     // its error, rather than silently attaching a partial selection.
     const gen = generation.current;
     setPreparing((count) => count + kept.length);
     void Promise.all(kept.map((file) => prepareImage(file))).then(
       (prepared) => {
+        // Reserved slots move preparing → staged; the count stays taken.
         if (generation.current !== gen) return;
-        setImages((current) => [...current, ...prepared].slice(0, MAX_IMAGES_PER_MESSAGE));
+        setImages((current) => [...current, ...prepared]);
         setPreparing((count) => count - kept.length);
       },
       (failure: unknown) => {
         if (generation.current !== gen) return;
+        taken.current -= kept.length;
         setError(failure instanceof Error ? failure.message : String(failure));
         setPreparing((count) => count - kept.length);
       },
@@ -53,11 +60,13 @@ export function useImageAttachments(accepts: boolean): {
   };
 
   const remove = (index: number): void => {
+    taken.current -= 1;
     setImages((current) => current.filter((_, i) => i !== index));
   };
 
   const clear = (): void => {
     generation.current += 1;
+    taken.current = 0;
     setImages([]);
     setPreparing(0);
     setError(null);
