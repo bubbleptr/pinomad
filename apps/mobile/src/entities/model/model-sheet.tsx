@@ -7,7 +7,7 @@ import { BottomSheet, SearchField, useBottomSheetAwareHandlers } from "heroui-na
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
-import { filterModels, modelLabel, sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { clampLevel, filterModels, modelLabel, sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useCSSVariable } from "uniwind";
 import { Check, ChevronDown } from "../../shared/ui/icons.tsx";
 
@@ -73,21 +73,29 @@ export function ModelSheet({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // The last model picked while the sheet stayed open for a level pick — the
+  // host echoes the change async, so until then the Thinking section and the
+  // model checkmark show the pick, not the stale `selected.model`.
+  const [pendingModel, setPendingModel] = useState<ModelRef | undefined>();
   const [foreground, muted, border] = useCSSVariable(["--foreground", "--muted", "--border"]) as Array<
     string | undefined
   >;
-  const selectedSummary = summaryOf(models, selected.model);
+  const shownModel = pendingModel ?? selected.model;
+  const selectedSummary = summaryOf(models, shownModel);
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
   const filtered = filterModels(models, query);
   const disabled = isDisabled || models.length === 0;
 
   const pickModel = (model: ModelSummary): void => {
-    onModelChange({ provider: model.provider, modelId: model.modelId });
+    const ref: ModelRef = { provider: model.provider, modelId: model.modelId };
+    onModelChange(ref);
+    setPendingModel(ref);
     // A multi-level model invites a follow-up level pick; keep the sheet open.
     if (model.thinkingLevels.length <= 1) setOpen(false);
   };
   const pickLevel = (level: ThinkingLevel): void => {
     onLevelChange(level);
+    setPendingModel(undefined);
     setOpen(false);
   };
 
@@ -98,6 +106,7 @@ export function ModelSheet({
         // The composer is usually focused when this opens; the sheet must not
         // fight the keyboard for the space it slides into.
         if (next) Keyboard.dismiss();
+        else setPendingModel(undefined);
         setOpen(next);
       }}
     >
@@ -133,7 +142,7 @@ export function ModelSheet({
               <ModelRow
                 key={`${model.provider}/${model.modelId}`}
                 model={model}
-                selected={sameModel(model, selected.model)}
+                selected={sameModel(model, shownModel)}
                 onPress={() => pickModel(model)}
               />
             ))}
@@ -153,7 +162,7 @@ export function ModelSheet({
                   <Text className="text-foreground" style={{ fontSize: 15 }}>
                     {thinkingLevelLabels[level]}
                   </Text>
-                  {level === selected.level ? <Check size={16} color={foreground} /> : null}
+                  {level === clampLevel(levels, selected.level) ? <Check size={16} color={foreground} /> : null}
                 </Pressable>
               ))}
             </View>
