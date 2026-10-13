@@ -46,7 +46,13 @@ function Grabber({ onDismiss }: { onDismiss(): void }) {
   });
   return (
     <GestureDetector gesture={Gesture.Exclusive(pan, tap)}>
-      <View accessible accessibilityRole="button" accessibilityLabel="Dismiss keyboard" style={styles.grabberStrip}>
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss keyboard"
+        onAccessibilityTap={onDismiss}
+        style={styles.grabberStrip}
+      >
         <View style={[styles.grabber, { backgroundColor: muted }]} />
       </View>
     </GestureDetector>
