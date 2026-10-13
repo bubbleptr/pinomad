@@ -26,7 +26,7 @@
 - Omarchy 真机常驻：npm 安装的宿主跑成 systemd 用户单元 + linger，带 `--relay` 常驻；中继用 `deploy/relay/Dockerfile` 部署在 Zeabur 香港机器上，自定义域名 HTTPS 和 WebSocket 都验证过，宿主登记成功，手机走流量配对连通（2026-10-09）
 - tailnet 直连试用：Mac 和 Omarchy 都装官方 Tailscale 客户端，和 sing-box 共存。共用的 sing-box 配置要改两处：DNS 规则让 `tailscale.com` / `tailscale.io` 不走 FakeIP，否则控制面连不上；tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。`tailscale ping` 显示经局域网直连，2–7ms，没走 DERP。Omarchy 开了 Tailscale SSH，tailnet 策略加了一条 SSH 规则（成员登录自己的设备，非 root）。宿主带 `--remote-port 7422` 和 `--relay` 同时跑：tailnet 内的设备直连，不在 tailnet 里的设备仍走中继。Mac 已经配对上并通过直连使用（2026-10-10）
 - fork 和子代理的呈现：侧栏只放顶层对话，行首状态点按整个家族汇总（等回答 > 失败 > 运行中），行尾显示更新时间；右侧面板分 Threads / Tasks / Live 三个 tab，fork 能在面板里对话或"在主区打开"（顶栏面包屑回父对话），子代理只读；父对话里分叉点显示"N forks"胶囊、子代理调用显示成任务卡片（fork 的检出和层数见 ADR-0019；PR #34、#40、#42）
-- 项目入口（M5 第 1 项，ADR-0007 §1、§7）：协议 5.3 新增 `listFolders`，从宿主家目录开始逐层列出子文件夹，不列 `.` 开头的，可以一直走到 `/`；`addProject` 改成返回登记好的项目、失败时由调用方显示错误。三端用同一套文件夹选择器（面包屑和上一级的推导在 `packages/client` 的 `folder-path`），去掉了手打路径；桌面端连本机宿主也用它。Web 和桌面端的 Projects "+" 常显，没有项目时侧栏给"Add project"；移动端在新建对话页的项目菜单底部和没有项目时的对话列表给入口。加完直接进入该项目的新对话草稿。移动端顺带给导航栈接上了深色主题，原来深色模式下原生标题栏仍是浅色（PR #77、#78 和移动端 PR）。不做：新建目录、`git init`、从 Git 地址克隆、项目根目录设置
+- 项目入口（M5 第 1 项，ADR-0007 §1、§7）：协议 5.3 新增 `listFolders`，从宿主家目录开始逐层列出子文件夹，不列 `.` 开头的，可以一直走到 `/`；`addProject` 改成返回登记好的项目、失败时由调用方显示错误。三端用同一套文件夹选择器（面包屑和上一级的推导在 `packages/client` 的 `folder-path`），去掉了手打路径；桌面端连本机宿主也用它。Web 和桌面端的 Projects "+" 常显，没有项目时侧栏给"Add project"；移动端在新建对话页的项目菜单底部和没有项目时的对话列表给入口。加完直接进入该项目的新对话草稿。移动端顺带给导航栈接上了深色主题，原来深色模式下原生标题栏仍是浅色（PR #77、#78、#80）。不做：新建目录、`git init`、从 Git 地址克隆、项目根目录设置
 
 ## M5：离开电脑，用手机也能推进 side project（下一阶段）
 
