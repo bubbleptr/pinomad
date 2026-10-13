@@ -1,24 +1,9 @@
 import type { ModelRef } from "@earendil-works/pi-durable";
 import { useState } from "react";
 import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import { clampLevel, reconcileDraftPick, summaryOf } from "@pinomad/client/model.ts";
 
 const DRAFT_MODEL_KEY = "pinomad.draft.model";
-
-// pi-ai's thinking-level order; used to clamp a stored/default level down to
-// what the picked model supports (highest supported level not above it).
-const LEVEL_ORDER: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
-export const clampLevel = (levels: readonly ThinkingLevel[], want: ThinkingLevel): ThinkingLevel => {
-  if (levels.includes(want)) return want;
-  const wantIndex = LEVEL_ORDER.indexOf(want);
-  return levels.filter((level) => LEVEL_ORDER.indexOf(level) <= wantIndex).at(-1) ?? "off";
-};
-
-export const summaryOf = (
-  models: readonly ModelSummary[],
-  ref: ModelRef | undefined,
-): ModelSummary | undefined =>
-  ref === undefined ? undefined : models.find((each) => each.provider === ref.provider && each.modelId === ref.modelId);
 
 interface DraftPick {
   readonly provider: string;
@@ -83,18 +68,11 @@ export function useDraftModelPick(view: DurableView): {
     localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
-  const model =
-    remembered.model !== undefined && summaryOf(view.models, remembered.model) !== undefined
-      ? remembered.model
-      : summaryOf(view.models, view.defaults.model) !== undefined
-        ? view.defaults.model
-        : view.models[0] === undefined
-          ? undefined
-          : { provider: view.models[0].provider, modelId: view.models[0].modelId };
-  const level = clampLevel(summaryOf(view.models, model)?.thinkingLevels ?? ["off"], remembered.level);
+  const pick = reconcileDraftPick(view.models, view.defaults, remembered);
+  const level = pick.level;
 
   return {
-    pick: { model, level },
+    pick,
     setModel: (next) => {
       const nextLevel = clampLevel(summaryOf(view.models, next)?.thinkingLevels ?? ["off"], level);
       setRemembered({ model: next, level: nextLevel });
@@ -102,7 +80,7 @@ export function useDraftModelPick(view: DurableView): {
     },
     setLevel: (next) => {
       setRemembered((current) => ({ ...current, level: next }));
-      if (model !== undefined) remember(model, next);
+      if (pick.model !== undefined) remember(pick.model, next);
     },
   };
 }
