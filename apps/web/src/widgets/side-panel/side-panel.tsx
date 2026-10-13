@@ -261,6 +261,7 @@ function SideTranscript({
   openInPanel,
   ownOnly,
   forkSource,
+  onRetry,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -269,6 +270,8 @@ function SideTranscript({
   /** Forks show only their own entries; the parent's prefix is in the main column. */
   ownOnly?: boolean;
   forkSource?: string;
+  /** Forks are talkable and pass one through; read-only details do not. */
+  onRetry?: (retry: { text: string; requestId: string }) => Promise<void>;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -286,6 +289,7 @@ function SideTranscript({
       // Legacy trees nest forks inside forks: the side's own children may
       // still anchor a chip back to another thread.
       forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
+      onRetry={onRetry}
     />
   );
 }
@@ -337,6 +341,10 @@ function ThreadDetail({
           openInPanel={openInPanel}
           ownOnly
           forkSource={displayName(parentSummary)}
+          onRetry={async ({ text, requestId }) => {
+            requestNotificationPermission();
+            await remote.controller.submit(text, "followUp", side.id, requestId);
+          }}
         />
         <PendingQuestions
           docs={side.docs}

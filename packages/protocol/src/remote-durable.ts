@@ -566,9 +566,14 @@ class RemoteClient {
           // family is gone too.
           if (archived && this.#side !== undefined && this.#descendsFrom(this.#side, id)) await this.#showSide(undefined);
         }),
-      submit: (text, whenBusy, target) =>
+      submit: (text, whenBusy, target, requestId) =>
         this.#command(() =>
-          this.#call("submit", { conversationId: target ?? conversationId(), text, whenBusy, requestId: newRequestId() }),
+          this.#call("submit", {
+            conversationId: target ?? conversationId(),
+            text,
+            whenBusy,
+            requestId: requestId ?? newRequestId(),
+          }),
         ),
       compact: (instructions) =>
         this.#command(() =>

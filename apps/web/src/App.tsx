@@ -591,6 +591,15 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
               onFork={setForkTarget}
               forksAt={forksAtForShown}
               summaryOf={summaryOf}
+              // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
+              onRetry={
+                shownSummary?.kind === "subagent"
+                  ? undefined
+                  : async ({ text, requestId }) => {
+                      requestNotificationPermission();
+                      await remote.controller.submit(text, "followUp", undefined, requestId);
+                    }
+              }
             />
           </ChatLayout>
         )}
