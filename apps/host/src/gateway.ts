@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { networkInterfaces } from "node:os";
+import { homedir, networkInterfaces } from "node:os";
 import { join, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -54,6 +54,7 @@ import {
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
+import { listFolders } from "./folders.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
 import type { ModelAuth } from "./model-auth.ts";
@@ -1064,6 +1065,8 @@ class GatewayClient {
         await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
         return null;
       }
+      case "listFolders":
+        return listFolders((args as CallMethods["listFolders"]["args"]).path, homedir());
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {

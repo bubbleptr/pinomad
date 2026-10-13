@@ -8,7 +8,7 @@ import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { ProtocolVersion } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { Home, Organized, WorktreeCheckout } from "./organization.ts";
+import type { FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 
@@ -138,8 +138,14 @@ export interface DurableViewSource {
 
 /** What a client may ask for. */
 export interface DurableController {
-  /** Register a local directory as a project; returns the stored (normalized) project. */
-  addProject(path: string): Promise<void>;
+  /**
+   * Register a local directory as a project; resolves with the stored
+   * (normalized) project. Rejects with the host's error — the caller shows it
+   * (no notice).
+   */
+  addProject(path: string): Promise<Project>;
+  /** One page of the folder picker: a host directory and its visible subfolders. Rejects on error (the caller shows it). Needs a 5.3 host. */
+  listFolders(path?: string): Promise<FolderListing>;
   /** Unregister a project; its directory and conversations are kept. */
   removeProject(path: string): Promise<void>;
   /**

@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { type ConversationId, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
@@ -70,7 +71,8 @@ describe("projects and conversations", () => {
     const client = await connectTo(defer, host);
     const normalized = await realpath(dir.path);
 
-    await client.controller.addProject(join(dir.path, "sub", ".."));
+    const added = await client.controller.addProject(join(dir.path, "sub", ".."));
+    expect(added).toMatchObject({ path: normalized, name: dir.path.split("/").at(-1) });
     await waitForView(client.view, (view) => view.organized.projects.length === 1);
     const registered = client.view.current().organized.projects[0]!.project;
     expect(registered.path).toBe(normalized);
@@ -80,15 +82,31 @@ describe("projects and conversations", () => {
     await client.controller.addProject(normalized);
     await waitForView(client.view, (view) => view.organized.projects.length === 1 && view.notices.length === 0);
 
-    // A file and a missing path are refused with the path in the error.
+    // A file and a missing path reject with the path in the error — no notices.
     const file = join(dir.path, "a-file");
     await writeFile(file, "x");
-    await client.controller.addProject(file);
-    await client.controller.addProject(join(dir.path, "does-not-exist"));
-    await waitForView(client.view, (view) => view.notices.length === 2);
-    expect(client.view.current().notices.map((notice) => notice.message).join(" ")).toContain("a-file");
-    expect(client.view.current().notices.map((notice) => notice.message).join(" ")).toContain("does-not-exist");
+    await expect(client.controller.addProject(file)).rejects.toThrow("a-file");
+    await expect(client.controller.addProject(join(dir.path, "does-not-exist"))).rejects.toThrow("does-not-exist");
+    expect(client.view.current().notices).toHaveLength(0);
     expect(client.view.current().organized.projects).toHaveLength(1);
+  });
+
+  it("lists a host directory's visible subfolders through the controller", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    for (const name of ["alpha", "beta", ".hidden"]) await mkdir(join(dir.path, name));
+    await writeFile(join(dir.path, "a-file"), "x");
+    const host = await startFauxHost(defer);
+    const client = await connectTo(defer, host);
+
+    const listing = await client.controller.listFolders(dir.path);
+    const real = await realpath(dir.path);
+    expect(listing.path).toBe(real);
+    expect(listing.home).toBe(await realpath(homedir()));
+    expect(listing.folders).toEqual([
+      { name: "alpha", path: join(real, "alpha") },
+      { name: "beta", path: join(real, "beta") },
+    ]);
   });
 
   it("runs tools in the project dir for project conversations and in chats/<id> for chats", async () => {

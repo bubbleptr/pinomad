@@ -8,9 +8,12 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 
 export function AddProjectDialog({ remote, connected, onClose }: { remote: RemoteDurable; connected: boolean; onClose: () => void }) {
   const [path, setPath] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
   const add = (): void => {
-    void remote.controller.addProject(path.trim());
-    onClose();
+    void remote.controller.addProject(path.trim()).then(
+      () => onClose(),
+      (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
+    );
   };
   return (
     <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
@@ -24,7 +27,15 @@ export function AddProjectDialog({ remote, connected, onClose }: { remote: Remot
         }
         content={
           <LayoutContent>
-            <TextInput label="Path" value={path} onChange={setPath} />
+            <TextInput
+              label="Path"
+              value={path}
+              onChange={(value) => {
+                setPath(value);
+                setError(undefined);
+              }}
+              status={error === undefined ? undefined : { type: "error", message: error }}
+            />
           </LayoutContent>
         }
         footer={

@@ -3,7 +3,7 @@ import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { HostAuth } from "./auth.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { Home, HostIndex, Project } from "./organization.ts";
+import type { FolderListing, Home, HostIndex, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import {
   HOST_SETTING_KEYS,
@@ -83,12 +83,17 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 2 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 3 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
   addProject: { args: { path: string }; result: Project };
   removeProject: { args: { path: string }; result: null };
+  /**
+   * List a host directory's visible subfolders; no `path` lists the host
+   * user's home. Hosts are POSIX-only, so paths are `/`-separated.
+   */
+  listFolders: { args: { path?: string }; result: FolderListing };
   /**
    * Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`.
    * `checkout`: project conversations default to a git worktree when the project
@@ -153,7 +158,7 @@ export interface CallMethods {
 export type CallMethod = keyof CallMethods;
 
 /** Minor version that introduced each call; calls absent here date from 5.0. */
-const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1, updateSettings: 2 };
+const CALL_SINCE: Partial<Record<CallMethod, number>> = { logout: 1, updateSettings: 2, listFolders: 3 };
 
 /** Whether a host of the given minor version knows `method`. */
 export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
@@ -252,6 +257,7 @@ const isCallMethod = (method: string): method is CallMethod =>
 const CALL_METHODS = [
   "addProject",
   "removeProject",
+  "listFolders",
   "createConversation",
   "archive",
   "submit",
@@ -311,6 +317,9 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "addProject":
     case "removeProject":
       return nonempty(args.path);
+    case "listFolders":
+      // Absoluteness is the host's check — the frame only needs a usable name.
+      return args.path === undefined || nonempty(args.path);
     case "createConversation":
       return (
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
