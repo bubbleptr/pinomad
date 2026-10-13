@@ -1,7 +1,7 @@
 // The Durable→CotView adapter: same fixture style as apps/web/test/presentation.test.ts.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { deriveChat, pinomadOf, retryPromptOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { deriveChat, pinomadOf, retryOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
 
 let nextId = 1;
 const entry = (kind: string, message?: unknown): EntryRecord =>
@@ -474,13 +474,13 @@ describe("deriveChat", () => {
   });
 });
 
-describe("retryPromptOf", () => {
+describe("retryOf", () => {
   const failed = (errorMessage = "HTTP 429 quota exceeded") =>
     assistant([text("")], "error", 0, { errorMessage });
 
-  it("returns the user message a failed run answered", () => {
+  it("returns the user message a failed run answered, keyed to that run", () => {
     const entries = deriveChat(view([user("go"), failed()]), {}, false);
-    expect(retryPromptOf(entries)).toBe("go");
+    expect(retryOf(entries)).toEqual({ text: "go", requestId: `retry:${entries.at(-1)!.id}` });
   });
 
   it("returns nothing once the failed run is no longer the newest entry", () => {
@@ -489,12 +489,12 @@ describe("retryPromptOf", () => {
       {},
       false,
     );
-    expect(retryPromptOf(entries)).toBeUndefined();
+    expect(retryOf(entries)).toBeUndefined();
   });
 
   it("returns nothing when the newest run succeeded", () => {
     const entries = deriveChat(view([user("go"), assistant([text("done")])]), {}, false);
-    expect(retryPromptOf(entries)).toBeUndefined();
+    expect(retryOf(entries)).toBeUndefined();
   });
 
   it("looks past a compaction between the user message and the failed run", () => {
@@ -504,12 +504,12 @@ describe("retryPromptOf", () => {
       false,
     );
     expect(entries.map((item) => item.kind)).toEqual(["user", "compaction", "run"]);
-    expect(retryPromptOf(entries)).toBe("go");
+    expect(retryOf(entries)?.text).toBe("go");
   });
 
   it("returns nothing across a reset boundary", () => {
     const entries = deriveChat(view([user("go"), entry("pi.reset"), failed()]), {}, false);
-    expect(retryPromptOf(entries)).toBeUndefined();
+    expect(retryOf(entries)).toBeUndefined();
   });
 
   it("resolves a failed run after a steer to the steer text", () => {
@@ -518,6 +518,15 @@ describe("retryPromptOf", () => {
       {},
       false,
     );
-    expect(retryPromptOf(entries)).toBe("steer");
+    expect(retryOf(entries)?.text).toBe("steer");
+  });
+
+  it("keys a re-failed retry to its own run, so it is not deduped against the first", () => {
+    const entries = deriveChat(view([user("go"), failed(), user("go"), failed()]), {}, false);
+    const [first, second] = runs(entries);
+    const retry = retryOf(entries);
+    expect(retry?.text).toBe("go");
+    expect(retry?.requestId).toBe(`retry:${second!.id}`);
+    expect(retry?.requestId).not.toBe(`retry:${first!.id}`);
   });
 });

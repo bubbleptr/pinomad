@@ -282,4 +282,39 @@ describe("gateway", () => {
     expect(fork.kind).toBe("fork");
     expect(fork.updatedAt).toBeUndefined();
   });
+
+  it("admits a submit's requestId once: a resent call returns the same submission and writes nothing", async () => {
+    const host = await startFauxHost(defer, { answers: ["done", "recovered"] });
+    const client = await connectTo(defer, host);
+    const id = await startChat(client, "go");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "done");
+
+    // Raw call frames: the controller's submit resolves void — the
+    // submissionId only exists on the result frame.
+    const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+    defer(() => socket.terminate());
+    const results = new Map<number, { submissionId: string }>();
+    socket.on("message", (data) => {
+      const frame = JSON.parse(String(data)) as ServerFrame;
+      if (frame.type === "result" && frame.ok) results.set(frame.id, frame.value as { submissionId: string });
+    });
+    await once(socket, "open");
+    for (const callId of [1, 2]) {
+      socket.send(
+        JSON.stringify({
+          type: "call",
+          id: callId,
+          method: "submit",
+          args: { conversationId: id, text: "again", whenBusy: "followUp", requestId: "retry:same" },
+        }),
+      );
+    }
+    await expect.poll(() => results.size).toBe(2);
+    expect(results.get(1)!.submissionId).toBe(results.get(2)!.submissionId);
+
+    // One pi.user entry despite two calls: the retry runs once.
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "recovered");
+    const texts = transcript(client.view.current().conversation!).filter((m) => m.role === "user").map((m) => m.text);
+    expect(texts).toEqual(["go", "again"]);
+  });
 });

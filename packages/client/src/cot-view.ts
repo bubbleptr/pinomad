@@ -490,8 +490,8 @@ export function deriveChat(
   return items;
 }
 
-/** The prompt to resend for the transcript's tail failure: the user text the failed run answered. */
-export function retryPromptOf(entries: readonly ChatEntry[]): string | undefined {
+/** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
+export function retryOf(entries: readonly ChatEntry[]): { text: string; requestId: string } | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {
@@ -499,7 +499,10 @@ export function retryPromptOf(entries: readonly ChatEntry[]): string | undefined
     // A compaction between the prompt and the run doesn't break the reach
     // back; a reset or another run does.
     if (entry.kind === "compaction") continue;
-    return entry.kind === "user" && entry.text.trim() !== "" ? entry.text : undefined;
+    if (entry.kind !== "user" || entry.text.trim() === "") return undefined;
+    // The run id (`run-<first assistant entry id>`) is stable across views, so
+    // a second click or another client's retry dedupes on the host.
+    return { text: entry.text, requestId: `retry:${last.id}` };
   }
   return undefined;
 }

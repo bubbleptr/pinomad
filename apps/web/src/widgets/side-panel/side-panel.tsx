@@ -271,7 +271,7 @@ function SideTranscript({
   ownOnly?: boolean;
   forkSource?: string;
   /** Forks are talkable and pass one through; read-only details do not. */
-  onRetry?: (text: string) => Promise<void>;
+  onRetry?: (retry: { text: string; requestId: string }) => Promise<void>;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -341,9 +341,9 @@ function ThreadDetail({
           openInPanel={openInPanel}
           ownOnly
           forkSource={displayName(parentSummary)}
-          onRetry={async (text) => {
+          onRetry={async ({ text, requestId }) => {
             requestNotificationPermission();
-            await remote.controller.submit(text, "followUp", side.id);
+            await remote.controller.submit(text, "followUp", side.id, requestId);
           }}
         />
         <PendingQuestions

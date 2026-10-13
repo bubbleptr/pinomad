@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import { deriveChat, retryPromptOf } from "@pinomad/client/cot-view.ts";
+import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { ChatEntryView } from "./chat-entries.tsx";
 
@@ -43,9 +43,11 @@ export function ConversationTranscript({
   forkSource?: string;
   /**
    * Resubmits the user message the newest run answered, when that run failed.
-   * Absent on read-only transcripts (subagent conversations).
+   * The retry carries a requestId derived from the failed run, so a second
+   * click or another client's retry admits once on the host. Absent on
+   * read-only transcripts (subagent conversations).
    */
-  onRetry?: (text: string) => Promise<void>;
+  onRetry?: (retry: { text: string; requestId: string }) => Promise<void>;
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(
@@ -56,7 +58,7 @@ export function ConversationTranscript({
     [conversation, ownOnly],
   );
   const items = useMemo(() => deriveChat(view, toolPresentations, busy), [view, toolPresentations, busy]);
-  const retry = useMemo(() => retryPromptOf(items), [items]);
+  const retry = useMemo(() => retryOf(items), [items]);
   if (items.length === 0 && !ownOnly) return null;
   return (
     <ChatMessageList isStreaming={busy} gap={0}>

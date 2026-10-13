@@ -316,6 +316,24 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("sends the caller's requestId on submit, generating a fresh one otherwise", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.submit("retry", "followUp", id(1), "retry:run-4");
+      await remote.controller.submit("fresh", "followUp", id(1));
+      const submits = sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      expect((submits[0]!.args as { requestId: string }).requestId).toBe("retry:run-4");
+      const generated = (submits[1]!.args as { requestId: string }).requestId;
+      expect(typeof generated).toBe("string");
+      expect(generated.length).toBeGreaterThan(0);
+      expect(generated).not.toBe("retry:run-4");
+    } finally {
+      remote.close();
+    }
+  });
+
   it("forks into the side panel when asked instead of switching the main", async () => {
     const { transport, sent } = fakeTransport([{}]);
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });

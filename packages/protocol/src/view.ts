@@ -160,8 +160,12 @@ export interface DurableController {
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
   archive(id: ConversationId, archived: boolean): Promise<void>;
-  /** Prompt when idle; otherwise steer or queue a follow-up. `target` defaults to the main shown conversation. */
-  submit(text: string, whenBusy: "steer" | "followUp", target?: ConversationId): Promise<void>;
+  /**
+   * Prompt when idle; otherwise steer or queue a follow-up. `target` defaults
+   * to the main shown conversation. `requestId` is an idempotency key: the
+   * host admits one submission per key and conversation; defaults to a fresh one.
+   */
+  submit(text: string, whenBusy: "steer" | "followUp", target?: ConversationId, requestId?: string): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */
   abort(target?: ConversationId): Promise<void>;
