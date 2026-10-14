@@ -44,8 +44,8 @@
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
    - 协议：`submit` / `createConversation` 加 `images`（base64 + mimeType），`ModelSummary` 加能否收图片（取 pi-ai 模型数据的 `input`），按 ADR-0018 涨次版本号；当前模型不收图片时附图入口变灰并提示，换模型后历史图片由上游换成占位文本；
    - 第一步（协议 5.5 + 宿主）和第二步（Web / 桌面端附图界面）已做：`submit` / `createConversation` 带 `images`，宿主按 `imageProblem` 校验（一条消息 ≤4 张、单张 ≤5 MB、JPEG/PNG/GIF/WebP），允许只发图片，模型不收图片时宿主照收（上游换占位文本）；`ModelSummary.images` 标记模型是否收图片，新增 `FEATURE_SINCE` 表记录功能引入的次版本号。Web / 桌面端可粘贴、拖入、"+" 菜单选图，发送前缩放到长边 1568px、转 JPEG 质量 0.85；用户消息显示缩略图，点开看大图；当前模型不收图片时入口变灰，失败重试带上原图；fork 线程面板的输入框暂不支持附图；移动端还没做——它的 transcript 也还不显示用户消息里的图片（纯图片消息会显示成空气泡），随移动端图片 PR 一起做；
-   - agent → 用户：不做内置截图工具，靠 Playwright MCP / Chrome DevTools MCP（`~/.agents/mcp.json`）；移动端工具卡片显示图片、点开看大图，codemode 卡片显示脚本输出的图片；`docs/usage.md` 写一段"怎么让 agent 截图"；
-   - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）：升级本身已在 `chore/pi-1.2.0` 分支完成（七天规则，2026-10-20 后合并）。剩下接上 read 读图片：1.2.0 的 read 遇到 PNG / JPEG / GIF / WebP 返回图片块，还可以经 `createCodingTools({ images })` 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出——已评审并在 `feat/upstream-codemode` 换成上游实现（ADR-0013 修订）。
+   - agent → 用户：不做内置截图工具，靠 Playwright MCP / Chrome DevTools MCP（`~/.agents/mcp.json`）；移动端工具卡片显示图片、点开看大图，codemode 卡片显示脚本输出的图片；`docs/usage.md` 写一段"怎么让 agent 截图"（已完成）；
+   - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）（已完成，2026-10-14 经确认提前合入，没等满七天）：read 遇到 PNG / JPEG / GIF / WebP 返回图片块，经 `createCodingTools({ images })` 接 Photon 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出——已评审并换成上游实现（ADR-0013 修订）。
 4. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
 5. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
