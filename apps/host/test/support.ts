@@ -18,7 +18,6 @@ import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remo
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
 import type { AgentRoleStore } from "../src/agent-roles.ts";
 import type { BuiltinExtension } from "../src/builtin-extension.ts";
-import type { ScriptTool } from "../src/script-tools.ts";
 
 /** Cleanups registered during a test, run in reverse after it. */
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
@@ -59,15 +58,13 @@ export async function startFauxHost(
     browserOrigins?: readonly string[];
     /**
      * Built-in extensions installed on the host. A function receives the host's
-     * `models` and `modelSummaries`, for extensions configured from them, plus
-     * the lazy script-tool catalog codemode reads (ADR-0013).
+     * `models` and `modelSummaries`, for extensions configured from them.
      */
     extensions?:
       | Exclude<OpenHostOptions["extensions"], undefined>
       | ((provided: {
           models: Models;
           modelSummaries: () => readonly ModelSummary[];
-          scriptTools: () => readonly ScriptTool[];
           /** Resolves to the open harness — lazy because extensions out-preface it. */
           harness: () => Harness;
           /** The host's live named-agent store (`<dataDir>/agents`, ADR-0023). */
@@ -133,8 +130,8 @@ export async function startFauxHost(
       : {
           extensions:
             typeof extensions === "function"
-              ? (host: { scriptTools: () => readonly ScriptTool[]; harness: () => Harness; agentRoles: AgentRoleStore }) =>
-                  extensions({ models, modelSummaries, scriptTools: host.scriptTools, harness: host.harness, agentRoles: host.agentRoles })
+              ? (host: { harness: () => Harness; agentRoles: AgentRoleStore }) =>
+                  extensions({ models, modelSummaries, harness: host.harness, agentRoles: host.agentRoles })
               : extensions,
         }),
     ...(projects === undefined ? {} : { projects }),

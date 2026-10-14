@@ -57,6 +57,8 @@ export function createSubagent(options: {
 
   const tool = defineTool({
     name: "subagent",
+    // Nested in a script, memo/owner bookkeeping of a child conversation would go wrong (ADR-0013 §2).
+    callers: ["model"],
     description:
       "Delegate a self-contained task to a subagent that runs in its own conversation and returns its final answer. " +
       "The subagent starts with none of this conversation's context, so put everything it needs in `task`. " +
@@ -207,6 +209,5 @@ export function createSubagent(options: {
       }),
     ],
   });
-  // Nested in a script, memo/owner bookkeeping of a child conversation would go wrong (ADR-0013 §2).
-  return { extension, modelOnly: ["subagent"] };
+  return { extension };
 }

@@ -43,6 +43,15 @@ describe("classify", () => {
       ],
     };
     expect(classify("pinomad.codemode", details)).toEqual({ type: "pinomad.codemode", value: details });
+    // Upstream durable codemode writes no `code` and numbers each call.
+    const upstream = {
+      calls: [
+        { id: 1, name: "read", args: '{"path":"a"}', status: "ok", durationMs: 12 },
+        { id: 2, name: "bash", args: "{}", status: "error", error: "nope" },
+      ],
+      fullOutputPath: "/tmp/out.txt",
+    };
+    expect(classify("pinomad.codemode", upstream)).toEqual({ type: "pinomad.codemode", value: upstream });
     expect(classify("pinomad.codemode", { code: "x", calls: [{ name: "read" }] })).toEqual({ type: "fallback", value: { code: "x", calls: [{ name: "read" }] } });
     expect(classify("pinomad.codemode", { code: 1 })).toEqual({ type: "fallback", value: { code: 1 } });
   });

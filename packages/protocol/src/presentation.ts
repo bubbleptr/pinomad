@@ -73,6 +73,8 @@ export type DiffDetails = Static<typeof DiffSchema>;
  * it made, so the card can show progress while the script still runs.
  */
 export const CodemodeCallSchema = Type.Object({
+  /** The VM's call number; present since upstream durable codemode (ADR-0013 §7). */
+  id: Type.Optional(Type.Number()),
   name: Type.String(),
   /** Compact JSON of the arguments, summarized. */
   args: Type.String(),
@@ -83,7 +85,12 @@ export const CodemodeCallSchema = Type.Object({
   details: Type.Optional(Type.Unknown()),
 });
 
-export const CodemodeSchema = Type.Object({ code: Type.String(), calls: Type.Array(CodemodeCallSchema) });
+/**
+ * Both stored shapes classify: legacy entries carry `code` and call `details`;
+ * upstream durable codemode writes `calls` (with `id`) once, with the result,
+ * and the script text lives in the call's own arguments.
+ */
+export const CodemodeSchema = Type.Object({ code: Type.Optional(Type.String()), calls: Type.Array(CodemodeCallSchema) });
 
 export type CodemodeCall = Static<typeof CodemodeCallSchema>;
 export type CodemodeDetails = Static<typeof CodemodeSchema>;

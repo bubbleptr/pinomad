@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import type { Models } from "@earendil-works/pi-ai/models";
-import type { LiveState } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import { Type } from "typebox";
+import { defineExtension, defineTool, type LiveState } from "@earendil-works/pi-durable";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -14,8 +15,7 @@ import { coding } from "../src/extensions/coding.ts";
 import { createCodemode } from "../src/extensions/codemode.ts";
 import { question } from "../src/extensions/question.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
-import type { ScriptTool } from "../src/script-tools.ts";
-import { connectTo, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, followFirst, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const fixture = fileURLToPath(new URL("./fixtures/mcp-server.ts", import.meta.url));
@@ -24,22 +24,12 @@ const fixture = fileURLToPath(new URL("./fixtures/mcp-server.ts", import.meta.ur
 const extensionsFor = (provided: {
   models: Models;
   modelSummaries: () => readonly ModelSummary[];
-  scriptTools: () => readonly ScriptTool[];
-}): readonly BuiltinExtension[] => {
-  const others: BuiltinExtension[] = [
-    coding,
-    question,
-    createSubagent({ models: provided.models, modelSummaries: provided.modelSummaries, exclude: [question.extension] }),
-  ];
-  return [
-    ...others,
-    createCodemode({
-      scriptTools: provided.scriptTools,
-      modelOnly: others.flatMap((each) => each.modelOnly ?? []),
-      presentations: Object.assign({}, ...others.map((each) => each.tools ?? {})),
-    }),
-  ];
-};
+}): readonly BuiltinExtension[] => [
+  coding,
+  question,
+  createSubagent({ models: provided.models, modelSummaries: provided.modelSummaries, exclude: [question.extension] }),
+  createCodemode(),
+];
 
 type ToolResultEntry = { content?: { type: string; text?: string }[]; isError?: boolean; details?: unknown };
 
@@ -129,7 +119,7 @@ describe("codemode", () => {
     expect(details.calls[0]).toMatchObject({ name: "bash", status: "error" });
   });
 
-  it("applies an edit through a script and carries its diff details", async () => {
+  it("applies an edit through a script", async () => {
     const project = await tempDir();
     defer(project.remove);
     await writeFile(join(project.path, "f.txt"), "hello world\n");
@@ -150,10 +140,9 @@ describe("codemode", () => {
     );
 
     expect(await readFile(join(project.path, "f.txt"), "utf8")).toBe("goodbye world\n");
-    const details = lastResult(client).details as { calls: { name: string; status: string; details?: { patch?: string } }[] };
+    // Upstream nested calls carry no per-call details (ADR-0013 §7): no nested diff.
+    const details = lastResult(client).details as { calls: { name: string; status: string }[] };
     expect(details.calls[0]).toMatchObject({ name: "edit", status: "ok" });
-    expect(details.calls[0]?.details?.patch).toContain("-hello");
-    expect(details.calls[0]?.details?.patch).toContain("+goodbye");
   });
 
   it("keeps model-only tools out of scripts and fails direct calls to them", async () => {
@@ -200,7 +189,8 @@ describe("codemode", () => {
     const result = lastResult(client);
     expect(result.isError).toBe(true);
     expect(resultText(result)).toContain("before");
-    expect(resultText(result)).toContain("Script error: Error: boom");
+    expect(resultText(result)).toContain("Script error");
+    expect(resultText(result)).toContain("Error: boom");
   });
 
   it("keeps image blocks when long script output is truncated", async () => {
@@ -229,9 +219,11 @@ describe("codemode", () => {
     expect(blocks[0]).toMatchObject({ type: "text" });
     expect((blocks[0] as { text: string }).text).toContain("Script completed");
     const text = resultText(lastResult(client));
-    expect(text).toContain("characters omitted");
-    expect(blocks.at(-1)).toMatchObject({ type: "text" });
-    expect((blocks.at(-1) as { text: string }).text.endsWith("b".repeat(10))).toBe(true);
+    // Upstream cuts past the token budget and spills the full text to a file.
+    expect(text).toContain("tokens truncated");
+    expect(text).toContain("Image saved to");
+    const details = lastResult(client).details as { fullOutputPath?: string };
+    expect(details.fullOutputPath).toBeDefined();
   });
 
   it("lets a script catch a nested tool's error and continue", async () => {
@@ -276,7 +268,7 @@ describe("codemode", () => {
       return fauxAssistantMessage(fauxToolCall("codemode", {
         code: `text(JSON.stringify(await tools.mcp__fixture__echo({ text: "hi" })));
         text((await searchTools("echo")).map((t) => t.name).join(","));
-        text(JSON.stringify((await describeNamespace("fixture")).tools.map((t) => t.name)));
+        text(JSON.stringify((await describeNamespace("fixture")).tools));
         return "done with mcp";`,
       }), { stopReason: "toolUse" });
     };
@@ -339,7 +331,7 @@ describe("codemode", () => {
     expect(resultText(lastResult(client))).toContain('"hi"');
   });
 
-  it("aborts a running script quickly and records the partial state", async () => {
+  it("aborts a running script quickly", async () => {
     const project = await tempDir();
     defer(project.remove);
     const host = await startFauxHost(defer, {
@@ -350,22 +342,126 @@ describe("codemode", () => {
     });
     const client = await connectTo(defer, host);
     await startConversation(client, { kind: "project", path: project.path }, "sleep");
-    // Abort only once the nested bash call is recorded as running in the live slot.
+    // Abort only once the nested bash call shows as running in pi.live.nestedTools.
     await waitForView(client.view, (view) => {
       const live = view.conversation?.docs["pi.live"] as LiveState | undefined;
-      const slot = live?.tools?.find((tool) => tool.name === "codemode");
-      const details = slot?.details as { calls?: { name: string; status: string }[] } | undefined;
-      return slot?.status === "running" && details?.calls?.some((call) => call.name === "bash" && call.status === "running") === true;
+      const parent = live?.tools?.find((tool) => tool.name === "codemode");
+      return (
+        parent?.status === "running" &&
+        live?.nestedTools?.some((tool) => tool.parentCallId === parent.callId && tool.name === "bash" && tool.status === "running") === true
+      );
     });
     await client.controller.abort();
     await waitForView(client.view, (view) => view.conversation !== undefined && !isBusy(view.conversation));
 
     const result = lastResult(client);
     expect(result.isError).toBe(true);
-    // The result's details come from the live slot's last committed publish;
-    // the nested call's "cancelled" status is set after the abort, when
-    // api.details can no longer commit, so the stored row stays "running".
-    const details = result.details as { calls: { name: string; status: string }[] } | undefined;
-    expect(details?.calls?.[0]).toMatchObject({ name: "bash", status: "running" });
+    // An aborted script yields a harness-written error result; upstream keeps
+    // no partial call list for it.
+    expect(resultText(result)).toContain("aborted");
+    expect(result.details).toBeUndefined();
+  });
+
+  it("keeps model-only tools callable by the model but not by scripts", async () => {
+    const offered: string[][] = [];
+    const record: FauxResponseFactory = (context) => {
+      offered.push(getCurrentTools(context.messages).map((tool) => tool.name));
+      return fauxAssistantMessage(
+        fauxToolCall("codemode", {
+          code: `try { await tools.ask_user_question({ questions: [{ header: "Q", question: "q?", options: [{ label: "a" }] }] }); return "asked"; }
+            catch (error) { try { await tools.subagent({ task: "x" }); return "subagent called"; } catch (inner) { return "both blocked"; } }`,
+        }),
+        { stopReason: "toolUse" },
+      );
+    };
+    const host = await startFauxHost(defer, { extensions: extensionsFor, answers: [record, "done"] });
+    const client = await connectTo(defer, host);
+    await startChat(client, "try the model-only tools");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done",
+    );
+
+    expect(offered[0]).toContain("ask_user_question");
+    expect(offered[0]).toContain("subagent");
+    expect(resultText(lastResult(client))).toContain("both blocked");
+  });
+
+  it("resumes a script across a host restart without re-running finished calls", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const executions = { counted: 0, blocked: 0 };
+    const counters: BuiltinExtension = {
+      extension: defineExtension({
+        name: "counters",
+        tools: [
+          defineTool({
+            name: "counted",
+            description: "Counts its executions.",
+            parameters: Type.Object({}),
+            execute: async () => ({ output: [{ type: "text", text: `counted #${++executions.counted}` }] }),
+          }),
+          defineTool({
+            name: "blocked",
+            description: "Waits on the test's gate.",
+            parameters: Type.Object({}),
+            // Re-runs after a restart; the replaying script reattaches to it.
+            replay: "safe",
+            execute: async (_args, _api, ctx) => {
+              const attempt = ++executions.blocked;
+              // Close aborts the invocation; settling keeps the task's record
+              // running so the reopened harness replays it.
+              await new Promise<void>((resolve, reject) => {
+                gate.then(resolve);
+                ctx.abortSignal?.addEventListener("abort", () => reject(new Error("aborted by host close")));
+              });
+              return { output: [{ type: "text", text: `released #${attempt}` }] };
+            },
+          }),
+        ],
+      }),
+    };
+    const extensions = (provided: Parameters<typeof extensionsFor>[0]) => [...extensionsFor(provided), counters];
+    const host1 = await startFauxHost(defer, {
+      dataDir: project.path,
+      projects: [project.path],
+      extensions,
+      answers: [
+        script(`const a = await tools.counted({}); const b = await tools.blocked({}); return a + "|" + b;`),
+        "done",
+      ],
+    });
+    const client1 = await connectTo(defer, host1);
+    await startConversation(client1, { kind: "project", path: project.path }, "run the script");
+    // The first nested call is done; the second is in flight when the host dies.
+    const deadline = Date.now() + 10_000;
+    while (executions.blocked !== 1) {
+      if (Date.now() > deadline) throw new Error("blocked tool never ran");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(executions.counted).toBe(1);
+    await host1.close();
+
+    const host2 = await startFauxHost(defer, {
+      dataDir: project.path,
+      projects: [project.path],
+      extensions,
+      answers: ["done"],
+    });
+    const client2 = await connectTo(defer, host2);
+    await followFirst(client2);
+    release();
+    await waitForView(
+      client2.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done",
+    );
+
+    expect(executions.counted).toBe(1);
+    expect(executions.blocked).toBe(2);
+    expect(resultText(lastResult(client2))).toContain("counted #1|released #2");
   });
 });

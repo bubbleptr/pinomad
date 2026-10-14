@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
+import { createCodemode } from "../src/extensions/codemode.ts";
 import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -189,5 +190,34 @@ describe("mcp", () => {
     expect(alive(pid)).toBe(true);
     await host.close();
     await until(() => !alive(pid));
+  });
+
+  it("matches tools to a namespace whose sanitized prefix is cut at 64 chars", async () => {
+    // `mcp__<58 a's>__` is 65 chars; callName() cuts tool names to 64, so the
+    // namespace prefix must come from callName() too or no tool matches it.
+    const long = "a".repeat(58);
+    const configPath = await writeConfig({ [long]: { command: process.execPath, args: [fixture] } });
+    const host = await startFauxHost(defer, {
+      mcpConfig: configPath,
+      extensions: () => [createCodemode()],
+      answers: [
+        fauxAssistantMessage(fauxToolCall("codemode", {
+          code: `const ns = await describeNamespace("${long}"); return JSON.stringify(ns?.tools ?? "none");`,
+        }), { stopReason: "toolUse" }),
+        "done",
+      ],
+    });
+    const client = await connectTo(defer, host);
+    await mcpIs(client, (status) => server(status, long)?.state === "connected");
+    await startChat(client, "list the namespace");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done",
+    );
+
+    const result = toolResults(client).at(-1);
+    expect(result?.isError).not.toBe(true);
+    // Tool names collapsed onto the same 64-char cut collide; the first survives.
+    expect(JSON.stringify(result?.content ?? [])).toContain("mcp__aaa");
   });
 });

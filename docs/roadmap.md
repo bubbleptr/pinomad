@@ -18,7 +18,7 @@
 - 对话级改动面板：相对检出起点的 git diff（ADR-0010、0011）
 - 前台子代理工具 `subagent`：子对话归调用任务所有，中止连带、重启不重复派活；共用父对话检出，并行写只靠工具描述约束；子代理里禁用 `ask_user_question`；模型和思考等级默认沿用父对话，可用 `model` / `thinkingLevel` 参数指定；调用结束后卡片仍能链到子对话（ADR-0010 §5）
 - MCP 接入：`~/.agents/mcp.json` 全局 `mcpServers` 配置，每个 server 在宿主里只连一份、所有对话共用；工具以 `mcp__<server>__<tool>` 直接声明，`tools/list_changed` 跟随；状态和配置错误经 `mcp` 流推到客户端右侧面板；结果图片显示在工具卡片里（ADR-0012；协议 v3）
-- codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用并能展开 edit / write 的 diff（ADR-0013）
+- codemode：所有对话默认开启的通用工具，模型写 JavaScript 在 QuickJS 沙箱里调用其他工具，只有脚本输出进入上下文；工具按 `direct` / `model-only` / `codemode` 暴露，`ask_user_question`、`subagent` 只给模型；MCP 工具默认只在脚本里可调（`mcp.json` 可按 server 写 `exposure: "direct"`），脚本用 `searchTools` / `describeTool` / `describeNamespace` 发现，server 连上前后工具声明不变；Web 上一次调用是一张 `pinomad.codemode` 卡片，列出嵌套调用（ADR-0013）。1.2.0 后换成上游 `pi-durable/codemode`：嵌套调用是真实工具任务，崩溃后脚本确定性重放续跑，`store`/`load` 和 `models.*` 一并提供；代价是嵌套调用不再各自带 diff 详情，展开只看状态和耗时
 - 远程访问第二期：自部署中继 `apps/relay`，宿主 `--relay` 主动连出，每台设备一条数据连接拼接到同一个 IK 握手；宿主用独立 Ed25519 密钥签名登记，中继按 `--allow-host` 白名单接受；中继用 HTTPS 提供 Web 客户端，配对链接优先指向中继（ADR-0008、0015）
 - npm 单包分发：一个公开的 `pinomad` 包装宿主、中继和构建好的 Web 客户端（Bun.build 打我们自己的代码，第三方依赖外置）；`pinomad` 单入口分发子命令；打包安装升级走 `npm i -g`；tag 触发 GitHub Actions 发布（OIDC trusted publishing）（ADR-0016）。仓库已公开，`pinomad@0.1.0` 已手动首发；trusted publisher 已配置（只允许 `npm publish`，不开 `npm dist-tag`），`v0.1.1` 由 tag 流水线经 OIDC 自动发布并带 provenance。`v0.2.0`（协议 5）第一次由流水线同时发出 npm 包和签名、公证过的 Mac 包（GitHub Release 带 `latest-mac.yml`）；发布前 electron-builder 升到 26.16.1，26.15.x 在 `macos-26` runner 上签名会失败（electron-builder#10066，PR #55）。Omarchy 已升到 0.2.0（2026-10-12）。跨协议主版本升级时，`pinomad upgrade` 里等待重启的仍是旧版代码，会误报 "host did not answer … protocol mismatch"，实际宿主已经起来了，用 `pinomad service status` 确认即可。中继代码从 0.1.1 到 0.2.0 没变，但中继托管的 Web 客户端跟着镜像里的 npm 版本走，宿主升到协议 5 后还停在 0.1.1（协议 4），浏览器从中继打开会版本不匹配；`deploy/relay/Dockerfile` 已改到 `0.2.0` 并在 Zeabur 重新部署（2026-10-12；桌面端和 iOS 不受影响，代码随 App 打包）
 - 协议兼容（ADR-0018）：hello 带 `protocol: { major: 5, minor: 0 }` 和 `hostVersion`，客户端只比较主版本号，不一致时按"客户端太旧 / 宿主太旧"分别提示。`parseClientFrame` 区分"不认识"和"格式错误"：不认识的调用回 `result ok:false`，不认识的流回 `ended`，不认识的帧类型忽略；格式错误用 4400 断开，客户端收到 4400 不再重连（1008 留给安全通道，照旧重连）。契约快照的测试在 `apps/host/test/protocol-contract.test.ts`，基准文件在 `packages/protocol/test/fixtures/`；升级 `@earendil-works/*` 时用 `PINOMAD_UPDATE_CONTRACT=1` 重新录制并评审变化。遗留：已还清——调用和功能的 since 表都有了（`CALL_SINCE` / `FEATURE_SINCE`）
@@ -45,7 +45,7 @@
    - 协议：`submit` / `createConversation` 加 `images`（base64 + mimeType），`ModelSummary` 加能否收图片（取 pi-ai 模型数据的 `input`），按 ADR-0018 涨次版本号；当前模型不收图片时附图入口变灰并提示，换模型后历史图片由上游换成占位文本；
    - 第一步（协议 5.5 + 宿主）和第二步（Web / 桌面端附图界面）已做：`submit` / `createConversation` 带 `images`，宿主按 `imageProblem` 校验（一条消息 ≤4 张、单张 ≤5 MB、JPEG/PNG/GIF/WebP），允许只发图片，模型不收图片时宿主照收（上游换占位文本）；`ModelSummary.images` 标记模型是否收图片，新增 `FEATURE_SINCE` 表记录功能引入的次版本号。Web / 桌面端可粘贴、拖入、"+" 菜单选图，发送前缩放到长边 1568px、转 JPEG 质量 0.85；用户消息显示缩略图，点开看大图；当前模型不收图片时入口变灰，失败重试带上原图；fork 线程面板的输入框暂不支持附图；移动端还没做——它的 transcript 也还不显示用户消息里的图片（纯图片消息会显示成空气泡），随移动端图片 PR 一起做；
    - agent → 用户：不做内置截图工具，靠 Playwright MCP / Chrome DevTools MCP（`~/.agents/mcp.json`）；移动端工具卡片显示图片、点开看大图，codemode 卡片显示脚本输出的图片；`docs/usage.md` 写一段"怎么让 agent 截图"；
-   - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）：升级本身已在 `chore/pi-1.2.0` 分支完成（七天规则，2026-10-20 后合并）。剩下接上 read 读图片：1.2.0 的 read 遇到 PNG / JPEG / GIF / WebP 返回图片块，还可以经 `createCodingTools({ images })` 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出，评审时一并看对我们的 codemode（ADR-0013）有什么影响。
+   - 升级 `@earendil-works/*` 到 1.2.0（2026-10-12 发布，ADR-0002 要显式评审）：升级本身已在 `chore/pi-1.2.0` 分支完成（七天规则，2026-10-20 后合并）。剩下接上 read 读图片：1.2.0 的 read 遇到 PNG / JPEG / GIF / WebP 返回图片块，还可以经 `createCodingTools({ images })` 按模型限制缩放。同一版本还带了上游自己的 codemode 和结构化工具输出——已评审并在 `feat/upstream-codemode` 换成上游实现（ADR-0013 修订）。
 4. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
 5. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
@@ -90,7 +90,7 @@
 
 MCP 接入和 codemode 都已完成（ADR-0012、0013）。
 
-codemode 之后可能的后续，都等有明确需求再做：`store` / `load`（要一个跟着 fork 走的可回退文档）、`models`（分类、图片模型）、`deferred` + `tool_search`（可用 Durable 的 `control.addTools`）、CLI 的 `only` 模式、bash 在脚本里返回带退出码的结构化结果。
+codemode 之后可能的后续，都等有明确需求再做：`deferred` + `tool_search`（上游已带，可用 `control.addTools` 加载）、CLI 的 `only` 模式。`store` / `load`、`models.*` 和 bash 的结构化退出码已随上游实现带上。
 
 MCP 本身的后续，都等有明确需求再做：
 

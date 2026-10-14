@@ -14,7 +14,6 @@ import type { ModelAuth } from "./model-auth.ts";
 import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
 import { type HostSettingsStore, openHostSettings, type SettingsFallback } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
-import type { ScriptTool } from "./script-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -30,14 +29,12 @@ export interface OpenHostOptions {
   readonly modelSummaries: () => readonly ModelSummary[];
   /**
    * Built-in extensions installed before the Harness opens; their docs reach the gateway.
-   * The function form is resolved once before MCP starts — `scriptTools()` stays
-   * lazy so codemode sees servers that connect later (ADR-0013 §2), and `harness()`
+   * The function form is resolved once before MCP starts, and `harness()`
    * resolves only when an extension's wiring runs after open (prompt renderers).
    */
   readonly extensions?:
     | readonly BuiltinExtension[]
     | ((host: {
-        readonly scriptTools: () => readonly ScriptTool[];
         readonly harness: () => Harness;
         /** Named-agent files under `<dataDir>/agents` (ADR-0023); open before this runs so extensions can render it. */
         readonly agentRoles: AgentRoleStore;
@@ -140,6 +137,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let harness: Harness | undefined;
   let mcp: McpBridge | undefined;
   let agentRoles: AgentRoleStore | undefined;
+  let extensions: readonly BuiltinExtension[] = [];
   try {
     const token = await hostToken(options.dataDir);
     const reports: unknown[] = [];
@@ -148,10 +146,9 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     // Opened before `extensions` resolves: the callback sees the live store,
     // and `subagent` renders its section per request off it.
     agentRoles = await openAgentRoles({ dir: join(options.dataDir, "agents") });
-    const extensions =
+    extensions =
       typeof options.extensions === "function"
         ? options.extensions({
-            scriptTools: () => mcp?.scriptTools() ?? [],
             harness: () => {
               // Resolves after openHost assigns it — render-time wiring only.
               if (harness === undefined) throw new Error("harness is not open yet");
@@ -162,7 +159,20 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         : (options.extensions ?? []);
     for (const { extension } of extensions) registry.install(extension);
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
-    mcp = options.mcpConfig === undefined ? undefined : startMcp({ configPath: options.mcpConfig, registry });
+    // Namespace changes rebuild the extensions that opt in (codemode's section).
+    mcp =
+      options.mcpConfig === undefined
+        ? undefined
+        : startMcp({
+            configPath: options.mcpConfig,
+            registry,
+            onNamespaces: (namespaces) => {
+              for (const each of extensions) {
+                const rebuilt = each.namespaced?.(namespaces);
+                if (rebuilt !== undefined) registry.install(rebuilt);
+              }
+            },
+          });
     // Opened before the harness: `settings` may be a function reading its value.
     const hostSettings = await openHostSettings({
       path: join(options.dataDir, "settings.json"),
@@ -298,6 +308,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             // MCP servers go down with the host (stdio children get the spec shutdown).
             await mcp?.close();
             agentRoles?.close();
+            // Process-wide extension resources (the codemode sandbox pool).
+            for (const each of extensions) await each.close?.();
             options.modelAuth?.close();
             await Promise.all([...environments.values()].map((env) => env.cleanup(context)));
           } finally {
@@ -310,6 +322,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   } catch (error) {
     options.modelAuth?.close();
     agentRoles?.close();
+    for (const each of extensions) await each.close?.().catch(() => {});
     await mcp?.close().catch(() => {});
     await harness?.close(context).catch(() => {});
     await release().catch(() => {});
