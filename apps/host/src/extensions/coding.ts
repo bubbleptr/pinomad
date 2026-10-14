@@ -1,6 +1,6 @@
 import type { Context } from "@earendil-works/chord";
 import { type ToolExecutionApi, wrapTool } from "@earendil-works/pi-durable";
-import { CodingTools, createWriteTool, type WriteToolInput } from "@earendil-works/pi-durable/tools";
+import { createCodingTools, createWriteTool, type ReadToolOptions, type WriteToolInput } from "@earendil-works/pi-durable/tools";
 import { createPatch } from "diff";
 import type { BuiltinExtension } from "../builtin-extension.ts";
 
@@ -24,7 +24,12 @@ const writeWithDiff = wrapTool(createWriteTool(), (tool) => ({
 }));
 
 // Durable's read/write/edit/bash bundle; runs directly against the conversation env, no approval gate.
-export const coding: BuiltinExtension = {
-  extension: { ...CodingTools, wraps: [writeWithDiff] },
-  tools: { edit: "pinomad.diff", write: "pinomad.diff" },
-};
+// `options.images` lets `read` resize oversized image files instead of refusing them.
+export function createCoding(options?: ReadToolOptions): BuiltinExtension {
+  return {
+    extension: { ...createCodingTools(options), wraps: [writeWithDiff] },
+    tools: { edit: "pinomad.diff", write: "pinomad.diff" },
+  };
+}
+
+export const coding: BuiltinExtension = createCoding();

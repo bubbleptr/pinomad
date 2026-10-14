@@ -12,13 +12,15 @@ import { parseArgs } from "node:util";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
+import type { ReadToolOptions } from "@earendil-works/pi-durable/tools";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
 import { packagedVersion, webRoot } from "./distribution.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { question } from "./extensions/question.ts";
-import { coding } from "./extensions/coding.ts";
+import { createCoding } from "./extensions/coding.ts";
 import { createCodemode } from "./extensions/codemode.ts";
 import { createContext } from "./extensions/context.ts";
 import { createSubagent } from "./extensions/subagent.ts";
@@ -51,7 +53,7 @@ export async function main(argv: readonly string[]): Promise<void> {
   // Extensions are built per options source: `subagent` validates `model` against
   // the same Models and advertised summaries the gateway serves.
   const extensionsFor =
-    (models: Models, summaries: () => readonly ModelSummary[]) =>
+    (models: Models, summaries: () => readonly ModelSummary[], options?: ReadToolOptions) =>
     (host: {
       readonly harness: () => Harness;
       readonly agentRoles: AgentRoleStore;
@@ -60,7 +62,7 @@ export async function main(argv: readonly string[]): Promise<void> {
         agentsHome: join(homedir(), ".agents"),
         checkout: (input, context) => checkoutInfo(host.harness(), input, context),
       }),
-      coding,
+      createCoding(options),
       todo,
       question,
       createSubagent({
@@ -134,12 +136,14 @@ export async function main(argv: readonly string[]): Promise<void> {
     configureHarnessHttp(settingsManager);
     // One source for hello.models, extension model lists, and the `models` stream.
     const summaries = () => modelAuth.models.value;
+    // Photon resizes oversized images `read` returns, off the event loop.
+    const images = await createNodePhotonImages();
     return {
       ...common,
       models: modelRuntime,
       modelSummaries: summaries,
       modelAuth,
-      extensions: extensionsFor(modelRuntime, summaries),
+      extensions: extensionsFor(modelRuntime, summaries, { images }),
       settings: (store) => createHarnessSettings(settingsManager, store),
       // Unset keys fall back to pi's settings (ADR-0021 §2).
       settingsFallback: {
