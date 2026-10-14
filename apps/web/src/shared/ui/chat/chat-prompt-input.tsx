@@ -1,15 +1,18 @@
 // Simplified port of Pace's shared/ui/chat/chat-prompt-input.tsx (PiGUI
-// commit 15b9084): tokens, triggers and leading-token rehydrate are dropped.
-// Kept: the caller-owned submit contract (the composer must not force-clear
-// a failed draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning
-// behavior (always on — we steer), brand accent, status,
-// startActions/footer/endActions slots, and the attachments drawer.
+// commit 15b9084): tokens and leading-token rehydrate are dropped. Kept: the
+// caller-owned submit contract (the composer must not force-clear a failed
+// draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning behavior
+// (always on — we steer), brand accent, status, startActions/footer/endActions
+// slots, the attachments drawer, and trigger menus (callers pass Astryx
+// ChatComposerTrigger[]; an open menu consumes Enter/Arrows/Escape before our
+// submit path, so Enter selects rather than sends).
 import { type ComponentProps, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import {
   ChatComposer,
   ChatComposerDrawer,
   ChatComposerInput,
   type ChatComposerInputHandle,
+  type ChatComposerTrigger,
   ChatSendButton,
 } from "@astryxdesign/core/Chat";
 
@@ -39,6 +42,7 @@ function PromptComposerInput({
   value,
   onValueChange,
   onFiles,
+  triggers,
 }: {
   disabled?: boolean;
   placeholder?: string;
@@ -47,6 +51,8 @@ function PromptComposerInput({
   value: string;
   onValueChange?: (value: string) => void;
   onFiles?: (files: File[]) => void;
+  /** Trigger menus (e.g. @agent); undefined keeps the editable a plain textbox. */
+  triggers?: readonly ChatComposerTrigger[];
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerInputHandle | null>(null);
@@ -134,6 +140,7 @@ function PromptComposerInput({
       onChange={(next) => onValueChange?.(next)}
       onKeyDown={handleKeyDown}
       {...(onFiles === undefined ? {} : { onFiles })}
+      {...(triggers === undefined ? {} : { triggers: [...triggers] })}
     />
   );
 }
@@ -151,6 +158,11 @@ type ChatPromptInputOwnProps = {
   hasAttachments?: boolean;
   /** Pasted or dropped files, for the caller to stage as attachments. */
   onFiles?: (files: File[]) => void;
+  /**
+   * Trigger menus (e.g. @agent mentions). With triggers configured Astryx
+   * gives the editable role="combobox" — pass nothing for a plain textbox.
+   */
+  triggers?: readonly ChatComposerTrigger[];
   startActions?: ReactNode;
   endActions?: ReactNode;
   /**
@@ -193,6 +205,7 @@ export function ChatPromptInput({
   attachments,
   hasAttachments,
   onFiles,
+  triggers,
   startActions,
   endActions,
   footer,
@@ -254,6 +267,7 @@ export function ChatPromptInput({
             onValueChange={onValueChange}
             onSubmitRequest={handleSubmit}
             onFiles={onFiles}
+            triggers={triggers}
           />
         }
         // ChatSendButton never disables in stop mode (`!isStopShown &&

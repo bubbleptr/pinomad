@@ -69,7 +69,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | 项目和 worktree | 把一个目录登记成项目。Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到 |
 | Fork | 从某条消息分出去，两条线各自往下聊 |
 | 子代理 | 把自成一体的任务交给子代理，多个子代理并行执行 |
-| 具名 Agent | `<数据目录>/agents/<名字>.md` 里的可复用角色——`subagent` 调用可以派给它，可选锁定模型和思考等级 |
+| 具名 Agent | `<数据目录>/agents/<名字>.md` 里的可复用角色——`subagent` 调用或 `@名字` 提及可以派给它，可选锁定模型和思考等级 |
 | 提问代替审批 | 工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题 |
 | codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
 | MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |

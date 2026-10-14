@@ -45,6 +45,7 @@ function SubagentCard({
   const endedAt = pinomad?.endedAt;
   const meta = [
     STATUS_TEXT[status],
+    summary?.role === undefined ? undefined : `@${summary.role}`,
     pinomad?.model,
     startedAt === undefined
       ? undefined
