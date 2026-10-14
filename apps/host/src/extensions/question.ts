@@ -95,7 +95,7 @@ function result(questions: readonly QuestionItem[], resolution: QuestionResoluti
   } else {
     text = "Question cancelled.";
   }
-  return { content: [{ type: "text", text }], details: { resolution } };
+  return { output: [{ type: "text", text }], details: { resolution } };
 }
 
 const askUserQuestion = defineTool({

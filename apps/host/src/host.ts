@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { createRegistry, Harness, type HarnessSettings } from "@earendil-works/pi-durable";
+import { createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, ensureIndex, IndexDoc } from "./organization.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
@@ -68,6 +68,8 @@ export interface OpenHostOptions {
   readonly autoTitle?: boolean;
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
+  /** Test seam: the session.sqlite opener; defaults to the node-sqlite storage. */
+  readonly openStorage?: (path: string) => Promise<Storage>;
   /**
    * Listen on all interfaces for secure-channel clients. Off by default: tunnels
    * forward to loopback, and remote access is the caller's explicit choice.
@@ -98,6 +100,8 @@ export interface OpenedHost {
   readonly url: string;
   readonly token: string;
   readonly harness: Harness;
+  /** Settles when the Harness session ends — `failed` means a Storage error closed it. */
+  readonly closed: Promise<SessionEnd>;
   /** Present when remote access is on. `hostKey` is the public half. */
   readonly remote?: { readonly url: string; readonly advertiseUrl: string; readonly hostKey: Uint8Array };
   /** Present when a relay link is up. `hostId` is the relay-side identity. */
@@ -171,7 +175,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const environments = new Map<string, NodeExecutionEnv>();
     const chatsDir = join(options.dataDir, "chats");
     harness = await Harness.open(
-      await openNodeSqliteStorage(join(options.dataDir, "session.sqlite")),
+      await (options.openStorage ?? openNodeSqliteStorage)(join(options.dataDir, "session.sqlite")),
       {
         models: options.models,
         registry,
@@ -277,6 +281,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       url: gateway.url,
       token,
       harness,
+      closed: opened.closed,
       settings: hostSettings,
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}

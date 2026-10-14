@@ -209,7 +209,7 @@ function asModelTool(tool: ScriptTool): ToolRegistration {
     // MCP tools may not be idempotent; an interrupted call replays as `interrupted` (ADR-0012 §6).
     execute: async (args, _api, context) => {
       const result = (await tool.call(args, context.abortSignal ?? NEVER_ABORT)) as CallToolResult;
-      return { content: toLlmContent(result), isError: result.isError === true };
+      return { output: toLlmContent(result), isError: result.isError === true };
     },
   });
 }

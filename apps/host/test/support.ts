@@ -47,6 +47,7 @@ export async function startFauxHost(
     mcpConfig,
     modelAuth,
     autoTitle,
+    openStorage,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -91,6 +92,8 @@ export async function startFauxHost(
      * consume a queued `answers` step, so it stays off unless a test opts in.
      */
     autoTitle?: boolean;
+    /** Wrap the real storage to inject failures (session-failure tests). */
+    openStorage?: OpenHostOptions["openStorage"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -141,6 +144,7 @@ export async function startFauxHost(
     ...(mcpConfig === undefined ? {} : { mcpConfig }),
     ...(modelAuth === undefined ? {} : { modelAuth }),
     autoTitle: autoTitle === true,
+    ...(openStorage === undefined ? {} : { openStorage }),
   });
   defer(() => host.close());
   return host;

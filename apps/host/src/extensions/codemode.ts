@@ -66,6 +66,10 @@ class NestedOutput {
       ? this.#head + tail
       : `${this.#head}\n[... ${this.#dropped} characters omitted ...]\n${tail}`;
   }
+
+  truncated(): boolean {
+    return this.#dropped > 0;
+  }
 }
 
 type NestedRecord = {
@@ -162,7 +166,7 @@ export function createCodemode(options: {
         parsed = parseCodemodeSource(args.code);
       } catch (error) {
         if (error instanceof CodemodeSourceError) {
-          return { content: [{ type: "text", text: `Script failed: ${error.message}` }], isError: true };
+          return { output: [{ type: "text", text: `Script failed: ${error.message}` }], isError: true };
         }
         throw error;
       }
@@ -199,7 +203,8 @@ export function createCodemode(options: {
             callable.kind === "script"
               ? await callable.tool.call(callArgs, signal)
               : await runAgentTool(callable.tool, callArgs, signal, record, calls.length - 1);
-          record.status = signal.aborted ? "cancelled" : "ok";
+          // runAgentTool may already have recorded an error result it resolved (bash's nonzero exit).
+          if (record.status === "running") record.status = signal.aborted ? "cancelled" : "ok";
           return value;
         } catch (error) {
           record.status = signal.aborted ? "cancelled" : "error";
@@ -234,6 +239,8 @@ export function createCodemode(options: {
           output: (chunk) => output.push(chunk),
           // The buffer transforms text, so no tail window may leak untruncated output past it.
           outputWindow: undefined,
+          // Structured results (bash's { output, exitCode }) read this buffer, not the parent's.
+          retainedOutput: () => ({ text: output.text(), truncated: output.truncated() }),
           diagnostic: (diagnostic) => diagnostics.push(`[${diagnostic.severity}] ${diagnostic.message}`),
           details: async (value) => {
             reported = value;
@@ -259,8 +266,21 @@ export function createCodemode(options: {
           }
         }
         const collected = [output.text(), ...diagnostics].filter(Boolean).join("\n");
-        const content = result.content ?? [{ type: "text", text: collected }];
-        if (result.isError === true) throw new Error(textOf(content) || collected);
+        const content = result.output ?? [{ type: "text", text: collected }];
+        if (result.isError === true) {
+          // A tool that declares structured output resolves with it even on an
+          // error result (bash's { output, exitCode } for a nonzero exit); a
+          // failure without one rejects into the script, marked on the card.
+          if (result.structuredOutput === undefined) throw new Error(textOf(content) || collected);
+          record.status = "error";
+          const messages = (result.diagnostics ?? [])
+            .filter((diagnostic) => diagnostic.severity === "error")
+            .map((diagnostic) => diagnostic.message)
+            .join("\n");
+          if (messages !== "") record.error = messages.slice(0, 500);
+          return result.structuredOutput;
+        }
+        if (result.structuredOutput !== undefined) return result.structuredOutput;
         const texts = content.filter((block) => block.type === "text");
         return texts.length === content.length ? texts.map((block) => block.text).join("") : content;
       };
@@ -339,7 +359,7 @@ export function createCodemode(options: {
         const result = await sandbox.execute(parsed.code, { signal: context.abortSignal });
         context.abortSignal?.throwIfAborted();
         return {
-          content: resultContent(result, started, parsed.options.maxOutputTokens),
+          output: resultContent(result, started, parsed.options.maxOutputTokens),
           isError: !result.ok,
           details: snapshot(),
         };
@@ -401,7 +421,7 @@ Globals:
 - describeNamespace(name): resolves to { name, description?, instructions?, tools } for a namespace such as an MCP server, or undefined.
 These three return promises: await them.
 
-What a call resolves to: MCP tools resolve to their CallToolResult { content, isError?, structuredContent? }, also when isError is true. Other tools resolve to their text output, or to an array of text and image blocks when the output has images. A call that fails or gets invalid arguments rejects with an Error carrying the tool's error text; use Promise.allSettled to keep the calls that succeed. Tool calls are real: calls made before a failure are not undone, and calls still running when the script ends are cancelled.
+What a call resolves to: MCP tools resolve to their CallToolResult { content, isError?, structuredContent? }, also when isError is true. A tool that declares a structured output resolves to it, also when the call failed — bash resolves to { output, truncated, exitCode } for a nonzero exit instead of rejecting. Other tools resolve to their text output, or to an array of text and image blocks when the output has images. A call that fails without a structured output, or gets invalid arguments, rejects with an Error carrying the tool's error text; use Promise.allSettled to keep the calls that succeed. Tool calls are real: calls made before a failure are not undone, and calls still running when the script ends are cancelled.
 
 Call describeTool before using a tool whose arguments you have not seen. Scripts cannot call {MODEL_ONLY}.`;
 

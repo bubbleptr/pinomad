@@ -127,7 +127,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1791913916133,
+            "createdAt": 1791951082713,
             "requestId": "contract-1"
           }
         ]
@@ -211,7 +211,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791913916137
+        "updatedAt": 1791951082716
       }
     ]
   },
@@ -253,7 +253,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1791913916137
+              "timestamp": 1791951082716
             }
           ],
           "kind": "pi.user",
@@ -268,7 +268,7 @@
               "toolsAdded": [
                 {
                   "name": "read",
-                  "description": "Read the contents of a text file. Output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                  "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
                   "parameters": {
                     "type": "object",
                     "required": [
@@ -370,7 +370,7 @@
                   }
                 }
               ],
-              "timestamp": 1791913916142
+              "timestamp": 1791951082720
             }
           ],
           "kind": "pi.system",
@@ -403,7 +403,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a13664-76e5-70b0-9d76-acccc65b1f5c"
+          "sessionId": "01a1389b-94d8-724b-9cd1-9cd611ef75c3"
         },
         "pi.usage": {
           "models": {},
@@ -474,7 +474,7 @@
         ],
         [
           {
-            "callId": "tool:1791913916089:coc0znervem",
+            "callId": "tool:1791951082683:ve31nnbsf2",
             "name": "write",
             "taskId": 15,
             "status": "pending"
@@ -498,11 +498,11 @@
           "faux/faux-1"
         ],
         {
-          "input": 668,
+          "input": 692,
           "output": 12,
           "cacheRead": 0,
-          "cacheWrite": 668,
-          "totalTokens": 1348,
+          "cacheWrite": 692,
+          "totalTokens": 1396,
           "cost": {
             "input": 0,
             "output": 0,
@@ -527,7 +527,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1791913916089:coc0znervem",
+                    "id": "tool:1791951082683:ve31nnbsf2",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -535,15 +535,15 @@
                     }
                   }
                 ],
-                "api": "faux:1791913916090:ypevunljdke",
+                "api": "faux:1791951082684:ue7omurp0mg",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
-                  "input": 668,
+                  "input": 692,
                   "output": 12,
                   "cacheRead": 0,
-                  "cacheWrite": 668,
-                  "totalTokens": 1348,
+                  "cacheWrite": 692,
+                  "totalTokens": 1396,
                   "cost": {
                     "input": 0,
                     "output": 0,
@@ -553,7 +553,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1791913916089
+                "timestamp": 1791951082683
               }
             ],
             "kind": "pi.assistant",
@@ -643,7 +643,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791913916089,
+        "updatedAt": 1791951082683,
         "activity": {
           "tool": "write",
           "target": "note.txt"
@@ -702,7 +702,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1791913916089:coc0znervem",
+                "toolCallId": "tool:1791951082683:ve31nnbsf2",
                 "toolName": "write",
                 "content": [
                   {
@@ -714,7 +714,8 @@
                   "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
                 },
                 "isError": false,
-                "timestamp": 1791913916216
+                "durationMs": 5,
+                "timestamp": 1791951082792
               }
             ],
             "data": {
@@ -844,7 +845,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1791913916089
+        "updatedAt": 1791951082683
       }
     ]
   },
@@ -932,7 +933,7 @@
           "faux/faux-1",
           "input"
         ],
-        695
+        720
       ],
       [
         "s",
@@ -954,7 +955,7 @@
           "faux/faux-1",
           "cacheRead"
         ],
-        668
+        692
       ],
       [
         "s",
@@ -965,7 +966,7 @@
           "faux/faux-1",
           "cacheWrite"
         ],
-        696
+        720
       ],
       [
         "s",
@@ -976,7 +977,7 @@
           "faux/faux-1",
           "totalTokens"
         ],
-        2075
+        2148
       ],
       [
         "p",
@@ -996,15 +997,15 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1791913916090:ypevunljdke",
+                "api": "faux:1791951082684:ue7omurp0mg",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
-                  "input": 27,
+                  "input": 28,
                   "output": 4,
-                  "cacheRead": 668,
+                  "cacheRead": 692,
                   "cacheWrite": 28,
-                  "totalTokens": 727,
+                  "totalTokens": 752,
                   "cost": {
                     "input": 0,
                     "output": 0,
@@ -1014,7 +1015,7 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1791913916090
+                "timestamp": 1791951082684
               }
             ],
             "kind": "pi.assistant",

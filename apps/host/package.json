@@ -8,12 +8,12 @@
     "./test/*": "./test/*"
   },
   "dependencies": {
-    "@earendil-works/chord": "1.0.4",
-    "@earendil-works/pi-ai": "1.0.4",
-    "@earendil-works/pi-codemode": "1.0.4",
-    "@earendil-works/pi-coding-agent": "1.0.4",
-    "@earendil-works/pi-durable": "1.0.4",
-    "@earendil-works/pi-mcp": "1.0.4",
+    "@earendil-works/chord": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-codemode": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.2.0",
+    "@earendil-works/pi-durable": "1.2.0",
+    "@earendil-works/pi-mcp": "1.2.0",
     "@noble/curves": "2.4.0",
     "@pinomad/protocol": "workspace:*",
     "diff": "8.0.4",

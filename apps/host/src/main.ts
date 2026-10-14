@@ -196,6 +196,15 @@ export async function main(argv: readonly string[]): Promise<void> {
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  // A failed Storage call closes the session; exit nonzero so the service
+  // manager restarts a working host instead of leaving a zombie (ADR-0009).
+  void host.closed.then((end) => {
+    if (end.reason !== "failed" || stopping) return;
+    stopping = true;
+    const error = end.error instanceof Error ? end.error.message : String(end.error);
+    process.stderr.write(`${JSON.stringify({ event: "fatal", error })}\n`);
+    void host.close().finally(() => process.exit(1));
+  });
 }
 
 if (import.meta.main) await main(process.argv.slice(2));

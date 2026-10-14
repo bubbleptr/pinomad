@@ -143,6 +143,7 @@
                 "details": {
                   "patch": "string"
                 },
+                "durationMs": "number",
                 "isError": "boolean",
                 "role": "=toolResult",
                 "timestamp": "number",
