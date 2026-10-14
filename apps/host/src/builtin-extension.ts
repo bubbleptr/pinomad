@@ -2,6 +2,7 @@
 // documents it wants clients to see. Core knows extensions only through this
 // boundary; the dependency rule is tested in test/extension-boundary.test.ts.
 import type { ConversationDocToken, Extension, JsonObject } from "@earendil-works/pi-durable";
+import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 
 export interface ExtensionDoc {
@@ -16,10 +17,10 @@ export interface BuiltinExtension {
   /** Tool name → presentation of its result `details` (ADR-0005). */
   readonly tools?: Readonly<Record<string, PresentationType>>;
   /**
-   * Tools declared to the model but not callable from codemode scripts
-   * (ADR-0013 §2 `model-only` exposure): `ask_user_question` would block
-   * invisibly on a user answer, `subagent` relies on its own task's owner
-   * and memo, and `codemode` must not nest scripts.
+   * Rebuild the extension with the current script-tool namespaces (MCP
+   * servers, ADR-0013 §5); the host reinstalls the result when they change.
    */
-  readonly modelOnly?: readonly string[];
+  readonly namespaced?: (namespaces: readonly CodemodeNamespace[]) => Extension;
+  /** Resources the extension owns process-wide, such as a sandbox pool. */
+  readonly close?: () => Promise<void>;
 }

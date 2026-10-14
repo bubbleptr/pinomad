@@ -192,7 +192,41 @@ describe("deriveChat", () => {
     expect(parent.children![0]!.durationMs).toBe(10);
   });
 
-  it("keeps a codemode nested call running while its card runs, and carries a nested diff", () => {
+  it("shows a running codemode call's nested tools from pi.live, skipping pi.* internals", () => {
+    const entries = deriveChat(
+      view([user("go"), assistant([call("c1", "codemode", { code: "x" })], "toolUse")], {
+        run: {},
+        tools: [{ callId: "c1", name: "codemode", status: "running" }],
+        nestedTools: [
+          { callId: "c1/1", name: "read", parentCallId: "c1", parentTaskId: 9, taskId: 10, status: "running", arguments: { path: "a.txt" } },
+          {
+            callId: "c1/2",
+            name: "bash",
+            parentCallId: "c1",
+            parentTaskId: 9,
+            taskId: 11,
+            status: "done",
+            arguments: { command: "exit 3" },
+            summary: { isError: true, durationMs: 5, error: "Command exited with code 3" },
+          },
+          { callId: "c1/3", name: "pi.codemode.classify", parentCallId: "c1", parentTaskId: 9, taskId: 12, status: "done", arguments: {} },
+          // Another tool's nested call and a pi.* internal stay off this card.
+          { callId: "c9/1", name: "read", parentCallId: "c9", parentTaskId: 99, taskId: 13, status: "running", arguments: {} },
+        ],
+      }),
+      { codemode: "pinomad.codemode" },
+      true,
+    );
+    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
+    const children = step.tools[0]!.children!;
+    expect(children.map((child) => [child.toolName, child.state, child.output, child.argsText])).toEqual([
+      ["read", "input-available", undefined, '{"path":"a.txt"}'],
+      ["bash", "output-error", "Command exited with code 3", '{"command":"exit 3"}'],
+    ]);
+    expect(children[1]!.durationMs).toBe(5);
+  });
+
+  it("still renders a legacy stored codemode card's calls and nested diff", () => {
     const details = {
       code: "x",
       calls: [
@@ -201,16 +235,17 @@ describe("deriveChat", () => {
       ],
     };
     const entries = deriveChat(
-      view([user("go"), assistant([call("c1", "codemode", { code: "x" })], "toolUse")], {
-        run: {},
-        tools: [{ callId: "c1", name: "codemode", status: "running", details }],
-      }),
+      view([
+        user("go"),
+        assistant([call("c1", "codemode", { code: "x" })], "toolUse"),
+        result("c1", "codemode", "ok", false, details),
+      ]),
       { codemode: "pinomad.codemode", edit: "pinomad.diff" },
-      true,
+      false,
     );
     const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
     const children = step.tools[0]!.children!;
-    expect(children[0]).toMatchObject({ toolName: "read", state: "input-available" });
+    expect(children[0]).toMatchObject({ toolName: "read", state: "output-error", output: "Cancelled" });
     expect(pinomadOf(children[1]!)).toMatchObject({ kind: "diff" });
   });
 

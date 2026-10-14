@@ -29,7 +29,6 @@ import { watchModelAuth } from "./model-auth.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel } from "./pi-setup.ts";
 import type { Harness } from "@earendil-works/pi-durable";
-import type { ScriptTool } from "./script-tools.ts";
 
 export async function main(argv: readonly string[]): Promise<void> {
   const { values } = parseArgs({
@@ -50,39 +49,28 @@ export async function main(argv: readonly string[]): Promise<void> {
 
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
   // Extensions are built per options source: `subagent` validates `model` against
-  // the same Models and advertised summaries the gateway serves. The host function
-  // form hands codemode the script-tool catalog (MCP `codemode` exposure, ADR-0013).
+  // the same Models and advertised summaries the gateway serves.
   const extensionsFor =
     (models: Models, summaries: () => readonly ModelSummary[]) =>
     (host: {
-      readonly scriptTools: () => readonly ScriptTool[];
       readonly harness: () => Harness;
       readonly agentRoles: AgentRoleStore;
-    }): readonly BuiltinExtension[] => {
-      const others: BuiltinExtension[] = [
-        createContext({
-          agentsHome: join(homedir(), ".agents"),
-          checkout: (input, context) => checkoutInfo(host.harness(), input, context),
-        }),
-        coding,
-        todo,
-        question,
-        createSubagent({
-          models,
-          modelSummaries: summaries,
-          exclude: [question.extension],
-          roles: () => host.agentRoles.value.roles,
-        }),
-      ];
-      return [
-        ...others,
-        createCodemode({
-          scriptTools: host.scriptTools,
-          modelOnly: others.flatMap((extension) => extension.modelOnly ?? []),
-          presentations: Object.assign({}, ...others.map((extension) => extension.tools ?? {})),
-        }),
-      ];
-    };
+    }): readonly BuiltinExtension[] => [
+      createContext({
+        agentsHome: join(homedir(), ".agents"),
+        checkout: (input, context) => checkoutInfo(host.harness(), input, context),
+      }),
+      coding,
+      todo,
+      question,
+      createSubagent({
+        models,
+        modelSummaries: summaries,
+        exclude: [question.extension],
+        roles: () => host.agentRoles.value.roles,
+      }),
+      createCodemode(),
+    ];
   const common = {
     dataDir,
     projects: values.project ?? [],

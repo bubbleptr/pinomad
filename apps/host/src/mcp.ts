@@ -7,6 +7,7 @@
 // its tools; v1 does not reconnect.
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import type { JsonValue } from "@earendil-works/chord";
 import { isAbsolute, resolve } from "node:path";
 import {
   type CallToolResult,
@@ -19,16 +20,14 @@ import {
   type Tool as McpTool,
 } from "@earendil-works/pi-mcp";
 import { defineExtension, defineTool, type Registry, type ToolRegistration } from "@earendil-works/pi-durable";
+import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 import { Type } from "typebox";
 import type { McpServerStatus, McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { HostValue } from "./host-value.ts";
-import type { ScriptTool } from "./script-tools.ts";
 
 export interface McpBridge {
   /** Latest status; subscribed listeners get every subsequent publication. */
   readonly status: HostValue<McpStatus>;
-  /** Every connected server's tools for codemode scripts — both exposures (ADR-0013 §3). */
-  scriptTools(): readonly ScriptTool[];
   close(): Promise<void>;
 }
 
@@ -172,55 +171,53 @@ const callToolResultSchema = (tool: McpTool): Record<string, unknown> => ({
   required: ["content"],
 });
 
-function scriptTool(
+/** One registration per MCP tool, model-facing or scripts-only by `callers` (ADR-0013 §2). */
+function mcpTool(
   client: McpClient,
   timeoutMs: number,
-  server: string,
-  description: string | undefined,
+  exposure: "codemode" | "direct",
   name: string,
   tool: McpTool,
-): ScriptTool {
-  return {
+): ToolRegistration {
+  return defineTool({
     name,
     description: tool.description ?? tool.title ?? tool.name,
-    inputSchema: tool.inputSchema,
-    outputSchema: callToolResultSchema(tool),
-    namespace: {
-      name: server,
-      ...(description === undefined ? {} : { description }),
-      ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
-    },
-    // Raw CallToolResult: scripts see `isError` and `structuredContent` themselves (ADR-0013 §4).
-    call: (args, signal) => client.callTool(tool.name, args as Record<string, unknown>, { signal, timeoutMs }),
-  };
-}
-
-/** The model-facing registration of a `direct` server tool: the script value maps to content blocks. */
-function asModelTool(tool: ScriptTool): ToolRegistration {
-  return defineTool({
-    name: tool.name,
-    description: tool.description,
     // Providers require an object schema, and some reject one without `properties`.
     parameters: Type.Unsafe<Record<string, unknown>>({
       ...tool.inputSchema,
       type: "object",
       properties: tool.inputSchema.properties ?? {},
     }),
+    // `codemode` exposure never reaches the model; `direct` stays the default both.
+    ...(exposure === "direct" ? {} : { callers: ["tools" as const] }),
+    // Scripts get the raw CallToolResult — `isError` and `structuredContent` included (ADR-0013 §4).
+    structuredOutputSchema: Type.Unsafe(callToolResultSchema(tool)),
     // MCP tools may not be idempotent; an interrupted call replays as `interrupted` (ADR-0012 §6).
     execute: async (args, _api, context) => {
-      const result = (await tool.call(args, context.abortSignal ?? NEVER_ABORT)) as CallToolResult;
-      return { output: toLlmContent(result), isError: result.isError === true };
+      const result = (await client.callTool(tool.name, args as Record<string, unknown>, {
+        signal: context.abortSignal ?? NEVER_ABORT,
+        timeoutMs,
+      })) as CallToolResult;
+      // CallToolResult has no index signature; the schema declares it already.
+      return { output: toLlmContent(result), structuredOutput: result as unknown as JsonValue, isError: result.isError === true };
     },
   });
 }
 
 const NEVER_ABORT = new AbortController().signal;
 
-export function startMcp(options: { configPath: string; registry: Registry }): McpBridge {
+export function startMcp(options: {
+  configPath: string;
+  registry: Registry;
+  /** The connected servers as codemode namespaces; called whenever the toolsets change. */
+  onNamespaces?: (namespaces: CodemodeNamespace[]) => void;
+}): McpBridge {
   const listeners = new Set<(value: McpStatus) => void>();
   const servers = new Map<string, McpServerStatus>();
-  // Every connected server's tools as script tools; the `mcp` extension mirrors the `direct` ones.
-  const toolsets = new Map<string, ScriptTool[]>();
+  // Every connected server's tool registrations; `callers` carries the exposure.
+  const toolsets = new Map<string, ToolRegistration[]>();
+  // One namespace per connected server, for the codemode section and describeNamespace.
+  const namespaces = new Map<string, CodemodeNamespace>();
   const exposures = new Map<string, "codemode" | "direct">();
   // Every client ever created, so close() also aborts connections still in flight.
   const live = new Set<McpClient>();
@@ -232,10 +229,8 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
     for (const listener of listeners) listener(value);
   };
   const install = (): void => {
-    const direct = [...toolsets.entries()].flatMap(([name, tools]) =>
-      exposures.get(name) === "direct" ? tools.map(asModelTool) : [],
-    );
-    options.registry.install(defineExtension({ name: "mcp", tools: direct }));
+    options.registry.install(defineExtension({ name: "mcp", tools: [...toolsets.values()].flat() }));
+    options.onNamespaces?.([...namespaces.values()]);
   };
   const set = (name: string, patch: Partial<McpServerStatus> & Pick<McpServerStatus, "state">): void => {
     servers.set(name, { name, tools: 0, ...servers.get(name), ...patch });
@@ -245,7 +240,7 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
   /** Rebuild a connected server's tool registrations; `removed` clears them after a drop. */
   const relist = async (name: string, client: McpClient, timeoutMs: number, description: string | undefined): Promise<void> => {
     const taken = new Set([...toolsets.entries()].flatMap(([other, tools]) => (other === name ? [] : tools.map((tool) => tool.name))));
-    const tools: ScriptTool[] = [];
+    const tools: ToolRegistration[] = [];
     const collisions: string[] = [];
     for (const tool of await client.listTools()) {
       const wire = callName(name, tool.name);
@@ -254,16 +249,24 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
         continue;
       }
       taken.add(wire);
-      tools.push(scriptTool(client, timeoutMs, name, description, wire, tool));
+      tools.push(mcpTool(client, timeoutMs, exposures.get(name) ?? "codemode", wire, tool));
     }
     if (closed) return;
     toolsets.set(name, tools);
+    namespaces.set(name, {
+      name,
+      ...(description === undefined ? {} : { description }),
+      ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
+      // Sanitized exactly as callName() does, so the prefix matches the wire names.
+      prefix: `mcp__${name}__`.replace(/[^A-Za-z0-9_]/g, "_"),
+    });
     set(name, { state: "connected", tools: tools.length, error: collisions.length === 0 ? undefined : collisions.join("; ") });
     install();
   };
 
   const fail = (name: string, error: string): void => {
     toolsets.delete(name);
+    namespaces.delete(name);
     set(name, { state: "failed", error, tools: 0 });
     install();
   };
@@ -337,7 +340,6 @@ export function startMcp(options: { configPath: string; registry: Registry }): M
 
   return {
     status,
-    scriptTools: () => [...toolsets.values()].flat(),
     async close() {
       closed = true;
       // A still-connecting client closes its transport, which rejects the

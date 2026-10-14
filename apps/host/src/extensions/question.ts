@@ -100,6 +100,8 @@ function result(questions: readonly QuestionItem[], resolution: QuestionResoluti
 
 const askUserQuestion = defineTool({
   name: "ask_user_question",
+  // Nested in a script the question would block with no user visible prompt (ADR-0013 §2).
+  callers: ["model"],
   description:
     "Ask the user 1–4 multiple-choice questions when their decision is needed to proceed (ambiguous requirements, choosing between approaches, scope). Blocks until answered. The user can always type a custom answer, so never add an 'Other' option. Keep headers short.",
   parameters: Type.Object({
@@ -131,7 +133,5 @@ const askUserQuestion = defineTool({
 
 export const question: BuiltinExtension = {
   extension: defineExtension({ name: "question", tools: [askUserQuestion], tasks: [QuestionWait] }),
-  // Nested in a script the question would block with no user visible prompt (ADR-0013 §2).
-  modelOnly: ["ask_user_question"],
   docs: [{ token: QuestionDoc, presentation: "pinomad.question" }],
 };

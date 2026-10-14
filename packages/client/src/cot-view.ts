@@ -5,7 +5,7 @@
 // Durable's ConversationView (pi.assistant / pi.tool-result entries plus the
 // pi.live doc) instead of Pace's session runtime model.
 
-import type { ConversationId, ConversationView, EntryRecord, LiveState } from "@earendil-works/pi-durable";
+import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
@@ -189,7 +189,6 @@ function childConversationId(details: unknown): ConversationId | undefined {
 /** One `pinomad.codemode` nested call, as a child ToolItem of the parent card. */
 function codemodeChild(
   call: { name: string; args: string; status: string; durationMs?: number; error?: string; details?: unknown },
-  parentRunning: boolean,
   toolPresentations: Record<string, PresentationType>,
 ): ConversationToolItem {
   const state: ToolItem["state"] =
@@ -197,11 +196,9 @@ function codemodeChild(
       ? "output-available"
       : call.status === "error"
         ? "output-error"
-        : // Stored details freeze at the last publish: a call still "running"
-          // when the card settled was cancelled, never still in flight.
-          parentRunning && call.status === "running"
-          ? "input-available"
-          : "output-error";
+        : // Stored details are written once, when the card settles: a call
+          // still "running" then was cancelled, never still in flight.
+          "output-error";
   const output =
     call.status === "error"
       ? call.error
@@ -220,10 +217,31 @@ function codemodeChild(
   };
 }
 
+/** A live nested call from `pi.live.nestedTools`, as a codemode card child. */
+function nestedChild(slot: NestedToolSlot): ConversationToolItem {
+  const summary = slot.summary;
+  const state: ToolItem["state"] =
+    slot.status !== "done"
+      ? "input-available"
+      : // A done slot without a summary faulted or was orphaned.
+        summary === undefined || summary.isError
+        ? "output-error"
+        : "output-available";
+  return {
+    state,
+    toolCallId: slot.callId,
+    toolName: slot.name,
+    argsText: JSON.stringify(slot.arguments),
+    ...(summary?.error === undefined ? {} : { output: summary.error }),
+    ...(summary?.durationMs === undefined ? {} : { durationMs: summary.durationMs }),
+  };
+}
+
 function toolItem(
   block: CallBlock,
   message: RunMessage,
   liveSlots: ReadonlyMap<string, Slot>,
+  nestedByParent: ReadonlyMap<string, readonly NestedToolSlot[]>,
   toolPresentations: Record<string, PresentationType>,
 ): ConversationToolItem {
   const callId = block.id;
@@ -274,9 +292,12 @@ function toolItem(
       ...(typeof result?.timestamp === "number" ? { endedAt: result.timestamp } : {}),
     };
   }
-  if (classified?.type === "pinomad.codemode") {
-    const running = result === undefined;
-    children = classified.value.calls.map((call) => codemodeChild(call, running, toolPresentations));
+  if (toolName === "codemode" && result === undefined) {
+    // Upstream writes details.calls once, with the result; while the script
+    // runs, its nested calls show live from pi.live.nestedTools instead.
+    children = (nestedByParent.get(callId) ?? []).map(nestedChild);
+  } else if (classified?.type === "pinomad.codemode") {
+    children = classified.value.calls.map((call) => codemodeChild(call, toolPresentations));
   }
 
   return {
@@ -319,6 +340,17 @@ function deriveRun(
   toolPresentations: Record<string, PresentationType>,
 ): ChatEntry {
   const liveSlots = new Map<string, Slot>((busy ? live.tools : undefined)?.map((slot) => [slot.callId, slot]) ?? []);
+  // Nested calls of running tools, grouped by the parent call's id; `pi.*`
+  // internals (codemode's own models.* plumbing) stay off the card.
+  const nestedByParent = new Map<string, NestedToolSlot[]>();
+  if (busy) {
+    for (const slot of live.nestedTools ?? []) {
+      if (slot.name.startsWith("pi.")) continue;
+      const list = nestedByParent.get(slot.parentCallId);
+      if (list === undefined) nestedByParent.set(slot.parentCallId, [slot]);
+      else list.push(slot);
+    }
+  }
   const partial = busy ? (live.generation?.message as AssistantMessageLike | undefined) : undefined;
   const emptyResults: ReadonlyMap<string, ToolResultLike> = new Map();
   const messages: RunMessage[] = [
@@ -367,7 +399,7 @@ function deriveRun(
         steps.push({
           kind: "tools",
           id: `${message.id}-tools-${slotIndex}`,
-          tools: slot.blocks.map((block) => toolItem(block, message, liveSlots, toolPresentations)),
+          tools: slot.blocks.map((block) => toolItem(block, message, liveSlots, nestedByParent, toolPresentations)),
           live: stepLive,
           // The agent executes in order, so the active call is the first unexecuted one.
           ...(stepLive && pending[0] !== undefined ? { activeToolCallId: pending[0].id } : {}),
