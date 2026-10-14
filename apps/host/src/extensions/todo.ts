@@ -26,7 +26,7 @@ const todoWrite = defineTool({
       const doc = await tx.doc(TodoDoc, api.conversationId);
       doc.items = args.items.map((item) => ({ ...item }));
     }, context);
-    return { content: [{ type: "text", text: `Todo list updated: ${args.items.length} item(s).` }] };
+    return { output: [{ type: "text", text: `Todo list updated: ${args.items.length} item(s).` }] };
   },
 });
 

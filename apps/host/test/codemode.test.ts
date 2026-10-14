@@ -75,7 +75,7 @@ describe("codemode", () => {
           tools.read({ path: "b.txt" }),
           tools.bash({ command: "printf from-bash" }),
         ]);
-        return "summary: a=" + a.length + " b=" + b.length + " bash=" + out;`),
+        return "summary: a=" + a.length + " b=" + b.length + " bash=" + out.output;`),
         "done",
       ],
     });
@@ -97,6 +97,36 @@ describe("codemode", () => {
     const details = result.details as { code: string; calls: { name: string; status: string }[] };
     expect(details.calls.map((call) => call.name).sort()).toEqual(["bash", "read", "read"]);
     expect(details.calls.every((call) => call.status === "ok")).toBe(true);
+  });
+
+  it("resolves a bash nonzero exit to its structured output instead of rejecting", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const host = await startFauxHost(defer, {
+      dataDir: project.path,
+      projects: [project.path],
+      extensions: extensionsFor,
+      answers: [
+        script(`const r = await tools.bash({ command: "echo hi; exit 3" });
+          return "exit=" + r.exitCode + " out=" + r.output.trim();`),
+        "done",
+      ],
+    });
+    const client = await connectTo(defer, host);
+    await startConversation(client, { kind: "project", path: project.path }, "run a failing command");
+    await waitForView(
+      client.view,
+      (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done",
+    );
+
+    const result = lastResult(client);
+    expect(result.isError).not.toBe(true);
+    const text = resultText(result);
+    expect(text).toContain("exit=3");
+    expect(text).toContain("out=hi");
+    // An error result the script got a value for is still an error row on the card.
+    const details = result.details as { calls: { name: string; status: string; error?: string }[] };
+    expect(details.calls[0]).toMatchObject({ name: "bash", status: "error" });
   });
 
   it("applies an edit through a script and carries its diff details", async () => {
@@ -212,7 +242,7 @@ describe("codemode", () => {
       projects: [project.path],
       extensions: extensionsFor,
       answers: [
-        script(`try { await tools.bash({ command: "exit 3" }); } catch (error) { return "caught: " + error.message; }`),
+        script(`try { await tools.read({ path: "missing.txt" }); } catch (error) { return "caught: " + error.message; }`),
         "done",
       ],
     });
@@ -227,7 +257,7 @@ describe("codemode", () => {
     expect(result.isError).not.toBe(true);
     expect(resultText(result)).toContain("caught:");
     const details = result.details as { calls: { name: string; status: string }[] };
-    expect(details.calls[0]).toMatchObject({ name: "bash", status: "error" });
+    expect(details.calls[0]).toMatchObject({ name: "read", status: "error" });
   });
 
   it("exposes MCP tools to scripts only by default, with discovery helpers", async () => {

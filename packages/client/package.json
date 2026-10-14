@@ -7,7 +7,7 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "@earendil-works/pi-durable": "1.0.4",
+    "@earendil-works/pi-durable": "1.2.0",
     "@pinomad/protocol": "workspace:*"
   }
 }

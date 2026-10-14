@@ -178,7 +178,7 @@ export function createSubagent(options: {
       const text =
         message?.role === "assistant" ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("") : "";
       const result: ToolExecutionResult = {
-        content: [{ type: "text", text: text === "" ? "(The subagent returned no text.)" : text }],
+        output: [{ type: "text", text: text === "" ? "(The subagent returned no text.)" : text }],
         details: {
           conversationId: child.id,
           ...(child.model === undefined ? {} : { model: child.model }),
