@@ -257,8 +257,9 @@ export function startMcp(options: {
       name,
       ...(description === undefined ? {} : { description }),
       ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
-      // Sanitized exactly as callName() does, so the prefix matches the wire names.
-      prefix: `mcp__${name}__`.replace(/[^A-Za-z0-9_]/g, "_"),
+      // The same sanitize and 64-char cut callName() gives tool names, or no
+      // tool startsWith the prefix for server names over ~57 chars.
+      prefix: callName(name, ""),
     });
     set(name, { state: "connected", tools: tools.length, error: collisions.length === 0 ? undefined : collisions.join("; ") });
     install();
