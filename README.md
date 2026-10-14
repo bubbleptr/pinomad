@@ -69,7 +69,7 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | Projects and worktrees | Register a directory as a project. In a Git repo each conversation works in its own worktree and branch, so your checkout stays untouched |
 | Forks | Branch off from a message and keep both lines going |
 | Subagents | Hand self-contained tasks to subagents that run in parallel |
-| Named agents | Reusable roles in `<data dir>/agents/<name>.md` — a `subagent` call can delegate to one, optionally pinning its model and thinking level |
+| Named agents | Reusable roles in `<data dir>/agents/<name>.md` — a `subagent` call or an `@name` mention delegates to one, optionally pinning its model and thinking level |
 | Questions, not approvals | Tools run without approval prompts; when the direction is unclear, the agent asks 1–4 multiple-choice questions |
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
 | MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |

@@ -24,6 +24,7 @@ import { requestNotificationPermission } from "../../entities/conversation/notif
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
+import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
@@ -363,6 +364,7 @@ function ThreadDetail({
           onSubmit={submit}
           onStop={() => void remote.controller.abort(side.id)}
           onValueChange={setDraft}
+          triggers={useAgentMentions(view.agents)}
         />
       </div>
     </div>

@@ -6,6 +6,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
+import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -87,6 +88,7 @@ export function ConversationComposer({
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
+        triggers={useAgentMentions(view.agents)}
         onStop={busy ? () => void remote.controller.abort() : undefined}
         attachments={attachmentDrawer({ images, pending, onRemove: remove })}
         hasAttachments={images.length > 0}

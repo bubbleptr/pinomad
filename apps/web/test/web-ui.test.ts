@@ -10,6 +10,7 @@ import { AgentDoc, AssistantEntry, type ConversationId } from "@earendil-works/p
 import { chromium, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
+import type { AgentRoleStore } from "@pinomad/host/src/agent-roles.ts";
 import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { constantValue, Published } from "@pinomad/host/src/host-value.ts";
 import type { ModelAuth } from "@pinomad/host/src/model-auth.ts";
@@ -43,7 +44,8 @@ async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 844 } });
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
-  await page.getByRole("textbox").waitFor();
+  // The prompt is a plain textbox until an agent file gives it a trigger menu.
+  await page.getByRole("textbox").or(page.getByRole("combobox", { name: "Prompt" })).waitFor();
   return page;
 }
 
@@ -2602,4 +2604,113 @@ it("keeps a pinned thinking level the model no longer supports visible in the ed
   const text = await readFile(join(dir.path, "agents", "legacy.md"), "utf8");
   expect(text).toContain('description: "New description"');
   expect(text).toContain('thinkingLevel: "high"');
+});
+
+it("lists named agents in a @ mention menu and inserts @name as plain text", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  // With no agent files the editable stays a plain textbox — no empty popup.
+  const plain = page.getByRole("textbox", { name: "Prompt" });
+  await plain.click();
+  await plain.pressSequentially("@");
+  await expect.poll(() => page.getByRole("listbox").count()).toBe(0);
+  await plain.pressSequentially("x");
+
+  // Hand-written files stream in; the editable becomes a combobox.
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
+  await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
+  const editable = page.getByRole("combobox", { name: "Prompt" });
+  await editable.waitFor();
+  await editable.click();
+
+  // Clear the typed "@x", then query the menu.
+  await editable.press("ControlOrMeta+a");
+  await editable.press("Delete");
+  await editable.pressSequentially("@rev");
+  const menu = page.getByRole("listbox", { name: "Named agents" });
+  await menu.waitFor();
+  await menu.getByRole("option", { name: /reviewer/ }).waitFor();
+  await expect.poll(() => menu.getByRole("option").count()).toBe(1);
+
+  // Enter selects the highlighted item — nothing is submitted.
+  await editable.press("Enter");
+  await expect.poll(() => menu.count()).toBe(0);
+  await expect.poll(async () => editable.textContent()).toBe("@reviewer ");
+
+  await editable.pressSequentially("check auth");
+  await editable.press("Enter");
+  await page.getByText(LONG_ANSWER, { exact: true }).waitFor();
+  const id = await followFirst(observer);
+  await expect.poll(async () => userContentsOf(host, id)).toEqual(["@reviewer check auth"]);
+});
+
+it("shows the @ mention menu in a fork thread composer too", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dir.path,
+    answers: ["first answer", "fork answer"],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  const mainComposer = page.getByRole("combobox", { name: "Prompt" });
+  await mainComposer.fill("start");
+  await mainComposer.press("Enter");
+  await page.getByText("first answer", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Fork", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fork", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("fork answer", { exact: true }).waitFor();
+
+  const threadComposer = panel.getByRole("combobox", { name: "Prompt" });
+  await threadComposer.click();
+  await threadComposer.pressSequentially("@rev");
+  const menu = page.getByRole("listbox", { name: "Named agents" });
+  await menu.waitFor();
+  await menu.getByRole("option", { name: /reviewer/ }).waitFor();
+  await threadComposer.press("Enter");
+  await expect.poll(async () => threadComposer.textContent()).toBe("@reviewer ");
+});
+
+it("shows the named agent a subagent ran as on its done card", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dir.path,
+    extensions: (provided: { models: Models; modelSummaries: () => readonly ModelSummary[]; agentRoles: AgentRoleStore }) => [
+      createSubagent({
+        models: provided.models,
+        modelSummaries: provided.modelSummaries,
+        roles: () => provided.agentRoles.value.roles,
+        exclude: [],
+      }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", role: "reviewer" }), { stopReason: "toolUse" }),
+      "child answer",
+      "parent final",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("combobox", { name: "Prompt" }).fill("delegate");
+  await page.getByRole("combobox", { name: "Prompt" }).press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  const card = page.locator('[data-slot="subagent-card"][data-status="done"]');
+  await card.waitFor();
+  await card.getByText(/Done · @reviewer · faux\/faux-1 · \d+s/).waitFor();
 });

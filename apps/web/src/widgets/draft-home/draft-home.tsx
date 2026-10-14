@@ -6,6 +6,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
+import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -112,6 +113,7 @@ export function DraftHome({
             value={value}
             inputRef={inputRef}
             onValueChange={setValue}
+            triggers={useAgentMentions(view.agents)}
             status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
               const text = value.trim();
