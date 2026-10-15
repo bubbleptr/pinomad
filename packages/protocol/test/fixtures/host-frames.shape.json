@@ -436,6 +436,7 @@
     },
     "settings": {
       "value": {
+        "acceptAccountDevices": "boolean",
         "custom": [],
         "defaultModel": {
           "modelId": "string",
