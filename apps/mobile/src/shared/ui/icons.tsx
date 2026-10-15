@@ -13,6 +13,7 @@ import {
   Folder01Icon,
   FolderLibraryIcon,
   GitBranchIcon,
+  MoreHorizontalIcon,
   Queue02Icon,
   StopIcon,
   Tick02Icon,
@@ -47,5 +48,7 @@ export const Computer = iconComponent(ComputerIcon);
 export const FolderClosed = iconComponent(Folder01Icon);
 export const FolderLibrary = iconComponent(FolderLibraryIcon);
 export const GitBranch = iconComponent(GitBranchIcon);
+// The row-actions affordance the web sidebar uses (⋯).
+export const MoreHorizontal = iconComponent(MoreHorizontalIcon);
 // Same glyph the web uses for cancel/close affordances.
 export const Cancel = iconComponent(Cancel01Icon);

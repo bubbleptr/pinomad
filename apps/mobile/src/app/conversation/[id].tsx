@@ -165,6 +165,16 @@ function ConversationBody({ remote, id }: { remote: RemoteDurable; id: Conversat
             toolPresentations={view.toolPresentations}
             organized={view.organized}
             bottomInset={composerHeight + 8}
+            connected={view.connection === "connected"}
+            // A subagent's run belongs to the delegating task; resending its
+            // prompt would talk past it.
+            onRetry={
+              summary?.kind === "subagent"
+                ? undefined
+                : async ({ text, images, requestId }) => {
+                    await remote.controller.submit(text, "followUp", { requestId, images });
+                  }
+            }
           />
           <ConversationComposer remote={remote} view={view} onHeightChange={setComposerHeight} />
         </View>

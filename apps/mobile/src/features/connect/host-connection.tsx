@@ -321,7 +321,7 @@ function ConnectedView({
             </Card.Footer>
           </Card>
         )}
-        <ConversationList view={view} onAddProject={() => router.push("/add-project")} />
+        <ConversationList view={view} remote={remote} onAddProject={() => router.push("/add-project")} />
       </ScrollView>
     </SafeAreaView>
   );
