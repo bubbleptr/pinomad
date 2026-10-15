@@ -21,7 +21,7 @@ public struct AgentTraceView: View {
                 TraceHeader(trace: trace, isExpanded: disclosure.isExpanded)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(disclosure.isExpanded ? "Hides the steps" : "Shows the steps")
+            .accessibilityHint(disclosure.isExpanded ? String(localized: "Hides the steps", bundle: .module) : String(localized: "Shows the steps", bundle: .module))
 
             if disclosure.isExpanded, !trace.steps.isEmpty {
                 TraceSteps(steps: trace.steps)
@@ -70,12 +70,12 @@ private struct TraceHeader: View {
 
     private func headline(_ summary: TraceSummary) -> String {
         switch summary.headline {
-        case .thinking: "Thinking"
-        case let .running(tool): "Running \(tool)"
-        case .thought: "Thought"
-        case .worked: "Worked"
-        case .failed: "Failed"
-        case .interrupted: "Stopped"
+        case .thinking: String(localized: "Thinking", bundle: .module)
+        case let .running(tool): String(localized: "Running \(tool)", bundle: .module)
+        case .thought: String(localized: "Thought", bundle: .module)
+        case .worked: String(localized: "Worked", bundle: .module)
+        case .failed: String(localized: "Failed", bundle: .module)
+        case .interrupted: String(localized: "Stopped", bundle: .module)
         }
     }
 
@@ -85,7 +85,7 @@ private struct TraceHeader: View {
             parts.append(elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
         }
         if !isWorking, summary.toolCount > 0 {
-            parts.append(summary.toolCount == 1 ? "1 tool" : "\(summary.toolCount) tools")
+            parts.append(String(localized: "\(summary.toolCount) tools", bundle: .module))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -123,7 +123,7 @@ private struct ThinkingStep: View {
 
     var body: some View {
         if text.isEmpty {
-            Text(isLive ? "Thinking…" : "Thought without a summary")
+            Text(isLive ? "Thinking…" : "Thought without a summary", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         } else {

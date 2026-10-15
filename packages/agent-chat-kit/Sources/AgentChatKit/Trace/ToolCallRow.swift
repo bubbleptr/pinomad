@@ -38,7 +38,7 @@ struct ToolCallRow: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(call.name), \(stateLabel)")
+            .accessibilityLabel(Text("\(call.name), \(stateLabel)", bundle: .module))
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
@@ -76,10 +76,10 @@ struct ToolCallRow: View {
 
     private var stateLabel: String {
         switch call.state {
-        case .streamingInput: "preparing"
-        case .running: "running"
-        case .succeeded: "done"
-        case .failed: "failed"
+        case .streamingInput: String(localized: "preparing", bundle: .module)
+        case .running: String(localized: "running", bundle: .module)
+        case .succeeded: String(localized: "done", bundle: .module)
+        case .failed: String(localized: "failed", bundle: .module)
         }
     }
 }

@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "AgentChatKit",
+    defaultLocalization: "en",
     platforms: [.iOS(.v26), .macOS(.v26)],
     products: [
         .library(name: "AgentChatCore", targets: ["AgentChatCore"]),
@@ -19,7 +20,8 @@ let package = Package(
         ),
         .target(
             name: "AgentChatKit",
-            dependencies: ["AgentChatCore", .product(name: "Markdown", package: "swift-markdown")]
+            dependencies: ["AgentChatCore", .product(name: "Markdown", package: "swift-markdown")],
+            resources: [.process("Resources")]
         ),
         .testTarget(name: "AgentChatCoreTests", dependencies: ["AgentChatCore"]),
     ]
