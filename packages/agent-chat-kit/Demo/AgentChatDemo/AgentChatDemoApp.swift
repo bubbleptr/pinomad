@@ -24,11 +24,19 @@ struct DemoConversation: View {
         Transcript {
             UserMessageView("Why does the upload test fail now and then?")
             AgentTraceView(Replay.history.trace)
-            MarkdownView(markdown: Replay.history.answer)
+            VStack(alignment: .leading, spacing: 4) {
+                MarkdownView(markdown: Replay.history.answer)
+                ReplyActions(markdown: Replay.history.answer)
+            }
 
             UserMessageView("Fix it, and keep the change small.")
             AgentTraceView(replay.trace)
-            StreamingMarkdownView(replay.answer)
+            VStack(alignment: .leading, spacing: 4) {
+                StreamingMarkdownView(replay.answer)
+                if replay.answer.stream.isFinished {
+                    ReplyActions(markdown: replay.answer.markdown)
+                }
+            }
         }
         .toolbar {
             Button("Replay", systemImage: "arrow.counterclockwise") {

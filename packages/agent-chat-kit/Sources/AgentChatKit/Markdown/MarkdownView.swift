@@ -33,6 +33,8 @@ public struct MarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Each block selects on its own: SwiftUI cannot select across texts.
+        .textSelection(.enabled)
     }
 }
 

@@ -49,6 +49,26 @@
         }
       }
     },
+    "Copy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        }
+      }
+    },
+    "Copy as Markdown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制为 Markdown"
+          }
+        }
+      }
+    },
     "Copy code": {
       "localizations": {
         "zh-Hans": {
