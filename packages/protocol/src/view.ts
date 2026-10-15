@@ -218,4 +218,10 @@ export interface DurableController {
   updateAgent(role: AgentRole): Promise<void>;
   /** Delete a named agent's file; rejects when it does not exist. Needs a 5.6 host. */
   deleteAgent(name: string): Promise<void>;
+  /**
+   * Register this device's Expo push token on the host (`null` clears it).
+   * Secure-channel (paired device) clients only; rejects with the host's error —
+   * the caller shows it (no notice). Needs a 5.7 host.
+   */
+  setPushToken(token: string | null): Promise<void>;
 }

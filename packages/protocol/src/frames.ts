@@ -87,7 +87,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 6 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 7 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -169,6 +169,13 @@ export interface CallMethods {
   updateAgent: { args: { role: AgentRole }; result: null };
   /** Delete `<name>.md`; fails when it does not exist. */
   deleteAgent: { args: { name: string }; result: null };
+  /**
+   * Register this device's Expo push token on the host (`null` deregisters);
+   * secure-channel clients only — the token lands under the connection's own
+   * device key. Idempotent. Needs a 5.7 host; token-format problems answer
+   * `ok:false`, malformed shapes close with 4400.
+   */
+  setPushToken: { args: { token: string | null }; result: null };
 }
 
 export type CallMethod = keyof CallMethods;
@@ -182,6 +189,7 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
   createAgent: 6,
   updateAgent: 6,
   deleteAgent: 6,
+  setPushToken: 7,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -309,6 +317,7 @@ const CALL_METHODS = [
   "createAgent",
   "updateAgent",
   "deleteAgent",
+  "setPushToken",
 ] as const satisfies readonly CallMethod[];
 
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
@@ -394,6 +403,9 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return role();
     case "deleteAgent":
       return typeof args.name === "string";
+    case "setPushToken":
+      // Shape only — the ExponentPushToken[...] format and length are the host's check.
+      return args.token === null || typeof args.token === "string";
     case "updateSettings":
       // An empty patch is valid; an unknown key is malformed, never silently dropped.
       return (

@@ -156,6 +156,21 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
   });
 
+  it("accepts a string or null token on setPushToken, rejecting malformed shapes", () => {
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: "ExponentPushToken[abc]" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: null } })).toBe("frame");
+    // Token content rules are the host's check; only the shape is enforced here.
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: "anything" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: {} })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: 3 } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: ["x"] } })).toBe("malformed");
+  });
+
+  it("introduces setPushToken at minor 7", () => {
+    expect(hostSupportsCall(6, "setPushToken")).toBe(false);
+    expect(hostSupportsCall(7, "setPushToken")).toBe(true);
+  });
+
   it("introduces the agents stream and the three agent calls at minor 6", () => {
     expect(hostStreams(5)).not.toContain("agents");
     expect(hostStreams(6)).toContain("agents");

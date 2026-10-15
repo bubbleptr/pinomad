@@ -65,7 +65,8 @@ import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
-import { isRegistered, registerDevice, revokeDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { isRegistered, registerDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { attachPushSender, revokeDevice, setPushToken, type PushFetch, type PushTimers } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -149,6 +150,16 @@ export interface GatewayOptions {
   readonly webRoot?: string;
   /** Name conversations after their first successful run; default on. */
   readonly autoTitle?: boolean;
+  /**
+   * Expo push sender (M5): absent → `setPushToken` still registers but nothing
+   * leaves the host; tests inject `fetch`/`timers` fakes.
+   */
+  readonly push?: {
+    /** The host's X25519 public key, base64url — the push payload's `data.hostKey`. */
+    readonly hostKey: string;
+    readonly fetch?: PushFetch;
+    readonly timers?: PushTimers;
+  };
   /** Set to accept secure-channel clients, on LAN and/or via a relay. */
   readonly secure?: SecureGatewayOptions;
 }
@@ -180,6 +191,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           harness: options.harness,
           models: options.models,
           settings: options.settings,
+        });
+  const detachPush =
+    options.push === undefined
+      ? undefined
+      : await attachPushSender({
+          harness: options.harness,
+          conversations,
+          hostKey: options.push.hostKey,
+          ...(options.push.fetch === undefined ? {} : { fetch: options.push.fetch }),
+          ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
         });
   // The loopback port also serves the built web client: in service mode there
   // is no vite dev server to reach it through (ADR-0009 §7).
@@ -295,6 +316,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     async close() {
       await relay?.close();
       detachAutoTitle?.();
+      await detachPush?.();
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
       for (const socket of server.clients) socket.terminate();
@@ -1114,6 +1136,12 @@ class GatewayClient {
         const { publicKey } = args as CallMethods["revokeDevice"]["args"];
         await revokeDevice(this.#options.harness, publicKey, context);
         this.#hooks.closeDevice(publicKey);
+        return null;
+      }
+      case "setPushToken": {
+        const device = this.devicePublicKey;
+        if (device === undefined) throw new Error("Push tokens register over the secure channel only");
+        await setPushToken(this.#options.harness, device, (args as CallMethods["setPushToken"]["args"]).token, context);
         return null;
       }
       case "logout": {

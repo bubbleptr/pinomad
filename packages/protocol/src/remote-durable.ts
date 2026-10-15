@@ -684,6 +684,16 @@ class RemoteClient {
           }
           await this.#call("deleteAgent", { name });
         }),
+      // A request, not a command: registration failures (old host, rejected
+      // token, revoked device) must reach the caller — the mobile client shows
+      // them on its notification toggle instead of swallowing them as a notice.
+      setPushToken: (token) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "setPushToken")) {
+            throw new Error("The host is too old for this (needs protocol 5.7); run `pinomad upgrade` on the host");
+          }
+          await this.#call("setPushToken", { token });
+        }),
     };
   }
 

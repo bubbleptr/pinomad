@@ -47,6 +47,7 @@ export async function startFauxHost(
     modelAuth,
     autoTitle,
     openStorage,
+    push,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -91,6 +92,11 @@ export async function startFauxHost(
     autoTitle?: boolean;
     /** Wrap the real storage to inject failures (session-failure tests). */
     openStorage?: OpenHostOptions["openStorage"];
+    /**
+     * Expo push sender fakes; absent → the sender stays off (registrations
+     * still work), so tests never touch the real Expo API by accident.
+     */
+    push?: OpenHostOptions["push"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -142,6 +148,7 @@ export async function startFauxHost(
     ...(modelAuth === undefined ? {} : { modelAuth }),
     autoTitle: autoTitle === true,
     ...(openStorage === undefined ? {} : { openStorage }),
+    ...(push === undefined ? {} : { push }),
   });
   defer(() => host.close());
   return host;

@@ -145,6 +145,9 @@ export async function main(argv: readonly string[]): Promise<void> {
       modelAuth,
       extensions: extensionsFor(modelRuntime, summaries, { images }),
       settings: (store) => createHarnessSettings(settingsManager, store),
+      // Push notifications go straight to Expo from the host (M5); the faux
+      // path leaves the sender off — scripted answers only exist for tests.
+      push: {},
       // Unset keys fall back to pi's settings (ADR-0021 §2).
       settingsFallback: {
         defaultModel: () => {
