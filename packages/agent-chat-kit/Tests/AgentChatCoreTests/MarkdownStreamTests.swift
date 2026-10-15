@@ -15,6 +15,19 @@ import Testing
         #expect(stream.blocks.map(\.isClosed) == [true])
     }
 
+    // Views key their work on this: a closed block is never parsed or laid out again.
+    @Test func closedBlocksAreNotParsedAgain() throws {
+        var stream = MarkdownStream()
+        stream.append("First paragraph.\n\nSecond paragraph,\nstill")
+        let first = try #require(stream.blocks.first)
+        #expect(first.isClosed)
+
+        stream.append(" streaming.")
+        #expect(stream.blocks.first?.markup.isIdentical(to: first.markup) == true)
+        stream.finish()
+        #expect(stream.blocks.first?.markup.isIdentical(to: first.markup) == true)
+    }
+
     @Test(arguments: Fixtures.replies.indices, [1, 3, 7, 0])
     func chunkingNeverChangesTheResult(reply: Int, seed: UInt64) {
         let text = Fixtures.replies[reply]
