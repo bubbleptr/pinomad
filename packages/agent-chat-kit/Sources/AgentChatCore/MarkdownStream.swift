@@ -29,8 +29,14 @@ public struct MarkdownStream {
 
     private mutating func reparse() {
         let children = Array(Document(parsing: source).blockChildren)
+        // Until the last block's first line ends, it may still turn into an
+        // item of the list before it ("3" becoming "3. "), so that block stays
+        // open too.
+        let lastStartLine = children.last?.range?.lowerBound.line ?? 1
+        let newlines = source.utf8.count { $0 == UInt8(ascii: "\n") }
+        let openCount = newlines >= lastStartLine ? 1 : 2
         blocks = children.enumerated().map { index, markup in
-            MarkdownBlock(id: index, markup: markup, isClosed: isFinished || index < children.count - 1)
+            MarkdownBlock(id: index, markup: markup, isClosed: isFinished || index < children.count - openCount)
         }
     }
 }
