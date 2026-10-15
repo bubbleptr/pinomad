@@ -21,7 +21,8 @@ const USAGE = `pinomad — PiNomad host, relay, and utilities
 usage: pinomad <command> [args…]
 
   host [host args…]                    run the host in the foreground
-  relay --public-origin O --allow-host H…  run the relay
+  relay --public-origin O [--allow-host H…] [--data-dir D] [--trust-proxy]   run the server
+  relay passwd [--data-dir D] [--user U]   change the account password (stdin)
   service install|uninstall|status|restart|logs   user-level host service
   upgrade [--force] [address flags]    upgrade the package and restart the service
   link [--data-dir D|--url U …]        print the browser link
