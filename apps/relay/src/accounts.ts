@@ -24,7 +24,13 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SCRYPT = { N: 16384, r: 8, p: 1 } as const;
 const KEY_LEN = 32;
 const SALT_LEN = 16;
-const MIN_PASSWORD_CODEPOINTS = 12;
+
+// Shared with the login endpoint (api.ts): credentials outside these bounds
+// are refused there, so creating one here would mint an account nobody can
+// log into.
+export const MIN_PASSWORD_CODEPOINTS = 12;
+export const MAX_PASSWORD_CODEPOINTS = 1024;
+export const MAX_USERNAME_CODEPOINTS = 254;
 
 const scryptAsync = promisify(scrypt) as (
   password: string,
@@ -110,8 +116,16 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
 }
 
 function assertPasswordPolicy(password: string): void {
-  if ([...password].length < MIN_PASSWORD_CODEPOINTS) {
-    throw new Error(`password must be at least ${MIN_PASSWORD_CODEPOINTS} characters`);
+  const length = [...password].length;
+  if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
+    throw new Error(`password must be ${MIN_PASSWORD_CODEPOINTS}–${MAX_PASSWORD_CODEPOINTS} characters`);
+  }
+}
+
+function assertUsernamePolicy(username: string): void {
+  const length = [...username].length;
+  if (length === 0 || length > MAX_USERNAME_CODEPOINTS) {
+    throw new Error(`username must be 1–${MAX_USERNAME_CODEPOINTS} characters`);
   }
 }
 
@@ -253,6 +267,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (options.bootstrapUser === undefined || options.bootstrapPassword === undefined) {
         throw new Error("PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required to create the first account");
       }
+      assertUsernamePolicy(options.bootstrapUser);
       assertPasswordPolicy(options.bootstrapPassword);
       const hash = await hashPassword(options.bootstrapPassword);
       db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)").run(
@@ -291,19 +306,29 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       const user = db
         .prepare("SELECT id, username, password_hash AS passwordHash FROM users WHERE username = ?")
         .get(username) as { id: number; username: string; passwordHash: string } | undefined;
-      const verified = await gate.run(() => verifyPassword(password, user?.passwordHash ?? DUMMY_HASH));
-      if (verified === undefined) return { status: "limited" };
-      if (!verified || user === undefined) {
-        userFailures.bump(username, limits.userWindowMs);
-        return { status: "invalid" };
-      }
+      // Re-check inside the task: a burst queues requests that all pass the
+      // first check; once earlier failures lock the name, queued work must
+      // refuse instead of still verifying (and possibly issuing a session).
+      // The failure count is bumped in the task too, so the next queued task's
+      // re-check sees it — recording after the await would lag one behind.
+      const outcome = await gate.run(async (): Promise<"limited" | "invalid" | number> => {
+        if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+        const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+        if (!ok || user === undefined) {
+          userFailures.bump(username, limits.userWindowMs);
+          return "invalid";
+        }
+        return user.id;
+      });
+      if (outcome === undefined || outcome === "limited") return { status: "limited" };
+      if (outcome === "invalid") return { status: "invalid" };
       userFailures.reset(username);
       db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now());
       const token = randomBytes(32).toString("base64url");
       const expiresAt = now() + SESSION_TTL_MS;
       db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
         sha256Hex(token),
-        user.id,
+        outcome,
         now(),
         expiresAt,
       );

@@ -73,12 +73,18 @@ export async function main(argv: readonly string[]): Promise<void> {
   const allowedHosts = values["allow-host"] ?? [];
   const bootstrapUser = process.env.PINOMAD_SERVER_USER;
   const bootstrapPassword = process.env.PINOMAD_SERVER_PASSWORD;
-  // Account mode is on once any of its inputs is present: an explicit data dir
-  // or either bootstrap variable. A bare --allow-host run keeps the old
-  // stateless relay so existing deployments keep working (ADR-0022 §2).
-  const accountMode = values["data-dir"] !== undefined || process.env.PINOMAD_SERVER_DATA_DIR !== undefined || bootstrapUser !== undefined || bootstrapPassword !== undefined;
+  // Legacy stateless mode is the explicit opt-out: --allow-host with no
+  // account inputs at all. Otherwise the server opens the (default) data dir
+  // — bootstrapped accounts must be found again after the env vars that
+  // created them are gone (ADR-0022 §2).
+  const accountMode =
+    allowedHosts.length === 0 ||
+    values["data-dir"] !== undefined ||
+    process.env.PINOMAD_SERVER_DATA_DIR !== undefined ||
+    bootstrapUser !== undefined ||
+    bootstrapPassword !== undefined;
 
-  if (values["public-origin"] === undefined || (!accountMode && allowedHosts.length === 0)) {
+  if (values["public-origin"] === undefined) {
     console.error(
       `usage: ${commandHint("relay")} --public-origin ORIGIN [--allow-host HOST_ID ...] [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
         `       ${commandHint("relay")} passwd [--data-dir DIR] [--user NAME]   (server stopped; new password on stdin)\n` +

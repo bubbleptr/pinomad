@@ -8,7 +8,7 @@
 // No CORS headers are emitted — nothing cross-origin is meant to call this.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Accounts } from "./accounts.ts";
+import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, type Accounts } from "./accounts.ts";
 
 export interface ApiContext {
   readonly accounts: Accounts;
@@ -20,7 +20,6 @@ export interface ApiContext {
 
 const SESSION_COOKIE = "__Host-pinomad-session";
 const MAX_BODY = 8 * 1024;
-const MAX_FIELD_CHARS = 1024;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const isLoopback = (address: string | undefined): boolean =>
@@ -138,7 +137,13 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     const { username, password } = value as { username: string; password: string };
-    if ([...username].length === 0 || [...username].length > MAX_FIELD_CHARS || [...password].length > MAX_FIELD_CHARS) {
+    // Same bounds the account layer enforces at creation (accounts.ts) — a
+    // field outside them can never match a stored credential.
+    if (
+      [...username].length === 0 ||
+      [...username].length > MAX_USERNAME_CODEPOINTS ||
+      [...password].length > MAX_PASSWORD_CODEPOINTS
+    ) {
       fail(response, 400, "invalid_request");
       return;
     }

@@ -1,9 +1,11 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -190,6 +192,9 @@ describe("server bootstrap", () => {
     await expect(openAccounts({ dataDir: dir, bootstrapUser: "admin" })).rejects.toThrow();
     await expect(openAccounts({ dataDir: dir, bootstrapPassword: GOOD_PASSWORD })).rejects.toThrow();
     await expect(openAccounts({ dataDir: dir, bootstrapUser: "admin", bootstrapPassword: "short" })).rejects.toThrow();
+    // Credentials outside the login endpoint's bounds would mint an account nobody can log into.
+    await expect(openAccounts({ dataDir: dir, bootstrapUser: "", bootstrapPassword: GOOD_PASSWORD })).rejects.toThrow();
+    await expect(openAccounts({ dataDir: dir, bootstrapUser: "admin", bootstrapPassword: "x".repeat(2000) })).rejects.toThrow();
     // A failed bootstrap must release the lock so a retry can succeed.
     const accounts = await openAccounts({ dataDir: dir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
     await accounts.close();
@@ -346,6 +351,18 @@ describe("server login rate limiting", () => {
     expect((await login(relay, "alice", WRONG)).status).toBe(401);
   });
 
+  it("re-checks the username lock before a queued scrypt run executes", async () => {
+    // A burst queues behind one slow slot; once two failures land, the queued
+    // attempts must refuse instead of verifying anyway.
+    const { relay } = await startServer({
+      limits: { scryptConcurrency: 1, scryptQueue: 64, userMaxFailures: 2, userWindowMs: 60_000, ipMaxAttempts: 1000 },
+    });
+    const responses = await Promise.all(Array.from({ length: 6 }, () => login(relay, "admin", WRONG)));
+    const statuses = responses.map((r) => r.status).sort();
+    expect(statuses.filter((s) => s === 401)).toHaveLength(2);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(4);
+  });
+
   it("returns 429 when the scrypt queue is full", async () => {
     const { relay } = await startServer({
       limits: { scryptConcurrency: 1, scryptQueue: 0, ipMaxAttempts: 1000, userMaxFailures: 1000 },
@@ -439,6 +456,50 @@ describe("relay passwd", () => {
     expect(unused.n).toBe(0);
     expect(used.n).toBe(1);
     verify.close();
+  });
+});
+
+describe("server CLI account mode", () => {
+  const mainPath = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+  const children = new Set<ChildProcess>();
+  afterEach(() => {
+    for (const child of children) child.kill("SIGKILL");
+    children.clear();
+  });
+
+  /** Runs `main.ts` until the ready line or exit; resolves with the log. */
+  function runMain(home: string, env: Record<string, string>): Promise<{ log: string; child: ChildProcess }> {
+    const child = spawn(process.execPath, [mainPath, "--public-origin", "https://relay.example.com", "--port", "0"], {
+      env: { HOME: home, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    children.add(child);
+    return new Promise((resolve, reject) => {
+      let log = "";
+      const onData = (chunk: Buffer) => {
+        log += chunk.toString();
+        if (log.includes('"event":"ready"')) resolve({ log, child });
+      };
+      child.stdout.on("data", onData);
+      child.stderr.on("data", onData);
+      child.on("exit", (code) => reject(new Error(`exited ${code}: ${log}`)));
+      setTimeout(() => reject(new Error(`no ready event: ${log}`)), 15_000);
+    });
+  }
+
+  it("reopens the default data dir after the bootstrap env vars are gone", async () => {
+    const home = await tempDir();
+    // First boot: env vars create the account under ~/.pinomad-server.
+    const first = await runMain(home, { PINOMAD_SERVER_USER: "admin", PINOMAD_SERVER_PASSWORD: GOOD_PASSWORD });
+    expect(first.log).toContain('"accounts":true');
+    first.child.kill("SIGTERM");
+    await once(first.child, "exit");
+
+    // Same command, no env vars: account mode must persist — the users already exist.
+    const second = await runMain(home, {});
+    expect(second.log).toContain('"accounts":true');
+    second.child.kill("SIGTERM");
+    await once(second.child, "exit");
   });
 });
 
