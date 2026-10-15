@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-13
+最后更新：2026-10-15
 
 ## 已完成
 
@@ -36,9 +36,13 @@
 2. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
    - 宿主直接调 Expo Push Service（`https://exp.host/--/api/v2/push/send`，默认不要鉴权），不经服务端，宿主上不放 Apple 密钥；APNs 密钥在 EAS 凭据里。移动端加 `expo-notifications`，要出新的 TestFlight 构建；
    - 推送只带对话标题和事件（"等你回答"、"完成"、"失败"），不带问题和回复内容。标题会经过 Expo 和 Apple，这是推送不走安全通道的代价；真要加密得写 iOS Notification Service Extension 解密，现在不做；
-   - App 拿到权限后经安全通道把 Expo push token 报给当前宿主，存进这台设备在 `pinomad.devices` 里的记录；吊销设备、Expo 回执 `DeviceNotRegistered` 时删掉；App 里的通知开关是客户端偏好，关掉就注销；
-   - 宿主复用 `packages/client` 的 `diffRunNotices`（等回答，子代理也算；顶层对话一轮完成或失败），推给所有登记了 token 的设备；App 在前台时不弹横幅；推送带宿主身份和对话 id，点开后切到那台宿主、打开那条对话；
+   - 推送标题只用 `pinomad.title` 里的正式标题（自动起名或手动改名），绝不回落到第一条用户消息——摘要的标题在起名前就是用户原话，会原样出现在锁屏、经过 Expo 和 Apple。"完成"等自动起名落地（最多十几秒）再发；"等你回答"、"失败"和等不到名字时用固定的 "PiNomad conversation"。开关旁写明标题会经过 Expo 和 Apple；
+   - token 存在宿主级 Durable 文档 `pinomad.push`（按设备公钥一条），不进 `pinomad.devices`：`devices` 流把整份设备表推给所有客户端，而不开 enhanced push security 时拿到 token 就能给那台手机发推送。这个文档不提供流；
+   - 协议 5.7 新增 `setPushToken({ token | null })`：只接受安全通道连接，登记到这条连接自己的设备公钥下；同一个事务里确认设备仍在设备表，吊销在同一个事务里删 token。参数结构错用 4400，未授权和 token 不合法回 `ok:false`（ADR-0018）；
+   - 宿主等对话摘要和索引的初始值都到齐后才建基线（重启不补发），没有 token 时也维护基线、不发外网请求；复用 `packages/client` 的 `diffRunNotices`（等回答，子代理也算；顶层对话一轮完成或失败）。每个 token 单独请求（不同 EAS project 的 token 混在一批会整批失败），发送和每次重试前重新读登记名单，状态已变的旧通知不再发；设短 `ttl`、请求超时和有界内存队列，不持久化发件箱。ticket 和尽力而为的 receipt 里的 `DeviceNotRegistered` 只在 token 没换过时删除。推送的 `data` 是 `{ hostKey, conversationId }`，以后只加可忽略的字段；
+   - App：通知开关按宿主分别设（客户端偏好）；连上、重连、回到前台时按偏好 `setPushToken`，失败在开关旁可见；token 监听器给的是 APNs token，要先换成 Expo token 再报；忘记宿主前先注销，没能注销时提示到宿主上吊销这台设备。App 在前台时只屏蔽当前宿主的推送横幅，其他宿主照常弹；点开推送先记下 `{ hostKey, conversationId }`，等那台宿主连上、数据就绪再打开，用完清掉最后一次 response；
    - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
+   - 拆两个 PR：协议 + 宿主（Linux），再移动端（mbp，堆在前一个上，出新的 TestFlight 构建）。设计经 critic 评审，不另写 ADR（ADR-0008 §9 已记下 Expo 和标题出安全通道的取舍）。
 3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
