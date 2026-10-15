@@ -151,7 +151,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
    第一个 TestFlight 构建 0.1.0（3）已经发出。
    真机上扫码配对和用主机名连接都已验证（2026-10-12）。
    接下来：正式图标（优先级不高）。改动面板进 M5；fork、子代理只读展示放在 MVP 之后。
-   原生 iOS 评估（还没决定，ADR-0017 暂不动）：觉得 Expo 版不够好看，先在独立私有仓库 `bubbleptr/AgentChatKit` 做 SwiftUI 的 agent 对话组件（iOS 26+ / macOS 26+），最重要的是流式 Markdown 和 agent trace；以后可能开源成组件库。第一版（PR #1）已有：只解析未闭合尾部的流式 Markdown（`swift-markdown` / cmark-gfm 解析，半截语法按预判显示）、trace 的通用模型（语义对照 `cot-view`）和折叠规则、SwiftUI 视图和回放用的 Demo App。接下来：逐词淡入的显示节奏、代码高亮、跨块选择；做出来后和 Expo 版并排对比，再决定要不要把 App 换成原生（换的话写新 ADR 取代 ADR-0017 §3）。
+   原生 iOS 评估（还没决定，ADR-0017 暂不动）：觉得 Expo 版不够好看，先在独立私有仓库 `bubbleptr/AgentChatKit` 做 SwiftUI 的 agent 对话组件（iOS 26+ / macOS 26+），最重要的是流式 Markdown 和 agent trace；以后可能开源成组件库。第一版（PR #1）已有：只解析未闭合尾部的流式 Markdown（`swift-markdown` / cmark-gfm 解析，半截语法按预判显示）、trace 的通用模型（语义对照 `cot-view`）和折叠规则、SwiftUI 视图和回放用的 Demo App。之后堆叠的 PR #2–#4：逐词淡入的显示节奏（一阵 token 在 0.25 秒内按词铺开，汉字逐字，`TextRenderer` 淡入）、常见语言的代码高亮、界面文案的简体中文。接下来：跨块选择；做出来后和 Expo 版并排对比，再决定要不要把 App 换成原生（换的话写新 ADR 取代 ADR-0017 §3）。
 - 设置界面（第一版已完成，PR #58–#61，ADR-0021）。宿主设置存在数据目录的 `settings.json`，没设过的项按键回落到 pi 的设置；凭据仍共用 pi 的 `auth.json`。任一设备改了，其他在线设备立刻看到。堆叠的四步：
   1. 宿主状态流的通用做法：协议里一份宿主流的表（流名 + 值类型 + 引入它的次版本号），网关用一条通用分支提供"内存值 + 完整快照"的流；`mcp` 的快照和订阅之间原本有一个会丢变化的空隙，顺带修掉。
   2. `models`、`auth` 两条流和 `logout` 调用（协议 5.1）：`HOST_STREAMS` / `CALL_SINCE` 就是 ADR-0018 的 `since` 表，客户端只订阅、等待宿主次版本号覆盖的流，调用不支持时提示升级宿主。宿主监视 `~/.pi/agent/auth.json` 所在目录，Pi CLI 登录或退出后调用 `getAvailable()` 刷新并推给客户端（`getAvailableSnapshot()` 不会自己刷新，以前要重启宿主）。
