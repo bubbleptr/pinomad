@@ -12,9 +12,9 @@ trace 用本库自己的通用模型，不引用 PiNomad 的类型；语义对�
 
 ## 开发和验证
 
-在 omarchy 上改代码，Swift 只能在 mbp 上构建：`scripts/mbp swift test` 会把工作区 rsync 到 mbp 的 `~/code/projects/AgentChatKit` 再在那边执行，跑完把 `Package.resolved` 拉回来。mbp 离线时没法构建和测试。
+Swift 只能在 macOS 上构建。`scripts/mbp swift test` 在 Mac 上直接在当前工作区执行；在其他系统上会把工作区 rsync 到 mbp 的 `~/code/projects/AgentChatKit` 再在那边执行，跑完把 `Package.resolved` 拉回来。mbp 离线时非 Mac 环境没法构建和测试。
 
-`scripts/demo 2 8.5` 在 mbp 上构建 Demo、装到已启动的 iPhone 17 Pro 模拟器并启动，启动后第 2 秒、第 8.5 秒各截一张图，拉回本机的 `.build/shots/`。改了视图要用它截图确认。
+`scripts/demo 2 8.5` 构建 Demo、装到已启动的 iPhone 17 Pro 模拟器并启动，启动后第 2 秒、第 8.5 秒各截一张图，放到 `.build/shots/`（非 Mac 上从 mbp 拉回）。改了视图要用它截图确认。
 
 测试只放在这几个边界上：
 

@@ -27,6 +27,14 @@ struct ToolCallRow: View {
                             .truncationMode(.tail)
                     }
                     Spacer(minLength: 0)
+                    if let diff = call.diffStat {
+                        HStack(spacing: 4) {
+                            Text("+\(diff.additions)").foregroundStyle(.green)
+                            Text("−\(diff.deletions)").foregroundStyle(.red)
+                        }
+                        .font(.caption)
+                        .monospacedDigit()
+                    }
                     if let duration = call.duration, call.state == .succeeded || call.state == .failed {
                         Text(duration.formatted(.units(allowed: [.minutes, .seconds, .milliseconds], width: .narrow, maximumUnitCount: 1)))
                             .font(.caption)
@@ -41,13 +49,9 @@ struct ToolCallRow: View {
             .accessibilityLabel(Text("\(call.name), \(stateLabel)", bundle: .module))
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let input = call.input, !input.isEmpty { DetailBox(text: input) }
-                    if let output = call.output, !output.isEmpty { DetailBox(text: output) }
-                    ForEach(call.children) { ToolCallRow(call: $0) }
-                }
-                .padding(.leading, 24)
-                .transition(.opacity)
+                ToolCallDetail(call: call)
+                    .padding(.leading, 24)
+                    .transition(.opacity)
             }
         }
     }
@@ -80,6 +84,20 @@ struct ToolCallRow: View {
         case .running: String(localized: "running", bundle: .module)
         case .succeeded: String(localized: "done", bundle: .module)
         case .failed: String(localized: "failed", bundle: .module)
+        }
+    }
+}
+
+/// A call's input and output, then any calls it made, one row each. Also
+/// the disclosure of a single-call batch, which skips the call's own row.
+struct ToolCallDetail: View {
+    let call: ToolCall
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let input = call.input, !input.isEmpty { DetailBox(text: input) }
+            if let output = call.output, !output.isEmpty { DetailBox(text: output) }
+            ForEach(call.children) { ToolCallRow(call: $0) }
         }
     }
 }

@@ -4,7 +4,8 @@ import Foundation
 public struct TraceSummary: Sendable, Equatable {
     public enum Headline: Sendable, Equatable {
         case thinking
-        case running(tool: String)
+        /// Making tool calls; the steps below name what is running.
+        case working
         /// Done, without calling a tool.
         case thought
         case worked
@@ -32,9 +33,7 @@ extension AgentTrace {
         case (.failed, _): headline = .failed
         case (.interrupted, _): headline = .interrupted
         case (_, .thinking): headline = .thinking
-        case (_, .acting):
-            let current = calls.last { $0.state == .running || $0.state == .streamingInput }
-            headline = current.map { .running(tool: $0.name) } ?? .thinking
+        case (_, .acting): headline = .working
         default: headline = calls.isEmpty ? .thought : .worked
         }
 

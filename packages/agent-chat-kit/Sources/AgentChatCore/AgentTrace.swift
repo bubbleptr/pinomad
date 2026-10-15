@@ -42,7 +42,8 @@ public struct AgentTrace: Sendable, Equatable {
 }
 
 public enum TraceStep: Sendable, Equatable, Identifiable {
-    case thinking(id: String, text: String, isLive: Bool)
+    /// `duration` is set once the step ends; the folded row reads it.
+    case thinking(id: String, text: String, isLive: Bool, duration: Duration? = nil)
     /// Text the model addressed to the user mid-run, before calling a tool.
     case interim(id: String, text: String)
     /// Consecutive tool calls of one model message.
@@ -50,7 +51,7 @@ public enum TraceStep: Sendable, Equatable, Identifiable {
 
     public var id: String {
         switch self {
-        case let .thinking(id, _, _), let .interim(id, _), let .tools(id, _): id
+        case let .thinking(id, _, _, _), let .interim(id, _), let .tools(id, _): id
         }
     }
 }
@@ -69,6 +70,8 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
     public var input: String?
     public var output: String?
     public var duration: Duration?
+    /// Line counts of an edit, when the call reports them.
+    public var diffStat: DiffStat?
     /// Calls made from inside this one, as a script calling other tools.
     public var children: [ToolCall]
 
@@ -79,6 +82,7 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         input: String? = nil,
         output: String? = nil,
         duration: Duration? = nil,
+        diffStat: DiffStat? = nil,
         children: [ToolCall] = []
     ) {
         self.id = id
@@ -87,6 +91,36 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         self.input = input
         self.output = output
         self.duration = duration
+        self.diffStat = diffStat
         self.children = children
+    }
+}
+
+/// Lines an edit added and removed.
+public struct DiffStat: Sendable, Equatable {
+    public var additions: Int
+    public var deletions: Int
+
+    public init(additions: Int, deletions: Int) {
+        self.additions = additions
+        self.deletions = deletions
+    }
+}
+
+/// How long a settled thinking step took, as its folded row reports it.
+public enum ThoughtLength: Sendable, Equatable {
+    /// Under a second: not worth a number.
+    case brief
+    case seconds(Int)
+}
+
+extension Duration {
+    /// Whole seconds, rounded; under one counts as brief rather than
+    /// claiming a second that was never spent, and a negative length — a
+    /// clock mistake, not a measurement — claims no number at all.
+    public var thoughtLength: ThoughtLength? {
+        let ms = Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15
+        if ms < 0 { return nil }
+        return ms < 1000 ? .brief : .seconds(Int((ms / 1000).rounded()))
     }
 }
