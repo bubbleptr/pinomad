@@ -1,0 +1,52 @@
+import Foundation
+
+/// The one line a trace shows when folded, or above its steps.
+public struct TraceSummary: Sendable, Equatable {
+    public enum Headline: Sendable, Equatable {
+        case thinking
+        case running(tool: String)
+        /// Done, without calling a tool.
+        case thought
+        case worked
+        case failed
+        case interrupted
+    }
+
+    public var headline: Headline
+    /// Whole seconds; ticks while the agent works, then stops.
+    public var elapsed: Duration?
+    /// Calls the model made itself; calls made from inside a tool are not counted.
+    public var toolCount: Int
+    public var failedToolCount: Int
+}
+
+extension AgentTrace {
+    public func summary(at now: Date) -> TraceSummary {
+        let calls = steps.flatMap { step -> [ToolCall] in
+            if case let .tools(_, calls) = step { calls } else { [] }
+        }
+        let working = phase == .thinking || phase == .acting
+
+        let headline: TraceSummary.Headline
+        switch (outcome, phase) {
+        case (.failed, _): headline = .failed
+        case (.interrupted, _): headline = .interrupted
+        case (_, .thinking): headline = .thinking
+        case (_, .acting):
+            let current = calls.last { $0.state == .running || $0.state == .streamingInput }
+            headline = current.map { .running(tool: $0.name) } ?? .thinking
+        default: headline = calls.isEmpty ? .thought : .worked
+        }
+
+        let end = working ? now : endedAt
+        let elapsed = startedAt.flatMap { start in
+            end.map { Duration.seconds(Int(max($0.timeIntervalSince(start), 0))) }
+        }
+        return TraceSummary(
+            headline: headline,
+            elapsed: elapsed,
+            toolCount: calls.count,
+            failedToolCount: calls.count { $0.state == .failed }
+        )
+    }
+}
