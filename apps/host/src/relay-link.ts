@@ -40,7 +40,7 @@ export function relayWsBase(origin: string): string {
 const REJECTION_REASONS: Record<number, (hostId: string) => string> = {
   [RELAY_CLOSE.badSignature]: () => `the relay rejected this host's registration signature — a version mismatch?`,
   [RELAY_CLOSE.hostNotAllowed]: (hostId) =>
-    `the relay does not allow this host; add --allow-host ${hostId} to the relay's arguments`,
+    `the server does not allow this host; join it to an account (\`pinomad join\`) or add --allow-host ${hostId} to the server's arguments`,
   [RELAY_CLOSE.replaced]: () => `the relay replaced this control connection — another process registered the same hostId`,
 };
 

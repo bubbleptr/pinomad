@@ -243,7 +243,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         return;
       }
       // Admission = static allowlist (legacy, migration window) or a host row
-      // bound to an account (ADR-0022; join lands in a later step).
+      // bound to an account (ADR-0022).
       if (!allowedHosts.has(frame.hostId) && accounts?.hasHost(frame.hostId) !== true) {
         socket.close(RELAY_CLOSE.hostNotAllowed);
         return;
