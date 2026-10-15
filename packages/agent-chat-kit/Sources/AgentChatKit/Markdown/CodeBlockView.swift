@@ -19,6 +19,7 @@ struct CodeBlockView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 SwiftUI.Text(code.hasSuffix("\n") ? String(code.dropLast()) : code)
                     .font(.callout.monospaced())
+                    .fadingTail()
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)

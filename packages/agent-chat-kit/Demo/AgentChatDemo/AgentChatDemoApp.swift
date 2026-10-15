@@ -28,7 +28,7 @@ struct DemoConversation: View {
 
             UserMessageView("Fix it, and keep the change small.")
             AgentTraceView(replay.trace)
-            MarkdownView(replay.answer)
+            StreamingMarkdownView(replay.answer)
         }
         .toolbar {
             Button("Replay", systemImage: "arrow.counterclockwise") {

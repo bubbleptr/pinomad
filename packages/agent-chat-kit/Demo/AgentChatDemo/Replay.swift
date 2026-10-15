@@ -1,4 +1,5 @@
 import AgentChatCore
+import AgentChatKit
 import Foundation
 import Observation
 
@@ -6,7 +7,7 @@ import Observation
 @MainActor @Observable
 final class Replay {
     private(set) var trace = AgentTrace(phase: .thinking, steps: [])
-    private(set) var answer = MarkdownStream()
+    let answer = StreamingMarkdown()
 
     func play() async {
         let start = Date()

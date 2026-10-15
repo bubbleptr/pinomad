@@ -10,9 +10,11 @@ struct MarkdownBlockView: View {
         case let paragraph as Paragraph:
             SwiftUI.Text(InlineText.attributed(paragraph))
                 .fixedSize(horizontal: false, vertical: true)
+                .fadingTail()
         case let heading as Heading:
             SwiftUI.Text(InlineText.attributed(heading))
                 .font(Self.font(ofHeading: heading.level))
+                .fadingTail()
                 .padding(.top, heading.level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
         case let code as CodeBlock:
@@ -29,6 +31,7 @@ struct MarkdownBlockView: View {
             .foregroundStyle(.secondary)
         case let table as Markdown.Table:
             TableView(table: table)
+                .environment(\.tailFade, nil)
         case is ThematicBreak:
             Divider().padding(.vertical, 4)
         case let html as HTMLBlock:
@@ -50,14 +53,18 @@ struct MarkdownBlockView: View {
     }
 }
 
-/// The block children of a container, stacked.
+/// The block children of a container, stacked. Only the last child can be
+/// the one still streaming in.
 struct BlockStack: View {
     let parent: any Markup
+    @Environment(\.tailFade) private var tailFade
 
     var body: some View {
+        let count = parent.childCount
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(parent.children.enumerated()), id: \.offset) { _, child in
+            ForEach(Array(parent.children.enumerated()), id: \.offset) { index, child in
                 MarkdownBlockView(markup: child)
+                    .environment(\.tailFade, index == count - 1 ? tailFade : nil)
             }
         }
     }
@@ -67,6 +74,7 @@ private struct ListView: View {
     let items: [ListItem]
     /// Number of the first item; nil for a bulleted list.
     let start: Int?
+    @Environment(\.tailFade) private var tailFade
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -75,6 +83,7 @@ private struct ListView: View {
                     marker(for: item, at: index)
                     BlockStack(parent: item)
                 }
+                .environment(\.tailFade, index == items.count - 1 ? tailFade : nil)
             }
         }
     }

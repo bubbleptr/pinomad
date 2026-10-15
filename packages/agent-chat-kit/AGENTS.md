@@ -5,7 +5,7 @@
 ## 布局
 
 - `AgentChatCore`：不依赖 SwiftUI。流式 Markdown 的增量解析和半截语法预判、agent trace 的数据模型和展示规则。解析交给 `swift-markdown`（cmark-gfm），流式这一层是自己写的。
-- `AgentChatKit`：SwiftUI 视图（`MarkdownView`、`AgentTraceView`、`Transcript`、`UserMessageView`），只依赖 `AgentChatCore`。
+- `AgentChatKit`：SwiftUI 视图（`MarkdownView`、`StreamingMarkdown` + `StreamingMarkdownView`、`AgentTraceView`、`Transcript`、`UserMessageView`），只依赖 `AgentChatCore`。逐词淡入用 `TextRenderer`，只作用在还在流式输出的最后一段文字上，靠环境值 `tailFade` 沿最后一个子块往下传。
 - `Demo/`：iOS Demo App，回放一段脚本化的 agent 运行（`Replay.swift`），用来截图验证视图。Xcode 工程是手写的，用了同步文件夹（Xcode 16+），往 `Demo/AgentChatDemo/` 加文件不用改工程。
 
 trace 用本库自己的通用模型，不引用 PiNomad 的类型；语义对照 PiNomad 的 `packages/client/src/cot-view.ts`（phase、step），由使用方写适配层。流式 Markdown 的行为对照 MyGo 的规格：https://mygo.egoist.dev/docs/ui/markdown
@@ -19,6 +19,7 @@ trace 用本库自己的通用模型，不引用 PiNomad 的类型；语义对�
 测试只放在这几个边界上：
 
 - 流式解析器（`MarkdownStream` 的 `append` / `finish` / `blocks`）：同一段文本不管怎么切分，结果都一样；已闭合的块不再变化；半截语法按预判显示；`finish()` 之后和 cmark-gfm 一次性解析的结果一致。
+- 显示节奏（`RevealSchedule`）：一阵 token 在追赶窗口内均匀铺开，显示的文字落后到达的不超过这个窗口，不会在到达之前显示，汉字一个字一步。
 - trace 的展示规则（自动展开和收起、摘要）。纯数据结构不测。
 - 视图不写单元测试，用 Demo App 在模拟器上截图验证。
 
