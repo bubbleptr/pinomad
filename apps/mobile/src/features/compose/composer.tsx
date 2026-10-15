@@ -8,20 +8,26 @@
 // to stop or queue.
 import { useRef, useState, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Menu } from "heroui-native";
+import { Menu, Separator } from "heroui-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { LinearTransition } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { useCSSVariable, useUniwind } from "uniwind";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons.tsx";
 import { GlassBackdrop, liquidGlass } from "../../shared/ui/glass.tsx";
 import { useKeyboardVisible } from "../../shared/lib/use-keyboard-visible.ts";
 import { LocationChip, LocationRow } from "../../entities/checkout/location-row.tsx";
+import { AttachmentStrip } from "../../entities/image/message-images.tsx";
+import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
+import { pasteClipboard, pickFromLibrary, takePhoto } from "../../entities/image/pick.ts";
+import type { ImageSource } from "../../entities/image/attachment-store.ts";
 import { ModelSheet } from "../../entities/model/model-sheet.tsx";
 import { PendingQuestions } from "../answer-question/pending-questions.tsx";
 import { SendSlot } from "./send-button.tsx";
@@ -59,11 +65,77 @@ function Grabber({ onDismiss }: { onDismiss(): void }) {
   );
 }
 
-function PlusMenu({ remote, connected }: { remote: RemoteDurable; connected: boolean }) {
+/** What the "+" menu needs to stage images: the store's verbs plus the model gate. */
+export interface AttachActions {
+  readonly accepts: boolean;
+  /** Why images are off, e.g. "Claude can't see images"; folded into the disabled label. */
+  readonly reason: string;
+  readonly freeSlots: number;
+  add(sources: ImageSource[]): void;
+  report(message: string): void;
+}
+
+function AttachItems({ attach, defer }: { attach: AttachActions; defer(action: () => void): void }) {
+  // Empty results mean the user cancelled; failures carry the reason to show.
+  const act = (pick: () => Promise<ImageSource[]>) => (): void => {
+    defer(() => {
+      void pick().then(
+        (sources) => {
+          if (sources.length > 0) attach.add(sources);
+        },
+        (failure: unknown) =>
+          attach.report(failure instanceof Error ? failure.message : String(failure)),
+      );
+    });
+  };
+  if (!attach.accepts) {
+    return (
+      <Menu.Item isDisabled>
+        <Menu.ItemTitle>Add images… ({attach.reason} can't see images)</Menu.ItemTitle>
+      </Menu.Item>
+    );
+  }
+  return (
+    <>
+      <Menu.Item onPress={act(() => pickFromLibrary(attach.freeSlots))}>
+        <Menu.ItemTitle>Photo Library</Menu.ItemTitle>
+      </Menu.Item>
+      <Menu.Item onPress={act(takePhoto)}>
+        <Menu.ItemTitle>Take Photo</Menu.ItemTitle>
+      </Menu.Item>
+      <Menu.Item onPress={act(pasteClipboard)}>
+        <Menu.ItemTitle>Paste Image</Menu.ItemTitle>
+      </Menu.Item>
+    </>
+  );
+}
+
+export function PlusMenu({
+  remote,
+  connected,
+  attach,
+}: {
+  /** Omitted on the draft screen, where there is no conversation to compact. */
+  remote?: RemoteDurable;
+  connected: boolean;
+  attach: AttachActions;
+}) {
   const [surfaceTertiary, muted] = useCSSVariable(["--surface-tertiary", "--muted"]) as Array<string | undefined>;
   const glass = liquidGlass();
+  // Menu items record what to run; the pick runs once the menu reports
+  // closed. The portal subtree unmounts with the close commit but its overlay
+  // window tears down a frame later, and presenting a system picker while it
+  // is still dismissing drops the presentation silently — hence the next
+  // frame rather than inside onOpenChange itself.
+  const afterClose = useRef<(() => void) | null>(null);
+  const onMenuOpenChange = (open: boolean): void => {
+    if (open) return;
+    const action = afterClose.current;
+    afterClose.current = null;
+    if (action !== null) requestAnimationFrame(action);
+  };
   return (
-    <Menu>
+    <Menu onOpenChange={onMenuOpenChange}>
       <Menu.Trigger
         accessibilityRole="button"
         accessibilityLabel="More actions"
@@ -79,13 +151,27 @@ function PlusMenu({ remote, connected }: { remote: RemoteDurable; connected: boo
       <Menu.Portal>
         <Menu.Overlay />
         <Menu.Content presentation="popover" placement="top" align="start" width={220}>
-          <Menu.Item isDisabled={!connected} onPress={() => void remote.controller.compact(undefined)}>
-            <Menu.ItemTitle>Compact conversation</Menu.ItemTitle>
-          </Menu.Item>
+          <AttachItems attach={attach} defer={(fn) => (afterClose.current = fn)} />
+          {remote === undefined ? null : (
+            <>
+              <Separator style={{ marginVertical: 4 }} />
+              <Menu.Item isDisabled={!connected} onPress={() => void remote.controller.compact(undefined)}>
+                <Menu.ItemTitle>Compact conversation</Menu.ItemTitle>
+              </Menu.Item>
+            </>
+          )}
         </Menu.Content>
       </Menu.Portal>
     </Menu>
   );
+}
+
+/** Staged attachments as ComposeBar sees them: state in, remove out. */
+export interface ComposeAttachments {
+  readonly images: readonly MessageImage[];
+  readonly pending: boolean;
+  readonly error: string | null;
+  onRemove(index: number): void;
 }
 
 export function ComposeBar({
@@ -96,6 +182,7 @@ export function ComposeBar({
   onStop,
   expanded = false,
   autoFocus = false,
+  attachments,
   startAction,
   modelAction,
   footer,
@@ -104,11 +191,12 @@ export function ComposeBar({
   busy?: boolean;
   placeholder?: string;
   /** Returning a promise delays the clear until it resolves; rejection keeps the text. */
-  onSubmit(text: string, whenBusy: "steer" | "followUp"): void | Promise<void>;
+  onSubmit(text: string, whenBusy: "steer" | "followUp", images: readonly MessageImage[]): void | Promise<void>;
   onStop?(): void;
   /** Force the expanded card (new-conversation screen) regardless of focus. */
   expanded?: boolean;
   autoFocus?: boolean;
+  attachments?: ComposeAttachments;
   /** The leading + affordance; omitted where there is nothing to put behind it. */
   startAction?: ReactNode;
   /** The model · thinking capsule; expanded only, right after startAction. */
@@ -125,11 +213,16 @@ export function ComposeBar({
     "--muted",
   ]) as Array<string | undefined>;
   const dark = useUniwind().theme === "dark";
-  const isExpanded = expanded || focused;
-  const empty = text.trim() === "";
+  const staged = attachments?.images ?? [];
+  const preparing = attachments?.pending ?? false;
+  const attachError = attachments?.error ?? null;
+  // Staged or preparing images and problems keep the card open: the
+  // collapsed capsule has nowhere to show them.
+  const isExpanded = expanded || focused || staged.length > 0 || preparing || attachError !== null;
+  const empty = text.trim() === "" && staged.length === 0;
   const send = (whenBusy: "steer" | "followUp"): void => {
-    if (disabled || empty) return;
-    const result = onSubmit(text, whenBusy);
+    if (disabled || empty || preparing) return;
+    const result = onSubmit(text, whenBusy, staged);
     if (result === undefined) {
       setText("");
       return;
@@ -139,7 +232,10 @@ export function ComposeBar({
       () => {},
     );
   };
-  const sendSlot = <SendSlot hasText={!empty} busy={busy} disabled={disabled} onSend={send} onStop={onStop} />;
+  const sendSlot = (
+    // preparing dims only the send path; Stop stays tappable during a run.
+    <SendSlot hasText={!empty} busy={busy} disabled={disabled} sendDisabled={preparing} onSend={send} onStop={onStop} />
+  );
   const glass = liquidGlass();
   return (
     <Animated.View
@@ -156,6 +252,9 @@ export function ComposeBar({
           sits behind the fixed tree so the TextInput mount rule is untouched. */}
       {glass ? <GlassBackdrop radius={isExpanded ? 28 : 26} /> : null}
       {isExpanded ? <Grabber onDismiss={() => inputRef.current?.blur()} /> : null}
+      {isExpanded && attachments !== undefined ? (
+        <AttachmentStrip images={staged} pending={preparing} onRemove={attachments.onRemove} />
+      ) : null}
       <View style={[styles.mainRow, isExpanded ? null : styles.mainRowCollapsed]}>
         {isExpanded ? null : startAction}
         <TextInput
@@ -179,6 +278,11 @@ export function ComposeBar({
           model sheet inside modelAction survives Keyboard.dismiss() blurring
           the input — blur collapses the card, and an unmount would kill the
           open sheet. */}
+      {isExpanded && attachError !== null ? (
+        <Text className="text-danger" style={styles.attachError} testID="composer-attach-error">
+          {attachError}
+        </Text>
+      ) : null}
       <View style={[styles.actionsRow, isExpanded ? undefined : styles.hidden]}>
         {startAction}
         {modelAction}
@@ -212,6 +316,16 @@ export function ConversationComposer({
   const isProject = view.home?.kind === "project";
   const checkout = view.checkout;
   const glass = liquidGlass();
+  const model = summaryOf(view.models, agent?.model);
+  const accepts = model?.images === true;
+  const { images, pending, error, freeSlots, add, remove, clear, report } = useImageAttachments(accepts);
+  const attach: AttachActions = {
+    accepts,
+    reason: model?.name ?? agent?.model?.modelId ?? "This model",
+    freeSlots,
+    add,
+    report,
+  };
   return (
     <View
       style={[styles.floating, { pointerEvents: "box-none" }, { paddingBottom: 8 + (keyboardVisible ? 0 : insets.bottom) }]}
@@ -233,7 +347,9 @@ export function ConversationComposer({
             <View key={item.id} className={glass ? undefined : "bg-surface"} style={[styles.queueRow, glass ? styles.noEdge : { borderColor: border }]}>
               {glass ? <GlassBackdrop radius={14} /> : null}
               <Text className="text-foreground" style={{ flex: 1, fontSize: 13 }} numberOfLines={1}>
-                {item.text}
+                {item.imageCount === 0
+                  ? item.text
+                  : `${item.text === "" ? "" : `${item.text} · `}${item.imageCount} ${item.imageCount === 1 ? "image" : "images"}`}
               </Text>
               <Text className="text-muted" style={{ fontSize: 12 }}>
                 {QUEUE_TAGS[item.mode]}
@@ -246,9 +362,13 @@ export function ConversationComposer({
         disabled={!connected}
         busy={busy}
         placeholder={busy ? "Follow up…" : "Ask the agent…"}
-        onSubmit={(text, whenBusy) => void remote.controller.submit(text, whenBusy)}
+        attachments={{ images, pending, error, onRemove: remove }}
+        onSubmit={(text, whenBusy, sendImages) => {
+          void remote.controller.submit(text, whenBusy, { images: sendImages });
+          clear();
+        }}
         onStop={() => void remote.controller.abort()}
-        startAction={<PlusMenu remote={remote} connected={connected} />}
+        startAction={<PlusMenu remote={remote} connected={connected} attach={attach} />}
         modelAction={
           agent === undefined ? undefined : (
             <ModelSheet
@@ -387,6 +507,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 4,
+  },
+  attachError: {
+    fontSize: 13,
+    paddingTop: 2,
   },
   queueScroll: {
     maxHeight: 104,

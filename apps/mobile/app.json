@@ -22,9 +22,17 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "PiNomad scans a host's pairing QR code.",
+          "cameraPermission": "PiNomad uses the camera to scan a host's pairing QR code and attach photos to messages.",
           "microphonePermission": false,
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PiNomad attaches photos from your library to messages.",
+          "cameraPermission": "PiNomad uses the camera to scan a host's pairing QR code and attach photos to messages.",
+          "microphonePermission": false
         }
       ]
     ],

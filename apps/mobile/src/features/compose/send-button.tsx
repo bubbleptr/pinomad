@@ -122,12 +122,16 @@ export function SendSlot({
   hasText,
   busy,
   disabled,
+  sendDisabled = false,
   onSend,
   onStop,
 }: {
   hasText: boolean;
   busy: boolean;
   disabled: boolean;
+  /** Gates only the send gestures/dim — Stop must stay live while it is set
+      (e.g. attachments preparing during a run). */
+  sendDisabled?: boolean;
   onSend(mode: "steer" | "followUp"): void;
   onStop?(): void;
 }) {
@@ -170,7 +174,7 @@ export function SendSlot({
 
   const pan = Gesture.Pan()
     .activateAfterLongPress(300)
-    .enabled(busy && !disabled)
+    .enabled(busy && !disabled && !sendDisabled)
     .onStart(() => {
       "worklet";
       lastHover.value = -1;
@@ -194,7 +198,7 @@ export function SendSlot({
       scheduleOnRN(closeWheel);
     });
   const tap = Gesture.Tap()
-    .enabled(!disabled)
+    .enabled(!disabled && !sendDisabled)
     .onEnd(() => {
       "worklet";
       scheduleOnRN(tapSend);
@@ -232,8 +236,11 @@ export function SendSlot({
           accessibilityActions={
             busy ? [{ name: "activate" }, { name: "steer", label: "Send as steer" }] : [{ name: "activate" }]
           }
-          onAccessibilityAction={(e) => onSend(e.nativeEvent.actionName === "steer" ? "steer" : "followUp")}
-          style={[styles.circle, { backgroundColor: foreground }, disabled ? styles.dimmed : null]}
+          onAccessibilityAction={(e) => {
+            if (disabled || sendDisabled) return;
+            onSend(e.nativeEvent.actionName === "steer" ? "steer" : "followUp");
+          }}
+          style={[styles.circle, { backgroundColor: foreground }, disabled || sendDisabled ? styles.dimmed : null]}
         >
           {wheelOpen ? <Cancel size={20} color={background} /> : <ArrowUp size={20} color={background} />}
         </Animated.View>

@@ -5,14 +5,17 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import { Menu, Separator } from "heroui-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Home } from "@pinomad/protocol/organization.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { useActiveRemote } from "../shared/lib/active-remote.ts";
 import { useDurableView } from "../shared/lib/use-remote.ts";
 import { createAndShow } from "../shared/lib/conversation-commands.ts";
 import { useKeyboardVisible } from "../shared/lib/use-keyboard-visible.ts";
 import { takeAddedProject } from "../shared/lib/pending-project.ts";
-import { ComposeBar } from "../features/compose/composer.tsx";
+import { ComposeBar, PlusMenu } from "../features/compose/composer.tsx";
 import { LocationChip, LocationRow } from "../entities/checkout/location-row.tsx";
+import { useImageAttachments } from "../entities/image/use-image-attachments.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { ModelSheet } from "../entities/model/model-sheet.tsx";
 import { useDraftModelPick } from "../entities/model/use-draft-model-pick.ts";
 import { ChatAdd, Computer, FolderClosed, FolderLibrary } from "../shared/ui/icons.tsx";
@@ -128,16 +131,20 @@ function NewConversationBody({ remote }: { remote: RemoteDurable }) {
 
   const projects = view.organized.projects.map((entry) => entry.project);
   const connected = view.connection === "connected";
+  const model = summaryOf(view.models, pick.model);
+  const accepts = model?.images === true;
+  const { images, pending, error, freeSlots, add, remove, report } = useImageAttachments(accepts);
 
   // Failure rejects so ComposeBar keeps the draft; the notice toast carries
   // the host's reason.
-  const send = async (text: string): Promise<void> => {
+  const send = async (text: string, sendImages: readonly MessageImage[]): Promise<void> => {
     setSending(true);
     try {
       const id = await createAndShow(remote, home, text, {
         ...(home.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
         ...(pick.model === undefined ? {} : { model: pick.model }),
         thinkingLevel: pick.level,
+        ...(sendImages.length === 0 ? {} : { images: sendImages }),
       });
       router.replace(`/conversation/${id}`);
     } finally {
@@ -165,7 +172,20 @@ function NewConversationBody({ remote }: { remote: RemoteDurable }) {
             expanded
             autoFocus
             placeholder="Do anything with Pi"
-            onSubmit={(text) => send(text)}
+            onSubmit={(text, _whenBusy, sendImages) => send(text, sendImages)}
+            attachments={{ images, pending, error, onRemove: remove }}
+            startAction={
+              <PlusMenu
+                connected={connected}
+                attach={{
+                  accepts,
+                  reason: model?.name ?? pick.model?.modelId ?? "This model",
+                  freeSlots,
+                  add,
+                  report,
+                }}
+              />
+            }
             modelAction={
               <ModelSheet
                 models={view.models}
