@@ -125,7 +125,32 @@ pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pino
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
 
-HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+#### 宿主加入账号（join / leave）
+
+在已登录的会话里调 `POST /api/join-tokens` 拿一次性令牌（10 分钟有效，只能用一次），然后在要加入的机器上跑：
+
+```sh
+npm i -g pinomad            # 已经装好就跳过
+pinomad join https://relay.example.com <token> [--name 显示名]
+```
+
+`join` 依次做：建好宿主的 Ed25519 登记密钥和 Noise 密钥（已有就复用）；经一条一次性操作连接向服务端登记（这条连接不会顶替正在跑的控制连接）；把服务端地址写进 `<数据目录>/server.json`；然后安装宿主服务——已安装就重写服务定义、去掉旧的 `--relay` 参数——并按 ADR-0009 等空闲重启。输出会打印宿主指纹（hostId）和加入的账号名。令牌响应丢了就重新生成一个再跑一遍，重复 join 同一台宿主是幂等的。
+
+```sh
+pinomad leave [--data-dir DIR]
+```
+
+`leave` 向服务端解绑这台宿主（服务端会立刻断开它现存的控制连接），删掉本地 `server.json`，重写服务定义去掉 `--relay` 后等空闲重启。服务端不在线时本地文件照样删，但会明确提示服务端的绑定记录没清掉。
+
+`server.json` 和 `--relay` 参数表达同一个东西；宿主启动时两者都给出且不一致会直接报错。对着没开账号的旧服务端跑 `join` 会得到明确报错（先探测 `GET /api/me`），不会误报成功。
+
+##### 从 `--allow-host` + `--relay` 迁移
+
+1. 服务端升级到有账号的版本，配好 `--data-dir`（挂持久卷）和首次启动的 `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD`；`--allow-host` 先留着，两种准入可以并存。
+2. 在每台宿主上 `pinomad join <origin> <token>`。join 会把服务定义里的 `--relay` 摘掉，重启后宿主经账号绑定登记。
+3. 确认宿主在线（`pinomad service logs`，或连 `wss://<origin>/c/<hostId>` 看会不会以 4604 关闭）之后，把 `--allow-host` 从服务端参数里删掉。
+
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。服务端没开账号（纯 `--allow-host` 模式）时 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端可据此探测。
 
