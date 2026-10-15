@@ -60,12 +60,7 @@ struct CopyButton: View {
 
     var body: some View {
         Button {
-            #if os(iOS)
-            UIPasteboard.general.string = text
-            #else
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            #endif
+            Pasteboard.copy(text)
             copied = true
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")

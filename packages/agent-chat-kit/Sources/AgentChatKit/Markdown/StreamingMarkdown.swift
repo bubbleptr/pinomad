@@ -11,6 +11,9 @@ public final class StreamingMarkdown {
     /// Whether words are still revealing or fading in.
     public private(set) var isAnimating = false
 
+    /// All the Markdown that has arrived, revealed or not.
+    public var markdown: String { source }
+
     @ObservationIgnored private var source = ""
     @ObservationIgnored private var schedule: RevealSchedule
     @ObservationIgnored private let paced: Bool
