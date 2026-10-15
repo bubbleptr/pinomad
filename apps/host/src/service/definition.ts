@@ -86,6 +86,17 @@ export function installSpec(argv: readonly string[], inputs: ServiceInputs): Ser
 export const launchdPlistPath = (home: string): string => join(home, "Library", "LaunchAgents", "pinomad.host.plist");
 export const systemdUnitPath = (home: string): string => join(home, ".config", "systemd", "user", "pinomad.service");
 
+/** Reads `--flag value` / `--flag=value` out of a host-args list; last occurrence wins. */
+export function argValue(args: readonly string[], flag: string): string | undefined {
+  let value: string | undefined;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === flag) value = args[i + 1];
+    else if (arg.startsWith(`${flag}=`)) value = arg.slice(flag.length + 1);
+  }
+  return value;
+}
+
 /** Drops `--relay <value>` and `--relay=<value>` pairs — join/leave rewrite the definition without it. */
 export function withoutRelayArgs(args: readonly string[]): string[] {
   const out: string[] = [];

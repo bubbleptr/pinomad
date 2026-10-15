@@ -12,6 +12,7 @@ import { startRelay, type Relay } from "@pinomad/relay/src/relay.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
+import { probeServerAccounts } from "../src/cli/server-ops.ts";
 import { readServerConfig } from "../src/server-config.ts";
 import type { ServiceSpec } from "../src/service/definition.ts";
 import type { ServiceManager } from "../src/service/manager.ts";
@@ -182,6 +183,37 @@ describe("joinServer", () => {
       joinServer({ origin: started.origin, token, dataDir: again.path }, { manager: fakeManager().manager }),
     ).rejects.toThrow(/invalid|spent/i);
   });
+
+  it("refuses to spend the token when the installed service belongs to another data dir", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const token = await joinToken(started);
+    // The single service slot is occupied by a host on /srv/pinomad.
+    const fake = fakeManager(seededSpec("/srv/pinomad", ["--relay", "https://old.example.com"]));
+    await expect(
+      joinServer({ origin: started.origin, token, dataDir: data.path }, { manager: fake.manager }),
+    ).rejects.toThrow(/srv\/pinomad/);
+    // The token is unspent and the definition untouched.
+    expect(fake.installs).toHaveLength(0);
+    const db = new DatabaseSync(started.accounts.dbPath);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM hosts").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT used_at AS u FROM join_tokens").get() as { u: number | null }).u).toBeNull();
+    db.close();
+  });
+
+  it("refuses plaintext origins for account operations (loopback aside)", async () => {
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager();
+    await expect(
+      joinServer({ origin: "http://relay.example.com", token: "tok", dataDir: data.path }, { manager: fake.manager }),
+    ).rejects.toThrow(/https/);
+    await expect(
+      joinServer({ origin: "ws://relay.example.com", token: "tok", dataDir: data.path }, { manager: fake.manager }),
+    ).rejects.toThrow(/https/);
+    expect(await readServerConfig(data.path)).toBeUndefined();
+  });
 });
 
 describe("leaveServer", () => {
@@ -221,6 +253,50 @@ describe("leaveServer", () => {
     const data = await tempDir();
     defer(data.remove);
     await expect(leaveServer({ dataDir: data.path }, { manager: fakeManager().manager })).rejects.toThrow(/not joined/);
+  });
+
+  it("leaves a service bound to another data dir untouched", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const token = await joinToken(started);
+    // Join first with no service, then pretend the slot belongs elsewhere.
+    await joinServer({ origin: started.origin, token, dataDir: data.path }, { manager: fakeManager().manager });
+    const foreign = fakeManager(seededSpec("/srv/pinomad", ["--relay", "https://x"]));
+    const outcome = await leaveServer({ dataDir: data.path }, { manager: foreign.manager });
+    expect(outcome.warnings).toEqual([]);
+    expect(outcome.notes.join(" ")).toContain("/srv/pinomad");
+    expect(foreign.installs).toHaveLength(0);
+    expect(await readServerConfig(data.path)).toBeUndefined();
+  });
+
+  it("warns when the service definition can't be read", async () => {
+    const data = await tempDir();
+    defer(data.remove);
+    await loadRelayKey(data.path);
+    await writeFile(join(data.path, "server.json"), JSON.stringify({ origin: "http://127.0.0.1:1" }));
+    const broken = fakeManager(seededSpec(data.path, []));
+    broken.manager = { ...broken.manager, read: async () => { throw new Error("corrupt unit"); } };
+    const outcome = await leaveServer({ dataDir: data.path }, { manager: broken.manager });
+    expect(outcome.warnings.join(" ")).toMatch(/corrupt unit/);
+    expect(await readServerConfig(data.path)).toBeUndefined();
+  });
+});
+
+describe("probeServerAccounts", () => {
+  const fakeFetch = (status: number, body?: string): typeof fetch =>
+    (async () => new Response(body ?? "", { status })) as typeof fetch;
+
+  it("reads the API's own answers, treats 404 as no-accounts, and 5xx as unreachable", async () => {
+    expect(await probeServerAccounts("https://x", fakeFetch(401))).toBe("enabled");
+    expect(await probeServerAccounts("https://x", fakeFetch(200, JSON.stringify({ user: { username: "a" } })))).toBe("enabled");
+    // An old server's SPA fallback is a 200 without an account JSON.
+    expect(await probeServerAccounts("https://x", fakeFetch(200, "<html>app</html>"))).toBe("disabled");
+    expect(await probeServerAccounts("https://x", fakeFetch(404, '{"error":"accounts_disabled"}'))).toBe("disabled");
+    // A proxy's failure says nothing about whether the server has accounts.
+    expect(await probeServerAccounts("https://x", fakeFetch(502))).toBe("unreachable");
+    expect(await probeServerAccounts("https://x", fakeFetch(403))).toBe("unreachable");
+    expect(await probeServerAccounts("https://x", () => Promise.reject(new Error("ECONNREFUSED")) as never)).toBe("unreachable");
   });
 });
 

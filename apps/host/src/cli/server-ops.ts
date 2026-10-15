@@ -19,9 +19,30 @@ import { relayWsBase } from "../relay-link.ts";
 export type ServerProbe = "enabled" | "disabled" | "unreachable";
 
 /**
+ * Account operations are TLS-only (ADR-0022): a plaintext ws:// join would hand
+ * the one-use token to anyone on the path — the challenge signature proves the
+ * host key but authenticates nothing about the server. Loopback http stays for
+ * local development.
+ */
+export function assertSecureServerOrigin(origin: string): void {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    throw new Error(`not a URL: ${origin}`);
+  }
+  const host = url.hostname;
+  const loopback = host === "localhost" || host.endsWith(".localhost") || host.startsWith("127.") || host === "::1" || host === "[::1]";
+  if (url.protocol === "https:" || (url.protocol === "http:" && loopback)) return;
+  throw new Error(`account operations need an https origin (loopback http allowed for development) — got ${origin}`);
+}
+
+/**
  * Whether the origin runs server accounts. `enabled` needs the account API's
- * own answer (401 unauthenticated, or a JSON user); an SPA page, a plain 404,
- * or `accounts_disabled` all mean "no accounts here".
+ * own answer (401 unauthenticated, or a JSON user); a 404 (`accounts_disabled`,
+ * or an old server with no /api at all) or an SPA page mean "no accounts".
+ * Anything else — 502 through the proxy, a WAF's 403 — is "unreachable": we
+ * can't tell, so leave must not mistake it for a clean unbind.
  */
 export async function probeServerAccounts(origin: string, fetchImpl: typeof fetch = fetch): Promise<ServerProbe> {
   let response: Response;
@@ -35,7 +56,7 @@ export async function probeServerAccounts(origin: string, fetchImpl: typeof fetc
     const body = (await response.json().catch(() => undefined)) as { user?: unknown } | undefined;
     return typeof body?.user === "object" && body.user !== null ? "enabled" : "disabled";
   }
-  return "disabled";
+  return response.status === 404 ? "disabled" : "unreachable";
 }
 
 export type ServerOpResult =
@@ -72,6 +93,7 @@ export async function runServerOperation(options: {
   readonly timeoutMs?: number;
 }): Promise<ServerOpResult> {
   const origin = options.origin.replace(/\/+$/, "");
+  assertSecureServerOrigin(origin);
   const hostId = relayHostId(options.signingKey.publicKey);
   const timeoutMs = options.timeoutMs ?? 10_000;
   const socket = new WebSocket(`${relayWsBase(origin)}/host`, { handshakeTimeout: timeoutMs });

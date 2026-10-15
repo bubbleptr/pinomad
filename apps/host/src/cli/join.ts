@@ -13,9 +13,9 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { loadHostKey, loadRelayKey } from "../devices.ts";
 import { commandHint, hostEntry } from "../distribution.ts";
 import { writeServerConfig } from "../server-config.ts";
-import { installSpec, withoutRelayArgs, type ServiceSpec } from "../service/definition.ts";
+import { argValue, installSpec, withoutRelayArgs, type ServiceSpec } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
-import { probeServerAccounts, runServerOperation } from "./server-ops.ts";
+import { assertSecureServerOrigin, probeServerAccounts, runServerOperation } from "./server-ops.ts";
 import { restartService } from "./service.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
 
@@ -42,12 +42,27 @@ export async function joinServer(
 ): Promise<JoinOutcome> {
   const origin = args.origin.replace(/\/+$/, "");
   const dataDir = resolve(args.dataDir);
+  // TLS-only before anything else: the token must never ride plaintext ws.
+  assertSecureServerOrigin(origin);
   await mkdir(dataDir, { recursive: true });
   // Both identities exist before the server is asked: the join signature binds
   // the Noise key, and a fresh install needs them either way.
   const signingKey = await loadRelayKey(dataDir);
   const hostKey = await loadHostKey(dataDir);
   const hostId = relayHostId(signingKey.publicKey);
+
+  // Check the service slot before spending the token: there's exactly one
+  // unit, and rewriting a definition whose data dir is another host's would
+  // take that host offline and leave this join unserved.
+  const manager = deps?.manager ?? serviceManager();
+  const installed = await manager.state().then((state) => state.installed, () => false);
+  const previous = installed ? await manager.read() : undefined;
+  if (previous !== undefined && resolve(previous.dataDir) !== dataDir) {
+    throw new Error(
+      `the installed service uses a different data dir (${previous.dataDir}); ` +
+        `join it with --data-dir ${previous.dataDir} or uninstall the service first`,
+    );
+  }
 
   const probe = await probeServerAccounts(origin, deps?.fetch);
   if (probe === "unreachable") throw new Error(`cannot reach ${origin} — check the address and that the server is up`);
@@ -80,7 +95,6 @@ export async function joinServer(
   let service: JoinOutcome["service"];
   try {
     await writeServerConfig(dataDir, { origin });
-    const manager = deps?.manager ?? serviceManager();
     const freshSpec = installSpec(["--data-dir", dataDir], {
       execPath: process.execPath,
       env: process.env,
@@ -89,19 +103,20 @@ export async function joinServer(
       mainPath: hostEntry.script,
       entryArgs: hostEntry.args,
     });
-    const installed = await manager.state().then((state) => state.installed, () => false);
     if (!installed) {
       await manager.install(freshSpec);
       service = "installed";
     } else {
       // server.json now carries the origin — drop a pinned --relay so a later
       // re-join elsewhere can't contradict the definition.
-      const previous = await manager.read();
       const spec: ServiceSpec =
         previous === undefined ? freshSpec : { ...previous, hostArgs: withoutRelayArgs(previous.hostArgs) };
+      // Idle-wait must knock on the port the service actually listens on —
+      // the default 7420 would look dead and force a mid-task restart.
+      const port = argValue(spec.hostArgs, "--port");
       const code = await restartService({
         force: false,
-        argv: ["--data-dir", dataDir],
+        argv: ["--data-dir", dataDir, ...(port === undefined ? [] : ["--url", `ws://127.0.0.1:${port}`])],
         manager,
         restart: async () => {
           await manager.install(spec);

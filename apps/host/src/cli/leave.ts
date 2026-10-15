@@ -10,9 +10,9 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { loadHostKey, loadRelayKey } from "../devices.ts";
 import { commandHint } from "../distribution.ts";
 import { readServerConfig, removeServerConfig } from "../server-config.ts";
-import { withoutRelayArgs } from "../service/definition.ts";
+import { argValue, withoutRelayArgs } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
-import { probeServerAccounts, runServerOperation } from "./server-ops.ts";
+import { assertSecureServerOrigin, probeServerAccounts, runServerOperation } from "./server-ops.ts";
 import { restartService } from "./service.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
 
@@ -44,6 +44,8 @@ export async function leaveServer(
   const notes: string[] = [];
   let hostId: string | undefined;
 
+  // The leave frame carries a signature worth protecting — same TLS rule as join.
+  assertSecureServerOrigin(origin);
   if (await stat(join(dataDir, "relay-key")).then(() => true, () => false)) {
     const signingKey = await loadRelayKey(dataDir);
     const hostKey = await loadHostKey(dataDir);
@@ -81,17 +83,23 @@ export async function leaveServer(
   await removeServerConfig(dataDir);
 
   const manager = deps?.manager ?? serviceManager();
-  const installed = await manager.state().then((state) => state.installed, () => false);
-  if (!installed) {
-    notes.push("no service installed — restart any running host so it stops dialing the server");
-  } else {
-    try {
-      const previous = await manager.read();
+  try {
+    const installed = await manager.state().then((state) => state.installed, () => false);
+    const previous = installed ? await manager.read() : undefined;
+    if (!installed) {
+      notes.push("no service installed — restart any running host so it stops dialing the server");
+    } else if (previous !== undefined && resolve(previous.dataDir) !== dataDir) {
+      // The single service slot belongs to another data dir — not ours to
+      // rewrite or restart.
+      notes.push(`the installed service uses ${previous.dataDir}, not ${dataDir} — left untouched`);
+    } else {
       const stripped = previous === undefined ? undefined : { ...previous, hostArgs: withoutRelayArgs(previous.hostArgs) };
       const rewriting = stripped !== undefined && stripped.hostArgs.length !== previous!.hostArgs.length;
+      // Idle-wait knocks on the service's own port, not the default 7420.
+      const port = argValue(previous?.hostArgs ?? [], "--port");
       const code = await restartService({
         force: false,
-        argv: ["--data-dir", dataDir],
+        argv: ["--data-dir", dataDir, ...(port === undefined ? [] : ["--url", `ws://127.0.0.1:${port}`])],
         manager,
         ...(rewriting
           ? {
@@ -102,9 +110,9 @@ export async function leaveServer(
           : {}),
       });
       if (code !== 0) warnings.push("the service restart did not finish — check `service status`");
-    } catch (error) {
-      warnings.push(`could not update the service definition: ${message(error)} — remove --relay from it and restart manually`);
     }
+  } catch (error) {
+    warnings.push(`could not update the service definition: ${message(error)} — remove --relay from it and restart manually`);
   }
   return {
     origin,
