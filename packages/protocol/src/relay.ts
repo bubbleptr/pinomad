@@ -22,10 +22,38 @@ export const RELAY_CLOSE = {
 export type RelayToHost =
   | { readonly t: "challenge"; readonly nonce: string }
   | { readonly t: "registered" }
-  | { readonly t: "incoming"; readonly connId: string };
+  | { readonly t: "incoming"; readonly connId: string }
+  // One-shot account operations (ADR-0022 §3): the server answers an op
+  // connection's register with one of these, then closes it.
+  | { readonly t: "joined"; readonly username: string }
+  | { readonly t: "left" }
+  | { readonly t: "refused"; readonly reason: string };
 
-/** Host → relay: the only frame a control connection may ever send. */
-export type HostToRelay = { readonly t: "register"; readonly hostId: string; readonly signature: string };
+/**
+ * Host → relay: the only frame a control connection may ever send.
+ * `signature` stays mandatory — a pre-accounts server verifies only it and
+ * ignores everything else (roadmap M3: new host + old server must still work).
+ */
+export type HostToRelay = {
+  readonly t: "register";
+  readonly hostId: string;
+  readonly signature: string;
+  /**
+   * `pinomad-relay/2` signature that additionally binds `noisePublicKey`.
+   * Account-mode servers verify this over the v1 signature when present.
+   */
+  readonly signatureV2?: string;
+  /** The host's current Noise public key; trusted only when `signatureV2` verifies. */
+  readonly noisePublicKey?: string;
+  /** Set on one-shot join/leave connections — they never become control connections. */
+  readonly op?: "join" | "leave";
+  /** The single-use token join spends (ADR-0022 §3). Never logged server-side. */
+  readonly joinToken?: string;
+  /** Display name stored on the hosts row at join. */
+  readonly name?: string;
+  /** Capability strings the pairing step (M3 item 4) gates on, e.g. "pairing". */
+  readonly features?: readonly string[];
+};
 
 export function encodeRelayFrame(frame: RelayToHost | HostToRelay): string {
   return JSON.stringify(frame);
@@ -53,6 +81,14 @@ export function decodeRelayToHost(text: string): RelayToHost {
     case "incoming":
       if (!isString(value.connId)) throw new Error("malformed incoming");
       return { t: "incoming", connId: value.connId };
+    case "joined":
+      if (!isString((value as { username?: unknown }).username)) throw new Error("malformed joined");
+      return { t: "joined", username: (value as { username: string }).username };
+    case "left":
+      return { t: "left" };
+    case "refused":
+      if (!isString((value as { reason?: unknown }).reason)) throw new Error("malformed refused");
+      return { t: "refused", reason: (value as { reason: string }).reason };
     default:
       throw new Error("unknown relay frame");
   }
@@ -60,11 +96,44 @@ export function decodeRelayToHost(text: string): RelayToHost {
 
 /** Throws on anything malformed — the relay closes the control on that. */
 export function decodeHostToRelay(text: string): HostToRelay {
-  const value = decodeJson(text) as { t?: unknown; hostId?: unknown; signature?: unknown };
+  const value = decodeJson(text) as {
+    t?: unknown;
+    hostId?: unknown;
+    signature?: unknown;
+    signatureV2?: unknown;
+    noisePublicKey?: unknown;
+    op?: unknown;
+    joinToken?: unknown;
+    name?: unknown;
+    features?: unknown;
+  };
   if (value?.t !== "register" || !isString(value.hostId) || !isString(value.signature)) {
     throw new Error("malformed register");
   }
-  return { t: "register", hostId: value.hostId, signature: value.signature };
+  if (value.op !== undefined && value.op !== "join" && value.op !== "leave") throw new Error("malformed register");
+  if (value.signatureV2 !== undefined && !isString(value.signatureV2)) throw new Error("malformed register");
+  if (value.noisePublicKey !== undefined && !isString(value.noisePublicKey)) throw new Error("malformed register");
+  if (value.joinToken !== undefined && !isString(value.joinToken)) throw new Error("malformed register");
+  if (value.name !== undefined && !isString(value.name)) throw new Error("malformed register");
+  if (
+    value.features !== undefined &&
+    (!Array.isArray(value.features) ||
+      value.features.length > 16 ||
+      !value.features.every((feature) => isString(feature) && feature.length <= 64))
+  ) {
+    throw new Error("malformed register");
+  }
+  return {
+    t: "register",
+    hostId: value.hostId,
+    signature: value.signature,
+    ...(value.signatureV2 === undefined ? {} : { signatureV2: value.signatureV2 }),
+    ...(value.noisePublicKey === undefined ? {} : { noisePublicKey: value.noisePublicKey }),
+    ...(value.op === undefined ? {} : { op: value.op }),
+    ...(value.joinToken === undefined ? {} : { joinToken: value.joinToken }),
+    ...(value.name === undefined ? {} : { name: value.name }),
+    ...(value.features === undefined ? {} : { features: value.features }),
+  };
 }
 
 /**
@@ -104,6 +173,40 @@ export function verifyRelayChallenge(
 ): boolean {
   try {
     return ed25519.verify(fromBase64Url(signature), relayChallengeMessage(args), fromBase64Url(args.hostId));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `pinomad-relay/2` (ADR-0022 §3): same challenge plus the host's current Noise
+ * public key, so the server can trust the key a register reports — a relay that
+ * rewrote the plaintext field would break the signature.
+ */
+export function relayChallengeMessageV2(args: {
+  relayOrigin: string;
+  hostId: string;
+  nonce: string;
+  noisePublicKey: string;
+}): Uint8Array {
+  return utf8.encode(
+    `pinomad-relay/2\n${args.relayOrigin}\n${args.hostId}\n${args.nonce}\n${args.noisePublicKey}`,
+  );
+}
+
+export function signRelayChallengeV2(
+  secretKey: Uint8Array,
+  args: { relayOrigin: string; hostId: string; nonce: string; noisePublicKey: string },
+): string {
+  return toBase64Url(ed25519.sign(relayChallengeMessageV2(args), secretKey));
+}
+
+export function verifyRelayChallengeV2(
+  signature: string,
+  args: { relayOrigin: string; hostId: string; nonce: string; noisePublicKey: string },
+): boolean {
+  try {
+    return ed25519.verify(fromBase64Url(signature), relayChallengeMessageV2(args), fromBase64Url(args.hostId));
   } catch {
     return false;
   }
