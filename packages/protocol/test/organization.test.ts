@@ -46,6 +46,26 @@ describe("organize", () => {
     expect(gone.conversations.map((node) => node.summary.id)).toEqual([12]);
   });
 
+  it("lists archived roots with their family and project, newest first, unless their project is unregistered", () => {
+    const index: HostIndex = {
+      projects: [project("/work/a")],
+      conversations: [
+        chat(10, 1),
+        { ...chat(11, 2), archived: true },
+        { ...inProject(12, "/work/a", 3), archived: true },
+        { ...inProject(13, "/work/gone", 4), archived: true },
+      ],
+    };
+    const organized = organize(index, [summary(10), summary(11), summary(12), summary(13), summary(20, 11)]);
+    expect(organized.archived.map(({ node, project }) => [node.summary.id, project?.path])).toEqual([
+      [12, "/work/a"],
+      [11, undefined],
+    ]);
+    expect(organized.archived[1]!.node.children.map((node) => node.summary.id)).toEqual([20]);
+    expect(organized.chats.map((node) => node.summary.id)).toEqual([10]);
+    expect(findConversation(organized, 20 as ConversationId)).toBeUndefined();
+  });
+
   it("nests forks of forks and subagents under their ancestor, and drops orphans", () => {
     const index: HostIndex = { projects: [], conversations: [chat(10, 1), chat(11, 2)] };
     const summaries = [

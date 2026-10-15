@@ -31,7 +31,7 @@ const node = (over: Partial<ConversationSummary> = {}, children: readonly Conver
   children,
 });
 
-const organized = (...chats: ConversationNode[]): Organized => ({ chats, projects: [] });
+const organized = (...chats: ConversationNode[]): Organized => ({ chats, projects: [], archived: [] });
 
 const view = (organized: Organized, connection: DurableView["connection"] = "connected"): DurableView =>
   ({ organized, connection }) as DurableView;

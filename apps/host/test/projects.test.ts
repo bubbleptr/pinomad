@@ -61,7 +61,7 @@ describe("projects and conversations", () => {
     expect(await host.harness.conversation(ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT)).toBeUndefined();
     const client = await connectTo(defer, host);
     expect(client.view.current().conversation).toBeUndefined();
-    expect(client.view.current().organized).toEqual({ chats: [], projects: [] });
+    expect(client.view.current().organized).toEqual({ chats: [], projects: [], archived: [] });
   });
 
   it("normalizes, deduplicates, and validates project paths", async () => {
@@ -204,12 +204,18 @@ describe("projects and conversations", () => {
     const id = await startConversation(client, { kind: "chat" }, "hi");
 
     await client.controller.archive(id, true);
-    await waitForView(client.view, (view) => view.organized.chats.length === 0);
+    await waitForView(
+      client.view,
+      (view) => view.organized.chats.length === 0 && view.organized.archived.some(({ node }) => node.summary.id === id),
+    );
     // The archiving client also stops showing it.
     expect(client.view.current().conversation).toBeUndefined();
 
     await client.controller.archive(id, false);
-    await waitForView(client.view, (view) => view.organized.chats.some((node) => node.summary.id === id));
+    await waitForView(
+      client.view,
+      (view) => view.organized.chats.some((node) => node.summary.id === id) && view.organized.archived.length === 0,
+    );
   });
 
   it("keeps projects and conversations across a host restart", async () => {

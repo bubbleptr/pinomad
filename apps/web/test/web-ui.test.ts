@@ -1348,6 +1348,17 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await expect.poll(() => chats.getByRole("button", { name: "chat work", exact: true }).count()).toBe(0);
 
+  // Settings → Archived lists it with its home; Restore puts it back in Chats.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Archived", exact: true }).click();
+  const archived = settings.getByRole("region", { name: "Archived" });
+  await archived.getByText("Chat · now", { exact: true }).waitFor();
+  await archived.getByRole("button", { name: "Restore chat work", exact: true }).click();
+  await archived.getByText("No archived conversations.", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await chats.getByRole("button", { name: "chat work", exact: true }).waitFor();
+
   // A fork nests under its parent conversation.
   await projectSection.getByRole("button", { name: "project work", exact: true }).click();
   await page.getByRole("button", { name: "Fork", exact: true }).first().click();
