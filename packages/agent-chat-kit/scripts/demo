@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Builds the demo app on mbp, installs it on the booted simulator and launches
+# it. Give seconds after launch to take screenshots at, e.g. `scripts/demo 1 3 8`;
+# they land in .build/shots/ here.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+shots="${*:-}"
+scripts/mbp "set -e
+cd Demo
+xcodebuild -quiet -project AgentChatDemo.xcodeproj -scheme AgentChatDemo \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath ../.build/DerivedData CODE_SIGNING_ALLOWED=NO build
+cd ..
+app=.build/DerivedData/Build/Products/Debug-iphonesimulator/AgentChatDemo.app
+xcrun simctl install booted \$app
+xcrun simctl terminate booted build.kieran.AgentChatDemo 2>/dev/null || true
+xcrun simctl launch booted build.kieran.AgentChatDemo >/dev/null
+rm -rf .build/shots && mkdir -p .build/shots
+prev=0
+for t in $shots; do
+  sleep \$(echo \"\$t - \$prev\" | bc)
+  prev=\$t
+  xcrun simctl io booted screenshot --type=png .build/shots/t\$t.png >/dev/null 2>&1
+done"
+
+if [ -n "$shots" ]; then
+  rm -rf .build/shots && mkdir -p .build/shots
+  rsync -a "void@mbp:${AGENTCHATKIT_REMOTE_DIR:-code/projects/AgentChatKit}/.build/shots/" .build/shots/
+  ls .build/shots
+fi

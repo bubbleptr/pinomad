@@ -1,7 +1,8 @@
 import Markdown
 
 /// One top-level Markdown block of a stream.
-public struct MarkdownBlock: Identifiable {
+// swift-markdown trees are immutable once parsed, so a block can cross actors.
+public struct MarkdownBlock: Identifiable, @unchecked Sendable {
     /// Position in the document; stable for the life of the stream.
     public let id: Int
     public let markup: any BlockMarkup
@@ -15,7 +16,7 @@ public struct MarkdownBlock: Identifiable {
 /// costs the same at the end of a long reply as at its start. The finished
 /// stream matches CommonMark, except that a link reference definition only
 /// applies within the block it was streamed with.
-public struct MarkdownStream {
+public struct MarkdownStream: Sendable {
     public private(set) var blocks: [MarkdownBlock] = []
     public private(set) var isFinished = false
     private var source = ""
