@@ -154,8 +154,8 @@ export interface PushSenderOptions {
 type SendItem = {
   readonly token: string;
   readonly notice: RunNotice;
-  /** The status the notice reported; a conversation that moved on makes the item stale. */
-  readonly status: ConversationSummary["status"] | undefined;
+  /** The baseline generation the notice came from; any later status change makes the item stale. */
+  readonly generation: number;
   /** Resolved on the first attempt; "Finished" items may wait for the auto-title. */
   title?: string;
   attempts: number;
@@ -185,21 +185,30 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
   const pending = new Set<SendItem>();
   const titleWaiters = new Map<ConversationId, Set<(title: string) => void>>();
   const receiptTimers = new Set<unknown>();
+  /**
+   * Per-conversation transition counter: comparing statuses alone cannot tell
+   * apart "unchanged" and "left and came back" (needs-answer → running →
+   * needs-answer), so every diff bump marks earlier notifications stale.
+   */
+  const generation = new Map<ConversationId, number>();
 
   const update = (): void => {
     if (index === undefined) return;
     const organized = organize(index, conversations.value);
     if (baseline === undefined) {
       baseline = diffRunNotices(undefined, organized).baseline;
+      for (const id of baseline.keys()) generation.set(id, 0);
       return;
     }
     const diff = diffRunNotices(baseline, organized);
     baseline = diff.baseline;
+    for (const id of diff.changed) generation.set(id, (generation.get(id) ?? 0) + 1);
     for (const notice of diff.notices) void enqueue(notice);
   };
 
-  /** The status the notice asserted must still hold for a send to go out. */
-  const fresh = (item: SendItem): boolean => baseline?.has(item.notice.id) === true && baseline.get(item.notice.id) === item.status;
+  /** The transition the notice reported must still be the latest for a send to go out. */
+  const fresh = (item: SendItem): boolean =>
+    baseline?.has(item.notice.id) === true && generation.get(item.notice.id) === item.generation;
 
   const registrations = async (): Promise<ReadonlySet<string>> => {
     const doc = await harness.snapshot(PushDoc, context);
@@ -213,7 +222,9 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    return { status: response.status, body: await response.json().catch(() => undefined) };
+    // A body read can still hit the request timeout or a dropped connection:
+    // let it propagate so attempt treats it as the retryable failure it is.
+    return { status: response.status, body: await response.json() };
   };
 
   /** Expo's per-message ticket; undefined or odd shapes count as a dead end — nothing to retry against. */
@@ -284,7 +295,8 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
       if (!(await registrations()).has(item.token) || !fresh(item)) return drop(item);
       if (item.title === undefined) {
         item.title = await titleFor(item.notice);
-        if (disposed || !(await registrations()).has(item.token) || !fresh(item)) return drop(item);
+        // The queue-eviction drop ran while this item waited for a title.
+        if (disposed || !pending.has(item) || !(await registrations()).has(item.token) || !fresh(item)) return drop(item);
       }
       const { status, body } = await post(EXPO_SEND_URL, message(item, item.title));
       const ticket = ticketOf(body);
@@ -342,7 +354,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
               ticketId
             ])
           : undefined;
-      if (receipt === undefined) return;
+      if (receipt === undefined || disposed) return;
       if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") {
         console.error(`push: token ${tokenHint(token)} is not registered (receipt)`);
         await dropTokenIfCurrent(harness, token, context);
@@ -356,7 +368,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
 
   const enqueue = async (notice: RunNotice): Promise<void> => {
     if (disposed) return;
-    const status = baseline?.get(notice.id);
+    const itemGeneration = generation.get(notice.id) ?? 0;
     try {
       // One request per distinct token: devices sharing a token (reinstalls)
       // get one notification, and tokens from different EAS projects never mix
@@ -368,7 +380,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
           const [oldest] = pending;
           drop(oldest!);
         }
-        const item: SendItem = { token, notice, status, attempts: 0 };
+        const item: SendItem = { token, notice, generation: itemGeneration, attempts: 0 };
         pending.add(item);
         void attempt(item);
       }

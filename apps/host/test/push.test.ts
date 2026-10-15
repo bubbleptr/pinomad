@@ -9,6 +9,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/provid
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { transcript } from "@pinomad/protocol/transcript.ts";
 import { DevicesDoc } from "../src/devices.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
@@ -443,6 +444,38 @@ describe("push sender", () => {
     // The stale Waiting retry never went out; the fresh Finished did.
     await waitUntil(() => expo.calls.length >= 2);
     expect(expo.calls.map((call) => (call.body as { body: string }).body)).toEqual(["Waiting for your answer", "Finished"]);
+  });
+
+  it("supersedes a notification still waiting for a title when the conversation moves on", async () => {
+    const expo = fakeExpo();
+    const timers = new ManualTimers();
+    const { host } = await pushHost({ expo, timers, answers: ["first done", "second done"] });
+    const { client } = await pairDevice(host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    const watcher = await connectTo(defer, host);
+    const id = await startChat(watcher, "first run");
+    await waitForView(
+      watcher.view,
+      (view) => view.organized.chats.some((node) => node.summary.id === id && node.summary.status === undefined),
+    );
+    await waitUntil(() => timers.pending === 1); // Finished #1 waits on the title
+
+    // A second run finishes before Finished #1's title wait elapses.
+    await watcher.controller.submit("again", "followUp", { target: id });
+    await waitForView(
+      watcher.view,
+      (view) =>
+        view.conversation !== undefined
+        && transcript(view.conversation).at(-1)?.text === "second done"
+        && view.organized.chats[0]?.summary.status === undefined,
+    );
+    await waitUntil(() => timers.pending >= 2);
+    timers.advance(15_000);
+    await expo.waitForCalls(1);
+    await settle(100);
+    // Only the latest transition's notification is delivered.
+    expect(expo.calls).toHaveLength(1);
+    expect(expo.calls[0]!.body).toMatchObject({ to: TOKEN_A, body: "Finished" });
   });
 
   it("stops retrying a token whose device was revoked", async () => {
