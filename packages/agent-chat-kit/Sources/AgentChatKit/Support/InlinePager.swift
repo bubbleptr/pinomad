@@ -49,7 +49,21 @@ struct InlinePager<Page: Hashable, Content: View>: View {
                 }
             }
         }
-        .onDisappear { flip?.cancel() }
+        .onAppear {
+            // Reappearing after a disappearance must not keep a stale page
+            // — pages turned while away are not replayed.
+            latest = page
+            if shown != page {
+                shown = page
+                shownAt = .now
+            }
+        }
+        .onDisappear {
+            // A cancelled task returns early and would leave `flip` set,
+            // blocking every page change after the view comes back.
+            flip?.cancel()
+            flip = nil
+        }
     }
 
     private var dwellInterval: TimeInterval {

@@ -599,6 +599,16 @@
         }
       }
     },
+    "Working": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中"
+          }
+        }
+      }
+    },
     "Wrote %@": {
       "localizations": {
         "zh-Hans": {

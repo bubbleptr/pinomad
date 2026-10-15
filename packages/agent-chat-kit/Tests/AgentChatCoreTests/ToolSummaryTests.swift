@@ -61,6 +61,15 @@ import Testing
         #expect(summary.label == .single(verb: .used, target: nil, name: "crystal"))
     }
 
+    @Test func anUnknownCallDoesNotTrustItsInputAsATarget() {
+        // Unknown tools take arbitrary input — JSON, prose — that cannot
+        // stand in as a target; the name is the fallback.
+        let summary = ToolSummary(calls: [
+            ToolCall(id: "1", name: "codemode", state: .succeeded, input: #"{"run": "compare.swift"}"#),
+        ])
+        #expect(summary.label == .single(verb: .used, target: nil, name: "codemode"))
+    }
+
     @Test func diffStatsSumTopLevelCallsOnly() {
         let summary = ToolSummary(calls: [
             ToolCall(id: "1", name: "edit", state: .succeeded, diffStat: DiffStat(additions: 4, deletions: 2), children: [

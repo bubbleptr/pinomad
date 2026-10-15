@@ -89,7 +89,10 @@ public struct ToolSummary: Sendable, Equatable {
 
     private static func label(for calls: [ToolCall]) -> Label {
         if calls.count == 1, let call = calls.first {
-            return .single(verb: verb(for: call.name), target: target(of: call), name: call.name)
+            let verb = verb(for: call.name)
+            // An unknown call's input is arbitrary — JSON, prose — and
+            // cannot stand in as its target; the name is the fallback.
+            return .single(verb: verb, target: verb == .used ? nil : target(of: call), name: call.name)
         }
         var buckets: [Bucket] = []
         for call in calls {

@@ -71,7 +71,8 @@ private struct TraceHeader: View {
     private func headline(_ summary: TraceSummary) -> String {
         switch summary.headline {
         case .thinking: String(localized: "Thinking", bundle: .module)
-        case let .running(tool): String(localized: "Running \(tool)", bundle: .module)
+        // The steps below already name what is running; the header does not.
+        case .working: String(localized: "Working", bundle: .module)
         case .thought: String(localized: "Thought", bundle: .module)
         case .worked: String(localized: "Worked", bundle: .module)
         case .failed: String(localized: "Failed", bundle: .module)
@@ -192,7 +193,13 @@ private struct ThinkingStep: View {
     }
 
     private func label(showChevron: Bool) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
+            // Same icon column as the tool rows, so every step's text starts
+            // at the same x.
+            Image(systemName: "brain")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
             Text(title)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -335,13 +342,12 @@ private struct ToolBatchRow: View {
     private func label(for page: Page) -> some View {
         switch page {
         case .running(let running):
-            HStack(spacing: 8) {
-                Text(runningText(running))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .shimmering(true)
-                Spacer(minLength: 0)
-            }
+            Text(runningText(running))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .shimmering(true)
+                .lineLimit(1)
+                .truncationMode(.tail)
         case .settled:
             HStack(spacing: 8) {
                 Text(settledText)
@@ -349,8 +355,8 @@ private struct ToolBatchRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 0)
-                meta
+                // The summary truncates before the meta does.
+                meta.fixedSize()
             }
         }
     }
@@ -383,8 +389,8 @@ private struct ToolBatchRow: View {
     private var settledText: String {
         switch summary.label {
         case .single(let verb, let target, let name):
-            if let target { return verbText(verb, target: target) }
             if verb == .used { return String(localized: "Used \(name)", bundle: .module) }
+            if let target { return verbText(verb, target: target) }
             return clause(verb, count: 1)
         case .buckets(let buckets):
             // Later clauses lose their capital: "Read 2 files, ran 1 command".

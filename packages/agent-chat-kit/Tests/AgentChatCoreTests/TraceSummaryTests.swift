@@ -5,7 +5,7 @@ import Testing
 @Suite struct TraceSummaryTests {
     let start = Date(timeIntervalSince1970: 1_000)
 
-    @Test func aLiveRunNamesTheCallInProgressAndCountsToNow() {
+    @Test func aRunCallingToolsReadsAsWorkingAndCountsToNow() {
         let trace = AgentTrace(
             phase: .acting,
             steps: [
@@ -18,7 +18,7 @@ import Testing
             startedAt: start
         )
         let summary = trace.summary(at: start.addingTimeInterval(12.4))
-        #expect(summary.headline == .running(tool: "bash"))
+        #expect(summary.headline == .working)
         #expect(summary.elapsed == .seconds(12))
     }
 
