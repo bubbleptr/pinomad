@@ -6,7 +6,15 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { launchdPlist, launchdPlistPath, type ServiceSpec, systemdUnit, systemdUnitPath } from "./definition.ts";
+import {
+  launchdPlist,
+  launchdPlistPath,
+  specFromLaunchdPlist,
+  specFromSystemdUnit,
+  type ServiceSpec,
+  systemdUnit,
+  systemdUnitPath,
+} from "./definition.ts";
 
 const run = promisify(execFile);
 
@@ -27,6 +35,11 @@ export interface ServiceManager {
   restart(): Promise<void>;
   state(): Promise<ServiceState>;
   logs(dataDir: string, lines: number, follow: boolean): Promise<void>;
+  /**
+   * Reads the installed definition back into a spec — join/leave rewrite it.
+   * Undefined when nothing is installed; throws on an unparseable file.
+   */
+  read(): Promise<ServiceSpec | undefined>;
 }
 
 /** macOS: ~/Library/LaunchAgents/pinomad.host.plist, gui/<uid>/pinomad.host. */
@@ -86,6 +99,14 @@ const launchd: ServiceManager = {
     const text = await readFile(file, "utf8");
     const all = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
     process.stdout.write(`${all.slice(-lines).join("\n")}\n`);
+  },
+
+  async read() {
+    const text = await readFile(launchdPlistPath(homedir()), "utf8").then(
+      (value) => value,
+      (error: unknown) => ((error as { code?: string }).code === "ENOENT" ? undefined : Promise.reject(error)),
+    );
+    return text === undefined ? undefined : specFromLaunchdPlist(text);
   },
 };
 
@@ -155,6 +176,14 @@ const systemd: ServiceManager = {
       stdio: "inherit",
     });
     await new Promise<void>((resolve) => journal.once("exit", () => resolve()));
+  },
+
+  async read() {
+    const text = await readFile(systemdUnitPath(homedir()), "utf8").then(
+      (value) => value,
+      (error: unknown) => ((error as { code?: string }).code === "ENOENT" ? undefined : Promise.reject(error)),
+    );
+    return text === undefined ? undefined : specFromSystemdUnit(text);
   },
 };
 

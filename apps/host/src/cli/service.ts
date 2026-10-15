@@ -16,7 +16,7 @@ import { parseArgs, promisify } from "node:util";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { installSpec } from "../service/definition.ts";
 import { waitForIdle } from "../service/idle.ts";
-import { serviceManager } from "../service/manager.ts";
+import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { commandHint, hostEntry, packagedVersion } from "../distribution.ts";
 import { DEFAULT_DATA_DIR, hostAddress } from "./host-address.ts";
 
@@ -85,9 +85,21 @@ async function status(argv: readonly string[]): Promise<void> {
 /**
  * Idle-wait then restart through the service manager; returns the exit code.
  * Shared with `upgrade`, which calls it after pull/install/build.
+ * `manager` and `restart` are injectable: join/leave pass the manager they
+ * resolved and can replace the restart with a definition rewrite + install.
  */
-export async function restartService({ force, argv }: { force: boolean; argv: readonly string[] }): Promise<number> {
-  const manager = serviceManager();
+export async function restartService({
+  force,
+  argv,
+  manager = serviceManager(),
+  restart,
+}: {
+  force: boolean;
+  argv: readonly string[];
+  manager?: ServiceManager;
+  /** The restart action; defaults to `manager.restart()`. */
+  restart?: () => Promise<void>;
+}): Promise<number> {
   if (!(await manager.state()).installed) {
     console.log(`service not installed (${commandHint("service")} install)`);
     return 1;
@@ -107,7 +119,7 @@ export async function restartService({ force, argv }: { force: boolean; argv: re
       // Unreachable — down or crashed; restart straight away.
     }
   }
-  await manager.restart();
+  await (restart?.() ?? manager.restart());
   if (address === undefined) {
     console.log("restart requested (host address unknown; not polling)");
     return 0;

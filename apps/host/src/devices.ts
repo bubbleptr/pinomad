@@ -60,7 +60,14 @@ export async function loadHostKey(dataDir: string): Promise<KeyPair> {
   } catch (error) {
     if ((error as { code?: string }).code !== "ENOENT") throw error;
     const pair = generateKeyPair();
-    await writeFile(path, `${toBase64Url(pair.privateKey)}\n`, { mode: 0o600 });
+    // `wx` like loadRelayKey: `pinomad join` beside a starting host must not
+    // see two processes write different identities over the same file.
+    try {
+      await writeFile(path, `${toBase64Url(pair.privateKey)}\n`, { flag: "wx", mode: 0o600 });
+    } catch (race) {
+      if ((race as { code?: string }).code !== "EEXIST") throw race;
+      return loadHostKey(dataDir);
+    }
     return pair;
   }
 }

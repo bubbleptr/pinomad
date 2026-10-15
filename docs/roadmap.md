@@ -138,11 +138,11 @@ MCP 本身的后续，都等有明确需求再做：
    - `pinomad relay passwd`：要求服务端已停（复用目录锁），从 stdin 读新密码；同一个事务里换哈希、删掉全部 sessions 和没用掉的 join tokens（不影响宿主上已登记的设备）。
    - HTTP API 挂在同端口 `/api/*`：`POST /api/login`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`GET /api/me`。Web（从服务端同源打开）用 `Secure`、`HttpOnly`、`SameSite=Strict` 的 host-only cookie，改动类请求校验 Origin；桌面端和移动端用 `Authorization: Bearer`，令牌存安全存储。CORS 只放行实际需要的来源，不带 credentials。
    - 防暴力破解：scrypt 前有全局并发上限和有界队列（满了回 429），按来源 IP 限速（只在 `--trust-proxy` 时信任反向代理给的地址），按用户名计失败次数（计数表有容量上限），限制请求体和字段长度。账号 API 和控制连接只走 HTTPS / WSS，明文只允许 localhost 开发。
-2. **宿主加入和退出**（`apps/host` CLI + 服务端 + `packages/protocol/relay.ts`）：
+2. **宿主加入和退出**（`apps/host` CLI + 服务端 + `packages/protocol/relay.ts`，已完成）：
    - `POST /api/join-tokens`（需登录）返回 `{token, expiresAt, command}`，命令形如 `npm i -g pinomad && pinomad join <origin> <token>`。
-   - join 和 leave 都走控制连接：每次连接服务端都发新的 challenge，签名防重放。签名消息升到 `pinomad-relay/2`，多绑定宿主当前的 Noise 公钥；`register` 帧加可选的 `joinToken` 和 `features`。服务端在一个事务里验签、核销令牌、写入或改绑 `hosts`，回 `joined`。`leave` 是已登记的控制连接上的一帧，删掉这台宿主的绑定。响应丢了就用新令牌再跑一次，不做幂等重放。
-   - 已加入账号的宿主每次 register 都报告当前 Noise 公钥；和 `hosts` 里的记录对不上时，服务端照常转发，但停掉这台宿主的账号配对并给出明确错误，要重新 join 才更新。不做通用的密钥轮换。
-   - 宿主在 `<dataDir>/server.json` 记服务端地址，`pinomad host` 启动时读它。join / leave 会改写已安装服务的定义、去掉旧的 `--relay` 参数，再按 ADR-0009 等空闲重启；没装服务就装上（测试里注入假的服务管理器）。服务端地址和 `--relay` 同时给出且不一致时报错。`loadHostKey` 改成和 `loadRelayKey` 一样用 `wx` 独占创建，全新安装时 join 先建好两把密钥。CLI 显示宿主指纹和加入结果。
+   - join 和 leave 走**一次性的操作连接**：CLI 自己连 `/host`、拿 challenge、发带 `op`（`"join"` / `"leave"`）的 `register`，服务端验签、执行、回 `joined` / `left` / `refused` 后关闭这条连接——它不进 `controls`，不会踢掉正在跑的同一宿主的控制连接。签名消息升到 `pinomad-relay/2`，多绑定宿主当前的 Noise 公钥（`signatureV2` 是可选字段，旧服务端只看 v1 `signature` 照常放行；新服务端有 v2 验 v2、没有验 v1）；`register` 帧还加了可选的 `joinToken`、`name`、`features`。服务端在一个事务里验签、核销令牌、写入或改绑 `hosts`。`leave` 删掉绑定后，如果 hostId 不在 `--allow-host` 里就把它现存的控制连接用 4603 关掉。响应丢了就用新令牌再跑一次，重 join 是幂等 upsert。
+   - 已绑定宿主每次 register 报告的 Noise 公钥（只有 v2 验过才可信）跟着那条控制连接存在服务端内存里，register 成功时更新 `hosts.last_seen_at`；第 4 步的配对接口拿它和 `hosts.noise_public_key` 比较，不一致时的拒绝逻辑在那时做。不做通用的密钥轮换。
+   - 宿主在 `<dataDir>/server.json` 记服务端地址，`pinomad host` 启动时读它。join / leave 会改写已安装服务的定义、去掉旧的 `--relay` 参数，再按 ADR-0009 等空闲重启；join 时没装服务就装上（测试里注入假的服务管理器）。`server.json` 和 `--relay` 同时给出且不一致时启动报错。`loadHostKey` 和 `loadRelayKey` 一样用 `wx` 独占创建，全新安装时 join 先建好两把密钥。CLI 显示宿主指纹和加入结果。
    - register 判定：hostId 在 `hosts` 里，或在 `--allow-host` 里。部署迁移完成后删掉 `--allow-host`。
 3. **宿主侧的准入**（`apps/host` + 协议次版本号）：
    - 吊销记录：`revokeDevice` 除了删设备，还把公钥记进宿主持久化的已吊销列表（和设备表同一个事务）。账号来源的邀请不能让已吊销的公钥重新登记；扫码配对可以，因为那是用户在宿主上主动做的。

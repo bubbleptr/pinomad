@@ -14,6 +14,8 @@ const COMMANDS: Record<string, () => Promise<CommandModule>> = {
   link: () => import("@pinomad/host/src/cli/web-link.ts"),
   pair: () => import("@pinomad/host/src/cli/pair.ts"),
   "relay-id": () => import("@pinomad/host/src/cli/relay-id.ts"),
+  join: () => import("@pinomad/host/src/cli/join.ts"),
+  leave: () => import("@pinomad/host/src/cli/leave.ts"),
 };
 
 const USAGE = `pinomad — PiNomad host, relay, and utilities
@@ -28,6 +30,8 @@ usage: pinomad <command> [args…]
   link [--data-dir D|--url U …]        print the browser link
   pair [--data-dir D|--url U …]        print a pairing QR
   relay-id [--data-dir D]              print this host's relay id (for --allow-host)
+  join <origin> <token> [--data-dir D] join this host to a server account
+  leave [--data-dir D]                 leave the server account
   --version, -v                        print the version
 `;
 
