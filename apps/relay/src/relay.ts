@@ -17,6 +17,8 @@ import {
   type HostToRelay,
 } from "@pinomad/protocol/relay.ts";
 import { serveWebClient } from "@pinomad/host/src/web-client.ts";
+import type { Accounts } from "./accounts.ts";
+import { handleApiRequest, secureTransport } from "./api.ts";
 
 export interface RelayOptions {
   /** 0 in tests. */
@@ -31,6 +33,17 @@ export interface RelayOptions {
   readonly pingIntervalMs?: number;
   /** Serve the built web client over plain HTTP on the same port; unset → 404. */
   readonly webRoot?: string;
+  /**
+   * Opened account store (ADR-0022): mounts /api/*, admits hosts bound in the
+   * hosts table, and requires TLS-visible transport on /api and /host. The
+   * relay takes ownership — close() closes it.
+   */
+  readonly accounts?: Accounts;
+  /**
+   * Trust X-Forwarded-For/Proto from the terminating proxy. Account mode only;
+   * without it the API and control socket stay loopback-plaintext-only.
+   */
+  readonly trustProxy?: boolean;
 }
 
 export interface Relay {
@@ -84,6 +97,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const registerTimeoutMs = options.registerTimeoutMs ?? 10_000;
   const pingIntervalMs = options.pingIntervalMs ?? 30_000;
   const listenHost = options.listenHost ?? "127.0.0.1";
+  const accounts = options.accounts;
+  const trustProxy = options.trustProxy ?? false;
 
   const controls = new Map<string, WebSocket>();
   const pending = new Map<string, PendingDevice>();
@@ -150,7 +165,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         socket.close(RELAY_CLOSE.badSignature);
         return;
       }
-      if (!allowedHosts.has(frame.hostId)) {
+      // Admission = static allowlist (legacy, migration window) or a host row
+      // bound to an account (ADR-0022; join lands in a later step).
+      if (!allowedHosts.has(frame.hostId) && accounts?.hasHost(frame.hostId) !== true) {
         socket.close(RELAY_CLOSE.hostNotAllowed);
         return;
       }
@@ -229,6 +246,20 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   const httpServer = createServer((request, response) => {
+    let pathname: string;
+    try {
+      pathname = new URL(request.url ?? "/", "http://relay.invalid").pathname;
+    } catch {
+      pathname = "";
+    }
+    // /api owns its prefix ahead of the static web client.
+    if (accounts !== undefined && (pathname === "/api" || pathname.startsWith("/api/"))) {
+      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy }).catch(() => {
+        if (!response.headersSent) response.writeHead(500);
+        response.end();
+      });
+      return;
+    }
     // Behind Caddy this port also is where phones load the web client from.
     if (options.webRoot !== undefined) {
       void serveWebClient(request, response, options.webRoot).catch(() => {
@@ -254,8 +285,16 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     };
     const device = DEVICE_PATH.exec(pathname);
     const accept = ACCEPT_PATH.exec(pathname);
-    if (pathname === HOST_PATH) upgrade(onControl);
-    else if (device !== null) upgrade((ws) => onDevice(ws, device[1]!));
+    if (pathname === HOST_PATH) {
+      // In account mode the control channel is TLS-only like the API: plaintext
+      // stays for localhost development, otherwise the proxy must attest https.
+      if (accounts !== undefined && !secureTransport(request, trustProxy)) {
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+        socket.destroy();
+      } else {
+        upgrade(onControl);
+      }
+    } else if (device !== null) upgrade((ws) => onDevice(ws, device[1]!));
     else if (accept !== null) upgrade((ws) => onAccept(ws, accept[1]!));
     else {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
@@ -296,6 +335,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       wss.close();
       await closing;
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      await accounts?.close();
     },
   };
 }

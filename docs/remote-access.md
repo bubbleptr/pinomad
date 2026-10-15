@@ -104,6 +104,29 @@ pinomad service install --relay https://nomad.example.com …   # 宿主接上�
 
 也可以从 GitHub 仓库部署：Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，其余同上。
 
+### 服务端账号（ADR-0022）
+
+只给 `--allow-host` 时服务端维持老行为：纯白名单、什么都不存。要开账号，给它一个数据目录（`--data-dir`，或环境变量 `PINOMAD_SERVER_DATA_DIR`，默认 `~/.pinomad-server`），首次启动时用两个环境变量建出唯一用户：
+
+```sh
+export PINOMAD_SERVER_USER=<用户名>
+export PINOMAD_SERVER_PASSWORD=<至少 12 位，建议密码管理器生成>
+pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad-server --trust-proxy
+```
+
+- 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
+- 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、Zeabur）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
+- 老部署不设账号变量、只给 `--allow-host` 时行为不变，两种准入可以并存（迁移期间白名单继续生效）。
+- 改密码用 `pinomad relay passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
+
+  ```sh
+  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad-server
+  ```
+
+  同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
+
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`，返回 Bearer 令牌并种 `Secure`+`HttpOnly`+`SameSite=Strict` cookie）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+
 ### 升级
 
 中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
