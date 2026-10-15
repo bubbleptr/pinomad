@@ -19,6 +19,10 @@ const SCHEMA_VERSION = 1;
 // hard ceiling, and re-logging-in is the only way forward.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Join tokens are short-lived and single-use (ADR-0022 §3): a leaked one is
+// only useful for minutes and only once.
+const JOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+
 // scrypt parameters are embedded in the stored string, so they can be raised
 // later without a flag day for existing hashes.
 const SCRYPT = { N: 16384, r: 8, p: 1 } as const;
@@ -72,6 +76,10 @@ export type LoginResult =
   | { readonly status: "invalid" }
   | { readonly status: "limited" };
 
+export type JoinHostResult =
+  | { readonly status: "joined"; readonly username: string }
+  | { readonly status: "refused"; readonly reason: "invalid_token" | "expired_token" };
+
 export interface Accounts {
   /** Server database path — tests write join_tokens rows directly. */
   readonly dbPath: string;
@@ -82,6 +90,22 @@ export interface Accounts {
   revokeAllSessions(userId: number): void;
   /** True when hostId is bound to an account — an alternative to --allow-host at register time. */
   hasHost(hostId: string): boolean;
+  /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
+  createJoinToken(userId: number): { readonly token: string; readonly expiresAt: number };
+  /**
+   * Spends a join token and writes or rebinds the hosts row in one transaction —
+   * the token must never be consumed without a binding landing beside it.
+   */
+  joinHost(args: {
+    readonly token: string;
+    readonly hostId: string;
+    readonly noisePublicKey: string;
+    readonly name?: string;
+  }): JoinHostResult;
+  /** Drops a host's account binding; false when the hostId was never bound. */
+  leaveHost(hostId: string): boolean;
+  /** Bumps last_seen_at on each successful register; a no-op for unbound hostIds. */
+  markHostSeen(hostId: string): void;
   close(): Promise<void>;
 }
 
@@ -356,6 +380,77 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
     hasHost(hostId) {
       return db.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ?").get(hostId) !== undefined;
+    },
+
+    createJoinToken(userId) {
+      // Sweep dead rows opportunistically, the same convention as expired
+      // sessions on login.
+      db.prepare("DELETE FROM join_tokens WHERE expires_at <= ?").run(now());
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = now() + JOIN_TOKEN_TTL_MS;
+      db.prepare("INSERT INTO join_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
+        sha256Hex(token),
+        userId,
+        now(),
+        expiresAt,
+      );
+      return { token, expiresAt };
+    },
+
+    joinHost({ token, hostId, noisePublicKey, name }) {
+      const tokenHash = sha256Hex(token);
+      const at = now();
+      db.exec("BEGIN");
+      try {
+        const row = db
+          .prepare("SELECT user_id AS userId, expires_at AS expiresAt, used_at AS usedAt FROM join_tokens WHERE token_hash = ?")
+          .get(tokenHash) as { userId: number; expiresAt: number; usedAt: number | null } | undefined;
+        let failure: "invalid_token" | "expired_token" | undefined;
+        if (row === undefined || row.usedAt !== null) failure = "invalid_token";
+        else if (row.expiresAt <= at) failure = "expired_token";
+        else {
+          // The conditional UPDATE is what makes the token single-use: it
+          // claims the row atomically, so a concurrent re-spend sees zero
+          // changes and is refused instead of binding twice.
+          const consumed = db
+            .prepare("UPDATE join_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL")
+            .run(at, tokenHash);
+          if (Number(consumed.changes) !== 1) failure = "invalid_token";
+        }
+        if (failure !== undefined) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: failure };
+        }
+        const hostName = name === undefined || name.trim() === "" ? "Unknown host" : name.trim().slice(0, 64);
+        // Re-joining an already-bound hostId rebinds it (a new account gets it);
+        // the upsert is what makes a lost join response safe to retry.
+        db.prepare(
+          `INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(host_id) DO UPDATE SET
+             user_id = excluded.user_id,
+             noise_public_key = excluded.noise_public_key,
+             name = excluded.name,
+             joined_at = excluded.joined_at,
+             last_seen_at = excluded.last_seen_at`,
+        ).run(hostId, row!.userId, noisePublicKey, hostName, at, at);
+        const user = db.prepare("SELECT username FROM users WHERE id = ?").get(row!.userId) as
+          | { username: string }
+          | undefined;
+        db.exec("COMMIT");
+        return { status: "joined", username: user?.username ?? "unknown" };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    leaveHost(hostId) {
+      return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
+    },
+
+    markHostSeen(hostId) {
+      db.prepare("UPDATE hosts SET last_seen_at = ? WHERE host_id = ?").run(now(), hostId);
     },
 
     async close() {

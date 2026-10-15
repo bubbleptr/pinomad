@@ -1,6 +1,6 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/logout,
-// POST /api/sessions/revoke-all, GET /api/me.
+// POST /api/sessions/revoke-all, GET /api/me, POST /api/join-tokens.
 //
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
@@ -196,7 +196,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     return;
   }
 
-  if (pathname === "/api/me" || pathname === "/api/logout" || pathname === "/api/sessions/revoke-all") {
+  if (
+    pathname === "/api/me" ||
+    pathname === "/api/logout" ||
+    pathname === "/api/sessions/revoke-all" ||
+    pathname === "/api/join-tokens"
+  ) {
     const expected = pathname === "/api/me" ? "GET" : "POST";
     if (method !== expected) {
       deny(405, "method_not_allowed", { allow: expected });
@@ -210,6 +215,17 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     if (pathname === "/api/me") {
       send(200, { user: { username: session.username } });
+      return;
+    }
+    if (pathname === "/api/join-tokens") {
+      const joinToken = accounts.createJoinToken(session.userId);
+      // The command is what the "add host" UI shows: install the package, then
+      // join this server's origin with the one-time token (ADR-0022 §3).
+      send(200, {
+        token: joinToken.token,
+        expiresAt: joinToken.expiresAt,
+        command: `npm i -g pinomad && pinomad join ${ctx.publicOrigin} ${joinToken.token}`,
+      });
       return;
     }
     if (pathname === "/api/logout") {

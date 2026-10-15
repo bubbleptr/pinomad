@@ -14,7 +14,9 @@ import {
   encodeRelayFrame,
   RELAY_CLOSE,
   verifyRelayChallenge,
+  verifyRelayChallengeV2,
   type HostToRelay,
+  type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { serveWebClient } from "@pinomad/host/src/web-client.ts";
 import type { Accounts } from "./accounts.ts";
@@ -49,6 +51,12 @@ export interface RelayOptions {
 export interface Relay {
   readonly port: number;
   readonly url: string;
+  /**
+   * What a host's live control connection reported at register: the Noise key
+   * only when a v2 signature bound it, plus declared `features`. In-memory by
+   * design — the pairing step compares it against the stored binding.
+   */
+  controlInfo(hostId: string): { readonly noisePublicKey?: string; readonly features?: readonly string[] } | undefined;
   close(): Promise<void>;
 }
 
@@ -100,7 +108,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const accounts = options.accounts;
   const trustProxy = options.trustProxy ?? false;
 
-  const controls = new Map<string, WebSocket>();
+  interface ControlEntry {
+    readonly socket: WebSocket;
+    /** The host's current Noise key — set only when a v2 signature bound it. */
+    readonly noisePublicKey?: string;
+    readonly features?: readonly string[];
+  }
+
+  const controls = new Map<string, ControlEntry>();
   const pending = new Map<string, PendingDevice>();
   const sockets = new Set<WebSocket>();
   const alive = new WeakMap<WebSocket, boolean>();
@@ -137,6 +152,45 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     forward(b, a);
   }
 
+  /**
+   * Handles one join/leave op connection (ADR-0022 §3). The register's Ed25519
+   * signature is already verified; this only runs the operation, replies, and
+   * hangs up. `noisePublicKey` is present only when a v2 signature bound it.
+   */
+  function runOp(socket: WebSocket, frame: HostToRelay, noisePublicKey: string | undefined): void {
+    // Reply, then hang up in the send callback so the close can't race it.
+    const answer = (reply: RelayToHost): void =>
+      socket.send(encodeRelayFrame(reply), () => socket.close(1000));
+    if (accounts === undefined) {
+      answer({ t: "refused", reason: "accounts_disabled" });
+      return;
+    }
+    if (frame.op === "join") {
+      // A binding without a v2-bound Noise key would be unverifiable later —
+      // pairing compares the live report against this row.
+      if (frame.joinToken === undefined || noisePublicKey === undefined) {
+        answer({ t: "refused", reason: "bad_request" });
+        return;
+      }
+      const result = accounts.joinHost({
+        token: frame.joinToken,
+        hostId: frame.hostId,
+        noisePublicKey,
+        ...(frame.name === undefined ? {} : { name: frame.name }),
+      });
+      answer(result.status === "joined" ? { t: "joined", username: result.username } : { t: "refused", reason: result.reason });
+      return;
+    }
+    if (!accounts.leaveHost(frame.hostId)) {
+      answer({ t: "refused", reason: "not_joined" });
+      return;
+    }
+    answer({ t: "left" });
+    // The binding is gone: unless the static allowlist still admits it, the
+    // host's live control connection loses its authorization right now.
+    if (!allowedHosts.has(frame.hostId)) controls.get(frame.hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+  }
+
   function onControl(socket: WebSocket): void {
     track(socket);
     const nonce = randomBytes(32).toString("base64url");
@@ -158,11 +212,34 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         socket.close(1008, "malformed frame");
         return;
       }
-      // Signature before allowlist: an unsigned claim must not learn which
-      // hostIds are allowed.
-      const verified = verifyRelayChallenge(frame.signature, { relayOrigin: publicOrigin, hostId: frame.hostId, nonce });
-      if (!verified) {
+      // Signature before admission and before any op work: an unsigned claim
+      // must not learn which hostIds are allowed, and a join token must never
+      // be consumed by a frame that can't prove the host key.
+      let noisePublicKey: string | undefined;
+      if (frame.signatureV2 !== undefined) {
+        // v2 binds the reported Noise key. A frame that offers v2 but fails it
+        // is rejected outright — never downgraded to a v1 check.
+        const bound =
+          frame.noisePublicKey !== undefined &&
+          verifyRelayChallengeV2(frame.signatureV2, {
+            relayOrigin: publicOrigin,
+            hostId: frame.hostId,
+            nonce,
+            noisePublicKey: frame.noisePublicKey,
+          });
+        if (!bound) {
+          socket.close(RELAY_CLOSE.badSignature);
+          return;
+        }
+        noisePublicKey = frame.noisePublicKey;
+      } else if (!verifyRelayChallenge(frame.signature, { relayOrigin: publicOrigin, hostId: frame.hostId, nonce })) {
         socket.close(RELAY_CLOSE.badSignature);
+        return;
+      }
+      // join/leave are one-shot operation connections: they never enter
+      // `controls`, so a CLI doing them can't kick the running host's control.
+      if (frame.op !== undefined) {
+        runOp(socket, frame, noisePublicKey);
         return;
       }
       // Admission = static allowlist (legacy, migration window) or a host row
@@ -176,15 +253,22 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       const previous = controls.get(hostId);
       // A second registration wins: a reconnecting host must not be locked out
       // by a zombie control socket from its previous life.
-      if (previous !== undefined) previous.close(RELAY_CLOSE.replaced);
-      controls.set(hostId, socket);
+      if (previous !== undefined) previous.socket.close(RELAY_CLOSE.replaced);
+      controls.set(hostId, {
+        socket,
+        ...(noisePublicKey === undefined ? {} : { noisePublicKey }),
+        ...(frame.features === undefined ? {} : { features: frame.features }),
+      });
+      // A bound host's successful register is also its heartbeat for the
+      // account: keep last_seen_at fresh so /api/hosts can report online age.
+      accounts?.markHostSeen(hostId);
       socket.send(encodeRelayFrame({ t: "registered" }));
     });
 
     socket.once("close", () => {
       clearTimeout(deadline);
       // A replaced control must not evict its successor.
-      if (hostId !== undefined && controls.get(hostId) === socket) controls.delete(hostId);
+      if (hostId !== undefined && controls.get(hostId)?.socket === socket) controls.delete(hostId);
       for (const [connId, entry] of pending) {
         if (entry.control === socket) {
           pending.delete(connId);
@@ -197,7 +281,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   function onDevice(socket: WebSocket, hostId: string): void {
     track(socket);
-    const control = controls.get(hostId);
+    const control = controls.get(hostId)?.socket;
     if (control === undefined) {
       socket.close(RELAY_CLOSE.hostOffline);
       return;
@@ -332,6 +416,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   return {
     port,
     url: `ws://${listenHost.includes(":") ? `[${listenHost}]` : listenHost}:${port}`,
+    controlInfo(hostId) {
+      const entry = controls.get(hostId);
+      if (entry === undefined) return undefined;
+      return {
+        ...(entry.noisePublicKey === undefined ? {} : { noisePublicKey: entry.noisePublicKey }),
+        ...(entry.features === undefined ? {} : { features: entry.features }),
+      };
+    },
     async close() {
       clearInterval(pingTimer);
       for (const entry of pending.values()) clearTimeout(entry.timer);
