@@ -11,7 +11,7 @@ import { type ConversationId, defineDoc, type Harness } from "@earendil-works/pi
 import { diffRunNotices, type RunNotice, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import { type HostIndex, organize } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
-import { DevicesDoc } from "./devices.ts";
+import { DevicesDoc, RevocationsDoc } from "./devices.ts";
 import type { HostValue } from "./host-value.ts";
 import { IndexDoc } from "./organization.ts";
 import { TitleDoc } from "./title-doc.ts";
@@ -77,9 +77,10 @@ export async function setPushToken(
 }
 
 /**
- * Forget a paired device and its push registration in one commit — a revoked
- * device must never keep a send-capable token, not even for one commit.
- * Lives here because the transaction spans both documents.
+ * Forget a paired device, its push registration, and record the revocation in
+ * one commit — a revoked device must never keep a send-capable token, not even
+ * for one commit, and an account offer must never re-register a revoked key
+ * (ADR-0022 §6). Lives here because the transaction spans three documents.
  */
 export async function revokeDevice(harness: Harness, publicKey: string, context: Context): Promise<void> {
   await harness.commit(async (tx) => {
@@ -87,6 +88,8 @@ export async function revokeDevice(harness: Harness, publicKey: string, context:
     devices.devices = devices.devices.filter((entry) => entry.publicKey !== publicKey);
     const push = await tx.doc(PushDoc);
     push.registrations = push.registrations.filter((entry) => entry.publicKey !== publicKey);
+    const revocations = await tx.doc(RevocationsDoc);
+    if (!revocations.revoked.includes(publicKey)) revocations.revoked.push(publicKey);
   }, context);
 }
 

@@ -12,7 +12,8 @@ export interface ServerConfig {
   readonly origin: string;
 }
 
-const stripSlashes = (origin: string): string => origin.replace(/\/+$/, "");
+/** Trailing slashes never distinguish a server; every comparison normalizes them away. */
+export const normalizeOrigin = (origin: string): string => origin.replace(/\/+$/, "");
 
 export async function readServerConfig(dataDir: string): Promise<ServerConfig | undefined> {
   let text: string;
@@ -39,7 +40,7 @@ export async function readServerConfig(dataDir: string): Promise<ServerConfig | 
 export async function writeServerConfig(dataDir: string, config: ServerConfig): Promise<void> {
   const path = join(dataDir, SERVER_CONFIG_FILE);
   const tmp = `${path}.tmp-${process.pid}`;
-  await writeFile(tmp, `${JSON.stringify({ origin: stripSlashes(config.origin) })}\n`, { mode: 0o600 });
+  await writeFile(tmp, `${JSON.stringify({ origin: normalizeOrigin(config.origin) })}\n`, { mode: 0o600 });
   await rename(tmp, path);
 }
 
@@ -51,7 +52,7 @@ export function resolveRelayOrigin(flag: string | undefined, config: ServerConfi
   if (
     flag !== undefined &&
     config !== undefined &&
-    stripSlashes(flag) !== stripSlashes(config.origin)
+    normalizeOrigin(flag) !== normalizeOrigin(config.origin)
   ) {
     throw new Error(`--relay ${flag} disagrees with ${SERVER_CONFIG_FILE} (${config.origin}) — remove one`);
   }

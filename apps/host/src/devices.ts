@@ -7,7 +7,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
-import type { DeviceEntry, HostDevices } from "@pinomad/protocol/devices.ts";
+import type { DeviceEntry, DeviceSource, HostDevices } from "@pinomad/protocol/devices.ts";
 import { generateKeyPair, type KeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
@@ -22,30 +22,82 @@ export async function ensureDevices(harness: Harness, context: Context): Promise
   await harness.commit(async (tx) => void (await tx.doc(DevicesDoc)), context);
 }
 
-export async function isRegistered(harness: Harness, publicKey: string, context: Context): Promise<boolean> {
-  return await harness.commit(async (tx) => (await tx.doc(DevicesDoc)).devices.some((entry) => entry.publicKey === publicKey), context);
-}
+/**
+ * Public keys the user revoked (ADR-0022 §6). A separate session doc, not a
+ * field of DevicesDoc: the `devices` stream republishes that whole document to
+ * every client, and revocation is host bookkeeping — the same reason push
+ * tokens live in `pinomad.push`.
+ */
+export const RevocationsDoc = defineDoc<{ revoked: string[] }>({
+  kind: "pinomad.revocations",
+  version: 1,
+  scope: "session",
+  initial: () => ({ revoked: [] }),
+});
 
-export async function registerDevice(
-  harness: Harness,
-  device: { readonly publicKey: string; readonly name: string },
-  context: Context,
-): Promise<DeviceEntry> {
-  return await harness.commit(async (tx) => {
-    const doc = await tx.doc(DevicesDoc);
-    const existing = doc.devices.find((entry) => entry.publicKey === device.publicKey);
-    if (existing !== undefined) return { ...existing };
-    const name = device.name.trim().slice(0, 64) || "Unknown device";
-    const entry: DeviceEntry = { publicKey: device.publicKey, name, pairedAt: Date.now() };
-    doc.devices.push(entry);
-    return entry;
-  }, context);
-}
+export type DeviceAdmission =
+  /** The public key is already paired; a `pair` payload on it spends no offer. */
+  | { readonly outcome: "registered" }
+  /** A new device landed; `entry` is the committed record. */
+  | { readonly outcome: "admitted"; readonly entry: DeviceEntry }
+  | { readonly outcome: "refused" };
 
 /**
- * Revocation lives in push.ts: the commit spans DevicesDoc and the push-token
- * registry — a revoked device must never keep a send-capable token.
+ * Admission of a secure-channel device in ONE commit (ADR-0022 §6): the offer
+ * check and the account-policy checks must observe the state that decides them
+ * at the moment the device lands — a revocation, a flipped switch, or a
+ * rewritten server.json between a separate check and the write would sneak a
+ * device past all three. `acceptAccountDevices` and `serverOrigin` are read
+ * inside the commit for exactly that reason.
  */
+export async function admitDevice(
+  harness: Harness,
+  input: {
+    readonly publicKey: string;
+    /** The pair payload from the client hello; absent → only a registered key passes. */
+    readonly pair?: { readonly secret: string; readonly name: string };
+    readonly offers: PairingOffers;
+    /** Live read of the setting, called inside the commit. */
+    readonly acceptAccountDevices: () => boolean;
+    /** The current server.json origin, read inside the commit; undefined when absent or unreadable. */
+    readonly serverOrigin: () => Promise<string | undefined>;
+  },
+  context: Context,
+): Promise<DeviceAdmission> {
+  return await harness.commit(async (tx) => {
+    const devices = await tx.doc(DevicesDoc);
+    if (devices.devices.some((entry) => entry.publicKey === input.publicKey)) {
+      return { outcome: "registered" };
+    }
+    if (input.pair === undefined) return { outcome: "refused" };
+    const offer = input.offers.consume(input.pair.secret);
+    if (offer === undefined) return { outcome: "refused" };
+    const revocations = await tx.doc(RevocationsDoc);
+    if (offer.source === "account") {
+      const server = await input.serverOrigin();
+      // Every condition is re-read here, not at offer mint: join/leave rewrites
+      // server.json before the host restarts, and only this instant counts.
+      if (
+        revocations.revoked.includes(input.publicKey)
+        || server === undefined
+        || offer.server !== server
+        || !input.acceptAccountDevices()
+      ) {
+        return { outcome: "refused" };
+      }
+    }
+    const name = input.pair.name.trim().slice(0, 64) || "Unknown device";
+    const entry: DeviceEntry = { publicKey: input.publicKey, name, pairedAt: Date.now(), source: offer.source };
+    devices.devices.push(entry);
+    // Pairing again was a deliberate local act (a fresh scan, a loopback
+    // link): forgive the revocation. Account offers never get this far for a
+    // revoked key — the check above already refused them.
+    if (revocations.revoked.includes(input.publicKey)) {
+      revocations.revoked = revocations.revoked.filter((key) => key !== input.publicKey);
+    }
+    return { outcome: "admitted", entry };
+  }, context);
+}
 
 /**
  * The host's long-term X25519 identity at `<dataDir>/host-key` (base64url,
@@ -98,45 +150,65 @@ export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8A
   }
 }
 
+/** What a spent offer was issued for — the source a registration inherits (ADR-0022 §6). */
+export interface PairingOffer {
+  readonly source: DeviceSource;
+  /** The server origin an account offer was minted under; absent otherwise. */
+  readonly server?: string;
+}
+
 /**
  * One-time pairing offers. In-memory only: an offer that survives a restart
  * would let someone pair without ever seeing the QR again, and the QR itself
- * dies with the process anyway.
+ * dies with the process anyway. The host alone decides an offer's source — the
+ * client's handshake never gets a say (ADR-0022 §6).
  */
 export interface PairingOffers {
-  /** A fresh 128-bit offer, single-use. */
-  create(): { secret: string; expiresAt: number };
-  /** True only once per live offer; expired or already-used secrets return false. */
-  consume(secret: string): boolean;
+  /** A fresh 128-bit offer, single-use; `source` is how it reaches the device. */
+  create(source: Exclude<DeviceSource, "account">): { secret: string; expiresAt: number };
+  /** A fresh offer bound to `server` — the joined server hands it to a device it vouches for. */
+  createAccount(server: string): { secret: string; expiresAt: number };
+  /** Spends `secret` once; expired, used, or revoked secrets yield undefined. */
+  consume(secret: string): PairingOffer | undefined;
+  /**
+   * Forget every account-source offer: the setting or the server binding that
+   * justified them is gone, and waiting out the TTL would leave a window.
+   */
+  revokeAccount(): void;
 }
 
 export function pairingOffers(ttlMs = 5 * 60 * 1000): PairingOffers {
-  const live = new Map<string, number>();
+  const live = new Map<string, { expiresAt: number; source: DeviceSource; server?: string }>();
   const prune = (): void => {
     const now = Date.now();
-    for (const [secret, expiresAt] of live) if (expiresAt <= now) live.delete(secret);
+    for (const [secret, offer] of live) if (offer.expiresAt <= now) live.delete(secret);
+  };
+  const mint = (offer: PairingOffer): { secret: string; expiresAt: number } => {
+    prune();
+    const secret = toBase64Url(randomBytes(16));
+    const expiresAt = Date.now() + ttlMs;
+    live.set(secret, { expiresAt, ...offer });
+    return { secret, expiresAt };
   };
   return {
-    create() {
-      prune();
-      const secret = toBase64Url(randomBytes(16));
-      const expiresAt = Date.now() + ttlMs;
-      live.set(secret, expiresAt);
-      return { secret, expiresAt };
-    },
+    create: (source) => mint({ source }),
+    createAccount: (server) => mint({ source: "account", server }),
     consume(secret) {
       prune();
       const candidate = Buffer.from(secret);
-      for (const offer of live.keys()) {
-        const offerBytes = Buffer.from(offer);
+      for (const [key, offer] of live) {
+        const offerBytes = Buffer.from(key);
         // Length mismatch is a fast reject; equal lengths compare in constant time.
         if (offerBytes.length !== candidate.length) continue;
         if (timingSafeEqual(offerBytes, candidate)) {
-          live.delete(offer);
-          return true;
+          live.delete(key);
+          return offer;
         }
       }
-      return false;
+      return undefined;
+    },
+    revokeAccount() {
+      for (const [key, offer] of live) if (offer.source === "account") live.delete(key);
     },
   };
 }

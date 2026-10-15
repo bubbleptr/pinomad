@@ -42,6 +42,7 @@ import {
 } from "@pinomad/protocol/frames.ts";
 import type { HostAuth } from "@pinomad/protocol/auth.ts";
 import type { McpStatus } from "@pinomad/protocol/mcp.ts";
+import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
 import {
@@ -65,7 +66,8 @@ import type { ModelAuth } from "./model-auth.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
-import { isRegistered, registerDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
+import { readServerConfig, normalizeOrigin } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushFetch, type PushTimers } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -226,7 +228,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   };
   let remote: { url: string; advertiseUrl: string; close(): Promise<void> } | undefined;
   let relay: RelayLink | undefined;
-  const register = (connection: GatewayConnection, devicePublicKey?: string): void => {
+  const register = (connection: GatewayConnection, devicePublicKey?: string, joined?: DeviceEntry): void => {
+    // A server-vouched device announces itself to every client already online
+    // (ADR-0022 §6); broadcast before the newcomer joins `clients` — the
+    // notice would only tell it about itself.
+    if (joined?.source === "account") {
+      broadcast("info", `New device "${joined.name}" joined through your account`);
+    }
     const client = new GatewayClient(connection, options, conversations, {
       devicePublicKey,
       closed: (self) => {
@@ -241,22 +249,41 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       createPairing: () => {
         const spec = options.secure;
         if (spec === undefined) return undefined;
-        const { secret, expiresAt } = spec.offers.create();
-        const pair = `pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`;
+        const pair = (secret: string) => `pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`;
+        // The offer's source is the link it rides on: a reachable URL is a
+        // "qr" offer; a loopback-only one is "local" (ADR-0020 §4, ADR-0022 §6).
         // The relay wins: a link through it works from any network, while the
         // LAN URL only reaches devices that can already see the host.
         if (relay !== undefined) {
+          const { secret, expiresAt } = spec.offers.create("qr");
           const target = `${relayWsBase(relay.origin)}/c/${relay.hostId}`;
-          return { url: `${relay.origin}/#${pair}&url=${encodeURIComponent(target)}`, expiresAt };
+          return { url: `${relay.origin}/#${pair(secret)}&url=${encodeURIComponent(target)}`, expiresAt };
         }
-        if (remote !== undefined) return { url: `${remote.advertiseUrl}/#${pair}`, expiresAt };
-        // ADR-0020 §4: no remote listener — the last resort is the loopback
-        // /secure path, which only a client on this machine can use.
+        if (remote !== undefined) {
+          const { secret, expiresAt } = spec.offers.create("qr");
+          return { url: `${remote.advertiseUrl}/#${pair(secret)}`, expiresAt };
+        }
+        const { secret, expiresAt } = spec.offers.create("local");
         const target = `ws://127.0.0.1:${port}${LOOPBACK_SECURE_PATH}`;
-        return { url: `http://127.0.0.1:${port}/#${pair}&url=${encodeURIComponent(target)}`, expiresAt };
+        return { url: `http://127.0.0.1:${port}/#${pair(secret)}&url=${encodeURIComponent(target)}`, expiresAt };
       },
     });
     clients.add(client);
+  };
+  /**
+   * The live reads `admitDevice` performs inside its commit (ADR-0022 §6):
+   * settings are in-memory, but server.json can be rewritten mid-run by
+   * join/leave (the restart comes later) — so the file is re-read at
+   * admission, and an offer minted under a binding that no longer stands
+   * refuses.
+   */
+  const admission = {
+    harness: options.harness,
+    acceptAccountDevices: () => options.settings.value.acceptAccountDevices,
+    serverOrigin: async (): Promise<string | undefined> => {
+      const origin = (await readServerConfig(options.dataDir).catch(() => undefined))?.origin;
+      return origin === undefined ? undefined : normalizeOrigin(origin);
+    },
   };
   server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     socket.on("error", () => socket.terminate());
@@ -269,7 +296,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
         return;
       }
-      secureHandshake(socket, secure, options.harness, register);
+      secureHandshake(socket, secure, admission, register);
       return;
     }
     const token = url.searchParams.get("token");
@@ -281,8 +308,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     register(tokenConnection(socket));
   });
 
-  remote = await startRemote(options, register);
+  remote = await startRemote(options, admission, register);
   const secure = options.secure;
+  // Flipping the account switch off kills account offers still in flight —
+  // they were minted under a grant that no longer stands (ADR-0022 §6).
+  const detachSettingsWatch = options.settings.subscribe((settings) => {
+    if (!settings.acceptAccountDevices) secure?.offers.revokeAccount();
+  });
   if (secure?.relay !== undefined) {
     // `link` is assigned before any state change can fire — transitions only
     // ever happen from async socket events.
@@ -291,7 +323,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       origin: secure.relay.origin,
       signingKey: secure.relay.signingKey,
       noisePublicKey: secure.hostKey.publicKey,
-      accept: (socket) => secureHandshake(socket, secure, options.harness, register),
+      accept: (socket) => secureHandshake(socket, secure, admission, register),
       onStateChange: (state) => {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
         // journalctl shows whether the host is registered with its relay.
@@ -317,6 +349,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     async close() {
       await relay?.close();
       detachAutoTitle?.();
+      detachSettingsWatch();
       await detachPush?.();
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
@@ -418,6 +451,17 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
 }
 
 /**
+ * Everything `admitDevice` needs beyond the socket: the store, and the reads
+ * it performs inside its one commit so a revoked key, a flipped switch, or a
+ * rewritten server.json cannot slip between check and write (ADR-0022 §6).
+ */
+interface AdmissionPolicy {
+  readonly harness: Harness;
+  readonly acceptAccountDevices: () => boolean;
+  readonly serverOrigin: () => Promise<string | undefined>;
+}
+
+/**
  * The IK handshake gate on a fresh secure socket — LAN listener or relay
  * accept. Anything but one binary message 1 — text frames, a second message
  * while admission is pending — is a protocol violation closed with 1008. Registered devices pass directly; new
@@ -426,8 +470,8 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
 function secureHandshake(
   socket: WebSocket,
   secure: SecureGatewayOptions,
-  harness: Harness,
-  register: (connection: GatewayConnection, devicePublicKey: string) => void,
+  policy: AdmissionPolicy,
+  register: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void,
 ): void {
   socket.on("error", () => socket.terminate());
   const responder = respondIK({ prologue: SECURE_PROLOGUE, static: secure.hostKey });
@@ -452,10 +496,12 @@ function secureHandshake(
         clearTimeout(timeout);
         const session = new SecureSession(admitted.result);
         socket.send(admitted.message);
-        register(secureConnection(socket, session), admitted.deviceKey);
+        register(secureConnection(socket, session), admitted.deviceKey, admitted.joined);
       })
       .catch(() => socket.close(1011, "handshake failed"));
-    async function admit(): Promise<{ result: HandshakeResult; message: Uint8Array; deviceKey: string } | undefined> {
+    async function admit(): Promise<
+      { result: HandshakeResult; message: Uint8Array; deviceKey: string; joined?: DeviceEntry } | undefined
+    > {
       const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       let hello;
       let remoteStatic: Uint8Array;
@@ -468,17 +514,30 @@ function secureHandshake(
         return undefined;
       }
       const deviceKey = toBase64Url(remoteStatic);
-      if (!(await isRegistered(harness, deviceKey, context))) {
-        // A registered device with `pair` present still passes above — a retry
-        // after a lost message 2 must not spend another offer.
-        if (hello.pair === undefined || !secure.offers.consume(hello.pair.secret)) {
-          socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
-          return undefined;
-        }
-        await registerDevice(harness, { publicKey: deviceKey, name: hello.pair.name }, context);
+      const decision = await admitDevice(
+        policy.harness,
+        {
+          publicKey: deviceKey,
+          ...(hello.pair === undefined ? {} : { pair: hello.pair }),
+          offers: secure.offers,
+          acceptAccountDevices: policy.acceptAccountDevices,
+          serverOrigin: policy.serverOrigin,
+        },
+        context,
+      );
+      // A registered device with `pair` present still passes — a retry after a
+      // lost message 2 must not spend another offer.
+      if (decision.outcome === "refused") {
+        socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+        return undefined;
       }
       const { message, result } = responder.writeMessage2(encodeHostHello({ v: 1 }));
-      return { result, message, deviceKey };
+      return {
+        result,
+        message,
+        deviceKey,
+        ...(decision.outcome === "admitted" ? { joined: decision.entry } : {}),
+      };
     }
   });
 }
@@ -486,7 +545,8 @@ function secureHandshake(
 /** The 0.0.0.0 listener: plain HTTP for the web client + secure WebSockets. */
 async function startRemote(
   options: GatewayOptions,
-  register: (connection: GatewayConnection, devicePublicKey: string) => void,
+  admission: AdmissionPolicy,
+  register: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void,
 ): Promise<{ url: string; advertiseUrl: string; close(): Promise<void> } | undefined> {
   const spec = options.secure;
   const remote = spec?.lan;
@@ -498,7 +558,7 @@ async function startRemote(
     });
   });
   const secure = new WebSocketServer({ server: http });
-  secure.on("connection", (socket) => secureHandshake(socket, spec, options.harness, register));
+  secure.on("connection", (socket) => secureHandshake(socket, spec, admission, register));
   await new Promise<void>((resolveListen, reject) => {
     http.once("listening", resolveListen);
     http.once("error", reject);
