@@ -190,7 +190,7 @@ describe("push token registration", () => {
     expect(await registrations(host)).toEqual([{ publicKey: key, token: TOKEN_A, updatedAt: expect.any(Number) }]);
     // A token is a send capability: it must not ride the devices stream.
     const entry = tokenClient.view.current().devices.find((each) => each.publicKey === key);
-    expect(Object.keys(entry ?? {}).sort()).toEqual(["name", "pairedAt", "publicKey"]);
+    expect(Object.keys(entry ?? {}).sort()).toEqual(["name", "pairedAt", "publicKey", "source"]);
 
     await client.controller.setPushToken(TOKEN_B);
     expect(await registrations(host)).toEqual([{ publicKey: key, token: TOKEN_B, updatedAt: expect.any(Number) }]);

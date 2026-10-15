@@ -150,6 +150,13 @@ pinomad leave [--data-dir DIR]
 2. 在每台宿主上 `pinomad join <origin> <token>`。join 会把服务定义里的 `--relay` 摘掉，重启后宿主经账号绑定登记。
 3. 确认宿主在线（`pinomad service logs`，或连 `wss://<origin>/c/<hostId>` 看会不会以 4604 关闭）之后，把 `--allow-host` 从服务端参数里删掉。
 
+#### 宿主侧的设备准入
+
+- 登记时记下每台设备的来源（扫码 / 本机回环 / 账号担保）；早期版本登记的设备没有来源标记。
+- 吊销会留下持久记录：被吊销的公钥不能经账号担保的邀请重新登记；在宿主上重新扫码配对可以——那是用户的主动动作，同时把该公钥从吊销记录里去掉。
+- 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。`pinomad leave` 或换服务端后，旧绑定签发的邀请在登记时也会被拒——准入时重新核对当前 `server.json`，不用等重启。
+- 账号来源的设备登记成功时，所有在线设备收到一条 notice：`New device "<name>" joined through your account`。
+
 HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。服务端没开账号（纯 `--allow-host` 模式）时 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端可据此探测。
