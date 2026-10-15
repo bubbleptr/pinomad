@@ -4,9 +4,12 @@ import {
   installSpec,
   launchdPlist,
   sanitizePath,
+  specFromLaunchdPlist,
+  specFromSystemdUnit,
   type ServiceInputs,
   type ServiceSpec,
   systemdUnit,
+  withoutRelayArgs,
 } from "../src/service/definition.ts";
 
 const inputs = (env: ServiceInputs["env"] = {}): ServiceInputs => ({
@@ -118,5 +121,59 @@ describe("systemdUnit", () => {
     expect(unit).toContain('Environment="PATH=/usr/bin:/opt/x$$bin" "LANG=en_US.UTF-8"');
     expect(unit).toContain("Restart=on-failure");
     expect(unit).toContain("WantedBy=default.target");
+  });
+});
+
+describe("withoutRelayArgs", () => {
+  it("drops --relay in both spellings and keeps the rest", () => {
+    expect(withoutRelayArgs(["--relay", "https://a", "--port", "1", "--relay=https://b", "--faux", "hi"])).toEqual([
+      "--port",
+      "1",
+      "--faux",
+      "hi",
+    ]);
+    expect(withoutRelayArgs([])).toEqual([]);
+    expect(withoutRelayArgs(["--relay"])).toEqual([]);
+  });
+});
+
+describe("service definition read-back", () => {
+  // join/leave rewrite the installed definition minus --relay; the parsers
+  // must reproduce the spec the renderer was written from.
+  const spec: ServiceSpec = {
+    nodePath: "/opt/node dir/bin/node",
+    mainPath: "/repo/main.ts",
+    entryArgs: ["host"],
+    dataDir: "/data/100%\\sure",
+    hostArgs: ["--relay", "https://relay.example.com", "--port", "7431", "--faux", 'say "hi" <there>'],
+    env: { PATH: "/usr/bin:/opt/x$bin", LANG: "en_US.UTF-8" },
+    home: "/home/u s",
+  };
+
+  it("round-trips a systemd unit", () => {
+    expect(specFromSystemdUnit(systemdUnit(spec))).toEqual(spec);
+  });
+
+  it("round-trips a launchd plist", () => {
+    expect(specFromLaunchdPlist(launchdPlist(spec))).toEqual(spec);
+  });
+
+  it("reads a definition written without entryArgs or optional env", () => {
+    const minimal: ServiceSpec = {
+      nodePath: "/usr/bin/node",
+      mainPath: "/repo/apps/host/src/main.ts",
+      entryArgs: [],
+      dataDir: "/home/u/.pinomad",
+      hostArgs: ["--remote-port", "7422"],
+      env: { PATH: "/usr/bin" },
+      home: "/home/u",
+    };
+    expect(specFromSystemdUnit(systemdUnit(minimal))).toEqual(minimal);
+    expect(specFromLaunchdPlist(launchdPlist(minimal))).toEqual(minimal);
+  });
+
+  it("throws on definitions it cannot parse", () => {
+    expect(() => specFromSystemdUnit("[Service]\nExecStart=/usr/bin/node")).toThrow();
+    expect(() => specFromLaunchdPlist("<plist/>")).toThrow();
   });
 });

@@ -228,6 +228,7 @@ describe("relay link resilience", () => {
     const link = startRelayLink({
       origin,
       signingKey: await loadRelayKey(dir.path),
+      noisePublicKey: generateKeyPair().publicKey,
       accept: () => {},
       onStateChange: (state) => states.push(state.status),
       reconnectDelayMs: { min: 20, max: 50 },
@@ -277,6 +278,7 @@ describe("relay link resilience", () => {
     const link = startRelayLink({
       origin: `http://127.0.0.1:${port}`,
       signingKey: ed25519.keygen(),
+      noisePublicKey: generateKeyPair().publicKey,
       accept: () => {},
       reconnectDelayMs: { min: 10, max: 10 },
       pingIntervalMs: 20,

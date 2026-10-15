@@ -14,6 +14,8 @@
     "host": "node apps/host/src/main.ts",
     "relay": "node apps/relay/src/main.ts",
     "relay-id": "node apps/host/src/cli/relay-id.ts",
+    "join": "node apps/host/src/cli/join.ts",
+    "leave": "node apps/host/src/cli/leave.ts",
     "web": "cd apps/web && bun run dev",
     "link": "node apps/host/src/cli/web-link.ts",
     "pair": "node apps/host/src/cli/pair.ts",

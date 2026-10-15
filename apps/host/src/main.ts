@@ -27,6 +27,7 @@ import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
+import { readServerConfig, resolveRelayOrigin } from "./server-config.ts";
 import { watchModelAuth } from "./model-auth.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel } from "./pi-setup.ts";
@@ -50,6 +51,15 @@ export async function main(argv: readonly string[]): Promise<void> {
   });
 
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+  // The joined server's origin lives in server.json (pinomad join writes it);
+  // an explicit --relay must agree with it or the host refuses to start.
+  let relayOrigin: string | undefined;
+  try {
+    relayOrigin = resolveRelayOrigin(values.relay, await readServerConfig(dataDir));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
   // Extensions are built per options source: `subagent` validates `model` against
   // the same Models and advertised summaries the gateway serves.
   const extensionsFor =
@@ -91,7 +101,7 @@ export async function main(argv: readonly string[]): Promise<void> {
             ...(values["public-url"] === undefined ? {} : { publicUrl: values["public-url"] }),
           },
         }),
-    ...(values.relay === undefined ? {} : { relay: { origin: values.relay } }),
+    ...(relayOrigin === undefined ? {} : { relay: { origin: relayOrigin } }),
   };
 
   function fauxOptions(responses: () => FauxResponseStep): OpenHostOptions {

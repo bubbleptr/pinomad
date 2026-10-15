@@ -11,8 +11,10 @@ import {
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
+  signRelayChallengeV2,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
+import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
 export type RelayLinkState =
   | { readonly status: "connecting" }
@@ -46,6 +48,8 @@ export function startRelayLink(options: {
   /** Public relay origin (https://…); trailing slashes stripped. */
   readonly origin: string;
   readonly signingKey: { readonly secretKey: Uint8Array; readonly publicKey: Uint8Array };
+  /** The host's current Noise public key — reported under the v2 signature. */
+  readonly noisePublicKey: Uint8Array;
   /** Hand each freshly opened data socket to the gateway's secure handshake. */
   accept(socket: WebSocket): void;
   /**
@@ -141,15 +145,22 @@ export function startRelayLink(options: {
       return;
     }
     switch (frame.t) {
-      case "challenge":
+      case "challenge": {
+        // Both signatures: a pre-accounts server verifies v1 and ignores the
+        // rest; an account server prefers v2, which also binds the Noise key.
+        const noisePublicKey = toBase64Url(options.noisePublicKey);
+        const challenge = { relayOrigin: origin, hostId, nonce: frame.nonce };
         control?.send(
           encodeRelayFrame({
             t: "register",
             hostId,
-            signature: signRelayChallenge(options.signingKey.secretKey, { relayOrigin: origin, hostId, nonce: frame.nonce }),
+            signature: signRelayChallenge(options.signingKey.secretKey, challenge),
+            signatureV2: signRelayChallengeV2(options.signingKey.secretKey, { ...challenge, noisePublicKey }),
+            noisePublicKey,
           }),
         );
         break;
+      }
       case "registered":
         delay = minDelay;
         setState({ status: "registered" });

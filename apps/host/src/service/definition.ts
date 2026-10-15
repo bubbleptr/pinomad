@@ -86,6 +86,91 @@ export function installSpec(argv: readonly string[], inputs: ServiceInputs): Ser
 export const launchdPlistPath = (home: string): string => join(home, "Library", "LaunchAgents", "pinomad.host.plist");
 export const systemdUnitPath = (home: string): string => join(home, ".config", "systemd", "user", "pinomad.service");
 
+/** Drops `--relay <value>` and `--relay=<value>` pairs — join/leave rewrite the definition without it. */
+export function withoutRelayArgs(args: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--relay") {
+      i += 1; // the flag's value
+      continue;
+    }
+    if (arg.startsWith("--relay=")) continue;
+    out.push(arg);
+  }
+  return out;
+}
+
+// The renderers escape in two layers: systemd doubles % and $ (specifiers and
+// $VAR expansion) then backslash-escapes inside quotes; launchd XML-escapes.
+// The readers below undo them in reverse order.
+const unescapeExec = (value: string): string => value.replace(/\\(.)/g, "$1");
+const unspecify = (value: string): string => value.replace(/%%/g, "%").replace(/\$\$/g, "$");
+const xmlUnescape = (value: string): string =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+/**
+ * Rebuilds the ServiceSpec from its rendered program array. `--data-dir` is the
+ * boundary: before it sit nodePath/mainPath/entryArgs, after it the host args.
+ */
+function specFromProgram(program: readonly string[], env: Record<string, string>, home: string): ServiceSpec {
+  const at = program.indexOf("--data-dir");
+  if (program.length < 4 || at < 2 || program[at + 1] === undefined) {
+    throw new Error("service definition has no --data-dir argument boundary");
+  }
+  return {
+    nodePath: program[0]!,
+    mainPath: program[1]!,
+    entryArgs: program.slice(2, at),
+    dataDir: program[at + 1]!,
+    hostArgs: program.slice(at + 2),
+    env: {
+      PATH: env.PATH ?? "",
+      ...(env.LANG === undefined ? {} : { LANG: env.LANG }),
+      ...(env.LC_ALL === undefined ? {} : { LC_ALL: env.LC_ALL }),
+    },
+    home,
+  };
+}
+
+/** Parses back a unit written by systemdUnit — join/leave read-then-rewrite the definition. */
+export function specFromSystemdUnit(text: string): ServiceSpec {
+  const exec = /^ExecStart=(.*)$/m.exec(text)?.[1];
+  if (exec === undefined) throw new Error("service unit has no ExecStart");
+  const program = [...exec.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => unspecify(unescapeExec(match[1]!)));
+  const env: Record<string, string> = {};
+  const envLine = /^Environment=(.*)$/m.exec(text)?.[1] ?? "";
+  // Environment values are specifier-escaped but not quote-escaped.
+  for (const match of envLine.matchAll(/"([^"]*)"/g)) {
+    const pair = unspecify(match[1]!);
+    const eq = pair.indexOf("=");
+    if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  const workdir = /^WorkingDirectory=(.*)$/m.exec(text)?.[1];
+  if (workdir === undefined) throw new Error("service unit has no WorkingDirectory");
+  return specFromProgram(program, env, unspecify(workdir));
+}
+
+/** Parses back a plist written by launchdPlist. */
+export function specFromLaunchdPlist(text: string): ServiceSpec {
+  const array = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1];
+  if (array === undefined) throw new Error("plist has no ProgramArguments");
+  const program = [...array.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((match) => xmlUnescape(match[1]!));
+  const env: Record<string, string> = {};
+  const dict = /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(text)?.[1] ?? "";
+  for (const match of dict.matchAll(/<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/g)) {
+    env[xmlUnescape(match[1]!)] = xmlUnescape(match[2]!);
+  }
+  const workdir = /<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/.exec(text)?.[1];
+  if (workdir === undefined) throw new Error("plist has no WorkingDirectory");
+  return specFromProgram(program, env, xmlUnescape(workdir));
+}
+
 const xmlEscape = (value: string): string =>
   value
     .replace(/&/g, "&amp;")

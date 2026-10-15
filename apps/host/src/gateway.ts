@@ -290,6 +290,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     link = startRelayLink({
       origin: secure.relay.origin,
       signingKey: secure.relay.signingKey,
+      noisePublicKey: secure.hostKey.publicKey,
       accept: (socket) => secureHandshake(socket, secure, options.harness, register),
       onStateChange: (state) => {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
