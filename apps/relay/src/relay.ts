@@ -252,8 +252,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     } catch {
       pathname = "";
     }
-    // /api owns its prefix ahead of the static web client.
-    if (accounts !== undefined && (pathname === "/api" || pathname.startsWith("/api/"))) {
+    // /api owns its prefix ahead of the static web client — without accounts a
+    // JSON 404, never the SPA fallback (clients probe /api/me to detect them).
+    if (pathname === "/api" || pathname.startsWith("/api/")) {
+      if (accounts === undefined) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "accounts_disabled" }));
+        return;
+      }
       void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();

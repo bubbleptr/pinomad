@@ -233,17 +233,26 @@ describe("server login and sessions", () => {
     // Same error shape either way — the API must not disclose which usernames exist.
     expect(unknown.json).toEqual(wrong.json);
 
-    const ok = await login(relay);
-    expect(ok.status).toBe(200);
-    const setCookie = (ok.headers["set-cookie"] as string[])[0]!;
+    // No Origin (native clients, CLI): bare token, no cookie.
+    const tokenResponse = await login(relay);
+    expect(tokenResponse.status).toBe(200);
+    expect(typeof tokenResponse.json.token).toBe("string");
+    expect(tokenResponse.headers["set-cookie"]).toBeUndefined();
+
+    // Same-origin browser login: HttpOnly cookie only, the body must not leak
+    // the session token to page JS.
+    const cookieResponse = await login(relay, "admin", GOOD_PASSWORD, { origin: ORIGIN });
+    expect(cookieResponse.status).toBe(200);
+    expect(cookieResponse.json.token).toBeUndefined();
+    const setCookie = (cookieResponse.headers["set-cookie"] as string[])[0]!;
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("Secure");
     expect(setCookie).toContain("SameSite=Strict");
     expect(setCookie).not.toContain("Domain=");
 
-    const cookie = sessionCookie(ok);
-    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${ok.json.token}` } })).status).toBe(200);
-    expect((await api(relay, { path: "/api/me", headers: { cookie } })).status).toBe(200);
+    const cookie = sessionCookie(cookieResponse);
+    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${tokenResponse.json.token}` } })).status).toBe(200);
+    expect((await api(relay, { path: "/api/me", headers: { cookie, origin: ORIGIN } })).status).toBe(200);
     expect((await api(relay, { path: "/api/me" })).status).toBe(401);
   });
 
@@ -286,15 +295,28 @@ describe("server login and sessions", () => {
     }
   });
 
-  it("rejects cross-origin mutating requests", async () => {
+  it("rejects cross-origin mutating requests on the cookie path, not on Bearer", async () => {
     const { relay } = await startServer();
-    const cookie = sessionCookie(await login(relay));
-    // The mismatched request must not have run: the session is still alive.
-    expect((await api(relay, { method: "POST", path: "/api/logout", headers: { cookie, origin: "https://evil.example.com" } })).status).toBe(403);
-    expect((await api(relay, { path: "/api/me", headers: { cookie } })).status).toBe(200);
+    const cookie = sessionCookie(await login(relay, "admin", GOOD_PASSWORD, { origin: ORIGIN }));
+    const token = (await login(relay)).json.token as string;
+
+    // Cookie is an ambient credential: foreign or missing Origin is refused.
+    expect(
+      (await api(relay, { method: "POST", path: "/api/logout", headers: { cookie, origin: "https://evil.example.com" } })).status,
+    ).toBe(403);
+    expect((await api(relay, { method: "POST", path: "/api/logout", headers: { cookie } })).status).toBe(403);
+    // Neither refused request ran: both sessions are still alive.
+    expect((await api(relay, { path: "/api/me", headers: { cookie, origin: ORIGIN } })).status).toBe(200);
+    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
+
+    // Bearer carries its own credential — any Origin is fine (desktop app).
+    expect(
+      (await api(relay, { method: "POST", path: "/api/logout", headers: { authorization: `Bearer ${token}`, origin: "https://whatever.invalid" } })).status,
+    ).toBe(204);
+
     // Login itself is a mutation — cross-site login CSRF is rejected too.
     expect((await login(relay, "admin", GOOD_PASSWORD, { origin: "https://evil.example.com" })).status).toBe(403);
-    // Same-origin requests pass the check.
+    // Same-origin cookie logout passes.
     expect((await api(relay, { method: "POST", path: "/api/logout", headers: { cookie, origin: ORIGIN } })).status).toBe(204);
   });
 
@@ -409,6 +431,54 @@ describe("server login rate limiting", () => {
     sockets.add(refused);
     const error = await once(refused, "error").catch((e: unknown) => e);
     expect(String(error)).toContain("403");
+  });
+});
+
+describe("desktop origin and legacy mode", () => {
+  const DESKTOP = "app://pinomad";
+
+  it("answers CORS preflights only for the desktop origin", async () => {
+    const { relay } = await startServer();
+    const preflight = await api(relay, { method: "OPTIONS", path: "/api/login", headers: { origin: DESKTOP } });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe(DESKTOP);
+    expect(preflight.headers["access-control-allow-methods"]).toBe("GET, POST");
+    expect(preflight.headers["access-control-allow-headers"]).toBe("authorization, content-type");
+    // Ambient credentials are never cross-origin.
+    expect(preflight.headers["access-control-allow-credentials"]).toBeUndefined();
+
+    const other = await api(relay, { method: "OPTIONS", path: "/api/login", headers: { origin: "https://evil.example.com" } });
+    expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("returns a bare token and no cookie to the desktop renderer", async () => {
+    const { relay } = await startServer();
+    const response = await login(relay, "admin", GOOD_PASSWORD, { origin: DESKTOP });
+    expect(response.status).toBe(200);
+    expect(typeof response.json.token).toBe("string");
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.headers["access-control-allow-origin"]).toBe(DESKTOP);
+
+    // The token works as Bearer — including on a mutating call from that origin.
+    expect(
+      (
+        await api(relay, {
+          method: "POST",
+          path: "/api/logout",
+          headers: { authorization: `Bearer ${response.json.token}`, origin: DESKTOP },
+        })
+      ).status,
+    ).toBe(204);
+  });
+
+  it("answers a JSON 404 on /api/* when accounts are off, ahead of the SPA fallback", async () => {
+    const web = await tempDir();
+    await writeFile(join(web, "index.html"), "<html>app</html>");
+    const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, allowedHosts: ["host-id"], webRoot: web });
+    relays.push(relay);
+    const response = await api(relay, { path: "/api/me" });
+    expect(response.status).toBe(404);
+    expect(response.json.error).toBe("accounts_disabled");
   });
 });
 

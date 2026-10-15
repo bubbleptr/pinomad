@@ -125,7 +125,9 @@ pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pino
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
 
-HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`，返回 Bearer 令牌并种 `Secure`+`HttpOnly`+`SameSite=Strict` cookie）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+
+凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。服务端没开账号（纯 `--allow-host` 模式）时 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端可据此探测。
 
 ### 升级
 
