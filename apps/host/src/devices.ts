@@ -47,7 +47,7 @@ export type DeviceAdmission =
  * check and the account-policy checks must observe the state that decides them
  * at the moment the device lands — a revocation, a flipped switch, or a
  * rewritten server.json between a separate check and the write would sneak a
- * device past all three. `acceptAccountDevices` and `serverOrigin` are read
+ * device past all three. `acceptAccountDevices` and `serverBinding` are read
  * inside the commit for exactly that reason.
  */
 export async function admitDevice(

@@ -49,10 +49,10 @@ export const removeServerConfig = (dataDir: string): Promise<void> =>
 
 /**
  * The binding identity of the current server.json: origin plus the file's
- * inode. writeServerConfig's tmp+rename and leave's rm+recreate both produce a
- * new file, so every join/leave — even back to the same origin — yields a new
- * binding, and account offers minted under an old one can never revive
- * (ADR-0022 §6).
+ * inode and birth time. writeServerConfig's tmp+rename and leave's
+ * rm+recreate both produce a new file, so every join/leave — even back to the
+ * same origin — yields a new binding, and account offers minted under an old
+ * one can never revive (ADR-0022 §6).
  */
 export async function readServerBinding(dataDir: string): Promise<string | undefined> {
   const path = join(dataDir, SERVER_CONFIG_FILE);
@@ -65,7 +65,7 @@ export async function readServerBinding(dataDir: string): Promise<string | undef
   }
   const config = await readServerConfig(dataDir);
   if (config === undefined) return undefined;
-  return `${normalizeOrigin(config.origin)}@${file.ino}`;
+  return `${normalizeOrigin(config.origin)}@${file.ino}:${file.birthtimeMs}`;
 }
 
 /** `--relay` wins ties only when equal; a disagreement between it and server.json is an error. */
