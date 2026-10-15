@@ -55,7 +55,7 @@
 4. **手机上的改动面板**：Web 已有的对话级改动面板搬到移动端（ADR-0010、0011）。
 5. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
-服务端上的账号（ADR-0022）排在 M5 之后，见 M3。
+服务端上的账号（ADR-0022）和 M5 并行做，见 M3。
 
 ### 具名 Agent 的实现条目
 
@@ -122,10 +122,39 @@ MCP 本身的后续，都等有明确需求再做：
 
 - 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
 - tailnet 直连的后续：同时开着中继时，`pinomad pair` 只给出中继链接，要走直连得取出其中的 `pair=…`，拼到 tailnet 地址后面（现在由本机脚本完成）。用一段时间后，再决定是给 `pair` 加一个选地址的参数，还是并入上面的"二维码带多个候选地址"。另外 `--remote-port` 监听的是 `0.0.0.0`，局域网也能访问到；连上后仍要过 IK 握手，所以暂不限制
-- 服务端上的账号（ADR-0022，信任模型已定，实现未开始）：中继演进为服务端，环境变量创建唯一用户、不开放注册；Web / App "添加宿主"给出 `pinomad join` 命令，宿主加入账号，取代 `relay-id` + `--allow-host`；客户端登录后列出宿主，第一次进某台宿主时服务端经控制连接要邀请、走现有 IK 配对；宿主设置加"接受账号担保的设备"开关，设备列表标来源，账号加入时提示在线设备；移动端补出示二维码。排在 M5 之后。之后：`apps/relay` 改名 `apps/server`；开放注册、OAuth、配额和限流；账号层面一键把某台设备从所有宿主上踢掉；客户端同时连多台宿主、开始对话时选宿主
+- 服务端上的账号（ADR-0022，进行中，和 M5 并行）：实现条目见下。之后：`apps/relay` 改名 `apps/server`；开放注册、OAuth、MFA、配额；账号层面一键把某台设备从所有宿主上踢掉；客户端同时连多台宿主、开始对话时选宿主
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
 - 推送通知已挪进 M5；"有问题等你回答"的提示已经有了
+
+### 服务端账号的实现条目
+
+方案经 critic 评审（2026-10-16），第一期范围：唯一用户、登录、宿主加入账号、服务端担保新设备、宿主侧开关和设备来源。按顺序做成堆叠 PR，每步都要测"旧宿主 + 新服务端"和"新宿主 + 旧服务端"两种组合；跨账号隔离即使现在只有一个用户，也用两个测试账号测。
+
+1. **服务端存账号、登录**（`apps/relay`）：
+   - `--data-dir`（默认 `~/.pinomad-server`，`PINOMAD_SERVER_DATA_DIR` 覆盖），`node:sqlite`，目录锁和宿主一样，一个目录一个进程。表有外键、非空约束和 schema 版本号。
+   - 表：`users`（scrypt，参数和 salt 编进哈希串）、`sessions`（令牌 32 字节随机数，库里只存 SHA-256；30 天固定过期，不滑动续期）、`join_tokens`（32 字节随机数、只存哈希、10 分钟、一次性）、`hosts`（`host_id` 就是 Ed25519 relayHostId、所属用户、Noise 公钥、名字、加入和最后在线时间；一台宿主只属于一个账号）。
+   - 首次启动：users 为空时用 `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD`（≥12 位，建议密码管理器生成）建用户；两个变量缺一个或密码不合规就报错退出。老的纯白名单模式只在显式给了 `--allow-host` 时启用。
+   - `pinomad relay passwd`：要求服务端已停（复用目录锁），从 stdin 读新密码；同一个事务里换哈希、删掉全部 sessions 和没用掉的 join tokens（不影响宿主上已登记的设备）。
+   - HTTP API 挂在同端口 `/api/*`：`POST /api/login`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`GET /api/me`。Web（从服务端同源打开）用 `Secure`、`HttpOnly`、`SameSite=Strict` 的 host-only cookie，改动类请求校验 Origin；桌面端和移动端用 `Authorization: Bearer`，令牌存安全存储。CORS 只放行实际需要的来源，不带 credentials。
+   - 防暴力破解：scrypt 前有全局并发上限和有界队列（满了回 429），按来源 IP 限速（只在 `--trust-proxy` 时信任反向代理给的地址），按用户名计失败次数（计数表有容量上限），限制请求体和字段长度。账号 API 和控制连接只走 HTTPS / WSS，明文只允许 localhost 开发。
+2. **宿主加入和退出**（`apps/host` CLI + 服务端 + `packages/protocol/relay.ts`）：
+   - `POST /api/join-tokens`（需登录）返回 `{token, expiresAt, command}`，命令形如 `npm i -g pinomad && pinomad join <origin> <token>`。
+   - join 和 leave 都走控制连接：每次连接服务端都发新的 challenge，签名防重放。签名消息升到 `pinomad-relay/2`，多绑定宿主当前的 Noise 公钥；`register` 帧加可选的 `joinToken` 和 `features`。服务端在一个事务里验签、核销令牌、写入或改绑 `hosts`，回 `joined`。`leave` 是已登记的控制连接上的一帧，删掉这台宿主的绑定。响应丢了就用新令牌再跑一次，不做幂等重放。
+   - 已加入账号的宿主每次 register 都报告当前 Noise 公钥；和 `hosts` 里的记录对不上时，服务端照常转发，但停掉这台宿主的账号配对并给出明确错误，要重新 join 才更新。不做通用的密钥轮换。
+   - 宿主在 `<dataDir>/server.json` 记服务端地址，`pinomad host` 启动时读它。join / leave 会改写已安装服务的定义、去掉旧的 `--relay` 参数，再按 ADR-0009 等空闲重启；没装服务就装上（测试里注入假的服务管理器）。服务端地址和 `--relay` 同时给出且不一致时报错。`loadHostKey` 改成和 `loadRelayKey` 一样用 `wx` 独占创建，全新安装时 join 先建好两把密钥。CLI 显示宿主指纹和加入结果。
+   - register 判定：hostId 在 `hosts` 里，或在 `--allow-host` 里。部署迁移完成后删掉 `--allow-host`。
+3. **宿主侧的准入**（`apps/host` + 协议次版本号）：
+   - 吊销记录：`revokeDevice` 除了删设备，还把公钥记进宿主持久化的已吊销列表（和设备表同一个事务）。账号来源的邀请不能让已吊销的公钥重新登记；扫码配对可以，因为那是用户在宿主上主动做的。
+   - 邀请带来源：`pairingOffers` 的 offer 记下 `source`（`account` / `qr` / `local`，`local` 指签发给回环链接的邀请）和签发它的服务端绑定。`consume` 把来源交给 `registerDevice` 写进 `DeviceEntry.source`（可选字段，老记录显示"未知"）；来源只看宿主自己存的 offer，不看设备怎么说，也不看连接地址。设备名以握手里提交的为准。
+   - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛。准入时再检查一遍：账号来源的邀请要求开关是开的，而且绑定还是当前那个服务端。关开关、leave、换服务端时，立刻作废还没用掉的账号邀请，不用等重启。
+   - 账号来源的设备登记成功后，宿主用现有的 `notice` 帧通知所有在线设备"新设备 X 通过账号加入"。
+4. **服务端担保配对**：
+   - `GET /api/hosts`（需登录）返回 `[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`，`pairing` 说明能不能经账号配对（宿主太旧、公钥对不上、离线）。
+   - `POST /api/hosts/:hostId/pairing`（需登录、宿主属于本账号）：经控制帧 `pairing-request` 向宿主要邀请，宿主回 `pairing` 或 `pairing-refused`。等待中的请求绑定到具体的控制连接和本次绑定，连接断开、被替换、leave 或 HTTP 请求取消时清掉；迟到或不认识的回复忽略。每台宿主、每个会话限制同时在途的请求数。宿主太旧（没声明 `features: ["pairing"]`）直接回固定的错误，不等超时；离线回 409，10 秒没回复回 504。成功时返回 `{url, hostKey, secret, expiresAt}`，客户端照 ADR-0008 走 IK 配对。
+5. **Web / 桌面端界面**：登录、宿主列表、"添加宿主"给出命令、设备来源标记、`acceptAccountDevices` 开关、退出所有登录。普通 Web 的 `HostStore` 改成能存多台宿主，迁移现有的单条记录；桌面端 renderer 的 CSP 放行 `https:`（`wss:` 本来就允许连任意地址，再放行 `https:` 风险没有实质变化）。客户端按服务端地址 + hostId 记住宿主公钥：公钥变了要提示，不自动重新配对；已存的宿主收到 4401 后不自动去要邀请。
+6. **移动端**（单独 PR，mbp）：登录、宿主列表、经账号配对、出示二维码。
+7. **部署迁移**：Zeabur 挂持久卷、设环境变量；Omarchy 跑 `pinomad join`。确认服务端重启后账号和绑定还在、宿主在线后，删掉 `--allow-host`。
 
 ## 待定优先级：代码在别的机器上跑
 
