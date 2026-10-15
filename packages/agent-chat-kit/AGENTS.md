@@ -5,14 +5,16 @@
 ## 布局
 
 - `AgentChatCore`：不依赖 SwiftUI。流式 Markdown 的增量解析和半截语法预判、agent trace 的数据模型和展示规则。解析交给 `swift-markdown`（cmark-gfm），流式这一层是自己写的。
-- `AgentChatKit`（还没建）：SwiftUI 视图，只依赖 `AgentChatCore`。
-- Demo App（还没建）：回放录好的数据流，用来截图验证视图。
+- `AgentChatKit`：SwiftUI 视图（`MarkdownView`、`AgentTraceView`、`Transcript`、`UserMessageView`），只依赖 `AgentChatCore`。
+- `Demo/`：iOS Demo App，回放一段脚本化的 agent 运行（`Replay.swift`），用来截图验证视图。Xcode 工程是手写的，用了同步文件夹（Xcode 16+），往 `Demo/AgentChatDemo/` 加文件不用改工程。
 
 trace 用本库自己的通用模型，不引用 PiNomad 的类型；语义对照 PiNomad 的 `packages/client/src/cot-view.ts`（phase、step），由使用方写适配层。流式 Markdown 的行为对照 MyGo 的规格：https://mygo.egoist.dev/docs/ui/markdown
 
 ## 开发和验证
 
 在 omarchy 上改代码，Swift 只能在 mbp 上构建：`scripts/mbp swift test` 会把工作区 rsync 到 mbp 的 `~/code/projects/AgentChatKit` 再在那边执行，跑完把 `Package.resolved` 拉回来。mbp 离线时没法构建和测试。
+
+`scripts/demo 2 8.5` 在 mbp 上构建 Demo、装到已启动的 iPhone 17 Pro 模拟器并启动，启动后第 2 秒、第 8.5 秒各截一张图，拉回本机的 `.build/shots/`。改了视图要用它截图确认。
 
 测试只放在这几个边界上：
 
