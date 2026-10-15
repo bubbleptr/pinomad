@@ -48,16 +48,20 @@ public struct MarkdownStream {
         let closedCount = max(children.count - openCount, 0)
 
         var kept = blocks.prefix { $0.isClosed }
-        for (offset, markup) in children.enumerated() {
-            kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: offset < closedCount))
+        for markup in children.prefix(closedCount) {
+            kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: true))
         }
-        blocks = Array(kept)
 
         if closedCount < children.count, let line = children[closedCount].range?.lowerBound.line {
             tailOffset += Self.offset(ofLine: line, in: tail.utf8)
+            let open = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
+            for markup in Document(parsing: Speculation.complete(String(open))).blockChildren {
+                kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: false))
+            }
         } else {
             tailOffset = source.utf8.count
         }
+        blocks = Array(kept)
     }
 
     /// UTF-8 offset of a 1-based line from the start of `text`. Scans bytes,
