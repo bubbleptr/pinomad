@@ -18,7 +18,7 @@ const node = (over: Partial<ConversationSummary> = {}, children: readonly Conver
   children,
 });
 
-const organized = (...chats: ConversationNode[]): Organized => ({ chats, projects: [] });
+const organized = (...chats: ConversationNode[]): Organized => ({ chats, projects: [], archived: [] });
 
 const baseline = (entries: readonly [number, ConversationSummary["status"]][]): StatusBaseline =>
   new Map(entries.map(([n, status]) => [id(n), status]));

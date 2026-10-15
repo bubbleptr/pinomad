@@ -19,9 +19,11 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
-import { ArrowLeft, Bot, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
+import { useNow } from "../../shared/use-now.ts";
+import { Archive, ArrowLeft, Bot, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 
 const SECTIONS = [
@@ -30,6 +32,7 @@ const SECTIONS = [
   { id: "agents", title: "Agents", icon: Bot },
   { id: "mcp", title: "MCP", icon: Puzzle },
   { id: "chats", title: "Chats", icon: ChatBubble },
+  { id: "archived", title: "Archived", icon: Archive },
   { id: "about", title: "About", icon: Info },
 ] as const;
 
@@ -225,6 +228,17 @@ function sectionBody(
         ),
         body: <ChatsSection view={view} remote={remote} connected={connected} />,
       };
+    case "archived":
+      return {
+        title: "Archived",
+        supporting: (
+          <Text as="p" type="supporting">
+            Archived conversations are hidden from the sidebar. Restoring one brings it back with its forks and
+            subagents; a worktree removed on archive is checked out again from its branch.
+          </Text>
+        ),
+        body: <ArchivedSection view={view} remote={remote} connected={connected} />,
+      };
     case "about":
       return { title: "About", body: <AboutSection view={view} /> };
   }
@@ -306,6 +320,41 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
         onReset={() => void remote.controller.updateSettings({ followUpMode: null })}
       />
     </VStack>
+  );
+}
+
+/** Restore only: an archived conversation is not opened from here, so nothing gets sent to it while hidden. */
+function ArchivedSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
+  const now = useNow(60_000);
+  const archived = view.organized.archived;
+  if (archived.length === 0) return <Text as="p" type="supporting">No archived conversations.</Text>;
+  return (
+    <List density="compact">
+      {archived.map(({ node, project }) => {
+        const title = node.summary.title ?? "New conversation";
+        const updatedAt = familyUpdatedAt(node);
+        return (
+          <ListItem
+            key={node.summary.id}
+            label={title}
+            description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
+              .filter((part) => part !== undefined)
+              .join(" · ")}
+            endContent={
+              <Button
+                label={`Restore ${title}`}
+                variant="secondary"
+                size="sm"
+                isDisabled={!connected}
+                onClick={() => void remote.controller.archive(node.summary.id, false)}
+              >
+                Restore
+              </Button>
+            }
+          />
+        );
+      })}
+    </List>
   );
 }
 

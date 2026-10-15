@@ -323,7 +323,7 @@ class RemoteClient {
     void Promise.all(hostStreams(hostMinor).map((stream) => this.#snapshot(stream))).then(() => {
       this.#state = {
         session: hello.session,
-        organized: { chats: [], projects: [] },
+        organized: { chats: [], projects: [], archived: [] },
         models: this.#host("models") ?? hello.models,
         defaults: this.#effectiveDefaults(hello.defaults ?? {}),
         notices: [],

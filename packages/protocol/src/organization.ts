@@ -65,12 +65,15 @@ export type ConversationNode = {
 export type Organized = {
   readonly chats: readonly ConversationNode[];
   readonly projects: readonly { readonly project: Project; readonly conversations: readonly ConversationNode[] }[];
+  /** Archived roots, newest first; `project` is absent for a Chat. Kept out of `findConversation`: they are restored, not shown. */
+  readonly archived: readonly { readonly node: ConversationNode; readonly project?: Project }[];
 };
 
 /**
  * Group index entries and summaries for display: projects newest-first, their
- * conversations newest-first, forks and subagents nested under their ancestor.
- * Entries in removed projects, archived entries, and orphans never surface.
+ * conversations newest-first, forks and subagents nested under their ancestor;
+ * archived roots go to their own list. Entries in removed projects and orphans
+ * never surface.
  */
 export function organize(index: HostIndex, summaries: readonly ConversationSummary[]): Organized {
   const summaryById = new Map(summaries.map((summary) => [summary.id, summary]));
@@ -78,7 +81,6 @@ export function organize(index: HostIndex, summaries: readonly ConversationSumma
   const topLevel = new Map<ConversationId, IndexEntry>();
 
   for (const entry of index.conversations) {
-    if (entry.archived === true) continue;
     const home = entry.home;
     if (home.kind === "project" && !index.projects.some((project) => project.path === home.path)) continue;
     const summary = summaryById.get(entry.id);
@@ -117,7 +119,8 @@ export function organize(index: HostIndex, summaries: readonly ConversationSumma
     children: [...node.children].sort(byIdAscending).map(sortChildren),
   });
 
-  const entries = [...topLevel.values()].sort((a, b) => b.createdAt - a.createdAt);
+  const sorted = [...topLevel.values()].sort((a, b) => b.createdAt - a.createdAt);
+  const entries = sorted.filter((entry) => entry.archived !== true);
   return {
     chats: entries.filter((entry) => entry.home.kind === "chat").map(nodeList),
     projects: [...index.projects]
@@ -128,6 +131,13 @@ export function organize(index: HostIndex, summaries: readonly ConversationSumma
           .filter((entry) => entry.home.kind === "project" && entry.home.path === project.path)
           .map(nodeList),
       })),
+    archived: sorted
+      .filter((entry) => entry.archived === true)
+      .map((entry) => {
+        const home = entry.home;
+        const project = home.kind === "project" ? index.projects.find((each) => each.path === home.path) : undefined;
+        return { node: nodeList(entry), ...(project === undefined ? {} : { project }) };
+      }),
   };
 }
 

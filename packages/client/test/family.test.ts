@@ -69,7 +69,7 @@ describe("displayName", () => {
   });
 });
 
-const organizedOf = (chats: ConversationNode[]): Organized => ({ chats, projects: [] });
+const organizedOf = (chats: ConversationNode[]): Organized => ({ chats, projects: [], archived: [] });
 
 describe("forksAt", () => {
   it("returns the direct fork children anchored at an entry — including legacy nested forks", () => {
