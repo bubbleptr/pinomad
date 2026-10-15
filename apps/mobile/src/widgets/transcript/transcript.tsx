@@ -25,18 +25,24 @@ import {
   type ToolItem,
 } from "@pinomad/client/tool-item.ts";
 import { MarkdownText, MONOSPACE } from "../../shared/ui/markdown.tsx";
+import { MessageImages } from "../../entities/image/message-images.tsx";
 
 const OUTPUT_LINE_CAP = 40;
 
 function UserBubble({ entry }: { entry: Extract<ChatEntry, { kind: "user" }> }) {
   return (
-    <View
-      className="bg-surface-tertiary"
-      style={{ alignSelf: "flex-end", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, maxWidth: "85%" }}
-    >
-      <Text className="text-foreground" style={{ fontSize: 15 }}>
-        {entry.text}
-      </Text>
+    <View style={{ alignSelf: "flex-end", maxWidth: "85%", gap: 6 }}>
+      <MessageImages images={entry.images} />
+      {entry.text === "" ? null : (
+        <View
+          className="bg-surface-tertiary"
+          style={{ borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 }}
+        >
+          <Text className="text-foreground" style={{ fontSize: 15 }}>
+            {entry.text}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -105,9 +111,7 @@ function ToolRow({ tool, depth = 0 }: { tool: ToolItem; depth?: number }) {
       {open && tool.argsText !== undefined ? <ToolOutput text={tool.argsText} /> : null}
       {open && tool.output !== undefined ? <ToolOutput text={tool.output} /> : null}
       {tool.images !== undefined && tool.images.length > 0 ? (
-        <Text className="text-muted" style={{ fontSize: 12 }}>
-          {tool.images.length} image{tool.images.length === 1 ? "" : "s"}
-        </Text>
+        <MessageImages images={tool.images} align="start" />
       ) : null}
       {tool.children?.map((child, index) => (
         <ToolRow key={child.toolCallId ?? index} tool={child} depth={depth + 1} />
