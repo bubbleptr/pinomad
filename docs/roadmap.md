@@ -43,6 +43,7 @@
    - App：通知开关按宿主分别设（客户端偏好）；连上、重连、回到前台时按偏好 `setPushToken`，失败在开关旁可见；token 监听器给的是 APNs token，要先换成 Expo token 再报；忘记宿主前先注销，没能注销时提示到宿主上吊销这台设备。App 在前台时只屏蔽当前宿主的推送横幅，其他宿主照常弹；点开推送先记下 `{ hostKey, conversationId }`，等那台宿主连上、数据就绪再打开，用完清掉最后一次 response；
    - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
    - 拆两个 PR：协议 + 宿主（Linux），再移动端（mbp，堆在前一个上，出新的 TestFlight 构建）。设计经 critic 评审，不另写 ADR（ADR-0008 §9 已记下 Expo 和标题出安全通道的取舍）。
+   - 第一步已完成：协议 5.7 `setPushToken`，宿主级文档 `pinomad.push` 与吊销同事务，宿主发送器在 `apps/host/src/push.ts`（重试、15 分钟 receipt 检查、`DeviceNotRegistered` 条件删除、collapse/thread 标识）。移动端没做：`expo-notifications`、通知开关、点开跳转；使用文档随移动端 PR 一起写。
 3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；

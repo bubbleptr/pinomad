@@ -46,6 +46,8 @@ function snapshotFor(stream: string): unknown {
 function fakeTransport(
   defaultsList: readonly ConversationDefaults[],
   helloExtras?: Record<string, unknown>,
+  /** Per-call result override; absent answers every call ok. */
+  callAnswer?: (frame: Extract<ClientFrame, { type: "call" }>) => { ok: true; value: unknown } | { ok: false; error: string } | undefined,
 ): {
   transport: FrameTransport;
   opened: FrameHandlers[];
@@ -88,7 +90,11 @@ function fakeTransport(
               frame.method === "fork"
                 ? { conversationId: (frame.args as { conversationId: number }).conversationId + 1 }
                 : undefined;
-            const result: ServerFrame = { type: "result", id: frame.id, ok: true, value };
+            const answer = callAnswer?.(frame) ?? { ok: true as const, value };
+            const result: ServerFrame =
+              answer.ok === true
+                ? { type: "result", id: frame.id, ok: true, value: answer.value }
+                : { type: "result", id: frame.id, ok: false, error: answer.error };
             queueMicrotask(() => handlers.message(JSON.stringify(result)));
           }
         },
@@ -388,6 +394,47 @@ describe("RemoteDurable side conversation", () => {
       await remote.controller.renameConversation(id(1), "renamed");
       const call = sent.find((frame) => frame.type === "call" && frame.method === "renameConversation")!;
       expect(call.args).toEqual({ conversationId: 1, title: "renamed" });
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects setPushToken against a 5.6 host without sending, sends it on 5.7", async () => {
+    const old = fakeTransport([{}], { protocol: { major: 5, minor: 6 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await expect(remoteOld.controller.setPushToken("ExponentPushToken[abc]")).rejects.toThrow(
+        "The host is too old for this (needs protocol 5.7)",
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "setPushToken")).toHaveLength(0);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.setPushToken("ExponentPushToken[abc]");
+      await remote.controller.setPushToken(null);
+      const calls = sent.filter((frame) => frame.type === "call" && frame.method === "setPushToken");
+      expect(calls.map((frame) => frame.args)).toEqual([{ token: "ExponentPushToken[abc]" }, { token: null }]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects setPushToken with the host's error instead of a notice", async () => {
+    const { transport } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "setPushToken" ? { ok: false, error: "Push tokens register over the secure channel only" } : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      // A failed call must surface to the caller, not the notice list.
+      await expect(remote.controller.setPushToken("ExponentPushToken[abc]")).rejects.toThrow(
+        "Push tokens register over the secure channel only",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(remote.view.current().notices).toHaveLength(0);
     } finally {
       remote.close();
     }

@@ -42,12 +42,10 @@ export async function registerDevice(
   }, context);
 }
 
-export async function revokeDevice(harness: Harness, publicKey: string, context: Context): Promise<void> {
-  await harness.commit(async (tx) => {
-    const doc = await tx.doc(DevicesDoc);
-    doc.devices = doc.devices.filter((entry) => entry.publicKey !== publicKey);
-  }, context);
-}
+/**
+ * Revocation lives in push.ts: the commit spans DevicesDoc and the push-token
+ * registry — a revoked device must never keep a send-capable token.
+ */
 
 /**
  * The host's long-term X25519 identity at `<dataDir>/host-key` (base64url,
