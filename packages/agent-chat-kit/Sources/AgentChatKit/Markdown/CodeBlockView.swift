@@ -8,7 +8,7 @@ struct CodeBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                SwiftUI.Text(language?.isEmpty == false ? language! : "code")
+                SwiftUI.Text(language?.isEmpty == false ? language! : String(localized: "code", bundle: .module))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -76,7 +76,7 @@ struct CopyButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .accessibilityLabel(copied ? "Copied" : "Copy code")
+        .accessibilityLabel(copied ? Text("Copied", bundle: .module) : Text("Copy code", bundle: .module))
         .task(id: copied) {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(1.5))

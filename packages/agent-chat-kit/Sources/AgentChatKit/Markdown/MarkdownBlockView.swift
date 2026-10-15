@@ -93,7 +93,7 @@ private struct ListView: View {
         if let checkbox = item.checkbox {
             Image(systemName: checkbox == .checked ? "checkmark.square.fill" : "square")
                 .foregroundStyle(checkbox == .checked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .accessibilityLabel(checkbox == .checked ? "Done" : "Not done")
+                .accessibilityLabel(checkbox == .checked ? Text("Done", bundle: .module) : Text("Not done", bundle: .module))
         } else if let start {
             SwiftUI.Text("\(start + index).")
                 .monospacedDigit()
