@@ -75,12 +75,10 @@ export interface AttachActions {
   report(message: string): void;
 }
 
-function AttachItems({ attach }: { attach: AttachActions }) {
+function AttachItems({ attach, defer }: { attach: AttachActions; defer(action: () => void): void }) {
   // Empty results mean the user cancelled; failures carry the reason to show.
   const act = (pick: () => Promise<ImageSource[]>) => (): void => {
-    // The menu's overlay window has to finish closing before a system picker
-    // can present; launching during the dismiss animation drops it silently.
-    setTimeout(() => {
+    defer(() => {
       void pick().then(
         (sources) => {
           if (sources.length > 0) attach.add(sources);
@@ -88,7 +86,7 @@ function AttachItems({ attach }: { attach: AttachActions }) {
         (failure: unknown) =>
           attach.report(failure instanceof Error ? failure.message : String(failure)),
       );
-    }, 400);
+    });
   };
   if (!attach.accepts) {
     return (
@@ -124,8 +122,20 @@ export function PlusMenu({
 }) {
   const [surfaceTertiary, muted] = useCSSVariable(["--surface-tertiary", "--muted"]) as Array<string | undefined>;
   const glass = liquidGlass();
+  // Menu items record what to run; the pick runs once the menu reports
+  // closed. The portal subtree unmounts with the close commit but its overlay
+  // window tears down a frame later, and presenting a system picker while it
+  // is still dismissing drops the presentation silently — hence the next
+  // frame rather than inside onOpenChange itself.
+  const afterClose = useRef<(() => void) | null>(null);
+  const onMenuOpenChange = (open: boolean): void => {
+    if (open) return;
+    const action = afterClose.current;
+    afterClose.current = null;
+    if (action !== null) requestAnimationFrame(action);
+  };
   return (
-    <Menu>
+    <Menu onOpenChange={onMenuOpenChange}>
       <Menu.Trigger
         accessibilityRole="button"
         accessibilityLabel="More actions"
@@ -141,7 +151,7 @@ export function PlusMenu({
       <Menu.Portal>
         <Menu.Overlay />
         <Menu.Content presentation="popover" placement="top" align="start" width={220}>
-          <AttachItems attach={attach} />
+          <AttachItems attach={attach} defer={(fn) => (afterClose.current = fn)} />
           {remote === undefined ? null : (
             <>
               <Separator style={{ marginVertical: 4 }} />
@@ -223,7 +233,8 @@ export function ComposeBar({
     );
   };
   const sendSlot = (
-    <SendSlot hasText={!empty} busy={busy} disabled={disabled || preparing} onSend={send} onStop={onStop} />
+    // preparing dims only the send path; Stop stays tappable during a run.
+    <SendSlot hasText={!empty} busy={busy} disabled={disabled} sendDisabled={preparing} onSend={send} onStop={onStop} />
   );
   const glass = liquidGlass();
   return (
