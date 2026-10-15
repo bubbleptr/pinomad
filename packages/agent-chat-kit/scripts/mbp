@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Swift and SwiftUI only build on macOS, so the working tree on omarchy is
-# mirrored to mbp and the command runs there. Usage: scripts/mbp swift test
+# Swift and SwiftUI only build on macOS. On a Mac the command runs in this
+# working tree; anywhere else the tree is mirrored to mbp over SSH first.
+# Usage: scripts/mbp swift test
 set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ "$(uname)" = Darwin ]; then
+  exec bash -c "$*"
+fi
 
 remote_dir="${AGENTCHATKIT_REMOTE_DIR:-code/projects/AgentChatKit}"
-cd "$(dirname "$0")/.."
 
 rsync -a --delete --exclude .build --exclude .git --exclude .swiftpm --exclude DerivedData ./ "void@mbp:$remote_dir/"
 status=0
