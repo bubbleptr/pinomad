@@ -115,9 +115,16 @@ extension Replay {
     2. Rename it into place, which is atomic on the same volume.
 
     ```swift
+    // Readers see the old file or the new one, never half of each.
     let tmp = url.appendingPathExtension("tmp")
     try data.write(to: tmp)
     _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
+    ```
+
+    ```diff
+    -try data.write(to: url)
+    +try data.write(to: tmp)
+    +_ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
     ```
 
     | Runs | Before | After |
