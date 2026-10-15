@@ -16,24 +16,38 @@ final class Replay {
             try await stream(Self.thinking, chunk: 3, every: .milliseconds(25)) { text in
                 self.trace.steps = [.thinking(id: "think", text: text, isLive: true)]
             }
-            trace.steps = [.thinking(id: "think", text: Self.thinking, isLive: false)]
+            let thought: TraceStep = .thinking(id: "think", text: Self.thinking, isLive: false, duration: .seconds(4))
+            trace.steps = [thought]
 
             trace.phase = .acting
             var calls: [ToolCall] = []
             for script in Self.firstCalls {
                 calls.append(ToolCall(id: script.id, name: script.name, state: .running, input: script.input))
-                trace.steps = steps(thinking: true, first: calls)
+                trace.steps = [thought, .tools(id: "first", calls: calls)]
+                for child in script.children {
+                    calls[calls.count - 1].children.append(
+                        ToolCall(id: child.id, name: child.name, state: .running, input: child.input)
+                    )
+                    trace.steps = [thought, .tools(id: "first", calls: calls)]
+                    try await Task.sleep(for: child.takes)
+                    calls[calls.count - 1].children[calls[calls.count - 1].children.count - 1].state = .succeeded
+                    calls[calls.count - 1].children[calls[calls.count - 1].children.count - 1].output = child.output
+                    calls[calls.count - 1].children[calls[calls.count - 1].children.count - 1].duration = child.takes
+                    trace.steps = [thought, .tools(id: "first", calls: calls)]
+                }
                 try await Task.sleep(for: script.takes)
                 calls[calls.count - 1].state = .succeeded
                 calls[calls.count - 1].output = script.output
                 calls[calls.count - 1].duration = script.takes
-                trace.steps = steps(thinking: true, first: calls)
+                trace.steps = [thought, .tools(id: "first", calls: calls)]
             }
 
             trace.phase = .thinking
-            try await Task.sleep(for: .milliseconds(600))
-            var steps = steps(thinking: true, first: calls)
-            steps.append(.interim(id: "interim", text: Self.interim))
+            try await stream(Self.secondThinking, chunk: 4, every: .milliseconds(20)) { text in
+                self.trace.steps = [thought, .tools(id: "first", calls: calls), .thinking(id: "think-2", text: text, isLive: true)]
+            }
+            let secondThought: TraceStep = .thinking(id: "think-2", text: Self.secondThinking, isLive: false, duration: .milliseconds(700))
+            var steps = [thought, .tools(id: "first", calls: calls), secondThought, .interim(id: "interim", text: Self.interim)]
             trace.steps = steps
 
             trace.phase = .acting
@@ -42,14 +56,21 @@ final class Replay {
             try await Task.sleep(for: .milliseconds(900))
             edit.state = .succeeded
             edit.duration = .milliseconds(900)
-            edit.output = "+4 −2"
+            edit.diffStat = DiffStat(additions: 4, deletions: 2)
             var test = ToolCall(id: "test", name: "bash", state: .running, input: "swift test --filter UploadTests")
             trace.steps = steps + [.tools(id: "second", calls: [edit, test])]
             try await Task.sleep(for: .seconds(2))
             test.state = .succeeded
             test.duration = .seconds(2)
             test.output = "Test run with 14 tests in 3 suites passed after 1.92 seconds."
-            trace.steps = steps + [.tools(id: "second", calls: [edit, test])]
+            steps += [.tools(id: "second", calls: [edit, test])]
+            trace.steps = steps
+
+            // A beat of quiet before the answer: the steps stay open while
+            // the phase still reads as working, so the folded rows can be
+            // seen before the trace folds itself away.
+            trace.phase = .thinking
+            try await Task.sleep(for: .milliseconds(2500))
 
             trace.phase = .answering
             trace.endedAt = Date()
@@ -59,10 +80,6 @@ final class Replay {
         } catch {
             // Cancelled: a new replay took over.
         }
-    }
-
-    private func steps(thinking: Bool, first calls: [ToolCall]) -> [TraceStep] {
-        [.thinking(id: "think", text: Self.thinking, isLive: false), .tools(id: "first", calls: calls)]
     }
 
     /// Streams text in uneven chunks, the way tokens arrive, into the answer
@@ -87,20 +104,37 @@ extension Replay {
         let id: String
         let name: String
         let input: String
-        let output: String
+        var output: String = ""
         let takes: Duration
+        /// Calls this one makes while it runs, each played in order.
+        var children: [ScriptedCall] = []
     }
 
     static let thinking = """
     The test writes the file and reads it back right away. If the reader \
-    wins the race it sees a partial write. Let me check how the store writes.
+    wins the race it sees a partial write. Let me check how the store writes \
+    — whether it writes in place or stages the bytes somewhere first. The \
+    cache writer had the same flake last month and the fix there was an \
+    atomic rename, so I want to compare the two paths before touching \
+    anything. If it is the same race, the fix is small: write to a \
+    temporary file next to the target and rename it into place.
     """
 
     static let firstCalls = [
         ScriptedCall(id: "read", name: "read", input: "Sources/Upload/Store.swift", output: "let data = try encoder.encode(record)\ntry data.write(to: url)", takes: .milliseconds(500)),
-        ScriptedCall(id: "grep", name: "grep", input: "write(to: in Sources/", output: "Sources/Upload/Store.swift:42\nSources/Upload/Cache.swift:17", takes: .milliseconds(700)),
+        ScriptedCall(
+            id: "codemode", name: "codemode", input: "compare write paths",
+            output: "Store writes in place; Cache stages then renames.",
+            takes: .milliseconds(400),
+            children: [
+                ScriptedCall(id: "codemode-read", name: "read", input: "Sources/Upload/Cache.swift", output: "try data.write(to: tmp)\ntry tmp.rename(to: url)", takes: .milliseconds(600)),
+                ScriptedCall(id: "codemode-bash", name: "bash", input: "swift run repro-write-race", output: "reader saw 3 partial writes in 50 runs", takes: .milliseconds(900)),
+            ]
+        ),
         ScriptedCall(id: "run", name: "bash", input: "swift test --filter UploadTests --repeat 50", output: "UploadTests.roundTrip failed 3 of 50 runs", takes: .seconds(2)),
     ]
+
+    static let secondThinking = "Same race as the cache writer — atomic rename it is."
 
     static let interim = "It writes in place, so a reader can see half a file. Writing to a temporary file and renaming it is atomic."
 
@@ -142,7 +176,7 @@ extension Replay {
         trace: AgentTrace(
             phase: .settled,
             steps: [
-                .thinking(id: "h-think", text: "Look at the test and the CI logs first.", isLive: false),
+                .thinking(id: "h-think", text: "Look at the test and the CI logs first.", isLive: false, duration: .seconds(2)),
                 .tools(id: "h-tools", calls: [
                     ToolCall(id: "h1", name: "read", state: .succeeded, input: "Tests/UploadTests.swift", duration: .milliseconds(300)),
                     ToolCall(id: "h2", name: "bash", state: .succeeded, input: "gh run view --log-failed", duration: .seconds(3)),
