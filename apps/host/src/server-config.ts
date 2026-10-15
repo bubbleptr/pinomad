@@ -3,7 +3,7 @@
 // reads it at startup as the relay to dial. A `--relay` flag and this file
 // must agree when both are present, or startup refuses — silently preferring
 // one could dial a different server than the operator meant.
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const SERVER_CONFIG_FILE = "server.json";
@@ -46,6 +46,27 @@ export async function writeServerConfig(dataDir: string, config: ServerConfig): 
 
 export const removeServerConfig = (dataDir: string): Promise<void> =>
   rm(join(dataDir, SERVER_CONFIG_FILE), { force: true });
+
+/**
+ * The binding identity of the current server.json: origin plus the file's
+ * inode. writeServerConfig's tmp+rename and leave's rm+recreate both produce a
+ * new file, so every join/leave — even back to the same origin — yields a new
+ * binding, and account offers minted under an old one can never revive
+ * (ADR-0022 §6).
+ */
+export async function readServerBinding(dataDir: string): Promise<string | undefined> {
+  const path = join(dataDir, SERVER_CONFIG_FILE);
+  let file;
+  try {
+    file = await stat(path);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    throw error;
+  }
+  const config = await readServerConfig(dataDir);
+  if (config === undefined) return undefined;
+  return `${normalizeOrigin(config.origin)}@${file.ino}`;
+}
 
 /** `--relay` wins ties only when equal; a disagreement between it and server.json is an error. */
 export function resolveRelayOrigin(flag: string | undefined, config: ServerConfig | undefined): string | undefined {

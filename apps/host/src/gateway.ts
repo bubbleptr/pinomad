@@ -67,7 +67,7 @@ import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
-import { readServerConfig, normalizeOrigin } from "./server-config.ts";
+import { readServerBinding } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushFetch, type PushTimers } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -273,17 +273,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   /**
    * The live reads `admitDevice` performs inside its commit (ADR-0022 §6):
    * settings are in-memory, but server.json can be rewritten mid-run by
-   * join/leave (the restart comes later) — so the file is re-read at
+   * join/leave (the restart comes later) — so the binding is re-read at
    * admission, and an offer minted under a binding that no longer stands
-   * refuses.
+   * refuses. The binding is per file incarnation: re-joining the same origin
+   * still retires earlier offers.
    */
   const admission = {
     harness: options.harness,
     acceptAccountDevices: () => options.settings.value.acceptAccountDevices,
-    serverOrigin: async (): Promise<string | undefined> => {
-      const origin = (await readServerConfig(options.dataDir).catch(() => undefined))?.origin;
-      return origin === undefined ? undefined : normalizeOrigin(origin);
-    },
+    serverBinding: async (): Promise<string | undefined> =>
+      await readServerBinding(options.dataDir).catch(() => undefined),
   };
   server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     socket.on("error", () => socket.terminate());
@@ -458,7 +457,7 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
 interface AdmissionPolicy {
   readonly harness: Harness;
   readonly acceptAccountDevices: () => boolean;
-  readonly serverOrigin: () => Promise<string | undefined>;
+  readonly serverBinding: () => Promise<string | undefined>;
 }
 
 /**
@@ -521,7 +520,7 @@ function secureHandshake(
           ...(hello.pair === undefined ? {} : { pair: hello.pair }),
           offers: secure.offers,
           acceptAccountDevices: policy.acceptAccountDevices,
-          serverOrigin: policy.serverOrigin,
+          serverBinding: policy.serverBinding,
         },
         context,
       );

@@ -18,7 +18,7 @@ import type { PushFetch, PushTimers } from "./push.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
-import { normalizeOrigin, readServerConfig } from "./server-config.ts";
+import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway } from "./gateway.ts";
@@ -319,8 +319,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       // The binding is read at mint time; admission re-reads it again (a
       // join/leave between the two must not let the old binding through).
       createAccountOffer: async () => {
-        const config = await readServerConfig(options.dataDir).catch(() => undefined);
-        return config === undefined ? undefined : offers.createAccount(normalizeOrigin(config.origin));
+        const binding = await readServerBinding(options.dataDir).catch(() => undefined);
+        return binding === undefined ? undefined : offers.createAccount(binding);
       },
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}

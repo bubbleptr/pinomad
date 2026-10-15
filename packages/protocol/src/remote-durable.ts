@@ -661,6 +661,16 @@ class RemoteClient {
               "The host is too old for this (needs protocol 5.2); run `pinomad upgrade` on the host",
             );
           }
+          // A 5.2–5.7 host rejects the unknown key as malformed and closes
+          // with 4400 — refuse locally instead (ADR-0018 §2).
+          if (
+            patch.acceptAccountDevices !== undefined
+            && !hostSupportsFeature(this.#hostMinor, "acceptAccountDevices")
+          ) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.8); run `pinomad upgrade` on the host",
+            );
+          }
           return this.#call("updateSettings", { patch });
         }),
       createAgent: (role) =>

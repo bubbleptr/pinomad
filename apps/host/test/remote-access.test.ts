@@ -427,6 +427,10 @@ describe("account-source admission", () => {
     await writeServerConfig(dataDir, { origin: "https://other.example.com" });
     await expect(connectDevice(host, generateKeyPair(), { secret: swapped!.secret, name: "x" })).rejects.toThrow();
 
+    // Re-joining the same origin is a new binding: the offer must stay dead.
+    await writeServerConfig(dataDir, { origin: SERVER });
+    await expect(connectDevice(host, generateKeyPair(), { secret: swapped!.secret, name: "y" })).rejects.toThrow();
+
     const orphaned = await host.createAccountOffer();
     await removeServerConfig(dataDir);
     await expect(connectDevice(host, generateKeyPair(), { secret: orphaned!.secret, name: "y" })).rejects.toThrow();

@@ -147,7 +147,7 @@ MCP 本身的后续，都等有明确需求再做：
 3. **宿主侧的准入**（`apps/host` + 协议 5.8，已完成）：
    - 吊销记录：`revokeDevice` 除了删设备，还把公钥记进宿主持久化的已吊销列表（和设备表同一个事务）。账号来源的邀请不能让已吊销的公钥重新登记；扫码配对可以，因为那是用户在宿主上主动做的。吊销列表单独放在会话级文档 `pinomad.revocations`（不放 `pinomad.devices`，那份会整个推给客户端），扫码重新配对时从记录里去掉。
    - 邀请带来源：`pairingOffers` 的 offer 记下 `source`（`account` / `qr` / `local`，`local` 指签发给回环链接的邀请）和签发它的服务端绑定。`consume` 把来源交给准入写进 `DeviceEntry.source`（可选字段，老记录显示"未知"）；来源只看宿主自己存的 offer，不看设备怎么说，也不看连接地址。设备名以握手里提交的为准。
-   - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛（协议 5.8）。准入时在登记设备的同一个 commit 里再检查一遍：账号来源的邀请要求开关是开的、绑定还是当前那个服务端（准入时实时重读 `server.json`）、公钥不在吊销记录里。关开关、leave、换服务端时，还没用掉的账号邀请作废，不用等重启。
+   - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛（协议 5.8）。准入时在登记设备的同一个 commit 里再检查一遍：账号来源的邀请要求开关是开的、绑定还是当前那次绑定（准入时实时重读 `server.json`，按文件代次核对，重 join 同一地址也作废）、公钥不在吊销记录里。关开关、leave、换服务端时，还没用掉的账号邀请作废，不用等重启。
    - 账号来源的设备登记成功后，宿主用现有的 `notice` 帧通知所有在线设备"新设备 X 通过账号加入"（`New device "<name>" joined through your account`）。
    - 这一步还没有人能拿到账号来源的邀请（`pairing-request` 控制帧是第 4 步）；宿主侧入口是 `OpenedHost.createAccountOffer()`，读 `server.json` 绑定签发。
 4. **服务端担保配对**：

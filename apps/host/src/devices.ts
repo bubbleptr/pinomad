@@ -59,8 +59,8 @@ export async function admitDevice(
     readonly offers: PairingOffers;
     /** Live read of the setting, called inside the commit. */
     readonly acceptAccountDevices: () => boolean;
-    /** The current server.json origin, read inside the commit; undefined when absent or unreadable. */
-    readonly serverOrigin: () => Promise<string | undefined>;
+    /** The current server.json binding, read inside the commit; undefined when absent or unreadable. */
+    readonly serverBinding: () => Promise<string | undefined>;
   },
   context: Context,
 ): Promise<DeviceAdmission> {
@@ -74,13 +74,15 @@ export async function admitDevice(
     if (offer === undefined) return { outcome: "refused" };
     const revocations = await tx.doc(RevocationsDoc);
     if (offer.source === "account") {
-      const server = await input.serverOrigin();
+      const binding = await input.serverBinding();
       // Every condition is re-read here, not at offer mint: join/leave rewrites
       // server.json before the host restarts, and only this instant counts.
+      // The binding is per file incarnation, so a re-join to the same origin
+      // still retires offers minted before it.
       if (
         revocations.revoked.includes(input.publicKey)
-        || server === undefined
-        || offer.server !== server
+        || binding === undefined
+        || offer.binding !== binding
         || !input.acceptAccountDevices()
       ) {
         return { outcome: "refused" };
@@ -153,8 +155,8 @@ export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8A
 /** What a spent offer was issued for — the source a registration inherits (ADR-0022 §6). */
 export interface PairingOffer {
   readonly source: DeviceSource;
-  /** The server origin an account offer was minted under; absent otherwise. */
-  readonly server?: string;
+  /** The server binding an account offer was minted under; absent otherwise. */
+  readonly binding?: string;
 }
 
 /**
@@ -166,8 +168,8 @@ export interface PairingOffer {
 export interface PairingOffers {
   /** A fresh 128-bit offer, single-use; `source` is how it reaches the device. */
   create(source: Exclude<DeviceSource, "account">): { secret: string; expiresAt: number };
-  /** A fresh offer bound to `server` — the joined server hands it to a device it vouches for. */
-  createAccount(server: string): { secret: string; expiresAt: number };
+  /** A fresh offer bound to `binding` — the joined server hands it to a device it vouches for. */
+  createAccount(binding: string): { secret: string; expiresAt: number };
   /** Spends `secret` once; expired, used, or revoked secrets yield undefined. */
   consume(secret: string): PairingOffer | undefined;
   /**
@@ -178,7 +180,7 @@ export interface PairingOffers {
 }
 
 export function pairingOffers(ttlMs = 5 * 60 * 1000): PairingOffers {
-  const live = new Map<string, { expiresAt: number; source: DeviceSource; server?: string }>();
+  const live = new Map<string, { expiresAt: number; source: DeviceSource; binding?: string }>();
   const prune = (): void => {
     const now = Date.now();
     for (const [secret, offer] of live) if (offer.expiresAt <= now) live.delete(secret);
@@ -192,7 +194,7 @@ export function pairingOffers(ttlMs = 5 * 60 * 1000): PairingOffers {
   };
   return {
     create: (source) => mint({ source }),
-    createAccount: (server) => mint({ source: "account", server }),
+    createAccount: (binding) => mint({ source: "account", binding }),
     consume(secret) {
       prune();
       const candidate = Buffer.from(secret);

@@ -627,6 +627,35 @@ describe("RemoteDurable minor-version gating", () => {
     }
   });
 
+  it("sends acceptAccountDevices on a 5.8 host, notices and skips the call on 5.7", async () => {
+    // A 5.2–5.7 host would call the unknown patch key malformed and close 4400 —
+    // the client must refuse locally instead (ADR-0018 §2).
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 7 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.updateSettings({ acceptAccountDevices: false });
+      await waitForView(remoteOld, (view) =>
+        view.notices.some((notice) => notice.level === "error" && notice.message.includes("needs protocol 5.8")),
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "updateSettings")).toHaveLength(0);
+      // Keys the host knows still go through on the same connection.
+      await remoteOld.controller.updateSettings({ steeringMode: "all" });
+      expect(old.sent.some((frame) => frame.type === "call" && frame.method === "updateSettings")).toBe(true);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.updateSettings({ acceptAccountDevices: false });
+      const call = sent.find((frame) => frame.type === "call" && frame.method === "updateSettings")!;
+      expect(call.args).toEqual({ patch: { acceptAccountDevices: false } });
+    } finally {
+      remote.close();
+    }
+  });
+
   it("subscribes to settings on a 5.2 host; the stream value derives defaults over the hello's", async () => {
     const { transport, sent, release } = fakeTransport([{ model: { provider: "hp", modelId: "h-1" } }]);
     const remote = await connectRemoteDurable({ transport });

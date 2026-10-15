@@ -154,7 +154,7 @@ pinomad leave [--data-dir DIR]
 
 - 登记时记下每台设备的来源（扫码 / 本机回环 / 账号担保）；早期版本登记的设备没有来源标记。
 - 吊销会留下持久记录：被吊销的公钥不能经账号担保的邀请重新登记；在宿主上重新扫码配对可以——那是用户的主动动作，同时把该公钥从吊销记录里去掉。
-- 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。`pinomad leave` 或换服务端后，旧绑定签发的邀请在登记时也会被拒——准入时重新核对当前 `server.json`，不用等重启。
+- 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。邀请绑定到 `server.json` 的文件代次而不只是地址：`pinomad leave`、换服务端、或重新 join（即使同一地址）后，旧绑定签发的邀请在登记时都会被拒——准入时重新核对当前 `server.json`，不用等重启。
 - 账号来源的设备登记成功时，所有在线设备收到一条 notice：`New device "<name>" joined through your account`。
 
 HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
