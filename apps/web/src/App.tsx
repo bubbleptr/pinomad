@@ -159,16 +159,11 @@ function Connected({ address }: { address: ResolvedAddress }) {
 
 /**
  * A pair link opens a socket only after the user has seen which host it is:
- * pairing with an attacker-controlled host would register this device and
- * (while the client keeps one key) replace its stored pairing — for every
- * pair link, browser QR or pasted, one uniform rule.
+ * pairing with an attacker-controlled host would register this device — for
+ * every pair link, browser QR or pasted, one uniform rule.
  */
 function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "pair" }> }) {
   const [confirmed, setConfirmed] = useState(false);
-  const { store, hosts } = useHosts();
-  // Only a single-device store is overwritten by pairing; the desktop keeps
-  // every host it has paired.
-  const replacing = !store.multiHost && hosts[0] !== undefined && hosts[0].hostKey !== address.hostKey;
   const cancel = (): void => {
     history.replaceState(null, "", window.location.pathname + window.location.search);
     window.location.reload();
@@ -179,13 +174,6 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
     <Centered>
       <VStack gap={4} hAlign="center" style={{ maxWidth: 420 }}>
         <EmptyState title="Pair with this host?" description={`This device will pair with ${target.host}.`} />
-        {replacing ? (
-          <Banner
-            status="warning"
-            title="Replaces your current pairing"
-            description="This device is already paired with a different host — pairing again replaces it."
-          />
-        ) : null}
         <Text type="supporting" style={{ wordBreak: "break-all" }}>
           {address.url}
         </Text>
@@ -338,7 +326,7 @@ export function RemoteWorkbench({
   if (state.status === "failed") {
     // Only a 4401 rejection means the pairing itself is bad — an unreachable
     // host keeps the key and the banner. These screens have no sidebar, so
-    // multi-host gets its switcher inline (a no-op in the browser).
+    // the host switcher repeats inline.
     return (
       <Centered>
         {state.mismatch !== undefined ? (

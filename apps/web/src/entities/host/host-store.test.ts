@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { DEVICE_KEY } from "../../address.ts";
-import { hostStore, type StoredHost } from "./host-store.ts";
+import { HOSTS_KEY, hostStore, type StoredHost } from "./host-store.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
 const host = (url = "ws://127.0.0.1:7420/secure"): StoredHost => ({
@@ -42,40 +42,65 @@ beforeEach(() => {
 });
 
 describe("browser host store", () => {
-  it("keeps a single device: save replaces, remove only clears a match", async () => {
+  it("keeps every paired host: save upserts by hostKey, remove drops the match", async () => {
     const store = hostStore();
-    expect(store.multiHost).toBe(false);
     expect(await store.list()).toEqual([]);
 
     const a = host();
     const b = host("ws://10.0.0.9:7420/secure");
     await store.save(a);
     await store.save(b);
-    expect(await store.list()).toEqual([b]);
+    expect(await store.list()).toEqual([a, b]);
 
-    await store.remove(a.hostKey);
-    expect(await store.list()).toEqual([b]);
+    // Re-pairing the same host refreshes the entry in place, not a duplicate.
+    const again = { ...a, url: "wss://relay.example.com/c/x" };
+    await store.save(again);
+    expect(await store.list()).toEqual([b, again]);
+
     await store.remove(b.hostKey);
+    expect(await store.list()).toEqual([again]);
+    await store.remove(again.hostKey);
     expect(await store.list()).toEqual([]);
   });
 
+  it("migrates the legacy single-device record into the list", async () => {
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    expect(await store.list()).toEqual([legacy]);
+    expect(localStorage.getItem(DEVICE_KEY)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(HOSTS_KEY)!)).toEqual([legacy]);
+  });
+
+  it("does not resurrect a migrated host that was removed", async () => {
+    const legacy = host();
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
+
+    const store = hostStore();
+    await store.list();
+    await store.remove(legacy.hostKey);
+    expect(await hostStore().list()).toEqual([]);
+  });
+
   it("ignores malformed localStorage content", async () => {
+    localStorage.setItem(HOSTS_KEY, "not json");
+    expect(await hostStore().list()).toEqual([]);
+    localStorage.setItem(HOSTS_KEY, JSON.stringify([{ url: "ws://x", hostKey: "short", privateKey: "short" }, host()]));
+    expect((await hostStore().list()).length).toBe(1);
     localStorage.setItem(DEVICE_KEY, "not json");
-    expect(await hostStore().list()).toEqual([]);
-    localStorage.setItem(DEVICE_KEY, JSON.stringify({ url: "ws://x", hostKey: "short", privateKey: "short" }));
-    expect(await hostStore().list()).toEqual([]);
+    expect((await hostStore().list()).length).toBe(1);
   });
 });
 
 describe("desktop host store", () => {
-  it("marks multiHost and migrates a legacy localStorage device into the bridge", async () => {
+  it("migrates a legacy localStorage device into the bridge", async () => {
     const bridge = fakeBridge();
     window.pinomadDesktop = bridge;
     const legacy = host();
     localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
 
     const store = hostStore();
-    expect(store.multiHost).toBe(true);
     expect(await store.list()).toEqual([legacy]);
     expect(bridge.saved).toEqual([legacy]);
     expect(localStorage.getItem(DEVICE_KEY)).toBeNull();

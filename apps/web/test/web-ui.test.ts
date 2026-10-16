@@ -1949,7 +1949,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   await first.getByRole("textbox").press("Enter");
   await first.getByText("paired answer", { exact: true }).waitFor();
   const savedKey = await first.evaluate(
-    () => (JSON.parse(localStorage.getItem("pinomad.device")!) as { privateKey: string }).privateKey,
+    () => (JSON.parse(localStorage.getItem("pinomad.hosts")!) as { privateKey: string }[])[0]!.privateKey,
   );
 
   // Same context, the now-spent link: a fresh load like scanning the QR again.
@@ -1959,7 +1959,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   await again.getByRole("textbox").waitFor();
   expect(again.url()).not.toContain("#pair=");
   const afterKey = await again.evaluate(
-    () => (JSON.parse(localStorage.getItem("pinomad.device")!) as { privateKey: string }).privateKey,
+    () => (JSON.parse(localStorage.getItem("pinomad.hosts")!) as { privateKey: string }[])[0]!.privateKey,
   );
   expect(afterKey).toBe(savedKey);
 
