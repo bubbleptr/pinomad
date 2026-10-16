@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
 use pinomad_core::frames::{classify_server_frame, decode_server_frame, encode_client_frame, ClientFrame, ServerFrame};
 use pinomad_core::json::Json;
+use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param};
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/protocol/test/fixtures")
@@ -136,6 +137,26 @@ fn delta_cases_apply_like_the_reference() {
             .collect();
         let after = apply_immutable(&before, &decoded).unwrap_or_else(|error| panic!("{name}: apply: {error}"));
         assert_eq!(after.to_json(), as_text(field(case, "after")), "{name}");
+    }
+}
+
+#[test]
+fn pairing_links_parse_like_the_reference() {
+    let file = load("rust-vectors/pairing");
+    for case in field(&file, "links").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let pasted = as_text(field(case, "pasted"));
+        let expect = match case.get("expect") {
+            Some(Json::String(s)) => Some(s.to_string_lossy()),
+            _ => None,
+        };
+        assert_eq!(pairing_fragment(&pasted), expect, "{name}");
+    }
+    for case in field(&file, "params").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let pair = as_text(field(case, "pair"));
+        let expect = field(case, "expect").truthy();
+        assert_eq!(parse_pair_param(&pair).is_some(), expect, "{name}");
     }
 }
 
