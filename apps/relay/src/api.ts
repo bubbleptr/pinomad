@@ -11,7 +11,34 @@
 // origin, and never with credentials.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { relayWsBase } from "@pinomad/host/src/relay-link.ts";
 import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, type Accounts } from "./accounts.ts";
+
+/** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
+export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mismatch";
+
+/**
+ * The outcome of asking a host for a pairing offer over its control
+ * connection: "gone" means the asking control vanished mid-flight (or was
+ * never there), "cancelled" that the HTTP client went away first.
+ */
+export type PairingRequestResult =
+  | { readonly status: "ok"; readonly secret: string; readonly expiresAt: number }
+  | { readonly status: "refused"; readonly reason: string }
+  | { readonly status: "gone" }
+  | { readonly status: "timeout" }
+  | { readonly status: "too_many" }
+  | { readonly status: "cancelled" };
+
+/**
+ * The transport's view of server-vouched pairing: liveness and capability of
+ * a host's control connection, and a way to ask it for an offer. Implemented
+ * in relay.ts where the control sockets live.
+ */
+export interface PairingBroker {
+  status(hostId: string, boundNoiseKey: string): PairingStatus;
+  request(hostId: string, sessionKey: string, signal: AbortSignal): Promise<PairingRequestResult>;
+}
 
 export interface ApiContext {
   readonly accounts: Accounts;
@@ -19,6 +46,8 @@ export interface ApiContext {
   readonly publicOrigin: string;
   /** Only set behind a TLS-terminating proxy — enables trusting X-Forwarded-*. */
   readonly trustProxy: boolean;
+  /** Server-vouched pairing (ADR-0022 §4) for /api/hosts. */
+  readonly pairing: PairingBroker;
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
@@ -52,7 +81,8 @@ function clientIp(request: IncomingMessage, trustProxy: boolean): string {
   return request.socket.remoteAddress ?? "unknown";
 }
 
-function respond(response: ServerResponse, status: number, body?: Record<string, unknown>, headers?: Record<string, string>): void {
+// Bodies are JSON values; /api/hosts legitimately answers with an array.
+function respond(response: ServerResponse, status: number, body?: unknown, headers?: Record<string, string>): void {
   const all: Record<string, string> = { ...headers };
   if (body !== undefined) all["content-type"] = "application/json";
   response.writeHead(status, all);
@@ -113,7 +143,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
   // API responses lets Chromium hand them to the app.
   const cors: Record<string, string> =
     origin === DESKTOP_ORIGIN ? { "access-control-allow-origin": DESKTOP_ORIGIN, vary: "Origin" } : {};
-  const send = (status: number, body?: Record<string, unknown>, headers?: Record<string, string>): void =>
+  const send = (status: number, body?: unknown, headers?: Record<string, string>): void =>
     respond(response, status, body, { ...cors, ...headers });
   const deny = (status: number, error: string, headers?: Record<string, string>): void =>
     send(status, { error }, headers);
@@ -193,6 +223,84 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       { user: { username }, expiresAt: result.expiresAt, ...(cookieMode ? {} : { token: result.token }) },
       cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
     );
+    return;
+  }
+
+  const hostPairing = /^\/api\/hosts\/([A-Za-z0-9_-]{43})\/pairing$/.exec(pathname);
+  if (pathname === "/api/hosts" || hostPairing !== null) {
+    const expected = pathname === "/api/hosts" ? "GET" : "POST";
+    if (method !== expected) {
+      deny(405, "method_not_allowed", { allow: expected });
+      return;
+    }
+    const token = sessionToken(request);
+    const session = token === undefined ? undefined : accounts.authenticate(token);
+    if (session === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    if (pathname === "/api/hosts") {
+      send(
+        200,
+        accounts.listHosts(session.userId).map((row) => {
+          const pairing = ctx.pairing.status(row.hostId, row.noisePublicKey);
+          return {
+            hostId: row.hostId,
+            name: row.name,
+            noisePublicKey: row.noisePublicKey,
+            online: pairing !== "offline",
+            lastSeenAt: row.lastSeenAt,
+            pairing,
+          };
+        }),
+      );
+      return;
+    }
+    // Ownership-scoped lookup: a host bound to another account is
+    // indistinguishable from one that doesn't exist.
+    const row = accounts.hostFor(session.userId, hostPairing![1]!);
+    if (row === undefined) {
+      deny(404, "not_found");
+      return;
+    }
+    const status = ctx.pairing.status(row.hostId, row.noisePublicKey);
+    if (status !== "available") {
+      deny(409, status === "offline" ? "host_offline" : status);
+      return;
+    }
+    // A client that hangs up mid-ask drops the pending request — nobody is
+    // left to spend the answer.
+    const abort = new AbortController();
+    response.once("close", () => {
+      if (!response.writableEnded) abort.abort();
+    });
+    const result = await ctx.pairing.request(row.hostId, token!, abort.signal);
+    switch (result.status) {
+      case "ok":
+        send(200, {
+          // The device dials the server's own device path; hostKey comes from
+          // the stored binding — the value v2 verified equals it by now, and
+          // the stored row is the one the client must pin (ADR-0022 §5).
+          url: `${relayWsBase(ctx.publicOrigin)}/c/${row.hostId}`,
+          hostKey: row.noisePublicKey,
+          secret: result.secret,
+          expiresAt: result.expiresAt,
+        });
+        return;
+      case "refused":
+        deny(409, result.reason);
+        return;
+      case "gone":
+        deny(409, "host_offline");
+        return;
+      case "timeout":
+        deny(504, "host_timeout");
+        return;
+      case "too_many":
+        deny(429, "rate_limited");
+        return;
+      // "cancelled": the HTTP client is gone; nothing to answer.
+    }
     return;
   }
 
