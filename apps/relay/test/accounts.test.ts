@@ -15,7 +15,7 @@ import {
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
-  type HostToRelay,
+  type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
 import { changePassword, openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
@@ -167,7 +167,7 @@ async function tryRegister(relay: Relay, keys: KeyPair): Promise<"registered" | 
   const challenge = decodeRelayToHost(asText((await challengeP)[0]));
   if (challenge.t !== "challenge") throw new Error("expected challenge");
   const hostId = relayHostId(keys.publicKey);
-  const register: HostToRelay = { t: "register", hostId, signature: signRelayChallenge(keys.secretKey, { relayOrigin: ORIGIN, hostId, nonce: challenge.nonce }) };
+  const register: RegisterFrame = { t: "register", hostId, signature: signRelayChallenge(keys.secretKey, { relayOrigin: ORIGIN, hostId, nonce: challenge.nonce }) };
   socket.send(encodeRelayFrame(register));
   const result = await Promise.race([
     once(socket, "message").then(([data]) => (decodeRelayToHost(asText(data)).t === "registered" ? ("registered" as const) : -1)),

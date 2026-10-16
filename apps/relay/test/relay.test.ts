@@ -12,7 +12,7 @@ import {
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
-  type HostToRelay,
+  type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 
@@ -71,7 +71,7 @@ async function openControl(
   await once(socket, "open");
   const challenge = decodeRelayToHost(asText((await challengeP)[0]));
   if (challenge.t !== "challenge") throw new Error("expected challenge");
-  const register: HostToRelay = {
+  const register: RegisterFrame = {
     t: "register",
     hostId: relayHostId(keys.publicKey),
     signature:

@@ -18,7 +18,7 @@ import {
   signRelayChallenge,
   signRelayChallengeV2,
   verifyRelayChallenge,
-  type HostToRelay,
+  type RegisterFrame,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
@@ -142,8 +142,8 @@ const answered = (socket: WebSocket): Promise<{ frame: RelayToHost } | { closed:
 function registerFrame(
   keys: KeyPair,
   nonce: string,
-  overrides?: Partial<HostToRelay> & { readonly noisePublicKey?: string },
-): HostToRelay {
+  overrides?: Partial<RegisterFrame> & { readonly noisePublicKey?: string },
+): RegisterFrame {
   const hostId = relayHostId(keys.publicKey);
   const args = { relayOrigin: ORIGIN, hostId, nonce };
   const noise = overrides?.noisePublicKey;

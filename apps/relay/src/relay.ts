@@ -15,7 +15,7 @@ import {
   RELAY_CLOSE,
   verifyRelayChallenge,
   verifyRelayChallengeV2,
-  type HostToRelay,
+  type RegisterFrame,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { serveWebClient } from "@pinomad/host/src/web-client.ts";
@@ -157,7 +157,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
    * signature is already verified; this only runs the operation, replies, and
    * hangs up. `noisePublicKey` is present only when a v2 signature bound it.
    */
-  function runOp(socket: WebSocket, frame: HostToRelay, noisePublicKey: string | undefined): void {
+  function runOp(socket: WebSocket, frame: RegisterFrame, noisePublicKey: string | undefined): void {
     // Reply, then hang up in the send callback so the close can't race it.
     const answer = (reply: RelayToHost): void =>
       socket.send(encodeRelayFrame(reply), () => socket.close(1000));
@@ -205,9 +205,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         socket.close(1008, "unexpected frame");
         return;
       }
-      let frame: HostToRelay;
+      let frame: RegisterFrame;
       try {
-        frame = decodeHostToRelay(data.toString());
+        const decoded = decodeHostToRelay(data.toString());
+        // The only pre-admission frame is register; anything else first is a violation.
+        if (decoded.t !== "register") throw new Error("expected register");
+        frame = decoded;
       } catch {
         socket.close(1008, "malformed frame");
         return;

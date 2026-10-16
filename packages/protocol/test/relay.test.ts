@@ -111,6 +111,45 @@ describe("relay frame codecs", () => {
     expect(decodeHostToRelay(encodeRelayFrame(register))).toEqual(register);
   });
 
+  it("round-trips the pairing frames", () => {
+    expect(decodeRelayToHost(encodeRelayFrame({ t: "pairing-request", requestId: "req-1" }))).toEqual({
+      t: "pairing-request",
+      requestId: "req-1",
+    });
+    expect(
+      decodeHostToRelay(encodeRelayFrame({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123 })),
+    ).toEqual({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123 });
+    expect(decodeHostToRelay(encodeRelayFrame({ t: "pairing-refused", requestId: "req-1", reason: "disabled" }))).toEqual({
+      t: "pairing-refused",
+      requestId: "req-1",
+      reason: "disabled",
+    });
+  });
+
+  it("rejects malformed pairing frames", () => {
+    for (const text of [
+      JSON.stringify({ t: "pairing-request" }),
+      JSON.stringify({ t: "pairing-request", requestId: 1 }),
+      JSON.stringify({ t: "pairing-request", requestId: "x".repeat(65) }),
+    ]) {
+      expect(() => decodeRelayToHost(text), text).toThrow();
+    }
+    for (const text of [
+      JSON.stringify({ t: "pairing" }),
+      JSON.stringify({ t: "pairing", requestId: "r" }),
+      JSON.stringify({ t: "pairing", requestId: "r", secret: "s" }),
+      JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: "soon" }),
+      JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: Number.NaN }),
+      JSON.stringify({ t: "pairing-refused" }),
+      JSON.stringify({ t: "pairing-refused", requestId: "r" }),
+      JSON.stringify({ t: "pairing-refused", requestId: "r", reason: 5 }),
+      // Register fields don't rescue a pairing frame: it needs its own.
+      JSON.stringify({ t: "pairing", hostId, signature: "s" }),
+    ]) {
+      expect(() => decodeHostToRelay(text), text).toThrow();
+    }
+  });
+
   it("round-trips the account-operation frames", () => {
     expect(decodeRelayToHost(encodeRelayFrame({ t: "joined", username: "kieran" }))).toEqual({
       t: "joined",
