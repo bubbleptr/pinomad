@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -220,6 +220,22 @@ describe("server bootstrap", () => {
     await expect(
       openAccounts({ dataDir: dir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD, lockStaleMs: 2000 }),
     ).rejects.toThrow(/already in use|held/i);
+  });
+
+  it("reports an unwritable lock location as itself, not as a running server", async () => {
+    // proper-lockfile creates `<dataDir>.lock` beside the directory: a parent
+    // the server can't write (a container's `/`) must not read as "in use".
+    const parent = await tempDir();
+    const dataDir = join(parent, "server");
+    await mkdir(dataDir);
+    await chmod(parent, 0o555);
+    try {
+      const failure = openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
+      await expect(failure).rejects.toThrow(/EACCES|permission/i);
+      await expect(failure).rejects.not.toThrow(/already in use/i);
+    } finally {
+      await chmod(parent, 0o755);
+    }
   });
 });
 

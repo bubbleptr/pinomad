@@ -32,6 +32,9 @@ export async function lockDataDir(
       },
     })
     .catch((error: unknown) => {
+      // Only a held lock means "running"; anything else (an unwritable parent
+      // for `<dir>.lock`, say) must surface as itself or deploys misdiagnose.
+      if ((error as { code?: string }).code !== "ELOCKED") throw error;
       throw new Error(`Data directory is already in use by a running process: ${dir}`, { cause: error });
     });
   return async () => {
