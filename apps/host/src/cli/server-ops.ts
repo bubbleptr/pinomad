@@ -4,6 +4,7 @@
 // takes one reply frame, and hangs up. Kept apart from relay-link.ts — that
 // one owns the persistent control connection with reconnects.
 import { WebSocket } from "ws";
+import { isSecureServerOrigin, probeAccounts, type AccountsProbe } from "@pinomad/client/account.ts";
 import {
   decodeRelayToHost,
   encodeRelayFrame,
@@ -16,24 +17,22 @@ import {
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { relayWsBase } from "../relay-link.ts";
 
-export type ServerProbe = "enabled" | "disabled" | "unreachable";
+export type ServerProbe = AccountsProbe;
 
 /**
  * Account operations are TLS-only (ADR-0022): a plaintext ws:// join would hand
  * the one-use token to anyone on the path — the challenge signature proves the
  * host key but authenticates nothing about the server. Loopback http stays for
- * local development.
+ * local development. The rule itself lives with the client-side account code
+ * (packages/client/account.ts) so the CLI and the apps can't drift apart.
  */
 export function assertSecureServerOrigin(origin: string): void {
-  let url: URL;
   try {
-    url = new URL(origin);
+    new URL(origin);
   } catch {
     throw new Error(`not a URL: ${origin}`);
   }
-  const host = url.hostname;
-  const loopback = host === "localhost" || host.endsWith(".localhost") || host.startsWith("127.") || host === "::1" || host === "[::1]";
-  if (url.protocol === "https:" || (url.protocol === "http:" && loopback)) return;
+  if (isSecureServerOrigin(origin)) return;
   throw new Error(`account operations need an https origin (loopback http allowed for development) — got ${origin}`);
 }
 
@@ -44,20 +43,8 @@ export function assertSecureServerOrigin(origin: string): void {
  * Anything else — 502 through the proxy, a WAF's 403 — is "unreachable": we
  * can't tell, so leave must not mistake it for a clean unbind.
  */
-export async function probeServerAccounts(origin: string, fetchImpl: typeof fetch = fetch): Promise<ServerProbe> {
-  let response: Response;
-  try {
-    response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, { signal: AbortSignal.timeout(5_000) });
-  } catch {
-    return "unreachable";
-  }
-  if (response.status === 401) return "enabled";
-  if (response.status === 200) {
-    const body = (await response.json().catch(() => undefined)) as { user?: unknown } | undefined;
-    return typeof body?.user === "object" && body.user !== null ? "enabled" : "disabled";
-  }
-  return response.status === 404 ? "disabled" : "unreachable";
-}
+export const probeServerAccounts = (origin: string, fetchImpl: typeof fetch = fetch): Promise<ServerProbe> =>
+  probeAccounts(origin, fetchImpl);
 
 export type ServerOpResult =
   | { readonly t: "joined"; readonly username: string }
