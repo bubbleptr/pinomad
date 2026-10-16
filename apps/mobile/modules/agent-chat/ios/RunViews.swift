@@ -13,19 +13,27 @@ import AgentChatKit
 private struct MeasuringLayout: Layout {
   var report: (CGSize) -> Void
 
-  struct CacheValue { var measured = CGSize.zero }
+  struct CacheValue {
+    var measured = CGSize.zero
+    var reported = CGFloat.nan
+  }
 
   func makeCache(subviews: Subviews) -> CacheValue { CacheValue() }
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheValue) -> CGSize {
     guard let view = subviews.first else { return .zero }
-    let size = view.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
-    cache.measured = size
-    report(size)
-    return size
+    // Height is ignored on purpose: the cell's own size is what we are
+    // measuring, so the content is probed at its ideal height for the width.
+    cache.measured = view.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+    return cache.measured
   }
 
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheValue) {
+    // Report from the committed pass only — sizeThatFits runs speculatively.
+    if cache.measured.height != cache.reported {
+      cache.reported = cache.measured.height
+      report(cache.measured)
+    }
     subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(cache.measured))
   }
 }

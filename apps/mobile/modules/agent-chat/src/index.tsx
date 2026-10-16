@@ -23,5 +23,5 @@ export const NativeRunAnswer: ComponentType<NativeRunProps> =
  * are registered there but render empty.
  */
 export function nativeTranscriptSupported(): boolean {
-  return Platform.OS === "ios";
+  return Platform.OS === "ios" && process.env.EXPO_PUBLIC_NATIVE_TRANSCRIPT !== "0";
 }
