@@ -275,8 +275,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
    * settings are in-memory, but server.json can be rewritten mid-run by
    * join/leave (the restart comes later) — so the binding is re-read at
    * admission, and an offer minted under a binding that no longer stands
-   * refuses. The binding is per file incarnation: re-joining the same origin
-   * still retires earlier offers.
+   * refuses. The binding is a fresh random value per server.json write:
+   * re-joining the same origin still retires earlier offers.
    */
   const admission = {
     harness: options.harness,

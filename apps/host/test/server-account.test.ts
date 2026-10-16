@@ -13,7 +13,7 @@ import { loadHostKey, loadRelayKey } from "../src/devices.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
 import { probeServerAccounts } from "../src/cli/server-ops.ts";
-import { readServerConfig } from "../src/server-config.ts";
+import { readServerBinding, readServerConfig, writeServerConfig } from "../src/server-config.ts";
 import type { ServiceSpec } from "../src/service/definition.ts";
 import type { ServiceManager } from "../src/service/manager.ts";
 import { freePort, tempDir, useCleanups } from "./support.ts";
@@ -320,6 +320,23 @@ describe("server.json", () => {
     await expect(readServerConfig(data.path)).rejects.toThrow(/not valid JSON/);
     await writeFile(join(data.path, "server.json"), JSON.stringify({ origin: 5 }));
     await expect(readServerConfig(data.path)).rejects.toThrow(/origin/);
+  });
+
+  it("stamps a fresh random binding on every write; a binding-less file reads but binds nothing", async () => {
+    const data = await tempDir();
+    defer(data.remove);
+    await writeServerConfig(data.path, { origin: "https://x.example.com" });
+    const first = await readServerConfig(data.path);
+    expect(first?.binding).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    await writeServerConfig(data.path, { origin: "https://x.example.com" });
+    const second = await readServerConfig(data.path);
+    expect(second!.binding).not.toBe(first!.binding);
+
+    // Only a file written before `binding` existed: origin is honored, but no
+    // account offer can mint under it.
+    await writeFile(join(data.path, "server.json"), JSON.stringify({ origin: "https://x.example.com" }));
+    expect((await readServerConfig(data.path))?.origin).toBe("https://x.example.com");
+    expect(await readServerBinding(data.path)).toBeUndefined();
   });
 });
 

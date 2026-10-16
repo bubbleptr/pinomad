@@ -318,6 +318,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       settings: hostSettings,
       // The binding is read at mint time; admission re-reads it again (a
       // join/leave between the two must not let the old binding through).
+      // A server.json without `binding` — written before the field existed —
+      // mints nothing; a fresh join stamps one.
       createAccountOffer: async () => {
         const binding = await readServerBinding(options.dataDir).catch(() => undefined);
         return binding === undefined ? undefined : offers.createAccount(binding);

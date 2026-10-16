@@ -77,8 +77,8 @@ export async function admitDevice(
       const binding = await input.serverBinding();
       // Every condition is re-read here, not at offer mint: join/leave rewrites
       // server.json before the host restarts, and only this instant counts.
-      // The binding is per file incarnation, so a re-join to the same origin
-      // still retires offers minted before it.
+      // The binding is a fresh random value per write, so a re-join to the
+      // same origin still retires offers minted before it.
       if (
         revocations.revoked.includes(input.publicKey)
         || binding === undefined

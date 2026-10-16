@@ -438,6 +438,23 @@ describe("account-source admission", () => {
     expect(await host.createAccountOffer()).toBeUndefined();
   });
 
+  it("runs normally on a server.json that predates bindings, but mints no account offers", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    // Only ever possible on a dev checkout between join and this change: a
+    // file with `origin` but no `binding`.
+    await writeFile(join(dir.path, "server.json"), JSON.stringify({ origin: SERVER }));
+    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: await freePort() } });
+    const tokenClient = await connectTo(defer, host);
+    expect(await host.createAccountOffer()).toBeUndefined();
+
+    // QR pairing is unaffected.
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    const remote = await connectDevice(host, generateKeyPair(), { secret, name: "phone" });
+    expect(remote.view.current().connection).toBe("connected");
+  });
+
   it("still connects a device registered before sources existed", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
     const device = generateKeyPair();
