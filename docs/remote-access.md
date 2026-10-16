@@ -76,7 +76,7 @@ WantedBy=multi-user.target
 
 ### 容器平台（Zeabur 等）
 
-镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data`，**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
+镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
 
 | 环境变量 | 含义 |
 |---|---|

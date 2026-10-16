@@ -4,12 +4,14 @@
 FROM node:26-slim
 ARG PINOMAD_VERSION=0.4.0
 RUN npm install -g pinomad@${PINOMAD_VERSION} && npm cache clean --force
-# Account data (ADR-0022) lives here; mount a persistent volume at /data or
-# every redeploy forgets users, sessions, and host bindings.
-RUN mkdir -p /data && chown node:node /data
+# Account data (ADR-0022) lives under /data; mount a persistent volume there or
+# every redeploy forgets users, sessions, and host bindings. The data dir is a
+# subdirectory because its lock is the sibling `<dir>.lock` — `/data.lock`
+# would land in the read-only-to-node root.
+RUN mkdir -p /data/server && chown -R node:node /data
 USER node
 ENV PORT=8080
-ENV PINOMAD_SERVER_DATA_DIR=/data
+ENV PINOMAD_SERVER_DATA_DIR=/data/server
 EXPOSE 8080
 # PINOMAD_PUBLIC_ORIGIN: the https origin clients open (e.g. https://nomad.example.com).
 # PINOMAD_SERVER_USER / PINOMAD_SERVER_PASSWORD: create the one account on first start.
