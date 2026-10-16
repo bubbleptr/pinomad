@@ -41,7 +41,7 @@ fn pinomad(json: &Json) -> Option<PinomadToolDetail> {
             patch: text(json.get("patch")).unwrap_or_default(),
         }),
         Some("subagent") => Some(PinomadToolDetail::Subagent {
-            conversation_id: num(json.get("conversationId")).unwrap_or(f64::NAN),
+            conversation_id: pinomad_core::json::num_key(json.get("conversationId")).unwrap_or(u64::MAX),
             output: text(json.get("output")),
             model: text(json.get("model")),
             started_at: num(json.get("startedAt")),

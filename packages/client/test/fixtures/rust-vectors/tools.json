@@ -280,6 +280,31 @@
       "expect": "\"3.3s\""
     },
     {
+      "name": "s-near-tie-1.05",
+      "durationMs": "1050",
+      "expect": "\"1.1s\""
+    },
+    {
+      "name": "s-near-tie-1.15",
+      "durationMs": "1150",
+      "expect": "\"1.1s\""
+    },
+    {
+      "name": "s-near-tie-1.35",
+      "durationMs": "1350",
+      "expect": "\"1.4s\""
+    },
+    {
+      "name": "s-near-tie-2.45",
+      "durationMs": "2450",
+      "expect": "\"2.5s\""
+    },
+    {
+      "name": "s-near-tie-9.95",
+      "durationMs": "9950",
+      "expect": "\"9.9s\""
+    },
+    {
       "name": "missing",
       "durationMs": null,
       "expect": "null"

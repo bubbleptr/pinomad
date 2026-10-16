@@ -44,7 +44,7 @@ pub struct MessageImage {
 pub enum PinomadToolDetail {
     Diff { patch: String },
     Subagent {
-        conversation_id: f64,
+        conversation_id: u64,
         output: Option<String>,
         /// "provider/modelId" the child ran, recorded by the host.
         model: Option<String>,
@@ -74,8 +74,8 @@ pub struct ToolItem {
 }
 
 /// `pinomadOf` — the `pinomad` payload a tool item may carry.
-pub fn pinomad_of(tool: &ToolItem) -> Option<&PinomadToolDetail> {
-    tool.pinomad.as_ref()
+pub fn pinomad_of(tool: &ToolItem) -> Option<PinomadToolDetail> {
+    tool.pinomad.clone()
 }
 
 /// `toolDisplayName`: `mcp__<server>__<tool>` reads as `<server>/<tool>`,
@@ -94,20 +94,41 @@ pub fn tool_display_name(name: Option<&str>) -> Option<String> {
 /// `toolTargetFromArgs` — parse the args text and pull the target key.
 pub fn tool_target_from_args(args_text: Option<&str>) -> Option<String> {
     let args = Json::parse(args_text?).ok()?;
-    tool_target(&args).map(|t| t.to_string_lossy())
+    tool_target(&args)
 }
 
-/// `(v).toFixed(1)` — JavaScript picks the candidate nearest the true value
-/// and, on an exact tie, the larger one; Rust's `{:.1}` rounds half to even,
-/// so exact ties need a nudge. A tie needs `v * 10` exactly halfway between
-/// two integers — `v * 20` an odd integer.
+/// `(v).toFixed(1)` — JavaScript rounds the double's *exact* decimal value to
+/// the nearest tenth, ties to the larger one (1.15 is stored just below the
+/// midpoint and yields "1.1", while the exact dyadic 1.25 yields "1.3").
+/// Rust's `{:.1}` rounds half to even, so do the rounding on the exact value:
+/// v = m·2^e, hence v·10 = 5m·2^(e+1) — a fraction with a power-of-two
+/// denominator, where "half or more" is an integer comparison.
 fn to_fixed_1(v: f64) -> String {
-    let t20 = v * 20.0;
-    if t20.is_finite() && t20.fract() == 0.0 && (t20 as i64) % 2 != 0 {
-        let n = (t20 / 2.0).ceil();
-        return format!("{:.1}", n / 10.0);
-    }
-    format!("{:.1}", v)
+    let bits = v.to_bits();
+    let exp_field = ((bits >> 52) & 0x7ff) as i64;
+    let mantissa = if exp_field == 0 {
+        bits & ((1u64 << 52) - 1)
+    } else {
+        (bits & ((1u64 << 52) - 1)) | (1u64 << 52)
+    };
+    // v = mantissa·2^e (mantissa includes the implicit bit's 2^52 scale);
+    // v·10 = (mantissa·5)·2^(e+1).
+    let e = if exp_field == 0 { -1074 } else { exp_field - 1075 };
+    let p = mantissa as u128 * 5;
+    let shift = e + 1;
+    let n = if shift >= 0 {
+        match p.checked_shl(shift as u32) {
+            Some(n) => n,
+            // Absurd duration; fall back to floating formatting.
+            None => return format!("{:.1}", v),
+        }
+    } else {
+        let s = (-shift) as u32;
+        let q = p >> s;
+        let r = p & ((1u128 << s) - 1);
+        q + if 2 * r >= 1u128 << s { 1 } else { 0 }
+    };
+    format!("{}.{}", n / 10, n % 10)
 }
 
 /// `formatToolDuration` — sub-second as `Nms`, else `N.Ns`.

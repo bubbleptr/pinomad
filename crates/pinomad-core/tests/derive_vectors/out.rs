@@ -55,7 +55,7 @@ fn pinomad_json(detail: &PinomadToolDetail) -> Json {
             ended_at,
         } => obj(&[
             ("kind", Some(s("subagent"))),
-            ("conversationId", Some(num(*conversation_id))),
+            ("conversationId", Some(num(*conversation_id as f64))),
             ("output", output.as_deref().map(s)),
             ("model", model.as_deref().map(s)),
             ("startedAt", started_at.map(num)),
@@ -191,7 +191,7 @@ pub fn split_json(split: &SplitSubagents) -> Json {
 }
 
 pub fn agent_json(agent: &AgentState) -> Json {
-    agent.raw.clone()
+    agent.to_json()
 }
 
 pub fn queue_items_json(items: &[QueueItem]) -> Json {
@@ -200,10 +200,10 @@ pub fn queue_items_json(items: &[QueueItem]) -> Json {
             .iter()
             .map(|item| {
                 obj(&[
-                    ("id", Some(num(item.id))),
-                    ("mode", Some(s(&item.mode))),
+                    ("id", Some(num(item.id as f64))),
+                    ("mode", Some(s(item.mode.as_str()))),
                     ("text", Some(s(&item.text))),
-                    ("imageCount", Some(num(item.image_count))),
+                    ("imageCount", Some(num(item.image_count as f64))),
                 ])
             })
             .collect(),
@@ -230,8 +230,8 @@ pub fn task_rows_json(rows: &[TaskRow]) -> Json {
         rows.iter()
             .map(|row| {
                 obj(&[
-                    ("id", Some(num(row.id))),
-                    ("depth", Some(num(row.depth))),
+                    ("id", Some(num(row.id as f64))),
+                    ("depth", Some(num(row.depth as f64))),
                     ("label", Some(s(&row.label))),
                 ])
             })
@@ -240,5 +240,8 @@ pub fn task_rows_json(rows: &[TaskRow]) -> Json {
 }
 
 pub fn classified_json(classified: &ClassifiedDoc) -> Json {
-    obj(&[("type", Some(s(classified.doc_type()))), ("value", Some(classified.value().clone()))])
+    obj(&[
+        ("type", Some(s(classified.doc_type().as_str()))),
+        ("value", Some(classified.to_json())),
+    ])
 }

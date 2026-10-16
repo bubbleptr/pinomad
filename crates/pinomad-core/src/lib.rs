@@ -10,6 +10,7 @@ pub mod cot_view;
 pub mod delta;
 pub mod frames;
 pub mod json;
+pub mod model;
 pub mod noise;
 pub mod organization;
 pub mod pairing_link;

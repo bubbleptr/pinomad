@@ -164,7 +164,7 @@ fn tool_target_replays() {
     for case in cases(&file, "toolTarget") {
         let name = as_text(field(case, "name"));
         let args = Json::parse(&as_text(field(case, "args"))).unwrap();
-        let got = opt_json(tool_target(&args).map(|t| Json::String(t)));
+        let got = opt_json(tool_target(&args).map(|t| Json::String(U16String::from_str(&t))));
         assert_eq!(got.to_json(), expect_text(case), "{name}");
     }
     for case in cases(&file, "toolTargetFromArgs") {

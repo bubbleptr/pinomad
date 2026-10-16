@@ -690,6 +690,15 @@ fn write_json_string(units: &U16String, out: &mut String) {
     out.push('"');
 }
 
+/// A non-negative integral JSON number as `u64`; anything else (absent, NaN,
+/// fractional, negative, beyond u64) is None — the degrade the caller picks.
+pub fn num_key(value: Option<&Json>) -> Option<u64> {
+    match value {
+        Some(Json::Number(v)) if v.fract() == 0.0 && *v >= 0.0 && *v <= u64::MAX as f64 => Some(*v as u64),
+        _ => None,
+    }
+}
+
 /// `String(number)` digits — also the canonical key name a numeric path
 /// segment resolves to on an object (String(1e30) is "1e+30").
 pub fn number_to_json(value: f64) -> String {

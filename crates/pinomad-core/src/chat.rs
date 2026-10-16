@@ -9,19 +9,22 @@ use crate::text;
 use crate::u16str::U16String;
 
 /// `pi.agent` — the conversation's agent doc (model, thinking level, cwd).
-/// The raw document is kept verbatim: the reference returns it untouched.
+/// The fields the UI reads decode into public fields; the raw document stays
+/// for verbatim emission (the reference returns it untouched) and for the
+/// extension/tool filter fields this decode does not surface.
 #[derive(Clone, Debug)]
 pub struct AgentState {
-    pub raw: Json,
+    pub model: Option<crate::model::ModelRef>,
+    pub thinking_level: Option<crate::model::ThinkingLevel>,
+    pub instructions: Option<String>,
+    pub cwd: Option<String>,
+    raw: Json,
 }
 
 impl AgentState {
-    pub fn model(&self) -> Option<&Json> {
-        self.raw.get("model")
-    }
-
-    pub fn thinking_level(&self) -> Option<&Json> {
-        self.raw.get("thinkingLevel")
+    /// The doc as it arrived — the reference returns it verbatim.
+    pub fn to_json(&self) -> Json {
+        self.raw.clone()
     }
 }
 
@@ -43,10 +46,18 @@ fn js_text(value: Option<&Json>) -> String {
 
 /// `agentOf(view)` — `docs["pi.agent"] ?? {}`.
 pub fn agent_of(view: &Json) -> AgentState {
+    let raw = not_null(view.get("docs").and_then(|docs| docs.get("pi.agent")))
+        .cloned()
+        .unwrap_or_else(Json::object);
     AgentState {
-        raw: not_null(view.get("docs").and_then(|docs| docs.get("pi.agent")))
-            .cloned()
-            .unwrap_or_else(Json::object),
+        model: raw.get("model").and_then(crate::model::ModelRef::from_json),
+        thinking_level: raw
+            .get("thinkingLevel")
+            .and_then(Json::as_str)
+            .and_then(|s| crate::model::ThinkingLevel::from_units(s.units())),
+        instructions: raw.get("instructions").and_then(Json::as_str).map(|s| s.to_string_lossy()),
+        cwd: raw.get("cwd").and_then(Json::as_str).map(|s| s.to_string_lossy()),
+        raw,
     }
 }
 
@@ -74,11 +85,15 @@ fn text_of(content: Option<&Json>) -> String {
     }
 }
 
-fn image_count_of(content: Option<&Json>) -> f64 {
+fn image_count_of(content: Option<&Json>) -> u64 {
     match content {
-        Some(Json::Array(items)) => items.iter().filter(|b| str_eq(b.get("type"), "image")).count() as f64,
-        _ => 0.0,
+        Some(Json::Array(items)) => items.iter().filter(|b| str_eq(b.get("type"), "image")).count() as u64,
+        _ => 0,
     }
+}
+
+fn lit(text: &str) -> Vec<u16> {
+    text.encode_utf16().collect()
 }
 
 /// `statusText(view)` — what the conversation is doing beyond the run itself,
@@ -113,13 +128,51 @@ pub fn status_text(view: &Json) -> String {
     String::new()
 }
 
+/// `InboxItem.mode` — how a queued input gets to the model. `Other` keeps a
+/// mode a newer host invented (the reference passes it through as a string).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QueueMode {
+    Steer,
+    FollowUp,
+    Write,
+    Other(String),
+}
+
+impl QueueMode {
+    pub fn as_str(&self) -> &str {
+        match self {
+            QueueMode::Steer => "steer",
+            QueueMode::FollowUp => "followUp",
+            QueueMode::Write => "write",
+            QueueMode::Other(value) => value,
+        }
+    }
+
+    fn from_json(value: Option<&Json>) -> Self {
+        // `String(mode)` — the reference emits the raw mode through String(),
+        // so a non-string mode stringifies first.
+        let units = match value.and_then(Json::as_str) {
+            Some(s) => s.units().to_vec(),
+            None => U16String::js_string(value.unwrap_or(&Json::Null)).0,
+        };
+        match units.as_slice() {
+            u if *u == lit("steer") => QueueMode::Steer,
+            u if *u == lit("followUp") => QueueMode::FollowUp,
+            u if *u == lit("write") => QueueMode::Write,
+            _ => QueueMode::Other(U16String(units).to_string_lossy()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueueItem {
-    pub id: f64,
-    pub mode: String,
+    /// The inbox entry's id; `u64::MAX` when it is absent or not a
+    /// non-negative integer (a malformed queue a real host never writes).
+    pub id: u64,
+    pub mode: QueueMode,
     pub text: String,
     /// Image blocks attached to the queued input; 0 on "write" items.
-    pub image_count: f64,
+    pub image_count: u64,
 }
 
 /// `queueItems(view)` — the queued inputs with their mode.
@@ -133,14 +186,14 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
                 .map(|item| {
                     let write = str_eq(item.get("mode"), "write");
                     QueueItem {
-                        id: item.get("id").and_then(Json::as_number).unwrap_or(f64::NAN),
-                        mode: js_text(item.get("mode")),
+                        id: crate::json::num_key(item.get("id")).unwrap_or(u64::MAX),
+                        mode: QueueMode::from_json(item.get("mode")),
                         text: if write {
                             format!("<{}>", js_text(item.get("entry").and_then(|e| e.get("kind"))))
                         } else {
                             text_of(item.get("content"))
                         },
-                        image_count: if write { 0.0 } else { image_count_of(item.get("content")) },
+                        image_count: if write { 0 } else { image_count_of(item.get("content")) },
                     }
                 })
                 .collect()
@@ -181,8 +234,9 @@ pub fn usage_rows(view: &Json) -> Vec<UsageRow> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TaskRow {
-    pub id: f64,
-    pub depth: f64,
+    /// The task number; `u64::MAX` when absent or not a non-negative integer.
+    pub id: u64,
+    pub depth: u64,
     pub label: String,
 }
 
@@ -263,7 +317,7 @@ pub fn task_rows(graph: &Json) -> Vec<TaskRow> {
     let mut rows = Vec::new();
     for node in &nodes {
         if node.get("owner").is_none() && !owned.contains(&JsKey::of(node.get("conversationId"))) {
-            visit_task(node, 0.0, &nodes, &mut rows);
+            visit_task(node, 0, &nodes, &mut rows);
         }
     }
     rows
@@ -278,9 +332,9 @@ fn js_strict_eq_opt(a: Option<&Json>, b: Option<&Json>) -> bool {
     }
 }
 
-fn visit_task<'a>(node: &'a Json, depth: f64, nodes: &[&'a Json], rows: &mut Vec<TaskRow>) {
+fn visit_task<'a>(node: &'a Json, depth: u64, nodes: &[&'a Json], rows: &mut Vec<TaskRow>) {
     rows.push(TaskRow {
-        id: node.get("id").and_then(Json::as_number).unwrap_or(f64::NAN),
+        id: crate::json::num_key(node.get("id")).unwrap_or(u64::MAX),
         depth,
         label: describe_task(node),
     });
@@ -293,7 +347,7 @@ fn visit_task<'a>(node: &'a Json, depth: f64, nodes: &[&'a Json], rows: &mut Vec
                         .is_some_and(|id| list.iter().any(|v| same_value_zero(v, id)))
                 }));
         if child {
-            visit_task(candidate, depth + 1.0, nodes, rows);
+            visit_task(candidate, depth + 1, nodes, rows);
         }
     }
 }

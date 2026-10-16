@@ -226,9 +226,10 @@ fn args_text_of(args: Option<&Json>, tool_name: Option<&U16String>) -> Option<St
     Some(args.to_json())
 }
 
-fn child_conversation_id(details: Option<&Json>) -> Option<f64> {
+fn child_conversation_id(details: Option<&Json>) -> Option<u64> {
     // `typeof details === "object"` admits arrays; their reads simply miss.
-    details.filter(|d| d.is_container())?.get("conversationId")?.as_number()
+    // A non-integer or negative conversationId degrades to absent.
+    crate::json::num_key(details.filter(|d| d.is_container())?.get("conversationId"))
 }
 
 fn codemode_child(call: &Json, tool_presentations: &Json) -> ToolItem {
@@ -250,10 +251,9 @@ fn codemode_child(call: &Json, tool_presentations: &Json) -> ToolItem {
     let name = call.get("name").and_then(Json::as_str);
     let classified = call.get("details").map(|d| classify(presentation_of(tool_presentations, name), d));
     let pinomad = match &classified {
-        Some(ClassifiedDoc::Diff(value)) => value
-            .get("patch")
-            .and_then(Json::as_str)
-            .map(|p| PinomadToolDetail::Diff { patch: p.to_string_lossy() }),
+        Some(ClassifiedDoc::Diff(value)) => {
+            Some(PinomadToolDetail::Diff { patch: value.patch.clone() })
+        }
         _ => None,
     };
     ToolItem {
@@ -354,10 +354,7 @@ fn tool_item(
     let mut pinomad = None;
     let mut children = Vec::new();
     if let Some(ClassifiedDoc::Diff(value)) = &classified {
-        pinomad = value
-            .get("patch")
-            .and_then(Json::as_str)
-            .map(|p| PinomadToolDetail::Diff { patch: p.to_string_lossy() });
+        pinomad = Some(PinomadToolDetail::Diff { patch: value.patch.clone() });
     } else if let Some(child) = child {
         pinomad = Some(PinomadToolDetail::Subagent {
             conversation_id: child,
@@ -375,7 +372,8 @@ fn tool_item(
             .map(|slots| slots.iter().map(|slot| nested_child(slot)).collect())
             .unwrap_or_default();
     } else if let Some(ClassifiedDoc::Codemode(value)) = &classified {
-        children = value
+        let doc = value.to_json();
+        children = doc
             .get("calls")
             .and_then(Json::as_array)
             .map(|calls| calls.iter().map(|call| codemode_child(call, tool_presentations)).collect())

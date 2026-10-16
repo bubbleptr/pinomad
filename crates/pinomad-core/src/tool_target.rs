@@ -25,7 +25,7 @@ const TARGET_MAX_LENGTH: usize = 120;
 
 /// The first recognized target-ish argument value, truncated at 120 code
 /// units like the reference; absent when none matches.
-pub fn tool_target(args: &Json) -> Option<U16String> {
+pub fn tool_target(args: &Json) -> Option<String> {
     if !args.is_object() {
         return None;
     }
@@ -37,9 +37,9 @@ pub fn tool_target(args: &Json) -> Option<U16String> {
                 return Some(if units.len() > TARGET_MAX_LENGTH {
                     let mut truncated = text::slice(units, 0, Some(TARGET_MAX_LENGTH as i64));
                     truncated.push(0x2026); // …
-                    U16String(truncated)
+                    U16String(truncated).to_string_lossy()
                 } else {
-                    text.clone()
+                    text.to_string_lossy()
                 });
             }
         }

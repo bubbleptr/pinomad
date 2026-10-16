@@ -54,6 +54,14 @@ export const TOOL_DURATION_CASES: NamedCase<number | undefined>[] = [
   { name: "s-tie-1.25", input: 1250 },
   { name: "s-tie-2.25", input: 2250 },
   { name: "s-tie-3.25", input: 3250 },
+  // Decimal midpoints that are NOT exact in binary: toFixed looks at the
+  // double's true value, so 1.15 (stored as 1.1499999999999999…) rounds down
+  // to "1.1" while 1.25 (exactly representable) rounds up to "1.3".
+  { name: "s-near-tie-1.05", input: 1050 },
+  { name: "s-near-tie-1.15", input: 1150 },
+  { name: "s-near-tie-1.35", input: 1350 },
+  { name: "s-near-tie-2.45", input: 2450 },
+  { name: "s-near-tie-9.95", input: 9950 },
   { name: "missing", input: undefined },
   { name: "negative", input: -5 },
   { name: "nan", input: Number.NaN },
