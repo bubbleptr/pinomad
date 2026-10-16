@@ -16,11 +16,18 @@ import {
   verifyRelayChallenge,
   verifyRelayChallengeV2,
   type HostToRelay,
+  type RegisterFrame,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { serveWebClient } from "@pinomad/host/src/web-client.ts";
 import type { Accounts } from "./accounts.ts";
-import { handleApiRequest, secureTransport } from "./api.ts";
+import {
+  handleApiRequest,
+  secureTransport,
+  type PairingBroker,
+  type PairingRequestResult,
+  type PairingStatus,
+} from "./api.ts";
 
 export interface RelayOptions {
   /** 0 in tests. */
@@ -32,6 +39,8 @@ export interface RelayOptions {
   readonly allowedHosts: readonly string[];
   readonly acceptTimeoutMs?: number;
   readonly registerTimeoutMs?: number;
+  /** How long a server-vouched pairing ask waits for the host; default 10 s. */
+  readonly pairingTimeoutMs?: number;
   readonly pingIntervalMs?: number;
   /** Serve the built web client over plain HTTP on the same port; unset → 404. */
   readonly webRoot?: string;
@@ -57,6 +66,8 @@ export interface Relay {
    * design — the pairing step compares it against the stored binding.
    */
   controlInfo(hostId: string): { readonly noisePublicKey?: string; readonly features?: readonly string[] } | undefined;
+  /** Server-vouched pairing asks (ADR-0022 §4); the API routes drive it. */
+  readonly pairing: PairingBroker;
   close(): Promise<void>;
 }
 
@@ -97,6 +108,21 @@ interface PendingDevice {
 
 const rawLength = (data: RawData): number => (Array.isArray(data) ? data.reduce((sum, part) => sum + part.length, 0) : data.byteLength);
 
+// In-flight pairing asks per host / per session stay small: the client UI
+// issues these one at a time, so anything beyond is abuse or a bug.
+const MAX_PAIRING_PER_HOST = 4;
+const MAX_PAIRING_PER_SESSION = 2;
+
+interface PendingPairing {
+  /** The exact control socket the request went out on. */
+  readonly control: WebSocket;
+  readonly hostId: string;
+  /** The session token this request runs under — keys the per-session cap. */
+  readonly sessionKey: string;
+  readonly settle: (result: PairingRequestResult) => void;
+  readonly timer: NodeJS.Timeout;
+}
+
 export async function startRelay(options: RelayOptions): Promise<Relay> {
   const publicOrigin = options.publicOrigin.replace(/\/+$/, "");
   if (publicOrigin === "") throw new Error("publicOrigin is required");
@@ -107,6 +133,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const listenHost = options.listenHost ?? "127.0.0.1";
   const accounts = options.accounts;
   const trustProxy = options.trustProxy ?? false;
+  const pairingTimeoutMs = options.pairingTimeoutMs ?? 10_000;
 
   interface ControlEntry {
     readonly socket: WebSocket;
@@ -117,6 +144,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   const controls = new Map<string, ControlEntry>();
   const pending = new Map<string, PendingDevice>();
+  /**
+   * Server-vouched pairing asks in flight (ADR-0022 §4), keyed by requestId.
+   * Each is pinned to the exact control socket it was sent on — a reply on a
+   * different (replaced) connection can never settle it.
+   */
+  const pairingRequests = new Map<string, PendingPairing>();
   const sockets = new Set<WebSocket>();
   const alive = new WeakMap<WebSocket, boolean>();
 
@@ -153,11 +186,54 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   /**
+   * Whether a bound host can be asked for a pairing offer right now
+   * (ADR-0022 §4). "host_too_old" covers both a control that never declared
+   * the feature and a v1-only register that bound no Noise key — asking
+   * either would just crash its decoder or waste the wait.
+   */
+  function pairingStatus(hostId: string, boundNoiseKey: string): PairingStatus {
+    const control = controls.get(hostId);
+    if (control === undefined) return "offline";
+    if (control.noisePublicKey === undefined || control.features?.includes("pairing") !== true) return "host_too_old";
+    return control.noisePublicKey === boundNoiseKey ? "available" : "key_mismatch";
+  }
+
+  function requestPairing(hostId: string, sessionKey: string, signal: AbortSignal): Promise<PairingRequestResult> {
+    const control = controls.get(hostId);
+    if (control === undefined) return Promise.resolve({ status: "gone" });
+    let perHost = 0;
+    let perSession = 0;
+    for (const entry of pairingRequests.values()) {
+      if (entry.hostId === hostId) perHost += 1;
+      if (entry.sessionKey === sessionKey) perSession += 1;
+    }
+    if (perHost >= MAX_PAIRING_PER_HOST || perSession >= MAX_PAIRING_PER_SESSION) {
+      return Promise.resolve({ status: "too_many" });
+    }
+    return new Promise<PairingRequestResult>((resolve) => {
+      const requestId = randomBytes(16).toString("base64url");
+      const settle = (result: PairingRequestResult): void => {
+        if (!pairingRequests.delete(requestId)) return; // already settled
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        resolve(result);
+      };
+      const timer = setTimeout(() => settle({ status: "timeout" }), pairingTimeoutMs);
+      const abort = (): void => settle({ status: "cancelled" });
+      pairingRequests.set(requestId, { control: control.socket, hostId, sessionKey, settle, timer });
+      signal.addEventListener("abort", abort, { once: true });
+      control.socket.send(encodeRelayFrame({ t: "pairing-request", requestId }));
+    });
+  }
+
+  const pairing: PairingBroker = { status: pairingStatus, request: requestPairing };
+
+  /**
    * Handles one join/leave op connection (ADR-0022 §3). The register's Ed25519
    * signature is already verified; this only runs the operation, replies, and
    * hangs up. `noisePublicKey` is present only when a v2 signature bound it.
    */
-  function runOp(socket: WebSocket, frame: HostToRelay, noisePublicKey: string | undefined): void {
+  function runOp(socket: WebSocket, frame: RegisterFrame, noisePublicKey: string | undefined): void {
     // Reply, then hang up in the send callback so the close can't race it.
     const answer = (reply: RelayToHost): void =>
       socket.send(encodeRelayFrame(reply), () => socket.close(1000));
@@ -178,6 +254,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         noisePublicKey,
         ...(frame.name === undefined ? {} : { name: frame.name }),
       });
+      if (result.status === "joined") {
+        // A re-join can move the host to another account without touching its
+        // control connection: asks still pending under the old owner must die
+        // before the new binding's invites could reach them.
+        for (const request of pairingRequests.values()) {
+          if (request.hostId === frame.hostId) request.settle({ status: "gone" });
+        }
+      }
       answer(result.status === "joined" ? { t: "joined", username: result.username } : { t: "refused", reason: result.reason });
       return;
     }
@@ -199,15 +283,41 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     const deadline = setTimeout(() => socket.close(1008, "register timeout"), registerTimeoutMs);
 
     socket.on("message", (data: RawData, isBinary: boolean) => {
-      // The control channel is JSON text only; anything else — including a
-      // second register — is a protocol violation.
-      if (hostId !== undefined || isBinary) {
+      if (isBinary) {
         socket.close(1008, "unexpected frame");
         return;
       }
-      let frame: HostToRelay;
+      if (hostId !== undefined) {
+        // After `registered`, a control may only answer pairing asks — and a
+        // reply counts only on the exact socket that carried the request, so
+        // a replaced connection can't resolve a new one's pendings. Late or
+        // unknown requestIds are ignored; anything else is a violation.
+        let answer: HostToRelay;
+        try {
+          answer = decodeHostToRelay(data.toString());
+        } catch {
+          socket.close(1008, "malformed frame");
+          return;
+        }
+        if (answer.t === "pairing" || answer.t === "pairing-refused") {
+          const request = pairingRequests.get(answer.requestId);
+          if (request === undefined || request.control !== socket) return;
+          request.settle(
+            answer.t === "pairing"
+              ? { status: "ok", secret: answer.secret, expiresAt: answer.expiresAt }
+              : { status: "refused", reason: answer.reason },
+          );
+          return;
+        }
+        socket.close(1008, "unexpected frame");
+        return;
+      }
+      let frame: RegisterFrame;
       try {
-        frame = decodeHostToRelay(data.toString());
+        const decoded = decodeHostToRelay(data.toString());
+        // The only pre-admission frame is register; anything else first is a violation.
+        if (decoded.t !== "register") throw new Error("expected register");
+        frame = decoded;
       } catch {
         socket.close(1008, "malformed frame");
         return;
@@ -252,7 +362,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       clearTimeout(deadline);
       const previous = controls.get(hostId);
       // A second registration wins: a reconnecting host must not be locked out
-      // by a zombie control socket from its previous life.
+      // by a zombie control socket from its previous life. The old control's
+      // pending pairing asks die with it in its close handler below.
       if (previous !== undefined) previous.socket.close(RELAY_CLOSE.replaced);
       controls.set(hostId, {
         socket,
@@ -275,6 +386,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
           clearTimeout(entry.timer);
           entry.socket.close(RELAY_CLOSE.hostOffline);
         }
+      }
+      // Pairing asks tied to this control die with it — a replaced connection,
+      // a leave, or a dropped socket all resolve the waiting HTTP request.
+      for (const request of pairingRequests.values()) {
+        if (request.control === socket) request.settle({ status: "gone" });
       }
     });
   }
@@ -344,7 +460,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         response.end(JSON.stringify({ error: "accounts_disabled" }));
         return;
       }
-      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy }).catch(() => {
+      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy, pairing }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();
       });
@@ -424,6 +540,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         ...(entry.features === undefined ? {} : { features: entry.features }),
       };
     },
+    pairing,
     async close() {
       clearInterval(pingTimer);
       for (const entry of pending.values()) clearTimeout(entry.timer);

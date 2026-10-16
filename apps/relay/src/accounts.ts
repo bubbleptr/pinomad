@@ -80,6 +80,16 @@ export type JoinHostResult =
   | { readonly status: "joined"; readonly username: string }
   | { readonly status: "refused"; readonly reason: "invalid_token" | "expired_token" };
 
+/** A bound host row as the API lists and looks it up. */
+export interface HostRow {
+  readonly hostId: string;
+  readonly userId: number;
+  readonly noisePublicKey: string;
+  readonly name: string;
+  readonly joinedAt: number;
+  readonly lastSeenAt: number;
+}
+
 export interface Accounts {
   /** Server database path — tests write join_tokens rows directly. */
   readonly dbPath: string;
@@ -104,6 +114,13 @@ export interface Accounts {
   }): JoinHostResult;
   /** Drops a host's account binding; false when the hostId was never bound. */
   leaveHost(hostId: string): boolean;
+  /** Every host bound to a user — GET /api/hosts. */
+  listHosts(userId: number): HostRow[];
+  /**
+   * The host row scoped to its owner. Callers must never probe by hostId
+   * alone: a host that belongs to someone else looks exactly like "not found".
+   */
+  hostFor(userId: number, hostId: string): HostRow | undefined;
   /** Bumps last_seen_at on each successful register; a no-op for unbound hostIds. */
   markHostSeen(hostId: string): void;
   close(): Promise<void>;
@@ -447,6 +464,26 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
     leaveHost(hostId) {
       return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
+    },
+
+    listHosts(userId) {
+      return db
+        .prepare(
+          `SELECT host_id AS hostId, user_id AS userId, noise_public_key AS noisePublicKey,
+                  name, joined_at AS joinedAt, last_seen_at AS lastSeenAt
+           FROM hosts WHERE user_id = ? ORDER BY joined_at`,
+        )
+        .all(userId) as unknown as HostRow[];
+    },
+
+    hostFor(userId, hostId) {
+      return db
+        .prepare(
+          `SELECT host_id AS hostId, user_id AS userId, noise_public_key AS noisePublicKey,
+                  name, joined_at AS joinedAt, last_seen_at AS lastSeenAt
+           FROM hosts WHERE user_id = ? AND host_id = ?`,
+        )
+        .get(userId, hostId) as HostRow | undefined;
     },
 
     markHostSeen(hostId) {

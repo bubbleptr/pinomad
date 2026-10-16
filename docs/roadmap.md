@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-16（服务端账号第 3 步完成）
+最后更新：2026-10-16（服务端账号第 4 步完成）
 
 ## 已完成
 
@@ -150,9 +150,9 @@ MCP 本身的后续，都等有明确需求再做：
    - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛（协议 5.8）。准入时在登记设备的同一个 commit 里再检查一遍：账号来源的邀请要求开关是开的、绑定还是当前那次绑定（准入时实时重读 `server.json`，按其中每次写入生成的随机 `binding` 核对，重 join 同一地址也作废）、公钥不在吊销记录里。关开关、leave、换服务端时，还没用掉的账号邀请作废，不用等重启。
    - 账号来源的设备登记成功后，宿主用现有的 `notice` 帧通知所有在线设备"新设备 X 通过账号加入"（`New device "<name>" joined through your account`）。
    - 这一步还没有人能拿到账号来源的邀请（`pairing-request` 控制帧是第 4 步）；宿主侧入口是 `OpenedHost.createAccountOffer()`，读 `server.json` 绑定签发。
-4. **服务端担保配对**：
-   - `GET /api/hosts`（需登录）返回 `[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`，`pairing` 说明能不能经账号配对（宿主太旧、公钥对不上、离线）。
-   - `POST /api/hosts/:hostId/pairing`（需登录、宿主属于本账号）：经控制帧 `pairing-request` 向宿主要邀请，宿主回 `pairing` 或 `pairing-refused`。等待中的请求绑定到具体的控制连接和本次绑定，连接断开、被替换、leave 或 HTTP 请求取消时清掉；迟到或不认识的回复忽略。每台宿主、每个会话限制同时在途的请求数。宿主太旧（没声明 `features: ["pairing"]`）直接回固定的错误，不等超时；离线回 409，10 秒没回复回 504。成功时返回 `{url, hostKey, secret, expiresAt}`，客户端照 ADR-0008 走 IK 配对。
+4. **服务端担保配对**（已完成）：
+   - `GET /api/hosts`（需登录）返回 `[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`，`pairing` 说明能不能经账号配对（`available` / `offline` / `host_too_old` / `key_mismatch`）。
+   - `POST /api/hosts/:hostId/pairing`（需登录、宿主属于本账号）：经控制帧 `pairing-request` 向宿主要邀请，宿主回 `pairing` 或 `pairing-refused`。等待中的请求绑定到具体的控制连接，连接断开、被替换、leave 或 HTTP 请求取消时清掉；迟到或不认识的回复忽略。在途上限：每台宿主 4、每个会话 2，超限回 429。宿主太旧（没声明 `features: ["pairing"]`）直接回固定的错误，不等超时；离线回 409 `host_offline`，宿主拒绝回 409 带宿主给的原因（`disabled` / `not_joined`），10 秒没回复回 504 `host_timeout`。成功时返回 `{url, hostKey, secret, expiresAt}`，客户端拼 `pair=<hostKey>.<secret>&url=<url>` 照 ADR-0008 走 IK 配对；请求体不带设备名，以握手里提交的为准。
 5. **Web / 桌面端界面**：登录、宿主列表、"添加宿主"给出命令、设备来源标记、`acceptAccountDevices` 开关、退出所有登录。普通 Web 的 `HostStore` 改成能存多台宿主，迁移现有的单条记录；桌面端 renderer 的 CSP 放行 `https:`（`wss:` 本来就允许连任意地址，再放行 `https:` 风险没有实质变化）。客户端按服务端地址 + hostId 记住宿主公钥：公钥变了要提示，不自动重新配对；已存的宿主收到 4401 后不自动去要邀请。
 6. **移动端**（单独 PR，mbp）：登录、宿主列表、经账号配对、出示二维码。
 7. **部署迁移**：Zeabur 挂持久卷、设环境变量；Omarchy 跑 `pinomad join`。确认服务端重启后账号和绑定还在、宿主在线后，删掉 `--allow-host`。

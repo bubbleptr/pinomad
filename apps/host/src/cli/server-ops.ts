@@ -140,7 +140,7 @@ export async function runServerOperation(options: {
         finish(() => reject(new Error(`${origin} ignored the operation — the server is too old for accounts; upgrade it first`)));
         return;
       }
-      if (frame.t === "incoming") return; // never sent to an op connection
+      if (frame.t === "incoming" || frame.t === "pairing-request") return; // never sent to an op connection
       finish(() => resolve(frame));
     });
   });

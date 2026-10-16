@@ -12,7 +12,7 @@ import { transcript } from "@pinomad/protocol/transcript.ts";
 import { startRelay } from "@pinomad/relay/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { startRelayLink, type RelayLinkState } from "../src/relay-link.ts";
+import { startRelayLink, type AccountOfferResult, type RelayLinkState } from "../src/relay-link.ts";
 import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -85,6 +85,117 @@ function connectDevice(
 }
 
 const QUICK_RECONNECT = { min: 50, max: 200 };
+
+/**
+ * A minimal stand-in for the server side of /host: answers the upgrade with a
+ * challenge, captures the register, then lets the test drive frames. Used to
+ * exercise the relay link's pairing answers without a whole accounts server.
+ */
+async function fakeServer(): Promise<{
+  port: number;
+  origin: string;
+  /** Resolves with the host's register frame once it arrives. */
+  register: Promise<Record<string, unknown>>;
+  send(frame: object): void;
+  nextMessage(): Promise<Record<string, unknown>>;
+}> {
+  const { WebSocketServer } = await import("ws");
+  const wss = new WebSocketServer({ port: 0 });
+  defer(async () => {
+    for (const client of wss.clients) client.terminate();
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+  });
+  const port = (wss.address() as AddressInfo).port;
+  let socket: import("ws").WebSocket | undefined;
+  const messages: Record<string, unknown>[] = [];
+  const waiters: ((frame: Record<string, unknown>) => void)[] = [];
+  const seen = new Promise<Record<string, unknown>>((resolve) => {
+    wss.on("connection", (ws) => {
+      socket = ws;
+      ws.on("message", (data) => {
+        const frame = JSON.parse((data as Buffer).toString()) as Record<string, unknown>;
+        if (frame.t === "register") {
+          resolve(frame);
+          ws.send(JSON.stringify({ t: "registered" }));
+          return;
+        }
+        const waiter = waiters.shift();
+        if (waiter !== undefined) waiter(frame);
+        else messages.push(frame);
+      });
+      ws.send(JSON.stringify({ t: "challenge", nonce: "test-nonce" }));
+    });
+  });
+  return {
+    port,
+    origin: `http://127.0.0.1:${port}`,
+    register: seen,
+    send(frame) {
+      socket?.send(JSON.stringify(frame));
+    },
+    nextMessage() {
+      const queued = messages.shift();
+      if (queued !== undefined) return Promise.resolve(queued);
+      return new Promise((resolve) => waiters.push(resolve));
+    },
+  };
+}
+
+describe("relay link pairing answers", () => {
+  const linkWith = async (
+    server: Awaited<ReturnType<typeof fakeServer>>,
+    accountOffer?: () => Promise<AccountOfferResult>,
+  ): Promise<RelayLinkState["status"][]> => {
+    const states: RelayLinkState["status"][] = [];
+    const link = startRelayLink({
+      origin: server.origin,
+      signingKey: ed25519.keygen(),
+      noisePublicKey: generateKeyPair().publicKey,
+      accept: () => {},
+      onStateChange: (state) => states.push(state.status),
+      reconnectDelayMs: QUICK_RECONNECT,
+      ...(accountOffer === undefined ? {} : { accountOffer }),
+    });
+    defer(() => link.close());
+    await until(() => states[0] === "registered");
+    return states;
+  };
+
+  it("declares the pairing feature only when an offer source is wired", async () => {
+    const wired = await fakeServer();
+    await linkWith(wired, async () => ({ ok: false, reason: "not_joined" }));
+    expect((await wired.register).features).toEqual(["pairing"]);
+
+    const plain = await fakeServer();
+    await linkWith(plain);
+    expect((await plain.register).features).toBeUndefined();
+  });
+
+  it("answers pairing-request with the minted offer or the refusal reason", async () => {
+    const server = await fakeServer();
+    let reply: AccountOfferResult = { ok: true, secret: "the-secret", expiresAt: 4242 };
+    await linkWith(server, async () => reply);
+    await server.register;
+
+    const answerP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-1" });
+    expect(await answerP).toEqual({ t: "pairing", requestId: "req-1", secret: "the-secret", expiresAt: 4242 });
+
+    reply = { ok: false, reason: "disabled" };
+    const refusedP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-2" });
+    expect(await refusedP).toEqual({ t: "pairing-refused", requestId: "req-2", reason: "disabled" });
+  });
+
+  it("refuses requests when no offer source exists", async () => {
+    const server = await fakeServer();
+    await linkWith(server);
+    await server.register;
+    const answerP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-9" });
+    expect(await answerP).toEqual({ t: "pairing-refused", requestId: "req-9", reason: "unavailable" });
+  });
+});
 
 describe("relay link", () => {
   it("pairs a device through the relay end to end, then reconnects it without pairing", async () => {

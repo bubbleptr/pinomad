@@ -23,6 +23,12 @@ export type RelayToHost =
   | { readonly t: "challenge"; readonly nonce: string }
   | { readonly t: "registered" }
   | { readonly t: "incoming"; readonly connId: string }
+  /**
+   * The server asks the host to mint a one-time pairing offer for a device it
+   * is vouching (ADR-0022 §4). Sent only to controls that declared the
+   * "pairing" feature — older hosts' decoders throw on unknown frames.
+   */
+  | { readonly t: "pairing-request"; readonly requestId: string }
   // One-shot account operations (ADR-0022 §3): the server answers an op
   // connection's register with one of these, then closes it.
   | { readonly t: "joined"; readonly username: string }
@@ -30,11 +36,14 @@ export type RelayToHost =
   | { readonly t: "refused"; readonly reason: string };
 
 /**
- * Host → relay: the only frame a control connection may ever send.
+ * Host → relay: `register` is the first and only pre-admission frame; after
+ * `registered`, the control connection may answer pairing requests.
  * `signature` stays mandatory — a pre-accounts server verifies only it and
  * ignores everything else (roadmap M3: new host + old server must still work).
  */
-export type HostToRelay = {
+export type HostToRelay = RegisterFrame | PairingAnswerFrame;
+
+export interface RegisterFrame {
   readonly t: "register";
   readonly hostId: string;
   readonly signature: string;
@@ -53,13 +62,28 @@ export type HostToRelay = {
   readonly name?: string;
   /** Capability strings the pairing step (M3 item 4) gates on, e.g. "pairing". */
   readonly features?: readonly string[];
-};
+}
+
+/**
+ * The host's answer to a `pairing-request` (ADR-0022 §4): the minted offer's
+ * secret, or a refusal reason the API hands back to the asking client. Early
+ * refusal is only a fast, readable error — admission is decided again at the
+ * IK handshake's commit.
+ */
+export type PairingAnswerFrame =
+  | { readonly t: "pairing"; readonly requestId: string; readonly secret: string; readonly expiresAt: number }
+  | { readonly t: "pairing-refused"; readonly requestId: string; readonly reason: string };
 
 export function encodeRelayFrame(frame: RelayToHost | HostToRelay): string {
   return JSON.stringify(frame);
 }
 
 const isString = (value: unknown): value is string => typeof value === "string";
+
+// requestIds, secrets, and reasons are all small protocol-controlled strings;
+// bounding them keeps a hostile peer from making the peer store novels.
+const isBoundedString = (value: unknown, max = 64): value is string =>
+  isString(value) && value.length > 0 && value.length <= max;
 
 function decodeJson(text: string): unknown {
   try {
@@ -71,7 +95,14 @@ function decodeJson(text: string): unknown {
 
 /** Throws on anything malformed — the relay treats that as a protocol violation. */
 export function decodeRelayToHost(text: string): RelayToHost {
-  const value = decodeJson(text) as { t?: unknown; nonce?: unknown; connId?: unknown };
+  const value = decodeJson(text) as {
+    t?: unknown;
+    nonce?: unknown;
+    connId?: unknown;
+    requestId?: unknown;
+    username?: unknown;
+    reason?: unknown;
+  };
   switch (value?.t) {
     case "challenge":
       if (!isString(value.nonce)) throw new Error("malformed challenge");
@@ -81,14 +112,17 @@ export function decodeRelayToHost(text: string): RelayToHost {
     case "incoming":
       if (!isString(value.connId)) throw new Error("malformed incoming");
       return { t: "incoming", connId: value.connId };
+    case "pairing-request":
+      if (!isBoundedString(value.requestId)) throw new Error("malformed pairing-request");
+      return { t: "pairing-request", requestId: value.requestId };
     case "joined":
-      if (!isString((value as { username?: unknown }).username)) throw new Error("malformed joined");
-      return { t: "joined", username: (value as { username: string }).username };
+      if (!isString(value.username)) throw new Error("malformed joined");
+      return { t: "joined", username: value.username };
     case "left":
       return { t: "left" };
     case "refused":
-      if (!isString((value as { reason?: unknown }).reason)) throw new Error("malformed refused");
-      return { t: "refused", reason: (value as { reason: string }).reason };
+      if (!isString(value.reason)) throw new Error("malformed refused");
+      return { t: "refused", reason: value.reason };
     default:
       throw new Error("unknown relay frame");
   }
@@ -106,8 +140,46 @@ export function decodeHostToRelay(text: string): HostToRelay {
     joinToken?: unknown;
     name?: unknown;
     features?: unknown;
+    requestId?: unknown;
+    secret?: unknown;
+    expiresAt?: unknown;
+    reason?: unknown;
   };
-  if (value?.t !== "register" || !isString(value.hostId) || !isString(value.signature)) {
+  switch (value?.t) {
+    case "register":
+      return decodeRegister(value);
+    case "pairing":
+      if (
+        !isBoundedString(value.requestId) ||
+        !isBoundedString(value.secret) ||
+        typeof value.expiresAt !== "number" ||
+        !Number.isFinite(value.expiresAt)
+      ) {
+        throw new Error("malformed pairing");
+      }
+      return { t: "pairing", requestId: value.requestId, secret: value.secret, expiresAt: value.expiresAt };
+    case "pairing-refused":
+      if (!isBoundedString(value.requestId) || !isBoundedString(value.reason)) {
+        throw new Error("malformed pairing-refused");
+      }
+      return { t: "pairing-refused", requestId: value.requestId, reason: value.reason };
+    default:
+      throw new Error("unknown host frame");
+    }
+}
+
+function decodeRegister(value: {
+  t?: unknown;
+  hostId?: unknown;
+  signature?: unknown;
+  signatureV2?: unknown;
+  noisePublicKey?: unknown;
+  op?: unknown;
+  joinToken?: unknown;
+  name?: unknown;
+  features?: unknown;
+}): RegisterFrame {
+  if (value.t !== "register" || !isString(value.hostId) || !isString(value.signature)) {
     throw new Error("malformed register");
   }
   if (value.op !== undefined && value.op !== "join" && value.op !== "leave") throw new Error("malformed register");
