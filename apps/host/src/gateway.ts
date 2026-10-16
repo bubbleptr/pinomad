@@ -323,6 +323,17 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       signingKey: secure.relay.signingKey,
       noisePublicKey: secure.hostKey.publicKey,
       accept: (socket) => secureHandshake(socket, secure, admission, register),
+      // ADR-0022 §4: the server vouches for a device by asking for an offer
+      // over this control connection. These are early answers only — the real
+      // admission check runs again inside admitDevice's commit, so refusal
+      // reasons here are for the client's message, not enforcement.
+      accountOffer: async () => {
+        if (!options.settings.value.acceptAccountDevices) return { ok: false, reason: "disabled" };
+        const binding = await readServerBinding(options.dataDir).catch(() => undefined);
+        if (binding === undefined) return { ok: false, reason: "not_joined" };
+        const { secret, expiresAt } = secure.offers.createAccount(binding);
+        return { ok: true, secret, expiresAt };
+      },
       onStateChange: (state) => {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
         // journalctl shows whether the host is registered with its relay.

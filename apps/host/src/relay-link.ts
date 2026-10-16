@@ -21,6 +21,16 @@ export type RelayLinkState =
   | { readonly status: "registered" }
   | { readonly status: "rejected"; readonly reason: string };
 
+/**
+ * The host's answer to the server's `pairing-request` (ADR-0022 §4): a minted
+ * account offer, or an early refusal whose reason the API hands back to the
+ * asking client. This is only the fast answer — admission is decided again at
+ * the IK handshake's commit, so refusals here are hints, not the verdict.
+ */
+export type AccountOfferResult =
+  | { readonly ok: true; readonly secret: string; readonly expiresAt: number }
+  | { readonly ok: false; readonly reason: string };
+
 export interface RelayLink {
   /** This host's relay identity — what goes in the relay's `--allow-host`. */
   readonly hostId: string;
@@ -52,6 +62,13 @@ export function startRelayLink(options: {
   readonly noisePublicKey: Uint8Array;
   /** Hand each freshly opened data socket to the gateway's secure handshake. */
   accept(socket: WebSocket): void;
+  /**
+   * Mints the account-bound offer a `pairing-request` asks for (ADR-0022 §4).
+   * Its presence is also the "pairing" feature declaration on register — a
+   * link without one refuses any request as `unavailable`, which only a
+   * misbehaving server should ever send (feature-gated servers don't ask).
+   */
+  accountOffer?(): Promise<AccountOfferResult>;
   /**
    * Fires only when the state actually changes: a different `status`, or a
    * `rejected` with a different `reason` (the same rejection on retry doesn't
@@ -122,7 +139,9 @@ export function startRelayLink(options: {
     watch(socket);
     // Attached synchronously on purpose: the relay sends `challenge` the
     // instant the upgrade completes — waiting for `open` loses it.
-    socket.on("message", onControlMessage);
+    // The socket is passed in: a pairing answer completes asynchronously and
+    // must go out on the connection that asked, not whatever `control` is then.
+    socket.on("message", (data, isBinary) => onControlMessage(socket, data, isBinary));
     socket.once("close", onControlClosed);
   }
 
@@ -134,14 +153,14 @@ export function startRelayLink(options: {
     }, at);
   }
 
-  function onControlMessage(data: RawData, isBinary: boolean): void {
+  function onControlMessage(socket: WebSocket, data: RawData, isBinary: boolean): void {
     let frame: RelayToHost;
     try {
       if (isBinary) throw new Error("binary control frame");
       frame = decodeRelayToHost(data.toString());
     } catch {
       // A malformed control frame means the peer is not our relay; drop and retry.
-      control?.close();
+      socket.close();
       return;
     }
     switch (frame.t) {
@@ -150,13 +169,17 @@ export function startRelayLink(options: {
         // rest; an account server prefers v2, which also binds the Noise key.
         const noisePublicKey = toBase64Url(options.noisePublicKey);
         const challenge = { relayOrigin: origin, hostId, nonce: frame.nonce };
-        control?.send(
+        socket.send(
           encodeRelayFrame({
             t: "register",
             hostId,
             signature: signRelayChallenge(options.signingKey.secretKey, challenge),
             signatureV2: signRelayChallengeV2(options.signingKey.secretKey, { ...challenge, noisePublicKey }),
             noisePublicKey,
+            // Capability negotiation (ADR-0022 §4): feature-gated requests
+            // would crash an old host's decoder, so the server only sends
+            // them to controls that declared "pairing".
+            ...(options.accountOffer === undefined ? {} : { features: ["pairing"] }),
           }),
         );
         break;
@@ -165,6 +188,34 @@ export function startRelayLink(options: {
         delay = minDelay;
         setState({ status: "registered" });
         break;
+      case "pairing-request": {
+        const accountOffer = options.accountOffer;
+        const refused = (reason: string): void => {
+          socket.send(encodeRelayFrame({ t: "pairing-refused", requestId: frame.requestId, reason }));
+        };
+        if (accountOffer === undefined) {
+          refused("unavailable");
+          break;
+        }
+        void accountOffer().then(
+          (result) => {
+            // The answer is worthless off the asking connection: a replaced or
+            // dead control means the server already dropped the request.
+            if (socket !== control || socket.readyState !== WebSocket.OPEN) return;
+            socket.send(
+              encodeRelayFrame(
+                result.ok
+                  ? { t: "pairing", requestId: frame.requestId, secret: result.secret, expiresAt: result.expiresAt }
+                  : { t: "pairing-refused", requestId: frame.requestId, reason: result.reason },
+              ),
+            );
+          },
+          () => {
+            if (socket === control && socket.readyState === WebSocket.OPEN) refused("error");
+          },
+        );
+        break;
+      }
       case "incoming": {
         // Past the cap the device just times out at the relay (4610) — the
         // host keeps its accept budget instead of hoarding dying sockets.
