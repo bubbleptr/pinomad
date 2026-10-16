@@ -1,0 +1,146 @@
+{
+  "serverFrames": [
+    {
+      "name": "hello",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":9},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "expect": "hello"
+    },
+    {
+      "name": "hello-legacy-int-protocol",
+      "wire": "{\"type\":\"hello\",\"protocol\":4,\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{}}",
+      "expect": "hello"
+    },
+    {
+      "name": "hello-unknown-fields",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":9},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "expect": "hello"
+    },
+    {
+      "name": "snapshot",
+      "wire": "{\"type\":\"snapshot\",\"stream\":\"index\",\"value\":{\"device\":\"Workphone \\ud83d\",\"nested\":{\"keep\":[\"a\",\"b\"],\"n\":1e+21}}}",
+      "expect": "snapshot",
+      "stream": "index"
+    },
+    {
+      "name": "snapshot-nonstring-stream",
+      "wire": "{\"type\":\"snapshot\",\"stream\":7,\"value\":1}",
+      "expect": "snapshot"
+    },
+    {
+      "name": "ops",
+      "wire": "{\"type\":\"ops\",\"stream\":\"index\",\"ops\":[[\"s\",[\"a\",\"b\"],1],[\"a\",[\"s\"],\"x\"]]}",
+      "expect": "ops",
+      "stream": "index"
+    },
+    {
+      "name": "ended",
+      "wire": "{\"type\":\"ended\",\"stream\":\"conversation:3\",\"reason\":\"gone\"}",
+      "expect": "ended",
+      "stream": "conversation:3"
+    },
+    {
+      "name": "result-ok",
+      "wire": "{\"type\":\"result\",\"id\":4,\"ok\":true,\"value\":{\"conversationId\":9}}",
+      "expect": "result"
+    },
+    {
+      "name": "result-err",
+      "wire": "{\"type\":\"result\",\"id\":5,\"ok\":false,\"error\":\"nope\"}",
+      "expect": "result"
+    },
+    {
+      "name": "result-absent-value",
+      "wire": "{\"type\":\"result\",\"id\":6,\"ok\":true}",
+      "expect": "result"
+    },
+    {
+      "name": "notice",
+      "wire": "{\"type\":\"notice\",\"level\":\"error\",\"message\":\"bad\"}",
+      "expect": "notice"
+    },
+    {
+      "name": "unknown-type",
+      "wire": "{\"type\":\"from-the-future\",\"data\":1}",
+      "expect": "ignored"
+    },
+    {
+      "name": "unknown-type-similar",
+      "wire": "{\"type\":\"snapshots\"}",
+      "expect": "ignored"
+    },
+    {
+      "name": "missing-type",
+      "wire": "{\"stream\":\"index\"}",
+      "expect": "ignored"
+    },
+    {
+      "name": "nonstring-type",
+      "wire": "{\"type\":4}",
+      "expect": "ignored"
+    },
+    {
+      "name": "array-frame",
+      "wire": "[1,2]",
+      "expect": "ignored"
+    },
+    {
+      "name": "null-frame",
+      "wire": "null",
+      "expect": "ignored"
+    },
+    {
+      "name": "string-frame",
+      "wire": "\"subscribe\"",
+      "expect": "ignored"
+    },
+    {
+      "name": "number-frame",
+      "wire": "5",
+      "expect": "ignored"
+    },
+    {
+      "name": "empty-object",
+      "wire": "{}",
+      "expect": "ignored"
+    }
+  ],
+  "badJson": [
+    "{",
+    "[1,2",
+    "\"unterminated",
+    "{'a':1}",
+    "undefined",
+    "{\"a\":}",
+    "01",
+    "+1",
+    "\\x",
+    "\"\\x\"",
+    "\"\t\""
+  ],
+  "clientFrames": [
+    {
+      "name": "subscribe",
+      "wire": "{\"type\":\"subscribe\",\"stream\":\"conversation:12\"}"
+    },
+    {
+      "name": "unsubscribe",
+      "wire": "{\"type\":\"unsubscribe\",\"stream\":\"doc:pinomad.title:3\"}"
+    },
+    {
+      "name": "call-submit",
+      "wire": "{\"type\":\"call\",\"id\":7,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"中文 ✓ 🚀\",\"whenBusy\":\"followUp\",\"requestId\":\"req-1\",\"images\":[{\"data\":\"AA==\",\"mimeType\":\"image/png\"}]}}"
+    },
+    {
+      "name": "call-createConversation",
+      "wire": "{\"type\":\"call\",\"id\":8,\"method\":\"createConversation\",\"args\":{\"home\":{\"kind\":\"project\",\"path\":\"/home/u/app\"},\"text\":\"go\",\"requestId\":\"r\",\"checkout\":\"worktree\",\"model\":{\"provider\":\"p\",\"modelId\":\"m\"},\"thinkingLevel\":\"high\"}}"
+    },
+    {
+      "name": "call-empty-args",
+      "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
+    },
+    {
+      "name": "call-null-arg",
+      "wire": "{\"type\":\"call\",\"id\":10,\"method\":\"setPushToken\",\"args\":{\"token\":null}}"
+    }
+  ]
+}

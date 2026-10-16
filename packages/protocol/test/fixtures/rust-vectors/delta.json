@@ -1,0 +1,322 @@
+{
+  "cases": [
+    {
+      "name": "set-new-key",
+      "before": "{\"a\":1}",
+      "ops": "[[\"s\",[\"b\"],2]]",
+      "after": "{\"a\":1,\"b\":2}"
+    },
+    {
+      "name": "set-existing-key",
+      "before": "{\"a\":1,\"b\":2}",
+      "ops": "[[\"s\",[\"a\"],9]]",
+      "after": "{\"a\":9,\"b\":2}"
+    },
+    {
+      "name": "set-nested",
+      "before": "{\"a\":{\"b\":{\"c\":[]}}}",
+      "ops": "[[\"s\",[\"a\",\"b\",\"d\"],\"x\"]]",
+      "after": "{\"a\":{\"b\":{\"c\":[],\"d\":\"x\"}}}"
+    },
+    {
+      "name": "set-preserves-key-order",
+      "before": "{\"b\":1,\"a\":2}",
+      "ops": "[[\"s\",[\"b\"],9],[\"s\",[\"c\"],3]]",
+      "after": "{\"b\":9,\"a\":2,\"c\":3}"
+    },
+    {
+      "name": "delete-key",
+      "before": "{\"a\":1,\"b\":2}",
+      "ops": "[[\"d\",[\"a\"]]]",
+      "after": "{\"b\":2}"
+    },
+    {
+      "name": "delete-missing-key-is-noop",
+      "before": "{\"a\":1}",
+      "ops": "[[\"d\",[\"zzz\"]]]",
+      "after": "{\"a\":1}"
+    },
+    {
+      "name": "delete-then-reset",
+      "before": "{\"a\":1,\"b\":2}",
+      "ops": "[[\"d\",[\"a\"]],[\"s\",[\"a\"],7]]",
+      "after": "{\"b\":2,\"a\":7}"
+    },
+    {
+      "name": "index-key-order",
+      "before": "{\"x\":0}",
+      "ops": "[[\"s\",[\"2\"],\"two\"],[\"s\",[\"10\"],\"ten\"],[\"s\",[\"1\"],\"one\"]]",
+      "after": "{\"1\":\"one\",\"2\":\"two\",\"10\":\"ten\",\"x\":0}"
+    },
+    {
+      "name": "numeric-seg-on-object",
+      "before": "{\"0\":\"zero\"}",
+      "ops": "[[\"s\",[0],\"ZERO\"],[\"s\",[3],\"three\"]]",
+      "after": "{\"0\":\"ZERO\",\"3\":\"three\"}"
+    },
+    {
+      "name": "append-string",
+      "before": "{\"s\":\"he\"}",
+      "ops": "[[\"a\",[\"s\"],\"llo\"]]",
+      "after": "{\"s\":\"hello\"}"
+    },
+    {
+      "name": "append-to-nested-string",
+      "before": "{\"a\":{\"s\":\"x\"},\"b\":2}",
+      "ops": "[[\"a\",[\"a\",\"s\"],\"yz\"]]",
+      "after": "{\"a\":{\"s\":\"xyz\"},\"b\":2}"
+    },
+    {
+      "name": "append-joins-lone-surrogates",
+      "before": "{\"s\":\"phone \\ud83d\"}",
+      "ops": "[[\"a\",[\"s\"],\"\\udcf1 ok\"]]",
+      "after": "{\"s\":\"phone 📱 ok\"}"
+    },
+    {
+      "name": "truncate-string",
+      "before": "{\"s\":\"abcdef\"}",
+      "ops": "[[\"t\",[\"s\"],2]]",
+      "after": "{\"s\":\"cdef\"}"
+    },
+    {
+      "name": "truncate-splits-surrogate-pair",
+      "before": "{\"s\":\"a🚀b\"}",
+      "ops": "[[\"t\",[\"s\"],2]]",
+      "after": "{\"s\":\"\\ude80b\"}"
+    },
+    {
+      "name": "truncate-past-end",
+      "before": "{\"s\":\"ab\"}",
+      "ops": "[[\"t\",[\"s\"],99]]",
+      "after": "{\"s\":\"\"}"
+    },
+    {
+      "name": "truncate-zero",
+      "before": "{\"s\":\"ab\"}",
+      "ops": "[[\"t\",[\"s\"],0]]",
+      "after": "{\"s\":\"ab\"}"
+    },
+    {
+      "name": "splice-append",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"p\",[\"items\"],2,0,[3,4]]]",
+      "after": "{\"items\":[1,2,3,4]}"
+    },
+    {
+      "name": "splice-remove",
+      "before": "{\"items\":[1,2,3,4]}",
+      "ops": "[[\"p\",[\"items\"],1,2,[]]]",
+      "after": "{\"items\":[1,4]}"
+    },
+    {
+      "name": "splice-replace",
+      "before": "{\"items\":[1,2,3]}",
+      "ops": "[[\"p\",[\"items\"],1,1,[\"a\",\"b\"]]]",
+      "after": "{\"items\":[1,\"a\",\"b\",3]}"
+    },
+    {
+      "name": "splice-clamps-index",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"p\",[\"items\"],99,0,[\"x\"]]]",
+      "after": "{\"items\":[1,\"x\"]}"
+    },
+    {
+      "name": "splice-clamps-remove",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"p\",[\"items\"],1,99,[]]]",
+      "after": "{\"items\":[1]}"
+    },
+    {
+      "name": "splice-root-array",
+      "before": "[1,2]",
+      "ops": "[[\"p\",[],1,0,[\"x\"]]]",
+      "after": "[1,\"x\",2]"
+    },
+    {
+      "name": "set-array-index",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"s\",[\"items\",0],9]]",
+      "after": "{\"items\":[9,2]}"
+    },
+    {
+      "name": "set-array-append-one",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"s\",[\"items\",2],3]]",
+      "after": "{\"items\":[1,2,3]}"
+    },
+    {
+      "name": "delete-array-index",
+      "before": "{\"items\":[1,2,3]}",
+      "ops": "[[\"d\",[\"items\",1]]]",
+      "after": "{\"items\":[1,3]}"
+    },
+    {
+      "name": "permute",
+      "before": "{\"items\":[\"a\",\"b\",\"c\"]}",
+      "ops": "[[\"m\",[\"items\"],[2,0,1]]]",
+      "after": "{\"items\":[\"c\",\"a\",\"b\"]}"
+    },
+    {
+      "name": "append-on-array-string-element",
+      "before": "{\"items\":[\"ab\"]}",
+      "ops": "[[\"a\",[\"items\",0],\"cd\"]]",
+      "after": "{\"items\":[\"abcd\"]}"
+    },
+    {
+      "name": "replace-object-with-array",
+      "before": "{\"a\":1}",
+      "ops": "[[\"r\",[1,2]]]",
+      "after": "[1,2]"
+    },
+    {
+      "name": "replace-scalar",
+      "before": "{\"a\":1}",
+      "ops": "[[\"r\",\"text\"]]",
+      "after": "\"text\""
+    },
+    {
+      "name": "replace-then-mutate",
+      "before": "{\"a\":1}",
+      "ops": "[[\"r\",{\"b\":{\"c\":[],\"s\":\"x\"}}],[\"s\",[\"b\",\"d\"],1],[\"a\",[\"b\",\"s\"],\"y\"]]",
+      "after": "{\"b\":{\"c\":[],\"s\":\"xy\",\"d\":1}}"
+    },
+    {
+      "name": "ops-under-unknown-field",
+      "before": "{\"known\":1,\"future\":{\"list\":[],\"note\":\"x\"}}",
+      "ops": "[[\"p\",[\"future\",\"list\"],0,0,[{\"new\":1}]],[\"a\",[\"future\",\"note\"],\"y\"]]",
+      "after": "{\"known\":1,\"future\":{\"list\":[{\"new\":1}],\"note\":\"xy\"}}"
+    },
+    {
+      "name": "number-formatting",
+      "before": "{}",
+      "ops": "[[\"s\",[\"big\"],1e+21],[\"s\",[\"bigger\"],1e+22],[\"s\",[\"small\"],1e-7],[\"s\",[\"fraction\"],0.30000000000000004],[\"s\",[\"neg\"],-0.5],[\"s\",[\"hugeInt\"],9007199254740992]]",
+      "after": "{\"big\":1e+21,\"bigger\":1e+22,\"small\":1e-7,\"fraction\":0.30000000000000004,\"neg\":-0.5,\"hugeInt\":9007199254740992}"
+    },
+    {
+      "name": "unsafe-proto",
+      "before": "{}",
+      "ops": "[[\"s\",[\"__proto__\",\"isAdmin\"],true]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-constructor",
+      "before": "{}",
+      "ops": "[[\"s\",[\"constructor\"],1]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-string-key-on-array",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"s\",[\"items\",\"0\"],9]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-array-gap",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"s\",[\"items\",5],9]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-negative-index",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"s\",[\"items\",-1],9]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-noninteger-index",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"s\",[\"items\",1.5],9]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "unsafe-bool-segment",
+      "before": "{}",
+      "ops": "[[\"s\",[true],1]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "path-missing-key",
+      "before": "{\"a\":1}",
+      "ops": "[[\"s\",[\"b\",\"c\"],1]]",
+      "error": "path"
+    },
+    {
+      "name": "path-through-scalar",
+      "before": "{\"a\":{\"b\":1}}",
+      "ops": "[[\"s\",[\"a\",\"b\",\"c\"],1]]",
+      "error": "path"
+    },
+    {
+      "name": "path-splice-on-object",
+      "before": "{\"o\":{}}",
+      "ops": "[[\"p\",[\"o\"],0,0,[1]]]",
+      "error": "path"
+    },
+    {
+      "name": "unsafe-delete-past-end",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"d\",[\"items\",4]]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "path-delete-at-end",
+      "before": "{\"items\":[1]}",
+      "ops": "[[\"d\",[\"items\",1]]]",
+      "error": "path"
+    },
+    {
+      "name": "path-append-nonstring",
+      "before": "{\"s\":7}",
+      "ops": "[[\"a\",[\"s\"],\"x\"]]",
+      "error": "path"
+    },
+    {
+      "name": "type-permute-not-bijection",
+      "before": "{\"items\":[1,2]}",
+      "ops": "[[\"m\",[\"items\"],[1,0,0]]]",
+      "error": "type"
+    },
+    {
+      "name": "path-permute-nonarray",
+      "before": "{\"o\":{}}",
+      "ops": "[[\"m\",[\"o\"],[0]]]",
+      "error": "path"
+    },
+    {
+      "name": "type-empty-path-set",
+      "before": "{\"a\":1}",
+      "ops": "[[\"s\",[],1]]",
+      "error": "type"
+    },
+    {
+      "name": "type-bad-verb",
+      "before": "{}",
+      "ops": "[[\"q\",[\"a\"],1]]",
+      "error": "type"
+    },
+    {
+      "name": "type-non-array-op",
+      "before": "{}",
+      "ops": "[\"s\"]",
+      "error": "type"
+    },
+    {
+      "name": "type-non-verb",
+      "before": "{}",
+      "ops": "[[1,[\"a\"],1]]",
+      "error": "type"
+    },
+    {
+      "name": "batch-error-midway",
+      "before": "{\"a\":1}",
+      "ops": "[[\"s\",[\"b\"],2],[\"s\",[\"__proto__\"],1]]",
+      "error": "unsafe-path"
+    },
+    {
+      "name": "batch-shared-subtree",
+      "before": "{\"a\":{\"b\":{\"s\":\"x\"}},\"z\":[0]}",
+      "ops": "[[\"a\",[\"a\",\"b\",\"s\"],\"y\"],[\"s\",[\"a\",\"b\",\"t\"],1],[\"p\",[\"z\"],0,0,[9]],[\"d\",[\"a\",\"b\"]]]",
+      "after": "{\"a\":{},\"z\":[9,0]}"
+    }
+  ]
+}

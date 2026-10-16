@@ -8,3 +8,4 @@ apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/.expo/
 apps/mobile/uniwind-types.d.ts
+target/
