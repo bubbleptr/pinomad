@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "build.kieran.pinomad",
+      "deploymentTarget": "26.0",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "PiNomad connects to a host on your local network or tailnet.",
         "ITSAppUsesNonExemptEncryption": false
