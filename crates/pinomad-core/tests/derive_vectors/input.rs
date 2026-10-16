@@ -124,3 +124,33 @@ pub fn cot(json: &Json) -> CotView {
         }),
     }
 }
+
+use pinomad_core::model::{ModelPick, ModelRef};
+use pinomad_core::stored_host::StoredHost;
+
+pub fn model_ref(json: &Json) -> Option<ModelRef> {
+    ModelRef::from_json(json)
+}
+
+pub fn model_pick(json: &Json) -> ModelPick {
+    ModelPick {
+        model: json.get("model").and_then(ModelRef::from_json),
+        level: json
+            .get("level")
+            .and_then(Json::as_str)
+            .map(|s| pinomad_core::model::ThinkingLevel::from_units(s.units()))
+            // `remembered.level` absent is `undefined` — an unknown level for
+            // every rank comparison, like the reference sees it.
+            .unwrap_or_else(|| pinomad_core::model::ThinkingLevel::Other("undefined".to_string())),
+    }
+}
+
+pub fn stored_host(json: &Json) -> StoredHost {
+    // The hosts passed to hostLabels are already parsed entries.
+    StoredHost {
+        url: text(json.get("url")).unwrap_or_default(),
+        host_key: text(json.get("hostKey")).unwrap_or_default(),
+        private_key: text(json.get("privateKey")).unwrap_or_default(),
+        account: None,
+    }
+}

@@ -85,6 +85,7 @@ pub fn tool_display_name(name: Option<&str>) -> Option<String> {
     let Some(rest) = name.strip_prefix("mcp__") else {
         return Some(name.to_string());
     };
+    // `rest.indexOf("__")` — "__" is ASCII so a byte index is a char boundary.
     Some(match rest.find("__") {
         Some(at) => format!("{}/{}", &rest[..at], &rest[at + 2..]),
         None => rest.to_string(),
@@ -199,7 +200,11 @@ pub fn tool_kind_from_name(name: Option<&str>) -> ToolKind {
 
 /// `toolKindFromTools` — a burst of mixed kinds shares the generic wrench.
 pub fn tool_kind_from_tools(tools: &[ToolItem]) -> ToolKind {
-    let mut kinds = tools.iter().map(|tool| tool_kind_from_name(tool.tool_name.as_deref()));
+    // The tool name was already decoded lossily into a Rust String; the
+    // re-wrap only puts the UTF-16 view the kind matching expects back.
+    let mut kinds = tools
+        .iter()
+        .map(|tool| tool_kind_from_name(tool.tool_name.as_deref()));
     match kinds.next() {
         Some(first) if kinds.all(|kind| kind == first) => first,
         _ => ToolKind::Tool,

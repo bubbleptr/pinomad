@@ -1499,7 +1499,7 @@ impl RemoteDurable {
             None
         };
         let conversation = self.current.and_then(|id| self.values.get(&conversation_stream(id).0).cloned());
-        let organized = organize(&index, &summaries)?;
+        let organized = organize(&index, &summaries)?.to_json();
         let docs = self.current.map(|id| self.docs_of(id));
         let side = self.side.map(|id| {
             let mut object = JsonObject::new();
@@ -1519,8 +1519,8 @@ impl RemoteDurable {
         self.set_or_clear("conversation", conversation);
         self.set_field("models", models);
         self.set_field("organized", organized);
-        self.set_or_clear("home", self.current.and_then(|id| home_of(&index, &summaries, id)));
-        self.set_or_clear("checkout", self.current.and_then(|id| checkout_of(&index, &summaries, id)));
+        self.set_or_clear("home", self.current.and_then(|id| home_of(&index, &summaries, id)).map(|h| h.to_json()));
+        self.set_or_clear("checkout", self.current.and_then(|id| checkout_of(&index, &summaries, id)).map(|c| c.to_json()));
         self.set_or_clear("tasks", tasks);
         self.set_field("docs", docs.unwrap_or_else(|| Json::array(vec![])));
         self.set_or_clear("side", side);

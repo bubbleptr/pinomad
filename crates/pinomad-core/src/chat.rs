@@ -54,7 +54,7 @@ pub fn agent_of(view: &Json) -> AgentState {
         thinking_level: raw
             .get("thinkingLevel")
             .and_then(Json::as_str)
-            .and_then(|s| crate::model::ThinkingLevel::from_units(s.units())),
+            .map(|s| crate::model::ThinkingLevel::from_units(s.units())),
         instructions: raw.get("instructions").and_then(Json::as_str).map(|s| s.to_string_lossy()),
         cwd: raw.get("cwd").and_then(Json::as_str).map(|s| s.to_string_lossy()),
         raw,

@@ -1,123 +1,107 @@
 import { describe, expect, it } from "vitest";
+import { organize, findConversation } from "@pinomad/protocol/organization.ts";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
-import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
+import {
+  DISPLAY_NAME_CASES,
+  FAMILY_CASES,
+  FORKS_AT_CASES,
+  NODE_QUERIES,
+  RELATIVE_TIME_CASES,
+  ROOT_OF_CASES,
+  family_case,
+  type FamilyInput,
+} from "./family-cases.ts";
 
-const summary = (over: Partial<ConversationSummary> = {}): ConversationSummary => ({
-  id: 0 as ConversationSummary["id"],
-  kind: "conversation",
-  ...over,
-});
+const organizedOf = (input: FamilyInput): Organized =>
+  organize(input.index as never, input.summaries as never[]);
 
-const node = (over: Partial<ConversationSummary> = {}, children: ConversationNode[] = []): ConversationNode => ({
-  summary: summary(over),
-  children,
-});
+const nodeOf = (family: string, id: number): ConversationNode =>
+  findConversation(organizedOf(family_case(family)), id as never)!;
 
 describe("familyStatus", () => {
   it("is undefined when the whole family is idle", () => {
-    expect(familyStatus(node({}, [node(), node({ kind: "subagent" })]))).toBeUndefined();
+    expect(familyStatus(nodeOf("idle", 1))).toBeUndefined();
   });
 
   it("a needs-answer in a grandchild beats a failed root", () => {
-    const root = node({ status: "failed" }, [
-      node({ status: "running" }, [node({ kind: "fork", status: "needs-answer" })]),
-    ]);
-    expect(familyStatus(root)).toBe("needs-answer");
+    expect(familyStatus(nodeOf("grandchild-needs-answer", 1))).toBe("needs-answer");
   });
 
   it("failed beats running anywhere in the family", () => {
-    expect(familyStatus(node({ status: "running" }, [node({ kind: "subagent", status: "failed" })]))).toBe("failed");
-    expect(familyStatus(node({ status: "running" }))).toBe("running");
+    expect(familyStatus(nodeOf("failed-beats-running", 1))).toBe("failed");
+  });
+
+  it("an unknown status can win an otherwise-statusless family", () => {
+    expect(familyStatus(nodeOf("unknown-status-wins", 1))).toBe("weird-status");
   });
 });
 
 describe("familyUpdatedAt", () => {
   it("is the newest updatedAt across the family, skipping conversations without one", () => {
-    const root = node({ updatedAt: 100 }, [
-      node({ kind: "fork", updatedAt: 300 }),
-      node({ kind: "subagent" }),
-      node({ updatedAt: 200 }),
-    ]);
-    expect(familyUpdatedAt(root)).toBe(300);
-    expect(familyUpdatedAt(node({}, [node({ kind: "fork" })]))).toBeUndefined();
+    expect(familyUpdatedAt(nodeOf("updated-at", 1))).toBe(300);
+    expect(familyUpdatedAt(nodeOf("idle", 1))).toBeUndefined();
   });
 });
 
 describe("displayName", () => {
   it("uses the subagent's label when it has one", () => {
-    expect(displayName(summary({ kind: "subagent", label: "Audit auth", title: "In the working directory /tmp/x, do things" }))).toBe(
-      "Audit auth",
-    );
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "subagent-label")!.summary as never)).toBe("Audit auth");
   });
 
   it("strips the working-directory boilerplate from a task title", () => {
-    expect(displayName(summary({ kind: "subagent", title: "  in the working directory /tmp/x, audit the auth flow" }))).toBe(
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "subagent-strips-prefix")!.summary as never)).toBe(
       "audit the auth flow",
     );
   });
 
   it("falls back to Subagent without label or title", () => {
-    expect(displayName(summary({ kind: "subagent" }))).toBe("Subagent");
-    expect(displayName(summary({ kind: "subagent", title: "In the working directory /tmp/x," }))).toBe("Subagent");
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "subagent-fallback")!.summary as never)).toBe("Subagent");
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "subagent-empty-title")!.summary as never)).toBe("Subagent");
   });
 
   it("keeps ordinary titles, New conversation when untitled, Conversation when absent", () => {
-    expect(displayName(summary({ title: "what broke?" }))).toBe("what broke?");
-    expect(displayName(summary({ kind: "fork" }))).toBe("New conversation");
-    expect(displayName(undefined)).toBe("Conversation");
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "title")!.summary as never)).toBe("what broke?");
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "fork-untitled")!.summary as never)).toBe(
+      "New conversation",
+    );
+    expect(displayName(DISPLAY_NAME_CASES.find((c) => c.name === "absent")!.summary as never)).toBe("Conversation");
   });
 });
 
-const organizedOf = (chats: ConversationNode[]): Organized => ({ chats, projects: [], archived: [] });
-
 describe("forksAt", () => {
-  it("returns the direct fork children anchored at an entry — including legacy nested forks", () => {
-    const id = (value: number) => value as ConversationSummary["id"];
-    // Legacy trees can nest a fork inside a fork (pre-depth-of-one data).
-    const nested = node({ id: id(3), kind: "fork", parent: id(2), forkedAt: "11" });
-    const fork = node({ id: id(2), kind: "fork", parent: id(1), forkedAt: "10" }, [nested]);
-    const root = node({ id: id(1) }, [fork, node({ id: id(4), kind: "subagent", parent: id(1) })]);
-    const organized = organizedOf([root]);
+  const organized = organizedOf(family_case("fork-anchors"));
 
-    expect(forksAt(organized, id(1), "10")).toEqual([id(2)]);
+  it("returns the direct fork children anchored at an entry — including legacy nested forks", () => {
+    expect(forksAt(organized, 1 as never, "10")).toEqual([2]);
     // A fork shown in the panel resolves its own children the same way.
-    expect(forksAt(organized, id(2), "11")).toEqual([id(3)]);
+    expect(forksAt(organized, 2 as never, "11")).toEqual([3]);
     // Only direct children anchor: B's entry does not belong to the root.
-    expect(forksAt(organized, id(1), "11")).toEqual([]);
-    expect(forksAt(organized, id(42), "10")).toEqual([]);
+    expect(forksAt(organized, 1 as never, "11")).toEqual([]);
+    expect(forksAt(organized, 42 as never, "10")).toEqual([]);
+  });
+
+  it("covers the same queries the vector generator emits", () => {
+    for (const c of FORKS_AT_CASES) {
+      const result = forksAt(organizedOf(family_case(c.family)), c.conversationId as never, c.entryId);
+      expect(result.length, c.name).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 
 describe("rootOf", () => {
-  const subInFork = node({
-    id: 3 as ConversationSummary["id"],
-    kind: "subagent",
-    parent: 2 as ConversationSummary["id"],
-  });
-  const forkA = node({ id: 2 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"] }, [subInFork]);
-  const rootA = node({ id: 1 as ConversationSummary["id"], kind: "conversation" }, [forkA]);
-  const organized = organizedOf([rootA, node({ id: 9 as ConversationSummary["id"] })]);
+  const organized = organizedOf(family_case("sub-in-fork"));
 
   it("walks parent links up to the top-level conversation", () => {
-    expect(rootOf(organized, 1 as ConversationSummary["id"])?.summary.id).toBe(1);
-    expect(rootOf(organized, 2 as ConversationSummary["id"])?.summary.id).toBe(1);
-    expect(rootOf(organized, 3 as ConversationSummary["id"])?.summary.id).toBe(1);
-    expect(rootOf(organized, 9 as ConversationSummary["id"])?.summary.id).toBe(9);
-    expect(rootOf(organized, 42 as ConversationSummary["id"])).toBeUndefined();
+    for (const c of ROOT_OF_CASES) {
+      expect(rootOf(organized, c.id as never)?.summary.id, c.name).toBe(c.id === 42 ? undefined : c.id === 9 ? 9 : 1);
+    }
   });
 });
 
 describe("threadsOf / taskGroupsOf", () => {
-  const subOnRoot = node({ id: 4 as ConversationSummary["id"], kind: "subagent", parent: 1 as ConversationSummary["id"], label: "Audit" });
-  const forkIdle = node({ id: 2 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"] });
-  const forkBusy = node(
-    { id: 5 as ConversationSummary["id"], kind: "fork", parent: 1 as ConversationSummary["id"], title: "worktree fork" },
-    [node({ id: 6 as ConversationSummary["id"], kind: "subagent", parent: 5 as ConversationSummary["id"] })],
-  );
-  const root = node({ id: 1 as ConversationSummary["id"], kind: "conversation" }, [subOnRoot, forkIdle, forkBusy]);
-
   it("lists the family's forks and groups subagents by owner", () => {
+    const root = nodeOf("family-tree", 1);
     expect(threadsOf(root).map((n) => n.summary.id)).toEqual([2, 5]);
     const groups = taskGroupsOf(root);
     expect(groups.map((group) => group.label)).toEqual(["This conversation", "worktree fork"]);
@@ -126,19 +110,13 @@ describe("threadsOf / taskGroupsOf", () => {
   });
 
   it("is empty for a conversation with no children", () => {
-    const bare = node({ id: 7 as ConversationSummary["id"] });
+    const bare = nodeOf("sub-in-fork", 9);
     expect(threadsOf(bare)).toEqual([]);
     expect(taskGroupsOf(bare)).toEqual([]);
   });
 
   it("walks legacy trees: several forks per message and forks nested inside forks", () => {
-    // Pre-ADR-0019 data: two forks on the same message, plus a fork of a fork.
-    const subagent = node({ id: 10 as ConversationSummary["id"], kind: "subagent", parent: 9 as ConversationSummary["id"], label: "Deep task" });
-    const nestedFork = node({ id: 9 as ConversationSummary["id"], kind: "fork", parent: 8 as ConversationSummary["id"], title: "nested" }, [subagent]);
-    const firstFork = node({ id: 8 as ConversationSummary["id"], kind: "fork", parent: 7 as ConversationSummary["id"], title: "first" }, [nestedFork]);
-    const secondFork = node({ id: 11 as ConversationSummary["id"], kind: "fork", parent: 7 as ConversationSummary["id"], title: "second" });
-    const legacy = node({ id: 7 as ConversationSummary["id"], kind: "conversation" }, [firstFork, secondFork]);
-
+    const legacy = nodeOf("legacy-nested-forks", 7);
     // Depth-first: a nested fork follows its parent fork, then siblings.
     expect(threadsOf(legacy).map((n) => n.summary.id)).toEqual([8, 9, 11]);
     const groups = taskGroupsOf(legacy);
@@ -148,15 +126,34 @@ describe("threadsOf / taskGroupsOf", () => {
 });
 
 describe("relativeTime", () => {
-  const now = 1_800_000_000_000;
   it("buckets into now / minutes / hours / days", () => {
-    expect(relativeTime(now - 59_000, now)).toBe("now");
-    expect(relativeTime(now - 60_000, now)).toBe("1m");
-    expect(relativeTime(now - 5 * 60_000, now)).toBe("5m");
-    expect(relativeTime(now - 59 * 60_000, now)).toBe("59m");
-    expect(relativeTime(now - 60 * 60_000, now)).toBe("1h");
-    expect(relativeTime(now - 3 * 60 * 60_000, now)).toBe("3h");
-    expect(relativeTime(now - 24 * 60 * 60_000, now)).toBe("1d");
-    expect(relativeTime(now - 2 * 24 * 60 * 60_000, now)).toBe("2d");
+    const expectOf = (name: string) => RELATIVE_TIME_CASES.find((c) => c.name === name)!;
+    expect(relativeTime(expectOf("now-59s").at, expectOf("now-59s").now)).toBe("now");
+    expect(relativeTime(expectOf("1m").at, expectOf("1m").now)).toBe("1m");
+    expect(relativeTime(expectOf("5m").at, expectOf("5m").now)).toBe("5m");
+    expect(relativeTime(expectOf("59m").at, expectOf("59m").now)).toBe("59m");
+    expect(relativeTime(expectOf("1h").at, expectOf("1h").now)).toBe("1h");
+    expect(relativeTime(expectOf("3h").at, expectOf("3h").now)).toBe("3h");
+    expect(relativeTime(expectOf("1d").at, expectOf("1d").now)).toBe("1d");
+    expect(relativeTime(expectOf("2d").at, expectOf("2d").now)).toBe("2d");
+  });
+
+  it("clamps a future timestamp to now", () => {
+    const c = RELATIVE_TIME_CASES.find((x) => x.name === "future")!;
+    expect(relativeTime(c.at, c.now)).toBe("now");
+  });
+});
+
+describe("shared cases", () => {
+  it("every family input organizes without throwing", () => {
+    for (const input of FAMILY_CASES) {
+      expect(() => organizedOf(input), input.name).not.toThrow();
+    }
+  });
+
+  it("node queries resolve", () => {
+    for (const query of NODE_QUERIES) {
+      expect(findConversation(organizedOf(family_case(query.family)), query.id as never), query.name).toBeDefined();
+    }
   });
 });

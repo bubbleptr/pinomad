@@ -245,3 +245,107 @@ pub fn classified_json(classified: &ClassifiedDoc) -> Json {
         ("value", Some(classified.to_json())),
     ])
 }
+
+use pinomad_core::family::TaskGroup;
+use pinomad_core::folder_path::FolderCrumb;
+use pinomad_core::model::{ModelPick, ModelRef};
+use pinomad_core::organization::ConversationNode;
+use pinomad_core::questions::{PendingQuestion, QuestionAnswer};
+use pinomad_core::stored_host::StoredHost;
+
+fn nodes_json(nodes: &[ConversationNode]) -> Json {
+    Json::array(nodes.iter().map(|n| n.to_json()).collect())
+}
+
+pub fn threads_json(nodes: &[ConversationNode]) -> Json {
+    nodes_json(nodes)
+}
+
+pub fn task_groups_json(groups: &[TaskGroup]) -> Json {
+    Json::array(
+        groups
+            .iter()
+            .map(|group| {
+                obj(&[
+                    ("owner", Some(group.owner.to_json())),
+                    ("label", Some(s(&group.label))),
+                    ("tasks", Some(nodes_json(&group.tasks))),
+                ])
+            })
+            .collect(),
+    )
+}
+
+pub fn pending_questions_json(items: &[PendingQuestion]) -> Json {
+    Json::array(
+        items
+            .iter()
+            .map(|item| {
+                obj(&[("kind", Some(s(&item.kind))), ("request", Some(item.request.to_json()))])
+            })
+            .collect(),
+    )
+}
+
+pub fn question_answers_json(items: &[QuestionAnswer]) -> Json {
+    Json::array(
+        items
+            .iter()
+            .map(|a| {
+                obj(&[
+                    ("selected", Some(Json::array(a.selected.iter().map(|v| s(v)).collect()))),
+                    ("other", a.other.as_deref().map(s)),
+                ])
+            })
+            .collect(),
+    )
+}
+
+pub fn folder_crumbs_json(crumbs: &[FolderCrumb]) -> Json {
+    Json::array(
+        crumbs
+            .iter()
+            .map(|c| obj(&[("label", Some(s(&c.label))), ("path", Some(s(&c.path)))]))
+            .collect(),
+    )
+}
+
+pub fn stored_host_json(host: Option<&StoredHost>) -> Json {
+    let Some(host) = host else {
+        return Json::Null;
+    };
+    obj(&[
+        ("url", Some(s(&host.url))),
+        ("hostKey", Some(s(&host.host_key))),
+        ("privateKey", Some(s(&host.private_key))),
+        ("account", host.account.as_ref().map(|a| a.to_json())),
+    ])
+}
+
+pub fn host_labels_json(labels: &[pinomad_core::stored_host::HostLabel]) -> Json {
+    let mut object = JsonObject::new();
+    for entry in labels {
+        object.set(U16String::from_str(&entry.host_key), s(&entry.label));
+    }
+    Json::Object(Rc::new(object))
+}
+
+pub fn model_pick_json(pick: &ModelPick) -> Json {
+    obj(&[
+        ("model", pick.model.as_ref().map(ModelRef::to_json)),
+        ("level", Some(Json::String(U16String::from_str(pick.level.as_str())))),
+    ])
+}
+
+/// The `thinkingLevelLabels` map in the reference's key order.
+pub fn level_labels_json() -> Json {
+    let mut object = JsonObject::new();
+    for level in pinomad_core::model::ThinkingLevel::ORDER {
+        let label = pinomad_core::model::thinking_level_label(&pinomad_core::model::ThinkingLevel::from_units(
+            &level.encode_utf16().collect::<Vec<u16>>(),
+        ))
+        .unwrap();
+        object.set(U16String::from_str(level), s(&label));
+    }
+    Json::Object(Rc::new(object))
+}
