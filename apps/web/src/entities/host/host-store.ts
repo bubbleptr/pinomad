@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { parseStoredHost } from "@pinomad/client/stored-host.ts";
 import { DEVICE_KEY, storedDevice, type StoredHost } from "../../address.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
@@ -7,32 +8,74 @@ export type { StoredHost };
 /** localStorage key naming the host the sidebar last connected to (a UI pref, not a secret). */
 export const ACTIVE_HOST_KEY = "pinomad.activeHost";
 
+/** localStorage key holding the browser's paired hosts as a JSON array. */
+export const HOSTS_KEY = "pinomad.hosts";
+
 /**
- * Where paired hosts live. The browser keeps a single device in localStorage
- * (multiHost false: pairing elsewhere replaces it); the desktop delegates to
- * the main process's encrypted list via the preload bridge.
+ * Where paired hosts live. The browser keeps its list in localStorage; the
+ * desktop delegates to the main process's encrypted list via the preload
+ * bridge. Both upsert by hostKey: pairing another host adds to the list.
  */
 export interface HostStore {
-  readonly multiHost: boolean;
   list(): Promise<StoredHost[]>;
-  /** Browser: replaces the one stored device. Desktop: upserts by hostKey. */
   save(host: StoredHost): Promise<void>;
   remove(hostKey: string): Promise<void>;
 }
 
+const readHosts = (): StoredHost[] => {
+  const raw = localStorage.getItem(HOSTS_KEY);
+  if (raw === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((entry) => {
+    const host = parseStoredHost(entry);
+    return host === undefined ? [] : [host];
+  });
+};
+
+const writeHosts = (hosts: readonly StoredHost[]): void => {
+  localStorage.setItem(HOSTS_KEY, JSON.stringify(hosts));
+};
+
+/**
+ * The stored list with the legacy single-device record (DEVICE_KEY) folded
+ * in and its key retired — the same migration the desktop store runs, only
+ * synchronous because localStorage is. A failed write keeps the legacy key
+ * so the next launch retries; this session still sees the entry.
+ */
+function migrated(): StoredHost[] {
+  const hosts = readHosts();
+  const legacy = storedDevice(localStorage.getItem(DEVICE_KEY));
+  if (legacy === undefined) return hosts;
+  if (hosts.some((entry) => entry.hostKey === legacy.hostKey)) {
+    localStorage.removeItem(DEVICE_KEY);
+    return hosts;
+  }
+  try {
+    writeHosts([...hosts, legacy]);
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    // Leave DEVICE_KEY: the next launch retries the move.
+  }
+  return [...hosts, legacy];
+}
+
 const browserStore: HostStore = {
-  multiHost: false,
-  list: () => {
-    const device = storedDevice(localStorage.getItem(DEVICE_KEY));
-    return Promise.resolve(device === undefined ? [] : [device]);
-  },
+  list: () => Promise.resolve(migrated()),
   save: (host) => {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify(host));
+    writeHosts([...migrated().filter((each) => each.hostKey !== host.hostKey), host]);
     return Promise.resolve();
   },
   remove: (hostKey) => {
-    const device = storedDevice(localStorage.getItem(DEVICE_KEY));
-    if (device !== undefined && device.hostKey === hostKey) localStorage.removeItem(DEVICE_KEY);
+    writeHosts(migrated().filter((each) => each.hostKey !== hostKey));
+    // A legacy record that never migrated is still removed if it matches.
+    const legacy = storedDevice(localStorage.getItem(DEVICE_KEY));
+    if (legacy !== undefined && legacy.hostKey === hostKey) localStorage.removeItem(DEVICE_KEY);
     return Promise.resolve();
   },
 };
@@ -58,7 +101,6 @@ function desktopStore(bridge: DesktopBridge): HostStore {
     }
   };
   return {
-    multiHost: true,
     list: async () => {
       const unsaved = await (migration ??= migrate());
       const hosts = await bridge.hosts.list();

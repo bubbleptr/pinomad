@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
-import { createHostStore, type StoredHost } from "./host-store.ts";
+import { createHostStore, type StoredAccount, type StoredHost } from "./host-store.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
@@ -106,6 +106,10 @@ function installHostStoreIpc(): void {
   ipcMain.handle("pinomad:hosts:list", handle(() => hosts.list()));
   ipcMain.handle("pinomad:hosts:save", handle((host: StoredHost) => hosts.save(host)));
   ipcMain.handle("pinomad:hosts:remove", handle((hostKey: string) => hosts.remove(hostKey)));
+  // The account session rides the same encrypted store and caller check.
+  ipcMain.handle("pinomad:account:get", handle(() => hosts.account()));
+  ipcMain.handle("pinomad:account:save", handle((account: StoredAccount) => hosts.saveAccount(account)));
+  ipcMain.handle("pinomad:account:clear", handle(() => hosts.clearAccount()));
 }
 
 /**

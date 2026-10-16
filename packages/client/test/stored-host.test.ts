@@ -33,6 +33,20 @@ describe("parseStoredHost", () => {
     expect(parseStoredHost({ ...host, name: "host-a", nested: { x: 1 } })).toEqual(host);
   });
 
+  it("round-trips the account link and tolerates its absence", () => {
+    const host = valid();
+    const account = { serverOrigin: "https://relay.example.com", hostId: host.hostKey };
+    expect(parseStoredHost({ ...host, account })).toEqual({ ...host, account });
+    expect(parseStoredHost(host)).toEqual(host);
+  });
+
+  it("drops a malformed account link but keeps the pairing", () => {
+    const host = valid();
+    for (const account of [{ hostId: host.hostKey }, { serverOrigin: "https://x", hostId: "short" }, "junk", 42]) {
+      expect(parseStoredHost({ ...host, account })).toEqual(host);
+    }
+  });
+
   it.each(["http://localhost:5199/", "https://example.com", "not a url", 42])(
     "rejects a non-ws url %s",
     (url) => {

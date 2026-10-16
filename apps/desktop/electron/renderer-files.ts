@@ -3,10 +3,13 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 /**
  * What the bundled renderer is allowed to reach: its own bundle, WebSocket
  * connections to a host or relay, and inline styles (Astryx sets style props).
- * Nothing else: no remote scripts, no remote fonts, no http fetches.
+ * Nothing else: no remote scripts, no remote fonts. connect-src also takes
+ * `https:` for the server-accounts API (ADR-0022) — `wss:` already lets the
+ * page dial any host, so allowing https fetches opens no new reach while
+ * plain http stays out.
  */
 export const RENDERER_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss:";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss: https:";
 
 export const APP_SCHEME = "app";
 export const APP_HOST = "pinomad";

@@ -13,9 +13,9 @@ import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { Computer, Plus } from "../../shared/ui/icons.tsx";
 
 /**
- * The desktop's host switcher. One connection at a time: picking another host
- * stores the choice and reloads — the same pattern a pasted link uses to
- * re-resolve the address.
+ * The host switcher. One connection at a time: picking another host stores
+ * the choice and reloads — the same pattern a pasted link uses to re-resolve
+ * the address.
  */
 export function HostSwitcher({ onPairAnother }: { onPairAnother: () => void }) {
   const { hosts, activeHostKey } = useHosts();
@@ -37,6 +37,9 @@ export function HostSwitcher({ onPairAnother }: { onPairAnother: () => void }) {
         value={current?.hostKey}
         onChange={(hostKey) => {
           localStorage.setItem(ACTIVE_HOST_KEY, hostKey);
+          // A live fragment (#token=…, #pair=…) would win over the stored
+          // selection after reload — clear it so the switch sticks.
+          history.replaceState(null, "", window.location.pathname + window.location.search);
           window.location.reload();
         }}
       >
@@ -76,15 +79,13 @@ export function PairHostDialog({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Connection-failure screens have no sidebar; in multi-host mode they still
- * owe the user a way off a dead host — the same switcher, inline. Centered's
- * column is window-wide, so the full-width button is boxed and spaced like
- * the screens' own blocks.
+ * Connection-failure screens have no sidebar; they still owe the user a way
+ * off a dead host — the same switcher, inline. Centered's column is
+ * window-wide, so the full-width button is boxed and spaced like the
+ * screens' own blocks.
  */
 export function HostSwitcherFallback() {
-  const { store } = useHosts();
   const [pairing, setPairing] = useState(false);
-  if (!store.multiHost) return null;
   return (
     <div className="mt-4 w-80">
       <HostSwitcher onPairAnother={() => setPairing(true)} />

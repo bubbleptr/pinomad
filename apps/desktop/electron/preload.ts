@@ -13,6 +13,11 @@ const bridge: DesktopBridge = {
     save: (host) => ipcRenderer.invoke("pinomad:hosts:save", host),
     remove: (hostKey) => ipcRenderer.invoke("pinomad:hosts:remove", hostKey),
   },
+  account: {
+    get: () => ipcRenderer.invoke("pinomad:account:get"),
+    save: (account) => ipcRenderer.invoke("pinomad:account:save", account),
+    clear: () => ipcRenderer.invoke("pinomad:account:clear"),
+  },
   updates: {
     status: () => ipcRenderer.invoke("pinomad:updates:status"),
     check: () => ipcRenderer.invoke("pinomad:updates:check"),

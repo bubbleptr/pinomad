@@ -14,6 +14,16 @@ export interface DesktopBridge {
     remove(hostKey: string): Promise<void>;
   };
   /**
+   * The bearer credential for the server-accounts API, kept in main's
+   * encrypted store (ADR-0022). Optional like `updates`: older bridges lack
+   * it, and a build without it just can't persist a session.
+   */
+  readonly account?: {
+    get(): Promise<{ serverOrigin: string; token: string } | undefined>;
+    save(account: { serverOrigin: string; token: string }): Promise<void>;
+    clear(): Promise<void>;
+  };
+  /**
    * Electron-updater control, owned by main. Optional only because the
    * browser has no bridge at all — inside the desktop app it always exists.
    */

@@ -160,4 +160,33 @@ describe("createHostStore", () => {
     await expect(store.save({ ...a, url: "not a url" })).rejects.toThrow();
     expect(await store.list()).toEqual([]);
   });
+
+  it("round-trips the account credential encrypted, independent of the hosts", async () => {
+    const { store, dir } = await tempStore();
+    expect(await store.account()).toBeUndefined();
+
+    await store.saveAccount({ serverOrigin: "https://relay.example.com/", token: "session-token" });
+    // The stored origin is normalized — the token lands only in ciphertext.
+    expect(await store.account()).toEqual({ serverOrigin: "https://relay.example.com", token: "session-token" });
+    const raw = await readFile(join(dir, "hosts.bin"));
+    expect(raw.includes("session-token")).toBe(false);
+    expect(raw.includes("relay.example.com")).toBe(false);
+
+    // Saving a host keeps the account; clearing drops it and nothing else.
+    const a = host();
+    await store.save(a);
+    expect(await store.account()).toMatchObject({ token: "session-token" });
+    await store.clearAccount();
+    expect(await store.account()).toBeUndefined();
+    expect(await store.list()).toEqual([a]);
+  });
+
+  it("rejects account payloads with a plaintext origin or empty token", async () => {
+    const { store } = await tempStore();
+    await expect(store.saveAccount({ serverOrigin: "http://lan.example.com", token: "t" })).rejects.toThrow();
+    await expect(store.saveAccount({ serverOrigin: "not a url", token: "t" })).rejects.toThrow();
+    await expect(store.saveAccount({ serverOrigin: "https://ok.example.com", token: "" })).rejects.toThrow();
+    await expect(store.saveAccount({ serverOrigin: "http://127.0.0.1:7430", token: "t" })).resolves.toBeUndefined();
+    expect((await store.account())?.serverOrigin).toBe("http://127.0.0.1:7430");
+  });
 });

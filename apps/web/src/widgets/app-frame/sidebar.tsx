@@ -16,7 +16,6 @@ import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHor
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
-import { useHosts } from "../../entities/host/host-store.ts";
 import { HostSwitcher } from "./host-switcher.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
@@ -111,7 +110,6 @@ export function SidebarFooter({
   onPairHost: () => void;
   onSelect?: () => void;
 }) {
-  const { store } = useHosts();
   const update = useAppUpdate();
   return (
     <>
@@ -125,14 +123,12 @@ export function SidebarFooter({
           onClick={() => update.install()}
         />
       ) : null}
-      {store.multiHost ? (
-        <HostSwitcher
-          onPairAnother={() => {
-            onSelect?.();
-            onPairHost();
-          }}
-        />
-      ) : null}
+      <HostSwitcher
+        onPairAnother={() => {
+          onSelect?.();
+          onPairHost();
+        }}
+      />
       <SideNavItem
         icon={<Computer aria-hidden="true" />}
         label="Devices"

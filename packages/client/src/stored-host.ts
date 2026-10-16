@@ -4,8 +4,19 @@
 // are base64url of exactly 32 bytes.
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
+/**
+ * The account linkage of a paired host (ADR-0022): which server bound the
+ * host and under what hostId. Absent on entries paired before accounts
+ * existed or through QR links — they still work, they just can't be matched
+ * back to a `GET /api/hosts` row except by Noise key.
+ */
+export interface StoredHostAccount {
+  readonly serverOrigin: string;
+  readonly hostId: string;
+}
+
 /** One paired host: where to dial and this device's identity on it (base64url, 32 bytes each). */
-export type StoredHost = { url: string; hostKey: string; privateKey: string };
+export type StoredHost = { url: string; hostKey: string; privateKey: string; account?: StoredHostAccount };
 
 const isKey = (value: unknown): value is string => {
   if (typeof value !== "string") return false;
@@ -26,12 +37,27 @@ const isHostUrl = (value: unknown): value is string => {
   }
 };
 
-/** A validated stored host, or undefined. The result holds only the three fields. */
+/** hostId is the host's relay identity — base64url of a 32-byte key, like hostKey. */
+const isAccountLink = (value: unknown): value is StoredHostAccount => {
+  if (typeof value !== "object" || value === null) return false;
+  const account = value as Record<string, unknown>;
+  return typeof account.serverOrigin === "string" && account.serverOrigin !== "" && isKey(account.hostId);
+};
+
+/** A validated stored host, or undefined. The result holds only the four fields. */
 export function parseStoredHost(value: unknown): StoredHost | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const host = value as Record<string, unknown>;
   if (!isHostUrl(host.url) || !isKey(host.hostKey) || !isKey(host.privateKey)) return undefined;
-  return { url: host.url, hostKey: host.hostKey, privateKey: host.privateKey };
+  // A malformed account link costs the association, not the pairing: the
+  // stored key still connects the device.
+  const account = isAccountLink(host.account) ? host.account : undefined;
+  return {
+    url: host.url,
+    hostKey: host.hostKey,
+    privateKey: host.privateKey,
+    ...(account === undefined ? {} : { account }),
+  };
 }
 
 /**
