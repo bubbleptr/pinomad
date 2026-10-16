@@ -19,7 +19,11 @@ const fakeFetch = (...script: { status: number; body?: unknown }[]) => {
     calls.push({ url, init });
     const next = script.length > 1 ? script.shift()! : script[0];
     if (next === undefined) return Promise.reject(new Error("no scripted response"));
-    return Promise.resolve({ status: next.status, json: () => Promise.resolve(next.body) });
+    return Promise.resolve({
+      status: next.status,
+      json: () => Promise.resolve(next.body),
+      text: () => Promise.resolve(typeof next.body === "string" ? next.body : JSON.stringify(next.body)),
+    });
   };
   return { impl, calls };
 };
@@ -346,11 +350,13 @@ describe("account model", () => {
       if (url.endsWith("/api/hosts")) {
         // The first listHosts (init's refresh) answers; the in-flight one hangs.
         hostsCalls += 1;
-        if (hostsCalls === 1) return Promise.resolve({ status: 200, json: () => Promise.resolve([]) });
-        return gate.then(() => ({ status: 200, json: () => Promise.resolve([]) }));
+        const okEmpty = { status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve("[]") };
+        if (hostsCalls === 1) return Promise.resolve(okEmpty);
+        return gate.then(() => okEmpty);
       }
       // logout and anything else get an empty 204 — what matters is the call went out.
-      if (url.endsWith("/api/logout")) return Promise.resolve({ status: 204, json: () => Promise.resolve(undefined) });
+      if (url.endsWith("/api/logout"))
+        return Promise.resolve({ status: 204, json: () => Promise.resolve(undefined), text: () => Promise.resolve("") });
       return scripted.impl(url, init);
     };
     const { model } = makeModel({ fake: { impl: fetch, calls: [] } });

@@ -32,6 +32,7 @@ const fakeFetch = (...script: { status: number; body?: unknown }[]) => {
     return Promise.resolve({
       status: next.status,
       json: () => Promise.resolve(next.body),
+      text: () => Promise.resolve(typeof next.body === "string" ? next.body : JSON.stringify(next.body)),
     });
   };
   return { impl, calls };
@@ -46,14 +47,41 @@ describe("probeAccounts", () => {
   it("reads the account API's own answers", async () => {
     expect(await probeAccounts(ORIGIN, fakeFetch({ status: 401 }).impl)).toBe("enabled");
     expect(await probeAccounts(ORIGIN, fakeFetch({ status: 200, body: { user: { username: "a" } } }).impl)).toBe("enabled");
-    // A 200 that isn't the API — the SPA's index.html — means no accounts.
-    expect(await probeAccounts(ORIGIN, fakeFetch({ status: 200, body: "<html>" }).impl)).toBe("disabled");
+    // A 200 that isn't the API — the SPA's index.html, fully read but not
+    // JSON — means no accounts. It must not collapse into "unreachable".
+    expect(await probeAccounts(ORIGIN, fakeFetch({ status: 200, body: "<html>app</html>" }).impl)).toBe("disabled");
+    expect(await probeAccounts(ORIGIN, fakeFetch({ status: 200, body: "not json at all" }).impl)).toBe("disabled");
     expect(await probeAccounts(ORIGIN, fakeFetch({ status: 404, body: { error: "accounts_disabled" } }).impl)).toBe(
       "disabled",
     );
     expect(await probeAccounts(ORIGIN, fakeFetch({ status: 502 }).impl)).toBe("unreachable");
     expect(await probeAccounts(ORIGIN, fakeFetch({ status: 403 }).impl)).toBe("unreachable");
     expect(await probeAccounts(ORIGIN, failingFetch)).toBe("unreachable");
+  });
+
+  it("calls a stalled or cut body unreachable, not disabled", async () => {
+    // Headers arrive (200) but the body never reads — a half-dead proxy. This
+    // is what the probe's timeout exists for.
+    const cut: AccountFetch = () =>
+      Promise.resolve({
+        status: 200,
+        json: () => Promise.reject(new Error("body stream aborted")),
+        text: () => Promise.reject(new Error("body stream aborted")),
+      });
+    expect(await probeAccounts(ORIGIN, cut)).toBe("unreachable");
+    const hung: AccountFetch = (_url, init) =>
+      Promise.resolve({
+        status: 200,
+        json: () =>
+          new Promise<unknown>((_resolve, reject) =>
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }),
+          ),
+        text: () =>
+          new Promise<string>((_resolve, reject) =>
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }),
+          ),
+      });
+    expect(await probeAccounts(ORIGIN, hung)).toBe("unreachable"); // 5s probe timeout
   });
 
   it("strips a trailing slash from the origin", async () => {

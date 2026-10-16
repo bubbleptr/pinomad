@@ -25,6 +25,7 @@ export interface AccountFetchInit {
 export interface AccountFetchResponse {
   readonly status: number;
   json(): Promise<unknown>;
+  text(): Promise<string>;
 }
 
 export type AccountFetch = (url: string, init?: AccountFetchInit) => Promise<AccountFetchResponse>;
@@ -78,7 +79,16 @@ export async function probeAccounts(origin: string, fetchImpl: AccountFetch = fa
     const response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, { signal: timeout.signal });
     if (response.status === 401) return "enabled";
     if (response.status === 200) {
-      const body = (await response.json()) as { user?: unknown } | undefined;
+      // Read the body inside the timeout's reach: a stalled body (half-dead
+      // proxy) is "unreachable", but a fully-read body that isn't JSON — an
+      // SPA's index.html — is a plain "disabled".
+      const text = await response.text();
+      let body: { user?: unknown } | undefined;
+      try {
+        body = JSON.parse(text) as { user?: unknown };
+      } catch {
+        return "disabled";
+      }
       return typeof body?.user === "object" && body.user !== null ? "enabled" : "disabled";
     }
     return response.status === 404 ? "disabled" : "unreachable";
