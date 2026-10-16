@@ -215,6 +215,20 @@ describe("server-vouched pairing end to end", () => {
     await expect(connectDevice(offer.url, offer.hostKey, device, { secret: offer.secret, name: "phone" })).rejects.toThrow();
   });
 
+  it("refuses asks on a control that outlived a re-join to another server", async () => {
+    const server = await startServer();
+    const { hostId, dataDir } = await joinedHost(server);
+    const session = await login(server.relay);
+
+    // `pinomad join <B>` rewrites server.json to B and waits for idle before
+    // restarting: this control still points at A, and must not mint invites
+    // under B's fresh binding (admission would honor them).
+    await writeServerConfig(dataDir, { origin: "https://elsewhere.example.com" });
+    const ask = await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(session) });
+    expect(ask.status).toBe(409);
+    expect(ask.json).toEqual({ error: "rebinding" });
+  });
+
   it("hides and refuses the host for another account", async () => {
     const server = await startServer();
     const { hostId } = await joinedHost(server);

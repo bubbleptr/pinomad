@@ -254,6 +254,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         noisePublicKey,
         ...(frame.name === undefined ? {} : { name: frame.name }),
       });
+      if (result.status === "joined") {
+        // A re-join can move the host to another account without touching its
+        // control connection: asks still pending under the old owner must die
+        // before the new binding's invites could reach them.
+        for (const request of pairingRequests.values()) {
+          if (request.hostId === frame.hostId) request.settle({ status: "gone" });
+        }
+      }
       answer(result.status === "joined" ? { t: "joined", username: result.username } : { t: "refused", reason: result.reason });
       return;
     }

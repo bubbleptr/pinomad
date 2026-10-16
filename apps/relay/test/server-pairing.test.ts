@@ -48,7 +48,7 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 
-async function startServer(): Promise<{ relay: Relay; accounts: Accounts }> {
+async function startServer(options?: { readonly pairingTimeoutMs?: number }): Promise<{ relay: Relay; accounts: Accounts }> {
   const dataDir = await tempDir();
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
   const relay = await startRelay({
@@ -56,7 +56,7 @@ async function startServer(): Promise<{ relay: Relay; accounts: Accounts }> {
     publicOrigin: ORIGIN,
     allowedHosts: [],
     registerTimeoutMs: 150,
-    pairingTimeoutMs: 80,
+    ...(options?.pairingTimeoutMs === undefined ? {} : { pairingTimeoutMs: options.pairingTimeoutMs }),
     accounts,
   });
   relays.push(relay);
@@ -314,7 +314,7 @@ describe("POST /api/hosts/:hostId/pairing", () => {
   });
 
   it("times out a silent host with 504", async () => {
-    const { relay, accounts } = await startServer();
+    const { relay, accounts } = await startServer({ pairingTimeoutMs: 80 });
     const session = await login(relay);
     const keys = bindHost(accounts);
     const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });
@@ -359,9 +359,39 @@ describe("POST /api/hosts/:hostId/pairing", () => {
     expect((await third).json).toEqual({ error: "host_offline" });
   });
 
-  it("caps in-flight asks per session and per host", async () => {
+  it("kills a pending ask when the host rebinds to another account", async () => {
     const { relay, accounts } = await startServer();
     const session = await login(relay);
+    const keys = bindHost(accounts);
+    const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });
+    const pendingP = api(relay, { method: "POST", path: pairingPath(keys), headers: bearer(session) });
+    await nextFrame(control);
+
+    // The host rejoins under a second account's join token — the op
+    // connection leaves the control alone, so without explicit invalidation
+    // the minted invite would go out to the previous owner.
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES ('second', 'x', 1)").run();
+    db.prepare("INSERT INTO join_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, 2, ?, ?)").run(
+      sha256Hex("rebind-token"),
+      Date.now(),
+      Date.now() + 60_000,
+    );
+    db.close();
+    const { socket: op, nonce } = await dialHost(relay);
+    op.send(encodeRelayFrame(registerFrame(keys, nonce, { op: "join", joinToken: "rebind-token", noisePublicKey: NOISE_KEY })));
+    expect(await nextFrame(op)).toEqual({ t: "joined", username: "second" });
+
+    expect((await pendingP).json).toEqual({ error: "host_offline" });
+  });
+
+  it("caps in-flight asks per session and per host", async () => {
+    const { relay, accounts } = await startServer();
+    // Sessions are minted up front: scrypt logins inside the in-flight window
+    // could push early asks past the timeout before the cap even applies.
+    const session = await login(relay);
+    const session2 = await login(relay);
+    const session3 = await login(relay);
     const keys = bindHost(accounts);
     const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });
     const path = pairingPath(keys);
@@ -376,12 +406,10 @@ describe("POST /api/hosts/:hostId/pairing", () => {
 
     // Per-host cap is 4: a second session fills the host to the ceiling, so a
     // brand-new third session — itself empty — is refused on the host cap.
-    const session2 = await login(relay);
     const p3 = api(relay, { method: "POST", path, headers: bearer(session2) });
     const p4 = api(relay, { method: "POST", path, headers: bearer(session2) });
     const ask3 = (await nextFrame(control)) as { requestId: string };
     const ask4 = (await nextFrame(control)) as { requestId: string };
-    const session3 = await login(relay);
     expect((await api(relay, { method: "POST", path, headers: bearer(session3) })).status).toBe(429);
 
     // Settle everything so cleanup is quiet.

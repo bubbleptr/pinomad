@@ -67,7 +67,7 @@ import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
-import { readServerBinding } from "./server-config.ts";
+import { normalizeOrigin, readServerBinding, readServerConfig } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushFetch, type PushTimers } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -315,11 +315,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     if (!settings.acceptAccountDevices) secure?.offers.revokeAccount();
   });
   if (secure?.relay !== undefined) {
+    const relayOrigin = secure.relay.origin;
     // `link` is assigned before any state change can fire — transitions only
     // ever happen from async socket events.
     let link!: RelayLink;
     link = startRelayLink({
-      origin: secure.relay.origin,
+      origin: relayOrigin,
       signingKey: secure.relay.signingKey,
       noisePublicKey: secure.hostKey.publicKey,
       accept: (socket) => secureHandshake(socket, secure, admission, register),
@@ -329,9 +330,15 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       // reasons here are for the client's message, not enforcement.
       accountOffer: async () => {
         if (!options.settings.value.acceptAccountDevices) return { ok: false, reason: "disabled" };
-        const binding = await readServerBinding(options.dataDir).catch(() => undefined);
-        if (binding === undefined) return { ok: false, reason: "not_joined" };
-        const { secret, expiresAt } = secure.offers.createAccount(binding);
+        const config = await readServerConfig(options.dataDir).catch(() => undefined);
+        if (config?.binding === undefined) return { ok: false, reason: "not_joined" };
+        // A re-join rewrites server.json before the host restarts: this link
+        // still belongs to the previous server, and minting under the new
+        // binding would hand it invites the admission check would honor.
+        if (normalizeOrigin(config.origin) !== normalizeOrigin(relayOrigin)) {
+          return { ok: false, reason: "rebinding" };
+        }
+        const { secret, expiresAt } = secure.offers.createAccount(config.binding);
         return { ok: true, secret, expiresAt };
       },
       onStateChange: (state) => {

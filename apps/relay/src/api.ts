@@ -275,6 +275,13 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       if (!response.writableEnded) abort.abort();
     });
     const result = await ctx.pairing.request(row.hostId, token!, abort.signal);
+    // Re-verify ownership before handing out the secret: a re-join could have
+    // moved the host to another account while the ask was in flight — the
+    // invite must never cross an account boundary.
+    if (result.status === "ok" && accounts.hostFor(session.userId, row.hostId) === undefined) {
+      deny(404, "not_found");
+      return;
+    }
     switch (result.status) {
       case "ok":
         send(200, {
