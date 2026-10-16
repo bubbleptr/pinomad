@@ -45,7 +45,7 @@
    - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
    - 拆两个 PR：协议 + 宿主（Linux），再移动端（mbp，堆在前一个上，出新的 TestFlight 构建）。设计经 critic 评审，不另写 ADR（ADR-0008 §9 已记下 Expo 和标题出安全通道的取舍）。
    - 第一步已完成：协议 5.7 `setPushToken`，宿主级文档 `pinomad.push` 与吊销同事务，宿主发送器在 `apps/host/src/push.ts`（重试、15 分钟 receipt 检查、`DeviceNotRegistered` 条件删除、collapse/thread 标识）。移动端没做：`expo-notifications`、通知开关、点开跳转；使用文档随移动端 PR 一起写。
-   - 改向（ADR-0024 §8）：不再经 Expo，改成直连 APNs，密钥只放在服务端，宿主经服务端发推送。上面经 Expo 的几条（Expo token、`expo-notifications`、EAS 凭据）作废，宿主发送器 `apps/host/src/push.ts` 和 `setPushToken` 的 token 格式要跟着改；具体做法先写 ADR-0025 并过 critic。移动端部分在原生版上做。
+   - 改向（ADR-0024 §8）：不再经 Expo，改成直连 APNs，密钥只放在服务端，宿主经服务端发推送。上面经 Expo 的几条（Expo token、`expo-notifications`、EAS 凭据）作废，宿主发送器 `apps/host/src/push.ts` 和 `setPushToken` 的 token 格式要跟着改；具体做法见 ADR-0025（已接受）。移动端部分在原生版上做。
 3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
@@ -66,7 +66,7 @@
 2. **推导移植**（Linux）：`packages/client` 里移动端用到的推导搬进 Rust，带对照向量。
 3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。
 4. **功能追平 Expo 版**（mbp）：对话列表、对话流、Composer、提问、图片、扫码配对、多宿主、账号登录，以及 M5 的移动端部分。具体清单开工时从 Expo 版整理出来写在这里。
-5. **推送**：先写 ADR-0025（APNs 直连、密钥在服务端），再做宿主、服务端和 iOS。
+5. **推送**（ADR-0025）：协议和宿主、服务端两个 PR 在 Linux 上做（可以和第 2、3 步并行），iOS 侧在原生版上做；真机验收用 TestFlight 包。
 6. **替换**：Release 包真机验证局域网 IP、MagicDNS、中继 `wss://` 三种地址；推送真机收到；性能达到预算。TestFlight 替换 Expo 版，重新配对；日常用满一周没有阻断问题后删除 `apps/mobile`，取消 Hermes 要求，重写 `docs/mobile-release.md`。
 7. **遗留清理**：关闭 PR #104，删 AgentChatKit 的 `spike/expo-embed` 分支；mbp 上试验时建的模拟器（iPhone 17 Pro Native、iOS 18.6 iPhone 16 Pro）；宿主上为模拟器配对的设备在 Devices 里吊销；试验对话"秋天随笔写作"归档。
 
@@ -137,7 +137,7 @@ MCP 本身的后续，都等有明确需求再做：
 
 - 中继的后续，等有需要再做：二维码同时带局域网和中继两个候选地址并自动选择；中继限流；Web 里显示中继连接状态；中继托管页面加 CSP
 - tailnet 直连的后续：同时开着中继时，`pinomad pair` 只给出中继链接，要走直连得取出其中的 `pair=…`，拼到 tailnet 地址后面（现在由本机脚本完成）。用一段时间后，再决定是给 `pair` 加一个选地址的参数，还是并入上面的"二维码带多个候选地址"。另外 `--remote-port` 监听的是 `0.0.0.0`，局域网也能访问到；连上后仍要过 IK 握手，所以暂不限制
-- 服务端上的账号（ADR-0022，进行中，和 M5 并行）：实现条目见下。之后：`apps/relay` 改名 `apps/server`；开放注册、OAuth、MFA、配额；账号层面一键把某台设备从所有宿主上踢掉；客户端同时连多台宿主、开始对话时选宿主
+- 服务端上的账号（ADR-0022，进行中，和 M5 并行）：实现条目见下。之后：`apps/relay` 改名 `apps/server`；开放注册（前提：推送改成服务端核对 token 属于这个账号，ADR-0025）、OAuth、MFA、配额；账号层面一键把某台设备从所有宿主上踢掉；客户端同时连多台宿主、开始对话时选宿主
 - 按 ADR-0009 记下的条件，重新评估要不要加 PiNomad 自己的监管进程
 - 按设备区分的权限：只读设备（ADR-0008；审批策略见 ADR-0011）
 - 推送通知已挪进 M5；"有问题等你回答"的提示已经有了
