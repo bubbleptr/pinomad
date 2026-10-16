@@ -264,11 +264,11 @@ describe("push end to end", () => {
     await startChat(watcher, "deploy?");
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
 
-    // Retries schedule (the verdict is retry), then give up — the control was
-    // never disturbed by an unknown-frame close.
-    await waitUntil(() => timers.pending >= 1);
-    timers.advance(120_000);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // "Push-capable, nothing configured" declares push: [] — the host treats
+    // it as unavailable: no send, no retry timers, and the control was never
+    // disturbed by an unknown-frame close.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(timers.pending).toBe(0);
     expect(host.relay?.state().status).toBe("registered");
     expect(await registrations(host)).toHaveLength(1);
   });

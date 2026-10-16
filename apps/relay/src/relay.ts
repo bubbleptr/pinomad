@@ -451,12 +451,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // A bound host's successful register is also its heartbeat for the
       // account: keep last_seen_at fresh so /api/hosts can report online age.
       accounts?.markHostSeen(hostId);
-      // The push environments this server can deliver (ADR-0025 §3): the host
-      // clears them on disconnect and re-reads on every register, so a
-      // redeploy without keys simply stops declaring.
-      socket.send(
-        encodeRelayFrame({ t: "registered", ...(pushEnvironments.length === 0 ? {} : { push: pushEnvironments }) }),
-      );
+      // Push is an account feature (ADR-0025 §4): a bound host always gets the
+      // declaration — an empty list means "push-aware, nothing configured",
+      // which the host must distinguish from a pre-push server. An
+      // allowlist-only host could never send, so declaring to it would lie.
+      const bound = accounts?.hasHost(hostId) === true;
+      socket.send(encodeRelayFrame({ t: "registered", ...(bound ? { push: pushEnvironments } : {}) }));
     });
 
     socket.once("close", () => {

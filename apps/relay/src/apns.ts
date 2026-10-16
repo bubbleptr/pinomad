@@ -189,6 +189,18 @@ export function openApns(config: ApnsConfig): ApnsSender {
         unregisteredAt: typeof timestamp === "number" ? timestamp : Date.now(),
       };
     }
+    if (status === 403 && reason === "ExpiredProviderToken") {
+      // Drop the cached JWT — the next send re-signs (ADR-0025 §5).
+      state.token = undefined;
+      return { result: "retry", reason };
+    }
+    if (reason === "InvalidProviderToken" || reason === "TooManyProviderTokenUpdates") {
+      // The reason outranks the status: 429 TooManyProviderTokenUpdates is our
+      // key churn, not rate pressure — both are our config's fault, so the
+      // send is rejected (not retried) and the problem logged (ADR-0025 §5).
+      console.error(`apns: provider token problem for ${environment}: ${reason}`);
+      return { result: "rejected", reason };
+    }
     if (status === 429) {
       const retryAfter = Number(headers["retry-after"]);
       return {
@@ -198,15 +210,6 @@ export function openApns(config: ApnsConfig): ApnsSender {
       };
     }
     if (status >= 500) return { result: "retry", reason, retryAfterMs: SERVER_ERROR_RETRY_MS };
-    if (status === 403 && reason === "ExpiredProviderToken") {
-      // Drop the cached JWT — the next send re-signs (ADR-0025 §5).
-      state.token = undefined;
-      return { result: "retry", reason };
-    }
-    if (reason === "InvalidProviderToken" || reason === "TooManyProviderTokenUpdates") {
-      // Our credentials, not the host's request: say so loudly in the log.
-      console.error(`apns: provider token problem for ${environment}: ${reason}`);
-    }
     return { result: "rejected", reason };
   };
 

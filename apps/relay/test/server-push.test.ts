@@ -166,7 +166,7 @@ const pushFrame = (overrides?: Partial<PushFrame>): PushFrame => ({
 });
 
 describe("push declaration and authorization", () => {
-  it("declares the configured environments on registered — and nothing when unconfigured", async () => {
+  it("declares the environments on registered — bound hosts always see the field, allowlist-only never", async () => {
     const { relay, accounts } = await startServer({ push: fakeApnsSender().sender });
     const bound = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
     expect(await nextFrame(bound)).toEqual({ t: "registered", push: ["production"] });
@@ -176,9 +176,18 @@ describe("push declaration and authorization", () => {
     expect(bound.readyState).toBe(WebSocket.OPEN);
     bound.close();
 
+    // Bound host, no APNs configured: `push: []` — "push-aware, no keys",
+    // distinguishable from a pre-push server's missing field.
     const plain = await startServer();
     const control = await controlFor(plain.relay, bindHost(plain.accounts), { noisePublicKey: NOISE_KEY });
-    expect(await nextFrame(control)).toEqual({ t: "registered" });
+    expect(await nextFrame(control)).toEqual({ t: "registered", push: [] });
+
+    // Allowlist-only: the host is admitted but could never be authorized for
+    // push, so it gets no declaration at all.
+    const keys = ed25519.keygen();
+    const allowed = await startServer({ push: fakeApnsSender().sender, allow: [relayHostId(keys.publicKey)] });
+    const listed = await controlFor(allowed.relay, keys, { noisePublicKey: NOISE_KEY });
+    expect(await nextFrame(listed)).toEqual({ t: "registered" });
   });
 
   it("forwards a bound host's push and returns the classified verdict", async () => {

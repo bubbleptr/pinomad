@@ -117,6 +117,7 @@ describe("openApns", () => {
       ["bad-token", { status: 400, body: { reason: "BadDeviceToken" } }],
       ["wrong-topic", { status: 400, body: { reason: "DeviceTokenNotForTopic" } }],
       ["busy-token", { status: 429, body: { reason: "TooManyRequests" } }],
+      ["churn-token", { status: 429, body: { reason: "TooManyProviderTokenUpdates" } }],
       ["err-token", { status: 500, body: { reason: "InternalServerError" } }],
     ]);
     const { apns } = await startApns((call) => answers.get(call.token) ?? { status: 200 });
@@ -129,6 +130,12 @@ describe("openApns", () => {
     expect(await send(apns, { token: "bad-token" })).toEqual({ result: "rejected", reason: "BadDeviceToken" });
     expect(await send(apns, { token: "wrong-topic" })).toEqual({ result: "rejected", reason: "DeviceTokenNotForTopic" });
     expect(await send(apns, { token: "busy-token" })).toEqual({ result: "retry", reason: "TooManyRequests" });
+    // A 429 whose reason is about OUR key churn is a config fault, not rate
+    // pressure — the reason outranks the status (ADR-0025 §5).
+    expect(await send(apns, { token: "churn-token" })).toEqual({
+      result: "rejected",
+      reason: "TooManyProviderTokenUpdates",
+    });
     expect((await send(apns, { token: "err-token" })).result).toBe("retry");
     const errVerdict = await send(apns, { token: "err-token" });
     expect(errVerdict.result === "retry" && errVerdict.retryAfterMs).toBe(15 * 60 * 1000);

@@ -470,9 +470,9 @@ describe("push sender", () => {
     const apns = fakeTransport();
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, answers: ["done"] });
-    const dev = await pairDevice(host, "dev");
-    const prod = await pairDevice(host, "prod");
-    const dup = await pairDevice(host, "dup");
+    const dev = await pairDevice(defer, host, "dev");
+    const prod = await pairDevice(defer, host, "prod");
+    const dup = await pairDevice(defer, host, "dup");
     // The same hex under two environments are distinct APNs registrations —
     // a reinstall under the same pair still sends once.
     await dev.client.controller.setPushToken({ apns: TOKEN_B.apns, environment: "development" });

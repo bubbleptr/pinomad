@@ -171,7 +171,9 @@ async function controlFor(relay: Relay, keys: KeyPair, overrides?: Parameters<ty
   const { socket, nonce } = await dialHost(relay);
   socket.send(encodeRelayFrame(registerFrame(keys, nonce, overrides)));
   const reply = await answered(socket);
-  expect(reply).toEqual({ frame: { t: "registered" } });
+  // Bound hosts get the push declaration — an empty list when no APNs
+  // environment is configured (ADR-0025 §4).
+  expect(reply).toEqual({ frame: { t: "registered", push: [] } });
   return socket;
 }
 
@@ -237,7 +239,7 @@ describe("join op connection", () => {
     // The hostId now registers as a normal control connection, no allowlist.
     const { socket, nonce } = await dialHost(relay);
     socket.send(encodeRelayFrame(registerFrame(keys, nonce)));
-    expect(await answered(socket)).toEqual({ frame: { t: "registered" } });
+    expect(await answered(socket)).toEqual({ frame: { t: "registered", push: [] } });
   });
 
   it("spends a token once: a second join with it is refused", async () => {
@@ -417,8 +419,9 @@ describe("old and new interop", () => {
       NOISE_KEY,
     );
     db.close();
-    // Old hosts send {t, hostId, signature} and nothing else.
-    expect(await register(bound.relay, keys)).toEqual({ frame: { t: "registered" } });
+    // Old hosts send {t, hostId, signature} and nothing else. A bound one
+    // still gets the push declaration ([] = push-aware, nothing configured).
+    expect(await register(bound.relay, keys)).toEqual({ frame: { t: "registered", push: [] } });
 
     const allowKeys = ed25519.keygen();
     const allowed = await startServer({ allowedHosts: [relayHostId(allowKeys.publicKey)] });
