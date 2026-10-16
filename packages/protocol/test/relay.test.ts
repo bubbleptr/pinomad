@@ -150,6 +150,87 @@ describe("relay frame codecs", () => {
     }
   });
 
+  it("round-trips the push frames (ADR-0025 §3)", () => {
+    const push = {
+      t: "push" as const,
+      requestId: "req-1",
+      token: "aa".repeat(32),
+      environment: "production" as const,
+      notification: {
+        title: "PiNomad conversation",
+        body: "Waiting for your answer",
+        collapseId: "ab".repeat(16),
+        hostKey: "host-key",
+        conversationId: 7,
+      },
+    };
+    expect(decodeHostToRelay(encodeRelayFrame(push))).toEqual(push);
+
+    for (const result of [
+      { t: "push-result" as const, requestId: "req-1", result: "accepted" as const, reason: "ok" },
+      {
+        t: "push-result" as const,
+        requestId: "req-1",
+        result: "unregistered" as const,
+        reason: "Unregistered",
+        unregisteredAt: 1234,
+      },
+      { t: "push-result" as const, requestId: "req-1", result: "retry" as const, reason: "TooManyRequests" },
+      {
+        t: "push-result" as const,
+        requestId: "req-1",
+        result: "retry" as const,
+        reason: "InternalServerError",
+        retryAfterMs: 900_000,
+      },
+      { t: "push-result" as const, requestId: "req-1", result: "rejected" as const, reason: "BadDeviceToken" },
+      { t: "push-result" as const, requestId: "req-1", result: "unavailable" as const, reason: "not configured" },
+    ]) {
+      expect(decodeRelayToHost(encodeRelayFrame(result))).toEqual(result);
+    }
+  });
+
+  it("reads registered's push declaration, tolerating unknown environments", () => {
+    expect(decodeRelayToHost(encodeRelayFrame({ t: "registered" }))).toEqual({ t: "registered" });
+    expect(
+      decodeRelayToHost(JSON.stringify({ t: "registered", push: ["production", "development", "future-env"] })),
+    ).toEqual({ t: "registered", push: ["production", "development"] });
+    for (const push of ["production", 5, ["production", 3], Array.from({ length: 9 }, () => "production")]) {
+      expect(() => decodeRelayToHost(JSON.stringify({ t: "registered", push })), JSON.stringify(push)).toThrow();
+    }
+  });
+
+  it("rejects malformed push and push-result frames", () => {
+    const notification = {
+      title: "t",
+      body: "b",
+      collapseId: "c",
+      hostKey: "k",
+      conversationId: 1,
+    };
+    for (const frame of [
+      { t: "push" },
+      { t: "push", requestId: "r" },
+      { t: "push", requestId: "r", token: "aa", environment: "sandbox", notification },
+      { t: "push", requestId: "r", token: "aa", environment: "production" },
+      { t: "push", requestId: "r", token: "aa", environment: "production", notification: { ...notification, title: "" } },
+      { t: "push", requestId: "r", token: "aa", environment: "production", notification: { ...notification, conversationId: 0 } },
+      { t: "push", requestId: "r", token: "aa", environment: "production", notification: { ...notification, collapseId: "x".repeat(65) } },
+    ]) {
+      expect(() => decodeHostToRelay(JSON.stringify(frame)), JSON.stringify(frame)).toThrow();
+    }
+    for (const frame of [
+      { t: "push-result" },
+      { t: "push-result", requestId: "r", result: "accepted" },
+      { t: "push-result", requestId: "r", result: "bogus", reason: "x" },
+      { t: "push-result", requestId: "r", result: "unregistered", reason: "x" },
+      { t: "push-result", requestId: "r", result: "unregistered", reason: "x", unregisteredAt: "soon" },
+      { t: "push-result", requestId: "r", result: "retry", reason: "x", retryAfterMs: "soon" },
+    ]) {
+      expect(() => decodeRelayToHost(JSON.stringify(frame)), JSON.stringify(frame)).toThrow();
+    }
+  });
+
   it("round-trips the account-operation frames", () => {
     expect(decodeRelayToHost(encodeRelayFrame({ t: "joined", username: "kieran" }))).toEqual({
       t: "joined",

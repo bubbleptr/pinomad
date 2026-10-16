@@ -1,16 +1,20 @@
-// Push notifications (roadmap M5, ADR-0008 §9): a paired device registers its
-// Expo push token over the secure channel; the host watches run statuses and
-// posts one request per distinct token to the Expo Push Service. No Apple key
-// on the host, no server of ours in between. The registry is a session document
-// that is never streamed — the devices stream republishes the whole table to
-// every client, and without Expo's enhanced push security a leaked token is a
+// Push notifications (ADR-0025): a paired device registers its APNs token over
+// the secure channel; the host watches run statuses and asks the server —
+// over the account control connection — to deliver one notification per
+// distinct token. No Apple key on the host: signing lives on the server,
+// which is why registrations require the host to be joined to an account.
+// The registry is a session document that is never streamed — the devices
+// stream republishes the whole table to every client, and a leaked token is a
 // send capability.
+import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { type ConversationId, defineDoc, type Harness } from "@earendil-works/pi-durable";
 import { diffRunNotices, type RunNotice, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import { type HostIndex, organize } from "@pinomad/protocol/organization.ts";
+import type { ApnsEnvironment, PushNotification, PushVerdict } from "@pinomad/protocol/relay.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import type { PushToken } from "@pinomad/protocol/frames.ts";
 import { DevicesDoc, RevocationsDoc } from "./devices.ts";
 import type { HostValue } from "./host-value.ts";
 import { IndexDoc } from "./organization.ts";
@@ -18,11 +22,13 @@ import { TitleDoc } from "./title-doc.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
-/** One device's registered Expo push token; at most one per device public key. */
+/** One device's registered APNs token; at most one registration per device public key. */
 export type PushRegistration = {
   /** The paired device's base64url X25519 public key. */
   publicKey: string;
+  /** The APNs device token, hex — Apple does not fix its length. */
   token: string;
+  environment: ApnsEnvironment;
   updatedAt: number;
 };
 
@@ -33,38 +39,63 @@ export type PushRegistry = {
 
 export const PushDoc = defineDoc<PushRegistry>({
   kind: "pinomad.push",
-  version: 1,
+  // v1 registrations were Expo token strings, dead on arrival here — the app
+  // re-registers its APNs token on connect, so the migration just clears.
+  version: 2,
   scope: "session",
   initial: () => ({ registrations: [] }),
+  migrate: () => ({ registrations: [] }),
 });
 
-// Expo issues ExponentPushToken[...] and, newer SDKs, ExpoPushToken[...].
-const PUSH_TOKEN_PATTERN = /^Expo(?:nent)?PushToken\[[^\]]+\]$/;
-const PUSH_TOKEN_MAX_LENGTH = 256;
+// Apple does not fix token lengths; today's are 32 bytes (64 hex). 256 hex
+// chars leaves a wide margin while still bounding what lands in the registry.
+const APNS_TOKEN_PATTERN = /^(?:[0-9a-f]{2})+$/;
+const APNS_TOKEN_MAX_CHARS = 256;
 
-/** A problem string when `token` cannot be an Expo push token; `null` always passes (deregister). */
-export function pushTokenProblem(token: string | null): string | undefined {
+const isApnsEnvironment = (value: unknown): value is ApnsEnvironment =>
+  value === "production" || value === "development";
+
+/**
+ * A problem string when `token` cannot be registered; `null` always passes
+ * (deregister). A legacy Expo token string parses fine at the frame level but
+ * is refused here — Expo push is retired (ADR-0025 §7).
+ */
+export function pushTokenProblem(token: PushToken | null): string | undefined {
   if (token === null) return undefined;
-  if (token.length > PUSH_TOKEN_MAX_LENGTH) {
-    return `Push token is too long (${PUSH_TOKEN_MAX_LENGTH} characters at most)`;
+  if (typeof token === "string") {
+    return "Push notifications no longer go through Expo — register the device's APNs token instead";
   }
-  if (!PUSH_TOKEN_PATTERN.test(token)) return "Not an Expo push token";
+  if (!isApnsEnvironment(token.environment)) {
+    return 'environment must be "production" or "development"';
+  }
+  const apns = token.apns.toLowerCase();
+  if (apns.length > APNS_TOKEN_MAX_CHARS) {
+    return `APNs token is too long (${APNS_TOKEN_MAX_CHARS} characters at most)`;
+  }
+  if (!APNS_TOKEN_PATTERN.test(apns)) return "Not an APNs device token (expected hex)";
   return undefined;
 }
 
 /**
  * Register `token` under `publicKey` — the calling connection's own device —
- * or clear it when `token` is null. The device-table check shares the commit:
- * a device revoked between handshake and registration never acquires a token.
+ * or clear it when `token` is null. `joined` answers whether this host is
+ * bound to an account: pushes ride the account control connection, so a host
+ * that never joined can register nothing. The device-table check shares the
+ * commit: a device revoked between handshake and registration never acquires
+ * a token.
  */
 export async function setPushToken(
   harness: Harness,
   publicKey: string,
-  token: string | null,
+  token: PushToken | null,
   context: Context,
+  joined: () => Promise<boolean>,
 ): Promise<void> {
   const problem = pushTokenProblem(token);
   if (problem !== undefined) throw new Error(problem);
+  if (token !== null && typeof token !== "string" && !(await joined())) {
+    throw new Error("Push notifications need the host joined to an account (`pinomad join`)");
+  }
   await harness.commit(async (tx) => {
     const devices = await tx.doc(DevicesDoc);
     if (!devices.devices.some((entry) => entry.publicKey === publicKey)) {
@@ -72,7 +103,14 @@ export async function setPushToken(
     }
     const push = await tx.doc(PushDoc);
     push.registrations = push.registrations.filter((entry) => entry.publicKey !== publicKey);
-    if (token !== null) push.registrations.push({ publicKey, token, updatedAt: Date.now() });
+    if (token !== null && typeof token !== "string") {
+      push.registrations.push({
+        publicKey,
+        token: token.apns.toLowerCase(),
+        environment: token.environment,
+        updatedAt: Date.now(),
+      });
+    }
   }, context);
 }
 
@@ -94,44 +132,56 @@ export async function revokeDevice(harness: Harness, publicKey: string, context:
 }
 
 /**
- * Drop every registration carrying `token`, but only when the registry still
- * holds exactly that token — a device that re-registered a fresh token since
- * the failed send must not lose it (Expo's DeviceNotRegistered is about the
- * old one).
+ * Drop the (token, environment) registration APNs invalidated — only when the
+ * registry still holds exactly that pair written before the invalidation
+ * time. A device that re-registered since must not lose its fresh token to a
+ * late 410 (ADR-0025 §5).
  */
-async function dropTokenIfCurrent(harness: Harness, token: string, context: Context): Promise<void> {
+async function dropStaleRegistration(
+  harness: Harness,
+  token: string,
+  environment: ApnsEnvironment,
+  unregisteredAt: number,
+  context: Context,
+): Promise<void> {
   await harness.commit(async (tx) => {
     const push = await tx.doc(PushDoc);
-    push.registrations = push.registrations.filter((entry) => entry.token !== token);
+    push.registrations = push.registrations.filter(
+      (entry) =>
+        entry.token !== token || entry.environment !== environment || entry.updatedAt >= unregisteredAt,
+    );
   }, context);
 }
 
-const EXPO_SEND_URL = "https://exp.host/--/api/v2/push/send";
-const EXPO_RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts";
-/** No titled conversation gets its first message leaked to Expo/Apple. */
+/** No titled conversation gets its first message leaked to the server/Apple. */
 const FALLBACK_TITLE = "PiNomad conversation";
 const TITLE_WAIT_MS = 15_000;
-const TTL_SECONDS = 3600;
-const REQUEST_TIMEOUT_MS = 10_000;
-/** Initial send plus three exponential-backoff retries. */
+/** A banner's title must fit the bounded frame field and stay far under APNs' 4 KiB payload. */
+const TITLE_MAX_CHARS = 160;
+/** Initial send plus three retries; the delay comes from the verdict or the backoff. */
 const MAX_ATTEMPTS = 4;
 const RETRY_BASE_MS = 5_000;
-/** Expo recommends reading receipts ~15 minutes after the ticket. */
-const RECEIPT_DELAY_MS = 15 * 60 * 1000;
-/** Bounded in-memory outbox + pending receipt checks; nothing is persisted. */
+/** Pushes in flight to the server at once; excess waits in line. */
+const MAX_INFLIGHT = 8;
+/** Bounded in-memory outbox; nothing is persisted. */
 const MAX_PENDING = 128;
 
-/** The slice of fetch the sender needs — the real thing or a test double. */
-export interface PushResponse {
-  readonly ok: boolean;
-  readonly status: number;
-  json(): Promise<unknown>;
+/**
+ * The send seam the relay link implements and tests fake: one notification to
+ * one token, resolved to its classified verdict. Implementations never
+ * reject — connection loss and timeouts arrive as `retry` verdicts.
+ */
+export interface PushTransport {
+  send(request: {
+    readonly token: string;
+    readonly environment: ApnsEnvironment;
+    readonly notification: PushNotification;
+  }): Promise<PushVerdict>;
 }
 
-export type PushFetch = (
-  url: string,
-  init: { method: "POST"; headers: Record<string, string>; body: string; signal: AbortSignal },
-) => Promise<PushResponse>;
+const UNAVAILABLE_TRANSPORT: PushTransport = {
+  send: () => Promise.resolve({ result: "unavailable", reason: "no server connection" }),
+};
 
 /** Timer seam so tests drive retries and title waits with a manual clock. */
 export interface PushTimers {
@@ -148,14 +198,16 @@ export interface PushSenderOptions {
   readonly harness: Harness;
   /** The gateway's conversation summaries — the source `diffRunNotices` diffs. */
   readonly conversations: HostValue<readonly ConversationSummary[]>;
-  /** The host's X25519 public key, base64url — the value clients store as StoredHost.hostKey. */
+  /** The host's X25519 public key, base64url — the push payload's `data.hostKey`. */
   readonly hostKey: string;
-  readonly fetch?: PushFetch;
+  /** The control-connection transport; absent → every send answers `unavailable`. */
+  readonly transport?: PushTransport;
   readonly timers?: PushTimers;
 }
 
 type SendItem = {
   readonly token: string;
+  readonly environment: ApnsEnvironment;
   readonly notice: RunNotice;
   /** The baseline generation the notice came from; any later status change makes the item stale. */
   readonly generation: number;
@@ -163,21 +215,31 @@ type SendItem = {
   title?: string;
   attempts: number;
   timer?: unknown;
+  /** True while waiting for an in-flight slot — avoids double-queueing. */
+  queued: boolean;
 };
 
-/** What a ticket/recipient knows its token by: only the last few characters ever reach the log. */
+/** What a log knows a token by: only the last few characters ever reach it. */
 const tokenHint = (token: string): string => `…${token.slice(-6)}`;
+
+/**
+ * `apns-collapse-id` is capped at 64 bytes and `hostKey:conversationId` can
+ * exceed it — a fixed-length digest keeps the grouping property without the
+ * length risk (ADR-0025 §2).
+ */
+const collapseId = (hostKey: string, id: ConversationId): string =>
+  createHash("sha256").update(`${hostKey}:${id}`).digest("hex").slice(0, 32);
 
 /**
  * Watch run statuses and notify registered devices. The baseline is seeded —
  * never announced — once the summaries and the index both delivered their
  * initial value, so a host restart does not re-send states that already stood.
- * Returns the detach; a detached sender's in-flight fetches settle but write
+ * Returns the detach; a detached sender's in-flight requests settle but write
  * nothing back.
  */
 export async function attachPushSender(options: PushSenderOptions): Promise<() => Promise<void>> {
   const { harness, conversations } = options;
-  const fetcher = options.fetch ?? (fetch as PushFetch);
+  const transport = options.transport ?? UNAVAILABLE_TRANSPORT;
   const timers = options.timers ?? realTimers;
 
   const indexWatch = await harness.watchDoc(IndexDoc, context);
@@ -187,7 +249,8 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
 
   const pending = new Set<SendItem>();
   const titleWaiters = new Map<ConversationId, Set<(title: string) => void>>();
-  const receiptTimers = new Set<unknown>();
+  let inflight = 0;
+  const readyQueue: SendItem[] = [];
   /**
    * Per-conversation transition counter: comparing statuses alone cannot tell
    * apart "unchanged" and "left and came back" (needs-answer → running →
@@ -213,43 +276,13 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
   const fresh = (item: SendItem): boolean =>
     baseline?.has(item.notice.id) === true && generation.get(item.notice.id) === item.generation;
 
-  const registrations = async (): Promise<ReadonlySet<string>> => {
+  const registrations = async (): Promise<readonly PushRegistration[]> => {
     const doc = await harness.snapshot(PushDoc, context);
-    return new Set((doc?.registrations ?? []).map((entry) => entry.token));
+    return doc?.registrations ?? [];
   };
 
-  const post = async (url: string, payload: unknown): Promise<{ status: number; body: unknown }> => {
-    const response = await fetcher(url, {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    // A body read can still hit the request timeout or a dropped connection:
-    // let it propagate so attempt treats it as the retryable failure it is.
-    return { status: response.status, body: await response.json() };
-  };
-
-  /** Expo's per-message ticket; undefined or odd shapes count as a dead end — nothing to retry against. */
-  const ticketOf = (body: unknown): { status?: string; id?: string; details?: { error?: string } } | undefined => {
-    const data = (body as { data?: unknown } | undefined)?.data;
-    const ticket = Array.isArray(data) ? data[0] : data;
-    return ticket !== null && typeof ticket === "object"
-      ? (ticket as { status?: string; id?: string; details?: { error?: string } })
-      : undefined;
-  };
-
-  const message = (item: SendItem, title: string): Record<string, unknown> => ({
-    to: item.token,
-    title,
-    body: item.notice.body,
-    sound: "default",
-    ttl: TTL_SECONDS,
-    data: { hostKey: options.hostKey, conversationId: item.notice.id },
-    // A conversation's newest state replaces its earlier banner and groups them.
-    threadId: `${options.hostKey}:${item.notice.id}`,
-    collapseId: `${options.hostKey}:${item.notice.id}`,
-  });
+  const findRegistration = (entries: readonly PushRegistration[], item: SendItem): PushRegistration | undefined =>
+    entries.find((entry) => entry.token === item.token && entry.environment === item.environment);
 
   const namedTitle = async (id: ConversationId): Promise<string | undefined> => {
     const doc = await harness.snapshot(TitleDoc, id, context);
@@ -290,82 +323,100 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
     if (item.timer !== undefined) timers.clearTimeout(item.timer);
   };
 
+  /** Releases one queued item per freed in-flight slot. */
+  const pump = (): void => {
+    while (inflight < MAX_INFLIGHT) {
+      const next = readyQueue.shift();
+      if (next === undefined) return;
+      next.queued = false;
+      void attempt(next);
+    }
+  };
+
+  const scheduleRetry = (item: SendItem, retryAfterMs?: number): void => {
+    if (item.attempts + 1 >= MAX_ATTEMPTS) {
+      console.error(`push: send to ${tokenHint(item.token)} gave up`);
+      drop(item);
+      return;
+    }
+    // A server-directed delay (5xx ≥ 15 min) wins over the local 5/10/20 s
+    // backoff (ADR-0025 §5).
+    const delayMs = retryAfterMs ?? RETRY_BASE_MS * 2 ** item.attempts;
+    item.attempts += 1;
+    item.timer = timers.setTimeout(() => void attempt(item), delayMs);
+  };
+
   const attempt = async (item: SendItem): Promise<void> => {
     if (disposed || !pending.has(item)) return;
     try {
       // Registration and conversation state are re-read before every attempt:
       // a revoked device or a status that moved on drops the notification.
-      if (!(await registrations()).has(item.token) || !fresh(item)) return drop(item);
+      if (findRegistration(await registrations(), item) === undefined || !fresh(item)) return drop(item);
       if (item.title === undefined) {
         item.title = await titleFor(item.notice);
         // The queue-eviction drop ran while this item waited for a title.
-        if (disposed || !pending.has(item) || !(await registrations()).has(item.token) || !fresh(item)) return drop(item);
+        if (
+          disposed ||
+          !pending.has(item) ||
+          findRegistration(await registrations(), item) === undefined ||
+          !fresh(item)
+        ) {
+          return drop(item);
+        }
       }
-      const { status, body } = await post(EXPO_SEND_URL, message(item, item.title));
-      const ticket = ticketOf(body);
-      if (ticket?.details?.error === "DeviceNotRegistered") {
-        drop(item);
-        console.error(`push: token ${tokenHint(item.token)} is not registered (ticket)`);
-        await dropTokenIfCurrent(harness, item.token, context);
+      if (inflight >= MAX_INFLIGHT) {
+        if (!item.queued) {
+          item.queued = true;
+          readyQueue.push(item);
+        }
         return;
       }
-      if (status >= 200 && status < 300 && ticket?.status === "ok") {
-        drop(item);
-        if (typeof ticket.id === "string") scheduleReceiptCheck(item.token, ticket.id);
-        return;
+      inflight += 1;
+      let verdict: PushVerdict;
+      try {
+        verdict = await transport.send({
+          token: item.token,
+          environment: item.environment,
+          notification: {
+            title: item.title.slice(0, TITLE_MAX_CHARS),
+            body: item.notice.body,
+            collapseId: collapseId(options.hostKey, item.notice.id),
+            hostKey: options.hostKey,
+            conversationId: item.notice.id,
+          },
+        });
+      } catch {
+        verdict = { result: "retry", reason: "transport error" };
+      } finally {
+        inflight -= 1;
+        pump();
       }
-      // 429 and 5xx retry like network failures; ticket errors and other 4xx are permanent.
-      if ((status === 429 || status >= 500) && item.attempts + 1 < MAX_ATTEMPTS) {
-        item.attempts += 1;
-        item.timer = timers.setTimeout(() => void attempt(item), RETRY_BASE_MS * 2 ** (item.attempts - 1));
-        return;
+      if (disposed || !pending.has(item)) return drop(item);
+      switch (verdict.result) {
+        case "accepted":
+          drop(item);
+          return;
+        case "unregistered":
+          drop(item);
+          await dropStaleRegistration(harness, item.token, item.environment, verdict.unregisteredAt, context);
+          return;
+        case "retry":
+          scheduleRetry(item, verdict.retryAfterMs);
+          return;
+        case "rejected":
+          // No delete, no retry: BadDeviceToken can mean a misconfigured
+          // environment — the app re-registers on its next connect (ADR-0025 §5).
+          console.error(`push: send to ${tokenHint(item.token)} rejected: ${verdict.reason}`);
+          drop(item);
+          return;
+        case "unavailable":
+          console.error(`push: send to ${tokenHint(item.token)} unavailable: ${verdict.reason}`);
+          drop(item);
+          return;
       }
-      console.error(`push: send to ${tokenHint(item.token)} failed permanently (HTTP ${status})`);
-      drop(item);
     } catch (error) {
-      if (item.attempts + 1 < MAX_ATTEMPTS) {
-        item.attempts += 1;
-        item.timer = timers.setTimeout(() => void attempt(item), RETRY_BASE_MS * 2 ** (item.attempts - 1));
-        return;
-      }
-      console.error(`push: send to ${tokenHint(item.token)} gave up: ${error instanceof Error ? error.message : String(error)}`);
-      drop(item);
-    }
-  };
-
-  const scheduleReceiptCheck = (token: string, ticketId: string): void => {
-    const timer = timers.setTimeout(() => {
-      receiptTimers.delete(timer);
-      void checkReceipt(token, ticketId);
-    }, RECEIPT_DELAY_MS);
-    receiptTimers.add(timer);
-    // Best effort and bounded: oldest pending checks are the first to go.
-    while (receiptTimers.size > MAX_PENDING) {
-      const oldest = receiptTimers.values().next().value!;
-      receiptTimers.delete(oldest);
-      timers.clearTimeout(oldest);
-    }
-  };
-
-  const checkReceipt = async (token: string, ticketId: string): Promise<void> => {
-    if (disposed) return;
-    try {
-      const { status, body } = await post(EXPO_RECEIPTS_URL, { ids: [ticketId] });
-      const receipt =
-        status >= 200 && status < 300
-          ? ((body as { data?: Record<string, { status?: string; details?: { error?: string } }> } | undefined)?.data?.[
-              ticketId
-            ])
-          : undefined;
-      if (receipt === undefined || disposed) return;
-      if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") {
-        console.error(`push: token ${tokenHint(token)} is not registered (receipt)`);
-        await dropTokenIfCurrent(harness, token, context);
-        return;
-      }
-      if (receipt.status === "error") console.error(`push: receipt ${ticketId} reports ${receipt.details?.error ?? "error"}`);
-    } catch (error) {
-      console.error(`push: receipt check ${ticketId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`push: send to ${tokenHint(item.token)} failed: ${error instanceof Error ? error.message : String(error)}`);
+      scheduleRetry(item);
     }
   };
 
@@ -374,16 +425,18 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
     const itemGeneration = generation.get(notice.id) ?? 0;
     try {
       // One request per distinct token: devices sharing a token (reinstalls)
-      // get one notification, and tokens from different EAS projects never mix
-      // into a single Expo request.
-      const tokens = await registrations();
-      for (const token of tokens) {
+      // get one notification.
+      const entries = await registrations();
+      const seen = new Set<string>();
+      for (const entry of entries) {
         if (disposed) return;
+        if (seen.has(entry.token)) continue;
+        seen.add(entry.token);
         if (pending.size >= MAX_PENDING) {
           const [oldest] = pending;
           drop(oldest!);
         }
-        const item: SendItem = { token, notice, generation: itemGeneration, attempts: 0 };
+        const item: SendItem = { token: entry.token, environment: entry.environment, notice, generation: itemGeneration, attempts: 0, queued: false };
         pending.add(item);
         void attempt(item);
       }
@@ -419,8 +472,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
     await indexWatch?.stop();
     for (const item of pending) drop(item);
     pending.clear();
+    readyQueue.length = 0;
     titleWaiters.clear();
-    for (const timer of receiptTimers) timers.clearTimeout(timer);
-    receiptTimers.clear();
   };
 }

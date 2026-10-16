@@ -1,31 +1,32 @@
-// Push notifications: token registration over the secure channel and the
-// outbound Expo sender. Fetch and timers are fakes — no request ever leaves
-// the test process, and retries/waits run on a manual clock.
+// Push notifications: APNs token registration over the secure channel and the
+// outbound sender, which asks the server over the control connection
+// (ADR-0025). The transport and timers are fakes — nothing ever leaves the
+// test process, and retries/waits run on a manual clock.
 import { once } from "node:events";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
+import type { PushNotification, PushVerdict } from "@pinomad/protocol/relay.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
 import { DevicesDoc } from "../src/devices.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { PushDoc, pushTokenProblem, type PushFetch, type PushTimers } from "../src/push.ts";
+import { PushDoc, pushTokenProblem, type PushTransport, type PushTimers } from "../src/push.ts";
+import { writeServerConfig } from "../src/server-config.ts";
 import { connectTo, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const context = BACKGROUND_CONTEXT;
 
-const TOKEN_A = "ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]";
-const TOKEN_B = "ExponentPushToken[bbbbbbbbbbbbbbbbbbbbbb]";
+const TOKEN_A = { apns: "aa".repeat(32), environment: "production" as const };
+const TOKEN_B = { apns: "bb".repeat(32), environment: "production" as const };
+const TOKEN_DEV = { apns: "dd".repeat(32), environment: "development" as const };
 
-const SEND_URL = "https://exp.host/--/api/v2/push/send";
-const RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts";
-
-/** Deterministic scheduler for the sender's retries, title wait, and receipt check. */
+/** Deterministic scheduler for the sender's retries and title wait. */
 class ManualTimers implements PushTimers {
   #seq = 0;
   #now = 0;
@@ -60,42 +61,42 @@ class ManualTimers implements PushTimers {
   }
 }
 
-interface RecordedRequest {
-  readonly url: string;
-  readonly body: Record<string, unknown>;
+interface RecordedSend {
+  readonly token: string;
+  readonly environment: string;
+  readonly notification: PushNotification;
 }
 
-type ExpoAnswer = { status?: number; body: unknown };
-
 /**
- * The Expo API double: records every request and answers sends with an ok
- * ticket (or what `responder` says). `waitForCalls` is a barrier, not a sleep.
+ * The control-connection double: records every push request and answers
+ * `accepted` (or what `responder` says). `waitForCalls` is a barrier, not a
+ * sleep.
  */
-function fakeExpo(responder?: (request: RecordedRequest) => ExpoAnswer | Promise<ExpoAnswer>): {
-  calls: RecordedRequest[];
-  fetch: PushFetch;
+function fakeTransport(responder?: (request: RecordedSend) => PushVerdict | Promise<PushVerdict>): {
+  calls: RecordedSend[];
+  transport: PushTransport;
   waitForCalls(n: number): Promise<void>;
 } {
-  const calls: RecordedRequest[] = [];
+  const calls: RecordedSend[] = [];
   const waiters: { n: number; resolve(): void }[] = [];
-  const fetch: PushFetch = async (url, init) => {
-    const request: RecordedRequest = { url, body: JSON.parse(init.body) as Record<string, unknown> };
-    calls.push(request);
-    for (const waiter of [...waiters]) {
-      if (calls.length >= waiter.n) {
-        waiters.splice(waiters.indexOf(waiter), 1);
-        waiter.resolve();
+  const transport: PushTransport = {
+    send: async (request) => {
+      calls.push(request);
+      for (const waiter of [...waiters]) {
+        if (calls.length >= waiter.n) {
+          waiters.splice(waiters.indexOf(waiter), 1);
+          waiter.resolve();
+        }
       }
-    }
-    const answer = (await responder?.(request)) ?? { body: { data: { status: "ok", id: `ticket-${calls.length}` } } };
-    return { ok: (answer.status ?? 200) < 400, status: answer.status ?? 200, json: () => Promise.resolve(answer.body) };
+      return (await responder?.(request)) ?? { result: "accepted", reason: "ok" };
+    },
   };
   const waitForCalls = (n: number): Promise<void> =>
     new Promise((resolve) => {
       if (calls.length >= n) resolve();
       else waiters.push({ n, resolve });
     });
-  return { calls, fetch, waitForCalls };
+  return { calls, transport, waitForCalls };
 }
 
 /** Resolve once `predicate` holds; polled — the test is gated on the condition, not on a duration. */
@@ -107,7 +108,7 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
   }
 }
 
-/** A short settle window for assertions that must stay empty (no fetch, no write). */
+/** A short settle window for assertions that must stay empty (no send, no write). */
 const settle = (ms = 300): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Pair a fresh device over the remote listener; resolves to its client and key. */
@@ -166,48 +167,83 @@ const answerQuestion = async (client: RemoteDurable, selected: string): Promise<
 
 type FauxOptions = NonNullable<Parameters<typeof startFauxHost>[1]>;
 
+/**
+ * A host whose push registrations are allowed: `server.json` marks it joined
+ * (setPushToken refuses otherwise). The remote listener pairs test devices.
+ */
+async function joinedDir(): Promise<string> {
+  const dir = await tempDir();
+  defer(dir.remove);
+  await writeServerConfig(dir.path, { origin: "https://relay.example.com" });
+  return dir.path;
+}
+
 async function pushHost(
-  options: Omit<FauxOptions, "push" | "remote"> & { expo: ReturnType<typeof fakeExpo>; timers?: ManualTimers },
-): Promise<{ host: OpenedHost; expo: ReturnType<typeof fakeExpo>; timers: ManualTimers }> {
-  const { expo, timers = new ManualTimers(), ...rest } = options;
+  options: Omit<FauxOptions, "push" | "remote" | "dataDir"> & {
+    apns: ReturnType<typeof fakeTransport>;
+    timers?: ManualTimers;
+    dataDir?: string;
+  },
+): Promise<{ host: OpenedHost; apns: ReturnType<typeof fakeTransport>; timers: ManualTimers; dataDir: string }> {
+  const { apns, timers = new ManualTimers(), dataDir, ...rest } = options;
+  const dir = dataDir ?? (await joinedDir());
   const host = await startFauxHost(defer, {
     ...rest,
+    dataDir: dir,
     remote: { port: await freePort() },
-    push: { fetch: expo.fetch, timers },
+    push: { transport: apns.transport, timers },
   });
-  return { host, expo, timers };
+  return { host, apns, timers, dataDir: dir };
 }
 
 describe("push token registration", () => {
-  it("registers, replaces, and clears a device's token; the devices stream never carries it", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+  it("registers, replaces, and clears a device's APNs token; the devices stream never carries it", async () => {
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
     const { client, device } = await pairDevice(host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
     await waitForView(tokenClient.view, (view) => view.devices.some((entry) => entry.publicKey === key));
 
     await client.controller.setPushToken(TOKEN_A);
-    expect(await registrations(host)).toEqual([{ publicKey: key, token: TOKEN_A, updatedAt: expect.any(Number) }]);
+    expect(await registrations(host)).toEqual([
+      { publicKey: key, token: TOKEN_A.apns, environment: "production", updatedAt: expect.any(Number) },
+    ]);
     // A token is a send capability: it must not ride the devices stream.
     const entry = tokenClient.view.current().devices.find((each) => each.publicKey === key);
     expect(Object.keys(entry ?? {}).sort()).toEqual(["name", "pairedAt", "publicKey", "source"]);
 
-    await client.controller.setPushToken(TOKEN_B);
-    expect(await registrations(host)).toEqual([{ publicKey: key, token: TOKEN_B, updatedAt: expect.any(Number) }]);
+    await client.controller.setPushToken(TOKEN_DEV);
+    expect(await registrations(host)).toEqual([
+      { publicKey: key, token: TOKEN_DEV.apns, environment: "development", updatedAt: expect.any(Number) },
+    ]);
 
     await client.controller.setPushToken(null);
     expect(await registrations(host)).toEqual([]);
   });
 
+  it("refuses a legacy Expo token without a 4400, and explains the environment", async () => {
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
+    const { client } = await pairDevice(host, "phone");
+    await expect(client.controller.setPushToken("ExponentPushToken[abc]")).rejects.toThrow(/no longer go through Expo/);
+    await expect(client.controller.setPushToken("anything-string")).rejects.toThrow(/no longer go through Expo/);
+    // The refusal was a call error, not a disconnect: the client still works.
+    expect(client.view.current().connection).toBe("connected");
+    expect(await registrations(host)).toEqual([]);
+  });
+
   it("rejects token clients, bad token shapes, and unpaired devices", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
     const tokenClient = await connectTo(defer, host);
     await expect(tokenClient.controller.setPushToken(TOKEN_A)).rejects.toThrow(/secure channel/);
 
     const { client, device } = await pairDevice(host, "phone");
-    await expect(client.controller.setPushToken("not-a-token")).rejects.toThrow(/Expo push token/);
-    await expect(client.controller.setPushToken("x".repeat(300))).rejects.toThrow(/too long/);
-    expect(pushTokenProblem("ExpoPushToken[works-too]")).toBeUndefined();
+    await expect(client.controller.setPushToken({ apns: "not-hex", environment: "production" })).rejects.toThrow(
+      /APNs device token/,
+    );
+    await expect(
+      client.controller.setPushToken({ apns: "ab".repeat(200), environment: "production" }),
+    ).rejects.toThrow(/too long/);
+    expect(pushTokenProblem({ apns: "CC".repeat(32), environment: "development" })).toBeUndefined();
 
     // A device dropped from the table while still connected registers nothing.
     const key = toBase64Url(device.publicKey);
@@ -219,18 +255,27 @@ describe("push token registration", () => {
     expect(await registrations(host)).toEqual([]);
   });
 
+  it("refuses APNs registration while the host is not joined to an account", async () => {
+    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const { client } = await pairDevice(host, "phone");
+    await expect(client.controller.setPushToken(TOKEN_A)).rejects.toThrow(/joined to an account/);
+    // Deregistration needs no account — it's local cleanup.
+    await client.controller.setPushToken(null);
+    expect(await registrations(host)).toEqual([]);
+  });
+
   it("closes the connection on malformed call args (4400)", async () => {
     const host = await startFauxHost(defer);
     const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
     defer(() => socket.terminate());
     await once(socket, "open");
     const closed = once(socket, "close");
-    socket.send(JSON.stringify({ type: "call", id: 1, method: "setPushToken", args: {} }));
+    socket.send(JSON.stringify({ type: "call", id: 1, method: "setPushToken", args: { token: { apns: 5 } } }));
     expect((await closed)[0]).toBe(4400);
   });
 
   it("deletes the device's token in the same commit as revocation", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
     const { client, device } = await pairDevice(host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
@@ -255,10 +300,12 @@ describe("push sender", () => {
     seed.close();
     await first.close();
 
-    // Restart with the sender attached: the standing needs-answer seeds the baseline silently.
-    const expo = fakeExpo();
+    // Restart joined with the sender attached: the standing needs-answer seeds
+    // the baseline silently.
+    await writeServerConfig(dir.path, { origin: "https://relay.example.com" });
+    const apns = fakeTransport();
     const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, dataDir: dir.path, extensions: [question], answers: ["done"] });
+    const { host } = await pushHost({ apns, timers, dataDir: dir.path, extensions: [question], answers: ["done"] });
     const { client } = await pairDevice(host, "phone");
     const watcher = await connectTo(defer, host);
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
@@ -266,7 +313,7 @@ describe("push sender", () => {
 
     await client.controller.setPushToken(TOKEN_A);
     await settle();
-    expect(expo.calls).toHaveLength(0);
+    expect(apns.calls).toHaveLength(0);
 
     // A genuine transition does notify: answer → the run resumes and finishes.
     await answerQuestion(watcher, "Yes");
@@ -277,16 +324,15 @@ describe("push sender", () => {
     // The Finished item's title-wait timer must be queued before advancing.
     await waitUntil(() => timers.pending >= 1);
     timers.advance(15_000);
-    await expo.waitForCalls(1);
-    expect(expo.calls[0]!.url).toBe(SEND_URL);
-    expect(expo.calls[0]!.body).toMatchObject({ to: TOKEN_A, body: "Finished" });
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification.body).toBe("Finished");
   });
 
   it("pushes waiting and failure events immediately with the fixed title, never the first message", async () => {
-    const expo = fakeExpo();
+    const apns = fakeTransport();
     const timers = new ManualTimers();
     const { host } = await pushHost({
-      expo,
+      apns,
       timers,
       extensions: [question],
       answers: [QUESTION_STEP, fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "provider blew up" })],
@@ -299,32 +345,36 @@ describe("push sender", () => {
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
 
     // No title yet and "Waiting" does not wait for one.
-    await expo.waitForCalls(1);
-    const waiting = expo.calls[0]!.body as { title?: string; body?: string; data?: Record<string, unknown> };
+    await apns.waitForCalls(1);
+    const waiting = apns.calls[0]!;
+    const hostKey = toBase64Url(host.remote!.hostKey);
     expect(waiting).toMatchObject({
-      to: TOKEN_A,
-      body: "Waiting for your answer",
-      title: "PiNomad conversation",
-      sound: "default",
-      ttl: 3600,
-      data: { hostKey: toBase64Url(host.remote!.hostKey), conversationId: id },
-      threadId: `${toBase64Url(host.remote!.hostKey)}:${id}`,
-      collapseId: `${toBase64Url(host.remote!.hostKey)}:${id}`,
+      token: TOKEN_A.apns,
+      environment: "production",
+      notification: {
+        title: "PiNomad conversation",
+        body: "Waiting for your answer",
+        hostKey,
+        conversationId: id,
+      },
     });
-    expect(waiting.title).not.toContain("deploy");
+    expect(waiting.notification.title).not.toContain("deploy");
+    // The collapse id is the fixed-length digest — `hostKey:id` can exceed
+    // APNs' 64-byte apns-collapse-id limit (ADR-0025 §2).
+    expect(waiting.notification.collapseId).toMatch(/^[0-9a-f]{32}$/);
 
     // A failing run pushes "Failed" the same way — immediately, no title wait.
     await answerQuestion(watcher, "Yes");
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "failed");
-    await expo.waitForCalls(2);
-    expect(expo.calls[1]!.body).toMatchObject({ to: TOKEN_A, body: "Failed", title: "PiNomad conversation" });
+    await apns.waitForCalls(2);
+    expect(apns.calls[1]!.notification).toMatchObject({ body: "Failed", title: "PiNomad conversation" });
   });
 
   it("waits for the auto-title on Finished, falls back after the title wait elapses", async () => {
-    const expo = fakeExpo();
+    const apns = fakeTransport();
     const timers = new ManualTimers();
     const { host } = await pushHost({
-      expo,
+      apns,
       timers,
       autoTitle: true,
       answers: [
@@ -342,10 +392,10 @@ describe("push sender", () => {
 
     // The notification holds for the pinomad.title write, then carries it.
     await waitUntil(() => timers.pending > 0);
-    expect(expo.calls).toHaveLength(0);
+    expect(apns.calls).toHaveLength(0);
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.title === "Fix the crash loop");
-    await expo.waitForCalls(1);
-    expect(expo.calls[0]!.body).toMatchObject({ title: "Fix the crash loop", body: "Finished" });
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification).toMatchObject({ title: "Fix the crash loop", body: "Finished" });
 
     // A run whose title never lands sends the fixed title once the wait elapses.
     const id2 = await startChat(watcher, "and again, silently");
@@ -353,32 +403,31 @@ describe("push sender", () => {
       watcher.view,
       (view) => view.organized.chats.some((node) => node.summary.id === id2 && node.summary.status === undefined),
     );
-    // Two timers pending: the first send's receipt check and this one's title wait.
-    await waitUntil(() => timers.pending >= 2);
-    expect(expo.calls).toHaveLength(1);
+    await waitUntil(() => timers.pending >= 1);
+    expect(apns.calls).toHaveLength(1);
     timers.advance(15_000);
-    await expo.waitForCalls(2);
-    expect(expo.calls[1]!.body).toMatchObject({
+    await apns.waitForCalls(2);
+    expect(apns.calls[1]!.notification).toMatchObject({
       title: "PiNomad conversation",
       body: "Finished",
-      data: { conversationId: id2 },
+      conversationId: id2,
     });
   });
 
   it("sends one request per distinct token and isolates a failing token from the rest", async () => {
-    const expo = fakeExpo((request) =>
-      request.body["to"] === TOKEN_A
-        ? { status: 500, body: { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "expo down" }] } }
-        : { body: { data: { status: "ok", id: "ticket-ok" } } },
+    const apns = fakeTransport((request) =>
+      request.token === TOKEN_A.apns
+        ? { result: "retry", reason: "down" }
+        : { result: "accepted", reason: "ok" },
     );
     const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, answers: ["done"] });
+    const { host } = await pushHost({ apns, timers, answers: ["done"] });
     const a = await pairDevice(host, "phone-a");
     const b = await pairDevice(host, "phone-b");
     const c = await pairDevice(host, "phone-c");
     await a.client.controller.setPushToken(TOKEN_A);
     await b.client.controller.setPushToken(TOKEN_B);
-    // A reinstall can register the same Expo token twice — it sends once.
+    // A reinstall can register the same token twice — it sends once.
     await c.client.controller.setPushToken(TOKEN_B);
     expect(await registrations(host)).toHaveLength(3);
 
@@ -386,50 +435,128 @@ describe("push sender", () => {
     const id = await startChat(watcher, "run it");
     await waitForView(
       watcher.view,
-      (view) =>
-        view.organized.chats.some((node) => node.summary.id === id && node.summary.status === undefined),
+      (view) => view.organized.chats.some((node) => node.summary.id === id && node.summary.status === undefined),
     );
     // Both tokens' Finished items queue a title-wait timer.
-    await waitUntil(() => timers.pending >= 2).catch(async () => {
-      console.log("DBG dedupe: pending", timers.pending, "regs", JSON.stringify(await registrations(host)), "calls", expo.calls.length);
-      throw new Error("no title timers");
-    });
+    await waitUntil(() => timers.pending >= 2);
     timers.advance(15_000);
-    await expo.waitForCalls(2);
-    const recipients = () => expo.calls.map((call) => (call.body as { to: string }).to);
-    expect(recipients().sort()).toEqual([TOKEN_A, TOKEN_B]);
+    await apns.waitForCalls(2);
+    const recipients = () => apns.calls.map((call) => call.token);
+    expect(recipients().sort()).toEqual([TOKEN_A.apns, TOKEN_B.apns]);
 
     // TOKEN_A retries on a backoff while TOKEN_B is already done. Each advance
-    // waits for the retry timer — it is queued asynchronously after the 500.
-    // (The other pending timer is TOKEN_B's receipt check.)
-    await waitUntil(() => timers.pending >= 2);
+    // waits for the retry timer — it is queued asynchronously after the verdict.
+    await waitUntil(() => timers.pending >= 1);
     timers.advance(5_000);
-    await expo.waitForCalls(3);
-    await waitUntil(() => timers.pending >= 2);
+    await apns.waitForCalls(3);
+    await waitUntil(() => timers.pending >= 1);
     timers.advance(10_000);
-    await expo.waitForCalls(4);
-    await waitUntil(() => timers.pending >= 2);
+    await apns.waitForCalls(4);
+    await waitUntil(() => timers.pending >= 1);
     timers.advance(20_000);
-    await expo.waitForCalls(5);
-    expect(recipients().filter((to) => to === TOKEN_A)).toHaveLength(4);
-    expect(recipients().filter((to) => to === TOKEN_B)).toHaveLength(1);
+    await apns.waitForCalls(5);
+    expect(recipients().filter((to) => to === TOKEN_A.apns)).toHaveLength(4);
+    expect(recipients().filter((to) => to === TOKEN_B.apns)).toHaveLength(1);
   });
 
-  it("drops a retry when the conversation's state has moved on", async () => {
-    const expo = fakeExpo((request) =>
-      request.body["body"] === "Waiting for your answer"
-        ? { status: 503, body: { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "down" }] } }
-        : { body: { data: { status: "ok", id: "ticket-done" } } },
-    );
+  it("honors a server-directed retry delay and drops what stays undeliverable", async () => {
+    const apns = fakeTransport(() => ({ result: "retry", reason: "busy", retryAfterMs: 15 * 60 * 1000 }));
     const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, extensions: [question], answers: [QUESTION_STEP, "done"] });
+    const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
     const { client } = await pairDevice(host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "deploy?");
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
-    await expo.waitForCalls(1);
-    expect(expo.calls[0]!.body).toMatchObject({ body: "Waiting for your answer" });
+    await apns.waitForCalls(1);
+    await waitUntil(() => timers.pending === 1);
+
+    // The 15-minute verdict delay wins over the local 5 s backoff.
+    timers.advance(60_000);
+    await settle(100);
+    expect(apns.calls).toHaveLength(1);
+    timers.advance(15 * 60 * 1000);
+    await apns.waitForCalls(2);
+
+    // Four attempts total, then it gives up.
+    await waitUntil(() => timers.pending >= 1);
+    timers.advance(15 * 60 * 1000);
+    await apns.waitForCalls(3);
+    await waitUntil(() => timers.pending >= 1);
+    timers.advance(15 * 60 * 1000);
+    await apns.waitForCalls(4);
+    timers.advance(15 * 60 * 1000);
+    await settle(100);
+    expect(apns.calls).toHaveLength(4);
+  });
+
+  it("drops an unavailable send without retrying", async () => {
+    const apns = fakeTransport(() => ({ result: "unavailable", reason: "environment not declared" }));
+    const timers = new ManualTimers();
+    const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
+    const { client } = await pairDevice(host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    const watcher = await connectTo(defer, host);
+    await startChat(watcher, "deploy?");
+    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
+    await apns.waitForCalls(1);
+    await waitUntil(() => timers.pending === 0);
+    timers.advance(60_000);
+    await settle(100);
+    expect(apns.calls).toHaveLength(1);
+    // A rejection is a dead end for the notification, not for the registration.
+    expect(await registrations(host)).toHaveLength(1);
+  });
+
+  it("deletes a stale registration on unregistered, but never a fresh one or on rejected", async () => {
+    const apns = fakeTransport((request) => {
+      if (request.token === TOKEN_A.apns) {
+        return { result: "unregistered", reason: "Unregistered", unregisteredAt: Date.now() + 60_000 };
+      }
+      if (request.token === TOKEN_B.apns) {
+        return { result: "unregistered", reason: "Unregistered", unregisteredAt: Date.now() - 60_000 };
+      }
+      return { result: "rejected", reason: "BadDeviceToken" };
+    });
+    const timers = new ManualTimers();
+    const { host } = await pushHost({
+      apns,
+      timers,
+      extensions: [question],
+      answers: [questionStep(), questionStep(), questionStep()],
+    });
+    const a = await pairDevice(host, "phone-a");
+    const b = await pairDevice(host, "phone-b");
+    const c = await pairDevice(host, "phone-c");
+    await a.client.controller.setPushToken(TOKEN_A);
+    await b.client.controller.setPushToken(TOKEN_B);
+    await c.client.controller.setPushToken(TOKEN_DEV);
+    const watcher = await connectTo(defer, host);
+    await startChat(watcher, "first question");
+    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
+
+    // TOKEN_A's invalidation time postdates its registration → deleted.
+    await waitUntil(async () => !(await registrations(host)).some((entry) => entry.token === TOKEN_A.apns));
+    // TOKEN_B's predates its (re)registration → kept; rejected → kept too.
+    const kept = (await registrations(host)).map((entry) => entry.token).sort();
+    expect(kept).toEqual([TOKEN_B.apns, TOKEN_DEV.apns].sort());
+  });
+
+  it("drops a retry when the conversation's state has moved on", async () => {
+    const apns = fakeTransport((request) =>
+      request.notification.body === "Waiting for your answer"
+        ? { result: "retry", reason: "down" }
+        : { result: "accepted", reason: "ok" },
+    );
+    const timers = new ManualTimers();
+    const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP, "done"] });
+    const { client } = await pairDevice(host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    const watcher = await connectTo(defer, host);
+    await startChat(watcher, "deploy?");
+    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification.body).toBe("Waiting for your answer");
     await waitUntil(() => timers.pending === 1); // the retry timer is queued
 
     // The user answers from another client before the retry fires.
@@ -442,14 +569,14 @@ describe("push sender", () => {
     await waitUntil(() => timers.pending >= 2);
     timers.advance(60_000);
     // The stale Waiting retry never went out; the fresh Finished did.
-    await waitUntil(() => expo.calls.length >= 2);
-    expect(expo.calls.map((call) => (call.body as { body: string }).body)).toEqual(["Waiting for your answer", "Finished"]);
+    await waitUntil(() => apns.calls.length >= 2);
+    expect(apns.calls.map((call) => call.notification.body)).toEqual(["Waiting for your answer", "Finished"]);
   });
 
   it("supersedes a notification still waiting for a title when the conversation moves on", async () => {
-    const expo = fakeExpo();
+    const apns = fakeTransport();
     const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, answers: ["first done", "second done"] });
+    const { host } = await pushHost({ apns, timers, answers: ["first done", "second done"] });
     const { client } = await pairDevice(host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
@@ -471,17 +598,17 @@ describe("push sender", () => {
     );
     await waitUntil(() => timers.pending >= 2);
     timers.advance(15_000);
-    await expo.waitForCalls(1);
+    await apns.waitForCalls(1);
     await settle(100);
     // Only the latest transition's notification is delivered.
-    expect(expo.calls).toHaveLength(1);
-    expect(expo.calls[0]!.body).toMatchObject({ to: TOKEN_A, body: "Finished" });
+    expect(apns.calls).toHaveLength(1);
+    expect(apns.calls[0]!.notification.body).toBe("Finished");
   });
 
   it("stops retrying a token whose device was revoked", async () => {
-    const expo = fakeExpo(() => ({ status: 503, body: { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "down" }] } }));
+    const apns = fakeTransport(() => ({ result: "retry", reason: "down" }));
     const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, extensions: [question], answers: [QUESTION_STEP] });
+    const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
     const { client, device } = await pairDevice(host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
@@ -489,59 +616,13 @@ describe("push sender", () => {
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "deploy?");
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
-    await expo.waitForCalls(1);
+    await apns.waitForCalls(1);
     await waitUntil(() => timers.pending === 1);
 
     await tokenClient.controller.revokeDevice(key);
     await waitUntil(async () => (await registrations(host)).length === 0);
     timers.advance(60_000);
     await settle(100);
-    expect(expo.calls).toHaveLength(1);
-  });
-
-  it("forgets a token on DeviceNotRegistered — ticket at once, receipt only if unchanged", async () => {
-    const TOKEN_C = "ExponentPushToken[cccccccccccccccccccccc]";
-    const expo = fakeExpo((request) => {
-      if (request.url === RECEIPTS_URL) {
-        const ids = request.body["ids"] as string[];
-        return { body: { data: { [ids[0]!]: { status: "error", details: { error: "DeviceNotRegistered" } } } } };
-      }
-      if (request.body["to"] === TOKEN_A) {
-        return { body: { data: { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } } } };
-      }
-      return { body: { data: { status: "ok", id: `ticket-${request.body["to"]}` } } };
-    });
-    const timers = new ManualTimers();
-    const { host } = await pushHost({ expo, timers, extensions: [question], answers: [questionStep(), questionStep(), questionStep()] });
-    const { client } = await pairDevice(host, "phone");
-    await client.controller.setPushToken(TOKEN_A);
-    const watcher = await connectTo(defer, host);
-    await startChat(watcher, "first question");
-    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer", 5000).catch(async () => {
-      console.log("DBG dnr: chats", JSON.stringify(watcher.view.current().organized.chats.map((n) => [n.summary.id, n.summary.status])), "calls", JSON.stringify(expo.calls.map((c) => c.body)), "regs", JSON.stringify(await registrations(host)));
-      throw new Error("never needs-answer");
-    });
-    await waitUntil(async () => (await registrations(host)).length === 0);
-
-    // Re-registering with a new token must survive the OLD token's receipt:
-    // the delete is conditional on the registry still holding that token.
-    await client.controller.setPushToken(TOKEN_B);
-    await answerQuestion(watcher, "Yes");
-    await waitUntil(() => expo.calls.some((call) => call.body["to"] === TOKEN_B));
-
-    await client.controller.setPushToken(TOKEN_C);
-    // The send's receipt check is queued on a timer registered after the ticket.
-    await waitUntil(() => timers.pending >= 1);
-    timers.advance(15 * 60 * 1000);
-    await waitUntil(() => expo.calls.some((call) => call.url === RECEIPTS_URL));
-    await waitUntil(async () => (await registrations(host)).length === 1);
-    expect((await registrations(host)).map((entry) => entry.token)).toEqual([TOKEN_C]);
-
-    // When the registry still holds the receipt's token, it is deleted.
-    await answerQuestion(watcher, "No");
-    await waitUntil(() => expo.calls.some((call) => call.body["to"] === TOKEN_C));
-    await waitUntil(() => timers.pending >= 1);
-    timers.advance(15 * 60 * 1000);
-    await waitUntil(async () => (await registrations(host)).length === 0);
+    expect(apns.calls).toHaveLength(1);
   });
 });

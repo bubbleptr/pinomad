@@ -68,7 +68,7 @@ import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { normalizeOrigin, readServerBinding, readServerConfig } from "./server-config.ts";
-import { attachPushSender, revokeDevice, setPushToken, type PushFetch, type PushTimers } from "./push.ts";
+import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -153,13 +153,14 @@ export interface GatewayOptions {
   /** Name conversations after their first successful run; default on. */
   readonly autoTitle?: boolean;
   /**
-   * Expo push sender (M5): absent → `setPushToken` still registers but nothing
-   * leaves the host; tests inject `fetch`/`timers` fakes.
+   * APNs push sender (ADR-0025): absent → `setPushToken` still registers but
+   * nothing leaves the host; tests inject `transport`/`timers` fakes, the real
+   * wiring uses the relay link as the transport.
    */
   readonly push?: {
     /** The host's X25519 public key, base64url — the push payload's `data.hostKey`. */
     readonly hostKey: string;
-    readonly fetch?: PushFetch;
+    readonly transport?: PushTransport;
     readonly timers?: PushTimers;
   };
   /** Set to accept secure-channel clients, on LAN and/or via a relay. */
@@ -193,16 +194,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           harness: options.harness,
           models: options.models,
           settings: options.settings,
-        });
-  const detachPush =
-    options.push === undefined
-      ? undefined
-      : await attachPushSender({
-          harness: options.harness,
-          conversations,
-          hostKey: options.push.hostKey,
-          ...(options.push.fetch === undefined ? {} : { fetch: options.push.fetch }),
-          ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
         });
   // The loopback port also serves the built web client: in service mode there
   // is no vite dev server to reach it through (ADR-0009 §7).
@@ -358,6 +349,22 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     });
     relay = link;
   }
+  // Attached after the link exists: its pushes ride the control connection,
+  // so the link is the sender's transport (ADR-0025 §3). Tests inject a fake.
+  const detachPush =
+    options.push === undefined
+      ? undefined
+      : await attachPushSender({
+          harness: options.harness,
+          conversations,
+          hostKey: options.push.hostKey,
+          ...(options.push.transport === undefined
+            ? relay === undefined
+              ? {}
+              : { transport: { send: (request) => relay.sendPush(request) } }
+            : { transport: options.push.transport }),
+          ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
+        });
   return {
     url: `ws://127.0.0.1:${port}`,
     ...(remote === undefined ? {} : { remote: { url: remote.url, advertiseUrl: remote.advertiseUrl } }),
@@ -1219,7 +1226,12 @@ class GatewayClient {
       case "setPushToken": {
         const device = this.devicePublicKey;
         if (device === undefined) throw new Error("Push tokens register over the secure channel only");
-        await setPushToken(this.#options.harness, device, (args as CallMethods["setPushToken"]["args"]).token, context);
+        // Pushes ride the account control connection: a host that never
+        // joined has nowhere to send them (ADR-0025 §7). Read fresh — a join
+        // writes server.json without restarting the host.
+        const joined = async (): Promise<boolean> =>
+          (await readServerConfig(this.#options.dataDir).catch(() => undefined)) !== undefined;
+        await setPushToken(this.#options.harness, device, (args as CallMethods["setPushToken"]["args"]).token, context, joined);
         return null;
       }
       case "logout": {

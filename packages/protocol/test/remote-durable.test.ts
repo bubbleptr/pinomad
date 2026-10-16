@@ -423,6 +423,33 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("gates the APNs token form on a 5.9 host — a 5.8 host would 4400 it", async () => {
+    const apns = { apns: "aa".repeat(32), environment: "production" as const };
+    const old = fakeTransport([{}], { protocol: { major: 5, minor: 8 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await expect(remoteOld.controller.setPushToken(apns)).rejects.toThrow(
+        "The host is too old for this (needs protocol 5.9)",
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "setPushToken")).toHaveLength(0);
+      // The string form still goes through on the same 5.8 host.
+      await remoteOld.controller.setPushToken("ExponentPushToken[abc]");
+      expect(old.sent.some((frame) => frame.type === "call" && frame.method === "setPushToken")).toBe(true);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.setPushToken(apns);
+      const calls = sent.filter((frame) => frame.type === "call" && frame.method === "setPushToken");
+      expect(calls.map((frame) => frame.args)).toEqual([{ token: apns }]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("rejects setPushToken with the host's error instead of a notice", async () => {
     const { transport } = fakeTransport([{}], {}, (frame) =>
       frame.method === "setPushToken" ? { ok: false, error: "Push tokens register over the secure channel only" } : undefined,

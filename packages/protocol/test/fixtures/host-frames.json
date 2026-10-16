@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 8
+      "minor": 9
     },
     "session": {
       "id": "<sessionId>",
@@ -128,7 +128,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1792106879686,
+            "createdAt": 1792158233500,
             "requestId": "contract-1"
           }
         ]
@@ -212,7 +212,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792106879690
+        "updatedAt": 1792158233503
       }
     ]
   },
@@ -254,7 +254,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1792106879690
+              "timestamp": 1792158233503
             }
           ],
           "kind": "pi.user",
@@ -371,7 +371,7 @@
                   }
                 }
               ],
-              "timestamp": 1792106879696
+              "timestamp": 1792158233506
             }
           ],
           "kind": "pi.system",
@@ -404,7 +404,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a141e4-dac5-7690-a4bc-0ce27f5d89ed"
+          "sessionId": "01a144f4-739c-765e-a85c-2cc151121355"
         },
         "pi.usage": {
           "models": {},
@@ -475,7 +475,7 @@
         ],
         [
           {
-            "callId": "tool:1792106879641:4620c8tfq9z",
+            "callId": "tool:1792158233469:7y6h47rklb6",
             "name": "write",
             "taskId": 15,
             "status": "pending"
@@ -528,7 +528,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1792106879641:4620c8tfq9z",
+                    "id": "tool:1792158233469:7y6h47rklb6",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -536,7 +536,7 @@
                     }
                   }
                 ],
-                "api": "faux:1792106879642:sdqrdc0vo3s",
+                "api": "faux:1792158233470:amw3jh8fku",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -554,7 +554,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1792106879641
+                "timestamp": 1792158233470
               }
             ],
             "kind": "pi.assistant",
@@ -644,7 +644,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792106879641,
+        "updatedAt": 1792158233470,
         "activity": {
           "tool": "write",
           "target": "note.txt"
@@ -703,7 +703,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1792106879641:4620c8tfq9z",
+                "toolCallId": "tool:1792158233469:7y6h47rklb6",
                 "toolName": "write",
                 "content": [
                   {
@@ -716,7 +716,7 @@
                 },
                 "isError": false,
                 "durationMs": 2,
-                "timestamp": 1792106879770
+                "timestamp": 1792158233572
               }
             ],
             "data": {
@@ -846,7 +846,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792106879641
+        "updatedAt": 1792158233470
       }
     ]
   },
@@ -998,7 +998,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1792106879642:sdqrdc0vo3s",
+                "api": "faux:1792158233470:amw3jh8fku",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1016,7 +1016,7 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1792106879642
+                "timestamp": 1792158233470
               }
             ],
             "kind": "pi.assistant",

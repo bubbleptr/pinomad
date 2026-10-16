@@ -89,15 +89,22 @@ const QUICK_RECONNECT = { min: 50, max: 200 };
 /**
  * A minimal stand-in for the server side of /host: answers the upgrade with a
  * challenge, captures the register, then lets the test drive frames. Used to
- * exercise the relay link's pairing answers without a whole accounts server.
+ * exercise the relay link's pairing answers and push requests without a whole
+ * accounts server. `push` declares APNs environments on `registered`
+ * (ADR-0025 §3) — omit it to stand in for a pre-push server.
  */
-async function fakeServer(): Promise<{
+async function fakeServer(options?: { push?: readonly string[] }): Promise<{
   port: number;
   origin: string;
   /** Resolves with the host's register frame once it arrives. */
   register: Promise<Record<string, unknown>>;
   send(frame: object): void;
   nextMessage(): Promise<Record<string, unknown>>;
+  /** Frames seen so far after the register. */
+  messages(): readonly Record<string, unknown>[];
+  /** Change what the next `registered` declares — a redeployed older instance. */
+  setPush(push: readonly string[] | undefined): void;
+  closeControl(): void;
 }> {
   const { WebSocketServer } = await import("ws");
   const wss = new WebSocketServer({ port: 0 });
@@ -107,6 +114,7 @@ async function fakeServer(): Promise<{
   });
   const port = (wss.address() as AddressInfo).port;
   let socket: import("ws").WebSocket | undefined;
+  let declared = options?.push;
   const messages: Record<string, unknown>[] = [];
   const waiters: ((frame: Record<string, unknown>) => void)[] = [];
   const seen = new Promise<Record<string, unknown>>((resolve) => {
@@ -116,7 +124,7 @@ async function fakeServer(): Promise<{
         const frame = JSON.parse((data as Buffer).toString()) as Record<string, unknown>;
         if (frame.t === "register") {
           resolve(frame);
-          ws.send(JSON.stringify({ t: "registered" }));
+          ws.send(JSON.stringify({ t: "registered", ...(declared === undefined ? {} : { push: declared }) }));
           return;
         }
         const waiter = waiters.shift();
@@ -137,6 +145,14 @@ async function fakeServer(): Promise<{
       const queued = messages.shift();
       if (queued !== undefined) return Promise.resolve(queued);
       return new Promise((resolve) => waiters.push(resolve));
+    },
+    messages: () => messages,
+    setPush(push) {
+      declared = push;
+    },
+    closeControl() {
+      socket?.close();
+      socket = undefined;
     },
   };
 }
@@ -194,6 +210,83 @@ describe("relay link pairing answers", () => {
     const answerP = server.nextMessage();
     server.send({ t: "pairing-request", requestId: "req-9" });
     expect(await answerP).toEqual({ t: "pairing-refused", requestId: "req-9", reason: "unavailable" });
+  });
+});
+
+describe("relay link push", () => {
+  const notification = {
+    title: "PiNomad conversation",
+    body: "Finished",
+    collapseId: "ab".repeat(16),
+    hostKey: "host-key",
+    conversationId: 1,
+  };
+  const request = { token: "aa".repeat(32), environment: "production" as const, notification };
+
+  const startLink = (server: Awaited<ReturnType<typeof fakeServer>>) => {
+    const link = startRelayLink({
+      origin: server.origin,
+      signingKey: ed25519.keygen(),
+      noisePublicKey: generateKeyPair().publicKey,
+      accept: () => {},
+      reconnectDelayMs: QUICK_RECONNECT,
+    });
+    defer(() => link.close());
+    return link;
+  };
+  const registered = (link: ReturnType<typeof startLink>) => until(() => link.state().status === "registered");
+
+  it("sends a push frame and resolves the server's verdict", async () => {
+    const server = await fakeServer({ push: ["production"] });
+    const link = startLink(server);
+    await registered(link);
+
+    const sentP = server.nextMessage();
+    const verdictP = link.sendPush(request);
+    const frame = (await sentP) as { t: string; requestId: string; notification: unknown };
+    expect(frame).toMatchObject({ t: "push", token: request.token, environment: "production", notification });
+
+    server.send({ t: "push-result", requestId: frame.requestId, result: "accepted", reason: "ok" });
+    expect(await verdictP).toEqual({ result: "accepted", reason: "ok" });
+  });
+
+  it("sends nothing for an undeclared or missing environment (ADR-0025 §3)", async () => {
+    const server = await fakeServer({ push: ["development"] });
+    const link = startLink(server);
+    await registered(link);
+
+    // Declared, but not this environment: unavailable, and no frame leaves.
+    expect(await link.sendPush(request)).toEqual({
+      result: "unavailable",
+      reason: "environment production not declared",
+    });
+
+    // A pre-push server declares nothing: retry (a reconnect may bring one
+    // that does) — and still no frame, its old decoder would drop the control.
+    server.setPush(undefined);
+    server.closeControl();
+    await until(() => link.state().status === "connecting");
+    await registered(link);
+    expect((await link.sendPush(request)).result).toBe("retry");
+    expect(server.messages().filter((frame) => frame.t === "push")).toHaveLength(0);
+  });
+
+  it("settles an in-flight request as retry when the control drops", async () => {
+    const server = await fakeServer({ push: ["production"] });
+    const link = startLink(server);
+    await registered(link);
+
+    const sentP = server.nextMessage();
+    const verdictP = link.sendPush(request);
+    await sentP;
+    server.closeControl();
+    expect((await verdictP).result).toBe("retry");
+
+    // The capability does not survive the reconnect — the link must re-read it.
+    await until(() => link.state().status === "connecting");
+    server.setPush(undefined);
+    await registered(link);
+    expect((await link.sendPush(request)).result).toBe("retry");
   });
 });
 
