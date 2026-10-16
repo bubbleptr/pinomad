@@ -87,7 +87,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 7 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 8 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -198,7 +198,7 @@ export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean
 }
 
 /** Minor version that introduced each call-arg feature (ADR-0018 §2). */
-const FEATURE_SINCE = { images: 5 } as const;
+const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
 /** Whether a host of the given minor version honors `feature`. */
@@ -325,6 +325,7 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   defaultThinkingLevel: (value) => value === null || isThinkingLevel(value),
   steeringMode: (value) => value === null || isQueueMode(value),
   followUpMode: (value) => value === null || isQueueMode(value),
+  acceptAccountDevices: (value) => value === null || typeof value === "boolean",
 };
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {

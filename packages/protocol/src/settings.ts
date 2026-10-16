@@ -10,6 +10,8 @@ export interface HostSettings {
   readonly defaultThinkingLevel: ThinkingLevel | null;
   readonly steeringMode: QueueMode;
   readonly followUpMode: QueueMode;
+  /** Whether the joined server may vouch for new devices (ADR-0022 §6); PiNomad-only, defaults on. */
+  readonly acceptAccountDevices: boolean;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */
   readonly custom: readonly HostSettingKey[];
 }
@@ -22,6 +24,7 @@ const HOST_SETTING_KEY_SET = {
   defaultThinkingLevel: true,
   steeringMode: true,
   followUpMode: true,
+  acceptAccountDevices: true,
 } satisfies Record<HostSettingKey, true>;
 export const HOST_SETTING_KEYS = Object.keys(HOST_SETTING_KEY_SET) as readonly HostSettingKey[];
 

@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-16
+最后更新：2026-10-16（服务端账号第 3 步完成）
 
 ## 已完成
 
@@ -144,11 +144,12 @@ MCP 本身的后续，都等有明确需求再做：
    - 已绑定宿主每次 register 报告的 Noise 公钥（只有 v2 验过才可信）跟着那条控制连接存在服务端内存里，register 成功时更新 `hosts.last_seen_at`；第 4 步的配对接口拿它和 `hosts.noise_public_key` 比较，不一致时的拒绝逻辑在那时做。不做通用的密钥轮换。
    - 宿主在 `<dataDir>/server.json` 记服务端地址，`pinomad host` 启动时读它。join / leave 会改写已安装服务的定义、去掉旧的 `--relay` 参数，再按 ADR-0009 等空闲重启；join 时没装服务就装上（测试里注入假的服务管理器）。`server.json` 和 `--relay` 同时给出且不一致时启动报错。`loadHostKey` 和 `loadRelayKey` 一样用 `wx` 独占创建，全新安装时 join 先建好两把密钥。CLI 显示宿主指纹和加入结果。
    - register 判定：hostId 在 `hosts` 里，或在 `--allow-host` 里。部署迁移完成后删掉 `--allow-host`。
-3. **宿主侧的准入**（`apps/host` + 协议次版本号）：
-   - 吊销记录：`revokeDevice` 除了删设备，还把公钥记进宿主持久化的已吊销列表（和设备表同一个事务）。账号来源的邀请不能让已吊销的公钥重新登记；扫码配对可以，因为那是用户在宿主上主动做的。
-   - 邀请带来源：`pairingOffers` 的 offer 记下 `source`（`account` / `qr` / `local`，`local` 指签发给回环链接的邀请）和签发它的服务端绑定。`consume` 把来源交给 `registerDevice` 写进 `DeviceEntry.source`（可选字段，老记录显示"未知"）；来源只看宿主自己存的 offer，不看设备怎么说，也不看连接地址。设备名以握手里提交的为准。
-   - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛。准入时再检查一遍：账号来源的邀请要求开关是开的，而且绑定还是当前那个服务端。关开关、leave、换服务端时，立刻作废还没用掉的账号邀请，不用等重启。
-   - 账号来源的设备登记成功后，宿主用现有的 `notice` 帧通知所有在线设备"新设备 X 通过账号加入"。
+3. **宿主侧的准入**（`apps/host` + 协议 5.8，已完成）：
+   - 吊销记录：`revokeDevice` 除了删设备，还把公钥记进宿主持久化的已吊销列表（和设备表同一个事务）。账号来源的邀请不能让已吊销的公钥重新登记；扫码配对可以，因为那是用户在宿主上主动做的。吊销列表单独放在会话级文档 `pinomad.revocations`（不放 `pinomad.devices`，那份会整个推给客户端），扫码重新配对时从记录里去掉。
+   - 邀请带来源：`pairingOffers` 的 offer 记下 `source`（`account` / `qr` / `local`，`local` 指签发给回环链接的邀请）和签发它的服务端绑定。`consume` 把来源交给准入写进 `DeviceEntry.source`（可选字段，老记录显示"未知"）；来源只看宿主自己存的 offer，不看设备怎么说，也不看连接地址。设备名以握手里提交的为准。
+   - 设置 `acceptAccountDevices`（默认开，ADR-0021 的设置文件），按 `FEATURE_SINCE` 标版本门槛（协议 5.8）。准入时在登记设备的同一个 commit 里再检查一遍：账号来源的邀请要求开关是开的、绑定还是当前那次绑定（准入时实时重读 `server.json`，按其中每次写入生成的随机 `binding` 核对，重 join 同一地址也作废）、公钥不在吊销记录里。关开关、leave、换服务端时，还没用掉的账号邀请作废，不用等重启。
+   - 账号来源的设备登记成功后，宿主用现有的 `notice` 帧通知所有在线设备"新设备 X 通过账号加入"（`New device "<name>" joined through your account`）。
+   - 这一步还没有人能拿到账号来源的邀请（`pairing-request` 控制帧是第 4 步）；宿主侧入口是 `OpenedHost.createAccountOffer()`，读 `server.json` 绑定签发。
 4. **服务端担保配对**：
    - `GET /api/hosts`（需登录）返回 `[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`，`pairing` 说明能不能经账号配对（宿主太旧、公钥对不上、离线）。
    - `POST /api/hosts/:hostId/pairing`（需登录、宿主属于本账号）：经控制帧 `pairing-request` 向宿主要邀请，宿主回 `pairing` 或 `pairing-refused`。等待中的请求绑定到具体的控制连接和本次绑定，连接断开、被替换、leave 或 HTTP 请求取消时清掉；迟到或不认识的回复忽略。每台宿主、每个会话限制同时在途的请求数。宿主太旧（没声明 `features: ["pairing"]`）直接回固定的错误，不等超时；离线回 409，10 秒没回复回 504。成功时返回 `{url, hostKey, secret, expiresAt}`，客户端照 ADR-0008 走 IK 配对。

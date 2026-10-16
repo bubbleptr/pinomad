@@ -56,6 +56,7 @@ async function fixture(options: Partial<GatewayOptions> = {}) {
         defaultThinkingLevel: null,
         steeringMode: "one-at-a-time",
         followUpMode: "one-at-a-time",
+        acceptAccountDevices: true,
         custom: [],
       },
       subscribe: () => () => {},

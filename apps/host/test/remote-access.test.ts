@@ -2,14 +2,17 @@ import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
+import { DevicesDoc, RevocationsDoc } from "../src/devices.ts";
 import { pickLanAddress } from "../src/gateway.ts";
 import type { OpenedHost } from "../src/host.ts";
+import { removeServerConfig, writeServerConfig } from "../src/server-config.ts";
 import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -86,6 +89,8 @@ describe("remote access", () => {
 
     await waitForView(tokenClient.view, (view) => view.devices.length === 1);
     expect(devicesOf(tokenClient)[0]!.name).toBe("desktop");
+    // The offer rode a loopback link: source "local" (ADR-0020 §4).
+    expect(devicesOf(tokenClient)[0]!.source).toBe("local");
 
     // A registered device reconnects without a pairing secret.
     await remote.close();
@@ -125,6 +130,7 @@ describe("remote access", () => {
     const [entry] = devicesOf(tokenClient);
     expect(entry!.name).toBe("test phone");
     expect(entry!.publicKey).toBe(toBase64Url(device.publicKey));
+    expect(entry!.source).toBe("qr");
   });
 
   it("reconnects a registered device without pairing", async () => {
@@ -320,5 +326,147 @@ describe("remote access", () => {
     const response = await fetch(`${http}/`);
     expect(response.status).toBe(503);
     expect(await response.text()).toContain("bun run build");
+  });
+});
+
+// ADR-0022 §6 host-side admission: an account offer is minted under the joined
+// server's binding (server.json), and the one-commit admission re-checks it
+// against the revocation list, the acceptAccountDevices switch, and the
+// binding as it stands at that instant.
+describe("account-source admission", () => {
+  const SERVER = "https://server.example.com";
+
+  async function joinedHost(): Promise<{ host: OpenedHost; dataDir: string }> {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: await freePort() } });
+    await writeServerConfig(dir.path, { origin: SERVER });
+    return { host, dataDir: dir.path };
+  }
+
+  it("admits a server-vouched device as source account and tells online clients; qr pairing stays quiet", async () => {
+    const { host } = await joinedHost();
+    const tokenClient = await connectTo(defer, host);
+
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    await connectDevice(host, generateKeyPair(), { secret, name: "qr phone" });
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    // A notice, had one been broadcast, reaches a client before any later call's result.
+    await tokenClient.controller.createPairing();
+    expect(tokenClient.view.current().notices).toEqual([]);
+
+    const offer = await host.createAccountOffer();
+    expect(offer).toBeDefined();
+    const laptop = generateKeyPair();
+    const remote = await connectDevice(host, laptop, { secret: offer!.secret, name: "account laptop" });
+    expect(remote.view.current().connection).toBe("connected");
+
+    await waitForView(tokenClient.view, (view) => view.devices.length === 2);
+    const entry = devicesOf(tokenClient).find((each) => each.publicKey === toBase64Url(laptop.publicKey));
+    expect(entry?.source).toBe("account");
+    await waitForView(tokenClient.view, (view) =>
+      view.notices.some((notice) => notice.message === 'New device "account laptop" joined through your account'),
+    );
+    // The newcomer was not yet a client when the notice went out.
+    expect(remote.view.current().notices).toEqual([]);
+  });
+
+  it("refuses account offers for a revoked key; a fresh scan re-pairs and clears the revocation", async () => {
+    const { host } = await joinedHost();
+    const tokenClient = await connectTo(defer, host);
+
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    const device = generateKeyPair();
+    const key = toBase64Url(device.publicKey);
+    await connectDevice(host, device, { secret, name: "phone" });
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+
+    await tokenClient.controller.revokeDevice(key);
+    await waitForView(tokenClient.view, (view) => view.devices.length === 0);
+
+    const offer = await host.createAccountOffer();
+    await expect(connectDevice(host, device, { secret: offer!.secret, name: "phone" })).rejects.toThrow();
+    expect((await host.harness.snapshot(RevocationsDoc, BACKGROUND_CONTEXT))?.revoked).toContain(key);
+
+    // The user scanned again on purpose: pairing succeeds and forgives the revocation.
+    const { url: rescan } = await createPairing(tokenClient);
+    const { secret: rescanSecret } = pairFrom(rescan);
+    const rejoined = await connectDevice(host, device, { secret: rescanSecret, name: "phone" });
+    expect(rejoined.view.current().connection).toBe("connected");
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    expect((await host.harness.snapshot(RevocationsDoc, BACKGROUND_CONTEXT))?.revoked ?? []).not.toContain(key);
+  });
+
+  it("refuses outstanding and newly minted account offers once acceptAccountDevices is off", async () => {
+    const { host } = await joinedHost();
+    const tokenClient = await connectTo(defer, host);
+    const minted = await host.createAccountOffer();
+
+    await tokenClient.controller.updateSettings({ acceptAccountDevices: false });
+    await waitForView(tokenClient.view, (view) => view.settings?.acceptAccountDevices === false);
+
+    // The switch-off revoked the in-flight offer before the client saw it.
+    await expect(connectDevice(host, generateKeyPair(), { secret: minted!.secret, name: "x" })).rejects.toThrow();
+    const fresh = await host.createAccountOffer();
+    await expect(connectDevice(host, generateKeyPair(), { secret: fresh!.secret, name: "y" })).rejects.toThrow();
+
+    await tokenClient.controller.updateSettings({ acceptAccountDevices: true });
+    await waitForView(tokenClient.view, (view) => view.settings?.acceptAccountDevices === true);
+    const offer = await host.createAccountOffer();
+    const remote = await connectDevice(host, generateKeyPair(), { secret: offer!.secret, name: "z" });
+    expect(remote.view.current().connection).toBe("connected");
+  });
+
+  it("refuses account offers minted under a binding that no longer stands", async () => {
+    const { host, dataDir } = await joinedHost();
+    await connectTo(defer, host);
+
+    const swapped = await host.createAccountOffer();
+    await writeServerConfig(dataDir, { origin: "https://other.example.com" });
+    await expect(connectDevice(host, generateKeyPair(), { secret: swapped!.secret, name: "x" })).rejects.toThrow();
+
+    // Re-joining the same origin is a new binding: the offer must stay dead.
+    await writeServerConfig(dataDir, { origin: SERVER });
+    await expect(connectDevice(host, generateKeyPair(), { secret: swapped!.secret, name: "y" })).rejects.toThrow();
+
+    const orphaned = await host.createAccountOffer();
+    await removeServerConfig(dataDir);
+    await expect(connectDevice(host, generateKeyPair(), { secret: orphaned!.secret, name: "y" })).rejects.toThrow();
+    // Left entirely, the host mints no account offers at all.
+    expect(await host.createAccountOffer()).toBeUndefined();
+  });
+
+  it("runs normally on a server.json that predates bindings, but mints no account offers", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    // Only ever possible on a dev checkout between join and this change: a
+    // file with `origin` but no `binding`.
+    await writeFile(join(dir.path, "server.json"), JSON.stringify({ origin: SERVER }));
+    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: await freePort() } });
+    const tokenClient = await connectTo(defer, host);
+    expect(await host.createAccountOffer()).toBeUndefined();
+
+    // QR pairing is unaffected.
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    const remote = await connectDevice(host, generateKeyPair(), { secret, name: "phone" });
+    expect(remote.view.current().connection).toBe("connected");
+  });
+
+  it("still connects a device registered before sources existed", async () => {
+    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const device = generateKeyPair();
+    // A record written by a host that predated sources: no `source` field.
+    await host.harness.commit(async (tx) => {
+      (await tx.doc(DevicesDoc)).devices.push({ publicKey: toBase64Url(device.publicKey), name: "old phone", pairedAt: 1 });
+    }, BACKGROUND_CONTEXT);
+
+    const remote = await connectDevice(host, device);
+    expect(remote.view.current().connection).toBe("connected");
+    const tokenClient = await connectTo(defer, host);
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    expect(devicesOf(tokenClient)[0]!.source).toBeUndefined();
   });
 });

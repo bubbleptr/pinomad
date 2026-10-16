@@ -18,6 +18,7 @@ import type { PushFetch, PushTimers } from "./push.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
+import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway } from "./gateway.ts";
@@ -112,6 +113,12 @@ export interface OpenedHost {
   readonly relay?: { readonly origin: string; readonly hostId: string; state(): RelayLinkState };
   /** The effective host settings backing the `settings` stream and `updateSettings`. */
   readonly settings: HostSettingsStore;
+  /**
+   * Mint a one-time pairing offer bound to the joined server — the server's
+   * entry point for vouching a new device (ADR-0022 §4). Undefined while the
+   * host is not joined.
+   */
+  createAccountOffer(): Promise<{ secret: string; expiresAt: number } | undefined>;
   close(): Promise<void>;
 }
 
@@ -309,6 +316,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       harness,
       closed: opened.closed,
       settings: hostSettings,
+      // The binding is read at mint time; admission re-reads it again (a
+      // join/leave between the two must not let the old binding through).
+      // A server.json without `binding` — written before the field existed —
+      // mints nothing; a fresh join stamps one.
+      createAccountOffer: async () => {
+        const binding = await readServerBinding(options.dataDir).catch(() => undefined);
+        return binding === undefined ? undefined : offers.createAccount(binding);
+      },
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}
         : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),

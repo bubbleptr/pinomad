@@ -66,6 +66,8 @@ const fileValueError = (
     case "steeringMode":
     case "followUpMode":
       return isQueueMode(value) ? undefined : "malformed";
+    case "acceptAccountDevices":
+      return typeof value === "boolean" ? undefined : "malformed";
   }
 };
 
@@ -75,6 +77,7 @@ const sameModel = (a: ModelRef | null, b: ModelRef | null): boolean =>
 const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
   a.steeringMode === b.steeringMode
   && a.followUpMode === b.followUpMode
+  && a.acceptAccountDevices === b.acceptAccountDevices
   && a.defaultThinkingLevel === b.defaultThinkingLevel
   && sameModel(a.defaultModel, b.defaultModel)
   && sameList(a.custom, b.custom, (x, y) => x === y);
@@ -134,6 +137,8 @@ export async function openHostSettings(options: {
         (fileValues.defaultThinkingLevel as ThinkingLevel | undefined) ?? fallback.defaultThinkingLevel(),
       steeringMode: (fileValues.steeringMode as QueueMode | undefined) ?? fallback.steeringMode(),
       followUpMode: (fileValues.followUpMode as QueueMode | undefined) ?? fallback.followUpMode(),
+      // No pi-side counterpart exists: the fallback chain ends at the built-in default.
+      acceptAccountDevices: (fileValues.acceptAccountDevices as boolean | undefined) ?? true,
       custom,
     };
   };

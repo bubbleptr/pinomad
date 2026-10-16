@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOST_STREAM_NAMES, hostStreams, hostSupportsCall, parseClientFrame } from "../src/frames.ts";
+import { HOST_STREAM_NAMES, hostStreams, hostSupportsCall, hostSupportsFeature, parseClientFrame } from "../src/frames.ts";
 
 // The gateway closes connections on "malformed", answers "unsupported*" with
 // an error, and ignores "unknownType" (ADR-0018 §3), so every call shape the
@@ -85,6 +85,9 @@ describe("parseClientFrame", () => {
     expect(kinds(call({}))).toBe("frame");
     expect(kinds(call({ defaultModel: { provider: "a", modelId: "b" }, steeringMode: "all" }))).toBe("frame");
     expect(kinds(call({ defaultModel: null, defaultThinkingLevel: null, followUpMode: null }))).toBe("frame");
+    expect(kinds(call({ acceptAccountDevices: false }))).toBe("frame");
+    expect(kinds(call({ acceptAccountDevices: null }))).toBe("frame");
+    expect(kinds(call({ acceptAccountDevices: "yes" }))).toBe("malformed");
     expect(kinds(call({ defaultThinkingLevel: "xhigh" }))).toBe("frame");
     expect(kinds(call({ custom: [] }))).toBe("malformed");
     expect(kinds(call({ bogus: 1 }))).toBe("malformed");
@@ -169,6 +172,11 @@ describe("parseClientFrame", () => {
   it("introduces setPushToken at minor 7", () => {
     expect(hostSupportsCall(6, "setPushToken")).toBe(false);
     expect(hostSupportsCall(7, "setPushToken")).toBe(true);
+  });
+
+  it("introduces the acceptAccountDevices setting at minor 8", () => {
+    expect(hostSupportsFeature(7, "acceptAccountDevices")).toBe(false);
+    expect(hostSupportsFeature(8, "acceptAccountDevices")).toBe(true);
   });
 
   it("introduces the agents stream and the three agent calls at minor 6", () => {

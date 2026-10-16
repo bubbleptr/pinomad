@@ -41,6 +41,7 @@ describe("openHostSettings", () => {
       defaultThinkingLevel: "medium",
       steeringMode: "one-at-a-time",
       followUpMode: "all",
+      acceptAccountDevices: true,
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
@@ -132,6 +133,23 @@ describe("openHostSettings", () => {
       "Unknown model: nope/x",
     );
     await expect(readFile(path, "utf8")).rejects.toThrow();
+  });
+
+  it("acceptAccountDevices defaults on, persists an explicit off, and resets to on", async () => {
+    const path = await settingsPath();
+    const settings = await openHostSettings({ path, fallback, models });
+    const seen: boolean[] = [];
+    settings.subscribe((value) => seen.push(value.acceptAccountDevices));
+
+    await settings.update({ acceptAccountDevices: false });
+    expect(settings.value.acceptAccountDevices).toBe(false);
+    expect(settings.value.custom).toEqual(["acceptAccountDevices"]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ acceptAccountDevices: false });
+
+    await settings.update({ acceptAccountDevices: null });
+    expect(settings.value.acceptAccountDevices).toBe(true);
+    expect(settings.value.custom).toEqual([]);
+    expect(seen).toEqual([false, true]);
   });
 
   it("serializes concurrent updates so every one lands", async () => {
