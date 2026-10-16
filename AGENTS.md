@@ -10,7 +10,7 @@ Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`export
 
 移动端正按 ADR-0024 重写成原生（iOS SwiftUI，客户端协议核心用 Rust），`apps/mobile` 在维护期：只修严重问题，不加功能，原生版替换后删除；M5 等计划里的移动端部分都做在原生版上。
 
-改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并在 `packages/protocol/test` 里用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors` 重新生成对照向量；新鲜度测试会拦下漂移。
+改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并重新生成对照向量：协议层的在 `packages/protocol/test` 里跑 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors`，推导层的在 `packages/client/test` 里跑 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project client rust-vectors`；新鲜度测试会拦下漂移。
 
 界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/mobile`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，移动端的 typecheck 和测试也要通过。
 

@@ -5,14 +5,22 @@
 //! vectors keep the two in lockstep.
 
 pub mod b64;
+pub mod chat;
+pub mod cot_view;
 pub mod delta;
 pub mod frames;
 pub mod json;
 pub mod noise;
 pub mod organization;
 pub mod pairing_link;
+pub mod presentation;
 pub mod relay;
 pub mod remote_durable;
 pub mod secure_channel;
+pub mod text;
+pub mod tool_diff_stat;
+pub mod tool_item;
+pub mod tool_target;
+pub mod transcript;
 pub mod transport;
 pub mod u16str;

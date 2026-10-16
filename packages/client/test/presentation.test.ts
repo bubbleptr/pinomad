@@ -1,44 +1,52 @@
-import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
+import { isBusy } from "@pinomad/protocol/transcript.ts";
+import { agentOf, queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
+import { AGENT_CASES, IS_BUSY_CASES, QUEUE_CASES, STATUS_CASES, TASK_GRAPH_CASES, USAGE_CASES, chatView } from "./chat-cases.ts";
 
-const text = (value: string) => ({ type: "text", text: value });
-const view = (entries: EntryRecord[], live: object = {}, inbox: object[] = []): ConversationView =>
-  ({ conversation: { id: 0 }, entries, docs: { "pi.live": live, "pi.inbox": { items: inbox } } }) as unknown as ConversationView;
+describe("agentOf", () => {
+  it("returns an empty agent when no pi.agent doc exists", () => {
+    expect(agentOf(AGENT_CASES.find((c) => c.name === "empty")!.input)).toEqual({});
+  });
+
+  it("returns the pi.agent doc verbatim", () => {
+    expect(agentOf(AGENT_CASES.find((c) => c.name === "set")!.input)).toEqual({
+      model: { provider: "faux", modelId: "faux-1" },
+      thinkingLevel: "high",
+      cwd: "/w/project",
+    });
+  });
+});
 
 describe("statusText", () => {
   it("names what the conversation is doing, most specific first", () => {
-    expect(statusText(view([]))).toBe("");
-    expect(statusText(view([], { run: {} }))).toBe("");
-    expect(statusText(view([], { run: {}, tools: [{ callId: "c", name: "logs", status: "running" }] }))).toBe("");
-    expect(statusText(view([], { run: {}, generation: { attempt: 1, retry: { at: 0, error: "overloaded" } } }))).toBe(
-      "Retrying (attempt 2): overloaded",
+    expect(statusText(STATUS_CASES.find((c) => c.name === "idle")!.input)).toBe("");
+    expect(statusText(STATUS_CASES.find((c) => c.name === "run")!.input)).toBe("");
+    expect(statusText(STATUS_CASES.find((c) => c.name === "tools")!.input)).toBe("");
+    expect(statusText(STATUS_CASES.find((c) => c.name === "retry")!.input)).toBe("Retrying (attempt 2): overloaded");
+    expect(statusText(STATUS_CASES.find((c) => c.name === "compaction")!.input)).toBe("Compacting (manual)...");
+  });
+
+  it("shows a deferred generation", () => {
+    expect(statusText(STATUS_CASES.find((c) => c.name === "deferred")!.input)).toBe("Waiting for deferred response...");
+  });
+
+  it("shows a compaction retry", () => {
+    expect(statusText(STATUS_CASES.find((c) => c.name === "compaction-retry")!.input)).toBe(
+      "Retrying manual compaction (attempt 3)...",
     );
-    expect(statusText(view([], { compactions: [{ reason: "manual", attempt: 1 }] }))).toBe("Compacting (manual)...");
   });
 });
 
 describe("queueItems", () => {
   it("lists queued inputs with their mode", () => {
-    expect(queueItems(view([], {}, [{ id: 1, mode: "steer", content: "focus" }, { id: 2, mode: "followUp", content: [text("then this")] }]))).toEqual([
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "steer-followup")!.input)).toEqual([
       { id: 1, mode: "steer", text: "focus", imageCount: 0 },
       { id: 2, mode: "followUp", text: "then this", imageCount: 0 },
     ]);
   });
 
   it("counts the image blocks a queued input carries", () => {
-    expect(
-      queueItems(
-        view([], {}, [
-          {
-            id: 1,
-            mode: "followUp",
-            content: [text("look"), { type: "image", data: "aGk=", mimeType: "image/png" }, { type: "image", data: "aGk=", mimeType: "image/png" }],
-          },
-          { id: 2, mode: "write", entry: { kind: "pi.note" } },
-        ]),
-      ),
-    ).toEqual([
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "images")!.input)).toEqual([
       { id: 1, mode: "followUp", text: "look", imageCount: 2 },
       { id: 2, mode: "write", text: "<pi.note>", imageCount: 0 },
     ]);
@@ -47,14 +55,7 @@ describe("queueItems", () => {
 
 describe("taskRows", () => {
   it("nests owned tasks and conversation-owned tasks under their owner", () => {
-    const graph = {
-      tasks: {
-        "1": { id: 1, kind: "pi.generation", conversationId: 0, background: false, abortRequested: false, state: { status: "waiting", phase: "tools", on: [2], policy: "all" }, conversations: [] },
-        "2": { id: 2, kind: "pi.tool", conversationId: 0, owner: 1, background: false, abortRequested: false, state: { status: "running", phase: "run" }, conversations: [5] },
-        "3": { id: 3, kind: "pi.generation", conversationId: 5, background: false, abortRequested: true, state: { status: "running", phase: "request" }, conversations: [] },
-      },
-    } as unknown as TaskGraph;
-    expect(taskRows(graph)).toEqual([
+    expect(taskRows(TASK_GRAPH_CASES.find((c) => c.name === "tree")!.input)).toEqual([
       { id: 1, depth: 0, label: "pi.generation #1: waiting on 2" },
       { id: 2, depth: 1, label: "pi.tool #2: running run owns conversation 5" },
       { id: 3, depth: 2, label: "pi.generation #3: running request [aborting]" },
@@ -64,12 +65,20 @@ describe("taskRows", () => {
 
 describe("usageRows", () => {
   it("sums usage per model and tool", () => {
-    const usage = (input: number, output: number, cost: number) => ({ input, output, cacheRead: 0, cacheWrite: 0, totalTokens: input + output, cost: { total: cost } });
-    const conversation = { ...view([]), docs: { "pi.usage": { models: { "faux/faux-1": usage(120, 30, 0.002) }, tools: { search_logs: usage(0, 0, 0) } } } };
-    expect(usageRows(conversation as unknown as ConversationView)).toEqual([
+    expect(usageRows(USAGE_CASES.find((c) => c.name === "model-and-tool")!.input)).toEqual([
       { key: "faux/faux-1", input: 120, output: 30, cost: 0.002 },
       { key: "search_logs", input: 0, output: 0, cost: 0 },
     ]);
-    expect(usageRows(view([]))).toEqual([]);
+    expect(usageRows(USAGE_CASES.find((c) => c.name === "empty")!.input)).toEqual([]);
+    expect(usageRows(chatView())).toEqual([]);
+  });
+});
+
+describe("isBusy", () => {
+  it("is busy exactly while pi.live.run is present", () => {
+    expect(isBusy(IS_BUSY_CASES.find((c) => c.name === "idle")!.input)).toBe(false);
+    expect(isBusy(IS_BUSY_CASES.find((c) => c.name === "run")!.input)).toBe(true);
+    expect(isBusy(IS_BUSY_CASES.find((c) => c.name === "run-null")!.input)).toBe(true);
+    expect(isBusy(IS_BUSY_CASES.find((c) => c.name === "no-live")!.input)).toBe(false);
   });
 });

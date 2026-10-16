@@ -326,6 +326,70 @@ impl PartialEq for Json {
     }
 }
 
+/// `===` — strict equality as the reference uses it on raw values: numbers
+/// compare by value (NaN never equals, -0 equals +0), strings by units, and
+/// containers by reference, matching JavaScript's object identity.
+pub fn js_strict_eq(a: &Json, b: &Json) -> bool {
+    match (a, b) {
+        (Json::Null, Json::Null) => true,
+        (Json::Bool(x), Json::Bool(y)) => x == y,
+        (Json::Number(x), Json::Number(y)) => x == y, // NaN != NaN
+        (Json::String(x), Json::String(y)) => x == y,
+        (Json::Array(x), Json::Array(y)) => Rc::ptr_eq(x, y),
+        (Json::Object(x), Json::Object(y)) => Rc::ptr_eq(x, y),
+        _ => false,
+    }
+}
+
+/// SameValueZero — the comparison `Map`, `Set`, and `Array#includes` apply:
+/// strict equality except that NaN counts as equal to itself.
+pub fn same_value_zero(a: &Json, b: &Json) -> bool {
+    match (a, b) {
+        (Json::Number(x), Json::Number(y)) if x.is_nan() && y.is_nan() => true,
+        _ => js_strict_eq(a, b),
+    }
+}
+
+/// A JavaScript value usable as a `Map`/`Set` key — the SameValueZero identity
+/// `results.get(callId)`-style lookups in the reference rely on. Objects key
+/// by reference identity.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum JsKey {
+    /// `undefined` — an absent property read; distinct from JSON null, like
+    /// JS Map keys (`map.get(undefined)` misses a `null` key).
+    Undefined,
+    Null,
+    Bool(bool),
+    /// Canonical bit pattern: -0 and +0 fold together, every NaN shares one.
+    Number(u64),
+    Str(Vec<u16>),
+    /// Reference identity, like JS Map keys on objects.
+    Object(usize),
+}
+
+impl JsKey {
+    pub fn of(value: Option<&Json>) -> JsKey {
+        match value {
+            None => JsKey::Undefined,
+            Some(Json::Null) => JsKey::Null,
+            Some(Json::Bool(v)) => JsKey::Bool(*v),
+            Some(Json::Number(v)) => {
+                let bits = if v.is_nan() {
+                    f64::NAN.to_bits()
+                } else if *v == 0.0 {
+                    0
+                } else {
+                    v.to_bits()
+                };
+                JsKey::Number(bits)
+            }
+            Some(Json::String(s)) => JsKey::Str(s.units().to_vec()),
+            Some(Json::Array(v)) => JsKey::Object(Rc::as_ptr(v) as usize),
+            Some(Json::Object(v)) => JsKey::Object(Rc::as_ptr(v) as usize),
+        }
+    }
+}
+
 impl From<&str> for Json {
     fn from(text: &str) -> Self {
         Json::String(U16String::from_str(text))
