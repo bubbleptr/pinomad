@@ -46,6 +46,8 @@
    - 拆两个 PR：协议 + 宿主（Linux），再移动端（mbp，堆在前一个上，出新的 TestFlight 构建）。设计经 critic 评审，不另写 ADR（ADR-0008 §9 已记下 Expo 和标题出安全通道的取舍）。
    - 第一步已完成：协议 5.7 `setPushToken`，宿主级文档 `pinomad.push` 与吊销同事务，宿主发送器在 `apps/host/src/push.ts`（重试、15 分钟 receipt 检查、`DeviceNotRegistered` 条件删除、collapse/thread 标识）。移动端没做：`expo-notifications`、通知开关、点开跳转；使用文档随移动端 PR 一起写。
    - 改向（ADR-0024 §8）：不再经 Expo，改成直连 APNs，密钥只放在服务端，宿主经服务端发推送。上面经 Expo 的几条（Expo token、`expo-notifications`、EAS 凭据）作废，宿主发送器 `apps/host/src/push.ts` 和 `setPushToken` 的 token 格式要跟着改；具体做法见 ADR-0025（已接受）。移动端部分在原生版上做。
+   - 宿主和服务端已完成（协议 5.9，PR #109、#110）：`setPushToken` 接受 `{ apns, environment }`，旧的 Expo 字符串回 `ok:false`，宿主没加入账号也回 `ok:false`；`pinomad.push` 升到 v2，带环境，旧的 Expo 登记清空。宿主经控制连接发 `push`，服务端回 `push-result`；服务端只对绑定账号的宿主在 `registered` 里声明可用环境（没配密钥时是空数组），没声明就按 `unavailable` 不发。服务端用 `node:http2` 和 ES256 provider token 直连 APNs，按 reason 再按状态码分类，每台宿主在途 4、全局 32。Expo 发送器和 receipt 检查已删。环境变量和 Zeabur 注意事项写在 `docs/remote-access.md`。
+   - 还没做：在苹果开发者后台建开发和生产两把推送密钥，配到 Zeabur 并重新部署服务端；宿主升级；iOS 侧（原生版第 5 步）。
 3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
@@ -66,7 +68,7 @@
 2. **推导移植**（Linux）：`packages/client` 里移动端用到的推导搬进 Rust，带对照向量。
 3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。
 4. **功能追平 Expo 版**（mbp）：对话列表、对话流、Composer、提问、图片、扫码配对、多宿主、账号登录，以及 M5 的移动端部分。具体清单开工时从 Expo 版整理出来写在这里。
-5. **推送**（ADR-0025）：协议和宿主、服务端两个 PR 在 Linux 上做（可以和第 2、3 步并行），iOS 侧在原生版上做；真机验收用 TestFlight 包。
+5. **推送**（ADR-0025）：宿主和服务端已完成（PR #109、#110）；还剩配 APNs 密钥、部署服务端，以及 iOS 侧；真机验收用 TestFlight 包。
 6. **替换**：Release 包真机验证局域网 IP、MagicDNS、中继 `wss://` 三种地址；推送真机收到；性能达到预算。TestFlight 替换 Expo 版，重新配对；日常用满一周没有阻断问题后删除 `apps/mobile`，取消 Hermes 要求，重写 `docs/mobile-release.md`。
 7. **遗留清理**：关闭 PR #104，删 AgentChatKit 的 `spike/expo-embed` 分支；mbp 上试验时建的模拟器（iPhone 17 Pro Native、iOS 18.6 iPhone 16 Pro）；宿主上为模拟器配对的设备在 Devices 里吊销；试验对话"秋天随笔写作"归档。
 
