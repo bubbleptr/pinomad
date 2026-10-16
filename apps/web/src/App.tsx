@@ -30,6 +30,9 @@ import { ACTIVE_HOST_KEY, HostsContext, hostStore, useHosts, type HostsState } f
 import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
+import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
+import { AccountPanel } from "./widgets/account/account-panel.tsx";
+import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { hostWindowChrome } from "./shared/host-chrome.ts";
 
@@ -112,26 +115,43 @@ export function App() {
   const { address } = loaded;
   return (
     <HostsContext.Provider value={state}>
-      {address === undefined ? (
-        <Centered>
-          <NoHostLink />
-        </Centered>
-      ) : (
-        <Connected address={address} />
-      )}
+      <AccountProvider>
+        {address === undefined ? (
+          <Centered>
+            <NoHostLink />
+          </Centered>
+        ) : (
+          <Connected address={address} />
+        )}
+      </AccountProvider>
     </HostsContext.Provider>
   );
 }
 
-/** Where a client with no stored pairing lands: paste a pairing link to pair. */
+/**
+ * Where a client with no stored pairing lands: sign in to pick a host from
+ * the account (where this client can reach one), or paste a pairing link.
+ */
 function NoHostLink() {
+  const account = useAccountModel();
+  if (account.state.status === "unavailable") {
+    return (
+      <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
+        <EmptyState
+          title="No host link"
+          description="Paste a pairing link from pinomad pair or Devices → Pair a device."
+        />
+        <PairingLinkForm />
+      </VStack>
+    );
+  }
   return (
-    <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
-      <EmptyState
-        title="No host link"
-        description="Paste a pairing link from pinomad pair or Devices → Pair a device."
-      />
-      <PairingLinkForm />
+    <VStack gap={6} style={{ width: "100%", maxWidth: 420 }}>
+      <AccountPanel />
+      <VStack gap={2}>
+        <Text type="supporting">Or paste a pairing link from pinomad pair or Devices → Pair a device.</Text>
+        <PairingLinkForm />
+      </VStack>
     </VStack>
   );
 }
@@ -249,6 +269,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
     ) : (
       <VStack gap={4} hAlign="center">
         <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
+        <RepairViaAccount hostKey={address.hostKey} />
         <Button
           label="Forget this host"
           variant="secondary"

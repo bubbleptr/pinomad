@@ -49,8 +49,9 @@ try {
     }
   });
 
-  // Nothing stored → the paste-a-link screen over app:// with the CSP applied.
-  await page.getByText("No host link").waitFor({ timeout: 30_000 });
+  // Nothing stored → account sign-in with the paste-a-link form under it,
+  // over app:// with the CSP applied.
+  await page.getByRole("heading", { name: "Sign in" }).waitFor({ timeout: 30_000 });
   await page.screenshot({ path: "/tmp/pinomad-desktop-nolink.png" });
 
   await page.getByLabel("Pairing link").fill(pairingUrl);
