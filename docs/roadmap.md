@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-16（服务端账号第 5 步逻辑层完成，界面待做）
+最后更新：2026-10-16（ADR-0024：移动端改原生、客户端协议核心用 Rust）
 
 ## 已完成
 
@@ -31,7 +31,7 @@
 
 ## M5：离开电脑，用手机也能推进 side project（下一阶段）
 
-衡量标准：一整天只用手机，能发起任务、知道它跑完了或在等你、看懂它改了什么、给它截图或看它的截图。主用手机和 Web；每项 Web 和移动端都要做，界面按端分 PR。按顺序：
+衡量标准：一整天只用手机，能发起任务、知道它跑完了或在等你、看懂它改了什么、给它截图或看它的截图。主用手机和 Web；每项 Web 和移动端都要做，界面按端分 PR。移动端部分从现在起做在原生版上（ADR-0024），Expo 版不再加功能。按顺序：
 
 1. **顺手的小项**：运行失败后的重试入口——Web/桌面端已接上：重试是重发失败那一轮对应的用户消息（`packages/client` 的 `retryOf` 负责找它；只有最后一次失败可重试；子代理对话不提供；重试带着由失败那一轮决定的 requestId，连点或多台设备同时点，宿主只接受一次），Web / 桌面端和移动端都已接上（移动端在失败文案下给 Retry 按钮，带图重试带上原图）；对话自动起名——已做：第一轮成功完成后用宿主默认模型起一次名（顶层对话和 fork 都有，子代理保留委托时的 task 名），之后不再变；手动改名永久生效、自动起名不再碰；Web 侧栏会话行的 … 菜单和移动端会话行的 ⋯ 菜单都有 Rename；标题存在对话级文档 `pinomad.title` 里。
 2. **推送通知**（只做 iOS，Web Push 不做；issue #69）：
@@ -45,6 +45,7 @@
    - 对话列表的"等你回答"提示已经有了（Web 侧栏状态点、移动端 "Waiting"），不用另做。
    - 拆两个 PR：协议 + 宿主（Linux），再移动端（mbp，堆在前一个上，出新的 TestFlight 构建）。设计经 critic 评审，不另写 ADR（ADR-0008 §9 已记下 Expo 和标题出安全通道的取舍）。
    - 第一步已完成：协议 5.7 `setPushToken`，宿主级文档 `pinomad.push` 与吊销同事务，宿主发送器在 `apps/host/src/push.ts`（重试、15 分钟 receipt 检查、`DeviceNotRegistered` 条件删除、collapse/thread 标识）。移动端没做：`expo-notifications`、通知开关、点开跳转；使用文档随移动端 PR 一起写。
+   - 改向（ADR-0024 §8）：不再经 Expo，改成直连 APNs，密钥只放在服务端，宿主经服务端发推送。上面经 Expo 的几条（Expo token、`expo-notifications`、EAS 凭据）作废，宿主发送器 `apps/host/src/push.ts` 和 `setPushToken` 的 token 格式要跟着改；具体做法先写 ADR-0025 并过 critic。移动端部分在原生版上做。
 3. **图片**（issue #68）：
    - 用户 → agent（先做）：只支持图片，一条消息最多 4 张；新对话第一条、平时发送、排队的 Follow-up / Steer 都能带。Web 可粘贴、拖入、"+" 菜单选图（ChatPromptInput 已留好 drawer、onFiles），移动端 "+" 菜单选相册或拍照、也能粘贴；用户消息显示缩略图，点开看大图；
    - 客户端发送前缩放到长边 1568px、转成质量约 0.85 的 JPEG；宿主再校验，单张超过 5 MB 拒绝；
@@ -56,6 +57,20 @@
 5. **具名 Agent**（ADR-0023），连同输入框的 `@` 菜单和 @ 文件补全（Pace 的 trigger 菜单方案：leading token + typeahead）。实现条目见下。
 
 服务端上的账号（ADR-0022）和 M5 并行做，见 M3。
+
+## 移动端原生重写（ADR-0024，进行中）
+
+和 M5 并行。Rust 核心在 Linux 上做，iOS 绑定和界面在 mbp 上做。按顺序：
+
+1. **Rust 核心**（Linux）：`crates/pinomad-core`，帧、保留 UTF-16 的 JSON 值类型、chord delta 应用、Noise IK（`snow`）和记录层、中继和配对链接、不做 I/O 的 `RemoteDurable`；TS 导出对照向量；互操作测试连真实宿主配对并同步一个对话；`cargo test` 进 `bun run test`；PR 触发的 CI workflow。
+2. **推导移植**（Linux）：`packages/client` 里移动端用到的推导搬进 Rust，带对照向量。
+3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。
+4. **功能追平 Expo 版**（mbp）：对话列表、对话流、Composer、提问、图片、扫码配对、多宿主、账号登录，以及 M5 的移动端部分。具体清单开工时从 Expo 版整理出来写在这里。
+5. **推送**：先写 ADR-0025（APNs 直连、密钥在服务端），再做宿主、服务端和 iOS。
+6. **替换**：Release 包真机验证局域网 IP、MagicDNS、中继 `wss://` 三种地址；推送真机收到；性能达到预算。TestFlight 替换 Expo 版，重新配对；日常用满一周没有阻断问题后删除 `apps/mobile`，取消 Hermes 要求，重写 `docs/mobile-release.md`。
+7. **遗留清理**：关闭 PR #104，删 AgentChatKit 的 `spike/expo-embed` 分支；mbp 上试验时建的模拟器（iPhone 17 Pro Native、iOS 18.6 iPhone 16 Pro）；宿主上为模拟器配对的设备在 Devices 里吊销；试验对话"秋天随笔写作"归档。
+
+以后：安卓（`apps/android`，Kotlin + Compose，共用 Rust 核心；第一件事是 Kotlin 绑定的冒烟测试）。
 
 ### 具名 Agent 的实现条目
 
@@ -183,7 +198,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
    真机上扫码配对和用主机名连接都已验证（2026-10-12）。
    接下来：正式图标（优先级不高）。改动面板进 M5；fork、子代理只读展示放在 MVP 之后。
    原生 iOS 评估（还没决定，ADR-0017 暂不动）：觉得 Expo 版不够好看，先在独立私有仓库 `bubbleptr/AgentChatKit` 做 SwiftUI 的 agent 对话组件（iOS 26+ / macOS 26+），最重要的是流式 Markdown 和 agent trace；以后可能开源成组件库。第一版（PR #1）已有：只解析未闭合尾部的流式 Markdown（`swift-markdown` / cmark-gfm 解析，半截语法按预判显示）、trace 的通用模型（语义对照 `cot-view`）和折叠规则、SwiftUI 视图和回放用的 Demo App。之后堆叠的 PR #2–#4：逐词淡入的显示节奏（一阵 token 在 0.25 秒内按词铺开，汉字逐字，`TextRenderer` 淡入）、常见语言的代码高亮、界面文案的简体中文；#5 文字选择和复制整条回答（SwiftUI 不能跨多个 Text 选择，所以每块各自可选，iOS 27 起能选任意一段；回答下方的复制按钮点按复制纯文本、长按复制 Markdown；真正跨块选择要整条换成 TextKit，暂不做）。#6 trace 打磨：思考文字流式淡入（进行中最多 4 行、顶部淡出，结束后收成一行"思考了 N 秒"），一批工具调用合成一行（进行中显示正在跑的工具，结束后是动词摘要加 diff 和失败数），进行中的头部只写"工作中"。
-   并排对比（两边都是 Release 包）后的结论：原生的好看。走混合方案：协议、加密、同步、配对、Composer 等留在 Expo / TypeScript，只把对话流里每一轮运行（思维链 + 回答）换成 AgentChatKit 的 SwiftUI 视图，经本地 Expo 模块嵌入。不整个重写成原生，因为协议和同步都是 TypeScript。下一步先做嵌入试验（分支 `spike/native-transcript`，不合并），验证打包、高度、流式、滚动、适配层；可行的话写新 ADR 取代 ADR-0017 §3 关于移动端 UI 的部分。AgentChatKit 合进 pinomad 主干前开源。
+   并排对比（两边都是 Release 包）后的结论：原生的好看。先试了混合方案（Expo 外壳里只把每轮运行换成 SwiftUI，PR #104，不合并）：可行，但要维护嵌套测高和两种语言之间的快照边界，而最终还是要全换。已改为整个原生重写，见 ADR-0024 和下面的"移动端原生重写"。
 - 设置界面（第一版已完成，PR #58–#61，ADR-0021）。宿主设置存在数据目录的 `settings.json`，没设过的项按键回落到 pi 的设置；凭据仍共用 pi 的 `auth.json`。任一设备改了，其他在线设备立刻看到。堆叠的四步：
   1. 宿主状态流的通用做法：协议里一份宿主流的表（流名 + 值类型 + 引入它的次版本号），网关用一条通用分支提供"内存值 + 完整快照"的流；`mcp` 的快照和订阅之间原本有一个会丢变化的空隙，顺带修掉。
   2. `models`、`auth` 两条流和 `logout` 调用（协议 5.1）：`HOST_STREAMS` / `CALL_SINCE` 就是 ADR-0018 的 `since` 表，客户端只订阅、等待宿主次版本号覆盖的流，调用不支持时提示升级宿主。宿主监视 `~/.pi/agent/auth.json` 所在目录，Pi CLI 登录或退出后调用 `getAvailable()` 刷新并推给客户端（`getAvailableSnapshot()` 不会自己刷新，以前要重启宿主）。

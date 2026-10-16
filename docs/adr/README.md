@@ -10,7 +10,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0001](0001-own-the-ui-contract.md) | PiNomad 拥有自己的 UI 契约，不兼容 Pi CLI 的扩展、配置和会话格式 |
 | [0003](0003-self-hosted-host-remote-clients.md) | 以 coding 为核心：自托管宿主执行，桌面 / Web / 移动端都只是客户端 |
-| [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行 |
+| [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（移动端部分由 0024 取代） |
+| [0024](0024-native-mobile-rust-core.md) | 移动端改成原生（iOS SwiftUI，以后安卓 Compose），客户端协议核心用 Rust 写一份两端共用；核心不做 I/O，流状态是保留 UTF-16 的完整 JSON；TS 是参照，三层测试对齐 |
 | [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议 |
 
 ## 运行时与呈现
@@ -67,4 +68,6 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0003：只有宿主和客户端两个部分 | 由 0022 补充：加入服务端 |
 | 0008 §1、§3：中继只看到密文，配对只靠宿主出示的邀请；§9 第三期官方中继 | 由 0022 修订：服务端转发的只有密文，但能为新设备担保（经宿主控制连接要邀请）；官方实例和自部署是同一份服务端 |
 | 0015 §3：`--allow-host` 白名单，中继不持久化 | 由 0022 取代：账号绑定宿主，服务端有数据目录 |
+| 0017 §3 移动端用 Expo、§4 `packages/protocol` 要能在 Hermes 上运行 | 由 0024 取代：移动端原生，客户端协议核心用 Rust；§4 在删除 `apps/mobile` 后失效 |
+| 0008 §9 推送经 Expo（路线图 M5） | 由 0024 修订：直连 APNs，密钥只放在服务端；具体改法待 ADR-0025 |
 | 其余"以后再做" | 统一收在[路线图](../roadmap.md) |
