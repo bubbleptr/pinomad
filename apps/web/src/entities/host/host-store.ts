@@ -138,3 +138,15 @@ const defaultState: HostsState = {
 // this instead of threading the host list through every layer.
 export const HostsContext = createContext<HostsState>(defaultState);
 export const useHosts = (): HostsState => useContext(HostsContext);
+
+/**
+ * Connect to a stored host: one connection at a time, so the choice is stored
+ * and the page reloads to re-resolve the address.
+ */
+export function switchHost(hostKey: string): void {
+  localStorage.setItem(ACTIVE_HOST_KEY, hostKey);
+  // A live fragment (#token=…, #pair=…) would win over the stored selection
+  // after reload — clear it so the switch sticks.
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  window.location.reload();
+}

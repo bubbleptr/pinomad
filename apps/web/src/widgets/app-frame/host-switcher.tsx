@@ -8,17 +8,20 @@ import {
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { useState } from "react";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
-import { ACTIVE_HOST_KEY, useHosts } from "../../entities/host/host-store.ts";
+import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { switchHost, useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
-import { Computer, Plus } from "../../shared/ui/icons.tsx";
+import { Computer, Plus, User } from "../../shared/ui/icons.tsx";
+import { AccountDialog } from "../account/account-dialog.tsx";
 
 /**
  * The host switcher. One connection at a time: picking another host stores
  * the choice and reloads — the same pattern a pasted link uses to re-resolve
  * the address.
  */
-export function HostSwitcher({ onPairAnother }: { onPairAnother: () => void }) {
+export function HostSwitcher({ onPairAnother, onOpenAccount }: { onPairAnother: () => void; onOpenAccount: () => void }) {
   const { hosts, activeHostKey } = useHosts();
+  const account = useAccountModel();
   const labels = hostLabels(hosts);
   const current = hosts.find((host) => host.hostKey === activeHostKey) ?? hosts[0];
   return (
@@ -35,19 +38,17 @@ export function HostSwitcher({ onPairAnother }: { onPairAnother: () => void }) {
       <DropdownMenuRadioGroup
         label="Hosts"
         value={current?.hostKey}
-        onChange={(hostKey) => {
-          localStorage.setItem(ACTIVE_HOST_KEY, hostKey);
-          // A live fragment (#token=…, #pair=…) would win over the stored
-          // selection after reload — clear it so the switch sticks.
-          history.replaceState(null, "", window.location.pathname + window.location.search);
-          window.location.reload();
-        }}
+        onChange={switchHost}
       >
         {hosts.map((host) => (
           <DropdownMenuRadioItem key={host.hostKey} value={host.hostKey} label={labels.get(host.hostKey)} />
         ))}
       </DropdownMenuRadioGroup>
       <DropdownMenuItem label="Pair another host…" icon={<Plus aria-hidden="true" />} onClick={onPairAnother} />
+      {/* Only where this client can reach an account API at all (ADR-0022). */}
+      {account.state.status === "unavailable" ? null : (
+        <DropdownMenuItem label="Account…" icon={<User aria-hidden="true" />} onClick={onOpenAccount} />
+      )}
     </DropdownMenu>
   );
 }
@@ -86,10 +87,12 @@ export function PairHostDialog({ onClose }: { onClose: () => void }) {
  */
 export function HostSwitcherFallback() {
   const [pairing, setPairing] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
     <div className="mt-4 w-80">
-      <HostSwitcher onPairAnother={() => setPairing(true)} />
+      <HostSwitcher onPairAnother={() => setPairing(true)} onOpenAccount={() => setAccountOpen(true)} />
       {pairing ? <PairHostDialog onClose={() => setPairing(false)} /> : null}
+      {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
     </div>
   );
 }

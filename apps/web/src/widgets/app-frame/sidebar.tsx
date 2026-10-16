@@ -102,12 +102,14 @@ export function SidebarFooter({
   onOpenDevices,
   onOpenSettings,
   onPairHost,
+  onOpenAccount,
   onSelect,
 }: {
   view: DurableView;
   onOpenDevices: () => void;
   onOpenSettings: () => void;
   onPairHost: () => void;
+  onOpenAccount: () => void;
   onSelect?: () => void;
 }) {
   const update = useAppUpdate();
@@ -127,6 +129,10 @@ export function SidebarFooter({
         onPairAnother={() => {
           onSelect?.();
           onPairHost();
+        }}
+        onOpenAccount={() => {
+          onSelect?.();
+          onOpenAccount();
         }}
       />
       <SideNavItem

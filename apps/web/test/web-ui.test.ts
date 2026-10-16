@@ -2173,7 +2173,9 @@ it("switches between paired hosts on the desktop bridge", async () => {
 
   // Pair host A by pasting its loopback link.
   await page.goto(webOrigin);
-  await page.getByText("No host link").waitFor();
+  // On the desktop bridge the empty screen leads with account sign-in; the
+  // pairing-link form sits under it.
+  await page.getByLabel("Pairing link").waitFor();
   await page.getByLabel("Pairing link").fill(pairA);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
@@ -2262,7 +2264,9 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
   });
 
   await page.goto(webOrigin);
-  await page.getByText("No host link").waitFor();
+  // On the desktop bridge the empty screen leads with account sign-in; the
+  // pairing-link form sits under it.
+  await page.getByLabel("Pairing link").waitFor();
   await page.getByLabel("Pairing link").fill(pairA);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();

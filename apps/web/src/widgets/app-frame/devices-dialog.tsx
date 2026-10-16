@@ -3,11 +3,13 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
 import { encode } from "uqr";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
+import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -62,6 +64,7 @@ export function DevicesDialog({
                   ))}
                 </List>
               )}
+              <AccountDevicesSwitch view={view} remote={remote} />
               {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
               {offer === undefined ? (
                 <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
@@ -76,6 +79,31 @@ export function DevicesDialog({
   );
 }
 
+/**
+ * The host's "accept devices your account vouches for" switch (ADR-0022 §6).
+ * Hidden for hosts that predate it — they'd drop the connection on the key.
+ */
+function AccountDevicesSwitch({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
+  const minor = view.host?.protocol.minor;
+  if (view.settings === null || minor === undefined || !hostSupportsFeature(minor, "acceptAccountDevices")) return null;
+  return (
+    <Switch
+      label="Accept devices from your account"
+      description="Devices signed in to the server this host joined can pair without a QR code. Turn off to allow QR codes only."
+      value={view.settings.acceptAccountDevices}
+      isDisabled={view.connection !== "connected"}
+      onChange={(checked) => void remote.controller.updateSettings({ acceptAccountDevices: checked })}
+    />
+  );
+}
+
+/** How the device registered; entries from before sources existed say nothing. */
+const SOURCE_LABEL: Record<NonNullable<DeviceEntry["source"]>, string> = {
+  account: "via account",
+  qr: "via QR code",
+  local: "on this machine",
+};
+
 function DeviceRow({
   device,
   isSelf,
@@ -87,10 +115,11 @@ function DeviceRow({
   connected: boolean;
   remote: RemoteDurable;
 }) {
+  const source = device.source === undefined ? "" : ` ${SOURCE_LABEL[device.source]}`;
   return (
     <ListItem
       label={device.name}
-      description={`Paired ${new Date(device.pairedAt).toLocaleDateString()}`}
+      description={`Paired${source} · ${new Date(device.pairedAt).toLocaleDateString()}`}
       endContent={
         <HStack gap={2} vAlign="center">
           {isSelf ? <Token label="This device" size="sm" /> : null}

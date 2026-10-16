@@ -50,6 +50,7 @@ describe("SidebarFooter restart button", () => {
       onOpenDevices={() => {}}
       onOpenSettings={() => {}}
       onPairHost={() => {}}
+      onOpenAccount={() => {}}
     />
   );
 
