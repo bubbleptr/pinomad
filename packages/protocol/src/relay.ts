@@ -18,10 +18,18 @@ export const RELAY_CLOSE = {
   acceptTimeout: 4610,
 } as const;
 
+/** The APNs environment a token was issued under — the build's `aps-environment` entitlement (ADR-0025 §7). */
+export type ApnsEnvironment = "production" | "development";
+
 /** Relay → host, on the host's control connection. */
 export type RelayToHost =
   | { readonly t: "challenge"; readonly nonce: string }
-  | { readonly t: "registered" }
+  /**
+   * `push` lists the APNs environments the server can deliver to (ADR-0025 §3).
+   * Absent on servers that predate the frame or have nothing configured —
+   * the host treats it as "push unknown", not "push empty".
+   */
+  | { readonly t: "registered"; readonly push?: readonly ApnsEnvironment[] }
   | { readonly t: "incoming"; readonly connId: string }
   /**
    * The server asks the host to mint a one-time pairing offer for a device it
@@ -29,6 +37,7 @@ export type RelayToHost =
    * "pairing" feature — older hosts' decoders throw on unknown frames.
    */
   | { readonly t: "pairing-request"; readonly requestId: string }
+  | PushResultFrame
   // One-shot account operations (ADR-0022 §3): the server answers an op
   // connection's register with one of these, then closes it.
   | { readonly t: "joined"; readonly username: string }
@@ -37,11 +46,54 @@ export type RelayToHost =
 
 /**
  * Host → relay: `register` is the first and only pre-admission frame; after
- * `registered`, the control connection may answer pairing requests.
+ * `registered`, the control connection may answer pairing requests and ask
+ * the server to send pushes (ADR-0025 §3 — only for environments the
+ * `registered` frame declared, since the server's old decoders close on
+ * unknown frames).
  * `signature` stays mandatory — a pre-accounts server verifies only it and
  * ignores everything else (roadmap M3: new host + old server must still work).
  */
-export type HostToRelay = RegisterFrame | PairingAnswerFrame;
+export type HostToRelay = RegisterFrame | PairingAnswerFrame | PushFrame;
+
+/** The notification one `push` frame asks the server to deliver (ADR-0025 §8). */
+export interface PushNotification {
+  /** `pinomad.title` or the fixed fallback — never the first user message. */
+  readonly title: string;
+  /** The run event: "Waiting for your answer" / "Finished" / "Failed". */
+  readonly body: string;
+  /**
+   * Fixed-length digest of `hostKey:conversationId`: `hostKey:id` itself can
+   * exceed the 64-byte `apns-collapse-id` limit. Doubles as the APNs
+   * `thread-id`, which groups a conversation's banners.
+   */
+  readonly collapseId: string;
+  readonly hostKey: string;
+  readonly conversationId: number;
+}
+
+/** Host → server: deliver `notification` to one APNs device token (ADR-0025 §3). */
+export interface PushFrame {
+  readonly t: "push";
+  readonly requestId: string;
+  /** The APNs device token, hex — Apple does not fix its length. */
+  readonly token: string;
+  readonly environment: ApnsEnvironment;
+  readonly notification: PushNotification;
+}
+
+/**
+ * The classified outcome the server returns for a `push` frame (ADR-0025 §5):
+ * `unregistered` carries the invalidation time APNs reported; `retry` may
+ * carry a server-directed delay that overrides the host's own backoff.
+ */
+export type PushVerdict =
+  | { readonly result: "accepted"; readonly reason: string }
+  | { readonly result: "unregistered"; readonly reason: string; readonly unregisteredAt: number }
+  | { readonly result: "retry"; readonly reason: string; readonly retryAfterMs?: number }
+  | { readonly result: "rejected"; readonly reason: string }
+  | { readonly result: "unavailable"; readonly reason: string };
+
+export type PushResultFrame = { readonly t: "push-result"; readonly requestId: string } & PushVerdict;
 
 export interface RegisterFrame {
   readonly t: "register";
@@ -80,6 +132,9 @@ export function encodeRelayFrame(frame: RelayToHost | HostToRelay): string {
 
 const isString = (value: unknown): value is string => typeof value === "string";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
 // requestIds, secrets, and reasons are all small protocol-controlled strings;
 // bounding them keeps a hostile peer from making the peer store novels.
 const isBoundedString = (value: unknown, max = 64): value is string =>
@@ -102,19 +157,25 @@ export function decodeRelayToHost(text: string): RelayToHost {
     requestId?: unknown;
     username?: unknown;
     reason?: unknown;
+    push?: unknown;
+    result?: unknown;
+    unregisteredAt?: unknown;
+    retryAfterMs?: unknown;
   };
   switch (value?.t) {
     case "challenge":
       if (!isString(value.nonce)) throw new Error("malformed challenge");
       return { t: "challenge", nonce: value.nonce };
     case "registered":
-      return { t: "registered" };
+      return decodeRegistered(value);
     case "incoming":
       if (!isString(value.connId)) throw new Error("malformed incoming");
       return { t: "incoming", connId: value.connId };
     case "pairing-request":
       if (!isBoundedString(value.requestId)) throw new Error("malformed pairing-request");
       return { t: "pairing-request", requestId: value.requestId };
+    case "push-result":
+      return decodePushResult(value);
     case "joined":
       if (!isString(value.username)) throw new Error("malformed joined");
       return { t: "joined", username: value.username };
@@ -126,6 +187,64 @@ export function decodeRelayToHost(text: string): RelayToHost {
     default:
       throw new Error("unknown relay frame");
   }
+}
+
+function decodeRegistered(value: { push?: unknown }): RelayToHost {
+  if (value.push === undefined) return { t: "registered" };
+  if (!Array.isArray(value.push) || value.push.length > 8 || !value.push.every(isString)) {
+    throw new Error("malformed registered");
+  }
+  // Unknown entries are capabilities this build can't use — drop them like
+  // unlisted `features` on register instead of rejecting the whole frame.
+  const push = value.push.filter(
+    (entry): entry is ApnsEnvironment => entry === "production" || entry === "development",
+  );
+  return { t: "registered", push };
+}
+
+function decodePushResult(value: {
+  requestId?: unknown;
+  reason?: unknown;
+  result?: unknown;
+  unregisteredAt?: unknown;
+  retryAfterMs?: unknown;
+}): PushResultFrame {
+  if (
+    !isBoundedString(value.requestId) ||
+    !isBoundedString(value.reason, 256) ||
+    (value.result !== "accepted" &&
+      value.result !== "unregistered" &&
+      value.result !== "retry" &&
+      value.result !== "rejected" &&
+      value.result !== "unavailable")
+  ) {
+    throw new Error("malformed push-result");
+  }
+  if (value.result === "unregistered") {
+    if (typeof value.unregisteredAt !== "number" || !Number.isFinite(value.unregisteredAt)) {
+      throw new Error("malformed push-result");
+    }
+    return {
+      t: "push-result",
+      requestId: value.requestId,
+      result: "unregistered",
+      reason: value.reason,
+      unregisteredAt: value.unregisteredAt,
+    };
+  }
+  if (value.result === "retry") {
+    if (value.retryAfterMs !== undefined && (typeof value.retryAfterMs !== "number" || !Number.isFinite(value.retryAfterMs))) {
+      throw new Error("malformed push-result");
+    }
+    return {
+      t: "push-result",
+      requestId: value.requestId,
+      result: "retry",
+      reason: value.reason,
+      ...(value.retryAfterMs === undefined ? {} : { retryAfterMs: value.retryAfterMs }),
+    };
+  }
+  return { t: "push-result", requestId: value.requestId, result: value.result, reason: value.reason };
 }
 
 /** Throws on anything malformed — the relay closes the control on that. */
@@ -144,10 +263,15 @@ export function decodeHostToRelay(text: string): HostToRelay {
     secret?: unknown;
     expiresAt?: unknown;
     reason?: unknown;
+    token?: unknown;
+    environment?: unknown;
+    notification?: unknown;
   };
   switch (value?.t) {
     case "register":
       return decodeRegister(value);
+    case "push":
+      return decodePush(value);
     case "pairing":
       if (
         !isBoundedString(value.requestId) ||
@@ -166,6 +290,43 @@ export function decodeHostToRelay(text: string): HostToRelay {
     default:
       throw new Error("unknown host frame");
     }
+}
+
+function decodePush(value: {
+  requestId?: unknown;
+  token?: unknown;
+  environment?: unknown;
+  notification?: unknown;
+}): PushFrame {
+  const n = value.notification;
+  if (
+    !isBoundedString(value.requestId) ||
+    !isBoundedString(value.token, 256) ||
+    (value.environment !== "production" && value.environment !== "development") ||
+    !isRecord(n) ||
+    !isBoundedString(n.title, 512) ||
+    !isBoundedString(n.body, 256) ||
+    !isBoundedString(n.collapseId, 64) ||
+    !isBoundedString(n.hostKey, 64) ||
+    typeof n.conversationId !== "number" ||
+    !Number.isSafeInteger(n.conversationId) ||
+    n.conversationId < 1
+  ) {
+    throw new Error("malformed push");
+  }
+  return {
+    t: "push",
+    requestId: value.requestId,
+    token: value.token,
+    environment: value.environment,
+    notification: {
+      title: n.title,
+      body: n.body,
+      collapseId: n.collapseId,
+      hostKey: n.hostKey,
+      conversationId: n.conversationId,
+    },
+  };
 }
 
 function decodeRegister(value: {

@@ -144,7 +144,8 @@ async function controlFor(
 ): Promise<WebSocket> {
   const { socket, nonce } = await dialHost(relay);
   socket.send(encodeRelayFrame(registerFrame(keys, nonce, overrides)));
-  expect(await nextFrame(socket)).toEqual({ t: "registered" });
+  // Bound hosts always get the push declaration — [] here (no APNs configured).
+  expect(await nextFrame(socket)).toEqual({ t: "registered", push: [] });
   return socket;
 }
 

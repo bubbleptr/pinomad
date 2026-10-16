@@ -7,7 +7,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
-import type { ProtocolVersion } from "./frames.ts";
+import type { ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -219,9 +219,10 @@ export interface DurableController {
   /** Delete a named agent's file; rejects when it does not exist. Needs a 5.6 host. */
   deleteAgent(name: string): Promise<void>;
   /**
-   * Register this device's Expo push token on the host (`null` clears it).
+   * Register this device's APNs push token on the host (`null` clears it).
    * Secure-channel (paired device) clients only; rejects with the host's error —
-   * the caller shows it (no notice). Needs a 5.7 host.
+   * the caller shows it (no notice). The `apns` object form needs a 5.9 host
+   * (`apnsPush` in FEATURE_SINCE); legacy Expo strings are refused by the host.
    */
-  setPushToken(token: string | null): Promise<void>;
+  setPushToken(token: PushToken | null): Promise<void>;
 }

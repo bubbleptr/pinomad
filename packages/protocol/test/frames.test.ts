@@ -159,19 +159,33 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
   });
 
-  it("accepts a string or null token on setPushToken, rejecting malformed shapes", () => {
+  it("accepts a string, APNs object, or null token on setPushToken, rejecting malformed shapes", () => {
+    // The legacy string still parses — its refusal is an ok:false answer, not
+    // a 4400 (ADR-0025 §7).
     expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: "ExponentPushToken[abc]" } })).toBe("frame");
-    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: null } })).toBe("frame");
-    // Token content rules are the host's check; only the shape is enforced here.
     expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: "anything" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: null } })).toBe("frame");
+    // The 5.9 APNs form: hex token + environment; content rules are the host's.
+    for (const environment of ["production", "development"]) {
+      expect(
+        kinds({ type: "call", id: 1, method: "setPushToken", args: { token: { apns: "aa11", environment } } }),
+      ).toBe("frame");
+    }
     expect(kinds({ type: "call", id: 1, method: "setPushToken", args: {} })).toBe("malformed");
     expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: 3 } })).toBe("malformed");
     expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: ["x"] } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: { apns: 5, environment: "production" } } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setPushToken", args: { token: { apns: "aa11" } } })).toBe("malformed");
+    expect(
+      kinds({ type: "call", id: 1, method: "setPushToken", args: { token: { apns: "aa11", environment: "sandbox" } } }),
+    ).toBe("malformed");
   });
 
-  it("introduces setPushToken at minor 7", () => {
+  it("introduces setPushToken at minor 7 and its APNs form at minor 9", () => {
     expect(hostSupportsCall(6, "setPushToken")).toBe(false);
     expect(hostSupportsCall(7, "setPushToken")).toBe(true);
+    expect(hostSupportsFeature(8, "apnsPush")).toBe(false);
+    expect(hostSupportsFeature(9, "apnsPush")).toBe(true);
   });
 
   it("introduces the acceptAccountDevices setting at minor 8", () => {

@@ -14,7 +14,7 @@ import type { ModelAuth } from "./model-auth.ts";
 import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
 import { type HostSettingsStore, openHostSettings, type SettingsFallback } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
-import type { PushFetch, PushTimers } from "./push.ts";
+import type { PushTimers, PushTransport } from "./push.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
@@ -67,10 +67,11 @@ export interface OpenHostOptions {
    */
   readonly autoTitle?: boolean;
   /**
-   * Expo push sender (M5): absent → `setPushToken` registers but nothing is
-   * sent (faux test hosts). `{}` uses the real Expo API; tests inject fakes.
+   * APNs push sender (ADR-0025): absent → `setPushToken` registers but nothing
+   * is sent (faux test hosts). `{}` sends through the relay link when the
+   * host is joined; tests inject `transport`/`timers` fakes.
    */
-  readonly push?: { readonly fetch?: PushFetch; readonly timers?: PushTimers };
+  readonly push?: { readonly transport?: PushTransport; readonly timers?: PushTimers };
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
   /** Test seam: the session.sqlite opener; defaults to the node-sqlite storage. */
@@ -271,7 +272,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         : {
             push: {
               hostKey: toBase64Url(hostKey.publicKey),
-              ...(options.push.fetch === undefined ? {} : { fetch: options.push.fetch }),
+              ...(options.push.transport === undefined ? {} : { transport: options.push.transport }),
               ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
             },
           }),

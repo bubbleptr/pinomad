@@ -14,10 +14,13 @@ import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
+import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
 import type { AgentRoleStore } from "../src/agent-roles.ts";
 import type { BuiltinExtension } from "../src/builtin-extension.ts";
+import type { PushTimers } from "../src/push.ts";
 
 /** Cleanups registered during a test, run in reverse after it. */
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
@@ -93,8 +96,8 @@ export async function startFauxHost(
     /** Wrap the real storage to inject failures (session-failure tests). */
     openStorage?: OpenHostOptions["openStorage"];
     /**
-     * Expo push sender fakes; absent → the sender stays off (registrations
-     * still work), so tests never touch the real Expo API by accident.
+     * APNs push sender fakes (ADR-0025); absent → the sender stays off
+     * (registrations still work), so tests never reach a real server.
      */
     push?: OpenHostOptions["push"];
   } = {},
@@ -232,3 +235,64 @@ export function freePort(): Promise<number> {
 
 /** A reply long enough at the faux provider's pace to leave a window mid-stream. */
 export const LONG_ANSWER = Array.from({ length: 40 }, (_, i) => `step-${i}`).join(" ");
+
+/** Deterministic scheduler for the push sender's retries and title wait. */
+export class ManualTimers implements PushTimers {
+  #seq = 0;
+  #now = 0;
+  #queue: { id: number; at: number; fn: () => void }[] = [];
+
+  setTimeout = (fn: () => void, ms: number): unknown => {
+    const id = ++this.#seq;
+    this.#queue.push({ id, at: this.#now + ms, fn });
+    this.#queue.sort((a, b) => a.at - b.at);
+    return id;
+  };
+
+  clearTimeout = (handle: unknown): void => {
+    this.#queue = this.#queue.filter((entry) => entry.id !== handle);
+  };
+
+  get pending(): number {
+    return this.#queue.length;
+  }
+
+  /** Fire every timer due within `ms`, including ones they schedule. */
+  advance(ms: number): void {
+    const until = this.#now + ms;
+    for (;;) {
+      const next = this.#queue.find((entry) => entry.at <= until);
+      if (next === undefined) break;
+      this.#queue.splice(this.#queue.indexOf(next), 1);
+      this.#now = next.at;
+      next.fn();
+    }
+    this.#now = until;
+  }
+}
+
+/** Pair a fresh device over the remote listener; resolves to its client and key. */
+export async function pairDevice(
+  defer: (cleanup: () => Promise<void> | void) => void,
+  host: OpenedHost,
+  name: string,
+): Promise<{ client: RemoteDurable; device: KeyPair }> {
+  const tokenClient = await connectTo(defer, host);
+  const { url } = await tokenClient.controller.createPairing();
+  // The invite carries `pair=KEY.SECRET` plus params like `url=` when the host
+  // rides a relay — parse the fragment, don't guess positions.
+  const pair = new URLSearchParams(url.slice(url.indexOf("#") + 1)).get("pair")!;
+  const secret = pair.split(".")[1]!;
+  const device = generateKeyPair();
+  const client = await connectRemoteDurable({
+    transport: secureWebSocketTransport({
+      url: host.remote!.url,
+      hostKey: host.remote!.hostKey,
+      device,
+      pairing: { secret, name },
+    }),
+    reconnectDelayMs: { min: 100, max: 200 },
+  });
+  defer(() => client.close());
+  return { client, device };
+}

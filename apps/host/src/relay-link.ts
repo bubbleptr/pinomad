@@ -4,10 +4,14 @@
 // device that dialed `/c/<hostId>`. Every accepted socket goes through the
 // same IK secure handshake as a LAN socket; the relay only carries ciphertext.
 
+import { randomBytes } from "node:crypto";
 import { WebSocket, type RawData } from "ws";
 import {
+  type ApnsEnvironment,
   decodeRelayToHost,
   encodeRelayFrame,
+  type PushFrame,
+  type PushVerdict,
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
@@ -18,7 +22,12 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
 export type RelayLinkState =
   | { readonly status: "connecting" }
-  | { readonly status: "registered" }
+  /**
+   * `push` mirrors the server's `registered` declaration: absent on pre-push
+   * servers and unbound registrations, an empty list when the server knows
+   * push but configures no APNs environment.
+   */
+  | { readonly status: "registered"; readonly push?: readonly ApnsEnvironment[] }
   | { readonly status: "rejected"; readonly reason: string };
 
 /**
@@ -36,6 +45,13 @@ export interface RelayLink {
   readonly hostId: string;
   readonly origin: string;
   state(): RelayLinkState;
+  /**
+   * Send one push over the live control connection (ADR-0025 §3-4). Resolves
+   * to the server's classified verdict; a dead connection, a missing
+   * capability, and the 10 s wait all resolve as classified results instead
+   * of throwing — the caller maps them to retry/drop.
+   */
+  sendPush(request: Omit<PushFrame, "t" | "requestId">): Promise<PushVerdict>;
   close(): Promise<void>;
 }
 
@@ -53,6 +69,9 @@ const REJECTION_REASONS: Record<number, (hostId: string) => string> = {
     `the server does not allow this host; join it to an account (\`pinomad join\`) or add --allow-host ${hostId} to the server's arguments`,
   [RELAY_CLOSE.replaced]: () => `the relay replaced this control connection — another process registered the same hostId`,
 };
+
+/** A push that the server doesn't classify within this window counts as retryable (ADR-0025 §4). */
+const PUSH_TIMEOUT_MS = 10_000;
 
 export function startRelayLink(options: {
   /** Public relay origin (https://…); trailing slashes stripped. */
@@ -92,6 +111,13 @@ export function startRelayLink(options: {
   let delay = minDelay;
   let retryTimer: NodeJS.Timeout | undefined;
   let pendingAccepts = 0;
+  // What the current control connection declared at `registered`. Cleared the
+  // moment the socket dies or a new one starts connecting — the capability is
+  // per-connection, so a stale declaration must never survive a reconnect.
+  let pushEnvironments: readonly ApnsEnvironment[] | undefined;
+  // Push requests bound to the control that sent them (ADR-0025 §4): a close
+  // settles every one as retry, and a result that arrives late finds no entry.
+  const pushes = new Map<string, { readonly socket: WebSocket; readonly settle: (verdict: PushVerdict) => void }>();
 
   // Every state assignment goes through here so observers see each real
   // transition exactly once — reconnecting while already `connecting`, or the
@@ -136,13 +162,14 @@ export function startRelayLink(options: {
     if (stopped) return;
     const socket = new WebSocket(`${wsBase}/host`, { handshakeTimeout: pingIntervalMs });
     control = socket;
+    pushEnvironments = undefined;
     watch(socket);
     // Attached synchronously on purpose: the relay sends `challenge` the
     // instant the upgrade completes — waiting for `open` loses it.
     // The socket is passed in: a pairing answer completes asynchronously and
     // must go out on the connection that asked, not whatever `control` is then.
     socket.on("message", (data, isBinary) => onControlMessage(socket, data, isBinary));
-    socket.once("close", onControlClosed);
+    socket.once("close", (code) => onControlClosed(socket, code));
   }
 
   function reconnect(at: number): void {
@@ -186,8 +213,22 @@ export function startRelayLink(options: {
       }
       case "registered":
         delay = minDelay;
-        setState({ status: "registered" });
+        pushEnvironments = frame.push;
+        // The declaration rides the state so the one `registered` log line
+        // per connection says what this instance can push — "pre-push
+        // server" and "no keys configured" are different stories.
+        setState({ status: "registered", ...(frame.push === undefined ? {} : { push: frame.push }) });
         break;
+      case "push-result": {
+        const request = pushes.get(frame.requestId);
+        // Results count only on the control that asked — a reply over a
+        // replaced connection must not settle a new one's request.
+        if (request === undefined || request.socket !== socket) break;
+        pushes.delete(frame.requestId);
+        const { t: _t, requestId: _id, ...verdict } = frame;
+        request.settle(verdict);
+        break;
+      }
       case "pairing-request": {
         const accountOffer = options.accountOffer;
         const refused = (reason: string): void => {
@@ -238,8 +279,17 @@ export function startRelayLink(options: {
     }
   }
 
-  function onControlClosed(code: number): void {
+  function onControlClosed(socket: WebSocket, code: number): void {
     control = undefined;
+    pushEnvironments = undefined;
+    // Everything in flight settles as retry: the request dies with its
+    // connection, and any push-result that still arrives is ignored (ADR-0025 §4).
+    for (const [requestId, request] of pushes) {
+      if (request.socket === socket) {
+        pushes.delete(requestId);
+        request.settle({ result: "retry", reason: "control closed" });
+      }
+    }
     if (stopped) return;
     const rejection = REJECTION_REASONS[code];
     if (rejection !== undefined) {
@@ -260,6 +310,38 @@ export function startRelayLink(options: {
     hostId,
     origin,
     state: () => state,
+    sendPush(request) {
+      const socket = control;
+      if (stopped || socket === undefined || socket.readyState !== WebSocket.OPEN || state.status !== "registered") {
+        return Promise.resolve({ result: "retry", reason: "control disconnected" });
+      }
+      const envs = pushEnvironments;
+      // The capability is the server's word on this connection: nothing
+      // declared (a pre-push server, or an unbound registration) and a
+      // declared list missing this environment are both permanent for this
+      // connection — unavailable, and the frame must never reach the peer
+      // (ADR-0025 §3).
+      if (envs === undefined) {
+        return Promise.resolve({ result: "unavailable", reason: "server does not declare push" });
+      }
+      if (!envs.includes(request.environment)) {
+        return Promise.resolve({ result: "unavailable", reason: `environment ${request.environment} not declared` });
+      }
+      return new Promise<PushVerdict>((resolve) => {
+        const requestId = randomBytes(16).toString("base64url");
+        const timer = setTimeout(() => {
+          if (pushes.delete(requestId)) resolve({ result: "retry", reason: "timeout" });
+        }, PUSH_TIMEOUT_MS);
+        pushes.set(requestId, {
+          socket,
+          settle: (verdict) => {
+            clearTimeout(timer);
+            resolve(verdict);
+          },
+        });
+        socket.send(encodeRelayFrame({ t: "push", requestId, ...request }));
+      });
+    },
     close() {
       stopped = true;
       if (retryTimer !== undefined) clearTimeout(retryTimer);

@@ -702,6 +702,11 @@ class RemoteClient {
           if (!hostSupportsCall(this.#hostMinor, "setPushToken")) {
             throw new Error("The host is too old for this (needs protocol 5.7); run `pinomad upgrade` on the host");
           }
+          // The object form would be malformed to a 5.7/5.8 host — it 4400s
+          // the connection, so gate it on the feature like `images` (ADR-0018).
+          if (token !== null && typeof token !== "string" && !hostSupportsFeature(this.#hostMinor, "apnsPush")) {
+            throw new Error("The host is too old for this (needs protocol 5.9); run `pinomad upgrade` on the host");
+          }
           await this.#call("setPushToken", { token });
         }),
     };

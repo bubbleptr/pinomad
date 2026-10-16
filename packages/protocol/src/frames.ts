@@ -7,6 +7,7 @@ import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FolderListing, Home, HostIndex, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
+import type { ApnsEnvironment } from "./relay.ts";
 import {
   HOST_SETTING_KEYS,
   isQueueMode,
@@ -87,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 8 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 9 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -170,13 +171,29 @@ export interface CallMethods {
   /** Delete `<name>.md`; fails when it does not exist. */
   deleteAgent: { args: { name: string }; result: null };
   /**
-   * Register this device's Expo push token on the host (`null` deregisters);
+   * Register this device's APNs push token on the host (`null` deregisters);
    * secure-channel clients only — the token lands under the connection's own
-   * device key. Idempotent. Needs a 5.7 host; token-format problems answer
-   * `ok:false`, malformed shapes close with 4400.
+   * device key. Idempotent. Needs a 5.7 host; the `apns` object form needs a
+   * 5.9 host (`apnsPush` in FEATURE_SINCE). Legacy Expo token strings still
+   * parse but answer `ok:false` — push no longer goes through Expo (ADR-0025
+   * §7). Malformed shapes close with 4400.
    */
-  setPushToken: { args: { token: string | null }; result: null };
+  setPushToken: { args: { token: PushToken | null }; result: null };
 }
+
+/** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
+export interface ApnsPushToken {
+  /** The device token APNs issued, hex — Apple does not fix its length. */
+  readonly apns: string;
+  /** Matches the build's `aps-environment` entitlement. */
+  readonly environment: ApnsEnvironment;
+}
+
+/**
+ * `setPushToken` argument: an APNs registration, a legacy Expo token string
+ * (parses, but the host refuses it — Expo push is retired), or `null`.
+ */
+export type PushToken = string | ApnsPushToken;
 
 export type CallMethod = keyof CallMethods;
 
@@ -198,7 +215,7 @@ export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean
 }
 
 /** Minor version that introduced each call-arg feature (ADR-0018 §2). */
-const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8 } as const;
+const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8, apnsPush: 9 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
 /** Whether a host of the given minor version honors `feature`. */
@@ -405,8 +422,16 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "deleteAgent":
       return typeof args.name === "string";
     case "setPushToken":
-      // Shape only — the ExponentPushToken[...] format and length are the host's check.
-      return args.token === null || typeof args.token === "string";
+      // Shape only — the APNs hex format and length are the host's check; the
+      // legacy string form still parses so its refusal is an `ok:false`
+      // answer, not a 4400 (ADR-0025 §7).
+      return (
+        args.token === null ||
+        typeof args.token === "string" ||
+        (record(args.token) &&
+          typeof args.token.apns === "string" &&
+          (args.token.environment === "production" || args.token.environment === "development"))
+      );
     case "updateSettings":
       // An empty patch is valid; an unknown key is malformed, never silently dropped.
       return (

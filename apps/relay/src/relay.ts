@@ -12,6 +12,8 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import {
   decodeHostToRelay,
   encodeRelayFrame,
+  type PushFrame,
+  type PushVerdict,
   RELAY_CLOSE,
   verifyRelayChallenge,
   verifyRelayChallengeV2,
@@ -20,6 +22,7 @@ import {
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { serveWebClient } from "@pinomad/host/src/web-client.ts";
+import type { ApnsSender } from "./apns.ts";
 import type { Accounts } from "./accounts.ts";
 import {
   handleApiRequest,
@@ -55,6 +58,14 @@ export interface RelayOptions {
    * without it the API and control socket stay loopback-plaintext-only.
    */
   readonly trustProxy?: boolean;
+  /**
+   * The opened APNs sender (ADR-0025): declared environments go out on every
+   * `registered`, and bound hosts' `push` frames get forwarded to Apple.
+   * The relay takes ownership — close() closes it.
+   */
+  readonly push?: ApnsSender;
+  /** In-flight push caps, for tests; defaults below. */
+  readonly pushLimits?: { readonly perHost?: number; readonly total?: number };
 }
 
 export interface Relay {
@@ -113,6 +124,12 @@ const rawLength = (data: RawData): number => (Array.isArray(data) ? data.reduce(
 const MAX_PAIRING_PER_HOST = 4;
 const MAX_PAIRING_PER_SESSION = 2;
 
+// Push sends awaiting an APNs answer: capped per host and globally so a push
+// burst can't crowd the control connections and starve pairing/splicing
+// (ADR-0025 §4).
+const MAX_PUSH_PER_HOST = 4;
+const MAX_PUSH_TOTAL = 32;
+
 interface PendingPairing {
   /** The exact control socket the request went out on. */
   readonly control: WebSocket;
@@ -134,6 +151,13 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const accounts = options.accounts;
   const trustProxy = options.trustProxy ?? false;
   const pairingTimeoutMs = options.pairingTimeoutMs ?? 10_000;
+  const apns = options.push;
+  const pushEnvironments = apns?.environments ?? [];
+  const pushPerHost = options.pushLimits?.perHost ?? MAX_PUSH_PER_HOST;
+  const pushTotal = options.pushLimits?.total ?? MAX_PUSH_TOTAL;
+  // Sends currently awaiting an APNs answer — the counters the caps read.
+  let pushInflightTotal = 0;
+  const pushInflightHosts = new Map<string, number>();
 
   interface ControlEntry {
     readonly socket: WebSocket;
@@ -229,6 +253,56 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const pairing: PairingBroker = { status: pairingStatus, request: requestPairing };
 
   /**
+   * One host's `push` frame (ADR-0025 §4-5): re-checked against the account
+   * binding on every send — the static allowlist alone never authorizes push
+   * — then classified back to the asking control. Nothing about the token or
+   * the notification reaches the log; the counters keep pushes from crowding
+   * the control connections.
+   */
+  function handlePush(socket: WebSocket, hostId: string, frame: PushFrame): void {
+    const startedAt = Date.now();
+    const finish = (verdict: PushVerdict): void => {
+      console.log(
+        JSON.stringify({
+          event: "push",
+          hostId,
+          environment: frame.environment,
+          result: verdict.result,
+          reason: verdict.reason,
+          ms: Date.now() - startedAt,
+        }),
+      );
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(encodeRelayFrame({ t: "push-result", requestId: frame.requestId, ...verdict }));
+      }
+    };
+    if (accounts?.hasHost(hostId) !== true) {
+      finish({ result: "rejected", reason: "unauthorized" });
+      return;
+    }
+    if (apns === undefined || !pushEnvironments.includes(frame.environment)) {
+      finish({ result: "unavailable", reason: "environment not configured" });
+      return;
+    }
+    const perHost = pushInflightHosts.get(hostId) ?? 0;
+    if (perHost >= pushPerHost || pushInflightTotal >= pushTotal) {
+      finish({ result: "retry", reason: "rate_limited" });
+      return;
+    }
+    pushInflightTotal += 1;
+    pushInflightHosts.set(hostId, perHost + 1);
+    void apns
+      .send({ token: frame.token, environment: frame.environment, notification: frame.notification })
+      .then(finish, () => finish({ result: "retry", reason: "server error" }))
+      .finally(() => {
+        pushInflightTotal -= 1;
+        const left = (pushInflightHosts.get(hostId) ?? 1) - 1;
+        if (left <= 0) pushInflightHosts.delete(hostId);
+        else pushInflightHosts.set(hostId, left);
+      });
+  }
+
+  /**
    * Handles one join/leave op connection (ADR-0022 §3). The register's Ed25519
    * signature is already verified; this only runs the operation, replies, and
    * hangs up. `noisePublicKey` is present only when a v2 signature bound it.
@@ -297,6 +371,10 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
           answer = decodeHostToRelay(data.toString());
         } catch {
           socket.close(1008, "malformed frame");
+          return;
+        }
+        if (answer.t === "push") {
+          handlePush(socket, hostId, answer);
           return;
         }
         if (answer.t === "pairing" || answer.t === "pairing-refused") {
@@ -373,7 +451,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // A bound host's successful register is also its heartbeat for the
       // account: keep last_seen_at fresh so /api/hosts can report online age.
       accounts?.markHostSeen(hostId);
-      socket.send(encodeRelayFrame({ t: "registered" }));
+      // Push is an account feature (ADR-0025 §4): a bound host always gets the
+      // declaration — an empty list means "push-aware, nothing configured",
+      // which the host must distinguish from a pre-push server. An
+      // allowlist-only host could never send, so declaring to it would lie.
+      const bound = accounts?.hasHost(hostId) === true;
+      socket.send(encodeRelayFrame({ t: "registered", ...(bound ? { push: pushEnvironments } : {}) }));
     });
 
     socket.once("close", () => {
@@ -551,6 +634,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       await closing;
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       await accounts?.close();
+      await apns?.close();
     },
   };
 }
