@@ -6,15 +6,19 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/relay`（自部署中继，只转发密文，ADR-0008 第二期）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/relay`（自部署中继，只转发密文，ADR-0008 第二期）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
 
 移动端正按 ADR-0024 重写成原生（iOS SwiftUI，客户端协议核心用 Rust），`apps/mobile` 在维护期：只修严重问题，不加功能，原生版替换后删除；M5 等计划里的移动端部分都做在原生版上。
+
+改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并在 `packages/protocol/test` 里用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors` 重新生成对照向量；新鲜度测试会拦下漂移。
 
 界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/mobile`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，移动端的 typecheck 和测试也要通过。
 
 ## 验证
 
 `bun run typecheck`、`bun run test`、`bun run build` 都要绿。测试含 Playwright，缺浏览器先在 `apps/web` 下跑 `bunx playwright install chromium`（在根目录跑会拉最新版 playwright，装上的浏览器版本对不上）。
+
+Rust：`cargo test`（`bun run test` 会带着跑；非登录 shell 里 `~/.cargo/bin` 可能不在 PATH，先 export）。工具链锁在 `rust-toolchain.toml`，依赖锁精确版本且发布满 7 天。互操作测试 `cargo test --test interop` 用临时数据目录起真实宿主（Node），测完自动关。
 
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 

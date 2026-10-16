@@ -1,0 +1,105 @@
+{
+  "links": [
+    {
+      "name": "https-link",
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F"
+    },
+    {
+      "name": "http-link-defaults-socket",
+      "pasted": "http://192.168.1.9:4400/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2F192.168.1.9%3A4400%2F"
+    },
+    {
+      "name": "deep-link",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F"
+    },
+    {
+      "name": "http-link-port",
+      "pasted": "http://omarchy:4400/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2Fomarchy%3A4400%2F",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2Fomarchy%3A4400%2F"
+    },
+    {
+      "name": "missing-fragment",
+      "pasted": "https://omarchy/"
+    },
+    {
+      "name": "deep-link-missing-url",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1"
+    },
+    {
+      "name": "non-ws-url",
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=https%3A%2F%2Fevil%2F"
+    },
+    {
+      "name": "bad-pair-shape",
+      "pasted": "https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "three-part-pair",
+      "pasted": "https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "empty-secret",
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "non-b64-secret",
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.has%20space&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "short-key",
+      "pasted": "https://omarchy/#pair=QQ.sec&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "non-b64-key",
+      "pasted": "https://omarchy/#pair=!!.sec&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "token-smuggling-field",
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%2F&token=abc",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%2F"
+    },
+    {
+      "name": "garbage-url",
+      "pasted": "not a url"
+    },
+    {
+      "name": "javascript-scheme",
+      "pasted": "javascript:alert(1)#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1"
+    }
+  ],
+  "params": [
+    {
+      "name": "valid",
+      "pair": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1",
+      "expect": true
+    },
+    {
+      "name": "two-dots",
+      "pair": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.a.b",
+      "expect": false
+    },
+    {
+      "name": "no-dot",
+      "pair": "abc",
+      "expect": false
+    },
+    {
+      "name": "short-key",
+      "pair": "QQ.sec",
+      "expect": false
+    },
+    {
+      "name": "empty-secret",
+      "pair": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.",
+      "expect": false
+    },
+    {
+      "name": "bad-secret-char",
+      "pair": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.sec ret",
+      "expect": false
+    }
+  ]
+}

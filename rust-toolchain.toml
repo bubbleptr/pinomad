@@ -1,0 +1,4 @@
+# Pinned stable toolchain (ADR-0024 §12). Bump only to releases at least 7
+# days old — the same freshness rule package versions follow.
+[toolchain]
+channel = "1.99.0"
