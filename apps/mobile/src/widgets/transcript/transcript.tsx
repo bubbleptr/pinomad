@@ -28,6 +28,12 @@ import {
 } from "@pinomad/client/tool-item.ts";
 import { MarkdownText, MONOSPACE } from "../../shared/ui/markdown.tsx";
 import { MessageImages } from "../../entities/image/message-images.tsx";
+import {
+  NativeRunAnswer,
+  NativeRunTrace,
+  nativeTranscriptSupported,
+} from "../../../modules/agent-chat/src/index.tsx";
+import { answerPayloadOf, runImagesOf, tracePayloadOf } from "./native-run.ts";
 
 const OUTPUT_LINE_CAP = 40;
 
@@ -235,13 +241,39 @@ function RunEntry({
   onRetry?: () => Promise<void>;
 }) {
   const { view, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
+  // Spike: on iOS the trace and the answer render through AgentChatKit; the
+  // RN path stays for Android and for the parts with no native counterpart
+  // (subagent cards, tool images, failure/retry, interruption).
+  const native = nativeTranscriptSupported();
+  const tracePayload = useMemo(
+    () => (native ? JSON.stringify(tracePayloadOf(entry, view)) : ""),
+    [entry, view, native],
+  );
+  const answerPayload = useMemo(
+    () => (native ? JSON.stringify(answerPayloadOf(entry) ?? { id: entry.id, text: "", streaming: false }) : ""),
+    [entry, native],
+  );
+  const toolImages = useMemo(() => (native ? runImagesOf(view) : []), [view, native]);
+  const traceHidden =
+    (view.phase === "hidden" || view.phase === "settled") && view.steps.length === 0;
   return (
     <View style={{ gap: 10 }}>
-      <ChainOfThought cot={view} />
+      {native ? (
+        traceHidden ? null : (
+          <NativeRunTrace payload={tracePayload} />
+        )
+      ) : (
+        <ChainOfThought cot={view} />
+      )}
       {subagents.map(({ key, tool }) => (
         <SubagentCard key={key} tool={tool} organized={organized} />
       ))}
-      {view.answer === undefined ? null : <MarkdownText value={view.answer.text} />}
+      {toolImages.length === 0 ? null : <MessageImages images={toolImages} align="start" />}
+      {view.answer === undefined ? null : native ? (
+        <NativeRunAnswer payload={answerPayload} />
+      ) : (
+        <MarkdownText value={view.answer.text} />
+      )}
       {entry.failure !== undefined ? (
         <>
           <Text className="text-danger" style={{ fontSize: 13 }}>

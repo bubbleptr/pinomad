@@ -1,0 +1,8 @@
+{
+  "name": "pinomad-agent-chat",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Native SwiftUI run views (AgentChatKit) for the mobile transcript. Spike: spike/native-transcript.",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}
