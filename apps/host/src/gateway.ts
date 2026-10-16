@@ -336,7 +336,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
         // journalctl shows whether the host is registered with its relay.
         if (state.status === "registered") {
-          console.log(JSON.stringify({ event: "relay", status: "registered", origin: link.origin, hostId: link.hostId }));
+          // The push declaration is part of the registration: "undeclared"
+          // means a pre-push server or an unbound host, [] means no APNs keys.
+          const push = state.push === undefined ? "undeclared" : state.push.length === 0 ? "none" : state.push.join(",");
+          console.log(JSON.stringify({ event: "relay", status: "registered", origin: link.origin, hostId: link.hostId, push }));
         } else if (state.status === "connecting") {
           console.log(JSON.stringify({ event: "relay", status: "connecting", origin: link.origin }));
         } else {
@@ -374,7 +377,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       await relay?.close();
       detachAutoTitle?.();
       detachSettingsWatch();
-      await detachPush?.();
+      await detachPush?.close();
       conversations.dispose();
       await Promise.all([...clients].map((client) => client.dispose()));
       for (const socket of server.clients) socket.terminate();

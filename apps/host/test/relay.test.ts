@@ -250,7 +250,7 @@ describe("relay link push", () => {
     expect(await verdictP).toEqual({ result: "accepted", reason: "ok" });
   });
 
-  it("sends nothing for an undeclared or missing environment (ADR-0025 §3)", async () => {
+  it("sends nothing when the declaration is absent or misses the environment (ADR-0025 §3)", async () => {
     const server = await fakeServer({ push: ["development"] });
     const link = startLink(server);
     await registered(link);
@@ -261,13 +261,25 @@ describe("relay link push", () => {
       reason: "environment production not declared",
     });
 
-    // A pre-push server declares nothing: retry (a reconnect may bring one
-    // that does) — and still no frame, its old decoder would drop the control.
+    // A server with no APNs configured declares an empty list; a pre-push
+    // server declares nothing at all. Both are unavailable — never sent,
+    // never retried (the frame would end the old decoder's connection).
+    server.setPush([]);
+    server.closeControl();
+    await until(() => link.state().status === "connecting");
+    await registered(link);
+    expect(await link.sendPush(request)).toEqual({
+      result: "unavailable",
+      reason: "environment production not declared",
+    });
     server.setPush(undefined);
     server.closeControl();
     await until(() => link.state().status === "connecting");
     await registered(link);
-    expect((await link.sendPush(request)).result).toBe("retry");
+    expect(await link.sendPush(request)).toEqual({
+      result: "unavailable",
+      reason: "server does not declare push",
+    });
     expect(server.messages().filter((frame) => frame.t === "push")).toHaveLength(0);
   });
 
@@ -282,10 +294,9 @@ describe("relay link push", () => {
     server.closeControl();
     expect((await verdictP).result).toBe("retry");
 
-    // The capability does not survive the reconnect — the link must re-read it.
+    // A send while disconnected is retry — the capability re-reads on
+    // reconnect, so this is a transient condition, unlike "never declared".
     await until(() => link.state().status === "connecting");
-    server.setPush(undefined);
-    await registered(link);
     expect((await link.sendPush(request)).result).toBe("retry");
   });
 });

@@ -12,10 +12,14 @@ import type { PushNotification, PushVerdict } from "@pinomad/protocol/relay.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { DevicesDoc } from "../src/devices.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { PushDoc, pushTokenProblem, type PushTransport, type PushTimers } from "../src/push.ts";
+import type { HostValue } from "../src/host-value.ts";
+import { IndexDoc } from "../src/organization.ts";
+import { attachPushSender, PushDoc, pushTokenProblem, type PushTransport, type PushTimers } from "../src/push.ts";
+import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { writeServerConfig } from "../src/server-config.ts";
 import { connectTo, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
@@ -508,6 +512,34 @@ describe("push sender", () => {
     expect(await registrations(host)).toHaveLength(1);
   });
 
+  it("dedupes per (environment, token) — the same token under another environment is another registration", async () => {
+    const apns = fakeTransport();
+    const timers = new ManualTimers();
+    const { host } = await pushHost({ apns, timers, answers: ["done"] });
+    const dev = await pairDevice(host, "dev");
+    const prod = await pairDevice(host, "prod");
+    const dup = await pairDevice(host, "dup");
+    // The same hex under two environments are distinct APNs registrations —
+    // a reinstall under the same pair still sends once.
+    await dev.client.controller.setPushToken({ apns: TOKEN_B.apns, environment: "development" });
+    await prod.client.controller.setPushToken(TOKEN_B);
+    await dup.client.controller.setPushToken(TOKEN_B);
+    const watcher = await connectTo(defer, host);
+    const id = await startChat(watcher, "run it");
+    await waitForView(
+      watcher.view,
+      (view) => view.organized.chats.some((node) => node.summary.id === id && node.summary.status === undefined),
+    );
+    await waitUntil(() => timers.pending >= 2);
+    timers.advance(15_000);
+    await apns.waitForCalls(2);
+    await settle(100);
+    // development + production each get one request; the duplicate production
+    // registration did not fan out a third.
+    expect(apns.calls.map((call) => call.environment).sort()).toEqual(["development", "production"]);
+    expect(apns.calls).toHaveLength(2);
+  });
+
   it("deletes a stale registration on unregistered, but never a fresh one or on rejected", async () => {
     const apns = fakeTransport((request) => {
       if (request.token === TOKEN_A.apns) {
@@ -624,5 +656,84 @@ describe("push sender", () => {
     timers.advance(60_000);
     await settle(100);
     expect(apns.calls).toHaveLength(1);
+  });
+});
+
+/** A mutable HostValue for driving the sender's summaries input directly. */
+function mutableValue<T>(initial: T): HostValue<T> & { set(value: T): void } {
+  const listeners = new Set<(value: T) => void>();
+  const source = {
+    value: initial,
+    set(next: T): void {
+      source.value = next;
+      for (const listener of listeners) listener(next);
+    },
+    subscribe(listener: (value: T) => void): () => void {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+  };
+  return source;
+}
+
+describe("push sender outbox", () => {
+  it("keeps the bound tight: an item evicted while queued leaves the ready queue too", async () => {
+    const host = await startFauxHost(defer);
+    // Index entries + registrations committed directly — this test drives the
+    // sender, not the secure channel, so it doesn't need paired devices.
+    const cid = (n: number) => n as ConversationId;
+    await host.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDoc);
+      index.conversations.push({ id: cid(1), home: { kind: "chat" }, createdAt: 1 });
+      index.conversations.push({ id: cid(2), home: { kind: "chat" }, createdAt: 2 });
+      const push = await tx.doc(PushDoc);
+      push.registrations = ["aa", "bb", "cc", "dd"].map((hex, i) => ({
+        publicKey: `key-${i}`,
+        token: hex.repeat(32),
+        environment: "production",
+        updatedAt: 1,
+      }));
+    }, context);
+    const summaries = mutableValue<readonly ConversationSummary[]>([]);
+    const sent: string[] = [];
+    const transport: PushTransport = {
+      send: (request) => {
+        sent.push(request.token);
+        return new Promise(() => {}); // holds: the in-flight slot never frees
+      },
+    };
+    const sender = await attachPushSender({
+      harness: host.harness,
+      conversations: summaries,
+      hostKey: "host",
+      transport,
+      limits: { maxPending: 4, maxInflight: 1 },
+    });
+    defer(sender.close);
+    await settle(); // let the index watch deliver before statuses move
+
+    // needs-answer on conversation 1: four items — one in-flight, three queued.
+    summaries.set([
+      { id: cid(1), kind: "conversation", status: "running" },
+      { id: cid(2), kind: "conversation", status: "running" },
+    ]);
+    summaries.set([
+      { id: cid(1), kind: "conversation", status: "needs-answer" },
+      { id: cid(2), kind: "conversation", status: "running" },
+    ]);
+    await waitUntil(() => sender.stats().pending === 4);
+    expect(sender.stats().queued).toBe(3);
+
+    // needs-answer on conversation 2: four more items evict the whole first
+    // batch — three of them were sitting in the ready queue. Dropped items
+    // must leave it; otherwise the queue outgrows maxPending and the bound is
+    // gone.
+    summaries.set([
+      { id: cid(1), kind: "conversation", status: "needs-answer" },
+      { id: cid(2), kind: "conversation", status: "needs-answer" },
+    ]);
+    await waitUntil(() => sender.stats().queued === 4);
+    expect(sender.stats().pending).toBe(4);
+    expect(sent).toHaveLength(1); // only the held send ever left
   });
 });

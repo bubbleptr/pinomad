@@ -203,6 +203,14 @@ export interface PushSenderOptions {
   /** The control-connection transport; absent → every send answers `unavailable`. */
   readonly transport?: PushTransport;
   readonly timers?: PushTimers;
+  /** Outbox bounds — the constants above; tests pass small ones. */
+  readonly limits?: { readonly maxPending?: number; readonly maxInflight?: number };
+}
+
+/** The sender handle: close() detaches, stats() exposes the outbox counts (queued ⊆ pending). */
+export interface PushSender {
+  close(): Promise<void>;
+  stats(): { pending: number; queued: number };
 }
 
 type SendItem = {
@@ -234,13 +242,14 @@ const collapseId = (hostKey: string, id: ConversationId): string =>
  * Watch run statuses and notify registered devices. The baseline is seeded —
  * never announced — once the summaries and the index both delivered their
  * initial value, so a host restart does not re-send states that already stood.
- * Returns the detach; a detached sender's in-flight requests settle but write
- * nothing back.
+ * A closed sender's in-flight requests settle but write nothing back.
  */
-export async function attachPushSender(options: PushSenderOptions): Promise<() => Promise<void>> {
+export async function attachPushSender(options: PushSenderOptions): Promise<PushSender> {
   const { harness, conversations } = options;
   const transport = options.transport ?? UNAVAILABLE_TRANSPORT;
   const timers = options.timers ?? realTimers;
+  const maxPending = options.limits?.maxPending ?? MAX_PENDING;
+  const maxInflight = options.limits?.maxInflight ?? MAX_INFLIGHT;
 
   const indexWatch = await harness.watchDoc(IndexDoc, context);
   let index: HostIndex | undefined = indexWatch?.value ?? undefined;
@@ -251,6 +260,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
   const titleWaiters = new Map<ConversationId, Set<(title: string) => void>>();
   let inflight = 0;
   const readyQueue: SendItem[] = [];
+  let unavailableLogged = false;
   /**
    * Per-conversation transition counter: comparing statuses alone cannot tell
    * apart "unchanged" and "left and came back" (needs-answer → running →
@@ -321,11 +331,15 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
   const drop = (item: SendItem): void => {
     pending.delete(item);
     if (item.timer !== undefined) timers.clearTimeout(item.timer);
+    // Also leave the ready queue: an item evicted while queued would keep its
+    // reference there forever, and the outbox bound is on both structures.
+    const queuedAt = readyQueue.indexOf(item);
+    if (queuedAt >= 0) readyQueue.splice(queuedAt, 1);
   };
 
   /** Releases one queued item per freed in-flight slot. */
   const pump = (): void => {
-    while (inflight < MAX_INFLIGHT) {
+    while (inflight < maxInflight) {
       const next = readyQueue.shift();
       if (next === undefined) return;
       next.queued = false;
@@ -364,7 +378,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
           return drop(item);
         }
       }
-      if (inflight >= MAX_INFLIGHT) {
+      if (inflight >= maxInflight) {
         if (!item.queued) {
           item.queued = true;
           readyQueue.push(item);
@@ -410,7 +424,12 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
           drop(item);
           return;
         case "unavailable":
-          console.error(`push: send to ${tokenHint(item.token)} unavailable: ${verdict.reason}`);
+          // A server that can't deliver (no declaration, no such environment)
+          // is a standing condition — log it once per sender, not per banner.
+          if (!unavailableLogged) {
+            unavailableLogged = true;
+            console.error(`push: ${verdict.reason} — notifications are not being delivered`);
+          }
           drop(item);
           return;
       }
@@ -424,15 +443,16 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
     if (disposed) return;
     const itemGeneration = generation.get(notice.id) ?? 0;
     try {
-      // One request per distinct token: devices sharing a token (reinstalls)
-      // get one notification.
+      // One request per (environment, token) — the registration's identity,
+      // the same key unregistration and eviction match on.
       const entries = await registrations();
       const seen = new Set<string>();
       for (const entry of entries) {
         if (disposed) return;
-        if (seen.has(entry.token)) continue;
-        seen.add(entry.token);
-        if (pending.size >= MAX_PENDING) {
+        const identity = `${entry.environment}:${entry.token}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        if (pending.size >= maxPending) {
           const [oldest] = pending;
           drop(oldest!);
         }
@@ -465,14 +485,17 @@ export async function attachPushSender(options: PushSenderOptions): Promise<() =
   });
   update();
 
-  return async () => {
-    disposed = true;
-    unsubscribeConversations();
-    unsubscribeCommits();
-    await indexWatch?.stop();
-    for (const item of pending) drop(item);
-    pending.clear();
-    readyQueue.length = 0;
-    titleWaiters.clear();
+  return {
+    stats: () => ({ pending: pending.size, queued: readyQueue.length }),
+    async close() {
+      disposed = true;
+      unsubscribeConversations();
+      unsubscribeCommits();
+      await indexWatch?.stop();
+      for (const item of pending) drop(item);
+      pending.clear();
+      readyQueue.length = 0;
+      titleWaiters.clear();
+    },
   };
 }

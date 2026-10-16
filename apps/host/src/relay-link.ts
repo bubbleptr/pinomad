@@ -22,7 +22,12 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
 export type RelayLinkState =
   | { readonly status: "connecting" }
-  | { readonly status: "registered" }
+  /**
+   * `push` mirrors the server's `registered` declaration: absent on pre-push
+   * servers and unbound registrations, an empty list when the server knows
+   * push but configures no APNs environment.
+   */
+  | { readonly status: "registered"; readonly push?: readonly ApnsEnvironment[] }
   | { readonly status: "rejected"; readonly reason: string };
 
 /**
@@ -209,7 +214,10 @@ export function startRelayLink(options: {
       case "registered":
         delay = minDelay;
         pushEnvironments = frame.push;
-        setState({ status: "registered" });
+        // The declaration rides the state so the one `registered` log line
+        // per connection says what this instance can push — "pre-push
+        // server" and "no keys configured" are different stories.
+        setState({ status: "registered", ...(frame.push === undefined ? {} : { push: frame.push }) });
         break;
       case "push-result": {
         const request = pushes.get(frame.requestId);
@@ -308,10 +316,14 @@ export function startRelayLink(options: {
         return Promise.resolve({ result: "retry", reason: "control disconnected" });
       }
       const envs = pushEnvironments;
-      // The capability is the server's word on this connection: pre-push
-      // servers declare nothing (retry — a reconnect may bring a new one),
-      // a declared set missing this environment means unavailable.
-      if (envs === undefined) return Promise.resolve({ result: "retry", reason: "server did not declare push" });
+      // The capability is the server's word on this connection: nothing
+      // declared (a pre-push server, or an unbound registration) and a
+      // declared list missing this environment are both permanent for this
+      // connection — unavailable, and the frame must never reach the peer
+      // (ADR-0025 §3).
+      if (envs === undefined) {
+        return Promise.resolve({ result: "unavailable", reason: "server does not declare push" });
+      }
       if (!envs.includes(request.environment)) {
         return Promise.resolve({ result: "unavailable", reason: `environment ${request.environment} not declared` });
       }
