@@ -64,7 +64,7 @@
 
 和 M5 并行。Rust 核心在 Linux 上做，iOS 绑定和界面在 mbp 上做。按顺序：
 
-1. **Rust 核心**（Linux）：`crates/pinomad-core`，帧、保留 UTF-16 的 JSON 值类型、chord delta 应用、Noise IK（`snow`）和记录层、中继和配对链接、不做 I/O 的 `RemoteDurable`；TS 导出对照向量；互操作测试连真实宿主配对并同步一个对话；`cargo test` 进 `bun run test`；PR 触发的 CI workflow。
+1. **Rust 核心**（Linux，已完成）：`crates/pinomad-core`，帧、保留 UTF-16 的 JSON 值类型、chord delta 应用、Noise IK（`snow`）和记录层、中继和配对链接、不做 I/O 的 `RemoteDurable` 事件状态机；`packages/protocol/test/rust-vectors.ts` 生成对照向量（`PINOMAD_UPDATE_VECTORS=1` 重新生成，新鲜度测试把关）；`cargo test --test interop` 用临时数据目录起真实宿主完成配对并同步一个对话；`cargo test` 已进 `bun run test`；`rust-core.yml` 在 PR 上跑 cargo test 和 bun run test。
 2. **推导移植**（Linux）：`packages/client` 里移动端用到的推导搬进 Rust，带对照向量。
 3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。
 4. **功能追平 Expo 版**（mbp）：对话列表、对话流、Composer、提问、图片、扫码配对、多宿主、账号登录，以及 M5 的移动端部分。具体清单开工时从 Expo 版整理出来写在这里。

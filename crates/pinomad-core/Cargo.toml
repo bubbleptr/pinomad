@@ -7,8 +7,10 @@ description = "PiNomad client protocol core for the native apps (ADR-0024): no I
 publish = false
 
 [dependencies]
+getrandom = "=0.4.3"
 snow = "=0.10.0"
 url = "=2.5.8"
 
 [dev-dependencies]
 serde_json = "=1.0.149"
+tungstenite = "=0.30.0"
