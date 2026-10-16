@@ -118,8 +118,11 @@ export function normalizeServerOrigin(origin: string): string {
   }
 }
 
-/** The credential form a client holds (ADR-0022 §2): ambient cookie or a stored bearer token. */
-export type AccountCredentials = { readonly mode: "cookie" } | { readonly mode: "bearer"; readonly token: string };
+/**
+ * The credential form a client holds (ADR-0022 §2): ambient cookie, or a
+ * bearer token — absent while logging in, when there is none yet.
+ */
+export type AccountCredentials = { readonly mode: "cookie" } | { readonly mode: "bearer"; readonly token?: string };
 
 export interface AccountUser {
   readonly username: string;

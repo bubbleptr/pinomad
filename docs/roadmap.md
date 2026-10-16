@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-16（服务端账号第 4 步完成）
+最后更新：2026-10-16（服务端账号第 5 步逻辑层完成，界面待做）
 
 ## 已完成
 
@@ -153,7 +153,7 @@ MCP 本身的后续，都等有明确需求再做：
 4. **服务端担保配对**（已完成）：
    - `GET /api/hosts`（需登录）返回 `[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`，`pairing` 说明能不能经账号配对（`available` / `offline` / `host_too_old` / `key_mismatch`）。
    - `POST /api/hosts/:hostId/pairing`（需登录、宿主属于本账号）：经控制帧 `pairing-request` 向宿主要邀请，宿主回 `pairing` 或 `pairing-refused`。等待中的请求绑定到具体的控制连接，连接断开、被替换、leave 或 HTTP 请求取消时清掉；迟到或不认识的回复忽略。在途上限：每台宿主 4、每个会话 2，超限回 429。宿主太旧（没声明 `features: ["pairing"]`）直接回固定的错误，不等超时；离线回 409 `host_offline`，宿主拒绝回 409 带宿主给的原因（`disabled` / `not_joined`），10 秒没回复回 504 `host_timeout`。成功时返回 `{url, hostKey, secret, expiresAt}`，客户端拼 `pair=<hostKey>.<secret>&url=<url>` 照 ADR-0008 走 IK 配对；请求体不带设备名，以握手里提交的为准。
-5. **Web / 桌面端界面**：登录、宿主列表、"添加宿主"给出命令、设备来源标记、`acceptAccountDevices` 开关、退出所有登录。普通 Web 的 `HostStore` 改成能存多台宿主，迁移现有的单条记录；桌面端 renderer 的 CSP 放行 `https:`（`wss:` 本来就允许连任意地址，再放行 `https:` 风险没有实质变化）。客户端按服务端地址 + hostId 记住宿主公钥：公钥变了要提示，不自动重新配对；已存的宿主收到 4401 后不自动去要邀请。
+5. **Web / 桌面端**：登录、宿主列表、"添加宿主"给出命令、设备来源标记、`acceptAccountDevices` 开关、退出所有登录。**逻辑层已完成（界面待做）**：`packages/client/src/account.ts` 是共享账号客户端（cookie / bearer 两种凭据、错误按服务端错误码透传成 `AccountResult`、`probeAccounts` 探测、`isSecureServerOrigin` 校验、宿主 CLI 的探测和校验已复用它）；`StoredHost` 多了可选的 `account: {serverOrigin, hostId}` 关联，`matchAccountHosts` 给出已配对 / 未配对 / 公钥变了三种状态（公钥变了只报告）；`pairViaAccount` 把配对应答转成 `pair=…&url=…` 走现有握手、返回带关联的 StoredHost；已存宿主被 4401 时 model 只做标记、绝不自动要邀请（测试钉住）。普通 Web 的 `HostStore` 已能存多台宿主（`pinomad.hosts` 数组，迁移旧 `pinomad.device`），多宿主分支在浏览器里生效、`multiHost` 标志移除；桌面端 renderer CSP 的 `connect-src` 放行 `https:`，bearer token 和服务端地址存进 `hosts.bin` 同一个 safeStorage blob（`pinomad:account:*` IPC）。Web 的账号状态在 `entities/account`（无组件的 model + `useAccount` hook）。剩下界面半：登录页、宿主列表、"添加宿主"弹窗、设备来源标记、开关、退出所有登录按钮——直接用 `useAccount` 的导出接线。
 6. **移动端**（单独 PR，mbp）：登录、宿主列表、经账号配对、出示二维码。
 7. **部署迁移**：Zeabur 挂持久卷、设环境变量；Omarchy 跑 `pinomad join`。确认服务端重启后账号和绑定还在、宿主在线后，删掉 `--allow-host`。
 
