@@ -2,7 +2,7 @@
 
 唯一一份随进度更新的计划。ADR 只记录难以回退的取舍，"以后再做"的事情都收在这里；做完一项就挪进"已完成"，需要新决策的在条目后注明。
 
-最后更新：2026-10-16（ADR-0024：移动端改原生、客户端协议核心用 Rust）
+最后更新：2026-10-17（原生重写第 2 步：推导移植进 Rust，PR #112、#113）
 
 ## 已完成
 
@@ -66,7 +66,7 @@
 
 1. **Rust 核心**（Linux，已完成）：`crates/pinomad-core`，帧、保留 UTF-16 的 JSON 值类型、chord delta 应用、Noise IK（`snow`）和记录层、中继和配对链接、不做 I/O 的 `RemoteDurable` 事件状态机；`packages/protocol/test/rust-vectors.ts` 生成对照向量（`PINOMAD_UPDATE_VECTORS=1` 重新生成，新鲜度测试把关）；`cargo test --test interop` 用临时数据目录起真实宿主完成配对并同步一个对话；`cargo test` 已进 `bun run test`；`rust-core.yml` 在 PR 上跑 cargo test 和 bun run test。
 2. **推导移植**（Linux，已完成）：`packages/client` 里移动端用到的推导在 `crates/pinomad-core` 有了一份类型化 Rust 实现（输出结构体/枚举，不是 `Json`）：`cot_view`（deriveChat/retryOf/splitSubagentCalls/pinomadOf 及 CoT/Chat 条目类型）、`tool_item`/`tool_diff_stat`/`tool_target`/`transcript`/`presentation`（工具形状、显示名、时长、目标、kind、`isBusy`、`classify`）、`chat`（agentOf/statusText/queueItems/usageRows/taskRows）、`family`（familyStatus/familyUpdatedAt/relativeTime/displayName/rootOf/threadsOf/taskGroupsOf/forksAt）、`organization`（organize/findConversation/homeOf/checkoutOf 改成类型化输出）、`model`（thinkingLevelLabels/sameModel/clampLevel/summaryOf/modelLabel/filterModels/reconcileDraftPick）、`questions`/`folder_path`/`stored_host`/`provider_failure`/`images`（imageProblem、MAX_IMAGES_PER_MESSAGE）。对照向量：`packages/client/test/rust-vectors.ts` 生成（输入复用 `*-cases.ts` 共享用例表和 `host-frames.json` 录制的真实对话），产物在 `packages/client/test/fixtures/rust-vectors/`（`PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project client rust-vectors` 重新生成），Rust 在 `crates/pinomad-core/tests/derive_vectors.rs` 逐字节重放，新鲜度测试拦漂移。
-3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。
+3. **iOS 骨架**（mbp）：`apps/ios`、`apps/ios/PinomadCore`（xcframework、UniFFI 绑定、WebSocket / 计时器 / 钥匙串平台层、调用绑定的 Swift 测试）、AgentChatKit 用 subtree 导入 `packages/agent-chat-kit`；连上宿主显示对话；真机长对话实测性能，定界面状态的交付方式（ADR-0024 §5）。第 2 步的推导输出已经是拥有型记录，但有几处输入还是 `Json`，界面手里只有类型化的值：`display_name` 收的是 summary 的 `Json`，`summary_of` / `model_label` / `filter_models` / `reconcile_draft_pick` 收的是 `&[Json]` 模型列表；暴露给 UniFFI 时改成收 `ConversationSummary` / `ModelSummary`。
 4. **功能追平 Expo 版**（mbp）：对话列表、对话流、Composer、提问、图片、扫码配对、多宿主、账号登录，以及 M5 的移动端部分。具体清单开工时从 Expo 版整理出来写在这里。
 5. **推送**（ADR-0025）：宿主和服务端已完成（PR #109、#110）；还剩配 APNs 密钥、部署服务端，以及 iOS 侧；真机验收用 TestFlight 包。
 6. **替换**：Release 包真机验证局域网 IP、MagicDNS、中继 `wss://` 三种地址；推送真机收到；性能达到预算。TestFlight 替换 Expo 版，重新配对；日常用满一周没有阻断问题后删除 `apps/mobile`，取消 Hermes 要求，重写 `docs/mobile-release.md`。
