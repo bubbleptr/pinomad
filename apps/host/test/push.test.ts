@@ -7,10 +7,9 @@ import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import type { PushNotification, PushVerdict } from "@pinomad/protocol/relay.ts";
-import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import { secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { DevicesDoc } from "../src/devices.ts";
@@ -18,10 +17,20 @@ import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import type { HostValue } from "../src/host-value.ts";
 import { IndexDoc } from "../src/organization.ts";
-import { attachPushSender, PushDoc, pushTokenProblem, type PushTransport, type PushTimers } from "../src/push.ts";
+import { attachPushSender, PushDoc, pushTokenProblem, type PushTransport } from "../src/push.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { writeServerConfig } from "../src/server-config.ts";
-import { connectTo, freePort, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import {
+  connectTo,
+  freePort,
+  ManualTimers,
+  pairDevice,
+  startChat,
+  startFauxHost,
+  tempDir,
+  useCleanups,
+  waitForView,
+} from "./support.ts";
 
 const defer = useCleanups();
 const context = BACKGROUND_CONTEXT;
@@ -29,41 +38,6 @@ const context = BACKGROUND_CONTEXT;
 const TOKEN_A = { apns: "aa".repeat(32), environment: "production" as const };
 const TOKEN_B = { apns: "bb".repeat(32), environment: "production" as const };
 const TOKEN_DEV = { apns: "dd".repeat(32), environment: "development" as const };
-
-/** Deterministic scheduler for the sender's retries and title wait. */
-class ManualTimers implements PushTimers {
-  #seq = 0;
-  #now = 0;
-  #queue: { id: number; at: number; fn: () => void }[] = [];
-
-  setTimeout = (fn: () => void, ms: number): unknown => {
-    const id = ++this.#seq;
-    this.#queue.push({ id, at: this.#now + ms, fn });
-    this.#queue.sort((a, b) => a.at - b.at);
-    return id;
-  };
-
-  clearTimeout = (handle: unknown): void => {
-    this.#queue = this.#queue.filter((entry) => entry.id !== handle);
-  };
-
-  get pending(): number {
-    return this.#queue.length;
-  }
-
-  /** Fire every timer due within `ms`, including ones they schedule. */
-  advance(ms: number): void {
-    const until = this.#now + ms;
-    for (;;) {
-      const next = this.#queue.find((entry) => entry.at <= until);
-      if (next === undefined) break;
-      this.#queue.splice(this.#queue.indexOf(next), 1);
-      this.#now = next.at;
-      next.fn();
-    }
-    this.#now = until;
-  }
-}
 
 interface RecordedSend {
   readonly token: string;
@@ -114,26 +88,6 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
 
 /** A short settle window for assertions that must stay empty (no send, no write). */
 const settle = (ms = 300): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Pair a fresh device over the remote listener; resolves to its client and key. */
-async function pairDevice(host: OpenedHost, name: string): Promise<{ client: RemoteDurable; device: KeyPair }> {
-  const tokenClient = await connectTo(defer, host);
-  const { url } = await tokenClient.controller.createPairing();
-  const marker = "#pair=";
-  const [key, secret] = url.slice(url.indexOf(marker) + marker.length).split(".");
-  const device = generateKeyPair();
-  const client = await connectRemoteDurable({
-    transport: secureWebSocketTransport({
-      url: host.remote!.url,
-      hostKey: host.remote!.hostKey,
-      device,
-      pairing: { secret: secret!, name },
-    }),
-    reconnectDelayMs: { min: 100, max: 200 },
-  });
-  defer(() => client.close());
-  return { client, device };
-}
 
 const registrations = (host: OpenedHost) =>
   host.harness.snapshot(PushDoc, context).then((doc) => doc?.registrations ?? []);
@@ -203,7 +157,7 @@ async function pushHost(
 describe("push token registration", () => {
   it("registers, replaces, and clears a device's APNs token; the devices stream never carries it", async () => {
     const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
-    const { client, device } = await pairDevice(host, "phone");
+    const { client, device } = await pairDevice(defer, host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
     await waitForView(tokenClient.view, (view) => view.devices.some((entry) => entry.publicKey === key));
@@ -227,7 +181,7 @@ describe("push token registration", () => {
 
   it("refuses a legacy Expo token without a 4400, and explains the environment", async () => {
     const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await expect(client.controller.setPushToken("ExponentPushToken[abc]")).rejects.toThrow(/no longer go through Expo/);
     await expect(client.controller.setPushToken("anything-string")).rejects.toThrow(/no longer go through Expo/);
     // The refusal was a call error, not a disconnect: the client still works.
@@ -240,7 +194,7 @@ describe("push token registration", () => {
     const tokenClient = await connectTo(defer, host);
     await expect(tokenClient.controller.setPushToken(TOKEN_A)).rejects.toThrow(/secure channel/);
 
-    const { client, device } = await pairDevice(host, "phone");
+    const { client, device } = await pairDevice(defer, host, "phone");
     await expect(client.controller.setPushToken({ apns: "not-hex", environment: "production" })).rejects.toThrow(
       /APNs device token/,
     );
@@ -261,7 +215,7 @@ describe("push token registration", () => {
 
   it("refuses APNs registration while the host is not joined to an account", async () => {
     const host = await startFauxHost(defer, { remote: { port: await freePort() } });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await expect(client.controller.setPushToken(TOKEN_A)).rejects.toThrow(/joined to an account/);
     // Deregistration needs no account — it's local cleanup.
     await client.controller.setPushToken(null);
@@ -280,7 +234,7 @@ describe("push token registration", () => {
 
   it("deletes the device's token in the same commit as revocation", async () => {
     const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
-    const { client, device } = await pairDevice(host, "phone");
+    const { client, device } = await pairDevice(defer, host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
     await client.controller.setPushToken(TOKEN_A);
@@ -310,7 +264,7 @@ describe("push sender", () => {
     const apns = fakeTransport();
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, dataDir: dir.path, extensions: [question], answers: ["done"] });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     const watcher = await connectTo(defer, host);
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === "needs-answer");
     await watcher.controller.switchConversation(id); // docs load for the shown conversation only
@@ -341,7 +295,7 @@ describe("push sender", () => {
       extensions: [question],
       answers: [QUESTION_STEP, fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "provider blew up" })],
     });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     const firstMessage = "deploy the thing now please";
@@ -388,7 +342,7 @@ describe("push sender", () => {
         fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "title model down" }),
       ],
     });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "the app keeps crashing");
@@ -426,9 +380,9 @@ describe("push sender", () => {
     );
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, answers: ["done"] });
-    const a = await pairDevice(host, "phone-a");
-    const b = await pairDevice(host, "phone-b");
-    const c = await pairDevice(host, "phone-c");
+    const a = await pairDevice(defer, host, "phone-a");
+    const b = await pairDevice(defer, host, "phone-b");
+    const c = await pairDevice(defer, host, "phone-c");
     await a.client.controller.setPushToken(TOKEN_A);
     await b.client.controller.setPushToken(TOKEN_B);
     // A reinstall can register the same token twice — it sends once.
@@ -467,7 +421,7 @@ describe("push sender", () => {
     const apns = fakeTransport(() => ({ result: "retry", reason: "busy", retryAfterMs: 15 * 60 * 1000 }));
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "deploy?");
@@ -498,7 +452,7 @@ describe("push sender", () => {
     const apns = fakeTransport(() => ({ result: "unavailable", reason: "environment not declared" }));
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "deploy?");
@@ -557,9 +511,9 @@ describe("push sender", () => {
       extensions: [question],
       answers: [questionStep(), questionStep(), questionStep()],
     });
-    const a = await pairDevice(host, "phone-a");
-    const b = await pairDevice(host, "phone-b");
-    const c = await pairDevice(host, "phone-c");
+    const a = await pairDevice(defer, host, "phone-a");
+    const b = await pairDevice(defer, host, "phone-b");
+    const c = await pairDevice(defer, host, "phone-c");
     await a.client.controller.setPushToken(TOKEN_A);
     await b.client.controller.setPushToken(TOKEN_B);
     await c.client.controller.setPushToken(TOKEN_DEV);
@@ -582,7 +536,7 @@ describe("push sender", () => {
     );
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP, "done"] });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     await startChat(watcher, "deploy?");
@@ -609,7 +563,7 @@ describe("push sender", () => {
     const apns = fakeTransport();
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, answers: ["first done", "second done"] });
-    const { client } = await pairDevice(host, "phone");
+    const { client } = await pairDevice(defer, host, "phone");
     await client.controller.setPushToken(TOKEN_A);
     const watcher = await connectTo(defer, host);
     const id = await startChat(watcher, "first run");
@@ -641,7 +595,7 @@ describe("push sender", () => {
     const apns = fakeTransport(() => ({ result: "retry", reason: "down" }));
     const timers = new ManualTimers();
     const { host } = await pushHost({ apns, timers, extensions: [question], answers: [QUESTION_STEP] });
-    const { client, device } = await pairDevice(host, "phone");
+    const { client, device } = await pairDevice(defer, host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
     await client.controller.setPushToken(TOKEN_A);

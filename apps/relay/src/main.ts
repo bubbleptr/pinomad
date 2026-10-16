@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { commandHint, webRoot } from "@pinomad/host/src/distribution.ts";
 import { changePassword, openAccounts } from "./accounts.ts";
+import { loadApnsConfig, openApns } from "./apns.ts";
 import { startRelay } from "./relay.ts";
 
 /** Newest arg wins: flag, then PINOMAD_SERVER_DATA_DIR, then the default. */
@@ -104,6 +105,11 @@ export async function main(argv: readonly string[]): Promise<void> {
       })
     : undefined;
 
+  // APNs credentials live only here (ADR-0025 §1): whichever environments
+  // fully configure get declared to hosts on `registered`.
+  const apnsConfig = loadApnsConfig();
+  const apns = apnsConfig === undefined ? undefined : openApns(apnsConfig);
+
   const relay = await startRelay({
     port: Number(values.port),
     listenHost: values.listen,
@@ -114,6 +120,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     webRoot,
     accounts,
     trustProxy: values["trust-proxy"],
+    ...(apns === undefined ? {} : { push: apns }),
   });
   console.log(
     JSON.stringify({
@@ -122,6 +129,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       publicOrigin: values["public-origin"],
       allowedHosts: allowedHosts.length,
       accounts: accounts !== undefined,
+      push: apns?.environments ?? [],
     }),
   );
 

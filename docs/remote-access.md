@@ -176,6 +176,23 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。服务端没开账号（纯 `--allow-host` 模式）时 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端可据此探测。
 
+### 推送通知（ADR-0025）
+
+推送由服务端直连 APNs：宿主经自己的账号控制连接请服务端发，APNs 密钥（`.p8`）只存在服务端，宿主上不用配任何东西——宿主必须 `pinomad join` 进账号，只列在 `--allow-host` 白名单里的宿主发不了推送。不配下面的变量时服务端照常运行，只是不向宿主声明推送能力。
+
+| 环境变量 | 含义 |
+|---|---|
+| `PINOMAD_SERVER_APNS_TEAM_ID` | Apple Developer 账号的 Team ID（开发者门户的 Membership 页面） |
+| `PINOMAD_SERVER_APNS_TOPIC` | App 的 bundle id，比如 `build.kieran.pinomad` |
+| `PINOMAD_SERVER_APNS_PRODUCTION_KEY_ID` / `PINOMAD_SERVER_APNS_PRODUCTION_KEY` | production 环境的 Key ID 和 `.p8` 内容（在 Apple Developer 的 Keys 里建 APNs key 下载，只给看一次） |
+| `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY_ID` / `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY` | development（sandbox）环境，同上；配 TestFlight/开发包分开的两个 key 也行 |
+
+- 每个环境要 `*_KEY_ID` 和 `*_KEY` 都配上才会向宿主声明；只配一半会在日志里写一条 `apns:` 警告并跳过这个环境。启动日志的 `{"event":"ready",…,"push":["production",…]}` 是实际生效的环境。
+- `_KEY` 是 PEM 文本本身，不是文件路径。多行内容粘进平台的环境变量 UI 时换行可能被存成字面 `\n`，服务端两种都认。
+- 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
+- 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"），不带对话内容。
+- Zeabur 上把变量加进服务的 Variables 即可。**注意**：`zeabur` CLI 的 `variable set` 会把该服务全部变量连值打印到 stdout——密钥会落进终端历史和 CI 日志，跑这条命令时把输出丢掉（`zeabur variable set KEY=VALUE >/dev/null`），别贴给任何人或工具。
+
 ### 升级
 
 中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
