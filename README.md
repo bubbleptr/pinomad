@@ -87,6 +87,7 @@ These docs are written in Chinese.
 | [Usage](docs/usage.md) | Projects, worktrees, tools, MCP configuration |
 | [Remote access](docs/remote-access.md) | Pairing, tunnels, self-hosted relay (VPS or container platforms) |
 | [Running as a service](docs/service.md) | `service` and `upgrade` commands, platform notes |
+| [Architecture overview](docs/architecture.md) | How the parts and languages fit together, with send/receive diagrams |
 | [Architecture decisions](docs/adr/README.md) | Why things are the way they are |
 | [Roadmap](docs/roadmap.md) | What's done and what's next |
 | [Glossary](GLOSSARY.md) | Domain terms |

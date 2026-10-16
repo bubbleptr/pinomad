@@ -223,6 +223,8 @@ ADR-0005 的候选 `progress`、`table`、`log`、`status` 不单独排期，等
 
 - npm 上的 `0.0.0-stage` 占位版本可以 `npm deprecate` 掉（要 2FA），不影响安装
 - 远程配对测试偶发 `UnauthorizedError`，原因未查明
+- 测试跑完在 `/tmp` 留下临时文件不清：`pinomad-*.lock`、`pinomad-interop-*.lock`（数据目录删了，同级的 `<dir>.lock` 没删）、`pinomad-relay-web-*` 目录，每跑一次 `bun run test` 都会多一批
+- `apps/host/test/controller.test.ts` 的远程控制用例在 CI 负载下偶尔撞上 20 秒超时，本地正常
 - Skills 只扫描 `<cwd>/.agents/skills`，在仓库子目录启动时看不到仓库根目录的 Skills；格式有误的 Skill 被直接忽略，不提示用户（ADR-0006）
 - 审计和费用统计需要单独的数据来源，`watchEvents` 不能当审计日志（ADR-0002）
 - 协议版本号靠人工判断该加哪个，没有机器检查（ADR-0009、0018）；契约快照只盯得住上游的数据结构，我们自己的帧仍靠评审

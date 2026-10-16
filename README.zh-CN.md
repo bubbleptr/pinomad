@@ -87,6 +87,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | [使用说明](docs/usage.md) | 项目、worktree、工具、MCP 配置 |
 | [远程访问](docs/remote-access.md) | 配对、隧道、自部署中继（VPS 或容器平台） |
 | [常驻运行](docs/service.md) | `service` 和 `upgrade` 命令，各平台注意事项 |
+| [架构概览](docs/architecture.md) | 各部分和语言怎么配合，收发流程图 |
 | [架构决策](docs/adr/README.md) | 为什么这样设计 |
 | [路线图](docs/roadmap.md) | 做完了什么、接下来做什么 |
 | [术语表](GLOSSARY.md) | 领域术语 |
