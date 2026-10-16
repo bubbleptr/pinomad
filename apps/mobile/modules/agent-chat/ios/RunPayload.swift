@@ -24,6 +24,7 @@ struct RunTracePayload: Decodable, Equatable {
     var kind: String
     var text: String?
     var live: Bool?
+    var durationMs: Double?
     var calls: [Call]?
   }
 
@@ -35,7 +36,13 @@ struct RunTracePayload: Decodable, Equatable {
     var input: String?
     var output: String?
     var durationMs: Double?
+    var diffStat: DiffStat?
     var children: [Call]?
+  }
+
+  struct DiffStat: Decodable, Equatable {
+    var additions: Int
+    var deletions: Int
   }
 
   static func decode(_ json: String) -> RunTracePayload? {
@@ -77,7 +84,7 @@ private extension RunTracePayload.Step {
     case "tools":
       .tools(id: id, calls: (calls ?? []).map(\.toolCall))
     default:
-      .thinking(id: id, text: text ?? "", isLive: live ?? false)
+      .thinking(id: id, text: text ?? "", isLive: live ?? false, duration: durationMs.map { .milliseconds(Int64($0)) })
     }
   }
 }
@@ -98,6 +105,7 @@ private extension RunTracePayload.Call {
       input: input,
       output: output,
       duration: durationMs.map { .milliseconds(Int64($0)) },
+      diffStat: diffStat.map { .init(additions: $0.additions, deletions: $0.deletions) },
       children: (children ?? []).map(\.toolCall)
     )
   }

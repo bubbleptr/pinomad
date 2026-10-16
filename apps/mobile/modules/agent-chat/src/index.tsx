@@ -18,9 +18,10 @@ export const NativeRunAnswer: ComponentType<NativeRunProps> =
   requireNativeView<NativeRunProps>("PinomadAgentChat", "RunAnswerView");
 
 /**
- * AgentChatKit needs iOS 26. Below it (and on Android) the module's views are
- * still registered but render empty, so the transcript must keep its RN path.
+ * The spike builds AgentChatKit at an iOS 18 floor, so any iOS install can
+ * take the native path. Android keeps the RN fallback: the module's views
+ * are registered there but render empty.
  */
 export function nativeTranscriptSupported(): boolean {
-  return Platform.OS === "ios" && Number.parseFloat(String(Platform.Version)) >= 26;
+  return Platform.OS === "ios";
 }

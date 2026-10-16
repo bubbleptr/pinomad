@@ -16,12 +16,11 @@ Pod::Spec.new do |s|
   s.description    = package['description']
   s.author         = ''
   s.homepage       = 'https://github.com/bubbleptr/pinomad'
-  # AgentChatKit is iOS 26+ and Expo refuses to link a pod whose deployment
-  # target is above the app's, so app.json pins the whole app at iOS 26.0 for
-  # this spike. A real hybrid would need AgentChatKit's floor relaxed or the
-  # app to drop older OS versions — see the PR notes.
+  # AgentChatKit's spike branch builds at iOS 18. Expo refuses to link a pod
+  # whose deployment target is above the app's, so app.json pins the whole
+  # app at iOS 18.0 for this spike.
   s.platforms      = {
-    :ios => '26.0',
+    :ios => '18.0',
   }
   s.swift_version  = '6.0'
   s.source         = { git: 'https://github.com/bubbleptr/pinomad.git' }

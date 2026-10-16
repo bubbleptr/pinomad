@@ -462,12 +462,22 @@ export function deriveChat(
   const live = (view.docs["pi.live"] ?? {}) as LiveState;
   let draft: RunDraft | undefined;
   let runSeq = 0;
+  // The entry that most recently separated runs (a prompt, compaction or
+  // reset). Its id anchors run ids so a run keeps the same key while it
+  // turns from live to committed — `run-open-N` -> `run-<assistant id>`
+  // remounted every transcript cell that consumed it.
+  let boundaryId: string | undefined;
+  let runsSinceBoundary = 0;
 
   const flush = (busyRun: boolean): void => {
     if (draft === undefined) return;
     if (draft.assistants.length > 0 || draft.orphans.size > 0 || busyRun) {
-      const anchor = draft.assistants[0]?.id ?? `open-${runSeq++}`;
+      const anchor =
+        boundaryId === undefined
+          ? (draft.assistants[0]?.id ?? `open-${runSeq++}`)
+          : `${boundaryId}:${runsSinceBoundary}`;
       items.push(deriveRun(`run-${anchor}`, draft, live, busyRun, toolPresentations));
+      runsSinceBoundary += 1;
     }
     draft = undefined;
   };
@@ -481,13 +491,19 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
+      boundaryId = id;
+      runsSinceBoundary = 0;
       // The host admits images through imageProblem; the cast is that contract.
       items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) as MessageImage[] });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
+      boundaryId = id;
+      runsSinceBoundary = 0;
       items.push({ kind: "compaction", id });
     } else if (entry.kind === "pi.reset") {
       flush(false);
+      boundaryId = id;
+      runsSinceBoundary = 0;
       items.push({ kind: "reset", id });
     } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
       draft ??= { assistants: [], orphans: new Map() };

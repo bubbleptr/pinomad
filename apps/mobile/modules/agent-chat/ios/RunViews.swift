@@ -4,32 +4,42 @@ import SwiftUI
 #if canImport(AgentChatKit)
 import AgentChatCore
 import AgentChatKit
-import Observation
 
-/// Interaction state that must live outside the view tree: `AutoSizingStack`
-/// renders the content twice (a hidden measuring copy), so `@State` inside
-/// AgentChatKit's views would diverge between copies and the measured height
-/// would lag the visible one. Both copies share this object instead, wired
-/// down through AgentChatKit's disclosure environment overrides.
-@Observable
-final class RunTraceUIState {
-  var disclosure = TraceDisclosure(phase: .thinking)
-  var expandedCalls = Set<String>()
-  private(set) var runId = ""
+/// Measures the content once, in place: reports the subview's ideal height at
+/// the proposed width to the Yoga shadow node. Replaces AutoSizingStack, whose
+/// hidden second render forked every piece of @State inside the kit views
+/// (disclosure, batch expansion, thinking streams) and made the measured
+/// height lag the visible one.
+private struct MeasuringLayout: Layout {
+  var report: (CGSize) -> Void
 
-  /// Reset when the recycled cell starts showing a different run.
-  func sync(_ run: RunTracePayload?) {
-    guard let run, run.id != runId else { return }
-    runId = run.id
-    disclosure = TraceDisclosure(phase: run.trace.phase)
-    expandedCalls = []
+  struct CacheValue { var measured = CGSize.zero }
+
+  func makeCache(subviews: Subviews) -> CacheValue { CacheValue() }
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheValue) -> CGSize {
+    guard let view = subviews.first else { return .zero }
+    let size = view.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+    cache.measured = size
+    report(size)
+    return size
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheValue) {
+    subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(cache.measured))
+  }
+}
+
+private extension ExpoSwiftUI.ViewProps {
+  /// Yoga height write-back; NaN width leaves the stretched cell width alone.
+  func reportHeight(_ size: CGSize) {
+    shadowNodeProxy.setViewSize?(CGSize(width: .nan, height: size.height))
   }
 }
 
 final class RunTraceProps: ExpoSwiftUI.ViewProps {
   /// JSON of `RunTracePayload`; replaced wholesale on every update batch.
   @Field var payload: String = ""
-  let ui = RunTraceUIState()
 }
 
 /// The run's chain of thought rendered by AgentChatKit's `AgentTraceView`.
@@ -39,7 +49,7 @@ struct RunTraceView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   @ObservedObject var props: RunTraceProps
 
   var body: some View {
-    ExpoSwiftUI.AutoSizingStack(shadowNodeProxy: props.shadowNodeProxy, axis: .vertical) {
+    MeasuringLayout(report: { props.reportHeight($0) }) {
       RunTraceContent(props: props)
     }
   }
@@ -55,101 +65,75 @@ private struct RunTraceContent: View {
       // The hosting root centers non-expanding content; stretch so the
       // header hugs the leading edge like the RN transcript does.
       .frame(maxWidth: .infinity, alignment: .leading)
-      .environment(\.traceDisclosureOverride, Binding(
-        get: { props.ui.disclosure },
-        set: { props.ui.disclosure = $0 }))
-      .environment(\.expandedCallIds, Binding(
-        get: { props.ui.expandedCalls },
-        set: { props.ui.expandedCalls = $0 }))
-      // A new run in this recycled cell starts its disclosure over.
+      // A run handing over (open -> committed entry id) updates the payload
+      // rather than remounting; only a recycled cell showing a genuinely new
+      // run needs its disclosure reset, which `update(phase:)` covers.
       .id(run?.id ?? "")
-      .onChange(of: run?.id, initial: true) { _, _ in
-        props.ui.sync(run)
-      }
   }
 }
 
 final class RunAnswerProps: ExpoSwiftUI.ViewProps {
   /// JSON of `RunAnswerPayload`; replaced wholesale on every update batch.
   @Field var payload: String = ""
-
-  /// Shared so the measuring copy reveals exactly what the visible copy does.
-  /// Optional because `StreamingMarkdown` is main-actor; `sync` creates it.
-  private(set) var stream: StreamingMarkdown?
-  private var appliedId = ""
-  private var finished = false
-
-  /// Feeds full-text snapshots into the append-only stream: text extending
-  /// what arrived only appends the delta; anything else rebuilds the stream.
-  @MainActor
-  func sync() {
-    guard let payload = RunAnswerPayload.decode(payload) else { return }
-    if payload.id != appliedId || (finished && payload.streaming) {
-      reset(for: payload)
-      return
-    }
-    guard let stream else { return }
-    let arrived = stream.markdown
-    if payload.text != arrived {
-      if payload.text.hasPrefix(arrived) {
-        stream.append(String(payload.text.dropFirst(arrived.count)))
-      } else {
-        reset(for: payload)
-        return
-      }
-    }
-    if !payload.streaming, !finished {
-      stream.finish()
-      finished = true
-    }
-  }
-
-  @MainActor
-  private func reset(for payload: RunAnswerPayload) {
-    appliedId = payload.id
-    finished = false
-    // Settled history mounts instantly — no reveal animation.
-    stream = payload.streaming ? StreamingMarkdown() : StreamingMarkdown(markdown: payload.text)
-    if payload.streaming, let stream, !payload.text.isEmpty {
-      stream.append(payload.text)
-    }
-    // The view reads `stream` when props change; a swap needs an explicit nudge.
-    objectWillChange.send()
-  }
 }
 
-/// The run's answer rendered by `StreamingMarkdownView` (paced word fade-in).
+/// The run's answer: `StreamingMarkdownView` for the paced reveal, then the
+/// kit's `ReplyActions` copy row once the stream is finished.
 struct RunAnswerView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   @ObservedObject var props: RunAnswerProps
 
   var body: some View {
-    // Same measurement trick as Expo's AutoSizingStack(.vertical), written
-    // out so the two copies share `props.stream` — the pacing state would
-    // diverge if it lived in per-copy @State.
-    RunAnswerContent(props: props)
-      .overlay {
-        RunAnswerContent(props: props)
-          .fixedSize(horizontal: false, vertical: true)
-          .hidden()
-          .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
-            // NaN width leaves Yoga's width alone, same as AutoSizingStack(.vertical).
-            props.shadowNodeProxy.setViewSize?(CGSize(width: .nan, height: size.height))
-          }
-      }
+    MeasuringLayout(report: { props.reportHeight($0) }) {
+      RunAnswerContent(props: props)
+    }
   }
 }
 
 private struct RunAnswerContent: View {
   @ObservedObject var props: RunAnswerProps
+  @State private var stream: StreamingMarkdown?
+  @State private var appliedId = ""
+  @State private var finished = false
 
   var body: some View {
-    Group {
-      if let stream = props.stream {
+    VStack(alignment: .leading, spacing: 4) {
+      if let stream {
         StreamingMarkdownView(stream)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        if stream.stream.isFinished {
+          ReplyActions(markdown: stream.markdown)
+        }
       }
     }
-    .onChange(of: props.payload, initial: true) { _, _ in props.sync() }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .onChange(of: props.payload, initial: true) { _, _ in sync() }
+  }
+
+  /// Feeds full-text snapshots into the append-only stream: text extending
+  /// what arrived appends the delta and paces it; anything else rebuilds and
+  /// shows at once — a recycled cell must never replay history.
+  private func sync() {
+    guard let payload = RunAnswerPayload.decode(props.payload) else { return }
+    if let stream, payload.text.hasPrefix(stream.markdown) {
+      // Same run continuing — the open->committed id swap lands here too.
+      let delta = String(payload.text.dropFirst(stream.markdown.count))
+      if !delta.isEmpty { stream.append(delta) }
+    } else {
+      reset(for: payload)
+    }
+    appliedId = payload.id
+    if !payload.streaming, !finished {
+      stream?.finish()
+      finished = true
+    }
+  }
+
+  private func reset(for payload: RunAnswerPayload) {
+    appliedId = payload.id
+    finished = false
+    // Whatever arrived before this mount shows at once; only newer text paces.
+    stream = payload.streaming
+      ? StreamingMarkdown(prefilled: payload.text)
+      : StreamingMarkdown(markdown: payload.text)
   }
 }
 #else
