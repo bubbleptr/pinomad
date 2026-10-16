@@ -8,6 +8,7 @@ import {
   isSecureServerOrigin,
   isUnauthenticated,
   matchAccountHosts,
+  normalizeServerOrigin,
   pairViaAccount,
   probeAccounts,
   type AccountClient,
@@ -48,6 +49,12 @@ export type AccountState =
        * explicit re-pair — the model never asks for an invite on its own.
        */
       readonly rejectedHostKeys: readonly string[];
+      /**
+       * A host the account pairing registered but whose save failed — the
+       * device key dies with the page if it isn't persisted, so it stays
+       * here for `retryUnsavedHost`.
+       */
+      readonly unsavedHost?: StoredHost;
     };
 
 export interface AccountModel {
@@ -66,6 +73,8 @@ export interface AccountModel {
    * itself — a rejected stored host is reported via hostRejected, not repaired.
    */
   pairHost(hostId: string): Promise<AccountResult<StoredHost>>;
+  /** Retry persisting `state.unsavedHost` after a failed save. */
+  retryUnsavedHost(): Promise<AccountResult<void>>;
   /** Mark a stored host's connection as refused by the host (4401). Pure bookkeeping. */
   hostRejected(hostKey: string): void;
 }
@@ -75,10 +84,11 @@ export interface AccountModelDeps {
   readonly origin: string;
   /** Present in the desktop renderer; selects bearer mode and token storage. */
   readonly bridge?: DesktopBridge;
-  /** The paired-host store: refresh matches it, link adoption writes to it. */
+  /** The paired-host store: refresh matches it, link adoption and re-pair cleanup write to it. */
   readonly hosts: {
     list(): Promise<StoredHost[]>;
     save(host: StoredHost): Promise<void>;
+    remove(hostKey: string): Promise<void>;
   };
   /** Where a newly paired host lands — the hook wires the app's `paired`. */
   readonly paired: (host: StoredHost) => Promise<void>;
@@ -116,6 +126,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   const refresh = async (active: AccountClient, user: string): Promise<AccountResult<readonly AccountHostMatch[]>> => {
     const rows = await active.listHosts();
+    // A slow response may land after logout or a newer login swapped the
+    // client — publishing it would resurrect a dead session.
+    if (client !== active) return { ok: false, error: { code: "stale" } };
     if (!rows.ok) {
       if (isUnauthenticated(rows.error)) {
         // The session is gone — the stored bearer is dead weight too.
@@ -137,6 +150,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return rows;
     }
     const stored = await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
+    if (client !== active) return { ok: false, error: { code: "stale" } };
     const matches = matchAccountHosts(active.origin, rows.value, stored);
     // Adopt pre-account pairings: same Noise key, no link yet — bookkeeping,
     // not a re-pair, so a failed save is unremarkable.
@@ -285,9 +299,42 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         return result;
       }
       rejected.delete(result.value.hostKey);
-      await deps.paired(result.value);
-      if (state.status === "signed-in") await refresh(client, state.user);
+      try {
+        await deps.paired(result.value);
+      } catch {
+        // The invite is spent and the device registered — a failed save must
+        // not orphan the key. Keep the record for retryUnsavedHost.
+        if (state.status === "signed-in") setState({ ...state, unsavedHost: result.value });
+        return { ok: false, error: { code: "pairing_not_saved" } };
+      }
+      // A re-pair after a key change stored a fresh record under the new key;
+      // the stale linked record can never connect again — drop it so it stops
+      // matching this account host.
+      const stored = await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
+      for (const entry of stored) {
+        if (
+          entry.account !== undefined &&
+          normalizeServerOrigin(entry.account.serverOrigin) === client.origin &&
+          entry.account.hostId === hostId &&
+          entry.hostKey !== result.value.hostKey
+        ) {
+          void deps.hosts.remove(entry.hostKey).catch(() => undefined);
+        }
+      }
+      if (state.status === "signed-in" && client !== undefined) await refresh(client, state.user);
       return result;
+    },
+
+    retryUnsavedHost: async () => {
+      const pending = state.status === "signed-in" ? state.unsavedHost : undefined;
+      if (pending === undefined) return fail("nothing_pending");
+      try {
+        await deps.paired(pending);
+      } catch {
+        return fail("pairing_not_saved");
+      }
+      if (state.status === "signed-in") setState({ ...state, unsavedHost: undefined });
+      return { ok: true, value: undefined };
     },
 
     hostRejected: (hostKey) => {

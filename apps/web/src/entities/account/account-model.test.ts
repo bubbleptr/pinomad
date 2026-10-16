@@ -27,15 +27,25 @@ const fakeFetch = (...script: { status: number; body?: unknown }[]) => {
 const hosts = (initial: StoredHost[] = []) => {
   const stored: StoredHost[] = [...initial];
   const saved: StoredHost[] = [];
+  let failSaves = false;
   return {
     stored,
     saved,
+    setFailSaves: (value: boolean) => {
+      failSaves = value;
+    },
     list: () => Promise.resolve([...stored]),
     save: (host: StoredHost) => {
+      if (failSaves) return Promise.reject(new Error("store unavailable"));
       saved.push(host);
       const index = stored.findIndex((each) => each.hostKey === host.hostKey);
       if (index === -1) stored.push(host);
       else stored[index] = host;
+      return Promise.resolve();
+    },
+    remove: (hostKey: string) => {
+      const index = stored.findIndex((each) => each.hostKey === hostKey);
+      if (index !== -1) stored.splice(index, 1);
       return Promise.resolve();
     },
   };
@@ -262,6 +272,96 @@ describe("account model", () => {
     expect(state.rejectedHostKeys).toEqual([entry.hostKey]);
     // And the host still reports its stored pairing — rejection is display state.
     expect(state.hosts[0]).toMatchObject({ status: "paired" });
+  });
+
+  it("keeps the paired record when the store save fails, for retry", async () => {
+    const store = hosts();
+    store.setFailSaves(true);
+    const offer = {
+      url: "wss://relay.example.com/c/h1",
+      hostKey: toBase64Url(generateKeyPair().publicKey),
+      secret: toBase64Url(generateKeyPair().privateKey),
+      expiresAt: Date.now() + 60_000,
+    };
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 200, body: offer },
+    ), store });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+
+    // The device is already registered on the host — the failed save must not
+    // swallow the identity; it waits in state for a retry.
+    const result = await model.pairHost("h1");
+    expect(result).toEqual({ ok: false, error: { code: "pairing_not_saved" } });
+    const pending = (model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHost;
+    expect(pending).toBeDefined();
+    expect(store.stored).toHaveLength(0);
+
+    store.setFailSaves(false);
+    expect(await model.retryUnsavedHost()).toEqual({ ok: true, value: undefined });
+    expect(store.stored).toEqual([pending]);
+    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHost).toBeUndefined();
+  });
+
+  it("drops the stale linked record when a key-changed host is re-paired", async () => {
+    const old = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1" } });
+    const newKey = toBase64Url(generateKeyPair().publicKey);
+    const store = hosts([old]);
+    const offer = {
+      url: "wss://relay.example.com/c/h1",
+      hostKey: newKey,
+      secret: toBase64Url(generateKeyPair().privateKey),
+      expiresAt: Date.now() + 60_000,
+    };
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(newKey, "h1")] },
+      { status: 200, body: offer },
+      { status: 200, body: [accountHost(newKey, "h1")] },
+    ), store });
+    await vi.waitFor(() => {
+      const state = model.state as Extract<typeof model.state, { status: "signed-in" }>;
+      expect(state.hosts[0]?.status).toBe("key_changed");
+    });
+
+    const result = await model.pairHost("h1");
+    expect(result.ok).toBe(true);
+    // The old key's link is dead — only the fresh record remains.
+    expect(store.stored.map((each) => each.hostKey)).toEqual([newKey]);
+    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+  });
+
+  it("a late refresh never resurrects a signed-out session", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let hostsCalls = 0;
+    const scripted = fakeFetch(
+      { status: 401 }, // probe
+      { status: 200, body: { user: { username: "admin" } } }, // me
+    );
+    const fetch: AccountFetch = (url, init) => {
+      if (url.endsWith("/api/hosts")) {
+        // The first listHosts (init's refresh) answers; the in-flight one hangs.
+        hostsCalls += 1;
+        if (hostsCalls === 1) return Promise.resolve({ status: 200, json: () => Promise.resolve([]) });
+        return gate.then(() => ({ status: 200, json: () => Promise.resolve([]) }));
+      }
+      // logout and anything else get an empty 204 — what matters is the call went out.
+      if (url.endsWith("/api/logout")) return Promise.resolve({ status: 204, json: () => Promise.resolve(undefined) });
+      return scripted.impl(url, init);
+    };
+    const { model } = makeModel({ fake: { impl: fetch, calls: [] } });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+
+    const pending = model.refreshHosts();
+    await model.logout();
+    expect(model.state.status).toBe("signed-out");
+    release!();
+    await pending;
+    expect(model.state.status).toBe("signed-out");
   });
 
   it("revokeAll signs out everywhere including this session", async () => {

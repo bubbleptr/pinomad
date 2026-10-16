@@ -238,6 +238,16 @@ describe("matchAccountHosts", () => {
     expect(match).toMatchObject({ status: "key_changed", stored: entry, linkable: false });
   });
 
+  it("prefers the linked entry whose key still matches among duplicates", () => {
+    // Re-pairing after a key change stores a fresh record under the new key
+    // while the stale link survives until cleanup — the live record must win.
+    const stale = stored({ account: { serverOrigin: ORIGIN, hostId: HOST_ID } });
+    const fresh = stored({ account: { serverOrigin: ORIGIN, hostId: HOST_ID } });
+    const host = accountHost({ noisePublicKey: fresh.hostKey });
+    const [match] = matchAccountHosts(ORIGIN, [host], [stale, fresh]);
+    expect(match).toMatchObject({ status: "paired", stored: fresh, linkable: false });
+  });
+
   it("scopes the account link by origin: the same hostId elsewhere doesn't match", () => {
     const entry = stored({ account: { serverOrigin: "https://other.example.com", hostId: HOST_ID } });
     const host = accountHost({ noisePublicKey: toBase64Url(generateKeyPair().publicKey) });

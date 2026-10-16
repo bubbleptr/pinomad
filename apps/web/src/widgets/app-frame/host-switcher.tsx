@@ -37,6 +37,9 @@ export function HostSwitcher({ onPairAnother }: { onPairAnother: () => void }) {
         value={current?.hostKey}
         onChange={(hostKey) => {
           localStorage.setItem(ACTIVE_HOST_KEY, hostKey);
+          // A live fragment (#token=…, #pair=…) would win over the stored
+          // selection after reload — clear it so the switch sticks.
+          history.replaceState(null, "", window.location.pathname + window.location.search);
           window.location.reload();
         }}
       >

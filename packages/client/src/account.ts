@@ -70,22 +70,23 @@ export type AccountsProbe = "enabled" | "disabled" | "unreachable";
  */
 export async function probeAccounts(origin: string, fetchImpl: AccountFetch = fallbackFetch): Promise<AccountsProbe> {
   // AbortSignal.timeout isn't on Hermes; a controller plus setTimeout is.
+  // The timer stays armed through the body read — a stalled body after the
+  // headers (a half-dead proxy) must still count as unreachable.
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), 5_000);
-  let response: AccountFetchResponse;
   try {
-    response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, { signal: timeout.signal });
+    const response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, { signal: timeout.signal });
+    if (response.status === 401) return "enabled";
+    if (response.status === 200) {
+      const body = (await response.json()) as { user?: unknown } | undefined;
+      return typeof body?.user === "object" && body.user !== null ? "enabled" : "disabled";
+    }
+    return response.status === 404 ? "disabled" : "unreachable";
   } catch {
     return "unreachable";
   } finally {
     clearTimeout(timer);
   }
-  if (response.status === 401) return "enabled";
-  if (response.status === 200) {
-    const body = (await response.json().catch(() => undefined)) as { user?: unknown } | undefined;
-    return typeof body?.user === "object" && body.user !== null ? "enabled" : "disabled";
-  }
-  return response.status === 404 ? "disabled" : "unreachable";
 }
 
 /**
@@ -365,17 +366,19 @@ export function matchAccountHosts(
 ): AccountHostMatch[] {
   const origin = normalizeServerOrigin(serverOrigin);
   return hosts.map((host) => {
-    const linked = stored.find(
+    // Several entries may share a link — an explicit re-pair after a key
+    // change stores a fresh record without deleting the stale one. The entry
+    // whose key still matches wins; only a link with no matching key at all
+    // is a key_changed report.
+    const linked = stored.filter(
       (each) =>
         each.account !== undefined &&
         normalizeServerOrigin(each.account.serverOrigin) === origin &&
         each.account.hostId === host.hostId,
     );
-    if (linked !== undefined) {
-      return linked.hostKey === host.noisePublicKey
-        ? { host, status: "paired" as const, stored: linked, linkable: false }
-        : { host, status: "key_changed" as const, stored: linked, linkable: false };
-    }
+    const exact = linked.find((each) => each.hostKey === host.noisePublicKey);
+    if (exact !== undefined) return { host, status: "paired" as const, stored: exact, linkable: false };
+    if (linked.length > 0) return { host, status: "key_changed" as const, stored: linked[0], linkable: false };
     const twin = stored.find((each) => each.hostKey === host.noisePublicKey);
     if (twin !== undefined) return { host, status: "paired" as const, stored: twin, linkable: twin.account === undefined };
     return { host, status: "unpaired" as const, linkable: false };
