@@ -1,11 +1,12 @@
 // The account panel against a fake model: which host rows offer which action,
 // and that a key change or revocation never re-pairs until the user asks.
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
+import { ACTIVE_HOST_KEY } from "../../entities/host/host-store.ts";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { AccountPanel } from "./account-panel.tsx";
 
@@ -18,10 +19,21 @@ function host(overrides: Partial<AccountHost>): AccountHost {
 
 const stored = (hostKey: string): StoredHost => ({ url: "wss://s/c/x", hostKey, privateKey: "p".repeat(43) });
 
-function fakeModel(state: AccountState): AccountModel {
+function fakeModel(initial: AccountState): AccountModel & { setState(next: AccountState): void } {
+  let state = initial;
+  const listeners = new Set<() => void>();
   return {
-    state,
-    subscribe: () => () => {},
+    get state() {
+      return state;
+    },
+    setState(next) {
+      state = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     login: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     logout: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     revokeAll: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
@@ -93,5 +105,30 @@ describe("AccountPanel", () => {
     renderPanel(fakeModel(signedIn([{ host: host({}), status: "paired", stored: stored(KEY_A), linkable: false }], [KEY_A])));
     expect(within(row("box")).queryByRole("button", { name: "Connect" })).toBeNull();
     expect(within(row("box")).getByRole("button", { name: "Pair again" })).toBeEnabled();
+  });
+
+  it("still warns after a failed Sign out everywhere lands on the sign-in form", async () => {
+    const model = fakeModel(signedIn([]));
+    // Like the real model: signed-out even when the request never reached the server.
+    model.revokeAll = vi.fn(() => {
+      model.setState({ status: "signed-out", mode: "cookie" });
+      return Promise.resolve({ ok: false as const, error: { code: "network" } });
+    });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere?" }));
+    expect(await screen.findByText(/Other devices may still be signed in/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("connects to the host once a failed save succeeds on retry", async () => {
+    localStorage.removeItem(ACTIVE_HOST_KEY);
+    const model = fakeModel({ ...signedIn([]), unsavedHost: stored(KEY_A) } as AccountState);
+    renderPanel(model);
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    });
+    expect(model.retryUnsavedHost).toHaveBeenCalled();
+    expect(localStorage.getItem(ACTIVE_HOST_KEY)).toBe(KEY_A);
   });
 });

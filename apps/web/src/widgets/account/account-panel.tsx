@@ -11,6 +11,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState } from "react";
 import type { AccountError, AccountHostMatch, JoinToken } from "@pinomad/client/account.ts";
+import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
@@ -64,6 +65,9 @@ export function accountErrorMessage(error: AccountError): string {
 export function AccountPanel() {
   const account = useAccountModel();
   const { state } = account;
+  // Lives here, not in SignedIn: a failed sign-out still lands signed-out,
+  // and the warning has to survive that unmount.
+  const [signOutWarning, setSignOutWarning] = useState<string>();
   switch (state.status) {
     case "unavailable":
       return null;
@@ -75,9 +79,16 @@ export function AccountPanel() {
         </HStack>
       );
     case "signed-out":
-      return <SignInForm account={account} state={state} />;
+      return (
+        <VStack gap={3} style={{ width: "100%" }}>
+          {signOutWarning === undefined ? null : (
+            <Banner status="warning" title="Sign-out not confirmed" description={signOutWarning} />
+          )}
+          <SignInForm account={account} state={state} />
+        </VStack>
+      );
     case "signed-in":
-      return <SignedIn account={account} state={state} />;
+      return <SignedIn account={account} state={state} onSignOutWarning={setSignOutWarning} />;
   }
 }
 
@@ -125,9 +136,25 @@ function SignInForm({ account, state }: { account: AccountModel; state: Extract<
   );
 }
 
-function SignedIn({ account, state }: { account: AccountModel; state: Extract<AccountState, { status: "signed-in" }> }) {
+function SignedIn({
+  account,
+  state,
+  onSignOutWarning,
+}: {
+  account: AccountModel;
+  state: Extract<AccountState, { status: "signed-in" }>;
+  onSignOutWarning: (message: string | undefined) => void;
+}) {
   const [actionError, setActionError] = useState<AccountError>();
   const server = new URL(state.serverOrigin).host;
+  // A saved retry finishes what Pair started: connect to the host.
+  const retrySave = (host: StoredHost): void => {
+    setActionError(undefined);
+    void account.retryUnsavedHost().then((result) => {
+      if (result.ok) switchHost(host.hostKey);
+      else setActionError(result.error);
+    });
+  };
   return (
     <VStack gap={4} style={{ width: "100%" }}>
       <VStack gap={1}>
@@ -139,7 +166,7 @@ function SignedIn({ account, state }: { account: AccountModel; state: Extract<Ac
           status="warning"
           title="This pairing wasn't saved"
           description="It will be lost when the app restarts."
-          endContent={<Button label="Retry" variant="ghost" onClick={() => void account.retryUnsavedHost()} />}
+          endContent={<Button label="Retry" variant="ghost" onClick={() => retrySave(state.unsavedHost!)} />}
         />
       )}
       <HostList account={account} state={state} onError={setActionError} />
@@ -147,7 +174,7 @@ function SignedIn({ account, state }: { account: AccountModel; state: Extract<Ac
         <Banner status="error" title="Couldn't pair" description={accountErrorMessage(actionError)} />
       )}
       <AddHost account={account} />
-      <SignOut account={account} />
+      <SignOut account={account} onWarning={onSignOutWarning} />
     </VStack>
   );
 }
@@ -327,7 +354,7 @@ function JoinCommand({ token, onRenew, onDone }: { token: JoinToken; onRenew: ()
   );
 }
 
-function SignOut({ account }: { account: AccountModel }) {
+function SignOut({ account, onWarning }: { account: AccountModel; onWarning: (message: string | undefined) => void }) {
   // Signing out everywhere ends every session at once — one extra click to confirm.
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
@@ -338,11 +365,31 @@ function SignOut({ account }: { account: AccountModel }) {
   return (
     <VStack gap={1}>
       <HStack gap={2}>
-        <Button label="Sign out" variant="ghost" onClick={() => void account.logout()} />
+        <Button
+          label="Sign out"
+          variant="ghost"
+          onClick={() => {
+            onWarning(undefined);
+            void account.logout().then((result) => {
+              if (!result.ok) onWarning("Signed out on this device, but the server didn't confirm. The session ends on its own within 30 days.");
+            });
+          }}
+        />
         <Button
           label={confirming ? "Sign out everywhere?" : "Sign out everywhere"}
           variant={confirming ? "destructive" : "ghost"}
-          onClick={() => (confirming ? void account.revokeAll() : setConfirming(true))}
+          onClick={() => {
+            if (!confirming) {
+              setConfirming(true);
+              return;
+            }
+            onWarning(undefined);
+            // The model lands signed-out even when the request never reached the
+            // server — say so, or the user believes other devices are signed out.
+            void account.revokeAll().then((result) => {
+              if (!result.ok) onWarning("Other devices may still be signed in. Sign in and try Sign out everywhere again.");
+            });
+          }}
         />
       </HStack>
       <Text type="supporting">Signing out doesn't unpair this device from its hosts. Revoke it in Devices.</Text>
