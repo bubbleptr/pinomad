@@ -1,0 +1,109 @@
+{
+  "agentOf": [
+    {
+      "name": "empty",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "{}"
+    },
+    {
+      "name": "set",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.agent\":{\"model\":{\"provider\":\"faux\",\"modelId\":\"faux-1\"},\"thinkingLevel\":\"high\",\"cwd\":\"/w/project\"}}}",
+      "expect": "{\"model\":{\"provider\":\"faux\",\"modelId\":\"faux-1\"},\"thinkingLevel\":\"high\",\"cwd\":\"/w/project\"}"
+    }
+  ],
+  "statusText": [
+    {
+      "name": "idle",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"\""
+    },
+    {
+      "name": "run",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":{}},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"\""
+    },
+    {
+      "name": "tools",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":{},\"tools\":[{\"callId\":\"c\",\"name\":\"logs\",\"status\":\"running\"}]},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"\""
+    },
+    {
+      "name": "retry",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":{},\"generation\":{\"attempt\":1,\"retry\":{\"at\":0,\"error\":\"overloaded\"}}},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"Retrying (attempt 2): overloaded\""
+    },
+    {
+      "name": "deferred",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":{},\"generation\":{\"attempt\":1,\"deferred\":true}},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"Waiting for deferred response...\""
+    },
+    {
+      "name": "compaction",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"reason\":\"manual\",\"attempt\":1}]},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"Compacting (manual)...\""
+    },
+    {
+      "name": "compaction-retry",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"reason\":\"manual\",\"attempt\":2,\"retry\":{\"at\":1,\"error\":\"x\"}}]},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "\"Retrying manual compaction (attempt 3)...\""
+    }
+  ],
+  "queueItems": [
+    {
+      "name": "steer-followup",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"focus\"},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"then this\"}]}]}}}",
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"focus\",\"imageCount\":0},{\"id\":2,\"mode\":\"followUp\",\"text\":\"then this\",\"imageCount\":0}]"
+    },
+    {
+      "name": "images",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]},{\"id\":2,\"mode\":\"write\",\"entry\":{\"kind\":\"pi.note\"}}]}}}",
+      "expect": "[{\"id\":1,\"mode\":\"followUp\",\"text\":\"look\",\"imageCount\":2},{\"id\":2,\"mode\":\"write\",\"text\":\"<pi.note>\",\"imageCount\":0}]"
+    },
+    {
+      "name": "empty",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "[]"
+    }
+  ],
+  "usageRows": [
+    {
+      "name": "model-and-tool",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.usage\":{\"models\":{\"faux/faux-1\":{\"input\":120,\"output\":30,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":150,\"cost\":{\"total\":0.002}}},\"tools\":{\"search_logs\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"total\":0}}}}}}",
+      "expect": "[{\"key\":\"faux/faux-1\",\"input\":120,\"output\":30,\"cost\":0.002},{\"key\":\"search_logs\",\"input\":0,\"output\":0,\"cost\":0}]"
+    },
+    {
+      "name": "empty",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "[]"
+    }
+  ],
+  "taskRows": [
+    {
+      "name": "tree",
+      "graph": "{\"tasks\":{\"1\":{\"id\":1,\"kind\":\"pi.generation\",\"conversationId\":0,\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"waiting\",\"phase\":\"tools\",\"on\":[2],\"policy\":\"all\"},\"conversations\":[]},\"2\":{\"id\":2,\"kind\":\"pi.tool\",\"conversationId\":0,\"owner\":1,\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"running\",\"phase\":\"run\"},\"conversations\":[5]},\"3\":{\"id\":3,\"kind\":\"pi.generation\",\"conversationId\":5,\"background\":false,\"abortRequested\":true,\"state\":{\"status\":\"running\",\"phase\":\"request\"},\"conversations\":[]}}}",
+      "expect": "[{\"id\":1,\"depth\":0,\"label\":\"pi.generation #1: waiting on 2\"},{\"id\":2,\"depth\":1,\"label\":\"pi.tool #2: running run owns conversation 5\"},{\"id\":3,\"depth\":2,\"label\":\"pi.generation #3: running request [aborting]\"}]"
+    }
+  ],
+  "isBusy": [
+    {
+      "name": "idle",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "false"
+    },
+    {
+      "name": "run",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":{}},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "true"
+    },
+    {
+      "name": "run-null",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"run\":null},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "true"
+    },
+    {
+      "name": "no-live",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{}}",
+      "expect": "false"
+    }
+  ]
+}

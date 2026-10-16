@@ -1,0 +1,244 @@
+{
+  "thinkingLevelLabels": "{\"off\":\"Off\",\"minimal\":\"Minimal\",\"low\":\"Low\",\"medium\":\"Medium\",\"high\":\"High\",\"xhigh\":\"X-High\",\"max\":\"Max\"}",
+  "sameModel": [
+    {
+      "name": "same",
+      "a": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "b": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "expect": "true"
+    },
+    {
+      "name": "different-provider",
+      "a": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "b": "{\"provider\":\"local\",\"modelId\":\"gpt-b\"}",
+      "expect": "false"
+    },
+    {
+      "name": "different-id",
+      "a": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "b": "{\"provider\":\"openai\",\"modelId\":\"gpt-c\"}",
+      "expect": "false"
+    },
+    {
+      "name": "a-absent",
+      "a": "null",
+      "b": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "expect": "false"
+    },
+    {
+      "name": "b-absent",
+      "a": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "b": "null",
+      "expect": "false"
+    },
+    {
+      "name": "both-absent",
+      "a": "null",
+      "b": "null",
+      "expect": "false"
+    }
+  ],
+  "clampLevel": [
+    {
+      "name": "supported",
+      "levels": "[\"off\",\"low\",\"high\"]",
+      "want": "high",
+      "expect": "\"high\""
+    },
+    {
+      "name": "exact-off",
+      "levels": "[\"off\"]",
+      "want": "off",
+      "expect": "\"off\""
+    },
+    {
+      "name": "clamps-down",
+      "levels": "[\"off\",\"low\",\"medium\"]",
+      "want": "xhigh",
+      "expect": "\"medium\""
+    },
+    {
+      "name": "skips-unsupported-middle",
+      "levels": "[\"off\",\"medium\"]",
+      "want": "high",
+      "expect": "\"medium\""
+    },
+    {
+      "name": "nothing-below",
+      "levels": "[\"high\",\"max\"]",
+      "want": "off",
+      "expect": "\"off\""
+    },
+    {
+      "name": "empty-levels",
+      "levels": "[]",
+      "want": "medium",
+      "expect": "\"off\""
+    },
+    {
+      "name": "unknown-want",
+      "levels": "[\"off\",\"low\"]",
+      "want": "turbo",
+      "expect": "\"off\""
+    }
+  ],
+  "summaryOf": [
+    {
+      "name": "hit",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "ref": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}",
+      "expect": "{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}"
+    },
+    {
+      "name": "miss",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "ref": "{\"provider\":\"gone\",\"modelId\":\"claude-z\"}",
+      "expect": "null"
+    },
+    {
+      "name": "absent",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "ref": "null",
+      "expect": "null"
+    }
+  ],
+  "modelLabel": [
+    {
+      "name": "reasoning",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "selected": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"low\"}",
+      "expect": "\"GPT B · Low\""
+    },
+    {
+      "name": "non-reasoning",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "selected": "{\"model\":{\"provider\":\"local\",\"modelId\":\"llama-c\"},\"level\":\"off\"}",
+      "expect": "\"Llama C\""
+    },
+    {
+      "name": "unlisted-model",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "selected": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"high\"}",
+      "expect": "\"claude-z\""
+    },
+    {
+      "name": "no-model",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "selected": "{\"level\":\"off\"}",
+      "expect": "\"No model\""
+    },
+    {
+      "name": "name-null",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-x\",\"name\":null,\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "selected": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-x\"},\"level\":\"off\"}",
+      "expect": "\"claude-x\""
+    }
+  ],
+  "filterModels": [
+    {
+      "name": "blank-query",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "  ",
+      "expect": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]"
+    },
+    {
+      "name": "name-substring",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "claude",
+      "expect": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]}]"
+    },
+    {
+      "name": "case-insensitive",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "CLAUDE",
+      "expect": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]}]"
+    },
+    {
+      "name": "provider-modelid",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "openai/gpt-b",
+      "expect": "[{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]"
+    },
+    {
+      "name": "no-match",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "zzz",
+      "expect": "[]"
+    },
+    {
+      "name": "trims",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "  gpt ",
+      "expect": "[{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]"
+    },
+    {
+      "name": "non-bmp",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-rocket\",\"name\":\"Claude 🚀 Rocket\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "rocket",
+      "expect": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-rocket\",\"name\":\"Claude 🚀 Rocket\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]"
+    },
+    {
+      "name": "surrogate-mismatch",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"m1\",\"name\":\"phone 😎\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "🟿",
+      "expect": "[]"
+    },
+    {
+      "name": "lone-surrogate-query",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"m1\",\"name\":\"phone \\ud83d\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "query": "\ud83d",
+      "expect": "[{\"provider\":\"anthropic\",\"modelId\":\"m1\",\"name\":\"phone �\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]"
+    }
+  ],
+  "reconcileDraftPick": [
+    {
+      "name": "remembered-listed",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "remembered": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"high\"}",
+      "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"high\"}"
+    },
+    {
+      "name": "default-fallback",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "remembered": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"low\"}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"low\"}"
+    },
+    {
+      "name": "first-fallback",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"}}",
+      "remembered": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"also-gone\"},\"level\":\"off\"}",
+      "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"off\"}"
+    },
+    {
+      "name": "empty-list",
+      "models": "[]",
+      "defaults": "{}",
+      "remembered": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"high\"}",
+      "expect": "{\"level\":\"off\"}"
+    },
+    {
+      "name": "clamps-remembered",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{}",
+      "remembered": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"high\"}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"medium\"}"
+    },
+    {
+      "name": "clamps-after-fallback",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "remembered": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"high\"}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"medium\"}"
+    },
+    {
+      "name": "no-remembered-model",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"}}",
+      "remembered": "{\"level\":\"medium\"}",
+      "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"medium\"}"
+    }
+  ]
+}

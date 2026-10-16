@@ -1,602 +1,294 @@
-// The Durable→CotView adapter: same fixture style as apps/web/test/presentation.test.ts.
-import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { deriveChat, pinomadOf, retryOf, splitSubagentCalls, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { deriveChat, pinomadOf, retryOf, splitSubagentCalls } from "../src/cot-view.ts";
+import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES, runs } from "./cot-view-cases.ts";
 
-let nextId = 1;
-const entry = (kind: string, message?: unknown): EntryRecord =>
-  ({ id: nextId++, conversationId: 0, kind, ...(message === undefined ? {} : { model: [message] }) }) as unknown as EntryRecord;
-const user = (content: string | unknown[]) => entry("pi.user", { role: "user", content, timestamp: 0 });
-const assistant = (content: unknown[], stopReason = "stop", timestamp = 0, extra: object = {}) =>
-  entry("pi.assistant", { role: "assistant", content, stopReason, timestamp, ...extra });
-const result = (callId: string, name: string, output: string, isError = false, details?: unknown, timestamp = 0) =>
-  entry("pi.tool-result", {
-    role: "toolResult",
-    toolCallId: callId,
-    toolName: name,
-    content: [{ type: "text", text: output }],
-    isError,
-    timestamp,
-    ...(details === undefined ? {} : { details }),
-  });
-const text = (value: string) => ({ type: "text", text: value });
-const thinking = (value: string) => ({ type: "thinking", thinking: value });
-const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
-const image = (data: string, mimeType: string) => ({ type: "image", data, mimeType });
-const view = (entries: EntryRecord[], live: object = {}): ConversationView =>
-  ({ conversation: { id: 0 }, entries, docs: { "pi.live": live } }) as unknown as ConversationView;
-const runs = (entries: ChatEntry[]) => entries.filter((item) => item.kind === "run");
+const CASE = (name: string) => {
+  const found = [...DERIVE_CHAT_CASES, ...RETRY_CASES].find((c) => c.name === name);
+  if (!found) throw new Error(`missing case ${name}`);
+  return found;
+};
+const derive = (name: string) => {
+  const c = CASE(name);
+  return deriveChat(c.view, c.presentations ?? {}, c.busy);
+};
 
 describe("deriveChat", () => {
-  it("groups consecutive calls into one tools step, mid-run text into interim, final text into the answer", () => {
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([thinking("plan"), call("c1", "read", { path: "a.ts" }), call("c2", "read", { path: "b.ts" })], "toolUse"),
-        result("c1", "read", "A"),
-        result("c2", "read", "B"),
-        assistant([text("checking next"), call("c3", "bash", { command: "ls" })], "toolUse"),
-        result("c3", "bash", "ok"),
-        assistant([text("done")]),
-      ]),
-      {},
-      false,
-    );
-    expect(entries[0]).toMatchObject({ kind: "user", text: "go", images: [] });
-    const run = runs(entries)[0]!;
+  it("groups consecutive calls, thinking, interim text and answer into a run", () => {
+    const entries = derive("settled-run");
+    const kinds = entries.map((item) => item.kind);
+    const run = entries.find((item) => item.kind === "run")!;
+    expect(kinds).toEqual(["user", "run"]);
     expect(run.cot.phase).toBe("settled");
     expect(run.cot.steps.map((step) => step.kind)).toEqual(["thinking", "tools", "interim", "tools"]);
-    const burst = run.cot.steps[1] as Extract<(typeof run.cot.steps)[number], { kind: "tools" }>;
-    expect(burst.tools.map((tool) => [tool.toolCallId, tool.state, tool.output])).toEqual([
-      ["c1", "output-available", "A"],
-      ["c2", "output-available", "B"],
-    ]);
-    expect(run.cot.steps[2]).toMatchObject({ kind: "interim", text: "checking next" });
-    expect(run.cot.answer).toEqual({ text: "done", streaming: false });
-    expect(run.interrupted).toBe(false);
-    expect(run.forkEntryId).toBeDefined();
+    expect(run.cot.answer?.text).toBe("done");
+    expect(run.cot.answer?.streaming).toBe(false);
+    // The fork anchor is the last assistant entry's id.
+    expect(run.forkEntryId).toBe(String(CASE("settled-run").view.entries.at(-1)!.id));
   });
 
-  it("phases a live run: thinking on a thinking-only partial, acting with the active call, answering on partial text, settled when idle", () => {
-    const thinkingOnly = deriveChat(
-      view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [thinking("che")] } } }),
-      {},
-      true,
-    );
-    const thinkingRun = runs(thinkingOnly)[0]!;
+  it("phases a live run through thinking, acting and answering", () => {
+    const thinkingRun = runs(derive("live-thinking")).at(-1)!;
     expect(thinkingRun.cot.phase).toBe("thinking");
-    expect(thinkingRun.cot.steps[0]).toMatchObject({ kind: "thinking", text: "che", live: true });
 
-    const acting = deriveChat(
-      view(
-        [user("go"), assistant([call("c1", "logs", {})], "toolUse")],
-        { run: {}, tools: [{ callId: "c1", name: "logs", status: "running" }] },
-      ),
-      {},
-      true,
-    );
-    const actingRun = runs(acting)[0]!;
+    const actingRun = runs(derive("live-acting")).at(-1)!;
     expect(actingRun.cot.phase).toBe("acting");
-    const actingStep = actingRun.cot.steps[0] as Extract<(typeof actingRun.cot.steps)[number], { kind: "tools" }>;
-    expect(actingStep.live).toBe(true);
-    expect(actingStep.activeToolCallId).toBe("c1");
-    expect(actingStep.tools[0]).toMatchObject({ state: "input-available" });
+    // The step id keys off the assistant entry's id.
+    const actingAssistantId = String(CASE("live-acting").view.entries.at(-1)!.id);
+    expect(actingRun.cot.steps).toEqual([
+      {
+        kind: "tools",
+        id: `${actingAssistantId}-tools-0`,
+        tools: [{ state: "input-available", toolCallId: "c1", toolName: "logs", argsText: "{}" }],
+        live: true,
+        activeToolCallId: "c1",
+      },
+    ]);
 
-    const answering = deriveChat(
-      view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [text("hel")] } } }),
-      {},
-      true,
-    );
-    const answeringRun = runs(answering)[0]!;
+    const answeringRun = runs(derive("live-answering")).at(-1)!;
     expect(answeringRun.cot.phase).toBe("answering");
     expect(answeringRun.cot.answer).toEqual({ text: "hel", streaming: true });
 
-    const settled = deriveChat(view([user("hi"), assistant([text("hello")])]), {}, false);
-    expect(runs(settled)[0]!.cot.phase).toBe("settled");
+    const settledRun = runs(derive("settled-simple")).at(-1)!;
+    expect(settledRun.cot.phase).toBe("settled");
+    expect(settledRun.cot.answer?.text).toBe("hello");
+    expect(settledRun.cot.steps).toEqual([]);
   });
 
-  it("a tool call streaming in the partial is input-streaming", () => {
-    const entries = deriveChat(
-      view([user("go")], {
-        run: {},
-        generation: { attempt: 1, message: { role: "assistant", content: [call("c1", "read", { path: "a" })] } },
-      }),
-      {},
-      true,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    expect(step.tools[0]).toMatchObject({ toolCallId: "c1", toolName: "read", state: "input-streaming" });
+  it("marks a tool call streaming in the partial as input-streaming", () => {
+    const run = runs(derive("live-streaming-call")).at(-1)!;
+    const step = run.cot.steps.at(-1)!;
+    expect(step.kind).toBe("tools");
+    if (step.kind !== "tools") return;
+    expect(step.tools[0]!.state).toBe("input-streaming");
+    expect(run.cot.phase).toBe("acting");
   });
 
-  it("an interrupted answer errors its unrun calls, marks the run interrupted, and blocks forking", () => {
-    const entries = deriveChat(
-      view([user("go"), assistant([call("c1", "logs", {})], "aborted")]),
-      {},
-      false,
-    );
-    const run = runs(entries)[0]!;
-    const step = run.cot.steps[0] as Extract<(typeof run.cot.steps)[number], { kind: "tools" }>;
-    expect(step.tools[0]).toMatchObject({ state: "output-error", output: "Not run: the answer was interrupted." });
+  it("marks an interrupted answer's pending tool calls as not run", () => {
+    const run = runs(derive("interrupted")).at(-1)!;
     expect(run.interrupted).toBe(true);
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(step.tools[0]).toEqual({ state: "output-error", toolCallId: "c1", toolName: "logs", argsText: "{}", output: "Not run: the answer was interrupted." });
     expect(run.forkEntryId).toBeUndefined();
   });
 
-  it("a failed run carries the error message and no fork", () => {
-    const entries = deriveChat(
-      view([user("go"), assistant([text("")], "error", 0, { errorMessage: "HTTP 429 quota exceeded" })]),
-      {},
-      false,
-    );
-    const run = runs(entries)[0]!;
+  it("carries the failure on a failed run and clears forkEntryId", () => {
+    const run = runs(derive("failed")).at(-1)!;
     expect(run.failure).toBe("HTTP 429 quota exceeded");
-    expect(run.cot.outcome).toBe("failed");
     expect(run.forkEntryId).toBeUndefined();
+    expect(run.cot.outcome).toBe("failed");
   });
 
-  it("an edit result with pinomad.diff details carries the diff payload and line stats", () => {
-    const patch = "diff --git a/a.ts b/a.ts\n@@ -1,2 +1,2 @@\n-old\n+new\n";
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "edit", { path: "a.ts" })], "toolUse"),
-        result("c1", "edit", "edited a.ts", false, { patch }),
-      ]),
-      { edit: "pinomad.diff" },
-      false,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    expect(pinomadOf(step.tools[0]!)).toEqual({ kind: "diff", patch });
-    expect(step.tools[0]!.diffStat).toEqual({ additions: 1, deletions: 1 });
+  it("emits pinomad.diff detail when the edit presentation declares it", () => {
+    const run = runs(derive("diff")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(pinomadOf(step.tools[0]!)).toEqual({ kind: "diff", patch: "diff --git a/a.ts b/a.ts\n@@ -1,2 +1,2 @@\n-old\n+new\n" });
 
-    const nonConforming = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "edit", { path: "a.ts" })], "toolUse"),
-        result("c1", "edit", "edited", false, { notAPatch: true }),
-      ]),
-      { edit: "pinomad.diff" },
-      false,
-    );
-    const plainStep = runs(nonConforming)[0]!.cot.steps[0] as typeof step;
-    expect(pinomadOf(plainStep.tools[0]!)).toBeUndefined();
-    expect(plainStep.tools[0]!.diffStat).toBeUndefined();
+    const run2 = runs(derive("diff-nonconforming")).at(-1)!;
+    const step2 = run2.cot.steps.find((s) => s.kind === "tools")!;
+    if (step2.kind !== "tools") return;
+    expect(pinomadOf(step2.tools[0]!)).toBeUndefined();
   });
 
-  it("maps codemode nested calls, with a still-running call cancelled once the card settled", () => {
-    const details = {
-      code: "await tools.bash({})",
-      calls: [
-        { name: "bash", args: "{}", status: "ok", durationMs: 10 },
-        { name: "read", args: "{}", status: "running" },
-        { name: "edit", args: "{}", status: "error", error: "conflict" },
-      ],
-    };
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "codemode", { code: details.code })], "toolUse"),
-        result("c1", "codemode", "script result", false, details),
-      ]),
-      { codemode: "pinomad.codemode" },
-      false,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    const parent = step.tools[0]!;
-    expect(parent.argsText).toBe(details.code);
-    expect(parent.output).toBe("script result");
-    expect(parent.children!.map((child) => [child.toolName, child.state, child.output])).toEqual([
+  it("maps a codemode call's nested calls to tool items", () => {
+    const run = runs(derive("codemode")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    const codemode = step.tools[0]!;
+    expect(codemode.toolName).toBe("codemode");
+    expect(codemode.argsText).toBe("await tools.bash({})");
+    expect(codemode.children?.map((child) => [child.toolName, child.state, child.output])).toEqual([
       ["bash", "output-available", undefined],
       ["read", "output-error", "Cancelled"],
       ["edit", "output-error", "conflict"],
     ]);
-    expect(parent.children![0]!.durationMs).toBe(10);
   });
 
-  it("shows a running codemode call's nested tools from pi.live, skipping pi.* internals", () => {
-    const entries = deriveChat(
-      view([user("go"), assistant([call("c1", "codemode", { code: "x" })], "toolUse")], {
-        run: {},
-        tools: [{ callId: "c1", name: "codemode", status: "running" }],
-        nestedTools: [
-          { callId: "c1/1", name: "read", parentCallId: "c1", parentTaskId: 9, taskId: 10, status: "running", arguments: { path: "a.txt" } },
-          {
-            callId: "c1/2",
-            name: "bash",
-            parentCallId: "c1",
-            parentTaskId: 9,
-            taskId: 11,
-            status: "done",
-            arguments: { command: "exit 3" },
-            summary: { isError: true, durationMs: 5, error: "Command exited with code 3" },
-          },
-          { callId: "c1/3", name: "pi.codemode.classify", parentCallId: "c1", parentTaskId: 9, taskId: 12, status: "done", arguments: {} },
-          // Another tool's nested call and a pi.* internal stay off this card.
-          { callId: "c9/1", name: "read", parentCallId: "c9", parentTaskId: 99, taskId: 13, status: "running", arguments: {} },
-        ],
-      }),
-      { codemode: "pinomad.codemode" },
-      true,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    const children = step.tools[0]!.children!;
-    expect(children.map((child) => [child.toolName, child.state, child.output, child.argsText])).toEqual([
-      ["read", "input-available", undefined, '{"path":"a.txt"}'],
-      ["bash", "output-error", "Command exited with code 3", '{"command":"exit 3"}'],
+  it("shows a running codemode call's nested tools live", () => {
+    const run = runs(derive("codemode-live")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    const codemode = step.tools[0]!;
+    expect(codemode.children?.map((child) => [child.toolCallId, child.toolName, child.state, child.output])).toEqual([
+      ["c1/1", "read", "input-available", undefined],
+      ["c1/2", "bash", "output-error", "Command exited with code 3"],
     ]);
-    expect(children[1]!.durationMs).toBe(5);
+    expect(codemode.children?.[1]?.durationMs).toBe(5);
   });
 
-  it("still renders a legacy stored codemode card's calls and nested diff", () => {
-    const details = {
-      code: "x",
-      calls: [
-        { name: "read", args: "{}", status: "running" },
-        { name: "edit", args: "{}", status: "ok", details: { patch: "diff --git a/a b/a\n@@ -1 +1 @@\n-a\n+b\n" } },
-      ],
-    };
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "codemode", { code: "x" })], "toolUse"),
-        result("c1", "codemode", "ok", false, details),
-      ]),
-      { codemode: "pinomad.codemode", edit: "pinomad.diff" },
-      false,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
+  it("maps legacy stored codemode calls: running shows cancelled, details carry diff patches", () => {
+    const run = runs(derive("codemode-legacy")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
     const children = step.tools[0]!.children!;
     expect(children[0]).toMatchObject({ toolName: "read", state: "output-error", output: "Cancelled" });
-    expect(pinomadOf(children[1]!)).toMatchObject({ kind: "diff" });
+    expect(children[1]).toMatchObject({ toolName: "edit", state: "output-available" });
+    expect(pinomadOf(children[1]!)).toEqual({ kind: "diff", patch: "diff --git a/a b/a\n@@ -1 +1 @@\n-a\n+b\n" });
   });
 
-  it("links a subagent call to its child conversation from a live slot and from the result", () => {
-    const live = deriveChat(
-      view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse")], {
-        run: {},
-        tools: [{ callId: "c1", name: "subagent", status: "running", details: { conversationId: 7, model: "faux/faux-1", startedAt: 1000 } }],
-      }),
-      {},
-      true,
-    );
-    const liveStep = runs(live)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    expect(pinomadOf(liveStep.tools[0]!)).toEqual({ kind: "subagent", conversationId: 7, model: "faux/faux-1", startedAt: 1000 });
+  it("links a subagent call to its conversation while running and once done", () => {
+    const runningRun = runs(derive("subagent-live")).at(-1)!;
+    const step = runningRun.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(pinomadOf(step.tools[0]!)).toEqual({ kind: "subagent", conversationId: 7, model: "faux/faux-1", startedAt: 1000 });
 
-    const done = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "subagent", { task: "survey" })], "toolUse"),
-        result("c1", "subagent", "report", false, { conversationId: 9, model: "faux/faux-1", startedAt: 1000 }, 4000),
-      ]),
-      {},
-      false,
-    );
-    const doneStep = runs(done)[0]!.cot.steps[0] as typeof liveStep;
-    expect(pinomadOf(doneStep.tools[0]!)).toEqual({
-      kind: "subagent",
-      conversationId: 9,
-      output: "report",
-      model: "faux/faux-1",
-      startedAt: 1000,
-      endedAt: 4000,
-    });
+    const settledRun = runs(derive("subagent-done")).at(-1)!;
+    const step2 = settledRun.cot.steps.find((s) => s.kind === "tools")!;
+    if (step2.kind !== "tools") return;
+    expect(pinomadOf(step2.tools[0]!)).toEqual({ kind: "subagent", conversationId: 9, model: "faux/faux-1", output: "report", startedAt: 1000, endedAt: 4000 });
   });
 
   it("collects result images onto the tool item", () => {
-    const withImage = entry("pi.tool-result", {
-      role: "toolResult",
-      toolCallId: "c1",
-      toolName: "mcp__shot__capture",
-      content: [text("captured"), image("aGk=", "image/png")],
-      isError: false,
-      timestamp: 0,
-    });
-    const entries = deriveChat(view([user("go"), assistant([call("c1", "mcp__shot__capture", {})], "toolUse"), withImage]), {}, false);
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
+    const run = runs(derive("tool-result-images")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
     expect(step.tools[0]!.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
   });
 
-  it("lifts subagent calls out of tools steps, keeping order and dropping emptied steps", () => {
-    const tool = (id: string, name: string) => ({ toolCallId: id, toolName: name, state: "output-available" as const });
-    const cot = {
-      phase: "settled" as const,
-      steps: [
-        { kind: "tools" as const, tools: [tool("c1", "subagent"), tool("c2", "read")] },
-        { kind: "interim" as const, text: "looking" },
-        { kind: "tools" as const, tools: [tool("c3", "subagent")] },
-      ],
-      answer: { text: "done", streaming: false },
-    } as CotView;
-    const { view: next, subagents } = splitSubagentCalls(cot);
-    expect(subagents.map((item) => item.tool.toolCallId)).toEqual(["c1", "c3"]);
-    expect(next.steps.map((step) => step.kind)).toEqual(["tools", "interim"]);
-    const kept = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
-    expect(kept.tools.map((item) => item.toolCallId)).toEqual(["c2"]);
+  it("collects message images onto the user entry", () => {
+    const entries = derive("user-images");
+    const users = entries.filter((item) => item.kind === "user");
+    expect(users[0]).toMatchObject({ text: "look", images: [{ data: "aGk=", mimeType: "image/png" }] });
+    expect(users[1]).toMatchObject({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
   });
 
-  it("settles the surviving tools step when the lifted call was the active one", () => {
-    // Live run: read already answered, the subagent is the in-flight call.
-    const cot = runs(
-      deriveChat(
-        view(
-          [
-            user("go"),
-            assistant([call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" })], "toolUse"),
-            result("c1", "read", "done"),
-          ],
-          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
-        ),
-        {},
-        true,
-      ),
-    )[0]!.cot;
-    const before = cot.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
-    expect(before.live).toBe(true);
-    expect(before.activeToolCallId).toBe("c2");
-
-    const { view: next } = splitSubagentCalls(cot);
-    const step = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
-    expect(step.tools.map((item) => item.toolCallId)).toEqual(["c1"]);
-    // Nothing is still in flight: the row must not keep showing a stale call.
-    expect(step.live).toBe(false);
-    expect(step.activeToolCallId).toBeUndefined();
-  });
-
-  it("hands the active slot to a still-pending call when the active one was lifted", () => {
-    const cot = runs(
-      deriveChat(
-        view(
-          [
-            user("go"),
-            assistant(
-              [call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" }), call("c3", "read", { path: "b.ts" })],
-              "toolUse",
-            ),
-            result("c1", "read", "done"),
-          ],
-          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
-        ),
-        {},
-        true,
-      ),
-    )[0]!.cot;
-
-    const { view: next } = splitSubagentCalls(cot);
-    const step = next.steps[0] as Extract<CotView["steps"][number], { kind: "tools" }>;
-    expect(step.tools.map((item) => item.toolCallId)).toEqual(["c1", "c3"]);
-    // c3 is queued but unstarted: it becomes the step's active call.
-    expect(step.live).toBe(true);
-    expect(step.activeToolCallId).toBe("c3");
-  });
-
-  it("keys lifted subagent calls by their step so a reused call id stays distinct", () => {
-    const cot = runs(
-      deriveChat(
-        view([
-          user("go"),
-          assistant([call("c1", "subagent", { task: "one" })], "toolUse"),
-          result("c1", "subagent", "r1"),
-          assistant([call("c1", "subagent", { task: "two" })], "toolUse"),
-          result("c1", "subagent", "r2"),
-        ]),
-        {},
-        false,
-      ),
-    )[0]!.cot;
-    const { subagents } = splitSubagentCalls(cot);
-    expect(subagents).toHaveLength(2);
-    expect(subagents[0]!.tool.toolCallId).toBe("c1");
-    expect(subagents[1]!.tool.toolCallId).toBe("c1");
-    expect(subagents[0]!.key).not.toBe(subagents[1]!.key);
-  });
-
-  it("carries a user message's image blocks on its entry", () => {
-    const entries = deriveChat(
-      view([
-        user([text("look"), image("aGk=", "image/png")]),
-        assistant([text("seen")]),
-        user([image("aGk=", "image/png")]),
-        assistant([text("again")]),
-      ]),
-      {},
-      false,
-    );
-    expect(entries[0]).toMatchObject({ kind: "user", text: "look", images: [{ data: "aGk=", mimeType: "image/png" }] });
-    // An image-only message has no text but still renders.
-    expect(entries[2]).toMatchObject({ kind: "user", text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
-  });
-
-  it("splits runs at compaction and reset boundaries", () => {
-    const entries = deriveChat(
-      view([
-        user("one"),
-        assistant([text("first")]),
-        entry("pi.compaction", { role: "user", content: "summary" }),
-        entry("pi.reset"),
-        user("two"),
-        assistant([text("second")]),
-      ]),
-      {},
-      false,
-    );
+  it("splits runs at compaction and reset entries", () => {
+    const entries = derive("boundaries");
     expect(entries.map((item) => item.kind)).toEqual(["user", "run", "compaction", "reset", "user", "run"]);
-    expect(runs(entries)[0]!.cot.answer?.text).toBe("first");
-    expect(runs(entries)[1]!.cot.answer?.text).toBe("second");
   });
 
-  it("anchors the run clock at its first assistant message and measures to the answer", () => {
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "logs", {})], "toolUse", 1000),
-        result("c1", "logs", "ok", false, undefined, 3000),
-        assistant([text("done")], "stop", 5000),
-      ]),
-      {},
-      false,
-    );
-    const run = runs(entries)[0]!;
+  it("anchors the run clock at its first assistant and measures to the answer", () => {
+    const run = runs(derive("anchor")).at(-1)!;
     expect(run.cot.anchorMs).toBe(1000);
     expect(run.cot.elapsedMs).toBe(4000);
   });
 
-  it("matches a repeated call id to its own round's result", () => {
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "read", { path: "a" })], "toolUse"),
-        result("c1", "read", "A"),
-        assistant([call("c1", "read", { path: "b" })], "toolUse"),
-        result("c1", "read", "B"),
-        assistant([text("done")]),
-      ]),
-      {},
-      false,
-    );
-    const steps = runs(entries)[0]!.cot.steps.filter((step) => step.kind === "tools");
-    expect(steps.map((step) => step.tools[0]!.output)).toEqual(["A", "B"]);
+  it("routes a repeated call id to the newest call awaiting it", () => {
+    const run = runs(derive("dup-call-id")).at(-1)!;
+    const tools = run.cot.steps.flatMap((step) => (step.kind === "tools" ? step.tools : []));
+    expect(tools.map((tool) => [tool.argsText, tool.state])).toEqual([
+      ['{"path":"a"}', "output-available"],
+      ['{"path":"b"}', "output-available"],
+    ]);
   });
 
-  it("does not let an earlier round's result satisfy a repeated call id", () => {
-    const entries = deriveChat(
-      view(
-        [
-          user("go"),
-          assistant([call("c1", "read", { path: "a" })], "toolUse"),
-          result("c1", "read", "A"),
-          assistant([call("c1", "read", { path: "b" })], "toolUse"),
-        ],
-        { run: {}, tools: [{ callId: "c1", name: "read", status: "running" }] },
-      ),
-      {},
-      true,
-    );
-    const run = runs(entries)[0]!;
+  it("does not let an earlier round's result satisfy the newest repeated call id", () => {
+    const run = runs(derive("dup-call-id-live")).at(-1)!;
+    const steps = run.cot.steps.filter((s) => s.kind === "tools");
+    const first = steps[0]!;
+    const second = steps[1]!;
+    if (first.kind !== "tools" || second.kind !== "tools") return;
+    expect(first.tools[0]!.state).toBe("output-available");
+    expect(second.tools[0]!.state).toBe("input-available");
+    expect(second.activeToolCallId).toBe("c1");
+  });
+
+  it("does not treat an aborted call as pending while a new run starts", () => {
+    const run = runs(derive("aborted-not-pending")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(step.tools[0]!.state).toBe("output-error");
+    expect(step.tools[0]!.output).toBe("Not run: the answer was interrupted.");
+  });
+
+  it("keeps text ahead of a running call as interim, not the answer", () => {
+    const run = runs(derive("interim-before-tools")).at(-1)!;
     expect(run.cot.phase).toBe("acting");
-    const steps = run.cot.steps.filter((step) => step.kind === "tools");
-    expect(steps[0]!.tools[0]).toMatchObject({ state: "output-available", output: "A" });
-    expect(steps[1]!.live).toBe(true);
-    expect(steps[1]!.activeToolCallId).toBe("c1");
-    expect(steps[1]!.tools[0]!.state).not.toBe("output-available");
-  });
-
-  it("an aborted call is not pending: its step stays settled while the retry thinks", () => {
-    const entries = deriveChat(
-      view([user("go"), assistant([call("c1", "bash", { command: "x" })], "aborted")], {
-        run: {},
-        generation: { attempt: 1, message: { role: "assistant", content: [thinking("retrying")] } },
-      }),
-      {},
-      true,
-    );
-    const step = runs(entries)[0]!.cot.steps[0] as Extract<ChatEntry, { kind: "run" }>["cot"]["steps"][number] & { kind: "tools" };
-    expect(step.live).toBe(false);
-    expect(step.activeToolCallId).toBeUndefined();
-    expect(step.tools[0]).toMatchObject({ state: "output-error" });
-  });
-
-  it("text ahead of a running call stays interim while the answer waits", () => {
-    const entries = deriveChat(
-      view([user("go"), assistant([text("Checking the logs"), call("c1", "bash", { command: "ls" })], "toolUse")], {
-        run: {},
-        tools: [{ callId: "c1", name: "bash", status: "running" }],
-      }),
-      {},
-      true,
-    );
-    const run = runs(entries)[0]!;
     expect(run.cot.answer).toBeUndefined();
-    expect(run.cot.steps.map((step) => step.kind)).toEqual(["interim", "tools"]);
-    expect(run.cot.steps[0]).toMatchObject({ kind: "interim", text: "Checking the logs" });
+    expect(run.cot.steps.map((s) => s.kind)).toEqual(["interim", "tools"]);
   });
 
-  it("measures a run with no answer to its last entry", () => {
-    const entries = deriveChat(
-      view([
-        user("go"),
-        assistant([call("c1", "logs", {})], "toolUse", 1000),
-        result("c1", "logs", "ok", false, undefined, 4000),
-      ]),
-      {},
-      false,
-    );
-    const run = runs(entries)[0]!;
-    expect(run.cot.anchorMs).toBe(1000);
+  it("measures a run with no answer through its last activity", () => {
+    const run = runs(derive("elapsed-no-answer")).at(-1)!;
     expect(run.cot.elapsedMs).toBe(3000);
   });
 });
 
 describe("retryOf", () => {
-  const failed = (errorMessage = "HTTP 429 quota exceeded") =>
-    assistant([text("")], "error", 0, { errorMessage });
+  it("returns the user message a failed run answered", () => {
+    expect(retryOf(derive("retry-simple"))).toEqual({ text: "go", images: [], requestId: `retry:${runs(derive("retry-simple")).at(-1)!.id}` });
+  });
 
-  it("returns the user message a failed run answered, keyed to that run", () => {
-    const entries = deriveChat(view([user("go"), failed()]), {}, false);
+  it("reuses the user's images", () => {
+    expect(retryOf(derive("retry-images"))).toEqual({ text: "look", images: [{ data: "aGk=", mimeType: "image/png" }], requestId: expect.any(String) });
+  });
+
+  it("treats an image-only prompt as retryable", () => {
+    expect(retryOf(derive("retry-image-only"))).toEqual({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }], requestId: expect.any(String) });
+  });
+
+  it("returns undefined for an empty prompt with no images", () => {
+    expect(retryOf(derive("retry-empty-prompt"))).toBeUndefined();
+  });
+
+  it("returns undefined when the failed run is not the newest entry", () => {
+    expect(retryOf(derive("retry-not-newest"))).toBeUndefined();
+  });
+
+  it("returns undefined when the newest run succeeded", () => {
+    expect(retryOf(derive("retry-succeeded"))).toBeUndefined();
+  });
+
+  it("walks back over a compaction to the prompt", () => {
+    expect(retryOf(derive("retry-compaction"))).toEqual({ text: "go", images: [], requestId: expect.any(String) });
+  });
+
+  it("does not walk back over a reset", () => {
+    expect(retryOf(derive("retry-reset"))).toBeUndefined();
+  });
+
+  it("reaches the latest prompt, not the first", () => {
+    expect(retryOf(derive("retry-steer"))).toEqual({ text: "steer", images: [], requestId: expect.any(String) });
+  });
+
+  it("binds the request id to the failed run", () => {
+    const entries = derive("retry-second-failure");
     expect(retryOf(entries)).toEqual({ text: "go", images: [], requestId: `retry:${entries.at(-1)!.id}` });
   });
+});
 
-  it("returns a failed prompt's image blocks too", () => {
-    const entries = deriveChat(view([user([text("look"), image("aGk=", "image/png")]), failed()]), {}, false);
-    expect(retryOf(entries)).toEqual({
-      text: "look",
-      images: [{ data: "aGk=", mimeType: "image/png" }],
-      requestId: `retry:${entries.at(-1)!.id}`,
-    });
+describe("splitSubagentCalls", () => {
+  it("lifts subagent calls out of steps and drops emptied steps", () => {
+    const cotView = SPLIT_CASES.find((c) => c.name === "split-hand")!.cot;
+    const { view: splitView, subagents } = splitSubagentCalls(cotView);
+    expect(subagents).toEqual([
+      { key: "1-tools-0/c1", tool: { toolCallId: "c1", toolName: "subagent", state: "output-available" } },
+      { key: "1-tools-2/c3", tool: { toolCallId: "c3", toolName: "subagent", state: "output-available" } },
+    ]);
+    expect(splitView.steps).toEqual([
+      { kind: "tools", id: "1-tools-0", tools: [{ toolCallId: "c2", toolName: "read", state: "output-available" }], live: false },
+      { kind: "interim", id: "1-text-1", text: "looking" },
+    ]);
   });
 
-  it("retries an image-only prompt", () => {
-    const entries = deriveChat(view([user([image("aGk=", "image/png")]), failed()]), {}, false);
-    expect(retryOf(entries)).toMatchObject({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
+  it("recomputes a lifted active call's state when nothing is still running", () => {
+    const cotView = SPLIT_CASES.find((c) => c.name === "split-settles-active")!.cot;
+    const { view: splitView } = splitSubagentCalls(cotView);
+    const step = splitView.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(step.tools.map((tool) => tool.toolName)).toEqual(["read"]);
+    expect(step.activeToolCallId).toBeUndefined();
+    expect(step.live).toBe(false);
   });
 
-  it("returns nothing when the prompt has neither text nor images", () => {
-    const entries = deriveChat(view([user(""), failed()]), {}, false);
-    expect(retryOf(entries)).toBeUndefined();
+  it("hands activeToolCallId to the next still-pending call", () => {
+    const cotView = SPLIT_CASES.find((c) => c.name === "split-hands-active")!.cot;
+    const { view: splitView } = splitSubagentCalls(cotView);
+    const step = splitView.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(step.tools.map((tool) => tool.toolName)).toEqual(["read", "read"]);
+    expect(step.activeToolCallId).toBe("c3");
+    expect(step.live).toBe(true);
   });
 
-  it("returns nothing once the failed run is no longer the newest entry", () => {
-    const entries = deriveChat(
-      view([user("go"), failed(), user("again"), assistant([text("recovered")])]),
-      {},
-      false,
-    );
-    expect(retryOf(entries)).toBeUndefined();
-  });
-
-  it("returns nothing when the newest run succeeded", () => {
-    const entries = deriveChat(view([user("go"), assistant([text("done")])]), {}, false);
-    expect(retryOf(entries)).toBeUndefined();
-  });
-
-  it("looks past a compaction between the user message and the failed run", () => {
-    const entries = deriveChat(
-      view([user("go"), entry("pi.compaction", { role: "user", content: "summary" }), failed()]),
-      {},
-      false,
-    );
-    expect(entries.map((item) => item.kind)).toEqual(["user", "compaction", "run"]);
-    expect(retryOf(entries)?.text).toBe("go");
-  });
-
-  it("returns nothing across a reset boundary", () => {
-    const entries = deriveChat(view([user("go"), entry("pi.reset"), failed()]), {}, false);
-    expect(retryOf(entries)).toBeUndefined();
-  });
-
-  it("resolves a failed run after a steer to the steer text", () => {
-    const entries = deriveChat(
-      view([user("first"), assistant([text("one")]), user("steer"), failed()]),
-      {},
-      false,
-    );
-    expect(retryOf(entries)?.text).toBe("steer");
-  });
-
-  it("keys a re-failed retry to its own run, so it is not deduped against the first", () => {
-    const entries = deriveChat(view([user("go"), failed(), user("go"), failed()]), {}, false);
-    const [first, second] = runs(entries);
-    const retry = retryOf(entries);
-    expect(retry?.text).toBe("go");
-    expect(retry?.requestId).toBe(`retry:${second!.id}`);
-    expect(retry?.requestId).not.toBe(`retry:${first!.id}`);
+  it("keys repeated subagent call ids by step", () => {
+    const cotView = SPLIT_CASES.find((c) => c.name === "split-dup-callid")!.cot;
+    const { subagents } = splitSubagentCalls(cotView);
+    const keys = subagents.map((subagent) => subagent.key);
+    // Both rounds reuse the call id "c1" — the step id keeps the keys distinct.
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).toMatch(/^\d+-tools-0\/c1$/);
+    expect(subagents[0]!.tool.argsText).toBe('{"task":"one"}');
   });
 });

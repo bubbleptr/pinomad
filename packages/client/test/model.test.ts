@@ -1,88 +1,115 @@
 import { describe, expect, it } from "vitest";
-import type { ModelRef } from "@earendil-works/pi-durable";
-import type { ConversationDefaults, ModelSummary } from "@pinomad/protocol/view.ts";
-import { clampLevel, reconcileDraftPick } from "../src/model.ts";
+import { clampLevel, filterModels, modelLabel, reconcileDraftPick, sameModel } from "../src/model.ts";
+import {
+  CLAMP_CASES,
+  FILTER_CASES,
+  MODEL_LABEL_CASES,
+  RECONCILE_CASES,
+  SAME_MODEL_CASES,
+} from "./models-cases.ts";
 
-const model = (over: Partial<ModelSummary> = {}): ModelSummary => ({
-  provider: "anthropic",
-  modelId: "claude-x",
-  name: "Claude X",
-  contextWindow: 200_000,
-  thinkingLevels: ["off"],
-  ...over,
-});
-
-const models = {
-  a: model({ provider: "anthropic", modelId: "claude-a", name: "Claude A", thinkingLevels: ["off", "medium", "high"] }),
-  b: model({ provider: "openai", modelId: "gpt-b", name: "GPT B", thinkingLevels: ["off", "low", "medium"] }),
-  c: model({ provider: "local", modelId: "llama-c", name: "Llama C" }),
-};
-
-const ref = (m: ModelSummary): ModelRef => ({ provider: m.provider, modelId: m.modelId });
-const defaults = (over: Partial<ConversationDefaults> = {}): ConversationDefaults => over;
+const C = <T extends { name: string }[]>(cases: T, name: string): T[number] =>
+  cases.find((c) => c.name === name) as T[number];
 
 describe("clampLevel", () => {
   it("keeps the level when the model supports it", () => {
-    expect(clampLevel(["off", "low", "high"], "high")).toBe("high");
-    expect(clampLevel(["off"], "off")).toBe("off");
+    expect(clampLevel(C(CLAMP_CASES, "supported").levels, "high")).toBe("high");
+    expect(clampLevel(C(CLAMP_CASES, "exact-off").levels, "off")).toBe("off");
   });
 
   it("clamps down to the highest supported level below the wanted one", () => {
-    expect(clampLevel(["off", "low", "medium"], "xhigh")).toBe("medium");
-    expect(clampLevel(["off", "medium"], "high")).toBe("medium");
+    expect(clampLevel(C(CLAMP_CASES, "clamps-down").levels, "xhigh")).toBe("medium");
+    expect(clampLevel(C(CLAMP_CASES, "skips-unsupported-middle").levels, "high")).toBe("medium");
   });
 
   it("falls back to off when nothing supported is below the wanted level", () => {
-    expect(clampLevel(["high", "max"], "off")).toBe("off");
-    expect(clampLevel([], "medium")).toBe("off");
+    expect(clampLevel(C(CLAMP_CASES, "nothing-below").levels, "off")).toBe("off");
+    expect(clampLevel(C(CLAMP_CASES, "empty-levels").levels, "medium")).toBe("off");
+  });
+});
+
+describe("modelLabel", () => {
+  it("appends the level label for a reasoning model", () => {
+    const c = C(MODEL_LABEL_CASES, "reasoning");
+    expect(modelLabel(c.models, c.selected)).toBe("GPT B · Low");
+  });
+
+  it("is just the name when the model does not reason", () => {
+    const c = C(MODEL_LABEL_CASES, "non-reasoning");
+    expect(modelLabel(c.models, c.selected)).toBe("Llama C");
+  });
+
+  it("names an unlisted ref by its modelId and no model at all as No model", () => {
+    const unlisted = C(MODEL_LABEL_CASES, "unlisted-model");
+    expect(modelLabel(unlisted.models, unlisted.selected)).toBe("claude-z");
+    const none = C(MODEL_LABEL_CASES, "no-model");
+    expect(modelLabel(none.models, none.selected)).toBe("No model");
+  });
+});
+
+describe("filterModels", () => {
+  const filtered = (name: string) => {
+    const c = C(FILTER_CASES, name);
+    return filterModels(c.models, c.query).map((m) => m.modelId);
+  };
+
+  it("returns all models for a blank query", () => {
+    expect(filtered("blank-query")).toEqual(["claude-a", "gpt-b", "llama-c"]);
+  });
+
+  it("matches name or provider/modelId case-insensitively", () => {
+    expect(filtered("name-substring")).toEqual(["claude-a"]);
+    expect(filtered("case-insensitive")).toEqual(["claude-a"]);
+    expect(filtered("provider-modelid")).toEqual(["gpt-b"]);
+    expect(filtered("trims")).toEqual(["gpt-b"]);
+    expect(filtered("no-match")).toEqual([]);
+  });
+});
+
+describe("sameModel", () => {
+  it("compares provider and modelId with both sides defined", () => {
+    expect(sameModel(C(SAME_MODEL_CASES, "same").a, C(SAME_MODEL_CASES, "same").b)).toBe(true);
+    expect(sameModel(C(SAME_MODEL_CASES, "different-provider").a, C(SAME_MODEL_CASES, "different-provider").b)).toBe(
+      false,
+    );
+    expect(sameModel(C(SAME_MODEL_CASES, "different-id").a, C(SAME_MODEL_CASES, "different-id").b)).toBe(false);
+    expect(sameModel(C(SAME_MODEL_CASES, "a-absent").a, C(SAME_MODEL_CASES, "a-absent").b)).toBe(false);
+    expect(sameModel(C(SAME_MODEL_CASES, "both-absent").a, C(SAME_MODEL_CASES, "both-absent").b)).toBe(false);
   });
 });
 
 describe("reconcileDraftPick", () => {
-  const list = [models.a, models.b];
+  const pick = (name: string) => {
+    const c = C(RECONCILE_CASES, name);
+    return reconcileDraftPick(c.models, c.defaults, c.remembered);
+  };
 
   it("keeps the remembered model while it is still listed", () => {
-    const pick = reconcileDraftPick(list, defaults({ model: ref(models.b) }), {
-      model: ref(models.a),
-      level: "high",
-    });
-    expect(pick.model).toEqual(ref(models.a));
-    expect(pick.level).toBe("high");
+    const result = pick("remembered-listed");
+    expect(result.model).toEqual({ provider: "anthropic", modelId: "claude-a" });
+    expect(result.level).toBe("high");
   });
 
   it("falls back to the host default when the remembered model left the list", () => {
-    const pick = reconcileDraftPick(list, defaults({ model: ref(models.b) }), {
-      model: { provider: "gone", modelId: "claude-z" },
-      level: "low",
-    });
-    expect(pick.model).toEqual(ref(models.b));
+    const result = pick("default-fallback");
+    expect(result.model).toEqual({ provider: "openai", modelId: "gpt-b" });
   });
 
   it("falls back to the first listed model when the host default is unlisted too", () => {
-    const pick = reconcileDraftPick(list, defaults({ model: { provider: "gone", modelId: "claude-z" } }), {
-      model: { provider: "gone", modelId: "also-gone" },
-      level: "off",
-    });
-    expect(pick.model).toEqual(ref(models.a));
+    const result = pick("first-fallback");
+    expect(result.model).toEqual({ provider: "anthropic", modelId: "claude-a" });
   });
 
   it("returns no model and off for an empty model list", () => {
-    const pick = reconcileDraftPick([], defaults(), { model: ref(models.a), level: "high" });
-    expect(pick.model).toBeUndefined();
-    expect(pick.level).toBe("off");
+    const result = pick("empty-list");
+    expect(result.model).toBeUndefined();
+    expect(result.level).toBe("off");
   });
 
   it("clamps the remembered level to the resolved model's levels", () => {
-    // "high" remembered for a model that only reaches "medium" -> "medium".
-    const pick = reconcileDraftPick(list, defaults(), { model: ref(models.b), level: "high" });
-    expect(pick.model).toEqual(ref(models.b));
-    expect(pick.level).toBe("medium");
-    // Falling back to a model whose levels differ re-clamps.
-    const fellBack = reconcileDraftPick(list, defaults({ model: ref(models.b) }), {
-      model: { provider: "gone", modelId: "claude-z" },
-      level: "high",
-    });
-    expect(fellBack.model).toEqual(ref(models.b));
+    expect(pick("clamps-remembered").level).toBe("medium");
+    const fellBack = pick("clamps-after-fallback");
+    expect(fellBack.model).toEqual({ provider: "openai", modelId: "gpt-b" });
     expect(fellBack.level).toBe("medium");
   });
 });

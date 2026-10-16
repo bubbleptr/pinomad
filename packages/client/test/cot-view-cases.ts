@@ -1,0 +1,422 @@
+// Shared deriveChat inputs: cot-view.test.ts asserts on these cases and
+// rust-vectors.ts serializes the same inputs for the Rust replay — one table,
+// no copies. Entry ids come from a module counter so every case is stable.
+import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
+import type { PresentationType } from "@pinomad/protocol/presentation.ts";
+import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
+
+let nextId = 1;
+export const entry = (kind: string, message?: unknown): EntryRecord =>
+  ({ id: nextId++, conversationId: 0, kind, ...(message === undefined ? {} : { model: [message] }) }) as unknown as EntryRecord;
+export const user = (content: string | unknown[]) => entry("pi.user", { role: "user", content, timestamp: 0 });
+export const assistant = (content: unknown[], stopReason = "stop", timestamp = 0, extra: object = {}) =>
+  entry("pi.assistant", { role: "assistant", content, stopReason, timestamp, ...extra });
+export const result = (callId: string, name: string, output: string, isError = false, details?: unknown, timestamp = 0) =>
+  entry("pi.tool-result", {
+    role: "toolResult",
+    toolCallId: callId,
+    toolName: name,
+    content: [{ type: "text", text: output }],
+    isError,
+    timestamp,
+    ...(details === undefined ? {} : { details }),
+  });
+export const text = (value: string) => ({ type: "text", text: value });
+export const thinking = (value: string) => ({ type: "thinking", thinking: value });
+export const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
+export const image = (data: string, mimeType: string) => ({ type: "image", data, mimeType });
+export const view = (entries: EntryRecord[], live: object = {}): ConversationView =>
+  ({ conversation: { id: 0 }, entries, docs: { "pi.live": live } }) as unknown as ConversationView;
+export const runs = (entries: ChatEntry[]) => entries.filter((item) => item.kind === "run");
+
+export interface DeriveChatCase {
+  readonly name: string;
+  readonly view: ConversationView;
+  readonly busy: boolean;
+  readonly presentations?: Record<string, PresentationType>;
+}
+
+export const failed = (errorMessage = "HTTP 429 quota exceeded") =>
+  assistant([text("")], "error", 0, { errorMessage });
+
+export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
+  {
+    name: "settled-simple",
+    view: view([user("hi"), assistant([text("hello")])]),
+    busy: false,
+  },
+  {
+    name: "settled-run",
+    view: view([
+      user("go"),
+      assistant([thinking("plan"), call("c1", "read", { path: "a.ts" }), call("c2", "read", { path: "b.ts" })], "toolUse"),
+      result("c1", "read", "A"),
+      result("c2", "read", "B"),
+      assistant([text("checking next"), call("c3", "bash", { command: "ls" })], "toolUse"),
+      result("c3", "bash", "ok"),
+      assistant([text("done")]),
+    ]),
+    busy: false,
+  },
+  {
+    name: "live-thinking",
+    view: view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [thinking("che")] } } }),
+    busy: true,
+  },
+  {
+    name: "live-acting",
+    view: view([user("go"), assistant([call("c1", "logs", {})], "toolUse")], {
+      run: {},
+      tools: [{ callId: "c1", name: "logs", status: "running" }],
+    }),
+    busy: true,
+  },
+  {
+    name: "live-answering",
+    view: view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [text("hel")] } } }),
+    busy: true,
+  },
+  {
+    name: "live-streaming-call",
+    view: view([user("go")], {
+      run: {},
+      generation: { attempt: 1, message: { role: "assistant", content: [call("c1", "read", { path: "a" })] } },
+    }),
+    busy: true,
+  },
+  {
+    name: "interrupted",
+    view: view([user("go"), assistant([call("c1", "logs", {})], "aborted")]),
+    busy: false,
+  },
+  {
+    name: "failed",
+    view: view([user("go"), assistant([text("")], "error", 0, { errorMessage: "HTTP 429 quota exceeded" })]),
+    busy: false,
+  },
+  {
+    name: "diff",
+    view: view([
+      user("go"),
+      assistant([call("c1", "edit", { path: "a.ts" })], "toolUse"),
+      result("c1", "edit", "edited a.ts", false, { patch: "diff --git a/a.ts b/a.ts\n@@ -1,2 +1,2 @@\n-old\n+new\n" }),
+    ]),
+    busy: false,
+    presentations: { edit: "pinomad.diff" },
+  },
+  {
+    name: "diff-nonconforming",
+    view: view([
+      user("go"),
+      assistant([call("c1", "edit", { path: "a.ts" })], "toolUse"),
+      result("c1", "edit", "edited", false, { notAPatch: true }),
+    ]),
+    busy: false,
+    presentations: { edit: "pinomad.diff" },
+  },
+  {
+    name: "codemode",
+    view: view([
+      user("go"),
+      assistant([call("c1", "codemode", { code: "await tools.bash({})" })], "toolUse"),
+      result("c1", "codemode", "script result", false, {
+        code: "await tools.bash({})",
+        calls: [
+          { name: "bash", args: "{}", status: "ok", durationMs: 10 },
+          { name: "read", args: "{}", status: "running" },
+          { name: "edit", args: "{}", status: "error", error: "conflict" },
+        ],
+      }),
+    ]),
+    busy: false,
+    presentations: { codemode: "pinomad.codemode" },
+  },
+  {
+    name: "codemode-live",
+    view: view([user("go"), assistant([call("c1", "codemode", { code: "x" })], "toolUse")], {
+      run: {},
+      tools: [{ callId: "c1", name: "codemode", status: "running" }],
+      nestedTools: [
+        { callId: "c1/1", name: "read", parentCallId: "c1", parentTaskId: 9, taskId: 10, status: "running", arguments: { path: "a.txt" } },
+        {
+          callId: "c1/2",
+          name: "bash",
+          parentCallId: "c1",
+          parentTaskId: 9,
+          taskId: 11,
+          status: "done",
+          arguments: { command: "exit 3" },
+          summary: { isError: true, durationMs: 5, error: "Command exited with code 3" },
+        },
+        { callId: "c1/3", name: "pi.codemode.classify", parentCallId: "c1", parentTaskId: 9, taskId: 12, status: "done", arguments: {} },
+        // Another tool's nested call and a pi.* internal stay off this card.
+        { callId: "c9/1", name: "read", parentCallId: "c9", parentTaskId: 99, taskId: 13, status: "running", arguments: {} },
+      ],
+    }),
+    busy: true,
+    presentations: { codemode: "pinomad.codemode" },
+  },
+  {
+    name: "codemode-legacy",
+    view: view([
+      user("go"),
+      assistant([call("c1", "codemode", { code: "x" })], "toolUse"),
+      result("c1", "codemode", "ok", false, {
+        code: "x",
+        calls: [
+          { name: "read", args: "{}", status: "running" },
+          { name: "edit", args: "{}", status: "ok", details: { patch: "diff --git a/a b/a\n@@ -1 +1 @@\n-a\n+b\n" } },
+        ],
+      }),
+    ]),
+    busy: false,
+    presentations: { codemode: "pinomad.codemode", edit: "pinomad.diff" },
+  },
+  {
+    name: "subagent-live",
+    view: view([user("go"), assistant([call("c1", "subagent", { task: "survey" })], "toolUse")], {
+      run: {},
+      tools: [{ callId: "c1", name: "subagent", status: "running", details: { conversationId: 7, model: "faux/faux-1", startedAt: 1000 } }],
+    }),
+    busy: true,
+  },
+  {
+    name: "subagent-done",
+    view: view([
+      user("go"),
+      assistant([call("c1", "subagent", { task: "survey" })], "toolUse"),
+      result("c1", "subagent", "report", false, { conversationId: 9, model: "faux/faux-1", startedAt: 1000 }, 4000),
+    ]),
+    busy: false,
+  },
+  {
+    name: "tool-result-images",
+    view: view([
+      user("go"),
+      assistant([call("c1", "mcp__shot__capture", {})], "toolUse"),
+      entry("pi.tool-result", {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "mcp__shot__capture",
+        content: [text("captured"), image("aGk=", "image/png")],
+        isError: false,
+        timestamp: 0,
+      }),
+    ]),
+    busy: false,
+  },
+  {
+    name: "user-images",
+    view: view([
+      user([text("look"), image("aGk=", "image/png")]),
+      assistant([text("seen")]),
+      user([image("aGk=", "image/png")]),
+      assistant([text("again")]),
+    ]),
+    busy: false,
+  },
+  {
+    name: "boundaries",
+    view: view([
+      user("one"),
+      assistant([text("first")]),
+      entry("pi.compaction", { role: "user", content: "summary" }),
+      entry("pi.reset"),
+      user("two"),
+      assistant([text("second")]),
+    ]),
+    busy: false,
+  },
+  {
+    name: "anchor",
+    view: view([
+      user("go"),
+      assistant([call("c1", "logs", {})], "toolUse", 1000),
+      result("c1", "logs", "ok", false, undefined, 3000),
+      assistant([text("done")], "stop", 5000),
+    ]),
+    busy: false,
+  },
+  {
+    name: "dup-call-id",
+    view: view([
+      user("go"),
+      assistant([call("c1", "read", { path: "a" })], "toolUse"),
+      result("c1", "read", "A"),
+      assistant([call("c1", "read", { path: "b" })], "toolUse"),
+      result("c1", "read", "B"),
+      assistant([text("done")]),
+    ]),
+    busy: false,
+  },
+  {
+    name: "dup-call-id-live",
+    view: view(
+      [
+        user("go"),
+        assistant([call("c1", "read", { path: "a" })], "toolUse"),
+        result("c1", "read", "A"),
+        assistant([call("c1", "read", { path: "b" })], "toolUse"),
+      ],
+      { run: {}, tools: [{ callId: "c1", name: "read", status: "running" }] },
+    ),
+    busy: true,
+  },
+  {
+    name: "aborted-not-pending",
+    view: view([user("go"), assistant([call("c1", "bash", { command: "x" })], "aborted")], {
+      run: {},
+      generation: { attempt: 1, message: { role: "assistant", content: [thinking("retrying")] } },
+    }),
+    busy: true,
+  },
+  {
+    name: "interim-before-tools",
+    view: view([user("go"), assistant([text("Checking the logs"), call("c1", "bash", { command: "ls" })], "toolUse")], {
+      run: {},
+      tools: [{ callId: "c1", name: "bash", status: "running" }],
+    }),
+    busy: true,
+  },
+  {
+    name: "elapsed-no-answer",
+    view: view([
+      user("go"),
+      assistant([call("c1", "logs", {})], "toolUse", 1000),
+      result("c1", "logs", "ok", false, undefined, 4000),
+    ]),
+    busy: false,
+  },
+  {
+    name: "busy-empty",
+    view: view([user("hi")], { run: {} }),
+    busy: true,
+  },
+  {
+    name: "orphan-result",
+    view: view([
+      // A result that outruns its call in the log joins once the call lands.
+      result("c1", "read", "early"),
+      user("go"),
+      assistant([call("c1", "read", { path: "a" })], "toolUse"),
+    ]),
+    busy: false,
+  },
+  {
+    name: "partial-then-committed-live",
+    view: view([user("hi")], {
+      run: {},
+      generation: { attempt: 1, message: { role: "assistant", content: [thinking("hmm"), text("hel")] } },
+    }),
+    busy: true,
+  },
+  {
+    name: "partial-then-committed-done",
+    view: view([user("hi"), assistant([thinking("hmm"), text("hello")])]),
+    busy: false,
+  },
+  {
+    name: "unicode",
+    // A lone surrogate mid-string (host truncation produces these) and a
+    // non-BMP emoji — the wire keeps them, the UI sees U+FFFD for the loner.
+    view: view([
+      user("phone \ud83d and a rocket 🚀"),
+      assistant([thinking("想🤔"), text("done \ud83d ok")]),
+    ]),
+    busy: false,
+  },
+];
+
+/** Cases also exercised through `retryOf` — by name into DERIVE_CHAT_CASES. */
+export const RETRY_CASES: DeriveChatCase[] = [
+  { name: "retry-simple", view: view([user("go"), failed()]), busy: false },
+  { name: "retry-images", view: view([user([text("look"), image("aGk=", "image/png")]), failed()]), busy: false },
+  { name: "retry-image-only", view: view([user([image("aGk=", "image/png")]), failed()]), busy: false },
+  { name: "retry-empty-prompt", view: view([user(""), failed()]), busy: false },
+  { name: "retry-not-newest", view: view([user("go"), failed(), user("again"), assistant([text("recovered")])]), busy: false },
+  { name: "retry-succeeded", view: view([user("go"), assistant([text("done")])]), busy: false },
+  {
+    name: "retry-compaction",
+    view: view([user("go"), entry("pi.compaction", { role: "user", content: "summary" }), failed()]),
+    busy: false,
+  },
+  { name: "retry-reset", view: view([user("go"), entry("pi.reset"), failed()]), busy: false },
+  { name: "retry-steer", view: view([user("first"), assistant([text("one")]), user("steer"), failed()]), busy: false },
+  { name: "retry-second-failure", view: view([user("go"), failed(), user("go"), failed()]), busy: false },
+];
+
+export interface SplitCase {
+  readonly name: string;
+  readonly cot: CotView;
+}
+
+export const SPLIT_CASES: SplitCase[] = [
+  {
+    name: "split-hand",
+    cot: (() => {
+      const tool = (id: string, name: string) => ({ state: "output-available" as const, toolCallId: id, toolName: name });
+      return {
+        phase: "settled" as const,
+        steps: [
+          { kind: "tools" as const, id: "1-tools-0", tools: [tool("c1", "subagent"), tool("c2", "read")], live: false },
+          { kind: "interim" as const, id: "1-text-1", text: "looking" },
+          { kind: "tools" as const, id: "1-tools-2", tools: [tool("c3", "subagent")], live: false },
+        ],
+        answer: { text: "done", streaming: false },
+      } as CotView;
+    })(),
+  },
+  {
+    name: "split-settles-active",
+    cot: runs(
+      deriveChat(
+        view(
+          [
+            user("go"),
+            assistant([call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" })], "toolUse"),
+            result("c1", "read", "done"),
+          ],
+          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
+        ),
+        {},
+        true,
+      ),
+    )[0]!.cot,
+  },
+  {
+    name: "split-hands-active",
+    cot: runs(
+      deriveChat(
+        view(
+          [
+            user("go"),
+            assistant(
+              [call("c1", "read", { path: "a.ts" }), call("c2", "subagent", { task: "x" }), call("c3", "read", { path: "b.ts" })],
+              "toolUse",
+            ),
+            result("c1", "read", "done"),
+          ],
+          { run: {}, tools: [{ callId: "c2", name: "subagent", status: "running" }] },
+        ),
+        {},
+        true,
+      ),
+    )[0]!.cot,
+  },
+  {
+    name: "split-dup-callid",
+    cot: runs(
+      deriveChat(
+        view([
+          user("go"),
+          assistant([call("c1", "subagent", { task: "one" })], "toolUse"),
+          result("c1", "subagent", "r1"),
+          assistant([call("c1", "subagent", { task: "two" })], "toolUse"),
+          result("c1", "subagent", "r2"),
+        ]),
+        {},
+        false,
+      ),
+    )[0]!.cot,
+  },
+];
