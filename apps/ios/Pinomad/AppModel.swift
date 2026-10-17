@@ -43,6 +43,9 @@ final class AppModel {
     /// Bumped when the reader acts at the transcript's end (sends, starts
     /// typing) — the transcript jumps back to its end on each change.
     var transcriptPin = 0
+    /// A sheet is up and shows the toasts itself — the root stack steps
+    /// aside so a notice isn't drawn twice.
+    var sheetShowsToasts = false
     /// Notices currently shown as toasts, newest last.
     var toasts: [Notice] = []
     /// Which notices already toasted — one per session (ids restart).

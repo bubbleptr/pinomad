@@ -13,6 +13,12 @@ struct ModelSheet: View {
 
     private var models: [ModelSummary] { model.snapshot?.models ?? [] }
 
+    /// Offline changes "succeed" into a notice only — don't offer them.
+    private var connected: Bool {
+        guard let snapshot = model.snapshot else { return false }
+        return snapshot.connection == .connected && !snapshot.unauthorized
+    }
+
     /// Live agent state when the conversation is still shown, else what
     /// the sheet opened with.
     private var current: AgentState { model.snapshot?.conversation?.agent ?? agent }
@@ -51,6 +57,7 @@ struct ModelSheet: View {
                 }
             }
             .tint(.primary)
+            .disabled(!connected)
             .searchable(text: $query, prompt: "搜索模型")
             .navigationTitle("模型")
             .navigationBarTitleDisplayMode(.inline)
@@ -60,6 +67,10 @@ struct ModelSheet: View {
                 }
             }
         }
+        // Below the sheet's own navigation bar.
+        .overlay(alignment: .top) { ToastStack(model: model).padding(.top, 64) }
+        .onAppear { model.sheetShowsToasts = true }
+        .onDisappear { model.sheetShowsToasts = false }
         .presentationDetents([.medium, .large])
     }
 

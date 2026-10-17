@@ -23,7 +23,9 @@ struct RootView: View {
             }
             .navigationTitle("PiNomad")
         }
-        .overlay(alignment: .top) { ToastStack(model: model) }
+        .overlay(alignment: .top) {
+            if !model.sheetShowsToasts { ToastStack(model: model) }
+        }
     }
 
     private var pairingView: some View {
@@ -70,7 +72,9 @@ struct RootView: View {
 }
 
 /// Host and core notices, newest at the bottom; tap to dismiss early.
-private struct ToastStack: View {
+/// Also laid over sheets — a modal would otherwise hide the only report
+/// of why an action in it didn't stick.
+struct ToastStack: View {
     let model: AppModel
 
     var body: some View {
