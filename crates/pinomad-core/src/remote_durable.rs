@@ -13,7 +13,7 @@
 //   with the same backoff as the reference.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::delta::{apply_immutable, op_from_json};
 use crate::frames::{
@@ -161,7 +161,7 @@ pub struct RemoteDurableOptions {
     pub reconnect_delay_ms: Option<(u64, u64)>,
     /// `newRequestId` — a fresh 32-hex-char id per submit/fork; injected so
     /// tests can be deterministic and FFI hosts can supply their own RNG.
-    pub request_id: Option<Box<dyn FnMut() -> String>>,
+    pub request_id: Option<Box<dyn FnMut() -> String + Send>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -279,7 +279,11 @@ pub struct RemoteDurable {
     first_view: Option<FirstView>,
     ready_sent: bool,
     view_dirty: bool,
-    request_id: Box<dyn FnMut() -> String>,
+    request_id: Box<dyn FnMut() -> String + Send>,
+    /// The delivery version (ADR-0024 §5): bumped once per emitted
+    /// `ViewChanged`, so a snapshot read later reports exactly which view
+    /// change it answers.
+    version: u64,
     out: Vec<Command>,
 }
 
@@ -304,7 +308,7 @@ impl RemoteDurable {
             side: None,
             host_minor: 0,
             hello_models: Json::Null,
-            hello_defaults: Json::Object(Rc::new(JsonObject::new())),
+            hello_defaults: Json::Object(Arc::new(JsonObject::new())),
             host_version: None,
             attempt: 0,
             closed: false,
@@ -318,6 +322,7 @@ impl RemoteDurable {
             ready_sent: false,
             view_dirty: false,
             request_id,
+            version: 0,
             out: Vec::new(),
         };
         this.open();
@@ -332,12 +337,18 @@ impl RemoteDurable {
 
     /// The current view — absent until Ready(Connected).
     pub fn view(&self) -> Option<Json> {
-        self.state.as_ref().map(|state| Json::Object(Rc::new(state.clone())))
+        self.state.as_ref().map(|state| Json::Object(Arc::new(state.clone())))
     }
 
     /// The serialized view — `JSON.stringify` of `view()`.
     pub fn view_json(&self) -> Option<String> {
         self.view().map(|view| view.to_json())
+    }
+
+    /// How many `ViewChanged` commands this session has emitted — the
+    /// version a delivered snapshot is tagged with.
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     pub fn handle(&mut self, event: Event) -> Vec<Command> {
@@ -385,6 +396,7 @@ impl RemoteDurable {
             Event::Background => {}
         }
         if self.view_dirty {
+            self.version += 1;
             self.out.push(Command::ViewChanged);
         }
         std::mem::take(&mut self.out)
@@ -532,7 +544,7 @@ impl RemoteDurable {
                 }
                 set(&mut mismatch, "direction", Json::from(direction));
                 self.set_field("connection", Json::from(OUTDATED));
-                self.set_field("protocolMismatch", Json::Object(Rc::new(mismatch)));
+                self.set_field("protocolMismatch", Json::Object(Arc::new(mismatch)));
                 let message = if direction == "client-older" {
                     format!(
                         "Client out of date: the host speaks protocol major {}, this client speaks {}",
@@ -565,7 +577,7 @@ impl RemoteDurable {
             .get("defaults")
             .filter(|v| !matches!(v, Json::Null))
             .cloned()
-            .unwrap_or_else(|| Json::Object(Rc::new(JsonObject::new())));
+            .unwrap_or_else(|| Json::Object(Arc::new(JsonObject::new())));
         self.host_version = frame.get("hostVersion").cloned();
         self.fresh.clear();
         // A host that got older between reconnects no longer covers every
@@ -917,7 +929,7 @@ impl RemoteDurable {
                 if !images.is_empty() {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
-                steps.push_back(Step::Call { method: "createConversation", args: Json::Object(Rc::new(args)) });
+                steps.push_back(Step::Call { method: "createConversation", args: Json::Object(Arc::new(args)) });
                 steps.push_back(Step::Show { target: ShowTarget::FromResult, slot: Slot::Main });
             }
             Call::Archive { id, archived } => {
@@ -942,7 +954,7 @@ impl RemoteDurable {
                 if !images.is_empty() {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
-                steps.push_back(Step::Call { method: "submit", args: Json::Object(Rc::new(args)) });
+                steps.push_back(Step::Call { method: "submit", args: Json::Object(Arc::new(args)) });
             }
             Call::Compact { instructions } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
@@ -951,7 +963,7 @@ impl RemoteDurable {
                 if let Some(instructions) = instructions {
                     set(&mut args, "instructions", Json::from(instructions.clone()));
                 }
-                steps.push_back(Step::Call { method: "compact", args: Json::Object(Rc::new(args)) });
+                steps.push_back(Step::Call { method: "compact", args: Json::Object(Arc::new(args)) });
             }
             Call::Abort { target } => {
                 let Some(conversation) = target.or(self.current) else {
@@ -997,7 +1009,7 @@ impl RemoteDurable {
                 if let Some(remove_tools) = remove_tools {
                     set(&mut args, "removeTools", Json::array(remove_tools.iter().map(|t| Json::from(t.clone())).collect()));
                 }
-                steps.push_back(Step::Call { method: "fork", args: Json::Object(Rc::new(args)) });
+                steps.push_back(Step::Call { method: "fork", args: Json::Object(Arc::new(args)) });
                 steps.push_back(Step::Show {
                     target: ShowTarget::FromResult,
                     slot: if *show == ForkShow::Side { Slot::Side } else { Slot::Main },
@@ -1131,7 +1143,7 @@ impl RemoteDurable {
                     set(&mut args, "text", Json::from(prompt));
                     set(&mut args, "whenBusy", Json::from("followUp"));
                     set(&mut args, "requestId", Json::from((self.request_id)()));
-                    if let Err(error) = self.place_call(index, "submit", Json::Object(Rc::new(args))) {
+                    if let Err(error) = self.place_call(index, "submit", Json::Object(Arc::new(args))) {
                         return self.fail_op(index, &error);
                     }
                     return;
@@ -1377,11 +1389,11 @@ impl RemoteDurable {
         let mut protocol = JsonObject::new();
         set(&mut protocol, "major", Json::Number(PROTOCOL.major as f64));
         set(&mut protocol, "minor", Json::Number(self.host_minor as f64));
-        set(&mut object, "protocol", Json::Object(Rc::new(protocol)));
+        set(&mut object, "protocol", Json::Object(Arc::new(protocol)));
         if let Some(version) = &self.host_version {
             set(&mut object, "version", version.clone());
         }
-        Json::Object(Rc::new(object))
+        Json::Object(Arc::new(object))
     }
 
     fn set_field(&mut self, name: &str, value: Json) {
@@ -1424,7 +1436,7 @@ impl RemoteDurable {
             .and_then(Json::as_array)
             .map(|a| a.as_ref().clone())
             .unwrap_or_default();
-        notices.push(Json::Object(Rc::new(entry)));
+        notices.push(Json::Object(Arc::new(entry)));
         if notices.len() > 20 {
             notices.drain(..notices.len() - 20);
         }
@@ -1445,7 +1457,7 @@ impl RemoteDurable {
                         set(&mut object, "presentation", presentation.clone());
                     }
                     set(&mut object, "value", value.clone());
-                    Json::Object(Rc::new(object))
+                    Json::Object(Arc::new(object))
                 })
             })
             .collect();
@@ -1463,7 +1475,7 @@ impl RemoteDurable {
                 if let Some(level) = settings.get("defaultThinkingLevel").filter(|l| !matches!(l, Json::Null)) {
                     set(&mut object, "thinkingLevel", level.clone());
                 }
-                Json::Object(Rc::new(object))
+                Json::Object(Arc::new(object))
             }
             None => self.hello_defaults.clone(),
         }
@@ -1486,7 +1498,7 @@ impl RemoteDurable {
             let mut object = JsonObject::new();
             set(&mut object, "projects", Json::array(vec![]));
             set(&mut object, "conversations", Json::array(vec![]));
-            Json::Object(Rc::new(object))
+            Json::Object(Arc::new(object))
         });
         let devices = self
             .values
@@ -1508,7 +1520,7 @@ impl RemoteDurable {
                 set(&mut object, "conversation", value.clone());
             }
             set(&mut object, "docs", self.docs_of(id));
-            Json::Object(Rc::new(object))
+            Json::Object(Arc::new(object))
         });
         let models = self.values.get(&key("models")).cloned().unwrap_or_else(|| self.hello_models.clone());
         let mcp = self.values.get(&key("mcp")).cloned().unwrap_or(Json::Null);
@@ -1547,7 +1559,7 @@ impl RemoteDurable {
         set(&mut organized, "chats", Json::array(vec![]));
         set(&mut organized, "projects", Json::array(vec![]));
         set(&mut organized, "archived", Json::array(vec![]));
-        set(&mut state, "organized", Json::Object(Rc::new(organized)));
+        set(&mut state, "organized", Json::Object(Arc::new(organized)));
         set(
             &mut state,
             "models",
@@ -1627,9 +1639,16 @@ fn obj(fields: &[(&str, Json)]) -> Json {
     for (name, value) in fields {
         set(&mut object, name, value.clone());
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }
 
 fn set(obj: &mut JsonObject, name: &str, value: Json) {
     obj.set(U16String::from_str(name), value);
 }
+
+// The UniFFI facade parks the state machine behind a Mutex on an arbitrary
+// platform thread; anything that stops being Send must fail here, loudly.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<RemoteDurable>();
+};

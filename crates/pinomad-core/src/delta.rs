@@ -9,7 +9,7 @@
 // Every position and length in a string op counts UTF-16 code units,
 // because the reference is JavaScript.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::json::{number_to_units, Json};
 use crate::u16str::U16String;
@@ -252,8 +252,8 @@ fn as_index(v: f64) -> usize {
 
 /// `applyImmutable(target, ops)` from chord 1.2.0: validate every op, then
 /// replay copy-on-write — a container is cloned when first touched, so the
-/// previous value is never mutated. Rc sharing makes the clone-once
-/// bookkeeping of the JS WeakSet version unnecessary: `Rc::make_mut`
+/// previous value is never mutated. Arc sharing makes the clone-once
+/// bookkeeping of the JS WeakSet version unnecessary: `Arc::make_mut`
 /// already mutates in place only when this replay produced the container.
 pub fn apply_immutable(target: &Json, ops: &[Op]) -> Result<Json, DeltaError> {
     let mut root = target.clone();
@@ -273,7 +273,7 @@ fn apply_one(root: &mut Json, op: &Op) -> Result<(), DeltaError> {
             assert_safe_path(path)?;
             let target = resolve_mut(root, path)?;
             let array = match target {
-                Json::Array(items_rc) => Rc::make_mut(items_rc),
+                Json::Array(items_rc) => Arc::make_mut(items_rc),
                 _ => return Err(path_error(path)),
             };
             // Array.prototype.splice clamps both bounds to the length.
@@ -286,7 +286,7 @@ fn apply_one(root: &mut Json, op: &Op) -> Result<(), DeltaError> {
             assert_safe_path(path)?;
             let target = resolve_mut(root, path)?;
             let array = match target {
-                Json::Array(items_rc) => Rc::make_mut(items_rc),
+                Json::Array(items_rc) => Arc::make_mut(items_rc),
                 _ => return Err(path_error(path)),
             };
             if array.len() != permutation.len()
@@ -326,7 +326,7 @@ fn apply_one(root: &mut Json, op: &Op) -> Result<(), DeltaError> {
                 Seg::Num(v) => as_index(*v),
                 _ => return Err(unsafe_path(&key)),
             };
-            let items = Rc::make_mut(items_rc);
+            let items = Arc::make_mut(items_rc);
             // assertIndexInRange runs before the verb dispatch: an index may
             // reach one past the end (append), never further — sparse arrays
             // do not survive a JSON round trip.
@@ -369,7 +369,7 @@ fn apply_one(root: &mut Json, op: &Op) -> Result<(), DeltaError> {
         }
         Json::Object(object_rc) => {
             let key_units = key.object_key();
-            let object = Rc::make_mut(object_rc);
+            let object = Arc::make_mut(object_rc);
             match op {
                 Op::Set(_, value) => object.set(U16String(key_units), value.clone()),
                 Op::Delete(_) => object.remove(&key_units),
@@ -426,7 +426,7 @@ fn resolve_mut<'a>(root: &'a mut Json, path: &[Seg]) -> Result<&'a mut Json, Del
                 }
                 Seg::Num(v) => {
                     let index = as_index(*v);
-                    let items = Rc::make_mut(items_rc);
+                    let items = Arc::make_mut(items_rc);
                     if index >= items.len() {
                         return Err(path_error(path));
                     }
@@ -435,7 +435,7 @@ fn resolve_mut<'a>(root: &'a mut Json, path: &[Seg]) -> Result<&'a mut Json, Del
             },
             Json::Object(object_rc) => {
                 let key = seg.object_key();
-                let object = Rc::make_mut(object_rc);
+                let object = Arc::make_mut(object_rc);
                 object.get_mut(&key).ok_or_else(|| path_error(path))?
             }
             _ => return Err(path_error(path)),

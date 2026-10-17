@@ -7,7 +7,7 @@
 
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Close code for a rejected token or revoked device; never reconnect.
 pub const UNAUTHORIZED_CLOSE_CODE: u16 = 4401;
@@ -21,6 +21,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 9 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ProtocolVersion {
     pub major: u32,
     pub minor: u32,
@@ -108,6 +109,7 @@ pub enum HostFeature {
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ApnsEnvironment {
     Production,
     Development,
@@ -126,6 +128,7 @@ impl ApnsEnvironment {
 /// The legacy Expo string form is deliberately not modeled: the host
 /// refuses it anyway, and native clients only ever send APNs or `null`.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ApnsPushToken {
     /// The device token APNs issued, hex — Apple does not fix its length.
     pub apns: String,
@@ -240,5 +243,5 @@ pub fn encode_client_frame(frame: &ClientFrame) -> String {
             object.set(U16String::from_str("args"), args.clone());
         }
     }
-    Json::Object(Rc::new(object)).to_json()
+    Json::Object(Arc::new(object)).to_json()
 }

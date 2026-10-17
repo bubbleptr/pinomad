@@ -15,6 +15,7 @@ use crate::tool_item::{DiffStat, MessageImage, PinomadToolDetail, ToolItem, Tool
 use crate::u16str::U16String;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum CotPhase {
     Hidden,
     Thinking,
@@ -36,12 +37,14 @@ impl CotPhase {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct CotAnswer {
     pub text: String,
     pub streaming: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum CotStep {
     Thinking {
         id: String,
@@ -61,6 +64,7 @@ pub enum CotStep {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct CotView {
     pub phase: CotPhase,
     /// The reference's `outcome?: "failed"` — true maps back to that tag.
@@ -76,6 +80,7 @@ pub struct CotView {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ChatEntry {
     User {
         id: String,
@@ -756,6 +761,7 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
 /// The tail failure's retry: the user text the failed run answered, keyed to
 /// that run so repeated retries admit once.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct RetryRequest {
     pub text: String,
     pub images: Vec<MessageImage>,
@@ -790,12 +796,14 @@ pub fn retry_of(entries: &[ChatEntry]) -> Option<RetryRequest> {
 
 /// One lifted subagent call and the key the UI anchors its card to.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct LiftedSubagent {
     pub key: String,
     pub tool: ToolItem,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SplitSubagents {
     pub view: CotView,
     pub subagents: Vec<LiftedSubagent>,

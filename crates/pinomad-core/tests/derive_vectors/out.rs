@@ -1,7 +1,7 @@
 // Test-only serialization of the typed derivation outputs back into the Json
 // the vectors compare — kept out of the public API per the step-2 brief: the
 // production boundary is UniFFI, not JSON.
-use std::rc::Rc;
+use std::sync::Arc;
 
 use pinomad_core::chat::{AgentState, QueueItem, TaskRow, UsageRow};
 use pinomad_core::cot_view::{ChatEntry, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents};
@@ -23,7 +23,7 @@ fn obj(pairs: &[(&str, Option<Json>)]) -> Json {
             object.set(U16String::from_str(key), value.clone());
         }
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }
 
 fn num(value: f64) -> Json {
@@ -327,7 +327,7 @@ pub fn host_labels_json(labels: &[pinomad_core::stored_host::HostLabel]) -> Json
     for entry in labels {
         object.set(U16String::from_str(&entry.host_key), s(&entry.label));
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }
 
 pub fn model_pick_json(pick: &ModelPick) -> Json {
@@ -347,5 +347,5 @@ pub fn level_labels_json() -> Json {
         .unwrap();
         object.set(U16String::from_str(level), s(&label));
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }

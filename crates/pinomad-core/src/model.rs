@@ -10,6 +10,7 @@ use crate::u16str::U16String;
 /// an `Other` keeps a level a newer host invented (the reference passes it
 /// through as a string).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ThinkingLevel {
     Off,
     Minimal,
@@ -68,6 +69,7 @@ fn lit(text: &str) -> Vec<u16> {
 
 /// `ModelRef` — `{provider, modelId}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ModelRef {
     pub provider: String,
     pub model_id: String,
@@ -87,12 +89,13 @@ impl ModelRef {
         let mut object = crate::json::JsonObject::new();
         object.set(U16String::from_str("provider"), Json::String(U16String::from_str(&self.provider)));
         object.set(U16String::from_str("modelId"), Json::String(U16String::from_str(&self.model_id)));
-        Json::Object(std::rc::Rc::new(object))
+        Json::Object(std::sync::Arc::new(object))
     }
 }
 
 /// The picker's selection state: a model ref plus a thinking level.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ModelPick {
     pub model: Option<ModelRef>,
     pub level: ThinkingLevel,
@@ -124,7 +127,9 @@ impl ModelSummary {
             model_id: value.get("modelId").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default(),
             name: value.get("name").and_then(Json::as_str).map(|s| s.to_string_lossy()),
             context_window: value.get("contextWindow").and_then(Json::as_number),
-            supports_images: match value.get("supportsImages") {
+            // The wire field is `images` (view.ts ModelSummary.images) —
+            // reading `supportsImages` here decoded nothing.
+            supports_images: match value.get("images") {
                 Some(Json::Bool(b)) => Some(*b),
                 _ => None,
             },

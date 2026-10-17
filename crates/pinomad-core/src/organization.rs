@@ -4,7 +4,7 @@
 // derived view stays byte-faithful and unknown fields survive.
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -36,6 +36,7 @@ fn text(value: Option<&Json>) -> Option<String> {
 /// `ConversationSummary.kind` — conversation | fork | subagent; `Other`
 /// keeps a kind a newer host invented.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum SummaryKind {
     Conversation,
     Fork,
@@ -65,6 +66,7 @@ impl SummaryKind {
 
 /// `ConversationSummary.status` — the family rollup compares these.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ConversationStatus {
     NeedsAnswer,
     Running,
@@ -100,7 +102,8 @@ impl ConversationStatus {
 }
 
 /// `ConversationSummary.activity` — the tool call in flight.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SummaryActivity {
     pub tool: String,
     pub target: Option<String>,
@@ -190,7 +193,7 @@ impl ConversationNode {
             "children",
             Json::array(self.children.iter().map(ConversationNode::to_json).collect()),
         );
-        Json::Object(Rc::new(object))
+        Json::Object(Arc::new(object))
     }
 }
 
@@ -264,7 +267,7 @@ impl Organized {
                             "conversations",
                             Json::array(p.conversations.iter().map(ConversationNode::to_json).collect()),
                         );
-                        Json::Object(Rc::new(item))
+                        Json::Object(Arc::new(item))
                     })
                     .collect(),
             ),
@@ -281,12 +284,12 @@ impl Organized {
                         if let Some(project) = &a.project {
                             set(&mut item, "project", project.to_json());
                         }
-                        Json::Object(Rc::new(item))
+                        Json::Object(Arc::new(item))
                     })
                     .collect(),
             ),
         );
-        Json::Object(Rc::new(object))
+        Json::Object(Arc::new(object))
     }
 }
 
@@ -303,6 +306,7 @@ pub struct Home {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum HomeKind {
     Project,
     Chat,

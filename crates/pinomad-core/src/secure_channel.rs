@@ -11,8 +11,7 @@
 //   a failed decrypt does there: tampering, replay, and reorder all wedge
 //   the receive direction identically.
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::b64::{from_base64url, to_base64url};
 use crate::json::{Json, JsonObject};
@@ -81,9 +80,9 @@ pub fn encode_client_hello(pairing: Option<&Pairing>) -> String {
         let mut pair = JsonObject::new();
         pair.set(U16String::from_str("secret"), Json::from(pairing.secret.clone()));
         pair.set(U16String::from_str("name"), Json::from(pairing.name.clone()));
-        object.set(U16String::from_str("pair"), Json::Object(Rc::new(pair)));
+        object.set(U16String::from_str("pair"), Json::Object(Arc::new(pair)));
     }
-    Json::Object(Rc::new(object)).to_json()
+    Json::Object(Arc::new(object)).to_json()
 }
 
 /// `decodeHostHello` — `v !== 1` rejects, everything else rides along.
@@ -137,14 +136,14 @@ struct CipherPair {
 /// completes are buffered so `seal` calls interleave correctly — same as
 /// the reference's `pending` list.
 pub struct SecureSession {
-    pair: Rc<RefCell<CipherPair>>,
+    pair: Arc<Mutex<CipherPair>>,
     pending: Vec<Vec<u8>>,
 }
 
 impl SecureSession {
     pub fn new(transport: TransportState) -> Self {
         SecureSession {
-            pair: Rc::new(RefCell::new(CipherPair { transport, receive_dead: false })),
+            pair: Arc::new(Mutex::new(CipherPair { transport, receive_dead: false })),
             pending: Vec::new(),
         }
     }
@@ -161,7 +160,7 @@ impl SecureSession {
         let bytes = text.as_bytes();
         let chunks = bytes.len().div_ceil(MAX_PLAINTEXT);
         let mut records = Vec::with_capacity(chunks.max(1));
-        let mut pair = self.pair.borrow_mut();
+        let mut pair = self.pair.lock().expect("cipher pair poisoned");
         for index in 0..chunks.max(1) {
             let start = index * MAX_PLAINTEXT;
             let end = (start + MAX_PLAINTEXT).min(bytes.len());
@@ -184,13 +183,13 @@ impl SecureSession {
     /// `session.open(chunk)`: decrypt one record; `Some(text)` when a text
     /// frame completes. Any failure kills the session receive direction.
     pub fn open(&mut self, chunk: &[u8]) -> Result<Option<String>, ChannelError> {
-        {
-            let pair = self.pair.borrow();
-            if pair.receive_dead {
-                return Err(ChannelError::Noise("session is poisoned".into()));
-            }
+        // One lock for the check-and-decrypt: with forks shareable across
+        // threads, a poison set between two lock()s would let one record
+        // through that the wedge semantics forbid.
+        let mut pair = self.pair.lock().expect("cipher pair poisoned");
+        if pair.receive_dead {
+            return Err(ChannelError::Noise("session is poisoned".into()));
         }
-        let mut pair = self.pair.borrow_mut();
         let mut plaintext = vec![0u8; chunk.len()];
         match pair.transport.read_message(chunk, &mut plaintext) {
             Err(error) => {
@@ -328,7 +327,7 @@ impl IkServerHandshake {
 pub fn encode_host_hello() -> String {
     let mut object = JsonObject::new();
     object.set(U16String::from_str("v"), Json::Number(1.0));
-    Json::Object(Rc::new(object)).to_json()
+    Json::Object(Arc::new(object)).to_json()
 }
 
 // ─── SecureConnection: the RemoteDurable-facing transport ────────────────────

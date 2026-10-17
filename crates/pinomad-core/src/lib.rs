@@ -31,3 +31,9 @@ pub mod tool_target;
 pub mod transcript;
 pub mod transport;
 pub mod u16str;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;
+
+#[cfg(feature = "ffi")]
+uniffi::setup_scaffolding!();

@@ -312,6 +312,24 @@ fn session_rejects_tampered_replayed_reordered_and_wrong_direction() {
 }
 
 #[test]
+fn a_failed_open_on_one_fork_wedges_the_other_fork() {
+    let (mut client, server) = handshake_pair();
+    let mut a = server;
+    let mut b = a.fork();
+
+    // A bad record on `a` poisons the shared receive direction...
+    let mut bad = vec![0xde, 0xad, 0xbe, 0xef];
+    bad.extend_from_slice(&[0; 32]);
+    assert!(a.open(&bad).is_err());
+
+    // ...so a perfectly good record on `b` fails too — the wedge lives in
+    // the shared cipher state, not in the session object.
+    let chunk = client.seal("valid").unwrap().remove(0);
+    assert!(b.open(&chunk).is_err());
+    assert!(a.open(&chunk).is_err());
+}
+
+#[test]
 fn handshake_rejects_wrong_key_truncated_and_garbage() {
     let device = generate_keypair().unwrap();
     let host = generate_keypair().unwrap();

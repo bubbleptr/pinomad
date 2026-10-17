@@ -7,6 +7,7 @@ use crate::tool_target::tool_target;
 
 /// Lifecycle of a tool invocation as rendered in the trace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ToolPartState {
     InputStreaming,
     InputAvailable,
@@ -27,6 +28,7 @@ impl ToolPartState {
 
 /// Per-edit line counts; rendered as additions/deletions stats.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct DiffStat {
     pub additions: f64,
     pub deletions: f64,
@@ -34,6 +36,7 @@ pub struct DiffStat {
 
 /// An image block carried on a tool result or a user message.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct MessageImage {
     pub data: String,
     pub mime_type: String,
@@ -41,6 +44,7 @@ pub struct MessageImage {
 
 /// Tool rendering the item shape cannot express as data (ADR-0005).
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum PinomadToolDetail {
     Diff { patch: String },
     Subagent {
@@ -58,6 +62,7 @@ pub enum PinomadToolDetail {
 /// One tool call in a transcript, as data. Optional fields mirror the
 /// reference's "absent means omit" convention.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ToolItem {
     pub state: ToolPartState,
     pub args_text: Option<String>,
@@ -149,6 +154,7 @@ pub fn format_tool_duration(duration_ms: Option<f64>) -> Option<String> {
 
 /// Visual class of a tool call, for the kind icon on a CoT row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ToolKind {
     Shell,
     Search,
