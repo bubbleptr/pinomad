@@ -29,11 +29,11 @@ cd crates/uniffi-bindgen && cargo run --release -- generate --library ../../targ
 
 `crates/uniffi-bindgen` 是独立于根 workspace 的小 bin crate（自带 `[workspace]` 和 Cargo.lock，`uniffi` 版本和库里锁的一致），生成物不入库。库本身保持 rlib（普通 `cargo test` 不为静态库买单），iOS 需要 staticlib 时用 `cargo rustc --crate-type staticlib` 在打包脚本里编。
 
-原生 iOS（`apps/ios`，ADR-0024 §11）：`apps/ios/scripts/build-core.sh` 从干净检出生成 xcframework（真机 + 模拟器切片，release staticlib）和 UniFFI Swift 绑定，产物在 `apps/ios/PinomadCore/Vendor/` 和 `Sources/PinomadCore/Generated/`（都不入库，新检出必须先跑这个脚本）。`apps/ios/PinomadCore` 是本地 SwiftPM 包（binaryTarget + 生成的绑定 + 平台层），它的 Swift 测试在模拟器上跑：
+原生 iOS（`apps/ios`，ADR-0024 §11）：`apps/ios/scripts/build-core.sh` 从干净检出生成 xcframework（真机 + 模拟器切片，release staticlib）和 UniFFI Swift 绑定，产物在 `apps/ios/PinomadCore/Vendor/` 和 `Sources/PinomadCore/Generated/`（都不入库，新检出必须先跑这个脚本）。`apps/ios/PinomadCore` 是本地 SwiftPM 包（binaryTarget + 生成的绑定 + 平台层 + `PinomadChat` 适配层），它的 Swift 测试在模拟器上跑（多个测试 target 时用 SwiftPM 自动生成的 `-Package` scheme）：
 
 ```sh
 cd apps/ios/PinomadCore
-xcodebuild -scheme PinomadCore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+xcodebuild -scheme PinomadCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
 App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）：
@@ -44,6 +44,41 @@ xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
 xcrun simctl install "iPhone 17 Pro" <产物里的 Pinomad.app>
 xcrun simctl launch "iPhone 17 Pro" build.kieran.pinomad \
   -pairingLink '<配对链接>' -autoPair YES   # 调试注入；不带参数则走钥匙串自动重连
+```
+
+真机（iphone181，UDID 00008150-001608822678401C）：
+
+```sh
+# 构建要签名：DEVELOPMENT_TEAM 用开发者证书所属团队，pbxproj 里保持为空。
+xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
+  -destination 'id=00008150-001608822678401C' -derivedDataPath /tmp/pinomad-device-dd \
+  DEVELOPMENT_TEAM=9KZ32XLVQW -allowProvisioningUpdates build
+xcrun devicectl device install app --device 00008150-001608822678401C \
+  /tmp/pinomad-device-dd/Build/Products/Debug-iphoneos/Pinomad.app
+
+# devicectl 会把 -xxx 应用参数当成自己的短选项簇解析（-autoPair → -a -u -t …），
+# 所以启动参数走 DEVICECTL_CHILD_ 环境变量（App 也读 PINOMAD_* env）：
+DEVICECTL_CHILD_PINOMAD_PAIRING_LINK='<配对链接>' DEVICECTL_CHILD_PINOMAD_AUTOPAIR=1 \
+  xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
+# 手机锁屏时 launch 会被拒绝（FBSOpenApplicationErrorDomain 7）——等解锁。
+
+# 性能实测：iOS 27 真机上 xctrace 的 --attach/--launch 连不上进程（attach 找不到
+# 进程、launch 卡在 "waiting for device to boot"），改为 App 内 PerfLog：
+# PINOMAD_PERFLOG 开启后，会话层把 bytes / snapshot(耗时) / publish / ui-publish /
+# 常驻内存 记进 Documents/perf.ndjson，用 devicectl 拉回分析：
+DEVICECTL_CHILD_PINOMAD_PERFLOG=1 DEVICECTL_CHILD_PINOMAD_KEEPSCREEN=1 \
+  DEVICECTL_CHILD_PINOMAD_OPEN=<对话id> \
+  xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
+# 帧停顿（>2 帧的帧间隔）记为 hitch 事件，附 gap 和预期帧时长；
+# PINOMAD_AUTOSCROLL 让对话页定时滚到底部，用于远程测量滚动卡顿；
+# PINOMAD_AUTOPAIR 下配对失败每 15s 自动重试（约 10 分钟窗口）。
+xcrun devicectl device copy from --device 00008150-001608822678401C \
+  --source Documents/perf.ndjson \
+  --domain-type appDataContainer --domain-identifier build.kieran.pinomad \
+  --destination /tmp/perf.ndjson
+# 真机截图（PR 用）：xcrun devicectl device capture screenshot --device <UDID> --destination /tmp/shot.png
+# 后台恢复测试：devicectl 拉起别的 App（如 com.apple.mobilesafari）把 Pinomad 压后台。
+# os_signpost 打点仍在（bytes/snapshot/publish/ui-publish），能用 Instruments 的机器上照旧录。
 ```
 
 平台层的保序契约（ADR-0024 §3）：所有输入进同一条有序队列、由唯一一个循环消费，`handle` 和它产出的指令在同一段同步代码里处理完，没有悬挂点；每条连接一个顺序接收循环、一个 FIFO 发送器；计时器取消后不得再触发 `TimerFired`；`ViewChanged` 只标脏，快照计算最多一个在途、版本不回退。
