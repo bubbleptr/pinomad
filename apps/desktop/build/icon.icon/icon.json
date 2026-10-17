@@ -1,103 +1,73 @@
 {
-  "fill": {
-    "linear-gradient": [
-      "extended-srgb:0.62000,0.85000,0.95000,1.00000",
-      "extended-srgb:0.21000,0.44000,0.77000,1.00000"
-    ]
-  },
+  "fill": "system-light",
   "groups": [
     {
-      "name": "Frame",
-      "lighting": "individual",
-      "specular": true,
+      "layers": [
+        {
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "glass": false,
+          "image-name": "03-eyes.svg",
+          "name": "03-eyes"
+        },
+        {
+          "image-name": "02-hat.svg",
+          "name": "02-hat",
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "image-name": "01-body-outline.png",
+          "name": "01-body-outline",
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "image-name": "01-body-fill.svg",
+          "name": "01-body-fill",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.09412,0.09412,0.09412,1.00000"
+              }
+            }
+          ]
+        }
+      ],
       "shadow": {
         "kind": "neutral",
         "opacity": 0.5
       },
       "translucency": {
         "enabled": false,
-        "value": 0.2
-      },
-      "layers": [
-        {
-          "name": "platform",
-          "image-name": "platform.svg",
-          "glass": true
-        },
-        {
-          "name": "frame",
-          "image-name": "frame.svg",
-          "glass": true
-        }
-      ]
-    },
-    {
-      "name": "Recess outer",
-      "lighting": "individual",
-      "specular": true,
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.45
-      },
-      "translucency": {
-        "enabled": false,
-        "value": 0.2
-      },
-      "layers": [
-        {
-          "name": "recess-outer",
-          "image-name": "recess-outer.svg",
-          "glass": true
-        }
-      ]
-    },
-    {
-      "name": "Recess inner",
-      "lighting": "individual",
-      "specular": true,
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.4
-      },
-      "translucency": {
-        "enabled": false,
-        "value": 0.2
-      },
-      "layers": [
-        {
-          "name": "recess-inner",
-          "image-name": "recess-inner.svg",
-          "glass": true
-        }
-      ]
-    },
-    {
-      "name": "Opening",
-      "lighting": "individual",
-      "specular": true,
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.3
-      },
-      "translucency": {
-        "enabled": false,
-        "value": 0.2
-      },
-      "layers": [
-        {
-          "name": "floor",
-          "image-name": "floor.svg",
-          "glass": true
-        },
-        {
-          "name": "opening",
-          "image-name": "opening.svg",
-          "glass": true
-        }
-      ]
+        "value": 0.5
+      }
     }
   ],
   "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
     "squares": "shared"
   }
 }

@@ -85,7 +85,7 @@ xcrun devicectl device copy from --device 00008150-001608822678401C \
 
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 
-App 图标源文件是 `apps/desktop/build/icon.icon`，用 Xcode 自带的 Icon Composer（`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`）编辑，`/Applications` 下单独装的 1.5 版太旧；命令行预览用同目录的 `Contents/Executables/ictool`。Icon Composer 27 里图层和组的数组都是第一个在最上层。打包要 Xcode 26+ 的 actool。
+App 图标源文件是 `apps/desktop/build/icon.icon`（戴帽子的幽灵，全平台同一套视觉；身体轮廓层故意用 PNG，SVG 描边会被深色纯色覆盖填满）。Web 的 `apps/web/public/favicon.svg`（随系统深浅色切换）和 `apple-touch-icon.png`（不透明、无圆角）由同一图形导出，改图标时一起更新。图标用 Xcode 自带的 Icon Composer（`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`）编辑，`/Applications` 下单独装的 1.5 版太旧；命令行预览用同目录的 `Contents/Executables/ictool`。Icon Composer 27 里图层和组的数组都是第一个在最上层。打包要 Xcode 26+ 的 actool。
 
 移动端：`cd apps/mobile && bunx expo run:ios -d "iPhone 17 Pro"` 构建开发包并在模拟器上跑（`ios/`、`android/` 由 CNG 生成，不入库）。改了移动端依赖版本后用 `bunx expo start --clear`，Metro 的旧转换缓存会让 App 启动时栈溢出。Expo 相关依赖锁精确版本，不用发布不到 7 天的；`package.json` 的 `expo.install.exclude` 让 `expo install --check` 跳过故意没升到最新补丁的包，升级时一并更新。heroui-native 只用 OSS 包。发版（EAS + TestFlight）见 `docs/mobile-release.md`；`--configuration Release` 跑 Release 包，检查不依赖 Metro 的情况。
 
