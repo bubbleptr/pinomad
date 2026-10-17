@@ -40,9 +40,10 @@ extension AppModel {
 
     /// Create a conversation from the draft and show it in place of the
     /// draft page. The call is command-class: it "succeeds" either way, so
-    /// success means a snapshot showing a different conversation; a new
-    /// notice (the host's refusal) or a timeout means it failed, and the
-    /// draft stays for another try.
+    /// success means a snapshot showing a conversation the host hadn't
+    /// listed before (an earlier queued switch may publish in the meantime
+    /// — that one is known); a new notice (the host's refusal) or a
+    /// timeout means it failed, and the draft stays for another try.
     func createConversation() async {
         let key = Self.draftKey
         let text = drafts[key] ?? ""
@@ -50,7 +51,8 @@ extension AppModel {
         guard !creating, let session,
               !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty, tray.preparing == 0
         else { return }
-        let before = snapshot?.conversation?.id
+        guard let organized = snapshot?.organized else { return }
+        let known = KnownConversations(organized)
         let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
         let pick = effectiveDraftPick
         let checkout: ConversationCheckout? = {
@@ -69,7 +71,7 @@ extension AppModel {
         }
         // The op resolves before its snapshot is published — wait for it.
         for _ in 0..<120 {
-            if let shown = snapshot?.conversation?.id, shown != before {
+            if let shown = known.created(shown: snapshot?.conversation?.id) {
                 drafts[key] = nil
                 trays[key] = nil
                 navPath = [.conversation(shown)]

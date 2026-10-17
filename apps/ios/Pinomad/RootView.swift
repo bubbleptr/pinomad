@@ -26,6 +26,15 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if !model.sheetShowsToasts { ToastStack(model: model) }
         }
+        // Above every page — conversations and the draft both stage and
+        // show images — so a tap anywhere opens here and nothing lingers.
+        .fullScreenCover(item: Binding(
+            get: { model.viewing.map(ViewedImage.init) },
+            set: { model.viewing = $0?.image }
+        )) { viewed in
+            ImageViewer(image: viewed.image) { model.viewing = nil }
+                .presentationBackground(.clear)
+        }
     }
 
     private var pairingView: some View {
@@ -99,4 +108,10 @@ struct ToastStack: View {
         .padding(.horizontal, 16)
         .animation(.snappy, value: model.toasts.map(\.id))
     }
+}
+
+/// `fullScreenCover(item:)` wants an identity; an image's bytes are one.
+private struct ViewedImage: Identifiable {
+    let image: MessageImage
+    var id: String { image.data }
 }

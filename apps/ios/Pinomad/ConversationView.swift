@@ -59,13 +59,6 @@ struct ConversationView: View {
         .environment(\.inlineImageAction, InlineImageAction { image in
             model.viewing = MessageImage(data: image.data, mimeType: image.mimeType)
         })
-        .fullScreenCover(item: Binding(
-            get: { model.viewing.map(ViewedImage.init) },
-            set: { model.viewing = $0?.image }
-        )) { viewed in
-            ImageViewer(image: viewed.image) { model.viewing = nil }
-                .presentationBackground(.clear)
-        }
         .safeAreaInset(edge: .bottom) {
             if let conversation {
                 ConversationComposer(model: model, conversation: conversation)
@@ -217,10 +210,4 @@ private struct ReplyBody: View {
             }
         }
     }
-}
-
-/// `fullScreenCover(item:)` wants an identity; an image's bytes are one.
-private struct ViewedImage: Identifiable {
-    let image: MessageImage
-    var id: String { image.data }
 }

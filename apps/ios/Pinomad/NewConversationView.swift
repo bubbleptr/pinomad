@@ -64,7 +64,9 @@ struct NewConversationView: View {
                 AttachmentStrip(
                     tray: tray,
                     note: imagesBlocked ? "\(currentModel?.name ?? "当前模型")不支持图片，移除图片或换模型后再发送" : tray.error,
-                    remove: { model.removeImage(conversation: key, at: $0) },
+                    // The create already took these; a change now would be
+                    // lost when the draft clears.
+                    remove: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
                     view: { model.viewing = $0 }
                 )
             }
@@ -84,6 +86,9 @@ struct NewConversationView: View {
                     paste: { model.pasteImage(into: key, accepts: acceptsImages) },
                     compact: nil
                 )
+                // Images added mid-create would miss the request and then be
+                // cleared with the draft — hold the menu like the text field.
+                .disabled(model.creating)
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
                     enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true)
