@@ -29,6 +29,25 @@ cd crates/uniffi-bindgen && cargo run --release -- generate --library ../../targ
 
 `crates/uniffi-bindgen` 是独立于根 workspace 的小 bin crate（自带 `[workspace]` 和 Cargo.lock，`uniffi` 版本和库里锁的一致），生成物不入库。库本身保持 rlib（普通 `cargo test` 不为静态库买单），iOS 需要 staticlib 时用 `cargo rustc --crate-type staticlib` 在打包脚本里编。
 
+原生 iOS（`apps/ios`，ADR-0024 §11）：`apps/ios/scripts/build-core.sh` 从干净检出生成 xcframework（真机 + 模拟器切片，release staticlib）和 UniFFI Swift 绑定，产物在 `apps/ios/PinomadCore/Vendor/` 和 `Sources/PinomadCore/Generated/`（都不入库，新检出必须先跑这个脚本）。`apps/ios/PinomadCore` 是本地 SwiftPM 包（binaryTarget + 生成的绑定 + 平台层），它的 Swift 测试在模拟器上跑：
+
+```sh
+cd apps/ios/PinomadCore
+xcodebuild -scheme PinomadCore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+```
+
+App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）：
+
+```sh
+xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+xcrun simctl install "iPhone 17 Pro" <产物里的 Pinomad.app>
+xcrun simctl launch "iPhone 17 Pro" build.kieran.pinomad \
+  -pairingLink '<配对链接>' -autoPair YES   # 调试注入；不带参数则走钥匙串自动重连
+```
+
+平台层的保序契约（ADR-0024 §3）：所有输入进同一条有序队列、由唯一一个循环消费，`handle` 和它产出的指令在同一段同步代码里处理完，没有悬挂点；每条连接一个顺序接收循环、一个 FIFO 发送器；计时器取消后不得再触发 `TimerFired`；`ViewChanged` 只标脏，快照计算最多一个在途、版本不回退。
+
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 
 App 图标源文件是 `apps/desktop/build/icon.icon`，用 Xcode 自带的 Icon Composer（`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`）编辑，`/Applications` 下单独装的 1.5 版太旧；命令行预览用同目录的 `Contents/Executables/ictool`。Icon Composer 27 里图层和组的数组都是第一个在最上层。打包要 Xcode 26+ 的 actool。
