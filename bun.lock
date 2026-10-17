@@ -119,6 +119,16 @@
         "@types/ws": "8.18.2",
       },
     },
+    "apps/site": {
+      "name": "@pinomad/site",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fontsource-variable/montserrat": "5.3.0",
+      },
+      "devDependencies": {
+        "vite": "^5.4.2",
+      },
+    },
     "apps/web": {
       "name": "@pinomad/web",
       "version": "0.0.0",
@@ -648,6 +658,8 @@
     "@pinomad/protocol": ["@pinomad/protocol@workspace:packages/protocol"],
 
     "@pinomad/relay": ["@pinomad/relay@workspace:apps/relay"],
+
+    "@pinomad/site": ["@pinomad/site@workspace:apps/site"],
 
     "@pinomad/web": ["@pinomad/web@workspace:apps/web"],
 
