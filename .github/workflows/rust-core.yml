@@ -58,11 +58,11 @@ jobs:
         working-directory: apps/ios/PinomadCore
         run: |
           xcodebuild -scheme PinomadCore \
-            -destination 'platform=iOS Simulator,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
             test
       - name: Build the app for an iOS simulator
         run: |
           xcodebuild -project apps/ios/Pinomad.xcodeproj \
             -scheme Pinomad \
-            -destination 'platform=iOS Simulator,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
             build
