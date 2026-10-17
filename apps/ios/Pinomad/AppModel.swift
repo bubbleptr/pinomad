@@ -40,6 +40,8 @@ final class AppModel {
     /// Unsent composer text per conversation — kept across navigation,
     /// dropped with the session (a new host has other conversations).
     var drafts: [UInt64: String] = [:]
+    /// In-progress answers per pending question request id.
+    var questionDrafts: [String: QuestionDraft] = [:]
     /// Bumped when the reader acts at the transcript's end (sends, starts
     /// typing) — the transcript jumps back to its end on each change.
     var transcriptPin = 0
@@ -192,6 +194,7 @@ final class AppModel {
         lastError = ""
         replyStreams.sync(chat: nil)
         drafts = [:]
+        questionDrafts = [:]
         toasts = []
         noticeFeed = NoticeFeed()
         phase = .connecting

@@ -1,4 +1,5 @@
 import Foundation
+import PinomadChat
 import PinomadCore
 
 /// The composer's calls. All command-class: a host refusal resolves
@@ -24,6 +25,24 @@ extension AppModel {
                 self.lastError = "发送失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    /// Answer every question of a pending request at once. The card goes
+    /// away when the snapshot marks the request resolved; the draft is kept
+    /// until then so a refused answer (toasted) can be resent.
+    func answer(_ question: PendingQuestion, conversation id: UInt64) {
+        let draft = questionDrafts[question.request.id]
+            ?? QuestionDraft(questionCount: question.request.questions.count)
+        run(.answer(kind: question.kind, requestId: question.request.id,
+                    answers: draft.answers(), target: id))
+    }
+
+    /// Resend a failed run's prompt. The request id is derived from the run,
+    /// so a double tap or another client's retry is admitted once.
+    func retry(_ request: RetryRequest, conversation id: UInt64) {
+        transcriptPin += 1
+        run(.submit(text: request.text, whenBusy: .followUp, target: id,
+                    requestId: request.requestId, images: request.images))
     }
 
     func stop(conversation id: UInt64) {
