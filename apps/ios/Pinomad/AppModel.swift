@@ -83,6 +83,14 @@ final class AppModel {
                 return
             }
         }
+        if env["PINOMAD_DEMO"] != nil {
+            // No host needed: synthesize a streaming conversation so the
+            // reply path (StreamingMarkdown + its fade) can be exercised
+            // on a device that cannot reach one.
+            phase = .connected
+            startDemo()
+            return
+        }
         do {
             if let host = try store.load().active {
                 connect(host)
@@ -227,6 +235,67 @@ final class AppModel {
     /// The stream a run's answer is being revealed through, or nil while
     /// no answer has arrived.
     func streamFor(_ entryId: String) -> StreamingMarkdown? { replyStreams.stream(for: entryId) }
+
+    /// Drives a synthetic streaming answer — the same snapshot/sync path
+    /// the session uses, so a blank screen reproduces exactly what the
+    /// host-driven view would show.
+    private func startDemo() {
+        navPath = [1]
+        let body = """
+        这是一段流式输出的演示。**Markdown** 会逐词显现，应该能看到淡入效果。
+
+        ## 小节标题
+
+        - 列表项一：内容逐渐增长
+        - 列表项二：接着出现
+        - 列表项三：验证节奏
+
+        ```swift
+        let stream = StreamingMarkdown()
+        stream.append("hello")
+        ```
+
+        一段收尾的正文，到这里回答就基本结束了。
+        """
+        let words = (0..<3).map { _ in body }.joined()
+        var text = ""
+        var version: UInt64 = 0
+        Task { [weak self] in
+            for (i, ch) in words.enumerated() {
+                guard let self, !Task.isCancelled else { return }
+                text.append(ch)
+                self.demoPublish(answer: text, streaming: i < words.count - 1, version: &version)
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
+    }
+
+    private func demoPublish(answer: String, streaming: Bool, version: inout UInt64) {
+        version += 1
+        let cot = CotView(
+            phase: streaming ? .answering : .settled, failed: false,
+            anchorMs: nil, elapsedMs: nil, steps: [],
+            answer: CotAnswer(text: answer, streaming: streaming)
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "演示一轮流式输出", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
+        ]
+        let conv = ConversationSnapshot(
+            id: 1, chat: chat, statusText: streaming ? "正在输出…" : "",
+            queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
+            questions: [], home: nil, checkout: nil, busy: streaming
+        )
+        snapshot = ClientSnapshot(
+            version: version, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: nil,
+            organized: Organized(chats: [], projects: [], archived: []),
+            notices: [], models: [],
+            defaults: Defaults(model: nil, thinkingLevel: nil),
+            conversation: conv
+        )
+        replyStreams.sync(chat: chat)
+    }
 
     private func label(for connection: ConnectionState) -> String {
         switch connection {
