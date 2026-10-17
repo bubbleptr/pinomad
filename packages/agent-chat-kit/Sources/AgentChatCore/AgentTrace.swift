@@ -72,8 +72,14 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
     public var duration: Duration?
     /// Line counts of an edit, when the call reports them.
     public var diffStat: DiffStat?
+    /// Images the result carried, rendered after the output pane.
+    public var images: [ToolImage]
     /// Calls made from inside this one, as a script calling other tools.
     public var children: [ToolCall]
+    /// The host marked this call as the one executing now — submitted
+    /// but not yet running calls stay queued behind it, so a batch's
+    /// summary should show this one rather than the last in-progress.
+    public var isActive: Bool
 
     public init(
         id: String,
@@ -83,7 +89,9 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         output: String? = nil,
         duration: Duration? = nil,
         diffStat: DiffStat? = nil,
-        children: [ToolCall] = []
+        images: [ToolImage] = [],
+        children: [ToolCall] = [],
+        isActive: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -92,7 +100,22 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         self.output = output
         self.duration = duration
         self.diffStat = diffStat
+        self.images = images
         self.children = children
+        self.isActive = isActive
+    }
+}
+
+/// An image attached to a tool result, as wire data — decoding is the
+/// view's job so the model stays UI-free.
+public struct ToolImage: Sendable, Equatable {
+    /// Base64-encoded image bytes.
+    public var data: String
+    public var mimeType: String
+
+    public init(data: String, mimeType: String) {
+        self.data = data
+        self.mimeType = mimeType
     }
 }
 

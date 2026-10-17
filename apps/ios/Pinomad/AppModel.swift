@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+import AgentChatKit
+import PinomadChat
 import PinomadCore
 import UIKit
 
@@ -20,13 +23,28 @@ final class AppModel {
     var link = ""
     var hostURL = ""
     var connectionText = ""
-    var conversationCount = 0
     var lastError = ""
+    /// The newest published view — the list and the open conversation
+    /// both read straight off it; nothing here re-derives its contents.
+    private(set) var snapshot: ClientSnapshot?
+    /// NavigationStack path — conversation ids pushed onto it open that
+    /// conversation's screen.
+    var navPath: [UInt64] = []
+    /// Live answer streams, keyed by run entry id — the model side feeds
+    /// them per snapshot so view rows stay side-effect free (lazy rows
+    /// mutating their own @State kept iOS 27's layout unsettled; the
+    /// transcript rendered blank).
+    let replyStreams = ReplyStreams()
+    /// Set by `-openConversation <id>` — pushed once connected.
+    private var pendingOpen: UInt64?
 
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
     private let store = KeychainHostStore()
     private let monitor = NetworkMonitor()
+    /// Marks each snapshot landing on the main actor — paired with the
+    /// session's `bytes`/`publish` events for the byte-to-UI latency.
+    private let signposter = OSSignposter(subsystem: "build.kieran.pinomad", category: "delivery")
 
     func start() {
         // The monitor runs for the app's lifetime; it only yields into
@@ -35,14 +53,43 @@ final class AppModel {
             Task { @MainActor in self?.session?.notifyNetworkChanged() }
         }
         // Dev seam for scripted runs: `-pairingLink <url>` pre-fills the
-        // field, `-autoPair` connects straight away.
+        // field, `-autoPair` connects straight away. devicectl cannot pass
+        // single-dash args to a device app (it clusters them as its own
+        // short options), so the same three values are also read from
+        // PINOMAD_* environment variables.
         let args = UserDefaults.standard
-        if let injected = args.string(forKey: "pairingLink"), !injected.isEmpty {
+        let env = ProcessInfo.processInfo.environment
+        if env["PINOMAD_KEEPSCREEN"] != nil {
+            // Perf runs: keep the phone awake so a scripted measurement
+            // window isn't cut short by auto-lock.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        if env["PINOMAD_PERFLOG"] != nil {
+            PerfLog.shared.startFrameMonitor()
+        }
+        if let openId = args.string(forKey: "openConversation") ?? env["PINOMAD_OPEN"],
+           let n = UInt64(openId) {
+            pendingOpen = n
+        }
+        let injected = args.string(forKey: "pairingLink") ?? env["PINOMAD_PAIRING_LINK"] ?? ""
+        if !injected.isEmpty {
             link = injected
-            if args.bool(forKey: "autoPair") {
+            if args.bool(forKey: "autoPair") || env["PINOMAD_AUTOPAIR"] != nil {
                 pair()
+                // Scripted runs race the network coming up (tailnet,
+                // VPN toggles) — keep retrying the injected link rather
+                // than dropping the operator to a failed screen.
+                if env["PINOMAD_AUTOPAIR"] != nil { schedulePairRetries() }
                 return
             }
+        }
+        if env["PINOMAD_DEMO"] != nil {
+            // No host needed: synthesize a streaming conversation so the
+            // reply path (StreamingMarkdown + its fade) can be exercised
+            // on a device that cannot reach one.
+            phase = .connected
+            startDemo()
+            return
         }
         do {
             if let host = try store.load().active {
@@ -85,6 +132,33 @@ final class AppModel {
     func didEnterForeground() { session?.notifyForeground() }
     func didEnterBackground() { session?.notifyBackground() }
 
+    /// Show and talk to a conversation — command-class, so a refused
+    /// switch surfaces as a snapshot notice, not a thrown error.
+    func openConversation(_ id: UInt64) {
+        Task { [weak self] in
+            _ = try? await self?.session?.invoke(.switchConversation(id: id))
+        }
+    }
+
+    /// Retries the injected pairing link while the phase is a failure —
+    /// only armed by PINOMAD_AUTOPAIR, so manual pairing stays manual.
+    private var pairRetryTask: Task<Void, Never>?
+
+    private func schedulePairRetries() {
+        pairRetryTask?.cancel()
+        pairRetryTask = Task { [weak self] in
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { return }
+                if case .failed = self.phase {
+                    self.pair()
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
     private func connect(_ host: HostRecord) {
         do {
             let session = try PinomadSession.connect(host: host)
@@ -99,10 +173,11 @@ final class AppModel {
         self.session?.close()
         self.session = session
         // A new session is a new host — display state from the previous
-        // one (URL, counts, errors) must not bleed into this screen.
+        // one (URL, snapshots, errors) must not bleed into this screen.
         hostURL = ""
-        conversationCount = 0
+        snapshot = nil
         lastError = ""
+        replyStreams.sync(chat: nil)
         phase = .connecting
         connectionText = "正在连接…"
         watchTask?.cancel()
@@ -121,6 +196,10 @@ final class AppModel {
                 phase = .connected
                 // The host URL only becomes known once `Paired` lands.
                 hostURL = (try? store.load().active?.url) ?? hostURL
+                if let id = pendingOpen {
+                    pendingOpen = nil
+                    navPath = [id]
+                }
             case .unauthorized:
                 phase = .failed("设备未授权（配对可能已被撤销）")
             case .mismatch(_, _, let direction, let hostVersion):
@@ -138,11 +217,84 @@ final class AppModel {
             } else {
                 connectionText = label(for: snapshot.connection)
             }
-            conversationCount = snapshot.organized.chats.count
-                + snapshot.organized.projects.reduce(0) { $0 + $1.conversations.count }
+            self.snapshot = snapshot
+            signposter.emitEvent("ui-publish")
+            replyStreams.sync(chat: snapshot.conversation?.chat)
+            PerfLog.shared.mark("ui-publish", version: snapshot.version)
+            // Perf runs double as field diagnostics: which conversation is
+            // shown and how many chat rows it carries.
+            if let c = snapshot.conversation {
+                PerfLog.shared.mark("conv-\(c.id)-\(c.chat.count)")
+            }
+            PerfLog.shared.flush()
         case .platformError(let message):
             lastError = message
         }
+    }
+
+    /// The stream a run's answer is being revealed through, or nil while
+    /// no answer has arrived.
+    func streamFor(_ entryId: String) -> StreamingMarkdown? { replyStreams.stream(for: entryId) }
+
+    /// Drives a synthetic streaming answer — the same snapshot/sync path
+    /// the session uses, so a blank screen reproduces exactly what the
+    /// host-driven view would show.
+    private func startDemo() {
+        navPath = [1]
+        let body = """
+        这是一段流式输出的演示。**Markdown** 会逐词显现，应该能看到淡入效果。
+
+        ## 小节标题
+
+        - 列表项一：内容逐渐增长
+        - 列表项二：接着出现
+        - 列表项三：验证节奏
+
+        ```swift
+        let stream = StreamingMarkdown()
+        stream.append("hello")
+        ```
+
+        一段收尾的正文，到这里回答就基本结束了。
+        """
+        let words = (0..<3).map { _ in body }.joined()
+        var text = ""
+        var version: UInt64 = 0
+        Task { [weak self] in
+            for (i, ch) in words.enumerated() {
+                guard let self, !Task.isCancelled else { return }
+                text.append(ch)
+                self.demoPublish(answer: text, streaming: i < words.count - 1, version: &version)
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
+    }
+
+    private func demoPublish(answer: String, streaming: Bool, version: inout UInt64) {
+        version += 1
+        let cot = CotView(
+            phase: streaming ? .answering : .settled, failed: false,
+            anchorMs: nil, elapsedMs: nil, steps: [],
+            answer: CotAnswer(text: answer, streaming: streaming)
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "演示一轮流式输出", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
+        ]
+        let conv = ConversationSnapshot(
+            id: 1, chat: chat, statusText: streaming ? "正在输出…" : "",
+            queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
+            questions: [], home: nil, checkout: nil, busy: streaming
+        )
+        snapshot = ClientSnapshot(
+            version: version, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: nil,
+            organized: Organized(chats: [], projects: [], archived: []),
+            notices: [], models: [],
+            defaults: Defaults(model: nil, thinkingLevel: nil),
+            conversation: conv
+        )
+        replyStreams.sync(chat: chat)
     }
 
     private func label(for connection: ConnectionState) -> String {

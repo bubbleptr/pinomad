@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		AA0000000000000000000101 /* PinomadCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000102 /* PinomadCore */; };
+		AA0000000000000000000103 /* PinomadChat in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000104 /* PinomadChat */; };
+		AA0000000000000000000105 /* AgentChatKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000106 /* AgentChatKit */; };
+		AA0000000000000000000107 /* AgentChatCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000108 /* AgentChatCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -37,6 +40,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000101 /* PinomadCore in Frameworks */,
+				AA0000000000000000000103 /* PinomadChat in Frameworks */,
+				AA0000000000000000000105 /* AgentChatKit in Frameworks */,
+				AA0000000000000000000107 /* AgentChatCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +86,9 @@
 			name = Pinomad;
 			packageProductDependencies = (
 				AA0000000000000000000102 /* PinomadCore */,
+				AA0000000000000000000104 /* PinomadChat */,
+				AA0000000000000000000106 /* AgentChatKit */,
+				AA0000000000000000000108 /* AgentChatCore */,
 			);
 			productName = Pinomad;
 			productReference = AA0000000000000000000701 /* Pinomad.app */;
@@ -111,6 +120,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA0000000000000000001101 /* XCLocalSwiftPackageReference "PinomadCore" */,
+				AA0000000000000000001102 /* XCLocalSwiftPackageReference "agent-chat-kit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000602 /* Products */;
@@ -354,6 +364,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = PinomadCore;
 		};
+		AA0000000000000000001102 /* XCLocalSwiftPackageReference "agent-chat-kit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/agent-chat-kit";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -361,6 +375,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000001101 /* XCLocalSwiftPackageReference "PinomadCore" */;
 			productName = PinomadCore;
+		};
+		AA0000000000000000000104 /* PinomadChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000001101 /* XCLocalSwiftPackageReference "PinomadCore" */;
+			productName = PinomadChat;
+		};
+		AA0000000000000000000106 /* AgentChatKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000001102 /* XCLocalSwiftPackageReference "agent-chat-kit" */;
+			productName = AgentChatKit;
+		};
+		AA0000000000000000000108 /* AgentChatCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000001102 /* XCLocalSwiftPackageReference "agent-chat-kit" */;
+			productName = AgentChatCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -6,22 +6,21 @@ struct RootView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.navPath) {
             Group {
                 switch model.phase {
                 case .loading:
                     ProgressView("正在启动…")
                 case .pairing:
-                    pairingView
+                    pairingView.padding()
                 case .connecting:
                     ProgressView(model.connectionText.isEmpty ? "正在连接…" : model.connectionText)
                 case .connected:
-                    connectedView
+                    ConversationListView(model: model)
                 case .failed(let message):
-                    failedView(message)
+                    failedView(message).padding()
                 }
             }
-            .padding()
             .navigationTitle("PiNomad")
         }
     }
@@ -46,28 +45,6 @@ struct RootView: View {
             Button("连接") { model.pair() }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-    }
-
-    private var connectedView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-            Text("已连接")
-                .font(.title2)
-            if !model.hostURL.isEmpty {
-                Text(model.hostURL)
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-            }
-            LabeledContent("连接状态", value: model.connectionText)
-            LabeledContent("对话数", value: "\(model.conversationCount)")
-            if !model.lastError.isEmpty {
-                Text(model.lastError)
-                    .foregroundStyle(.orange)
-                    .font(.footnote)
-            }
         }
     }
 
