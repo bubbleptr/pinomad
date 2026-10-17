@@ -131,6 +131,7 @@ pub fn status_text(view: &Json) -> String {
 /// `InboxItem.mode` — how a queued input gets to the model. `Other` keeps a
 /// mode a newer host invented (the reference passes it through as a string).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum QueueMode {
     Steer,
     FollowUp,
@@ -165,6 +166,7 @@ impl QueueMode {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QueueItem {
     /// The inbox entry's id; `u64::MAX` when it is absent or not a
     /// non-negative integer (a malformed queue a real host never writes).
@@ -202,6 +204,7 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct UsageRow {
     /// `provider/model` of model responses, or a tool name.
     pub key: String,
@@ -233,6 +236,7 @@ pub fn usage_rows(view: &Json) -> Vec<UsageRow> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct TaskRow {
     /// The task number; `u64::MAX` when absent or not a non-negative integer.
     pub id: u64,

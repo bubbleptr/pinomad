@@ -12,6 +12,7 @@ fn lossy(units: &[u16]) -> String {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct FolderCrumb {
     pub label: String,
     pub path: String,

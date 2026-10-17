@@ -16,6 +16,7 @@ use crate::u16str::U16String;
 
 /// `TodoItemSchema.status`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -34,6 +35,7 @@ impl TodoStatus {
 
 /// `TodoItemSchema`: `{text: string(minLength: 1), status}`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct TodoItem {
     pub text: String,
     pub status: TodoStatus,
@@ -55,6 +57,7 @@ impl TodoDoc {
 
 /// `QuestionOptionSchema`: `{label: string(minLength: 1), description?}`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionOption {
     pub label: String,
     pub description: Option<String>,
@@ -62,6 +65,7 @@ pub struct QuestionOption {
 
 /// `QuestionItemSchema`: `{question, header, options: 2..4, multiSelect?}`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionItem {
     pub question: String,
     pub header: String,
@@ -72,6 +76,7 @@ pub struct QuestionItem {
 /// `QuestionAnswerSchema`: labels chosen from a question's options; empty
 /// `selected` with no `other` means skipped.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionAnswer {
     pub selected: Vec<String>,
     pub other: Option<String>,
@@ -79,6 +84,7 @@ pub struct QuestionAnswer {
 
 /// `QuestionResolutionSchema`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum QuestionResolution {
     Answered { answers: Vec<QuestionAnswer>, at: f64 },
     /// The user replied in chat instead (ADR-0011 §4).
@@ -131,6 +137,7 @@ impl DiffDoc {
 
 /// `CodemodeCallSchema.status`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum CodemodeCallStatus {
     Running,
     Ok,
@@ -201,6 +208,7 @@ impl FallbackDoc {
 
 /// The wire tag the reference emits for each variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum DocType {
     Todo,
     Question,

@@ -114,6 +114,7 @@ fn url_host(url_text: &str) -> String {
 
 /// A host picker's row label — one `hostLabels` map entry.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct HostLabel {
     pub host_key: String,
     pub label: String,
