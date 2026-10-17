@@ -3,37 +3,21 @@ import PinomadCore
 import SwiftUI
 
 /// Pending `ask_user_question` requests, above the composer so the agent's
-/// question can't be missed. Capped in height so a long question set never
-/// pushes the input off screen.
+/// question can't be missed. One card per request; inside it one question
+/// at a time, swiped sideways, so a long question set keeps the card short.
 struct QuestionCards: View {
     let model: AppModel
     let conversationId: UInt64
     let questions: [PendingQuestion]
     let connected: Bool
 
-    /// The cards' natural height. A ScrollView takes whatever height it's
-    /// offered (and its ideal is the full content), so it's sized by hand:
-    /// the content, up to the cap.
-    @State private var contentHeight: CGFloat = 0
-
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                ForEach(questions, id: \.request.id) { question in
-                    QuestionCard(model: model, conversationId: conversationId,
-                                 question: question, connected: connected)
-                }
+        VStack(spacing: 8) {
+            ForEach(questions, id: \.request.id) { question in
+                QuestionCard(model: model, conversationId: conversationId,
+                             question: question, connected: connected)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(height: min(contentHeight, cap))
-    }
-
-    /// About 40% of the screen, so the input still fits above the keyboard.
-    private var cap: CGFloat {
-        let screen = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800
-        return screen * 0.4
     }
 }
 
@@ -43,10 +27,15 @@ private struct QuestionCard: View {
     let question: PendingQuestion
     let connected: Bool
 
+    /// The question in view; the paging scroll view keeps it in sync.
+    @State private var page: Int? = 0
+
     private var request: QuestionRequest { question.request }
+    private var count: Int { request.questions.count }
+    private var current: Int { min(max(page ?? 0, 0), max(count - 1, 0)) }
 
     private var draft: QuestionDraft {
-        model.questionDrafts[request.id] ?? QuestionDraft(questionCount: request.questions.count)
+        model.questionDrafts[request.id] ?? QuestionDraft(questionCount: count)
     }
 
     private func update(_ change: (inout QuestionDraft) -> Void) {
@@ -56,43 +45,39 @@ private struct QuestionCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Agent 在问", systemImage: "questionmark.bubble")
-                .font(.subheadline.weight(.semibold))
-            ForEach(Array(request.questions.enumerated()), id: \.offset) { index, item in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if !item.header.isEmpty {
-                            Text(item.header)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.fill.tertiary, in: .capsule)
-                        }
-                        Text(item.question)
-                            .font(.callout)
-                    }
-                    let multi = item.multiSelect == true
-                    ForEach(item.options, id: \.label) { option in
-                        OptionRow(
-                            option: option,
-                            multi: multi,
-                            picked: draft.isPicked(question: index, option: option.label)
-                        ) {
-                            update { $0.pick(question: index, option: option.label, multiSelect: multi) }
-                        }
-                    }
-                    TextField("其他…", text: Binding(
-                        get: { draft.others.indices.contains(index) ? draft.others[index] : "" },
-                        set: { text in update { $0.setOther(question: index, text) } }
-                    ), axis: .vertical)
-                    .lineLimit(1...4)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.fill.tertiary, in: .rect(cornerRadius: 10))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Agent 在问", systemImage: "questionmark.bubble")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if count > 1 {
+                    Text("第 \(current + 1)/\(count) 题")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
             }
+            // All pages laid out (at most four questions), so the card takes
+            // the tallest page's height and doesn't jump while swiping.
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(request.questions.enumerated()), id: \.offset) { index, item in
+                        questionPage(index, item)
+                            .containerRelativeFrame(.horizontal)
+                            .id(index)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollIndicators(.hidden)
+            .scrollPosition(id: $page)
             HStack {
+                if count > 1 {
+                    PageIndicator(count: count, current: current) { index in
+                        withAnimation(.snappy) { page = index }
+                    }
+                }
                 Spacer()
                 Button("提交") { model.answer(question, conversation: conversationId) }
                     .buttonStyle(.borderedProminent)
@@ -103,6 +88,71 @@ private struct QuestionCard: View {
         }
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    }
+
+    private func questionPage(_ index: Int, _ item: QuestionItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if !item.header.isEmpty {
+                    Text(item.header)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.fill.tertiary, in: .capsule)
+                }
+                Text(item.question)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            let multi = item.multiSelect == true
+            ForEach(item.options, id: \.label) { option in
+                OptionRow(
+                    option: option,
+                    multi: multi,
+                    picked: draft.isPicked(question: index, option: option.label)
+                ) {
+                    update { $0.pick(question: index, option: option.label, multiSelect: multi) }
+                }
+            }
+            TextField("其他…", text: Binding(
+                get: { draft.others.indices.contains(index) ? draft.others[index] : "" },
+                set: { text in update { $0.setOther(question: index, text) } }
+            ), axis: .vertical)
+            .lineLimit(1...4)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.fill.tertiary, in: .rect(cornerRadius: 10))
+        }
+    }
+}
+
+/// One dot per question; the current one stretches into a bar. Tapping a
+/// dot jumps to that question.
+private struct PageIndicator: View {
+    let count: Int
+    let current: Int
+    let select: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule()
+                    .fill(index == current ? Color.primary : Color.secondary.opacity(0.35))
+                    .frame(width: index == current ? 18 : 6, height: 6)
+                    .contentShape(.rect.inset(by: -6))
+                    .onTapGesture { select(index) }
+            }
+        }
+        .animation(.snappy, value: current)
+        .accessibilityElement()
+        .accessibilityLabel("第 \(current + 1) 题，共 \(count) 题")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: select(min(current + 1, count - 1))
+            case .decrement: select(max(current - 1, 0))
+            @unknown default: break
+            }
+        }
     }
 }
 

@@ -84,10 +84,18 @@ struct ConversationView: View {
         return node.summary.kind == .subagent
     }
 
+    private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
+        if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
+        return false
+    }
+
     @ViewBuilder
     private func entries(_ conversation: ConversationSnapshot) -> some View {
-        // retryOf only answers when the newest entry is a failed run.
-        let retry = connected && !isSubagent ? retryOf(entries: conversation.chat) : nil
+        // retryOf only answers when the newest entry is a failed run — check
+        // that here first: the call copies the whole history across the FFI,
+        // which every streaming snapshot would otherwise pay for.
+        let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
+            ? retryOf(entries: conversation.chat) : nil
         ForEach(conversation.chat, id: \.entryId) { entry in
             row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil)
         }
