@@ -62,14 +62,20 @@ DEVICECTL_CHILD_PINOMAD_PAIRING_LINK='<配对链接>' DEVICECTL_CHILD_PINOMAD_AU
   xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
 # 手机锁屏时 launch 会被拒绝（FBSOpenApplicationErrorDomain 7）——等解锁。
 
-# 性能录制（会话层有 os_signpost 打点：bytes / snapshot / publish / ui-publish）：
-xcrun xctrace record --device 00008150-001608822678401C \
-  --attach Pinomad --template 'Logging' \
-  --instrument 'Animation Hitches' --instrument 'Activity Monitor' \
-  --output /tmp/perf.trace --time-limit 120s
-# 导出 signpost 表做分析：
-xcrun xctrace export --input /tmp/perf.trace \
-  --xpath '/trace-toc/run/data/tables/table[@schema="signpost-interval"]' > /tmp/signposts.xml
+# 性能实测：iOS 27 真机上 xctrace 的 --attach/--launch 连不上进程（attach 找不到
+# 进程、launch 卡在 "waiting for device to boot"），改为 App 内 PerfLog：
+# PINOMAD_PERFLOG 开启后，会话层把 bytes / snapshot(耗时) / publish / ui-publish /
+# 常驻内存 记进 Documents/perf.ndjson，用 devicectl 拉回分析：
+DEVICECTL_CHILD_PINOMAD_PERFLOG=1 DEVICECTL_CHILD_PINOMAD_KEEPSCREEN=1 \
+  DEVICECTL_CHILD_PINOMAD_OPEN=<对话id> \
+  xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
+xcrun devicectl device copy from --device 00008150-001608822678401C \
+  --source Documents/perf.ndjson \
+  --domain-type appDataContainer --domain-identifier build.kieran.pinomad \
+  --destination /tmp/perf.ndjson
+# 真机截图（PR 用）：xcrun devicectl device capture screenshot --device <UDID> --destination /tmp/shot.png
+# 后台恢复测试：devicectl 拉起别的 App（如 com.apple.mobilesafari）把 Pinomad 压后台。
+# os_signpost 打点仍在（bytes/snapshot/publish/ui-publish），能用 Instruments 的机器上照旧录。
 ```
 
 平台层的保序契约（ADR-0024 §3）：所有输入进同一条有序队列、由唯一一个循环消费，`handle` 和它产出的指令在同一段同步代码里处理完，没有悬挂点；每条连接一个顺序接收循环、一个 FIFO 发送器；计时器取消后不得再触发 `TimerFired`；`ViewChanged` 只标脏，快照计算最多一个在途、版本不回退。

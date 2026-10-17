@@ -239,6 +239,7 @@ public final class PinomadSession: @unchecked Sendable {
             feed(.socketOpened(conn: conn))
         case .socketData(let conn, let bytes):
             signposter.emitEvent("bytes")
+            PerfLog.shared.mark("bytes")
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
             feed(.socketClosed(conn: conn, code: code, reason: reason))
@@ -291,6 +292,7 @@ public final class PinomadSession: @unchecked Sendable {
             if let snapshot, snapshot.version > publishedVersion {
                 publishedVersion = snapshot.version
                 signposter.emitEvent("publish")
+                PerfLog.shared.mark("publish", version: snapshot.version)
                 updateSink.yield(.snapshot(snapshot))
             }
             if viewDirty { startSnapshot() }
@@ -393,8 +395,12 @@ public final class PinomadSession: @unchecked Sendable {
         let signposter = self.signposter
         Task { [sink] in
             let interval = signposter.beginInterval("snapshot")
+            let t0 = ContinuousClock.now
             let snapshot = snapshotter()
+            let elapsed = t0.duration(to: .now)
+            let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
             signposter.endInterval("snapshot", interval)
+            PerfLog.shared.measure("snapshot", ms: ms, version: snapshot?.version)
             sink.yield(.snapshotReady(snapshot))
         }
     }

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import AgentChatKit
 import PinomadCore
 import UIKit
 
@@ -28,6 +29,12 @@ final class AppModel {
     /// NavigationStack path — conversation ids pushed onto it open that
     /// conversation's screen.
     var navPath: [UInt64] = []
+    /// Live answer streams, keyed by run entry id. Owned here rather than
+    /// in view state: feeding them from LazyVStack rows' onAppear/onChange
+    /// kept the iOS 27 layout unsettled (the whole transcript rendered
+    /// blank). Snapshot-driven sync in `apply` is side-effect free for the
+    /// view tree.
+    private var streams: [String: StreamingMarkdown] = [:]
     /// Set by `-openConversation <id>` — pushed once connected.
     private var pendingOpen: UInt64?
 
@@ -52,6 +59,11 @@ final class AppModel {
         // PINOMAD_* environment variables.
         let args = UserDefaults.standard
         let env = ProcessInfo.processInfo.environment
+        if env["PINOMAD_KEEPSCREEN"] != nil {
+            // Perf runs: keep the phone awake so a scripted measurement
+            // window isn't cut short by auto-lock.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
         if let openId = args.string(forKey: "openConversation") ?? env["PINOMAD_OPEN"],
            let n = UInt64(openId) {
             pendingOpen = n
@@ -131,6 +143,7 @@ final class AppModel {
         hostURL = ""
         snapshot = nil
         lastError = ""
+        streams.removeAll()
         phase = .connecting
         connectionText = "正在连接…"
         watchTask?.cancel()
@@ -172,8 +185,52 @@ final class AppModel {
             }
             self.snapshot = snapshot
             signposter.emitEvent("ui-publish")
+            syncStreams(snapshot)
+            PerfLog.shared.mark("ui-publish", version: snapshot.version)
+            // Perf runs double as field diagnostics: which conversation is
+            // shown and how many chat rows it carries.
+            if let c = snapshot.conversation {
+                PerfLog.shared.mark("conv-\(c.id)-\(c.chat.count)")
+            }
+            PerfLog.shared.flush()
         case .platformError(let message):
             lastError = message
+        }
+    }
+
+    /// The stream a run's answer is being revealed through, or nil while
+    /// no answer has arrived.
+    func streamFor(_ entryId: String) -> StreamingMarkdown? { streams[entryId] }
+
+    /// Feed each run's whole answer text into its stream — the snapshot
+    /// always carries the full text, so only the arrived suffix is appended;
+    /// a rewrite (non-prefix) restarts the stream rather than replaying.
+    private func syncStreams(_ snapshot: ClientSnapshot) {
+        guard let chat = snapshot.conversation?.chat else { return }
+        for entry in chat {
+            guard case let .run(id, cot, _, _, _) = entry, let answer = cot.answer else { continue }
+            let stream = streams[id] ?? StreamingMarkdown(pace: answer.streaming ? .standard : nil)
+            if answer.text.hasPrefix(stream.markdown) {
+                let delta = answer.text.dropFirst(stream.markdown.count)
+                // A finished stream may still see a rewritten tail — start
+                // over instead of tripping append-after-finish.
+                if !delta.isEmpty, stream.stream.isFinished {
+                    let fresh = StreamingMarkdown(pace: nil)
+                    fresh.append(answer.text)
+                    fresh.finish()
+                    streams[id] = fresh
+                    continue
+                }
+                if !delta.isEmpty { stream.append(String(delta)) }
+            } else {
+                let fresh = StreamingMarkdown(pace: nil)
+                fresh.append(answer.text)
+                fresh.finish()
+                streams[id] = fresh
+                continue
+            }
+            if !answer.streaming { stream.finish() }
+            streams[id] = stream
         }
     }
 

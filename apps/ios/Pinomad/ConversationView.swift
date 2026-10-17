@@ -52,8 +52,8 @@ struct ConversationView: View {
         switch entry {
         case let .user(_, text, images):
             UserRow(text: text, images: images).equatable()
-        case let .run(_, cot, _, interrupted, failure):
-            RunRow(cot: cot, interrupted: interrupted, failure: failure).equatable()
+        case let .run(id, cot, _, interrupted, failure):
+            RunRow(cot: cot, interrupted: interrupted, failure: failure, stream: model.streamFor(id)).equatable()
         case .compaction:
             MarkerRow("上下文已压缩")
         case .reset:
@@ -88,12 +88,13 @@ private struct RunRow: View, Equatable {
     let cot: CotView
     let interrupted: Bool
     let failure: String?
+    let stream: StreamingMarkdown?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             AgentTraceView(ChatAdapter.trace(cot: cot, interrupted: interrupted))
-            if let answer = cot.answer {
-                ReplyBody(answer: answer)
+            if cot.answer != nil {
+                ReplyBody(answer: cot.answer!, stream: stream)
             }
             if let failure {
                 Text(failure)
@@ -105,6 +106,7 @@ private struct RunRow: View, Equatable {
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.cot == rhs.cot && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
+            && lhs.stream === rhs.stream
     }
 }
 
@@ -124,15 +126,11 @@ private struct MarkerRow: View {
     }
 }
 
-/// A run's answer. The whole text arrives per snapshot — the stream owns
-/// the reveal and only the new suffix is appended, so a settled answer is
-/// parsed exactly once while a streaming one reveals at pace (the same
-/// contract the kit's live thinking uses).
+/// A run's answer. The stream is owned by the model (snapshot-driven sync)
+/// — the view only reads it, so nothing in a lazy row mutates state.
 private struct ReplyBody: View {
     let answer: CotAnswer
-
-    @State private var stream: StreamingMarkdown?
-    @State private var finished = false
+    let stream: StreamingMarkdown?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -142,30 +140,6 @@ private struct ReplyBody: View {
                     ReplyActions(markdown: stream.markdown)
                 }
             }
-        }
-        .onAppear(perform: sync)
-        .onChange(of: answer) { _, _ in sync() }
-    }
-
-    private func sync() {
-        if stream == nil {
-            let next = StreamingMarkdown(pace: answer.streaming ? .standard : nil)
-            if !answer.text.isEmpty { next.append(answer.text) }
-            stream = next
-        } else if finished || !answer.text.hasPrefix(stream!.markdown) {
-            // A rewrite or growth after finish: replaying stale content is
-            // worse than showing the new text at once.
-            let next = StreamingMarkdown(pace: nil)
-            if !answer.text.isEmpty { next.append(answer.text) }
-            stream = next
-            finished = false
-        } else {
-            let delta = String(answer.text.dropFirst(stream!.markdown.count))
-            if !delta.isEmpty { stream!.append(delta) }
-        }
-        if !answer.streaming, let stream, !finished {
-            stream.finish()
-            finished = true
         }
     }
 }
