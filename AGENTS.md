@@ -18,7 +18,16 @@ Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`export
 
 `bun run typecheck`、`bun run test`、`bun run build` 都要绿。测试含 Playwright，缺浏览器先在 `apps/web` 下跑 `bunx playwright install chromium`（在根目录跑会拉最新版 playwright，装上的浏览器版本对不上）。
 
-Rust：`cargo test`（`bun run test` 会带着跑；非登录 shell 里 `~/.cargo/bin` 可能不在 PATH，先 export）。工具链锁在 `rust-toolchain.toml`，依赖锁精确版本且发布满 7 天。互操作测试 `cargo test --test interop` 用临时数据目录起真实宿主（Node），测完自动关。
+Rust：`cargo test`（`bun run test` 会带着跑，含 `--features ffi`；非登录 shell 里 `~/.cargo/bin` 可能不在 PATH，先 export）。工具链锁在 `rust-toolchain.toml`，依赖锁精确版本且发布满 7 天。互操作测试 `cargo test --test interop` 用临时数据目录起真实宿主（Node），测完自动关。
+
+UniFFI 外观层（ADR-0024）：`crates/pinomad-core` 的 `ffi` feature 打开 `src/ffi/` 和可选依赖 `uniffi = "=0.32.2"`（proc-macro，无 UDL）。生成 Swift 绑定：
+
+```sh
+cargo rustc -p pinomad-core --features ffi --crate-type cdylib
+cd crates/uniffi-bindgen && cargo run --release -- generate --library ../../target/debug/libpinomad_core.so --language swift --out-dir <输出目录>
+```
+
+`crates/uniffi-bindgen` 是独立于根 workspace 的小 bin crate（自带 `[workspace]` 和 Cargo.lock，`uniffi` 版本和库里锁的一致），生成物不入库。库本身保持 rlib（普通 `cargo test` 不为静态库买单），iOS 需要 staticlib 时用 `cargo rustc --crate-type staticlib` 在打包脚本里编。
 
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 

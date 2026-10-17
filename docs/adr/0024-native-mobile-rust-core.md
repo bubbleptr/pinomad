@@ -20,7 +20,7 @@ ADR-0017 选 Expo，主要是为了让移动端直接复用 TypeScript 的 `pack
    - 输入（事件）：连接已打开、收到消息、连接关闭（带关闭码）、发送失败，都带连接代际，旧代际的事件丢弃；计时器到点；App 进入前台/后台；网络变化；界面发起的调用（带操作 ID）。时间由平台给单调时钟。
    - 输出（指令）：打开或关闭连接、发送消息、设置或取消计时器、某个操作 ID 完成或失败、状态已变化。
    - 语义和 TS 现在的 `RemoteDurable` 一致：没连上时调用立即失败；断线时已发出、未回结果的调用全部失败，不自动重发；命令串行执行；重连后等新快照到了再切换；4400/4401 停止重连，1008 照常重连。
-   - 核心的事件串行处理，不需要异步运行时；跨 FFI 的只有同步调用和一个指令回调。iOS 用 `URLSessionWebSocketTask`，安卓用平台的 WebSocket，网络行为（ATS、本地网络权限、VPN、前后台）和平台一致。
+   - 核心的事件串行处理，不需要异步运行时；跨 FFI 的是同步调用，指令作为同步调用的返回值给出（`handle(event) -> [Command]`，构造后第一批走 `take()`）。所有指令都由某次 `handle`/`take` 产生，返回值省掉了跨 FFI 回调的重入和线程问题。iOS 用 `URLSessionWebSocketTask`，安卓用平台的 WebSocket，网络行为（ATS、本地网络权限、VPN、前后台）和平台一致。
 4. **流的状态是完整的 JSON，字符串按 UTF-16 保存，类型只用来读。** 和 TS 的 `RemoteDurable` 一样，每个流保存宿主发来的完整 JSON 值，`ops` 帧在这份 JSON 上应用；推导用的类型从它解码出来，不认识的字段留在 JSON 里不丢（ADR-0018 §3 要求两端容忍不认识的内容，丢掉的字段之后再收到增量会找不到路径）。宿主发来的字符串可能含有孤立的代理项：设备名按 UTF-16 截到 64（`apps/host/src/devices.ts`），chord 的字符串增量也按 UTF-16 切，中间状态会出现半个 emoji。`serde_json::Value` 遇到这种字符串会直接报错，所以核心用自己的 JSON 值类型，字符串存成 UTF-16 code unit 序列，解析、应用增量、再编码都保持原样；只在交给界面时转成平台字符串，孤立代理项换成 U+FFFD。不认识的帧类型忽略，不认识的展示类型走兜底渲染（ADR-0005）。
 5. **界面状态的交付契约**：推导在后台按顺序执行，结果带递增的版本号，到主线程发布；来得太密的更新合并，只发最新的一版。对话条目带稳定的 ID，供 SwiftUI 做增量更新。每次交付整份推导结果还是只交付变化的部分，由第一个任务实测后决定：在真机上用长对话（几百轮、带图片）测流式输出时的延迟、内存和帧率，先定预算再选方案。
 6. **TypeScript 是协议和推导的参照，三层测试对齐两边：**
@@ -40,7 +40,7 @@ ADR-0017 选 Expo，主要是为了让移动端直接复用 TypeScript 的 `pack
 12. **开发和验证**：
     - Rust 核心在 Linux 上就能开发和测试，`cargo test`（含互操作测试）进 `bun run test`；发版的 workflow 也要装 Rust。
     - Rust 工具链用 `rust-toolchain.toml` 锁版本，UniFFI 锁精确版本。
-    - 绑定、平台层和界面只能在 macOS 上构建，在 mbp 上做，界面改动用模拟器截图确认。`PinomadCore` 包有 Swift 测试，真正调用生成的绑定，验证指令回调、线程和类型转换，不只是编译通过。
+    - 绑定、平台层和界面只能在 macOS 上构建，在 mbp 上做，界面改动用模拟器截图确认。`PinomadCore` 包有 Swift 测试，真正调用生成的绑定，验证指令返回值、线程和类型转换，不只是编译通过。
     - 加一个 PR 触发的 GitHub Actions workflow：Linux 上跑 `cargo test`，macOS 上从干净检出编 xcframework、跑 `PinomadCore` 的 Swift 测试、给模拟器构建 App，都不需要签名凭据。改到 `packages/protocol`、`packages/client`、`crates/`、`apps/ios`、构建脚本、`Cargo.lock` 或这个 workflow 本身的 PR 都要跑它。
     - Kotlin 绑定的冒烟测试等安卓开工时再加，作为安卓的第一件事。
 
