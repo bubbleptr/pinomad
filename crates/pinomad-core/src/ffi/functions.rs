@@ -229,6 +229,13 @@ pub fn question_answers(
     crate::questions::question_answers(question_count as usize, &selections, &others)
 }
 
+/// How many images one message may carry — sizes the client's picker so
+/// it never offers more than `image_problem` would admit.
+#[uniffi::export]
+pub fn max_images_per_message() -> u32 {
+    crate::images::MAX_IMAGES_PER_MESSAGE
+}
+
 /// Why a message's images can't be admitted, or `None` when they can —
 /// the host enforces the verdict, the client may pre-check.
 #[uniffi::export]

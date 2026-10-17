@@ -12,12 +12,15 @@ public enum SendSlot: Equatable, Sendable {
 
     /// Offline calls still report success (the reason only becomes a
     /// notice), so a disconnected send would silently eat the draft —
-    /// nothing is live until the connection is back.
-    public init(draft: String, connected: Bool, busy: Bool) {
-        if draft.allSatisfy(\.isWhitespace) {
+    /// nothing is live until the connection is back. Images alone are a
+    /// message; images still being prepared hold the send (not Stop).
+    public init(draft: String, connected: Bool, busy: Bool, hasImages: Bool = false, preparing: Bool = false) {
+        if draft.allSatisfy(\.isWhitespace) && !hasImages && !preparing {
             self = busy ? .stop(enabled: connected) : .hidden
+        } else if draft.allSatisfy(\.isWhitespace) && !hasImages && busy {
+            self = .stop(enabled: connected)
         } else {
-            self = .send(enabled: connected, canSteer: busy)
+            self = .send(enabled: connected && !preparing, canSteer: busy)
         }
     }
 }

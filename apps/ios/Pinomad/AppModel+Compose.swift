@@ -11,20 +11,65 @@ extension AppModel {
     /// draft clears at once and comes back if the session was gone.
     func send(conversation id: UInt64, mode: SubmitMode) {
         let text = drafts[id] ?? ""
-        guard !text.allSatisfy(\.isWhitespace), let session else { return }
+        let tray = trays[id] ?? AttachmentTray()
+        guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty,
+              tray.preparing == 0, let session else { return }
+        let images = tray.images
         drafts[id] = ""
+        trays[id] = nil
         transcriptPin += 1
         Task { [weak self] in
             do {
                 _ = try await session.invoke(
-                    .submit(text: text, whenBusy: mode, target: id, requestId: nil, images: []))
+                    .submit(text: text, whenBusy: mode, target: id, requestId: nil, images: images))
             } catch {
                 guard let self else { return }
-                // Don't clobber anything typed meanwhile.
+                // Don't clobber anything typed or attached meanwhile.
                 if (self.drafts[id] ?? "").isEmpty { self.drafts[id] = text }
+                if self.trays[id]?.isEmpty ?? true {
+                    var restored = AttachmentTray()
+                    if let claim = restored.reserve(images.count, accepts: true) {
+                        restored.fulfil(claim, with: images)
+                    }
+                    self.trays[id] = restored
+                }
                 self.lastError = "发送失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    /// Stage images for a conversation: slots are claimed now, the bytes
+    /// are read and re-encoded off the main actor, and the batch lands (or
+    /// fails as a whole) when every image is ready.
+    func attach(conversation id: UInt64, accepts: Bool, sources: [@Sendable () async throws -> Data]) {
+        var tray = trays[id] ?? AttachmentTray()
+        let claim = tray.reserve(sources.count, accepts: accepts)
+        trays[id] = tray
+        guard let claim else { return }
+        let kept = Array(sources.prefix(claim.count))
+        transcriptPin += 1
+        Task { [weak self] in
+            do {
+                var prepared: [MessageImage] = []
+                for load in kept {
+                    let data = try await load()
+                    prepared.append(try await Task.detached { try ImagePrep.prepare(data) }.value)
+                }
+                self?.trays[id]?.fulfil(claim, with: prepared)
+            } catch {
+                self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "无法读取图片")
+            }
+        }
+    }
+
+    func removeImage(conversation id: UInt64, at index: Int) {
+        trays[id]?.remove(at: index)
+    }
+
+    func reportAttachProblem(conversation id: UInt64, _ message: String) {
+        var tray = trays[id] ?? AttachmentTray()
+        tray.report(message)
+        trays[id] = tray
     }
 
     /// Answer every question of a pending request at once. The card goes

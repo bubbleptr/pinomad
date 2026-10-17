@@ -1,3 +1,6 @@
+import AgentChatCore
+import AgentChatKit
+import PhotosUI
 import PinomadChat
 import PinomadCore
 import SwiftUI
@@ -10,7 +13,24 @@ struct ConversationComposer: View {
     let conversation: ConversationSnapshot
 
     @State private var showModels = false
+    @State private var showPhotos = false
+    @State private var showCamera = false
+    @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
+
+    private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
+
+    private var currentModel: ModelSummary? {
+        summaryOf(models: model.snapshot?.models ?? [], model: conversation.agent.model)
+    }
+
+    /// Only a model that says it takes images gets them (Expo's rule).
+    private var acceptsImages: Bool { currentModel?.images == true }
+
+    /// Images staged, then a switch to a model that can't see them: keep
+    /// them, say why, and hold the send until they're removed or the model
+    /// changes back.
+    private var imagesBlocked: Bool { !acceptsImages && !tray.images.isEmpty }
 
     private var connected: Bool {
         guard let snapshot = model.snapshot else { return false }
@@ -43,10 +63,60 @@ struct ConversationComposer: View {
         .sheet(isPresented: $showModels) {
             ModelSheet(model: model, agent: conversation.agent)
         }
+        .photosPicker(isPresented: $showPhotos, selection: $photoItems,
+                      maxSelectionCount: max(tray.freeSlots, 1), matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            model.attach(conversation: conversation.id, accepts: acceptsImages, sources: items.map { item in
+                { @Sendable in
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw ImagePrep.Failure(description: "无法读取图片")
+                    }
+                    return data
+                }
+            })
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { image in
+                guard let data = image.jpegData(compressionQuality: 1) else { return }
+                model.attach(conversation: conversation.id, accepts: acceptsImages,
+                             sources: [{ @Sendable in data }])
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    /// Present after the menu has gone: presenting from inside a Menu
+    /// action can be dropped while the menu is still dismissing.
+    private func presentAfterMenu(_ present: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            present()
+        }
+    }
+
+    private func pasteImage() {
+        // `hasImages` doesn't trigger the paste prompt; reading does.
+        guard UIPasteboard.general.hasImages,
+              let data = UIPasteboard.general.image?.jpegData(compressionQuality: 1)
+        else {
+            model.reportAttachProblem(conversation: conversation.id, "剪贴板里没有图片")
+            return
+        }
+        model.attach(conversation: conversation.id, accepts: acceptsImages, sources: [{ @Sendable in data }])
     }
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if !tray.isEmpty || tray.error != nil || imagesBlocked {
+                AttachmentStrip(
+                    tray: tray,
+                    note: imagesBlocked ? "\(currentModel?.name ?? "当前模型")不支持图片，移除图片或换模型后再发送" : tray.error,
+                    remove: { model.removeImage(conversation: conversation.id, at: $0) },
+                    view: { model.viewing = $0 }
+                )
+            }
             TextField(
                 conversation.busy ? "追加指令…" : "问点什么…",
                 text: draft, axis: .vertical
@@ -63,7 +133,17 @@ struct ConversationComposer: View {
                 }
             }
             HStack(spacing: 10) {
-                PlusMenu(connected: connected) { model.compact() }
+                PlusMenu(
+                    connected: connected,
+                    acceptsImages: acceptsImages,
+                    modelName: currentModel?.name ?? currentModel?.modelId,
+                    canAddImages: tray.freeSlots > 0,
+                    photos: { presentAfterMenu { showPhotos = true } },
+                    camera: UIImagePickerController.isSourceTypeAvailable(.camera)
+                        ? { presentAfterMenu { showCamera = true } } : nil,
+                    paste: pasteImage,
+                    compact: { model.compact() }
+                )
                 ModelCapsule(
                     label: modelText,
                     enabled: connected && !(model.snapshot?.models.isEmpty ?? true)
@@ -92,7 +172,9 @@ struct ConversationComposer: View {
 
     @ViewBuilder
     private var sendSlot: some View {
-        switch SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy) {
+        // A blocked image set holds the send the same way preparing does.
+        switch SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy,
+                        hasImages: !tray.images.isEmpty, preparing: tray.preparing > 0 || imagesBlocked) {
         case .hidden:
             EmptyView()
         case .stop(let enabled):
@@ -157,10 +239,30 @@ private struct SlotIcon: View {
 
 private struct PlusMenu: View {
     let connected: Bool
+    let acceptsImages: Bool
+    let modelName: String?
+    let canAddImages: Bool
+    let photos: () -> Void
+    /// Nil where there is no camera (the simulator).
+    let camera: (() -> Void)?
+    let paste: () -> Void
     let compact: () -> Void
 
     var body: some View {
         Menu {
+            if acceptsImages {
+                Section {
+                    Button("照片图库", systemImage: "photo.on.rectangle", action: photos)
+                    if let camera {
+                        Button("拍照", systemImage: "camera", action: camera)
+                    }
+                    Button("粘贴图片", systemImage: "doc.on.clipboard", action: paste)
+                }
+                .disabled(!canAddImages)
+            } else {
+                Button("添加图片（\(modelName ?? "当前模型")不支持图片）", systemImage: "photo") {}
+                    .disabled(true)
+            }
             Button("压缩上下文", systemImage: "rectangle.compress.vertical", action: compact)
                 .disabled(!connected)
         } label: {
@@ -172,6 +274,73 @@ private struct PlusMenu: View {
         }
         .tint(.secondary)
         .accessibilityLabel("更多操作")
+    }
+}
+
+/// Staged images (tap to view, × to drop), a spinner per image still being
+/// prepared, and the last attach problem.
+private struct AttachmentStrip: View {
+    let tray: AttachmentTray
+    let note: String?
+    let remove: (Int) -> Void
+    let view: (MessageImage) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !tray.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(tray.images.enumerated()), id: \.offset) { index, image in
+                            Thumbnail(image: image)
+                                .onTapGesture { view(image) }
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        remove(index)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, .black.opacity(0.6))
+                                            .font(.system(size: 18))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .offset(x: 5, y: -5)
+                                    .accessibilityLabel("移除第 \(index + 1) 张图片")
+                                }
+                        }
+                        ForEach(0..<tray.preparing, id: \.self) { _ in
+                            ProgressView()
+                                .frame(width: 56, height: 56)
+                                .background(.fill.tertiary, in: .rect(cornerRadius: 10))
+                        }
+                    }
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
+                }
+                .scrollIndicators(.hidden)
+            }
+            if let note {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+/// A square crop of a staged image.
+private struct Thumbnail: View {
+    let image: MessageImage
+
+    var body: some View {
+        Group {
+            if let decoded = InlineImage.decoded(ToolImage(data: image.data, mimeType: image.mimeType)) {
+                decoded.resizable().scaledToFill()
+            } else {
+                Color.secondary.opacity(0.2)
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(.rect(cornerRadius: 10))
     }
 }
 
