@@ -1,6 +1,6 @@
 # PiNomad
 
-[English](README.md) · 中文
+[English](README.md) · 中文 · [pinomad.si](https://pinomad.si/zh/)
 
 基于 [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable) 的自托管 coding agent。agent 跑在你自己的机器上，Mac App、Web 和 iPhone App 连的是同一批运行中的任务。
 
@@ -87,6 +87,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | [使用说明](docs/usage.md) | 项目、worktree、工具、MCP 配置 |
 | [远程访问](docs/remote-access.md) | 配对、隧道、自部署中继（VPS 或容器平台） |
 | [常驻运行](docs/service.md) | `service` 和 `upgrade` 命令，各平台注意事项 |
+| [官网](docs/website.md) | pinomad.si 落地页和 app.pinomad.si 托管实例 |
 | [架构概览](docs/architecture.md) | 各部分和语言怎么配合，收发流程图 |
 | [架构决策](docs/adr/README.md) | 为什么这样设计 |
 | [路线图](docs/roadmap.md) | 做完了什么、接下来做什么 |

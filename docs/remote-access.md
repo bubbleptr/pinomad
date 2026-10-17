@@ -197,4 +197,20 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
 
+### 更换服务端域名
+
+服务端只认一个 `--public-origin`：宿主登记时把它签进挑战（ADR-0015 §2），浏览器的 cookie 和同源校验也按它来。服务端数据目录里不存 origin，换域名不会丢用户、登录会话和宿主绑定；会受影响的是各端记下的旧地址：
+
+- 宿主的 `server.json` 里是旧 origin，签名会被新服务端拒绝（`badSignature`），换完之前宿主连不上中继。
+- 客户端配对时记下的是 `wss://<旧域名>/c/<hostId>`，之后不会自动刷新；账号列表里这台宿主仍显示已配对，不会提示重新配对。
+- 浏览器 cookie 绑在旧域名上，Web 要在新地址重新登录；桌面端要用新地址重新登录。
+
+所以**旧域名不要直接下线，也不要 301 跳转**（WebSocket 不跟随重定向）：让它和新域名一起指向同一个服务。设备入口 `/c/<hostId>` 只看路径，不看 Host，旧链接经旧域名照样接通，加密是端到端的，域名不影响安全性。步骤（以 Zeabur 为例）：
+
+1. 在服务的 Domains 里加上新域名（旧的留着），DNS 加记录（Dedicated Server 用 A 记录指向服务器 IP，Cloudflare 灰云），等到 `PROVISIONED`。
+2. 把 `PINOMAD_PUBLIC_ORIGIN` 改成新 origin 并重新部署（数据卷不动）。从这时起宿主掉线，直到下一步做完。
+3. 在新地址登录 Web，"Add a host" 拿一次性命令，在每台宿主上跑 `pinomad join https://<新域名> <token>`。重新 join 会覆盖 `server.json` 并等空闲重启，**不要先 `leave`**——它会用旧 origin 签名，被新服务端拒绝。
+4. 确认宿主在线：`curl -sI https://<新域名>/` 回 200，宿主日志有 `"status":"registered"`，`wss://<新域名>/c/<hostId>` 连上后保持打开。
+5. Web、桌面端在新地址重新登录。Web 的配对存在浏览器 localStorage 里、按域名隔离，新地址的页面一开始没有宿主，登录后在账号列表里点 Pair 即可；桌面端和 iOS 的已有配对先继续经旧域名工作；想彻底换掉旧域名时，在各个客户端里删掉这台宿主重新配对（账号里点 Pair，iOS 扫码），全部换完再从服务上解绑旧域名。
+
 npm 装的实例和本机任何开发检出互不相干（各自的数据目录、进程、包路径都独立），所以在同一台机器上开发 PiNomad 不会碰到正在跑的服务。

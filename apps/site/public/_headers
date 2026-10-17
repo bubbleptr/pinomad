@@ -1,0 +1,19 @@
+# Cloudflare Pages headers. The page loads only same-origin files (Vite emits
+# external JS/CSS, fonts are self-hosted, no inline script/style), so the CSP can
+# stay at 'self'.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The shared favicon carries an inline <style> for its dark-mode variant; the
+# page CSP's style-src 'self' would block it when the SVG is rendered as an image.
+/assets/*.svg
+  ! Content-Security-Policy

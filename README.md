@@ -1,6 +1,6 @@
 # PiNomad
 
-English · [中文](README.zh-CN.md)
+English · [中文](README.zh-CN.md) · [pinomad.si](https://pinomad.si)
 
 A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable). The agent runs on your own machine; the Mac app, the web client, and the iPhone app all attach to the same runs.
 
@@ -87,6 +87,7 @@ These docs are written in Chinese.
 | [Usage](docs/usage.md) | Projects, worktrees, tools, MCP configuration |
 | [Remote access](docs/remote-access.md) | Pairing, tunnels, self-hosted relay (VPS or container platforms) |
 | [Running as a service](docs/service.md) | `service` and `upgrade` commands, platform notes |
+| [Website](docs/website.md) | The pinomad.si landing page and the hosted app.pinomad.si instance |
 | [Architecture overview](docs/architecture.md) | How the parts and languages fit together, with send/receive diagrams |
 | [Architecture decisions](docs/adr/README.md) | Why things are the way they are |
 | [Roadmap](docs/roadmap.md) | What's done and what's next |
