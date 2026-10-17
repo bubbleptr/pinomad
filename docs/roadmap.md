@@ -208,7 +208,7 @@ coding anywhere 的第三条线：客户端在哪（M3）、宿主在哪之外�
    发版准备：EAS 项目在 Expo 个人账号 `kieranx` 下，`apps/mobile/eas.json` 配了 `production`（构建号远端自增）和不需要 Apple 账号的 `simulator`；Release 包在模拟器上不依赖 Metro 跑通（内嵌 bundle、Hermes、polyfill、Noise 握手）。流程见 `docs/mobile-release.md`。bundle ID 是 `build.kieran.pinomad`；出口合规声明不使用需要申报的加密（`ITSAppUsesNonExemptEncryption: false`）。移动端版本号独立，不跟 npm 包和桌面端的 `v*` tag 一起发；兼容靠协议主次版本号（ADR-0018），只有主版本号升级时各端一起升，节奏写在发版文档的“版本和发版节奏”一节。
    第一个 TestFlight 构建 0.1.0（3）已经发出。
    真机上扫码配对和用主机名连接都已验证（2026-10-12）。
-   接下来：正式图标（优先级不高）。改动面板进 M5；fork、子代理只读展示放在 MVP 之后。
+   正式图标做在原生版上（`apps/ios/Pinomad/AppIcon.icon`，和桌面端同一份），Expo 版不再补。改动面板进 M5；fork、子代理只读展示放在 MVP 之后。
    原生 iOS 评估（还没决定，ADR-0017 暂不动）：觉得 Expo 版不够好看，先在独立私有仓库 `bubbleptr/AgentChatKit` 做 SwiftUI 的 agent 对话组件（iOS 26+ / macOS 26+），最重要的是流式 Markdown 和 agent trace；以后可能开源成组件库。第一版（PR #1）已有：只解析未闭合尾部的流式 Markdown（`swift-markdown` / cmark-gfm 解析，半截语法按预判显示）、trace 的通用模型（语义对照 `cot-view`）和折叠规则、SwiftUI 视图和回放用的 Demo App。之后堆叠的 PR #2–#4：逐词淡入的显示节奏（一阵 token 在 0.25 秒内按词铺开，汉字逐字，`TextRenderer` 淡入）、常见语言的代码高亮、界面文案的简体中文；#5 文字选择和复制整条回答（SwiftUI 不能跨多个 Text 选择，所以每块各自可选，iOS 27 起能选任意一段；回答下方的复制按钮点按复制纯文本、长按复制 Markdown；真正跨块选择要整条换成 TextKit，暂不做）。#6 trace 打磨：思考文字流式淡入（进行中最多 4 行、顶部淡出，结束后收成一行"思考了 N 秒"），一批工具调用合成一行（进行中显示正在跑的工具，结束后是动词摘要加 diff 和失败数），进行中的头部只写"工作中"。
    并排对比（两边都是 Release 包）后的结论：原生的好看。先试了混合方案（Expo 外壳里只把每轮运行换成 SwiftUI，PR #104，不合并）：可行，但要维护嵌套测高和两种语言之间的快照边界，而最终还是要全换。已改为整个原生重写，见 ADR-0024 和下面的"移动端原生重写"。
 - 设置界面（第一版已完成，PR #58–#61，ADR-0021）。宿主设置存在数据目录的 `settings.json`，没设过的项按键回落到 pi 的设置；凭据仍共用 pi 的 `auth.json`。任一设备改了，其他在线设备立刻看到。堆叠的四步：
