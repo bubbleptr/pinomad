@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Testing
 @testable import PinomadCore
 
 enum FakeError: Error {
@@ -198,6 +199,19 @@ final class UpdateReader: @unchecked Sendable {
             return first
         }
     }
+}
+
+/// Cooperatively yield until a queued side task lands — bounded so a
+/// broken expectation fails instead of hanging.
+func spinUntil(
+    _ predicate: @Sendable () -> Bool,
+    _ label: String,
+    maxYields: Int = 10_000
+) async {
+    for _ in 0..<maxYields where !predicate() {
+        await Task.yield()
+    }
+    #expect(predicate(), "spin timed out: \(label)")
 }
 
 /// A `pinomad://` link that parses — 32 zero bytes host key, a short

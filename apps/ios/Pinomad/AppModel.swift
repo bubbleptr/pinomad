@@ -98,6 +98,11 @@ final class AppModel {
     private func adopt(_ session: PinomadSession) {
         self.session?.close()
         self.session = session
+        // A new session is a new host — display state from the previous
+        // one (URL, counts, errors) must not bleed into this screen.
+        hostURL = ""
+        conversationCount = 0
+        lastError = ""
         phase = .connecting
         connectionText = "正在连接…"
         watchTask?.cancel()
@@ -115,9 +120,7 @@ final class AppModel {
             case .connected:
                 phase = .connected
                 // The host URL only becomes known once `Paired` lands.
-                if hostURL.isEmpty {
-                    hostURL = (try? store.load().active?.url) ?? ""
-                }
+                hostURL = (try? store.load().active?.url) ?? hostURL
             case .unauthorized:
                 phase = .failed("设备未授权（配对可能已被撤销）")
             case .mismatch(_, _, let direction, let hostVersion):

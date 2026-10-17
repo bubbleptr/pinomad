@@ -40,6 +40,9 @@ struct SnapshotDeliveryTests {
         await session.waitForIdle()
 
         session.enqueue(.commands([FfiCommand.viewChanged]))
+        // waitForIdle only covers the queue — the snapshot Task itself
+        // still has to be scheduled. Spin until it actually starts.
+        await spinUntil({ computes.withLock { $0 } == 1 }, "first compute starts")
         // The first compute blocks at the gate; more ViewChanged just set
         // the dirty flag — no second compute may start.
         session.enqueue(.commands([FfiCommand.viewChanged, FfiCommand.viewChanged]))
@@ -56,6 +59,8 @@ struct SnapshotDeliveryTests {
 
         // The dirty flag triggered exactly one follow-up.
         gate.signal() // compute #2 (v2)
+        await spinUntil({ computes.withLock { $0 } == 2 }, "follow-up compute starts")
+        gate.signal()
         await session.waitForIdle()
         guard case .snapshot(let second) = await reader.next(timeout: .seconds(5)) else {
             Issue.record("expected the follow-up snapshot")
@@ -87,6 +92,7 @@ struct SnapshotDeliveryTests {
 
         // A snapshot computed behind a newer one never publishes.
         session.enqueue(.commands([FfiCommand.viewChanged]))
+        await spinUntil({ versions.withLock { $0.isEmpty } }, "stale compute ran")
         await session.waitForIdle()
         #expect(session.lastPublishedVersion == 10)
         session.close()

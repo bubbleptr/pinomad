@@ -85,7 +85,11 @@ final class URLSessionSocket: SessionSocket, @unchecked Sendable {
                     }
                     sink(.socketData(conn: conn, bytes: bytes))
                 } catch {
-                    deliverClosed(code: 1006, reason: error.localizedDescription)
+                    // No synthetic close here: the delegate's didCloseWith
+                    // carries the real code (4401 revocation must not
+                    // degrade to 1006) and didCompleteWithError covers
+                    // frameless transport deaths — the two share the
+                    // `terminated` dedup.
                     return
                 }
             }
@@ -150,8 +154,10 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
     ) {
+        // Fetch before forgetting — forget() first would drop the event.
+        let socket = socket(for: webSocketTask)
         forget(task: webSocketTask.taskIdentifier)
-        socket(for: webSocketTask)?.closed(
+        socket?.closed(
             code: UInt16(clamping: closeCode.rawValue),
             reason: reason.flatMap { String(data: $0, encoding: .utf8) }
         )
@@ -165,7 +171,8 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked
         didCompleteWithError error: (any Error)?
     ) {
         guard let error, let task = task as? URLSessionWebSocketTask else { return }
+        let socket = socket(for: task)
         forget(task: task.taskIdentifier)
-        socket(for: task)?.closed(code: 1006, reason: error.localizedDescription)
+        socket?.closed(code: 1006, reason: error.localizedDescription)
     }
 }

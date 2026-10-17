@@ -33,19 +33,6 @@ struct SessionOrderingTests {
         }
     }
 
-    /// Cooperatively yield until a queued side task lands — bounded so a
-    /// broken expectation fails instead of hanging.
-    private func spinUntil(
-        _ predicate: @Sendable () -> Bool,
-        _ label: String,
-        maxYields: Int = 10_000
-    ) async {
-        for _ in 0..<maxYields where !predicate() {
-            await Task.yield()
-        }
-        #expect(predicate(), "spin timed out: \(label)")
-    }
-
     @Test func handshakeBytesGoOutOnOpen() async throws {
         let (session, factory, _, _) = try makeSession()
         await session.waitForIdle()

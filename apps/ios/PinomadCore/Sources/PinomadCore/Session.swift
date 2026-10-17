@@ -45,6 +45,8 @@ public enum SessionUpdate: Sendable {
 public enum SessionError: Error, Equatable {
     /// `OperationFailed` — request-class calls only.
     case operationFailed(String)
+    /// The op never completed because the session ended first.
+    case sessionClosed
 }
 
 /// Injectable environment — tests swap every seam (socket, clock, store)
@@ -104,6 +106,9 @@ public final class PinomadSession: @unchecked Sendable {
     private var conns: [UInt64: ConnState] = [:]
     private var timers: [UInt64: any SessionTimerHandle] = [:]
     private var pendingOps: [UInt64: CheckedContinuation<CallResult, any Error>] = [:]
+    /// Ops cancelled before their `invoke` even reached the queue — the
+    /// cancel arrives first, so the invoke must reject on sight.
+    private var cancelledOps: Set<UInt64> = []
     private var viewDirty = false
     private var snapshotInFlight = false
     private var publishedVersion: UInt64 = 0
@@ -157,7 +162,11 @@ public final class PinomadSession: @unchecked Sendable {
         }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { reply in
-                sink.yield(.invoke(op: op, call: call, reply: reply))
+                // A closed session's stream is finished — resume here or
+                // the caller hangs forever.
+                if case .terminated = sink.yield(.invoke(op: op, call: call, reply: reply)) {
+                    reply.resume(throwing: SessionError.sessionClosed)
+                }
             }
         } onCancel: {
             sink.yield(.abandonOp(op: op))
@@ -207,6 +216,10 @@ public final class PinomadSession: @unchecked Sendable {
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
             feed(.socketClosed(conn: conn, code: code, reason: reason))
+            // A remote close is terminal for this generation but the
+            // core does not echo CloseSocket back — clean up here or the
+            // dead socket and its backlog live until shutdown.
+            conns.removeValue(forKey: conn)?.socket.close()
         case .sendSettled(let conn, let error):
             guard var state = conns[conn] else { return }
             state.sending = false
@@ -227,10 +240,20 @@ public final class PinomadSession: @unchecked Sendable {
             guard timers.removeValue(forKey: timer) != nil else { return }
             feed(.timerFired(timer: timer))
         case .invoke(let op, let call, let reply):
-            pendingOps[op] = reply
-            feed(.invoke(op: op, call: call))
+            if cancelledOps.remove(op) != nil {
+                reply.resume(throwing: CancellationError())
+            } else {
+                pendingOps[op] = reply
+                feed(.invoke(op: op, call: call))
+            }
         case .abandonOp(let op):
-            pendingOps.removeValue(forKey: op)?.resume(throwing: CancellationError())
+            if let reply = pendingOps.removeValue(forKey: op) {
+                reply.resume(throwing: CancellationError())
+            } else {
+                // The cancel beat the invoke — remember so it rejects
+                // when it lands instead of running to completion.
+                cancelledOps.insert(op)
+            }
         case .foreground:
             feed(.foreground)
         case .background:
@@ -255,6 +278,13 @@ public final class PinomadSession: @unchecked Sendable {
             conns.removeAll()
             for (_, timer) in timers { timer.cancel() }
             timers.removeAll()
+            // The core's close does not settle outstanding ops — a
+            // waiting caller must not hang on a dead session.
+            for (_, reply) in pendingOps {
+                reply.resume(throwing: SessionError.sessionClosed)
+            }
+            pendingOps.removeAll()
+            cancelledOps.removeAll()
             shutdown = true
         }
     }
