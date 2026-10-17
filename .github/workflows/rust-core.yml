@@ -1,7 +1,7 @@
 name: Rust core
 
-# PR gate for the Rust client core (ADR-0024 §12): cargo test plus the JS
-# suite — `bun run test` covers both since it now shells out to cargo test.
+# PR gate for the Rust client core (ADR-0024 §12): typecheck, cargo test plus
+# the JS suite — `bun run test` covers both since it now shells out to cargo test.
 # The macOS job (xcframework, Swift tests, simulator build) lands with the
 # iOS work.
 on:
@@ -42,6 +42,7 @@ jobs:
       # browser build.
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
+      - run: bun run typecheck
       - run: cargo test
       - run: bun run test
 
