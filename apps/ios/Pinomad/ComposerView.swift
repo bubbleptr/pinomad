@@ -26,6 +26,10 @@ struct ConversationComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !conversation.questions.isEmpty {
+                QuestionCards(model: model, conversationId: conversation.id,
+                              questions: conversation.questions, connected: connected)
+            }
             if !conversation.statusText.isEmpty {
                 StatusPill(text: conversation.statusText)
             }

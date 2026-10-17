@@ -70,20 +70,46 @@ struct ConversationView: View {
         ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
     }
 
+    private var connected: Bool {
+        guard let snapshot = model.snapshot else { return false }
+        return snapshot.connection == .connected && !snapshot.unauthorized
+    }
+
+    /// A subagent's run belongs to the delegating task; resending its
+    /// prompt would talk past it.
+    private var isSubagent: Bool {
+        guard let organized = model.snapshot?.organized,
+              let node = findConversation(organized: organized, id: conversationId)
+        else { return false }
+        return node.summary.kind == .subagent
+    }
+
+    private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
+        if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
+        return false
+    }
+
     @ViewBuilder
     private func entries(_ conversation: ConversationSnapshot) -> some View {
+        // retryOf only answers when the newest entry is a failed run — check
+        // that here first: the call copies the whole history across the FFI,
+        // which every streaming snapshot would otherwise pay for.
+        let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
+            ? retryOf(entries: conversation.chat) : nil
         ForEach(conversation.chat, id: \.entryId) { entry in
-            row(entry)
+            row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil)
         }
     }
 
     @ViewBuilder
-    private func row(_ entry: ChatEntry) -> some View {
+    private func row(_ entry: ChatEntry, retry: RetryRequest?) -> some View {
         switch entry {
         case let .user(_, text, images):
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
-            RunRow(cot: cot, interrupted: interrupted, failure: failure, stream: model.streamFor(id)).equatable()
+            RunRow(cot: cot, interrupted: interrupted, failure: failure, stream: model.streamFor(id),
+                   retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
+                   retryKey: retry?.requestId).equatable()
         case .compaction:
             MarkerRow("上下文已压缩")
         case .reset:
@@ -119,6 +145,10 @@ private struct RunRow: View, Equatable {
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
+    /// Set on the newest failed run while a retry is possible.
+    let retry: (() -> Void)?
+    /// What `retry` resends — the closure itself can't be compared.
+    let retryKey: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -131,12 +161,17 @@ private struct RunRow: View, Equatable {
                     .font(.callout)
                     .foregroundStyle(.red)
             }
+            if let retry {
+                Button("重试", systemImage: "arrow.clockwise", action: retry)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.cot == rhs.cot && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
-            && lhs.stream === rhs.stream
+            && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
     }
 }
 
