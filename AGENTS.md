@@ -29,11 +29,11 @@ cd crates/uniffi-bindgen && cargo run --release -- generate --library ../../targ
 
 `crates/uniffi-bindgen` 是独立于根 workspace 的小 bin crate（自带 `[workspace]` 和 Cargo.lock，`uniffi` 版本和库里锁的一致），生成物不入库。库本身保持 rlib（普通 `cargo test` 不为静态库买单），iOS 需要 staticlib 时用 `cargo rustc --crate-type staticlib` 在打包脚本里编。
 
-原生 iOS（`apps/ios`，ADR-0024 §11）：`apps/ios/scripts/build-core.sh` 从干净检出生成 xcframework（真机 + 模拟器切片，release staticlib）和 UniFFI Swift 绑定，产物在 `apps/ios/PinomadCore/Vendor/` 和 `Sources/PinomadCore/Generated/`（都不入库，新检出必须先跑这个脚本）。`apps/ios/PinomadCore` 是本地 SwiftPM 包（binaryTarget + 生成的绑定 + 平台层），它的 Swift 测试在模拟器上跑：
+原生 iOS（`apps/ios`，ADR-0024 §11）：`apps/ios/scripts/build-core.sh` 从干净检出生成 xcframework（真机 + 模拟器切片，release staticlib）和 UniFFI Swift 绑定，产物在 `apps/ios/PinomadCore/Vendor/` 和 `Sources/PinomadCore/Generated/`（都不入库，新检出必须先跑这个脚本）。`apps/ios/PinomadCore` 是本地 SwiftPM 包（binaryTarget + 生成的绑定 + 平台层 + `PinomadChat` 适配层），它的 Swift 测试在模拟器上跑（多个测试 target 时用 SwiftPM 自动生成的 `-Package` scheme）：
 
 ```sh
 cd apps/ios/PinomadCore
-xcodebuild -scheme PinomadCore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+xcodebuild -scheme PinomadCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
 App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）：

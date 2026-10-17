@@ -13,6 +13,7 @@ on:
       - "rust-toolchain.toml"
       - "packages/protocol/**"
       - "packages/client/**"
+      - "packages/agent-chat-kit/**"
       - "apps/host/**"
       - "apps/ios/**"
       - "package.json"
@@ -57,7 +58,7 @@ jobs:
       - name: PinomadCore Swift tests on an iOS simulator
         working-directory: apps/ios/PinomadCore
         run: |
-          xcodebuild -scheme PinomadCore \
+          xcodebuild -scheme PinomadCore-Package \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             test
       - name: Build the app for an iOS simulator

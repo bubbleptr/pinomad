@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import PinomadCore
 import UIKit
 
@@ -20,13 +21,23 @@ final class AppModel {
     var link = ""
     var hostURL = ""
     var connectionText = ""
-    var conversationCount = 0
     var lastError = ""
+    /// The newest published view — the list and the open conversation
+    /// both read straight off it; nothing here re-derives its contents.
+    private(set) var snapshot: ClientSnapshot?
+    /// NavigationStack path — conversation ids pushed onto it open that
+    /// conversation's screen.
+    var navPath: [UInt64] = []
+    /// Set by `-openConversation <id>` — pushed once connected.
+    private var pendingOpen: UInt64?
 
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
     private let store = KeychainHostStore()
     private let monitor = NetworkMonitor()
+    /// Marks each snapshot landing on the main actor — paired with the
+    /// session's `bytes`/`publish` events for the byte-to-UI latency.
+    private let signposter = OSSignposter(subsystem: "build.kieran.pinomad", category: "delivery")
 
     func start() {
         // The monitor runs for the app's lifetime; it only yields into
@@ -37,6 +48,9 @@ final class AppModel {
         // Dev seam for scripted runs: `-pairingLink <url>` pre-fills the
         // field, `-autoPair` connects straight away.
         let args = UserDefaults.standard
+        if let openId = args.string(forKey: "openConversation"), let n = UInt64(openId) {
+            pendingOpen = n
+        }
         if let injected = args.string(forKey: "pairingLink"), !injected.isEmpty {
             link = injected
             if args.bool(forKey: "autoPair") {
@@ -85,6 +99,14 @@ final class AppModel {
     func didEnterForeground() { session?.notifyForeground() }
     func didEnterBackground() { session?.notifyBackground() }
 
+    /// Show and talk to a conversation — command-class, so a refused
+    /// switch surfaces as a snapshot notice, not a thrown error.
+    func openConversation(_ id: UInt64) {
+        Task { [weak self] in
+            _ = try? await self?.session?.invoke(.switchConversation(id: id))
+        }
+    }
+
     private func connect(_ host: HostRecord) {
         do {
             let session = try PinomadSession.connect(host: host)
@@ -99,9 +121,9 @@ final class AppModel {
         self.session?.close()
         self.session = session
         // A new session is a new host — display state from the previous
-        // one (URL, counts, errors) must not bleed into this screen.
+        // one (URL, snapshots, errors) must not bleed into this screen.
         hostURL = ""
-        conversationCount = 0
+        snapshot = nil
         lastError = ""
         phase = .connecting
         connectionText = "正在连接…"
@@ -121,6 +143,10 @@ final class AppModel {
                 phase = .connected
                 // The host URL only becomes known once `Paired` lands.
                 hostURL = (try? store.load().active?.url) ?? hostURL
+                if let id = pendingOpen {
+                    pendingOpen = nil
+                    navPath = [id]
+                }
             case .unauthorized:
                 phase = .failed("设备未授权（配对可能已被撤销）")
             case .mismatch(_, _, let direction, let hostVersion):
@@ -138,8 +164,8 @@ final class AppModel {
             } else {
                 connectionText = label(for: snapshot.connection)
             }
-            conversationCount = snapshot.organized.chats.count
-                + snapshot.organized.projects.reduce(0) { $0 + $1.conversations.count }
+            self.snapshot = snapshot
+            signposter.emitEvent("ui-publish")
         case .platformError(let message):
             lastError = message
         }

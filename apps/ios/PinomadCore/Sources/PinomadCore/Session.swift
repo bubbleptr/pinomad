@@ -93,6 +93,10 @@ public final class PinomadSession: @unchecked Sendable {
     private let updateSink: AsyncStream<SessionUpdate>.Continuation
     /// Single-consumer stream of UI-facing updates.
     public let updates: AsyncStream<SessionUpdate>
+    /// Delivery latency instrumentation: `bytes` (wire data consumed),
+    /// `snapshot` (one compute, begin/end), `publish` (a version reaching
+    /// the UI). Recorded with Instruments' os_signpost template.
+    private let signposter = OSSignposter(subsystem: "build.kieran.pinomad", category: "delivery")
 
     private let nextOp = OSAllocatedUnfairLock<UInt64>(initialState: 1)
     private var loopTask: Task<Void, Never>?
@@ -234,6 +238,7 @@ public final class PinomadSession: @unchecked Sendable {
         case .socketOpened(let conn):
             feed(.socketOpened(conn: conn))
         case .socketData(let conn, let bytes):
+            signposter.emitEvent("bytes")
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
             feed(.socketClosed(conn: conn, code: code, reason: reason))
@@ -285,6 +290,7 @@ public final class PinomadSession: @unchecked Sendable {
             snapshotInFlight = false
             if let snapshot, snapshot.version > publishedVersion {
                 publishedVersion = snapshot.version
+                signposter.emitEvent("publish")
                 updateSink.yield(.snapshot(snapshot))
             }
             if viewDirty { startSnapshot() }
@@ -384,8 +390,12 @@ public final class PinomadSession: @unchecked Sendable {
         viewDirty = false
         snapshotInFlight = true
         let snapshotter = dependencies.snapshotter ?? { [client] in client.snapshot() }
+        let signposter = self.signposter
         Task { [sink] in
-            sink.yield(.snapshotReady(snapshotter()))
+            let interval = signposter.beginInterval("snapshot")
+            let snapshot = snapshotter()
+            signposter.endInterval("snapshot", interval)
+            sink.yield(.snapshotReady(snapshot))
         }
     }
 

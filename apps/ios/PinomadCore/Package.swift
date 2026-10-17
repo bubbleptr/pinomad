@@ -8,7 +8,11 @@ let package = Package(
     name: "PinomadCore",
     platforms: [.iOS(.v26)],
     products: [
-        .library(name: "PinomadCore", targets: ["PinomadCore"])
+        .library(name: "PinomadCore", targets: ["PinomadCore"]),
+        .library(name: "PinomadChat", targets: ["PinomadChat"])
+    ],
+    dependencies: [
+        .package(path: "../../../packages/agent-chat-kit")
     ],
     targets: [
         .binaryTarget(
@@ -20,10 +24,25 @@ let package = Package(
             dependencies: ["PinomadCoreFFI"],
             path: "Sources/PinomadCore"
         ),
+        // ChatEntry/CotView → AgentChatKit models. Model-only, no SwiftUI —
+        // the app composes the kit's views off what this produces.
+        .target(
+            name: "PinomadChat",
+            dependencies: [
+                "PinomadCore",
+                .product(name: "AgentChatCore", package: "agent-chat-kit"),
+            ],
+            path: "Sources/PinomadChat"
+        ),
         .testTarget(
             name: "PinomadCoreTests",
             dependencies: ["PinomadCore"],
             path: "Tests/PinomadCoreTests"
+        ),
+        .testTarget(
+            name: "PinomadChatTests",
+            dependencies: ["PinomadChat"],
+            path: "Tests/PinomadChatTests"
         ),
     ]
 )
