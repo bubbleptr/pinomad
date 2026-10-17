@@ -46,6 +46,32 @@ xcrun simctl launch "iPhone 17 Pro" build.kieran.pinomad \
   -pairingLink '<配对链接>' -autoPair YES   # 调试注入；不带参数则走钥匙串自动重连
 ```
 
+真机（iphone181，UDID 00008150-001608822678401C）：
+
+```sh
+# 构建要签名：DEVELOPMENT_TEAM 用开发者证书所属团队，pbxproj 里保持为空。
+xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
+  -destination 'id=00008150-001608822678401C' -derivedDataPath /tmp/pinomad-device-dd \
+  DEVELOPMENT_TEAM=9KZ32XLVQW -allowProvisioningUpdates build
+xcrun devicectl device install app --device 00008150-001608822678401C \
+  /tmp/pinomad-device-dd/Build/Products/Debug-iphoneos/Pinomad.app
+
+# devicectl 会把 -xxx 应用参数当成自己的短选项簇解析（-autoPair → -a -u -t …），
+# 所以启动参数走 DEVICECTL_CHILD_ 环境变量（App 也读 PINOMAD_* env）：
+DEVICECTL_CHILD_PINOMAD_PAIRING_LINK='<配对链接>' DEVICECTL_CHILD_PINOMAD_AUTOPAIR=1 \
+  xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
+# 手机锁屏时 launch 会被拒绝（FBSOpenApplicationErrorDomain 7）——等解锁。
+
+# 性能录制（会话层有 os_signpost 打点：bytes / snapshot / publish / ui-publish）：
+xcrun xctrace record --device 00008150-001608822678401C \
+  --attach Pinomad --template 'Logging' \
+  --instrument 'Animation Hitches' --instrument 'Activity Monitor' \
+  --output /tmp/perf.trace --time-limit 120s
+# 导出 signpost 表做分析：
+xcrun xctrace export --input /tmp/perf.trace \
+  --xpath '/trace-toc/run/data/tables/table[@schema="signpost-interval"]' > /tmp/signposts.xml
+```
+
 平台层的保序契约（ADR-0024 §3）：所有输入进同一条有序队列、由唯一一个循环消费，`handle` 和它产出的指令在同一段同步代码里处理完，没有悬挂点；每条连接一个顺序接收循环、一个 FIFO 发送器；计时器取消后不得再触发 `TimerFired`；`ViewChanged` 只标脏，快照计算最多一个在途、版本不回退。
 
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。

@@ -46,14 +46,20 @@ final class AppModel {
             Task { @MainActor in self?.session?.notifyNetworkChanged() }
         }
         // Dev seam for scripted runs: `-pairingLink <url>` pre-fills the
-        // field, `-autoPair` connects straight away.
+        // field, `-autoPair` connects straight away. devicectl cannot pass
+        // single-dash args to a device app (it clusters them as its own
+        // short options), so the same three values are also read from
+        // PINOMAD_* environment variables.
         let args = UserDefaults.standard
-        if let openId = args.string(forKey: "openConversation"), let n = UInt64(openId) {
+        let env = ProcessInfo.processInfo.environment
+        if let openId = args.string(forKey: "openConversation") ?? env["PINOMAD_OPEN"],
+           let n = UInt64(openId) {
             pendingOpen = n
         }
-        if let injected = args.string(forKey: "pairingLink"), !injected.isEmpty {
+        let injected = args.string(forKey: "pairingLink") ?? env["PINOMAD_PAIRING_LINK"] ?? ""
+        if !injected.isEmpty {
             link = injected
-            if args.bool(forKey: "autoPair") {
+            if args.bool(forKey: "autoPair") || env["PINOMAD_AUTOPAIR"] != nil {
                 pair()
                 return
             }
