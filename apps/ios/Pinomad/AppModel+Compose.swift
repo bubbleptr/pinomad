@@ -1,6 +1,7 @@
 import Foundation
 import PinomadChat
 import PinomadCore
+import UIKit
 
 /// The composer's calls. All command-class: a host refusal resolves
 /// normally and surfaces as a notice toast, so only a dead session
@@ -60,6 +61,18 @@ extension AppModel {
                 self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "无法读取图片")
             }
         }
+    }
+
+    /// Stage the clipboard's image, or say there isn't one.
+    func pasteImage(into id: UInt64, accepts: Bool) {
+        // `hasImages` doesn't trigger the paste prompt; reading does.
+        guard UIPasteboard.general.hasImages,
+              let data = UIPasteboard.general.image?.jpegData(compressionQuality: 1)
+        else {
+            reportAttachProblem(conversation: id, "剪贴板里没有图片")
+            return
+        }
+        attach(conversation: id, accepts: accepts, sources: [{ @Sendable in data }])
     }
 
     func removeImage(conversation id: UInt64, at index: Int) {
