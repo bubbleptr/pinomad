@@ -27,9 +27,8 @@ final class AppModel {
     /// The newest published view — the list and the open conversation
     /// both read straight off it; nothing here re-derives its contents.
     private(set) var snapshot: ClientSnapshot?
-    /// NavigationStack path — conversation ids pushed onto it open that
-    /// conversation's screen.
-    var navPath: [UInt64] = []
+    /// NavigationStack path.
+    var navPath: [Route] = []
     /// Live answer streams, keyed by run entry id — the model side feeds
     /// them per snapshot so view rows stay side-effect free (lazy rows
     /// mutating their own @State kept iOS 27's layout unsettled; the
@@ -40,6 +39,15 @@ final class AppModel {
     /// Unsent composer text per conversation — kept across navigation,
     /// dropped with the session (a new host has other conversations).
     var drafts: [UInt64: String] = [:]
+    /// The new-conversation draft's home, checkout and model pick. Its text
+    /// and images live in `drafts` / `trays` under `draftKey`.
+    var draftHome: NewConversationHome = .chat
+    var draftCheckout: ConversationCheckout = .worktree
+    /// The reader's own pick; nil until they choose (then the host default
+    /// is used). Kept across navigation, not across launches.
+    var draftPick: ModelPick?
+    /// A create is in flight — the draft page holds its send.
+    var creating = false
     /// Staged images per conversation, beside its draft text.
     var trays: [UInt64: AttachmentTray] = [:]
     /// The message image shown full screen, if any.
@@ -201,6 +209,9 @@ final class AppModel {
         questionDrafts = [:]
         trays = [:]
         viewing = nil
+        draftHome = .chat
+        draftCheckout = .worktree
+        draftPick = nil
         toasts = []
         noticeFeed = NoticeFeed()
         phase = .connecting
@@ -223,7 +234,7 @@ final class AppModel {
                 hostURL = (try? store.load().active?.url) ?? hostURL
                 if let id = pendingOpen {
                     pendingOpen = nil
-                    navPath = [id]
+                    navPath = [.conversation(id)]
                 }
             case .unauthorized:
                 phase = .failed("设备未授权（配对可能已被撤销）")
@@ -266,7 +277,7 @@ final class AppModel {
     /// the session uses, so a blank screen reproduces exactly what the
     /// host-driven view would show.
     private func startDemo() {
-        navPath = [1]
+        navPath = [.conversation(1)]
         let body = """
         这是一段流式输出的演示。**Markdown** 会逐词显现，应该能看到淡入效果。
 

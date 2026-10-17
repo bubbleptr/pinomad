@@ -15,7 +15,6 @@ struct ConversationComposer: View {
     @State private var showModels = false
     @State private var showPhotos = false
     @State private var showCamera = false
-    @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
@@ -61,50 +60,18 @@ struct ConversationComposer: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .sheet(isPresented: $showModels) {
-            ModelSheet(model: model, agent: conversation.agent)
+            ModelSheet(
+                model: model,
+                models: model.snapshot?.models ?? [],
+                selected: ModelPick(
+                    model: (model.snapshot?.conversation?.agent ?? conversation.agent).model,
+                    level: (model.snapshot?.conversation?.agent ?? conversation.agent).thinkingLevel ?? .off),
+                onModel: { model.setModel($0) },
+                onLevel: { model.setThinkingLevel($0) }
+            )
         }
-        .photosPicker(isPresented: $showPhotos, selection: $photoItems,
-                      maxSelectionCount: max(tray.freeSlots, 1), matching: .images)
-        .onChange(of: photoItems) { _, items in
-            guard !items.isEmpty else { return }
-            photoItems = []
-            model.attach(conversation: conversation.id, accepts: acceptsImages, sources: items.map { item in
-                { @Sendable in
-                    guard let data = try await item.loadTransferable(type: Data.self) else {
-                        throw ImagePrep.Failure(description: "无法读取图片")
-                    }
-                    return data
-                }
-            })
-        }
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { image in
-                guard let data = image.jpegData(compressionQuality: 1) else { return }
-                model.attach(conversation: conversation.id, accepts: acceptsImages,
-                             sources: [{ @Sendable in data }])
-            }
-            .ignoresSafeArea()
-        }
-    }
-
-    /// Present after the menu has gone: presenting from inside a Menu
-    /// action can be dropped while the menu is still dismissing.
-    private func presentAfterMenu(_ present: @escaping @MainActor () -> Void) {
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            present()
-        }
-    }
-
-    private func pasteImage() {
-        // `hasImages` doesn't trigger the paste prompt; reading does.
-        guard UIPasteboard.general.hasImages,
-              let data = UIPasteboard.general.image?.jpegData(compressionQuality: 1)
-        else {
-            model.reportAttachProblem(conversation: conversation.id, "剪贴板里没有图片")
-            return
-        }
-        model.attach(conversation: conversation.id, accepts: acceptsImages, sources: [{ @Sendable in data }])
+        .imageSources(model: model, key: conversation.id, accepts: acceptsImages,
+                      showPhotos: $showPhotos, showCamera: $showCamera)
     }
 
     private var card: some View {
@@ -141,7 +108,7 @@ struct ConversationComposer: View {
                     photos: { presentAfterMenu { showPhotos = true } },
                     camera: UIImagePickerController.isSourceTypeAvailable(.camera)
                         ? { presentAfterMenu { showCamera = true } } : nil,
-                    paste: pasteImage,
+                    paste: { model.pasteImage(into: conversation.id, accepts: acceptsImages) },
                     compact: { model.compact() }
                 )
                 ModelCapsule(
@@ -222,7 +189,7 @@ struct ConversationComposer: View {
 }
 
 /// The filled circle the trailing slot shows for send and stop.
-private struct SlotIcon: View {
+struct SlotIcon: View {
     let systemName: String
     @Environment(\.isEnabled) private var isEnabled
 
@@ -237,7 +204,7 @@ private struct SlotIcon: View {
     }
 }
 
-private struct PlusMenu: View {
+struct PlusMenu: View {
     let connected: Bool
     let acceptsImages: Bool
     let modelName: String?
@@ -246,7 +213,8 @@ private struct PlusMenu: View {
     /// Nil where there is no camera (the simulator).
     let camera: (() -> Void)?
     let paste: () -> Void
-    let compact: () -> Void
+    /// Nil where there is no conversation yet (the draft page).
+    let compact: (() -> Void)?
 
     var body: some View {
         Menu {
@@ -263,8 +231,10 @@ private struct PlusMenu: View {
                 Button("添加图片（\(modelName ?? "当前模型")不支持图片）", systemImage: "photo") {}
                     .disabled(true)
             }
-            Button("压缩上下文", systemImage: "rectangle.compress.vertical", action: compact)
-                .disabled(!connected)
+            if let compact {
+                Button("压缩上下文", systemImage: "rectangle.compress.vertical", action: compact)
+                    .disabled(!connected)
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 16, weight: .medium))
@@ -279,7 +249,7 @@ private struct PlusMenu: View {
 
 /// Staged images (tap to view, × to drop), a spinner per image still being
 /// prepared, and the last attach problem.
-private struct AttachmentStrip: View {
+struct AttachmentStrip: View {
     let tray: AttachmentTray
     let note: String?
     let remove: (Int) -> Void
@@ -328,7 +298,7 @@ private struct AttachmentStrip: View {
 }
 
 /// A square crop of a staged image.
-private struct Thumbnail: View {
+struct Thumbnail: View {
     let image: MessageImage
 
     var body: some View {
@@ -344,7 +314,7 @@ private struct Thumbnail: View {
     }
 }
 
-private struct ModelCapsule: View {
+struct ModelCapsule: View {
     let label: String
     let enabled: Bool
     let action: () -> Void
