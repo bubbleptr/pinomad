@@ -130,7 +130,14 @@ final class AppModel {
                 phase = .failed(message)
             }
         case .snapshot(let snapshot):
-            connectionText = label(for: snapshot.connection)
+            if snapshot.unauthorized {
+                // Terminal: the host revoked this device (close 4401).
+                // The failure screen's re-pair path is the only way out.
+                connectionText = "未授权（设备已被吊销）"
+                phase = .failed("设备已被吊销")
+            } else {
+                connectionText = label(for: snapshot.connection)
+            }
             conversationCount = snapshot.organized.chats.count
                 + snapshot.organized.projects.reduce(0) { $0 + $1.conversations.count }
         case .platformError(let message):

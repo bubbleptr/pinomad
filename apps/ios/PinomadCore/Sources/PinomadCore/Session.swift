@@ -182,16 +182,24 @@ public final class PinomadSession: @unchecked Sendable {
     public func close() { sink.yield(.shutdown) }
 
     /// Wait until every queued event was consumed — tests only.
+    /// A barrier that lands after the stream finished resumes at once
+    /// (there is nothing left to wait for).
     func waitForIdle() async {
         await withCheckedContinuation { reply in
-            sink.yield(.barrier(reply))
+            if case .terminated = sink.yield(.barrier(reply)) {
+                reply.resume()
+            }
         }
     }
 
     /// Test seam: enqueue a raw event so commands/invokes can be driven
-    /// through the real loop without a host.
+    /// through the real loop without a host. A terminated stream settles
+    /// the invoke the same way `invoke()` does.
     func enqueue(_ event: SessionEvent) {
-        sink.yield(event)
+        if case .terminated = sink.yield(event),
+           case .invoke(_, _, let reply) = event {
+            reply.resume(throwing: SessionError.sessionClosed)
+        }
     }
 
     /// The newest published snapshot version — tests only.
@@ -203,12 +211,25 @@ public final class PinomadSession: @unchecked Sendable {
         dispatch(client.take())
         for await event in events {
             process(event)
-            if shutdown { break }
         }
         updateSink.finish()
     }
 
     private func process(_ event: SessionEvent) {
+        // Buffered events keep arriving after `finish()` — anything
+        // queued behind .shutdown must still be settled, not dropped on
+        // the floor with its waiter.
+        if shutdown {
+            switch event {
+            case .invoke(_, _, let reply):
+                reply.resume(throwing: SessionError.sessionClosed)
+            case .barrier(let reply):
+                reply.resume()
+            default:
+                break
+            }
+            return
+        }
         switch event {
         case .socketOpened(let conn):
             feed(.socketOpened(conn: conn))

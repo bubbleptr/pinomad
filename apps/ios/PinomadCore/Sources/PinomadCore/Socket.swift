@@ -165,6 +165,9 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked
 
     /// A handshake or transport failure that never produced a close
     /// frame — surfaced as abnormal (1006), like a dropped TCP link.
+    /// When this callback wins the race against `didCloseWith`, the
+    /// task's `closeCode`/`closeReason` still hold the real frame — a
+    /// revocation (4401) must not degrade to abnormal.
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -173,6 +176,12 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked
         guard let error, let task = task as? URLSessionWebSocketTask else { return }
         let socket = socket(for: task)
         forget(task: task.taskIdentifier)
-        socket?.closed(code: 1006, reason: error.localizedDescription)
+        if task.closeCode != .invalid {
+            socket?.closed(
+                code: UInt16(clamping: task.closeCode.rawValue),
+                reason: task.closeReason.flatMap { String(data: $0, encoding: .utf8) })
+        } else {
+            socket?.closed(code: 1006, reason: error.localizedDescription)
+        }
     }
 }

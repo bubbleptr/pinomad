@@ -231,6 +231,30 @@ struct SessionOrderingTests {
         session.close()
     }
 
+    @Test func eventsQueuedBehindShutdownAreSettled() async throws {
+        let (session, _, _, _) = try makeSession()
+        await session.waitForIdle()
+
+        // The invoke lands behind .shutdown: the stream is finished but
+        // the buffered event still arrives — its waiter must be resumed
+        // with sessionClosed instead of hanging.
+        let captured = OSAllocatedUnfairLock<CheckedContinuation<CallResult, any Error>?>(
+            initialState: nil)
+        let result = Task<CallResult, any Error> {
+            try await withCheckedThrowingContinuation { reply in
+                captured.withLock { $0 = reply }
+            }
+        }
+        await spinUntil({ captured.withLock { $0 != nil } }, "reply captured")
+        session.close()
+        session.enqueue(.invoke(
+            op: 9, call: .renameConversation(id: 1, title: "x"),
+            reply: captured.withLock { $0! }))
+        await #expect(throws: SessionError.sessionClosed) { _ = try await result.value }
+        // A barrier behind the shutdown also resolves instead of hanging.
+        await session.waitForIdle()
+    }
+
     @Test func invokeRejectsRequestClassCallsWhenDisconnected() async throws {
         let (session, _, _, _) = try makeSession()
         await session.waitForIdle()
