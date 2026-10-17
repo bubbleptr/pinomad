@@ -49,11 +49,16 @@ struct ConversationView: View {
                         }
                     }
                 } else {
-                    Transcript { entries(conversation) }
+                    Transcript(pin: model.transcriptPin) { entries(conversation) }
                 }
             } else {
                 ProgressView("正在载入对话…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let conversation {
+                ConversationComposer(model: model, conversation: conversation)
             }
         }
         .navigationTitle(title)
@@ -69,11 +74,6 @@ struct ConversationView: View {
     private func entries(_ conversation: ConversationSnapshot) -> some View {
         ForEach(conversation.chat, id: \.entryId) { entry in
             row(entry)
-        }
-        if !conversation.statusText.isEmpty {
-            Text(conversation.statusText)
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
         }
     }
 

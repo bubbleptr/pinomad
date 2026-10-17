@@ -23,6 +23,7 @@ struct RootView: View {
             }
             .navigationTitle("PiNomad")
         }
+        .overlay(alignment: .top) { ToastStack(model: model) }
     }
 
     private var pairingView: some View {
@@ -65,5 +66,33 @@ struct RootView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
+    }
+}
+
+/// Host and core notices, newest at the bottom; tap to dismiss early.
+private struct ToastStack: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(model.toasts, id: \.id) { notice in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if notice.level == "error" || notice.level == "warning" {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(notice.level == "error" ? .red : .orange)
+                    }
+                    Text(notice.message)
+                        .font(.footnote)
+                        .lineLimit(3)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                .onTapGesture { model.dismissToast(notice.id) }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 16)
+        .animation(.snappy, value: model.toasts.map(\.id))
     }
 }

@@ -37,6 +37,16 @@ final class AppModel {
     let replyStreams = ReplyStreams()
     /// Set by `-openConversation <id>` — pushed once connected.
     private var pendingOpen: UInt64?
+    /// Unsent composer text per conversation — kept across navigation,
+    /// dropped with the session (a new host has other conversations).
+    var drafts: [UInt64: String] = [:]
+    /// Bumped when the reader acts at the transcript's end (sends, starts
+    /// typing) — the transcript jumps back to its end on each change.
+    var transcriptPin = 0
+    /// Notices currently shown as toasts, newest last.
+    var toasts: [Notice] = []
+    /// Which notices already toasted — one per session (ids restart).
+    private var noticeFeed = NoticeFeed()
 
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
@@ -178,6 +188,9 @@ final class AppModel {
         snapshot = nil
         lastError = ""
         replyStreams.sync(chat: nil)
+        drafts = [:]
+        toasts = []
+        noticeFeed = NoticeFeed()
         phase = .connecting
         connectionText = "正在连接…"
         watchTask?.cancel()
@@ -218,6 +231,7 @@ final class AppModel {
                 connectionText = label(for: snapshot.connection)
             }
             self.snapshot = snapshot
+            for notice in noticeFeed.fresh(snapshot.notices) { show(notice) }
             signposter.emitEvent("ui-publish")
             replyStreams.sync(chat: snapshot.conversation?.chat)
             PerfLog.shared.mark("ui-publish", version: snapshot.version)

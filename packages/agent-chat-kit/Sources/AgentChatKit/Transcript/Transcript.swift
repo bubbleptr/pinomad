@@ -2,10 +2,18 @@ import SwiftUI
 
 /// A scrolling conversation that stays pinned to its end as replies grow,
 /// until the reader scrolls up; scrolling back to the end pins it again.
+///
+/// Growth of the bottom inset (keyboard, a taller input bar) doesn't count
+/// as a size change, so the end can slide out of view under it; each
+/// change of `pin` jumps back to the end — bump it when the reader acts
+/// at the bottom, e.g. sends or starts typing.
 public struct Transcript<Content: View>: View {
     let content: Content
+    let pin: Int
+    @State private var position = ScrollPosition(edge: .bottom)
 
-    public init(@ViewBuilder content: () -> Content) {
+    public init(pin: Int = 0, @ViewBuilder content: () -> Content) {
+        self.pin = pin
         self.content = content()
     }
 
@@ -17,8 +25,12 @@ public struct Transcript<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+        .scrollPosition($position)
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        .onChange(of: pin) {
+            withAnimation { position.scrollTo(edge: .bottom) }
+        }
     }
 }
 
