@@ -2,3 +2,6 @@
 # days old — the same freshness rule package versions follow.
 [toolchain]
 channel = "1.99.0"
+# iOS slices of the xcframework (ADR-0024 §11): rustup installs them on
+# first use on any host.
+targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"]
