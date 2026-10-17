@@ -31,6 +31,7 @@ let package = Package(
             dependencies: [
                 "PinomadCore",
                 .product(name: "AgentChatCore", package: "agent-chat-kit"),
+                .product(name: "AgentChatKit", package: "agent-chat-kit"),
             ],
             path: "Sources/PinomadChat"
         ),

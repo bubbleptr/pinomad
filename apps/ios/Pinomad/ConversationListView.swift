@@ -10,6 +10,14 @@ struct ConversationListView: View {
 
     var body: some View {
         List {
+            if !model.lastError.isEmpty {
+                // Platform failures (e.g. the keychain rejecting a pairing
+                // write) are not fatal to the connection, but must be
+                // visible — a toast would lose them.
+                Label(model.lastError, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
             if let organized = model.snapshot?.organized {
                 if !organized.chats.isEmpty {
                     Section("对话") {

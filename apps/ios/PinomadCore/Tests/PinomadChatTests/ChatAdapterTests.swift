@@ -114,6 +114,38 @@ struct LiveStateTests {
             #expect(ChatAdapter.call(tool(state: toolState), fallbackId: "x").state == expected)
         }
     }
+
+    /// The batch's folded row must name the call the core says is
+    /// executing — submitted-but-queued calls are waiting, not running.
+    @Test func activeToolCallIdPicksTheRunningCall() {
+        let step = CotStep.tools(
+            id: "s1",
+            tools: [
+                tool(state: .inputAvailable, callId: "call-read", name: "read"),
+                tool(state: .inputAvailable, callId: "call-bash", name: "bash"),
+            ],
+            live: true,
+            activeToolCallId: "call-read"
+        )
+        let trace = ChatAdapter.trace(cot: cot(phase: .acting, steps: [step]), interrupted: false)
+        guard case let .tools(_, calls) = trace.steps[0] else {
+            Issue.record("expected a tools step")
+            return
+        }
+        #expect(calls[0].state == .running && calls[0].isActive)
+        #expect(calls[1].state == .streamingInput && !calls[1].isActive)
+        #expect(ToolSummary(calls: calls).running?.name == "read")
+    }
+
+    /// Without an active id the old position rule stands.
+    @Test func noActiveIdKeepsPositionalRunning() {
+        let calls = ChatAdapter.calls(of: "s", tools: [
+            tool(state: .inputAvailable, callId: "a", name: "read"),
+            tool(state: .inputAvailable, callId: "b", name: "bash"),
+        ])
+        #expect(calls.map(\.state) == [.running, .running])
+        #expect(ToolSummary(calls: calls).running?.name == "bash")
+    }
 }
 
 @Suite("ChatAdapter failure and interruption")
@@ -185,5 +217,43 @@ struct FallbackTests {
         item.images = [MessageImage(data: "aGk=", mimeType: "image/png")]
         let call = ChatAdapter.call(item, fallbackId: "x")
         #expect(call.images == [ToolImage(data: "aGk=", mimeType: "image/png")])
+    }
+}
+
+private func answeredRun(_ id: String, text: String, streaming: Bool = false) -> ChatEntry {
+    .run(
+        id: id,
+        cot: cot(answer: CotAnswer(text: text, streaming: streaming)),
+        forkEntryId: nil,
+        interrupted: false,
+        failure: nil
+    )
+}
+
+@Suite("ReplyStreams")
+@MainActor
+struct ReplyStreamsTests {
+    @Test func switchingConversationsEvictsTheOldRunsStreams() {
+        let streams = ReplyStreams()
+        streams.sync(chat: [answeredRun("run-a", text: "answer A")])
+        streams.sync(chat: [answeredRun("run-b", text: "answer B")])
+        #expect(streams.stream(for: "run-a") == nil)
+        #expect(streams.stream(for: "run-b")?.markdown == "answer B")
+    }
+
+    @Test func streamingTailOnlyAppendsTheNewSuffix() {
+        let streams = ReplyStreams()
+        streams.sync(chat: [answeredRun("run-1", text: "hello", streaming: true)])
+        let first = streams.stream(for: "run-1")
+        streams.sync(chat: [answeredRun("run-1", text: "hello world", streaming: true)])
+        #expect(streams.stream(for: "run-1") === first)
+        #expect(first?.markdown == "hello world")
+    }
+
+    @Test func rewrittenAnswerRestartsTheStream() {
+        let streams = ReplyStreams()
+        streams.sync(chat: [answeredRun("run-1", text: "first")])
+        streams.sync(chat: [answeredRun("run-1", text: "different")])
+        #expect(streams.stream(for: "run-1")?.markdown == "different")
     }
 }

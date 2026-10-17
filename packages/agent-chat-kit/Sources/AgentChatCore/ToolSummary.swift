@@ -77,7 +77,11 @@ public struct ToolSummary: Sendable, Equatable {
     }
 
     private static func runningCall(in calls: [ToolCall]) -> Running? {
-        guard let active = calls.last(where: { $0.isInProgress }) else { return nil }
+        // A host-marked active call wins over position: submitted calls
+        // queue behind it and the last in-progress one may be waiting.
+        let active = calls.first(where: { $0.isActive && $0.isInProgress })
+            ?? calls.last(where: { $0.isInProgress })
+        guard let active else { return nil }
         var nested: String?
         var cursor = active
         while let next = cursor.children.last(where: { $0.isInProgress }) {

@@ -27,15 +27,29 @@ struct ConversationView: View {
     var body: some View {
         Group {
             if let conversation {
-                Transcript {
-                    ForEach(conversation.chat, id: \.entryId) { entry in
-                        row(entry)
+                if autoScroll {
+                    // Debug-only: a scripted scroll drives the transcript
+                    // so PerfLog can measure hitches while scrolling —
+                    // a remote runner has no way to drag a finger.
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 24) {
+                                entries(conversation)
+                                Color.clear.frame(height: 1).id("bottom")
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        }
+                        .defaultScrollAnchor(.bottom)
+                        .task {
+                            while !Task.isCancelled {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                                try? await Task.sleep(for: .milliseconds(120))
+                            }
+                        }
                     }
-                    if !conversation.statusText.isEmpty {
-                        Text(conversation.statusText)
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
-                    }
+                } else {
+                    Transcript { entries(conversation) }
                 }
             } else {
                 ProgressView("正在载入对话…")
@@ -45,6 +59,22 @@ struct ConversationView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task { model.openConversation(conversationId) }
+    }
+
+    private var autoScroll: Bool {
+        ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
+    }
+
+    @ViewBuilder
+    private func entries(_ conversation: ConversationSnapshot) -> some View {
+        ForEach(conversation.chat, id: \.entryId) { entry in
+            row(entry)
+        }
+        if !conversation.statusText.isEmpty {
+            Text(conversation.statusText)
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     @ViewBuilder

@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import AgentChatKit
+import PinomadChat
 import PinomadCore
 import UIKit
 
@@ -29,12 +30,11 @@ final class AppModel {
     /// NavigationStack path — conversation ids pushed onto it open that
     /// conversation's screen.
     var navPath: [UInt64] = []
-    /// Live answer streams, keyed by run entry id. Owned here rather than
-    /// in view state: feeding them from LazyVStack rows' onAppear/onChange
-    /// kept the iOS 27 layout unsettled (the whole transcript rendered
-    /// blank). Snapshot-driven sync in `apply` is side-effect free for the
-    /// view tree.
-    private var streams: [String: StreamingMarkdown] = [:]
+    /// Live answer streams, keyed by run entry id — the model side feeds
+    /// them per snapshot so view rows stay side-effect free (lazy rows
+    /// mutating their own @State kept iOS 27's layout unsettled; the
+    /// transcript rendered blank).
+    let replyStreams = ReplyStreams()
     /// Set by `-openConversation <id>` — pushed once connected.
     private var pendingOpen: UInt64?
 
@@ -64,6 +64,9 @@ final class AppModel {
             // window isn't cut short by auto-lock.
             UIApplication.shared.isIdleTimerDisabled = true
         }
+        if env["PINOMAD_PERFLOG"] != nil {
+            PerfLog.shared.startFrameMonitor()
+        }
         if let openId = args.string(forKey: "openConversation") ?? env["PINOMAD_OPEN"],
            let n = UInt64(openId) {
             pendingOpen = n
@@ -73,6 +76,10 @@ final class AppModel {
             link = injected
             if args.bool(forKey: "autoPair") || env["PINOMAD_AUTOPAIR"] != nil {
                 pair()
+                // Scripted runs race the network coming up (tailnet,
+                // VPN toggles) — keep retrying the injected link rather
+                // than dropping the operator to a failed screen.
+                if env["PINOMAD_AUTOPAIR"] != nil { schedulePairRetries() }
                 return
             }
         }
@@ -125,6 +132,25 @@ final class AppModel {
         }
     }
 
+    /// Retries the injected pairing link while the phase is a failure —
+    /// only armed by PINOMAD_AUTOPAIR, so manual pairing stays manual.
+    private var pairRetryTask: Task<Void, Never>?
+
+    private func schedulePairRetries() {
+        pairRetryTask?.cancel()
+        pairRetryTask = Task { [weak self] in
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { return }
+                if case .failed = self.phase {
+                    self.pair()
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
     private func connect(_ host: HostRecord) {
         do {
             let session = try PinomadSession.connect(host: host)
@@ -143,7 +169,7 @@ final class AppModel {
         hostURL = ""
         snapshot = nil
         lastError = ""
-        streams.removeAll()
+        replyStreams.sync(chat: nil)
         phase = .connecting
         connectionText = "正在连接…"
         watchTask?.cancel()
@@ -185,7 +211,7 @@ final class AppModel {
             }
             self.snapshot = snapshot
             signposter.emitEvent("ui-publish")
-            syncStreams(snapshot)
+            replyStreams.sync(chat: snapshot.conversation?.chat)
             PerfLog.shared.mark("ui-publish", version: snapshot.version)
             // Perf runs double as field diagnostics: which conversation is
             // shown and how many chat rows it carries.
@@ -200,39 +226,7 @@ final class AppModel {
 
     /// The stream a run's answer is being revealed through, or nil while
     /// no answer has arrived.
-    func streamFor(_ entryId: String) -> StreamingMarkdown? { streams[entryId] }
-
-    /// Feed each run's whole answer text into its stream — the snapshot
-    /// always carries the full text, so only the arrived suffix is appended;
-    /// a rewrite (non-prefix) restarts the stream rather than replaying.
-    private func syncStreams(_ snapshot: ClientSnapshot) {
-        guard let chat = snapshot.conversation?.chat else { return }
-        for entry in chat {
-            guard case let .run(id, cot, _, _, _) = entry, let answer = cot.answer else { continue }
-            let stream = streams[id] ?? StreamingMarkdown(pace: answer.streaming ? .standard : nil)
-            if answer.text.hasPrefix(stream.markdown) {
-                let delta = answer.text.dropFirst(stream.markdown.count)
-                // A finished stream may still see a rewritten tail — start
-                // over instead of tripping append-after-finish.
-                if !delta.isEmpty, stream.stream.isFinished {
-                    let fresh = StreamingMarkdown(pace: nil)
-                    fresh.append(answer.text)
-                    fresh.finish()
-                    streams[id] = fresh
-                    continue
-                }
-                if !delta.isEmpty { stream.append(String(delta)) }
-            } else {
-                let fresh = StreamingMarkdown(pace: nil)
-                fresh.append(answer.text)
-                fresh.finish()
-                streams[id] = fresh
-                continue
-            }
-            if !answer.streaming { stream.finish() }
-            streams[id] = stream
-        }
-    }
+    func streamFor(_ entryId: String) -> StreamingMarkdown? { replyStreams.stream(for: entryId) }
 
     private func label(for connection: ConnectionState) -> String {
         switch connection {

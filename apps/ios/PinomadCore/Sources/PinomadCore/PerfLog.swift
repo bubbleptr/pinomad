@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 /// Optional delivery-latency recorder for on-device perf runs (ADR-0024
 /// §5). `xctrace --attach` cannot see processes on this iOS/Xcode combo,
@@ -15,7 +16,8 @@ public final class PerfLog: @unchecked Sendable {
         let t: Double // epoch ms
         let name: String
         let version: UInt64?
-        let ms: Double? // interval measurements (snapshot compute time)
+        let ms: Double? // interval measurements (snapshot compute time, hitch gap)
+        let span: Double? // expected frame interval for hitch events
         let mem: Double? // resident memory MB at the mark
     }
 
@@ -29,17 +31,17 @@ public final class PerfLog: @unchecked Sendable {
     }
 
     public func mark(_ name: String, version: UInt64? = nil) {
-        record(name, version: version, ms: nil)
+        record(name, version: version, ms: nil, span: nil)
     }
 
     public func measure(_ name: String, ms: Double, version: UInt64? = nil) {
-        record(name, version: version, ms: ms)
+        record(name, version: version, ms: ms, span: nil)
     }
 
-    private func record(_ name: String, version: UInt64?, ms: Double?) {
+    private func record(_ name: String, version: UInt64?, ms: Double?, span: Double? = nil) {
         guard enabled else { return }
         lock.lock()
-        events.append(Event(t: Date().timeIntervalSince1970 * 1000, name: name, version: version, ms: ms, mem: Self.footprint()))
+        events.append(Event(t: Date().timeIntervalSince1970 * 1000, name: name, version: version, ms: ms, span: span, mem: Self.footprint()))
         lock.unlock()
     }
 
@@ -53,11 +55,25 @@ public final class PerfLog: @unchecked Sendable {
             var parts = ["\"t\":\(e.t)", "\"n\":\"\(e.name)\""]
             if let v = e.version { parts.append("\"v\":\(v)") }
             if let m = e.ms { parts.append("\"ms\":\(m)") }
+            if let s = e.span { parts.append("\"span\":\(s)") }
             if let m = e.mem { parts.append("\"mem\":\(m)") }
             return "{\(parts.joined(separator: ","))}"
         }
         try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent(Self.fileName), atomically: true, encoding: .utf8)
     }
+
+    /// Start counting dropped frames via CADisplayLink. Each stall — a
+    /// frame gap longer than two expected frame intervals — lands as a
+    /// `hitch` event whose `ms` is the gap and `span` the expected frame.
+    /// Call on the main thread; runs only while `enabled`.
+    public func startFrameMonitor() {
+        guard enabled, Thread.isMainThread, monitor == nil else { return }
+        monitor = FrameMonitor { [weak self] gapMs, frameMs in
+            self?.record("hitch", version: nil, ms: gapMs, span: frameMs)
+        }
+    }
+
+    private var monitor: FrameMonitor?
 
     /// Resident size in MB — good enough for the 250 MB budget check.
     private static func footprint() -> Double? {
@@ -70,4 +86,32 @@ public final class PerfLog: @unchecked Sendable {
         }
         return result == KERN_SUCCESS ? Double(info.resident_size) / 1_048_576 : nil
     }
+}
+
+/// Counts dropped frames on the main run loop: the CADisplayLink tick
+/// fires once per expected frame, so a hitching main thread shows up as
+/// a gap between ticks longer than two frame intervals.
+private final class FrameMonitor: NSObject {
+    private let onStall: (Double, Double) -> Void
+    private var link: CADisplayLink?
+    private var last: CFTimeInterval = 0
+
+    init(onStall: @escaping (Double, Double) -> Void) {
+        self.onStall = onStall
+        super.init()
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let frame = (link.targetTimestamp - link.timestamp) * 1000
+        if last > 0 {
+            let gap = (link.timestamp - last) * 1000
+            if gap > 2 * frame { onStall(gap, frame) }
+        }
+        last = link.timestamp
+    }
+
+    deinit { link?.invalidate() }
 }

@@ -76,6 +76,10 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
     public var images: [ToolImage]
     /// Calls made from inside this one, as a script calling other tools.
     public var children: [ToolCall]
+    /// The host marked this call as the one executing now — submitted
+    /// but not yet running calls stay queued behind it, so a batch's
+    /// summary should show this one rather than the last in-progress.
+    public var isActive: Bool
 
     public init(
         id: String,
@@ -86,7 +90,8 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         duration: Duration? = nil,
         diffStat: DiffStat? = nil,
         images: [ToolImage] = [],
-        children: [ToolCall] = []
+        children: [ToolCall] = [],
+        isActive: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -97,6 +102,7 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
         self.diffStat = diffStat
         self.images = images
         self.children = children
+        self.isActive = isActive
     }
 }
 

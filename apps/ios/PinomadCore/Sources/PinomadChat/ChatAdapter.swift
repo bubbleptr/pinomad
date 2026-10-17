@@ -36,9 +36,13 @@ public enum ChatAdapter {
     }
 
     /// One step's calls, in message order — the kit folds a batch itself.
-    public static func calls(of stepId: String, tools: [ToolItem]) -> [AgentChatCore.ToolCall] {
+    /// `activeToolCallId` names the call the core says is executing; calls
+    /// whose input is complete but which have not started are demoted to
+    /// `streamingInput` (waiting), so the folded row's "running" call is
+    /// the real one rather than the last submitted.
+    public static func calls(of stepId: String, tools: [ToolItem], activeToolCallId: String? = nil) -> [AgentChatCore.ToolCall] {
         tools.enumerated().map { index, tool in
-            call(tool, fallbackId: "\(stepId).t\(index)")
+            call(tool, fallbackId: "\(stepId).t\(index)", activeToolCallId: activeToolCallId)
         }
     }
 
@@ -46,11 +50,12 @@ public enum ChatAdapter {
     /// JSON args (a path tail or the command) over the raw payload — the
     /// folded row reads it, and the full args stay in the details pane of
     /// callers that set them (codemode's args are already the script).
-    public static func call(_ tool: ToolItem, fallbackId: String) -> AgentChatCore.ToolCall {
-        AgentChatCore.ToolCall(
-            id: tool.toolCallId ?? fallbackId,
+    public static func call(_ tool: ToolItem, fallbackId: String, activeToolCallId: String? = nil) -> AgentChatCore.ToolCall {
+        let id = tool.toolCallId ?? fallbackId
+        return AgentChatCore.ToolCall(
+            id: id,
             name: toolDisplayName(name: tool.toolName) ?? tool.toolName ?? "tool",
-            state: state(of: tool.state),
+            state: state(of: tool.state, waiting: activeToolCallId != nil && id != activeToolCallId),
             input: toolTargetFromArgs(argsText: tool.argsText) ?? tool.argsText,
             output: output(of: tool),
             duration: tool.durationMs.map { .milliseconds(Int($0.rounded())) },
@@ -59,8 +64,9 @@ public enum ChatAdapter {
             },
             images: tool.images.map { ToolImage(data: $0.data, mimeType: $0.mimeType) },
             children: tool.children.enumerated().map { index, child in
-                call(child, fallbackId: "\(tool.toolCallId ?? fallbackId).c\(index)")
-            }
+                call(child, fallbackId: "\(id).c\(index)")
+            },
+            isActive: id == activeToolCallId
         )
     }
 
@@ -70,8 +76,8 @@ public enum ChatAdapter {
             .thinking(id: id, text: text, isLive: live)
         case let .interim(id, text):
             .interim(id: id, text: text)
-        case let .tools(id, tools, _, _):
-            .tools(id: id, calls: calls(of: id, tools: tools))
+        case let .tools(id, tools, _, activeToolCallId):
+            .tools(id: id, calls: calls(of: id, tools: tools, activeToolCallId: activeToolCallId))
         }
     }
 
@@ -90,10 +96,13 @@ public enum ChatAdapter {
         if failed { .failed } else if interrupted { .interrupted } else { .completed }
     }
 
-    private static func state(of state: ToolPartState) -> AgentChatCore.ToolCall.State {
+    private static func state(of state: ToolPartState, waiting: Bool) -> AgentChatCore.ToolCall.State {
         switch state {
         case .inputStreaming: .streamingInput
-        case .inputAvailable: .running
+        // `inputAvailable` means submitted; the core executes in order, so
+        // when the step names a different active call this one is queued —
+        // "preparing" — rather than running.
+        case .inputAvailable: waiting ? .streamingInput : .running
         case .outputAvailable: .succeeded
         case .outputError: .failed
         }

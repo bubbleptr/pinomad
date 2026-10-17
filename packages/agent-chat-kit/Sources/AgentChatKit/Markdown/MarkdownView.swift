@@ -48,18 +48,9 @@ public struct StreamingMarkdownView: View {
     }
 
     public var body: some View {
-        // iOS 27 regression: a TimelineView with the animation schedule
-        // inside a bottom-anchored LazyVStack never completes its first
-        // layout — the whole list renders blank. The fade is cosmetic
-        // (pacing lives in StreamingMarkdown itself), so drop the timeline
-        // there; older systems keep the word-by-word fade.
-        let timelineSafe = ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
-        if markdown.isAnimating && !reduceMotion && timelineSafe {
-            TimelineView(.animation) { context in
-                MarkdownView(blocks: markdown.stream.blocks, tailFade: markdown.tailOpacities(at: context.date))
-            }
-        } else {
-            MarkdownView(blocks: markdown.stream.blocks, tailFade: nil)
+        let fades = markdown.isAnimating && !reduceMotion
+        TimelineView(.animation(paused: !fades)) { context in
+            MarkdownView(blocks: markdown.stream.blocks, tailFade: fades ? markdown.tailOpacities(at: context.date) : nil)
         }
     }
 }
