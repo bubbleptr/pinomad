@@ -36,7 +36,7 @@ cd apps/ios/PinomadCore
 xcodebuild -scheme PinomadCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）：
+App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）。App 图标是 `apps/ios/Pinomad/AppIcon.icon`，和桌面端的 `apps/desktop/build/icon.icon` 是同一份 Icon Composer 工程，改图标时两份一起换：
 
 ```sh
 xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
