@@ -1,3 +1,4 @@
+import Foundation
 import PinomadCore
 
 /// The composer's staged images: what's ready, how many are still being
@@ -8,8 +9,14 @@ public struct AttachmentTray: Equatable, Sendable {
     /// A claim on slots for a batch being prepared.
     public struct Reservation: Equatable, Sendable {
         public let count: Int
+        let tray: UUID
         let generation: Int
     }
+
+    /// Which tray this is: a reservation only lands in the tray that made
+    /// it, not in a replacement (reconnecting rebuilds every tray while an
+    /// old batch may still be preparing).
+    private let identity = UUID()
 
     public private(set) var images: [MessageImage] = []
     public private(set) var preparing = 0
@@ -40,18 +47,22 @@ public struct AttachmentTray: Equatable, Sendable {
         guard kept > 0 else { return nil }
         taken += kept
         preparing += kept
-        return Reservation(count: kept, generation: generation)
+        return Reservation(count: kept, tray: identity, generation: generation)
+    }
+
+    private func owns(_ reservation: Reservation) -> Bool {
+        reservation.tray == identity && reservation.generation == generation
     }
 
     public mutating func fulfil(_ reservation: Reservation, with prepared: [MessageImage]) {
-        guard reservation.generation == generation else { return }
+        guard owns(reservation) else { return }
         preparing -= reservation.count
         images += prepared
     }
 
     /// One unreadable image drops its whole batch, with the reason.
     public mutating func fail(_ reservation: Reservation, message: String) {
-        guard reservation.generation == generation else { return }
+        guard owns(reservation) else { return }
         preparing -= reservation.count
         taken -= reservation.count
         error = message

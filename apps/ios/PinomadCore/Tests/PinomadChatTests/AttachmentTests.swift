@@ -68,6 +68,26 @@ private let jpeg = MessageImage(data: "AAAA", mimeType: "image/jpeg")
         #expect(tray.freeSlots == 4)
     }
 
+    /// Reconnecting rebuilds the trays while an old batch may still be
+    /// preparing; its result must not land in the new tray (it would push
+    /// `preparing` negative and attach an image the reader never saw).
+    @Test func aReservationFromAReplacedTrayIsIgnored() throws {
+        var old = AttachmentTray(limit: 4)
+        let staleClaim = old.reserve(1, accepts: true)
+        let stale = try #require(staleClaim)
+        var tray = AttachmentTray(limit: 4)
+        let freshClaim = tray.reserve(1, accepts: true)
+        let fresh = try #require(freshClaim)
+        tray.fulfil(stale, with: [jpeg])
+        tray.fail(stale, message: "x")
+        #expect(tray.preparing == 1)
+        #expect(tray.images.isEmpty)
+        #expect(tray.error == nil)
+        tray.fulfil(fresh, with: [jpeg])
+        #expect(tray.preparing == 0)
+        #expect(tray.images.count == 1)
+    }
+
     @Test func removingAnImageFreesItsSlot() throws {
         var tray = AttachmentTray(limit: 4)
         let slotClaim = tray.reserve(1, accepts: true)

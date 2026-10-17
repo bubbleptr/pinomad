@@ -11,6 +11,13 @@ struct ImageViewer: View {
     @State private var scale: CGFloat = 1
     @State private var settledScale: CGFloat = 1
     @State private var drag: CGSize = .zero
+    /// Where the last pan left the zoomed image; each new drag adds to it.
+    @State private var settledDrag: CGSize = .zero
+
+    private func recentre() {
+        drag = .zero
+        settledDrag = .zero
+    }
 
     var body: some View {
         ZStack {
@@ -26,18 +33,27 @@ struct ImageViewer: View {
                     .gesture(
                         MagnifyGesture()
                             .onChanged { scale = max(1, settledScale * $0.magnification) }
-                            .onEnded { _ in settledScale = scale }
+                            .onEnded { _ in
+                                settledScale = scale
+                                // Back at fit: recentre, so the next drag is a
+                                // dismiss pull from the middle.
+                                if scale <= 1 { withAnimation(.snappy) { recentre() } }
+                            }
                     )
                     .simultaneousGesture(
                         DragGesture()
                             .onChanged { value in
-                                // Zoomed in, a drag pans; at fit it's a dismiss pull.
-                                drag = value.translation
+                                // Zoomed in, a drag pans on from where the last
+                                // one stopped; at fit it's a dismiss pull.
+                                drag = CGSize(width: settledDrag.width + value.translation.width,
+                                              height: settledDrag.height + value.translation.height)
                             }
                             .onEnded { value in
-                                if scale <= 1, abs(value.translation.height) > 80 || abs(value.predictedEndTranslation.height) > 300 {
+                                if scale > 1 {
+                                    settledDrag = drag
+                                } else if abs(value.translation.height) > 80 || abs(value.predictedEndTranslation.height) > 300 {
                                     close()
-                                } else if scale <= 1 {
+                                } else {
                                     withAnimation(.snappy) { drag = .zero }
                                 }
                             }
@@ -49,7 +65,7 @@ struct ImageViewer: View {
             withAnimation(.snappy) {
                 scale = scale > 1 ? 1 : 2.5
                 settledScale = scale
-                drag = .zero
+                recentre()
             }
         }
         .onTapGesture { close() }
