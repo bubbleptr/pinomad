@@ -12,6 +12,12 @@ import AppKit
 /// transcript republishes whole on every update, and without a cache each
 /// render pass would pay the decode again.
 public struct InlineImage: View {
+    /// The decoded picture, from the same cache the view draws with — for
+    /// callers that lay it out themselves (crops, a full-screen viewer).
+    public static func decoded(_ image: ToolImage) -> Image? {
+        InlineImageCache.image(for: image)
+    }
+
     let image: ToolImage
     let maxWidth: CGFloat
     let maxHeight: CGFloat
@@ -22,13 +28,22 @@ public struct InlineImage: View {
         self.maxHeight = maxHeight
     }
 
+    @Environment(\.inlineImageAction) private var action
+
     public var body: some View {
         if let decoded = InlineImageCache.image(for: image) {
-            decoded
+            let shown = decoded
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: maxWidth, maxHeight: maxHeight, alignment: .leading)
                 .clipShape(.rect(cornerRadius: 10))
+            if let action {
+                shown
+                    .onTapGesture { action.open(image) }
+                    .accessibilityAddTraits(.isButton)
+            } else {
+                shown
+            }
         } else {
             Text("Image (\(image.mimeType))", bundle: .module)
                 .font(.caption)
@@ -61,4 +76,18 @@ enum InlineImageCache {
         if let decoded { cache.setObject(Box(decoded), forKey: key) }
         return decoded
     }
+}
+
+/// What tapping an inline image does — e.g. open it full screen. Set it
+/// once high in the tree; images without one are inert.
+public struct InlineImageAction {
+    let open: (ToolImage) -> Void
+
+    public init(_ open: @escaping (ToolImage) -> Void) {
+        self.open = open
+    }
+}
+
+extension EnvironmentValues {
+    @Entry public var inlineImageAction: InlineImageAction?
 }

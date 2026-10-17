@@ -40,6 +40,10 @@ final class AppModel {
     /// Unsent composer text per conversation — kept across navigation,
     /// dropped with the session (a new host has other conversations).
     var drafts: [UInt64: String] = [:]
+    /// Staged images per conversation, beside its draft text.
+    var trays: [UInt64: AttachmentTray] = [:]
+    /// The message image shown full screen, if any.
+    var viewing: MessageImage?
     /// In-progress answers per pending question request id.
     var questionDrafts: [String: QuestionDraft] = [:]
     /// Bumped when the reader acts at the transcript's end (sends, starts
@@ -195,6 +199,8 @@ final class AppModel {
         replyStreams.sync(chat: nil)
         drafts = [:]
         questionDrafts = [:]
+        trays = [:]
+        viewing = nil
         toasts = []
         noticeFeed = NoticeFeed()
         phase = .connecting
