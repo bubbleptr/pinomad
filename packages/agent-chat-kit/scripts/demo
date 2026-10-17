@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Builds the demo app on a Mac, installs it on the booted simulator and
+# launches it. Give seconds after launch to take screenshots at, e.g.
+# `scripts/demo 1 3 8`; they land in .build/shots/ here. DEMO_ARGS are passed
+# to the app, e.g. DEMO_ARGS='-AppleLanguages (zh-Hans)' for Chinese strings.
+# Off a Mac the build runs on mbp over SSH and the shots are pulled back.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+shots="${*:-}"
+# Launch args are interpolated into the command string; quote each word or
+# parens like (zh-Hans) break the parsing shell.
+demo_args=""
+for arg in ${DEMO_ARGS:-}; do demo_args="$demo_args '${arg//\'/\'\\\'\'}'"; done
+scripts/mbp "set -e
+cd Demo
+xcodebuild -quiet -project AgentChatDemo.xcodeproj -scheme AgentChatDemo \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath ../.build/DerivedData CODE_SIGNING_ALLOWED=NO build
+cd ..
+app=.build/DerivedData/Build/Products/Debug-iphonesimulator/AgentChatDemo.app
+xcrun simctl install booted \$app
+xcrun simctl terminate booted build.kieran.AgentChatDemo 2>/dev/null || true
+xcrun simctl launch booted build.kieran.AgentChatDemo$demo_args >/dev/null
+rm -rf .build/shots && mkdir -p .build/shots
+prev=0
+for t in $shots; do
+  sleep \$(echo \"\$t - \$prev\" | bc)
+  prev=\$t
+  xcrun simctl io booted screenshot --type=png .build/shots/t\$t.png >/dev/null 2>&1
+done"
+
+if [ -n "$shots" ]; then
+  if [ "$(uname)" != Darwin ]; then
+    rm -rf .build/shots && mkdir -p .build/shots
+    rsync -a "void@mbp:${AGENTCHATKIT_REMOTE_DIR:-code/projects/AgentChatKit}/.build/shots/" .build/shots/
+  fi
+  ls .build/shots
+fi
