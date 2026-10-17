@@ -30,7 +30,10 @@ pub enum ConnOut {
 /// One generation of a socket-level connection. Implementations handle the
 /// protocol on top of raw bytes — Noise + records for `SecureConnection`,
 /// plain JSON for tests' `PlaintextConnection`.
-pub trait Connection {
+///
+/// `Send` because the whole state machine crosses threads at the FFI
+/// boundary (the UniFFI facade owns it behind a mutex).
+pub trait Connection: Send {
     /// The socket is writable: send whatever the protocol needs first
     /// (the IK message 1 for the secure channel, nothing for plaintext).
     fn opened(&mut self, out: &mut Vec<ConnOut>);
@@ -45,8 +48,9 @@ pub trait Connection {
 }
 
 /// Makes new connections; each `open` is one generation (the reference
-/// closes over per-open state the same way).
-pub trait Transport {
+/// closes over per-open state the same way). `Send` for the same reason as
+/// `Connection`.
+pub trait Transport: Send {
     /// The URL the state machine reports in errors and pairing commands.
     fn url(&self) -> &str;
     /// A short name for error messages, like `transport.label`.

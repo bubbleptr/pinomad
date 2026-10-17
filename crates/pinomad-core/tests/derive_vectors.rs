@@ -511,7 +511,7 @@ fn image_images(case: &Json) -> Json {
             if let Some(mime) = image.get("mimeType") {
                 object.set(U16String::from_str("mimeType"), mime.clone());
             }
-            out.push(Json::Object(std::rc::Rc::new(object)));
+            out.push(Json::Object(std::sync::Arc::new(object)));
         } else {
             out.push(image.clone());
         }
@@ -628,7 +628,7 @@ fn tool_diff_stat_replays() {
             let mut object = pinomad_core::json::JsonObject::new();
             object.set(U16String::from_str("additions"), Json::Number(stat.additions));
             object.set(U16String::from_str("deletions"), Json::Number(stat.deletions));
-            Json::Object(std::rc::Rc::new(object))
+            Json::Object(std::sync::Arc::new(object))
         }));
         assert_eq!(
 norm(&got),

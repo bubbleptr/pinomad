@@ -3,7 +3,7 @@
 // deterministic events, no sleeps.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
@@ -20,7 +20,7 @@ fn obj(fields: &[(&str, Json)]) -> Json {
     for (name, value) in fields {
         object.set(U16String::from_str(name), value.clone());
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }
 
 fn default_snapshots() -> HashMap<String, Json> {
@@ -105,7 +105,7 @@ fn merge_hello(base: &Json, extras: &[(String, Json)]) -> Json {
     for (name, value) in extras {
         object.set(U16String::from_str(name), value.clone());
     }
-    Json::Object(Rc::new(object))
+    Json::Object(Arc::new(object))
 }
 
 fn protocol_obj(minor: f64) -> Json {

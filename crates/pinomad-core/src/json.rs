@@ -10,7 +10,7 @@
 // ascending order, then the rest in insertion order. serde_json is
 // deliberately not used anywhere in the streaming state path.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::u16str::U16String;
 
@@ -26,8 +26,8 @@ pub enum Json {
     Bool(bool),
     Number(f64),
     String(U16String),
-    Array(Rc<Vec<Json>>),
-    Object(Rc<JsonObject>),
+    Array(Arc<Vec<Json>>),
+    Object(Arc<JsonObject>),
 }
 
 /// An object's entries in insertion order. The JS enumeration order —
@@ -175,11 +175,11 @@ pub fn array_index(units: &[u16]) -> Option<u64> {
 
 impl Json {
     pub fn object() -> Self {
-        Json::Object(Rc::new(JsonObject::new()))
+        Json::Object(Arc::new(JsonObject::new()))
     }
 
     pub fn array(items: Vec<Json>) -> Self {
-        Json::Array(Rc::new(items))
+        Json::Array(Arc::new(items))
     }
 
     /// `JSON.parse(text)`; the input is UTF-8 — the record layer already
@@ -282,14 +282,14 @@ impl Json {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Rc<Vec<Json>>> {
+    pub fn as_array(&self) -> Option<&Arc<Vec<Json>>> {
         match self {
             Json::Array(items) => Some(items),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&Rc<JsonObject>> {
+    pub fn as_object(&self) -> Option<&Arc<JsonObject>> {
         match self {
             Json::Object(object) => Some(object),
             _ => None,
@@ -335,8 +335,8 @@ pub fn js_strict_eq(a: &Json, b: &Json) -> bool {
         (Json::Bool(x), Json::Bool(y)) => x == y,
         (Json::Number(x), Json::Number(y)) => x == y, // NaN != NaN
         (Json::String(x), Json::String(y)) => x == y,
-        (Json::Array(x), Json::Array(y)) => Rc::ptr_eq(x, y),
-        (Json::Object(x), Json::Object(y)) => Rc::ptr_eq(x, y),
+        (Json::Array(x), Json::Array(y)) => Arc::ptr_eq(x, y),
+        (Json::Object(x), Json::Object(y)) => Arc::ptr_eq(x, y),
         _ => false,
     }
 }
@@ -384,8 +384,8 @@ impl JsKey {
                 JsKey::Number(bits)
             }
             Some(Json::String(s)) => JsKey::Str(s.units().to_vec()),
-            Some(Json::Array(v)) => JsKey::Object(Rc::as_ptr(v) as usize),
-            Some(Json::Object(v)) => JsKey::Object(Rc::as_ptr(v) as usize),
+            Some(Json::Array(v)) => JsKey::Object(Arc::as_ptr(v) as usize),
+            Some(Json::Object(v)) => JsKey::Object(Arc::as_ptr(v) as usize),
         }
     }
 }
@@ -461,7 +461,7 @@ impl<'a> Parser<'a> {
                 self.skip_ws();
                 if self.peek() == Some(b']') {
                     self.pos += 1;
-                    return Ok(Json::Array(Rc::new(items)));
+                    return Ok(Json::Array(Arc::new(items)));
                 }
                 loop {
                     self.skip_ws();
@@ -473,7 +473,7 @@ impl<'a> Parser<'a> {
                         }
                         Some(b']') => {
                             self.pos += 1;
-                            return Ok(Json::Array(Rc::new(items)));
+                            return Ok(Json::Array(Arc::new(items)));
                         }
                         _ => return Err(self.error("expected ',' or ']'")),
                     }
@@ -485,7 +485,7 @@ impl<'a> Parser<'a> {
                 self.skip_ws();
                 if self.peek() == Some(b'}') {
                     self.pos += 1;
-                    return Ok(Json::Object(Rc::new(object)));
+                    return Ok(Json::Object(Arc::new(object)));
                 }
                 loop {
                     self.skip_ws();
@@ -508,7 +508,7 @@ impl<'a> Parser<'a> {
                         }
                         Some(b'}') => {
                             self.pos += 1;
-                            return Ok(Json::Object(Rc::new(object)));
+                            return Ok(Json::Object(Arc::new(object)));
                         }
                         _ => return Err(self.error("expected ',' or '}'")),
                     }
