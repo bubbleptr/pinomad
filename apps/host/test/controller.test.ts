@@ -85,6 +85,9 @@ describe("remote controller", () => {
     const bystander = await connectTo(defer, host);
     const firstId = await startChat(switcher, "first");
     await bystander.controller.switchConversation(firstId);
+    // The faux answers are one queue taken at each model call: the first turn
+    // must take its answer before the other conversation's turn can start.
+    await waitForView(bystander.view, (view) => transcript(view.conversation!).at(-1)?.text === "from the first conversation");
     // An ownerless conversation outside the index is still addressable by stream.
     const { model } = (await host.harness.snapshot(AgentDoc, firstId, BACKGROUND_CONTEXT))!;
     const other = await host.harness.createConversation(
