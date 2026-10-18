@@ -144,12 +144,19 @@ public struct MentionMenu: Equatable, Sendable {
         let query = token.query.hasPrefix("./")
             ? String(token.query.dropFirst(2))
             : token.query
-        guard lastScope != scope || lastQuery != query else { return nil }
+        let scopeChanged = lastScope != scope
+        if scopeChanged {
+            // A new root must never show the previous root's paths, so swap
+            // now rather than after the round trip.
+            files = []
+            filesTruncated = false
+        }
+        guard scopeChanged || lastQuery != query else { return nil }
         generation += 1
         lastScope = scope
         lastQuery = query
-        files = []
-        filesTruncated = false
+        // Same root, new query: keep the previous candidates on screen while
+        // the debounced request runs; the next answer or failure replaces them.
         filesLoading = true
         return FileRequest(generation: generation, scope: scope, query: query)
     }

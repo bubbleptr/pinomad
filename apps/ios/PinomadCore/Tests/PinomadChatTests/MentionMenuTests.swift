@@ -103,6 +103,51 @@ private func role(_ name: String, _ description: String = "") -> AgentRole {
         #expect(!menu.filesLoading)
     }
 
+    /// Typing one more character must not blank the file group for a
+    /// round trip; the old candidates stay until the new answer lands.
+    @Test func sameScopeKeepsOldFilesUntilTheNewAnswer() throws {
+        var menu = MentionMenu()
+        let firstRequest = menu.refresh(text: "@r", cursor: 2, roles: [], scope: scope)
+        let first = try #require(firstRequest)
+        menu.receive(first, files: ["README.md"], truncated: true)
+
+        let secondRequest = menu.refresh(text: "@re", cursor: 3, roles: [], scope: scope)
+        let second = try #require(secondRequest)
+        #expect(menu.files == ["README.md"])
+        #expect(menu.filesTruncated)
+        #expect(menu.filesLoading)
+
+        // The previous query's answer is stale and must not replace them.
+        menu.receive(first, files: ["stale"], truncated: false)
+        #expect(menu.files == ["README.md"])
+
+        menu.receive(second, files: ["README.md", "Sources/App.swift"], truncated: false)
+        #expect(menu.files == ["README.md", "Sources/App.swift"])
+        #expect(!menu.filesTruncated)
+        #expect(!menu.filesLoading)
+    }
+
+    /// A new root is a different file universe: clear it before the request
+    /// rather than showing paths from the old scope.
+    @Test func changingScopeClearsFilesImmediately() throws {
+        var menu = MentionMenu()
+        let firstRequest = menu.refresh(text: "@r", cursor: 2, roles: [], scope: scope)
+        let first = try #require(firstRequest)
+        menu.receive(first, files: ["old"], truncated: true)
+
+        let secondRequest = menu.refresh(
+            text: "@r", cursor: 2, roles: [], scope: .conversation(conversationId: 8))
+        let second = try #require(secondRequest)
+        #expect(menu.files.isEmpty)
+        #expect(!menu.filesTruncated)
+        #expect(menu.filesLoading)
+
+        menu.receive(first, files: ["stale"], truncated: false)
+        #expect(menu.files.isEmpty)
+        menu.receive(second, files: ["new"], truncated: false)
+        #expect(menu.files == ["new"])
+    }
+
     @Test func aFileFailureLeavesAgentsAlone() throws {
         var menu = MentionMenu()
         let requestValue = menu.refresh(
