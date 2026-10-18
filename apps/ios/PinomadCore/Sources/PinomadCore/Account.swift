@@ -179,33 +179,6 @@ extension AccountFailure: LocalizedError {
     public var errorDescription: String? { AccountCopy.message(self) }
 }
 
-/// The iOS account rule: the core's secure-origin check plus a real
-/// loopback test for plaintext http. The core treats any host starting with
-/// "127." as loopback, which would let http://127.relay.example.com carry a
-/// password in cleartext. iOS cannot change the shared core here, so it
-/// refuses that form before any request leaves the device.
-public func isSecureAccountOrigin(_ origin: String) -> Bool {
-    guard isSecureServerOrigin(origin: origin),
-          let url = URL(string: origin),
-          let scheme = url.scheme?.lowercased(),
-          let rawHost = url.host?.lowercased()
-    else { return false }
-    if scheme == "https" { return true }
-    guard scheme == "http" else { return false }
-
-    var host = rawHost
-    if host.hasSuffix(".") { host.removeLast() }
-    if host == "localhost" || host.hasSuffix(".localhost")
-        || host == "::1" || host == "[::1]" {
-        return true
-    }
-    let octets = host.split(separator: ".", omittingEmptySubsequences: false)
-    guard octets.count == 4,
-          octets.allSatisfy({ UInt8(String($0)) != nil })
-    else { return false }
-    return octets[0] == "127"
-}
-
 // MARK: - Transport
 
 public struct AccountHTTPResponse: Equatable, Sendable {
@@ -344,7 +317,7 @@ public struct AccountAPI: Sendable {
         let built = accountRequest(origin: origin, token: token, op: op)
         // Defense in depth: even an API value built somewhere other than the
         // login form never sends credentials over plaintext.
-        guard isSecureAccountOrigin(built.url) else {
+        guard isSecureServerOrigin(origin: built.url) else {
             return .failure(AccountFailure(code: "insecure_origin"))
         }
         do {
@@ -379,7 +352,7 @@ public struct AccountProbe: Sendable {
 
     public func probe(origin: String) async -> AccountsProbe {
         let request = accountProbeRequest(origin: origin)
-        guard isSecureAccountOrigin(request.url) else {
+        guard isSecureServerOrigin(origin: request.url) else {
             return .unreachable
         }
         let response = await withTaskGroup(of: AccountHTTPResponse?.self) { group in

@@ -141,7 +141,7 @@ struct AccountLoginView: View {
             error = AccountCopy.message(AccountFailure(code: "origin_required"))
             return
         }
-        guard isSecureAccountOrigin(server) else {
+        guard isSecureServerOrigin(origin: server) else {
             phase = .idle
             error = AccountCopy.message(AccountFailure(code: "insecure_origin"))
             return

@@ -247,7 +247,7 @@ struct AccountTests {
 
     @Test func insecureOriginNeverReachesTheTransport() async {
         let transport = StubAccountTransport()
-        let api = AccountAPI(origin: "http://relay.example.com", token: "tok", transport: transport)
+        let api = AccountAPI(origin: "http://127.example.com", token: "tok", transport: transport)
         let result = await api.listHosts()
         guard case .failure(let failure) = result else {
             Issue.record("expected insecure_origin, got \(result)")
@@ -289,22 +289,6 @@ struct AccountTests {
         #expect(AccountCopy.message(AccountFailure.network) == "连不上服务端，检查地址和网络。")
         #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "用户名或密码不对。")
         #expect(AccountCopy.message(AccountFailure(code: "surprise")).contains("surprise"))
-    }
-
-    /// "Sign out everywhere" must warn even on 401: that only proves this
-    /// device's token was dead, not that the other sessions were revoked.
-    /// The core accepts any "127." prefix as loopback; iOS must not let
-    /// http://127.relay.example.com carry a password in cleartext.
-    @Test func strictOriginOnlyAllowsRealLoopback() {
-        #expect(isSecureAccountOrigin("http://127.0.0.1:7441"))
-        #expect(isSecureAccountOrigin("http://127.1.2.3"))
-        #expect(isSecureAccountOrigin("http://localhost:7441"))
-        #expect(isSecureAccountOrigin("http://dev.localhost:7441"))
-        #expect(isSecureAccountOrigin("https://relay.example.com"))
-        #expect(!isSecureAccountOrigin("http://127.relay.example.com"))
-        #expect(!isSecureAccountOrigin("http://127.0.0.1.evil.example"))
-        #expect(!isSecureAccountOrigin("http://relay.example.com"))
-        #expect(!isSecureAccountOrigin("ftp://127.0.0.1"))
     }
 
     @Test func signOutWarningDistinguishesScope() {

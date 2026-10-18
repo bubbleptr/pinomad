@@ -64,7 +64,7 @@ extension AppModel {
             accountError = AccountCopy.message(AccountFailure(code: "origin_required"))
             return AccountFailure(code: "origin_required")
         }
-        guard isSecureAccountOrigin(server) else {
+        guard isSecureServerOrigin(origin: server) else {
             let failure = AccountFailure(code: "insecure_origin")
             accountError = AccountCopy.message(failure)
             return failure
