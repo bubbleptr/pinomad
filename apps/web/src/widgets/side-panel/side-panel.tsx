@@ -15,6 +15,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
+import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -24,7 +25,7 @@ import { requestNotificationPermission } from "../../entities/conversation/notif
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
-import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
@@ -213,7 +214,18 @@ function SideRow({
 }) {
   return (
     <ListItem
-      label={displayName(summary)}
+      label={
+        // A fork carries the named agent its top-level was created with;
+        // subagent rows keep their existing look.
+        summary.kind !== "fork" || summary.role === undefined ? (
+          displayName(summary)
+        ) : (
+          <span className="inline-flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate">{displayName(summary)}</span>
+            <span className="shrink-0 text-xs text-muted">@{summary.role}</span>
+          </span>
+        )
+      }
       description={
         summary.status === "running" && summary.activity !== undefined
           ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
@@ -364,7 +376,18 @@ function ThreadDetail({
           onSubmit={submit}
           onStop={() => void remote.controller.abort(side.id)}
           onValueChange={setDraft}
-          triggers={useAgentMentions(view.agents)}
+          triggers={useAtMentions(
+            view.agents,
+            hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+              ? {
+                  // The fork lists its own checkout — forks and subagents keep
+                  // separate cwds, never the parent's.
+                  key: `conversation:${side.id}`,
+                  list: (query) =>
+                    remote.controller.listFiles({ kind: "conversation", conversationId: side.id }, query),
+                }
+              : undefined,
+          )}
         />
       </div>
     </div>

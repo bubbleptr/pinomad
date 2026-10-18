@@ -1,7 +1,14 @@
 import type { ModelRef } from "@earendil-works/pi-durable";
 import { useState } from "react";
 import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
-import { clampLevel, reconcileDraftPick, summaryOf } from "@pinomad/client/model.ts";
+import {
+  clampLevel,
+  reconcileDraftPick,
+  resolveAgentDraft,
+  summaryOf,
+  type AgentDraftOverrides,
+  type AgentDraftResolution,
+} from "@pinomad/client/model.ts";
 
 const DRAFT_MODEL_KEY = "pinomad.draft.model";
 
@@ -44,11 +51,22 @@ export interface DraftModelPick {
  * The returned pick is reconciled against `view.models` at render time, not
  * synced into state: after a reconnect whose hello lists different models, a
  * remembered pick falls back to the host defaults, then the first model.
+ *
+ * With a named agent picked (ADR-0023), the pick comes from
+ * `resolveAgentDraft` instead: each side is "inherited" (role pin or host
+ * default, resolved host-side at create) until the user touches it, which
+ * turns that side into an override sent with the call. Overrides never write
+ * the remembered pick — clearing the agent returns to it untouched, and
+ * picking another agent drops the overrides back to full inheritance.
  */
 export function useDraftModelPick(view: DurableView): {
   pick: DraftModelPick;
   setModel: (model: ModelRef) => void;
   setLevel: (level: ThinkingLevel) => void;
+  agent?: string;
+  setAgent: (agent: string | undefined) => void;
+  /** The inherit/override resolution while an agent is picked — undefined otherwise. */
+  resolution?: AgentDraftResolution;
 } {
   const [remembered, setRemembered] = useState<DraftModelPick>(() => {
     const stored = readDraftPick(view.models);
@@ -63,24 +81,45 @@ export function useDraftModelPick(view: DurableView): {
     const want = (stored?.thinkingLevel ?? view.defaults.thinkingLevel ?? "off") as ThinkingLevel;
     return { model, level: clampLevel(levels, want) };
   });
+  const [agent, setAgentState] = useState<string | undefined>(undefined);
+  const [overrides, setOverrides] = useState<AgentDraftOverrides>({});
 
   const remember = (model: ModelRef, level: ThinkingLevel): void => {
     localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
-  const pick = reconcileDraftPick(view.models, view.defaults, remembered);
+  const resolution =
+    agent === undefined ? undefined : resolveAgentDraft(agent, view.agents, view.models, view.defaults, overrides);
+  const reconciled = reconcileDraftPick(view.models, view.defaults, remembered);
+  const pick: DraftModelPick = resolution ?? reconciled;
   const level = pick.level;
 
   return {
     pick,
+    agent,
+    resolution,
     setModel: (next) => {
+      if (agent !== undefined) {
+        setOverrides((current) => ({ ...current, model: next }));
+        return;
+      }
       const nextLevel = clampLevel(summaryOf(view.models, next)?.thinkingLevels ?? ["off"], level);
       setRemembered({ model: next, level: nextLevel });
       remember(next, nextLevel);
     },
     setLevel: (next) => {
+      if (agent !== undefined) {
+        setOverrides((current) => ({ ...current, level: next }));
+        return;
+      }
       setRemembered((current) => ({ ...current, level: next }));
       if (pick.model !== undefined) remember(pick.model, next);
+    },
+    setAgent: (next) => {
+      setAgentState(next);
+      // Switching to another agent or clearing one starts from full
+      // inheritance again — the overrides belonged to the previous pick.
+      setOverrides({});
     },
   };
 }

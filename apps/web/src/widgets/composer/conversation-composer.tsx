@@ -2,11 +2,12 @@ import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useRef, useState } from "react";
+import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -88,7 +89,19 @@ export function ConversationComposer({
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
-        triggers={useAgentMentions(view.agents)}
+        triggers={useAtMentions(
+          view.agents,
+          hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+            ? {
+                key: `conversation:${conversation.conversation.id}`,
+                list: (query) =>
+                  remote.controller.listFiles(
+                    { kind: "conversation", conversationId: conversation.conversation.id },
+                    query,
+                  ),
+              }
+            : undefined,
+        )}
         onStop={busy ? () => void remote.controller.abort() : undefined}
         attachments={attachmentDrawer({ images, pending, onRemove: remove })}
         hasAttachments={images.length > 0}

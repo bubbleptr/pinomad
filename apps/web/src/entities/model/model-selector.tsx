@@ -23,12 +23,18 @@ export function ModelSelector({
   models,
   selected,
   isDisabled = false,
+  sourceHint,
+  problem,
   onModelChange,
   onLevelChange,
 }: {
   models: readonly ModelSummary[];
   selected: { model?: ModelRef; level: ThinkingLevel };
   isDisabled?: boolean;
+  /** Small muted suffix, e.g. which side of the pick is inherited from a named agent. */
+  sourceHint?: string;
+  /** Why the shown pick can't be sent — rendered in red instead of the label. */
+  problem?: { readonly label: string; readonly title: string };
   onModelChange: (model: ModelRef) => void;
   onLevelChange: (level: ThinkingLevel) => void;
 }) {
@@ -112,9 +118,17 @@ export function ModelSelector({
         label="Model and Thinking"
         size="sm"
         variant="ghost"
+        {...(problem === undefined ? {} : { tooltip: problem.title })}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate">{modelLabel(models, selected)}</span>
+          {problem === undefined ? (
+            <span className="truncate">{modelLabel(models, selected)}</span>
+          ) : (
+            <span className="truncate text-danger">{problem.label}</span>
+          )}
+          {sourceHint === undefined || problem !== undefined ? null : (
+            <span className="shrink-0 truncate text-xs text-muted">{sourceHint}</span>
+          )}
           <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
         </span>
       </Button>
