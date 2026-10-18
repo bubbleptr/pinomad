@@ -29,10 +29,10 @@
     />
     <meta property="og:image" content="https://pinomad.si/og-image.jpg" />
     <meta property="og:image:width" content="1920" />
-    <meta property="og:image:height" content="990" />
+    <meta property="og:image:height" content="1200" />
     <meta
       property="og:image:alt"
-      content="One PiNomad run streaming live to the Mac app, an iPhone, and the web client"
+      content="One PiNomad run in the web client: conversations in the sidebar, the agent mid-run with thinking and tool calls"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="PiNomad — the durable coding agent for your own machine" />
@@ -50,7 +50,12 @@
     <header class="site-header">
       <div class="wrap">
         <a class="brand" href="/" aria-label="PiNomad home">
-          <img src="@brand/favicon.svg" alt="" width="28" height="28" />
+          <img
+            src="@brand/favicon.svg"
+            alt=""
+            width="28"
+            height="28"
+          />
           <span>PiNomad</span>
         </a>
         <nav class="header-nav" aria-label="Primary">
@@ -97,8 +102,13 @@
             </ul>
           </div>
           <figure class="shot shot-window hero-shot">
-            <!-- include skeleton-window.html -->
-            <figcaption class="shot-label">Screenshot coming: the client in the middle of a run.</figcaption>
+            <img
+              src="./shots/en/hero.webp"
+              width="2400"
+              height="1500"
+              alt="The PiNomad web client mid-run: conversations in the sidebar; the agent has answered, been asked for more, and is now reading and editing files and running commands"
+              fetchpriority="high"
+            />
           </figure>
         </div>
       </section>
@@ -168,8 +178,14 @@
                 </p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">Screenshot coming: conversations and their branches.</figcaption>
+                <img
+                  src="./shots/en/worktrees.webp"
+                  width="1440"
+                  height="1080"
+                  alt="A finished conversation in the slugkit project; under the composer, the Git worktree it runs in and its branch, pinomad/4-705e"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -181,8 +197,14 @@
                 </p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">Screenshot coming: a question card.</figcaption>
+                <img
+                  src="./shots/en/question.webp"
+                  width="1440"
+                  height="1080"
+                  alt="A question card from the agent asking how slugify should handle non-Latin titles, with four options and a field for a custom answer"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -195,8 +217,14 @@
                 </p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">Screenshot coming: subagents running in parallel.</figcaption>
+                <img
+                  src="./shots/en/subagents.webp"
+                  width="1440"
+                  height="1080"
+                  alt="Three subagents running in parallel: README docs, JSDoc, and edge-case tests, each on its own card"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
           </div>
@@ -313,7 +341,12 @@ pinomad link   <span class="comment"># in another terminal: prints a web client 
     <footer class="site-footer">
       <div class="wrap">
         <p class="footer-sign">
-          <img src="@brand/favicon.svg" alt="" width="20" height="20" />
+          <img
+            src="@brand/favicon.svg"
+            alt=""
+            width="20"
+            height="20"
+          />
           PiNomad is open source under the Apache-2.0 license.
         </p>
         <nav aria-label="Footer">

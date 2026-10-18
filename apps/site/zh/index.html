@@ -29,8 +29,8 @@
     />
     <meta property="og:image" content="https://pinomad.si/og-image.jpg" />
     <meta property="og:image:width" content="1920" />
-    <meta property="og:image:height" content="990" />
-    <meta property="og:image:alt" content="同一个 PiNomad 任务同时显示在 Mac App、iPhone 和 Web 上" />
+    <meta property="og:image:height" content="1200" />
+    <meta property="og:image:alt" content="PiNomad Web 客户端里的一个任务：侧栏是各个对话，agent 正在思考和调用工具" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="PiNomad — 崩溃重启也不丢进度的 coding agent" />
     <meta
@@ -47,7 +47,12 @@
     <header class="site-header">
       <div class="wrap">
         <a class="brand" href="/zh/" aria-label="PiNomad 首页">
-          <img src="@brand/favicon.svg" alt="" width="28" height="28" />
+          <img
+            src="@brand/favicon.svg"
+            alt=""
+            width="28"
+            height="28"
+          />
           <span>PiNomad</span>
         </a>
         <nav class="header-nav" aria-label="主导航">
@@ -93,8 +98,13 @@
             </ul>
           </div>
           <figure class="shot shot-window hero-shot">
-            <!-- include skeleton-window.html -->
-            <figcaption class="shot-label">截图待补：客户端里正在跑的任务。</figcaption>
+            <img
+              src="../shots/zh/hero.webp"
+              width="2400"
+              height="1500"
+              alt="运行中的 PiNomad Web 客户端：侧栏是各个对话；agent 已经回答过一轮，正在按追问读文件、改文件、跑命令"
+              fetchpriority="high"
+            />
           </figure>
         </div>
       </section>
@@ -157,8 +167,14 @@
                 <p>Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到。</p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：对话和各自的分支。</figcaption>
+                <img
+                  src="../shots/zh/worktrees.webp"
+                  width="1440"
+                  height="1080"
+                  alt="slugkit 项目里一个已完成的对话；输入框下方是它所在的 Git worktree 和分支 pinomad/24-f9ef"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -167,8 +183,14 @@
                 <p>工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题。</p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：一张选择题卡片。</figcaption>
+                <img
+                  src="../shots/zh/question.webp"
+                  width="1440"
+                  height="1080"
+                  alt="agent 提出的一张选择题卡片：slugify 遇到非拉丁标题时该怎么处理，四个选项外加自定义回答"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -180,8 +202,14 @@
                 </p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：并行运行的子代理。</figcaption>
+                <img
+                  src="../shots/zh/subagents.webp"
+                  width="1440"
+                  height="1080"
+                  alt="三个并行运行的子代理：README 中文 API 文档、JSDoc、uniqueSlug 边界测试，各占一张卡片"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
           </div>
@@ -295,7 +323,12 @@ pinomad link   <span class="comment"># 另开一个终端：打印 Web 客户端
     <footer class="site-footer">
       <div class="wrap">
         <p class="footer-sign">
-          <img src="@brand/favicon.svg" alt="" width="20" height="20" />
+          <img
+            src="@brand/favicon.svg"
+            alt=""
+            width="20"
+            height="20"
+          />
           PiNomad 以 Apache-2.0 许可证开源。
         </p>
         <nav aria-label="页脚">

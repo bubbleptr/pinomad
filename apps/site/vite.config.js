@@ -6,8 +6,8 @@ import { defineConfig } from "vite";
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 
 // og:image / twitter:image need a stable absolute URL (https://pinomad.si/og-image.jpg),
-// which a content-hashed asset can't give. Emit the README demo screenshot under a
-// fixed name at build time instead of keeping a second copy in the repo.
+// which a content-hashed asset can't give. Emit a JPEG of the English hero capture
+// (shots/en/hero.webp, downscaled to 1920×1200) under a fixed name at build time.
 function ogImage() {
   return {
     name: "pinomad-og-image",
@@ -16,21 +16,20 @@ function ogImage() {
       this.emitFile({
         type: "asset",
         fileName: "og-image.jpg",
-        source: readFileSync(here("../../docs/assets/demo.jpg")),
+        source: readFileSync(here("shots/og-image.jpg")),
       });
     },
   };
 }
 
 // Shared brand assets are referenced in place rather than copied: the icons are
-// exports of the shared app icon (AGENTS.md), the screenshot is the README's.
-// The HTML writes them as `@brand/…` / `@docs-assets/…`. Vite doesn't apply
-// resolve.alias to HTML attributes, and a plain ../ URL above the site root works
-// in build but is clamped to / by the browser in dev, so rewrite per mode: a
-// relative path for build (Vite then hashes the file into dist/assets), /@fs/ for dev.
+// exports of the shared app icon (AGENTS.md). The HTML writes them as `@brand/…`.
+// Vite doesn't apply resolve.alias to HTML attributes, and a plain ../ URL above
+// the site root works in build but is clamped to / by the browser in dev, so
+// rewrite per mode: a relative path for build (Vite then hashes the file into
+// dist/assets), /@fs/ for dev.
 const sharedDirs = {
   "@brand/": here("../web/public"),
-  "@docs-assets/": here("../../docs/assets"),
 };
 
 function sharedAssets() {

@@ -446,15 +446,36 @@ html[lang="zh-CN"] .hero h1 {
   white-space: nowrap;
 }
 
-/* —— Screenshot placeholders. Each slot keeps the final image's aspect ratio, so
-   a real capture drops in without moving the layout. The skeleton is abstract on
-   purpose: it should read as "screenshot goes here", never as the product. —— */
+/* —— Screenshots. Each slot keeps its image's aspect ratio, so the layout doesn't
+   move while it loads. A slot still waiting for its capture (the iPhone) shows an
+   abstract skeleton: it should read as "screenshot goes here", never as the product. —— */
 .shot {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* The dark captures' edges would melt into the page; a hairline drawn over the
+   image (not a border around it) keeps them crisp. */
+.shot:has(> img) {
+  border: 0;
+}
+
+.shot > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.shot:has(> img)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  pointer-events: none;
 }
 
 .shot-window {
@@ -479,34 +500,6 @@ html[lang="zh-CN"] .hero h1 {
   grid-template-rows: auto 1fr;
 }
 
-.sk-bar {
-  display: flex;
-  gap: 0.4rem;
-  padding: 0.85rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.sk-bar i {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 50%;
-  background: var(--surface-2);
-}
-
-.sk-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 3.2fr);
-  min-height: 0;
-}
-
-.sk-side {
-  display: grid;
-  align-content: start;
-  gap: 0.85rem;
-  padding: 1.25rem 1rem;
-  border-right: 1px solid var(--border);
-}
-
 .sk-main {
   display: grid;
   align-content: start;
@@ -519,10 +512,6 @@ html[lang="zh-CN"] .hero h1 {
   height: 0.6rem;
   border-radius: 999px;
   background: var(--surface-2);
-}
-
-.sk-line.w40 {
-  width: 40%;
 }
 
 .sk-line.w55 {
