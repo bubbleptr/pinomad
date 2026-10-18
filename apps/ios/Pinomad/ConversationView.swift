@@ -13,6 +13,8 @@ struct ConversationView: View {
     let model: AppModel
     let conversationId: UInt64
 
+    @State private var showingChanges = false
+
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
     }
@@ -67,6 +69,20 @@ struct ConversationView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingChanges = true
+                } label: {
+                    Image(systemName: "plus.forwardslash.minus")
+                }
+                .accessibilityLabel("改动")
+                .disabled(!connected)
+            }
+        }
+        .sheet(isPresented: $showingChanges) {
+            ChangesSheet(model: model, conversationId: conversationId)
+        }
         .task { model.openConversation(conversationId) }
     }
 
