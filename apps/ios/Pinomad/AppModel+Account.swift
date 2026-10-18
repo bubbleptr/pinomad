@@ -137,7 +137,16 @@ extension AppModel {
             }
         case .success(let hosts):
             guard accountSession == session else { return }
-            let stored = (try? store.load()) ?? StoredHosts()
+            let stored: StoredHosts
+            do {
+                stored = try store.load()
+            } catch {
+                // A keychain read failure is not "no pairings": keep the last
+                // good account rows and say what happened instead of inviting
+                // a re-pair over a live device key.
+                accountHostsError = "读取本地配对失败：\(describe(error))"
+                return
+            }
             let result = AccountHosts.reconcile(
                 serverOrigin: session.serverOrigin,
                 hosts: hosts,

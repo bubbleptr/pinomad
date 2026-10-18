@@ -391,6 +391,11 @@ final class AppModel {
     private func apply(_ update: SessionUpdate) {
         switch update {
         case .ready(let outcome):
+            // A revoked device can be refused before the first snapshot; the
+            // account list still needs the marker.
+            if outcome == .unauthorized, let host = revokedHost {
+                markAccountRejected(host)
+            }
             if let failure = ConnectFailure(outcome: outcome, pairing: pairingLink != nil) {
                 fail(failure)
                 return
