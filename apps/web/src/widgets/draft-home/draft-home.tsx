@@ -159,6 +159,7 @@ export function DraftHome({
             onValueChange={setValue}
             triggers={useAtMentions(
               view.agents,
+              inputRef,
               draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
                 ? {
                     key: `project:${draft.path}:${checkoutMode}`,

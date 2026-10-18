@@ -13,9 +13,10 @@ export const mentionCacheKey = (scopeKey: string, query: string): string => `${s
 export interface MentionFetcher {
   /**
    * Ask for the listing behind `cacheKey`; debounced and deduplicated — a key
-   * already scheduled or in flight is a no-op.
+   * already scheduled or in flight is a no-op. `scopeKey` is only echoed to
+   * `onItems` so the caller can tell which root the answer belongs to.
    */
-  request(cacheKey: string, list: () => Promise<FileListing>): void;
+  request(cacheKey: string, scopeKey: string, list: () => Promise<FileListing>): void;
   /**
    * Invalidate pending and in-flight work: the pending timer is cleared and
    * in-flight answers are dropped when they resolve (menu close, a new query,
@@ -30,13 +31,15 @@ export interface MentionFetcher {
  * dropped, and because answers are keyed by scope+query a slow listing can
  * never overwrite the items a faster one already delivered.
  */
-export function createMentionFetcher(onItems: (cacheKey: string, files: readonly string[]) => void): MentionFetcher {
+export function createMentionFetcher(
+  onItems: (cacheKey: string, scopeKey: string, files: readonly string[]) => void,
+): MentionFetcher {
   let generation = 0;
   let pending: { readonly cacheKey: string; readonly timer: ReturnType<typeof setTimeout> } | undefined;
   const inFlight = new Set<string>();
 
   return {
-    request(cacheKey, list) {
+    request(cacheKey, scopeKey, list) {
       if (pending !== undefined) {
         clearTimeout(pending.timer);
         pending = undefined;
@@ -52,7 +55,7 @@ export function createMentionFetcher(onItems: (cacheKey: string, files: readonly
           list().then(
             (listing) => {
               inFlight.delete(cacheKey);
-              if (captured === generation) onItems(cacheKey, listing.files);
+              if (captured === generation) onItems(cacheKey, scopeKey, listing.files);
             },
             () => {
               // A failed request leaves the slot unanswered: the next search

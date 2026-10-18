@@ -12,7 +12,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
@@ -26,7 +26,7 @@ import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
-import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { LiveState } from "./live-state.tsx";
@@ -329,6 +329,7 @@ function ThreadDetail({
   const conversation: ConversationView | undefined = side.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
   const [draft, setDraft] = useState("");
+  const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const submit = (): void => {
     const text = draft.trim();
     if (text === "") return;
@@ -370,6 +371,7 @@ function ThreadDetail({
       <div className="shrink-0 border-t border-border p-2">
         <ChatPromptInput
           value={draft}
+          inputRef={inputRef}
           placeholder="Reply in this thread…"
           status={busy ? "streaming" : "ready"}
           isDisabled={view.connection !== "connected"}
@@ -378,6 +380,7 @@ function ThreadDetail({
           onValueChange={setDraft}
           triggers={useAtMentions(
             view.agents,
+            inputRef,
             hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
               ? {
                   // The fork lists its own checkout — forks and subagents keep

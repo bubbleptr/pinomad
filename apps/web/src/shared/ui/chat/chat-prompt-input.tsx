@@ -22,6 +22,13 @@ export type ChatPromptInputHandle = {
   focus(): void;
   /** Focus and put the caret after the last character. */
   focusAtEnd(): void;
+  /**
+   * Re-dispatch an `input` event on the editable, but only while it holds
+   * the focus. Async trigger-menu candidates push through this so Astryx
+   * re-runs its search; scoping to this editable keeps a sibling composer's
+   * landed listing from being dispatched into the wrong input.
+   */
+  emitInput(): void;
 };
 
 function editableOf(root: HTMLDivElement | null): HTMLElement | null {
@@ -78,6 +85,15 @@ function PromptComposerInput({
         range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
+      },
+      emitInput: () => {
+        const editable = editableOf(rootRef.current);
+        // Only this composer's editable may be re-activated — with the main
+        // composer and a thread composer mounted together, an @ listing can
+        // land while the user is typing in the other one.
+        if (editable !== null && (document.activeElement === editable || editable.contains(document.activeElement))) {
+          editable.dispatchEvent(new Event("input", { bubbles: true }));
+        }
       },
     };
     return () => {

@@ -11,14 +11,25 @@
 // `search` always returns an array), and it never checks generations, so a
 // late answer must not be able to overwrite a newer one — the fetcher keys
 // results by scope+query and drops whatever resolves after a cancel.
-import { useEffect, useMemo, useRef, useState } from "react";
+//
+// Answered listings live only for MENTION_LISTING_TTL_MS: the main composer
+// is mounted for the whole session, so without expiry a file created after
+// the first `@foo` would never appear, and every typed query would grow the
+// cache. While a new query is in flight the menu keeps showing the previous
+// answer from the SAME scope (iOS's MentionMenu does the same) — a scope
+// change hides the old root's paths immediately.
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
 import type { SearchSource } from "@astryxdesign/core/Typeahead";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { FileListing } from "@pinomad/protocol/organization.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { Bot, FileIcon } from "@/shared/ui/icons";
+import type { ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { createMentionFetcher, mentionCacheKey } from "./mention-fetcher.ts";
+
+/** How long an answered listing is reused before the next search refetches it. */
+export const MENTION_LISTING_TTL_MS = 5_000;
 
 /** The listing source a composer offers, or none (Chat drafts, pre-5.10 hosts). */
 export interface MentionFiles {
@@ -34,6 +45,18 @@ interface MentionAux {
   readonly description?: string;
   /** What `onSelect` inserts into the editable. */
   readonly insert: string;
+}
+
+interface AnsweredListing {
+  readonly files: readonly string[];
+  /** `Date.now()` of the answer, for TTL. */
+  readonly at: number;
+}
+
+/** Every answered query so far plus the newest answer for the keep-showing fallback. */
+interface Listings {
+  readonly byKey: Readonly<Record<string, AnsweredListing>>;
+  readonly latest?: { readonly scope: string; readonly files: readonly string[] };
 }
 
 const agentItem = (role: AgentRole): ChatComposerTriggerItem => ({
@@ -57,35 +80,47 @@ const auxOf = (item: ChatComposerTriggerItem): MentionAux | undefined =>
  * role="combobox", and an empty source would surface a "No results" popup on
  * every stray `@`. `view.agents === null` means the host predates 5.6; a
  * missing `files` means the scope has no listing (Chat, or a pre-5.10 host).
+ *
+ * `inputRef` is the composer's own handle: a landed listing re-dispatches a
+ * synthetic `input` through it, which only fires while THIS composer's
+ * editable is focused.
  */
 export function useAtMentions(
   agents: DurableView["agents"],
+  inputRef: RefObject<ChatPromptInputHandle | null>,
   files?: MentionFiles,
 ): ChatComposerTrigger[] | undefined {
   const roles = agents?.roles ?? [];
-  // Answered listings by scope+query key; a missing key means "not asked".
-  const [listings, setListings] = useState<Record<string, readonly string[]>>({});
+  const [listings, setListings] = useState<Listings>({ byKey: {} });
   // The latest `files` prop is read through a ref so callers may pass inline
   // closures — what must invalidate the cache (the scope key) is part of the
   // key itself, not of the closure's identity.
   const filesRef = useRef(files);
   filesRef.current = files;
   const fetcherRef = useRef<ReturnType<typeof createMentionFetcher> | undefined>(undefined);
-  fetcherRef.current ??= createMentionFetcher((cacheKey, files) => {
-    setListings((current) => ({ ...current, [cacheKey]: files }));
+  fetcherRef.current ??= createMentionFetcher((cacheKey, scopeKey, files) => {
+    setListings((current) => {
+      const now = Date.now();
+      const byKey: Record<string, AnsweredListing> = {};
+      // Expired entries are dropped on write too, so the map can't grow
+      // without bound over a long session.
+      for (const [key, entry] of Object.entries(current.byKey)) {
+        if (now - entry.at < MENTION_LISTING_TTL_MS) byKey[key] = entry;
+      }
+      byKey[cacheKey] = { files, at: now };
+      return { byKey, latest: { scope: scopeKey, files } };
+    });
   });
   useEffect(() => () => fetcherRef.current?.cancel(), []);
   // Astryx only re-runs `search` on an input event — a state update alone
   // reaches the menu via a NEW trigger object, but nothing calls back into
-  // `handleInput`. The focused editable gets a synthetic `input` so the
-  // still-active @ span re-activates against the new trigger and merges the
-  // landed files. When focus moved elsewhere the next real keystroke does it.
+  // `handleInput`. `emitInput` gives the focused editable a synthetic `input`
+  // so the still-active @ span re-activates against the new trigger and
+  // merges the landed files; when focus is elsewhere (or in a sibling
+  // composer) the next real keystroke does it instead.
   useEffect(() => {
-    if (Object.keys(listings).length === 0) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active.isContentEditable) {
-      active.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    if (listings.latest === undefined) return;
+    inputRef.current?.emitInput();
   }, [listings]);
 
   const filesEnabled = files !== undefined;
@@ -102,12 +137,18 @@ export function useAtMentions(
         // `@./x` narrows to files — a role name can't hold "/" or ".".
         const fileQuery = query.startsWith("./") ? query.slice(2) : query;
         const cacheKey = mentionCacheKey(source.key, fileQuery);
-        const answered = listings[cacheKey];
-        if (answered === undefined) {
-          fetcher.request(cacheKey, () => source.list(fileQuery));
-          return agentItems;
+        const answered = listings.byKey[cacheKey];
+        if (answered !== undefined && Date.now() - answered.at < MENTION_LISTING_TTL_MS) {
+          return [...agentItems, ...answered.files.map(fileItem)];
         }
-        return [...agentItems, ...answered.map(fileItem)];
+        fetcher.request(cacheKey, source.key, () => source.list(fileQuery));
+        // The new query hasn't answered: keep the previous same-scope
+        // candidates on screen rather than collapsing the Files group on
+        // every keystroke; a different scope's paths are never shown.
+        if (listings.latest !== undefined && listings.latest.scope === source.key) {
+          return [...agentItems, ...listings.latest.files.map(fileItem)];
+        }
+        return agentItems;
       },
       cancel: () => fetcher.cancel(),
     };

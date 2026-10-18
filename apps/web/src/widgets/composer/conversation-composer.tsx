@@ -13,7 +13,7 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
-import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
 
@@ -48,6 +48,7 @@ export function ConversationComposer({
   const accepts = model?.images === true;
   const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
   const fileInput = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<ChatPromptInputHandle | null>(null);
   // No "why" slot on menu items: the reason goes into the label itself.
   const addImages =
     accepts || disconnected
@@ -84,6 +85,7 @@ export function ConversationComposer({
       <ImageFileInput inputRef={fileInput} onFiles={add} />
       <ChatPromptInput
         value={value}
+        inputRef={inputRef}
         status={busy ? "streaming" : "ready"}
         isDisabled={disconnected}
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
@@ -91,6 +93,7 @@ export function ConversationComposer({
         onSubmit={() => submit("steer")}
         triggers={useAtMentions(
           view.agents,
+          inputRef,
           hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
             ? {
                 key: `conversation:${conversation.conversation.id}`,

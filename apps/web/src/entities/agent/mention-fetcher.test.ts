@@ -23,9 +23,9 @@ describe("createMentionFetcher", () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
     const list = vi.fn(() => Promise.resolve(listing([])));
-    fetcher.request("s:a", list);
-    fetcher.request("s:ab", list);
-    fetcher.request("s:abc", list);
+    fetcher.request("s:a", "s", list);
+    fetcher.request("s:ab", "s", list);
+    fetcher.request("s:abc", "s", list);
     expect(list).not.toHaveBeenCalled();
     vi.advanceTimersByTime(MENTION_FETCH_DEBOUNCE_MS);
     expect(list).toHaveBeenCalledTimes(1);
@@ -34,9 +34,9 @@ describe("createMentionFetcher", () => {
   it("delivers the answer keyed, after the debounce", async () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
-    fetcher.request("s:q", () => Promise.resolve(listing(["a.ts", "b.ts"])));
+    fetcher.request("s:q", "s", () => Promise.resolve(listing(["a.ts", "b.ts"])));
     await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
-    expect(onItems).toHaveBeenCalledWith("s:q", ["a.ts", "b.ts"]);
+    expect(onItems).toHaveBeenCalledWith("s:q", "s", ["a.ts", "b.ts"]);
   });
 
   it("does not start a second fetch for a key already in flight", () => {
@@ -44,9 +44,9 @@ describe("createMentionFetcher", () => {
     const fetcher = createMentionFetcher(onItems);
     const first = deferred<ReturnType<typeof listing>>();
     const second = vi.fn(() => Promise.resolve(listing([])));
-    fetcher.request("s:q", () => first.promise);
+    fetcher.request("s:q", "s", () => first.promise);
     vi.advanceTimersByTime(MENTION_FETCH_DEBOUNCE_MS);
-    fetcher.request("s:q", second);
+    fetcher.request("s:q", "s", second);
     vi.advanceTimersByTime(MENTION_FETCH_DEBOUNCE_MS);
     expect(second).not.toHaveBeenCalled();
   });
@@ -55,40 +55,40 @@ describe("createMentionFetcher", () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
     const slow = deferred<ReturnType<typeof listing>>();
-    fetcher.request("s:a", () => slow.promise);
+    fetcher.request("s:a", "s", () => slow.promise);
     await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
     fetcher.cancel();
-    fetcher.request("s:ab", () => Promise.resolve(listing(["new.ts"])));
+    fetcher.request("s:ab", "s", () => Promise.resolve(listing(["new.ts"])));
     await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
     slow.resolve(listing(["old.ts"]));
     await Promise.resolve();
     // Only the post-cancel query delivered; "old.ts" arrived too late to matter.
     expect(onItems).toHaveBeenCalledTimes(1);
-    expect(onItems).toHaveBeenCalledWith("s:ab", ["new.ts"]);
+    expect(onItems).toHaveBeenCalledWith("s:ab", "s", ["new.ts"]);
   });
 
   it("leaves a failed query unanswered so the next request retries", async () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
     const failed = deferred<ReturnType<typeof listing>>();
-    fetcher.request("s:q", () => failed.promise);
+    fetcher.request("s:q", "s", () => failed.promise);
     await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
     failed.reject(new Error("checkout is unavailable"));
     await Promise.resolve();
     expect(onItems).not.toHaveBeenCalled();
 
     const retry = vi.fn(() => Promise.resolve(listing(["back.ts"])));
-    fetcher.request("s:q", retry);
+    fetcher.request("s:q", "s", retry);
     await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
     expect(retry).toHaveBeenCalledTimes(1);
-    expect(onItems).toHaveBeenCalledWith("s:q", ["back.ts"]);
+    expect(onItems).toHaveBeenCalledWith("s:q", "s", ["back.ts"]);
   });
 
   it("clears a pending request on cancel before it ever fires", () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
     const list = vi.fn(() => Promise.resolve(listing([])));
-    fetcher.request("s:q", list);
+    fetcher.request("s:q", "s", list);
     fetcher.cancel();
     vi.advanceTimersByTime(MENTION_FETCH_DEBOUNCE_MS * 2);
     expect(list).not.toHaveBeenCalled();
