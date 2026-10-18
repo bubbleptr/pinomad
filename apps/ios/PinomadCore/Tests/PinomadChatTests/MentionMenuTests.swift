@@ -138,6 +138,17 @@ private func role(_ name: String, _ description: String = "") -> AgentRole {
         #expect(menu.files == ["new"])
     }
 
+    /// The menu inserts `@./path`; editing that mention must query the path
+    /// the host knows, not the display prefix.
+    @Test func fileQueriesDropTheReferencePrefix() throws {
+        var menu = MentionMenu()
+        let requestValue = menu.refresh(
+            text: "@./Sources", cursor: 10, roles: [], scope: scope)
+        let request = try #require(requestValue)
+        #expect(request.query == "Sources")
+        #expect(menu.filesLoading)
+    }
+
     @Test func theSameQueryIsNotAskedAgain() throws {
         var menu = MentionMenu()
         _ = menu.refresh(text: "@r", cursor: 2, roles: [], scope: scope)

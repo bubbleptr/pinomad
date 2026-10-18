@@ -139,14 +139,19 @@ public struct MentionMenu: Equatable, Sendable {
             clearFiles()
             return nil
         }
-        guard lastScope != scope || lastQuery != token.query else { return nil }
+        // The inserted form is `@./path`; the host matches paths without
+        // that marker, so editing a finished reference still finds files.
+        let query = token.query.hasPrefix("./")
+            ? String(token.query.dropFirst(2))
+            : token.query
+        guard lastScope != scope || lastQuery != query else { return nil }
         generation += 1
         lastScope = scope
-        lastQuery = token.query
+        lastQuery = query
         files = []
         filesTruncated = false
         filesLoading = true
-        return FileRequest(generation: generation, scope: scope, query: token.query)
+        return FileRequest(generation: generation, scope: scope, query: query)
     }
 
     /// The newest query's answer. Older ones are already stale.
