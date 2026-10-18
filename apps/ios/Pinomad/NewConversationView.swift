@@ -12,6 +12,7 @@ struct NewConversationView: View {
     @State private var showModels = false
     @State private var showPhotos = false
     @State private var showCamera = false
+    @State private var mentions = MentionCoordinator()
     @FocusState private var focused: Bool
 
     private let key = AppModel.draftKey
@@ -26,6 +27,18 @@ struct NewConversationView: View {
         Binding(get: { model.drafts[key] ?? "" }, set: { model.drafts[key] = $0 })
     }
 
+    private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+
+    /// The draft's chosen checkout decides whether a fresh worktree's HEAD
+    /// files or the project directory's live files are candidates. A Chat
+    /// draft has no project scope at all.
+    private var mentionScope: FileScope? {
+        guard model.hostSupports("listFiles"), case .project(let path) = model.draftHome else {
+            return nil
+        }
+        return .project(path: path, checkout: model.draftCheckout)
+    }
+
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
             && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty)
@@ -38,6 +51,9 @@ struct NewConversationView: View {
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
             Spacer()
+            if mentions.menu.isShowing {
+                MentionMenuView(menu: mentions.menu, choose: chooseMention)
+            }
             card
         }
         .padding(.horizontal, 12)
@@ -45,6 +61,17 @@ struct NewConversationView: View {
         .navigationTitle("新对话")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { focused = true }
+        .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
+        .onChange(of: mentions.selection) { _, _ in refreshMentions() }
+        .onChange(of: roles) { _, _ in refreshMentions() }
+        .onChange(of: model.draftHome) { _, _ in refreshMentions() }
+        .onChange(of: model.draftCheckout) { _, _ in refreshMentions() }
+        .onChange(of: model.hostSupports("listFiles")) { _, _ in refreshMentions() }
+        .onChange(of: model.phase) { _, _ in mentions.close() }
+        .onChange(of: focused) { _, isFocused in
+            if isFocused { refreshMentions() } else { mentions.close() }
+        }
+        .onDisappear { mentions.close() }
         .sheet(isPresented: $showModels) {
             ModelSheet(
                 model: model,
@@ -70,10 +97,13 @@ struct NewConversationView: View {
                     view: { model.viewing = $0 }
                 )
             }
-            TextField("想让 Pi 做什么…", text: draft, axis: .vertical)
-                .lineLimit(3...8)
-                .focused($focused)
-                .disabled(!model.connected || model.creating)
+            TextField(
+                "想让 Pi 做什么…", text: draft,
+                selection: $mentions.selection, axis: .vertical
+            )
+            .lineLimit(3...8)
+            .focused($focused)
+            .disabled(!model.connected || model.creating)
             HStack(spacing: 10) {
                 PlusMenu(
                     connected: model.connected,
@@ -122,6 +152,24 @@ struct NewConversationView: View {
         .padding(.top, 14)
         .padding(.bottom, 10)
         .glassEffect(.regular, in: .rect(cornerRadius: 26))
+    }
+
+    private func refreshMentions() {
+        guard focused else {
+            mentions.close()
+            return
+        }
+        mentions.refresh(text: draft.wrappedValue, roles: roles, scope: mentionScope) { scope, query in
+            try await model.listFiles(scope: scope, query: query)
+        }
+    }
+
+    private func chooseMention(_ choice: MentionChoice) {
+        guard let insertion = mentions.insert(choice, into: draft.wrappedValue) else { return }
+        draft.wrappedValue = insertion.text
+        mentions.selection = TextSelection(
+            insertionPoint: String.Index(utf16Offset: insertion.cursor, in: insertion.text))
+        focused = true
     }
 
     private var homeLabel: String {

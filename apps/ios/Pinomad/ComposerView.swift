@@ -15,6 +15,7 @@ struct ConversationComposer: View {
     @State private var showModels = false
     @State private var showPhotos = false
     @State private var showCamera = false
+    @State private var mentions = MentionCoordinator()
     @FocusState private var focused: Bool
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
@@ -43,6 +44,14 @@ struct ConversationComposer: View {
         )
     }
 
+    private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+
+    /// A shown conversation lists its own cwd; older hosts have no call.
+    private var mentionScope: FileScope? {
+        guard model.hostSupports("listFiles") else { return nil }
+        return .conversation(conversationId: conversation.id)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !conversation.questions.isEmpty {
@@ -55,10 +64,19 @@ struct ConversationComposer: View {
             if !conversation.queueItems.isEmpty {
                 QueueList(items: conversation.queueItems)
             }
+            if mentions.menu.isShowing {
+                MentionMenuView(menu: mentions.menu, choose: chooseMention)
+            }
             card
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
+        .onChange(of: mentions.selection) { _, _ in refreshMentions() }
+        .onChange(of: roles) { _, _ in refreshMentions() }
+        .onChange(of: model.hostSupports("listFiles")) { _, _ in refreshMentions() }
+        .onChange(of: model.phase) { _, _ in mentions.close() }
+        .onDisappear { mentions.close() }
         .sheet(isPresented: $showModels) {
             ModelSheet(
                 model: model,
@@ -86,14 +104,18 @@ struct ConversationComposer: View {
             }
             TextField(
                 conversation.busy ? "追加指令…" : "问点什么…",
-                text: draft, axis: .vertical
+                text: draft, selection: $mentions.selection, axis: .vertical
             )
             .lineLimit(1...6)
             .focused($focused)
             .disabled(!connected)
             .onChange(of: focused) { _, isFocused in
+                guard isFocused else {
+                    mentions.close()
+                    return
+                }
+                refreshMentions()
                 // Let the keyboard's inset land first, then show the end.
-                guard isFocused else { return }
                 Task {
                     try? await Task.sleep(for: .milliseconds(350))
                     model.transcriptPin += 1
@@ -127,6 +149,24 @@ struct ConversationComposer: View {
         .padding(.top, 14)
         .padding(.bottom, 10)
         .glassEffect(.regular, in: .rect(cornerRadius: 26))
+    }
+
+    private func refreshMentions() {
+        guard focused else {
+            mentions.close()
+            return
+        }
+        mentions.refresh(text: draft.wrappedValue, roles: roles, scope: mentionScope) { scope, query in
+            try await model.listFiles(scope: scope, query: query)
+        }
+    }
+
+    private func chooseMention(_ choice: MentionChoice) {
+        guard let insertion = mentions.insert(choice, into: draft.wrappedValue) else { return }
+        draft.wrappedValue = insertion.text
+        mentions.selection = TextSelection(
+            insertionPoint: String.Index(utf16Offset: insertion.cursor, in: insertion.text))
+        focused = true
     }
 
     private var modelText: String {
