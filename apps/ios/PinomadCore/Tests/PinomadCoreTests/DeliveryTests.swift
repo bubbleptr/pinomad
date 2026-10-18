@@ -14,6 +14,7 @@ private func fakeSnapshot(version: UInt64) -> ClientSnapshot {
         notices: [],
         models: [],
         defaults: Defaults(model: nil, thinkingLevel: nil),
+        agents: nil,
         conversation: nil
     )
 }

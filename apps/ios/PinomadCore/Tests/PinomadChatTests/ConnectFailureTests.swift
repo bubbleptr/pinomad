@@ -52,5 +52,5 @@ private func snapshot(
         protocolMismatch: mismatch, host: nil,
         organized: Organized(chats: [], projects: [], archived: []),
         notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
-        conversation: nil)
+        agents: nil, conversation: nil)
 }

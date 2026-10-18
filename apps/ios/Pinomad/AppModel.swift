@@ -420,6 +420,7 @@ final class AppModel {
             organized: Organized(chats: [], projects: [], archived: []),
             notices: [], models: [],
             defaults: Defaults(model: nil, thinkingLevel: nil),
+            agents: nil,
             conversation: conv
         )
         replyStreams.sync(chat: chat)
