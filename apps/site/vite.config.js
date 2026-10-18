@@ -6,8 +6,9 @@ import { defineConfig } from "vite";
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 
 // og:image / twitter:image need a stable absolute URL (https://pinomad.si/og-image.jpg),
-// which a content-hashed asset can't give. Emit a JPEG of the English hero capture
-// (shots/en/hero.webp, downscaled to 1920×1200) under a fixed name at build time.
+// which a content-hashed asset can't give, so copy it in under a fixed name.
+// shots/og-image.jpg is a pre-made 1920×1200 JPEG export of shots/en/hero.webp;
+// re-export it by hand whenever the hero capture changes.
 function ogImage() {
   return {
     name: "pinomad-og-image",

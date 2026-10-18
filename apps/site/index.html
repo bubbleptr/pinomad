@@ -137,8 +137,8 @@
             <p class="eyebrow">Durable runs</p>
             <h2 id="durable-title">Runs survive crashes and restarts</h2>
             <p class="section-lead">
-              Pi Durable checkpoints every model call and tool call, so a restarted host picks up
-              where it stopped instead of starting over.
+              Pi Durable writes a checkpoint after every model call and tool call. After a restart
+              the run continues from the last one; only the call that was in flight runs again.
             </p>
           </div>
           <div class="panel" data-durable>
@@ -300,7 +300,7 @@
         <div class="wrap split">
           <div class="section-head">
             <p class="eyebrow">Quick start</p>
-            <h2 id="quick-start-title">Up and running in three commands</h2>
+            <h2 id="quick-start-title">Install, start the host, open a client</h2>
             <p class="section-lead">The host needs Node 25+ on macOS or Linux.</p>
             <p class="note">
               <code>pinomad host</code> uses the models and credentials you set up in pi
@@ -308,8 +308,8 @@
               runs a scripted fake model so you can click around.
             </p>
             <p class="note">
-              Early and moving fast. Pi Durable is itself experimental, and the host and its clients
-              must speak the same protocol major version.
+              It's early. Pi Durable is itself experimental, and the host and its clients must
+              speak the same protocol major version.
             </p>
           </div>
           <div class="code-card">
