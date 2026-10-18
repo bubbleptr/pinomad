@@ -671,6 +671,62 @@ fn list_files_needs_a_5_10_host() {
     }));
 }
 
+/// `createPairing`: a Request-class call whose success decodes to
+/// `CallResult::Pairing`; on the wire since 5.0, so no version gate.
+#[test]
+fn create_pairing_resolves_a_typed_result() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "createPairing".to_string(),
+        obj(&[
+            ("url", Json::from("wss://host.example/ws#pair=aGk.c2VjcmV0")),
+            ("expiresAt", Json::from(1700000000000.0)),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::CreatePairing);
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Pairing {
+            url: "wss://host.example/ws#pair=aGk.c2VjcmV0".to_string(),
+            expires_at: 1700000000000.0,
+        }))
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "createPairing").unwrap_or(false)
+    });
+    assert_eq!(call.and_then(|f| f.get("args").cloned()), Some(obj(&[])));
+}
+
+#[test]
+fn create_pairing_result_malformed_or_error_fails_the_op() {
+    for (index, value) in [
+        obj(&[("url", Json::from("u"))]),                                             // missing expiresAt
+        obj(&[("expiresAt", Json::from(1.0))]),                                       // missing url
+        obj(&[("url", Json::from(1.0)), ("expiresAt", Json::from(2.0))]),             // bad url
+        obj(&[("url", Json::from("u")), ("expiresAt", Json::from("soon"))]),          // bad expiresAt
+        Json::Null,                                                                    // not an object
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("createPairing".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::CreatePairing);
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed createPairing result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    // A host-side `ok:false` is an OperationFailed too.
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("createPairing".to_string(), "remote access is off".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::CreatePairing);
+    assert_eq!(h.ops.get(&1), Some(&Err("remote access is off".to_string())));
+}
+
 #[test]
 fn snapshot_agents_is_none_before_the_stream() {
     // A pre-5.6 host never subscribes `agents` — the view's `null` decodes

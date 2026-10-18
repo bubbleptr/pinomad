@@ -29,6 +29,7 @@ pub(crate) enum ResultKind {
     FolderListing,
     Changes,
     Files,
+    Pairing,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -46,8 +47,8 @@ struct Inner {
 ///
 /// Failure contract, following the reference `RemoteDurable` exactly:
 /// - Request-class calls (`addProject`, `listFolders`, `renameConversation`,
-///   `setPushToken`, `changes`) reject the op: the platform sees
-///   `OperationFailed { op, error }`.
+///   `setPushToken`, `changes`, `createPairing`) reject the op: the platform
+///   sees `OperationFailed { op, error }`.
 /// - Command-class calls (everything else: `submit`, `switchConversation`,
 ///   `createConversation`, `archive`, `compact`, `answer`, `setModel`,
 ///   `setThinkingLevel`) and the unqueued `abort` still emit
@@ -117,6 +118,13 @@ impl PinomadClient {
                             Ok((files, truncated)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Files { files, truncated },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::Pairing) => match pairing_of(value.as_ref()) {
+                            Ok((url, expires_at)) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::Pairing { url, expires_at },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

@@ -137,6 +137,27 @@ pub enum CallResult {
     /// `listFiles` — `/`-separated paths relative to the scope's root;
     /// `truncated` marks any enumeration or result cap the answer hit.
     Files { files: Vec<String>, truncated: bool },
+    /// `createPairing` — the one-time offer another device scans; `url`
+    /// carries the host key and secret, `expires_at` is epoch ms.
+    Pairing { url: String, expires_at: f64 },
+}
+
+/// `createPairing`'s typed result — strict like `changes_of`: the offer is
+/// only safe to display whole, so a malformed shape fails the op.
+pub(crate) fn pairing_of(value: Option<&Json>) -> Result<(String, f64), String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed createPairing result".to_string())?;
+    let url = value
+        .get("url")
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy())
+        .ok_or_else(|| "malformed createPairing result: url".to_string())?;
+    let expires_at = value
+        .get("expiresAt")
+        .and_then(Json::as_number)
+        .ok_or_else(|| "malformed createPairing result: expiresAt".to_string())?;
+    Ok((url, expires_at))
 }
 
 /// `listFiles`'s typed result — strict like `changes_of`: a malformed shape
