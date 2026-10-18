@@ -107,11 +107,10 @@ extension AppModel {
     func forget(_ hostKey: String) {
         // The switch is not proof either way: it may have been turned off
         // while offline after a successful registration. The flag is set
-        // before a register and cleared only by a successful clear.
+        // before a register and cleared only by a successful clear, so it
+        // is the one judgement here.
         let plan = pushForgetPlan(
             mayHaveRegistration: push.mayHaveRegistration(for: hostKey),
-            enabled: push.isEnabled(for: hostKey),
-            hasInFlight: pushSyncInFlight,
             canClear: hostKey == currentHostKey && phase == .connected && connected
                 && hostSupports("setPushToken"))
         // Stop token callbacks from queuing a fresh register behind the

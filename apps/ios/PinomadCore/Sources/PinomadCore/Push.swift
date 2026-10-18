@@ -3,8 +3,8 @@ import Foundation
 /// What a push-registration opportunity should put on the wire. Kept as a
 /// value so the app layer only maps it to `FfiCall.setPushToken`.
 public enum PushRegistrationAction: Equatable, Sendable {
-    /// Nothing to send: the host is too old, or APNs has not issued a
-    /// token yet.
+    /// Nothing to send: the host is too old, APNs has not issued a token
+    /// yet, or the switch is off and nothing was ever registered.
     case none
     case register(ApnsPushToken)
     /// `setPushToken(null)`; a 5.7 host knows the call even though it does
@@ -14,19 +14,24 @@ public enum PushRegistrationAction: Equatable, Sendable {
 
 /// The action for one opportunity (connect, reconnect, foreground, or the
 /// switch changing) — ADR-0025 §9. Registration needs both a 5.9 host and
-/// a token; clearing only needs the 5.7 call.
+/// a token; clearing only needs the 5.7 call, and only when this device may
+/// still be registered — a switch that was never acted on is not a reason
+/// to make the host commit a no-op clear.
 public func pushRegistrationAction(
     enabled: Bool,
+    mayHaveRegistration: Bool,
     hostMinor: UInt32,
     deviceToken: String?,
     environment: ApnsEnvironment
 ) -> PushRegistrationAction {
     guard hostSupportsCall(hostMinor: hostMinor, method: "setPushToken") else { return .none }
-    guard enabled else { return .unregister }
-    guard hostSupportsFeature(hostMinor: hostMinor, feature: .apnsPush),
-          let deviceToken, !deviceToken.isEmpty
-    else { return .none }
-    return .register(ApnsPushToken(apns: deviceToken, environment: environment))
+    if enabled {
+        guard hostSupportsFeature(hostMinor: hostMinor, feature: .apnsPush),
+              let deviceToken, !deviceToken.isEmpty
+        else { return .none }
+        return .register(ApnsPushToken(apns: deviceToken, environment: environment))
+    }
+    return mayHaveRegistration ? .unregister : .none
 }
 
 /// A foreground banner is suppressed only for the host on screen right now;
@@ -49,9 +54,9 @@ public struct PushTarget: Equatable, Sendable {
     }
 }
 
-/// What forgetting a host should do about its push registration. The switch
-/// alone is not enough: it may have been turned off while offline after a
-/// successful registration, and an in-flight register can land after that.
+/// What forgetting a host should do about its push registration. The flag
+/// is set before a register and cleared only by a successful clear, so it
+/// covers a switch turned off while offline as well as an in-flight register.
 public enum PushForgetPlan: Equatable, Sendable {
     /// Nothing was registered — drop the pairing directly.
     case forget
@@ -63,11 +68,9 @@ public enum PushForgetPlan: Equatable, Sendable {
 
 public func pushForgetPlan(
     mayHaveRegistration: Bool,
-    enabled: Bool,
-    hasInFlight: Bool,
     canClear: Bool
 ) -> PushForgetPlan {
-    guard mayHaveRegistration || enabled || hasInFlight else { return .forget }
+    guard mayHaveRegistration else { return .forget }
     return canClear ? .clearThenForget : .forgetWithWarning
 }
 

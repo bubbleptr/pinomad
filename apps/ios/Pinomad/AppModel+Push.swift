@@ -84,6 +84,7 @@ extension AppModel {
 
         let action = pushRegistrationAction(
             enabled: push.isEnabled(for: host.hostKey),
+            mayHaveRegistration: push.mayHaveRegistration(for: host.hostKey),
             hostMinor: hostMinor,
             deviceToken: push.deviceToken,
             environment: push.environment)
