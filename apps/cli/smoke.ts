@@ -93,14 +93,14 @@ try {
   // First start: the bootstrap env vars create the account in a fresh data dir.
   const relay = await untilReady(
     bin,
-    ["relay", "--public-origin", `http://127.0.0.1:${relayPort}`, "--data-dir", join(work, "server"), "--port", String(relayPort)],
+    ["server", "--public-origin", `http://127.0.0.1:${relayPort}`, "--data-dir", join(work, "server"), "--port", String(relayPort)],
     { PINOMAD_SERVER_USER: "smoke", PINOMAD_SERVER_PASSWORD: "smoke-password-long-enough" },
   );
   const relayIndex = await get(relayPort);
-  if (relayIndex.status !== 200 || !relayIndex.body.includes("<")) fail(`GET / on packaged relay: ${relayIndex.status}`);
+  if (relayIndex.status !== 200 || !relayIndex.body.includes("<")) fail(`GET / on packaged server: ${relayIndex.status}`);
   await stop(relay);
 
-  console.log(`smoke ok: pinomad@${version} (version, host+web, relay+web)`);
+  console.log(`smoke ok: pinomad@${version} (version, host+web, server+web)`);
 } finally {
   await rm(prefix, { recursive: true, force: true });
   await rm(work, { recursive: true, force: true });

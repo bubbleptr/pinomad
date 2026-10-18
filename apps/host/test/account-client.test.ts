@@ -13,8 +13,8 @@ import {
 } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
-import { openAccounts, type Accounts } from "@pinomad/relay/src/accounts.ts";
-import { startRelay, type Relay } from "@pinomad/relay/src/relay.ts";
+import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
+import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import {
   createAccountClient,
   isUnauthenticated,

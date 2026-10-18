@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
-import { openAccounts, type Accounts } from "@pinomad/relay/src/accounts.ts";
+import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";

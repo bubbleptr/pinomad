@@ -5,7 +5,7 @@
 | 域名 | 内容 | 部署 |
 |---|---|---|
 | `pinomad.si`（`www` 跳到根域名） | 落地页，`apps/site` 的静态构建，中英两份（`/`、`/zh/`） | Cloudflare Pages，接 GitHub，合进 `main` 自动发布 |
-| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | Zeabur，`deploy/relay/Dockerfile`，见[远程访问](remote-access.md)的"容器平台" |
+| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | Zeabur，`deploy/server/Dockerfile`，见[远程访问](remote-access.md)的"容器平台" |
 
 落地页只是静态文件，不跟服务端共享代码和部署，也不跟 npm 版本走；服务端照旧托管和它同版本的 Web 客户端（ADR-0015 §4）。
 

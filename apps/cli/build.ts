@@ -47,7 +47,7 @@ if (!existsSync(join(root, "apps/web/dist/index.html"))) fail("apps/web/dist is 
 // Third-party deps stay external and get installed by npm. workspace:* deps
 // (our own packages) are bundled instead. A name with two versions is a bug.
 const dependencies: Record<string, string> = {};
-for (const dir of ["apps/host", "apps/relay", "packages/protocol"]) {
+for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
   const manifest = JSON.parse(await readFile(join(root, dir, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
   };

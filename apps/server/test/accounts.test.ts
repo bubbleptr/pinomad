@@ -496,7 +496,7 @@ describe("desktop origin and legacy mode", () => {
   });
 });
 
-describe("relay passwd", () => {
+describe("server passwd", () => {
   it("refuses to change the password while the server holds the data dir", async () => {
     const { dataDir } = await startServer();
     await expect(changePassword({ dataDir, password: NEW_PASSWORD })).rejects.toThrow(/already in use|held|running/i);

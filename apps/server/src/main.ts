@@ -3,9 +3,9 @@
 // accounts, admits hosts bound to them, and serves /api/*. Run on Node with
 // native TS stripping — same as the host.
 //
-//   PINOMAD_SERVER_USER=… PINOMAD_SERVER_PASSWORD=… bun run relay -- --public-origin ORIGIN   # first start
-//   bun run relay -- --public-origin ORIGIN --data-dir DIR
-//   bun run relay -- passwd [--data-dir DIR]                          # new password on stdin
+//   PINOMAD_SERVER_USER=… PINOMAD_SERVER_PASSWORD=… bun run server -- --public-origin ORIGIN   # first start
+//   bun run server -- --public-origin ORIGIN --data-dir DIR
+//   bun run server -- passwd [--data-dir DIR]                          # new password on stdin
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -40,7 +40,7 @@ async function passwdMain(argv: readonly string[]): Promise<void> {
     strict: true,
   });
   if (process.stdin.isTTY) {
-    console.error("pipe the new password on stdin, e.g. `printenv NEW_PINOMAD_SERVER_PASSWORD | " + commandHint("relay") + " passwd`");
+    console.error("pipe the new password on stdin, e.g. `printenv NEW_PINOMAD_SERVER_PASSWORD | " + commandHint("server") + " passwd`");
     process.exit(1);
   }
   const dataDir = resolveDataDir(values["data-dir"]);
@@ -71,8 +71,8 @@ export async function main(argv: readonly string[]): Promise<void> {
 
   if (values["public-origin"] === undefined) {
     console.error(
-      `usage: ${commandHint("relay")} --public-origin ORIGIN [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
-        `       ${commandHint("relay")} passwd [--data-dir DIR] [--user NAME]   (server stopped; new password on stdin)\n` +
+      `usage: ${commandHint("server")} --public-origin ORIGIN [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
+        `       ${commandHint("server")} passwd [--data-dir DIR] [--user NAME]   (server stopped; new password on stdin)\n` +
         "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR",
     );
     process.exit(1);

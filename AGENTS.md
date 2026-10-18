@@ -6,7 +6,7 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/relay`（自部署中继，只转发密文，ADR-0008 第二期）、`apps/site`（pinomad.si 落地页，纯静态 Vite 多页，部署见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 落地页，纯静态 Vite 多页，部署见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
 
 移动端正按 ADR-0024 重写成原生（iOS SwiftUI，客户端协议核心用 Rust），`apps/mobile` 在维护期：只修严重问题，不加功能，原生版替换后删除；M5 等计划里的移动端部分都做在原生版上。
 

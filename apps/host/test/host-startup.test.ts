@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
-import { startRelay } from "@pinomad/relay/src/relay.ts";
+import { startRelay } from "@pinomad/server/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import { writeServerConfig } from "../src/server-config.ts";
 import { freePort, openBoundAccounts, tempDir, useCleanups } from "./support.ts";

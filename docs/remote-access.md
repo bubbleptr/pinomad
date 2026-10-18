@@ -48,7 +48,7 @@ VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来�
 npm i -g pinomad
 export PINOMAD_SERVER_USER=<用户名>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位>
-pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
+pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 # 默认只监听 127.0.0.1:7430，--port / --listen 可改；--trust-proxy 是因为前面有 Caddy
 ```
 
@@ -87,7 +87,7 @@ WantedBy=multi-user.target
 
 ### 容器平台（Zeabur 等）
 
-镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`，所以数据目录不能直接是卷的根），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
+镜像在 `deploy/server/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`，所以数据目录不能直接是卷的根），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
 
 | 环境变量 | 含义 |
 |---|---|
@@ -98,7 +98,7 @@ WantedBy=multi-user.target
 Zeabur 上的步骤（在 Dedicated Server 上部署，用 CLI 上传目录，不接 GitHub）：
 
 ```sh
-cd deploy/relay
+cd deploy/server
 zeabur deploy --project-id <项目 id> --create --name pinomad-relay   # 首次：在项目里建出服务
 # 之后重新部署同一个服务：
 zeabur deploy --service-id <服务 id>
@@ -113,7 +113,7 @@ pinomad join https://nomad.example.com <token>   # 宿主加入账号、接上�
 
 宿主登记成功会在日志里写一行 `{"event":"relay","status":"registered",…}`，掉线重连时写 `"status":"connecting"`（`pinomad service logs` 查看）；也可以从外面连设备入口 `wss://<origin>/c/<hostId>` 确认：宿主在线时连接保持打开（等握手），没登记会立刻以 `4604`（hostOffline）关闭。
 
-也可以从 GitHub 仓库部署：Root Directory 设 `deploy/relay`、Watch Paths 限 `deploy/relay/**`，其余同上。
+也可以从 GitHub 仓库部署：Root Directory 设 `deploy/server`、Watch Paths 限 `deploy/server/**`，其余同上。
 
 ### 服务端账号（ADR-0022）
 
@@ -122,15 +122,15 @@ pinomad join https://nomad.example.com <token>   # 宿主加入账号、接上�
 ```sh
 export PINOMAD_SERVER_USER=<用户名>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位，建议密码管理器生成>
-pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
+pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 ```
 
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
 - 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、Zeabur）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
-- 改密码用 `pinomad relay passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
+- 改密码用 `pinomad server passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
 
   ```sh
-  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad/server
+  printenv NEW_PASSWORD | pinomad server passwd --data-dir /var/lib/pinomad/server
   ```
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
@@ -198,7 +198,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 ### 升级
 
-中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主没加入服务端账号时，宿主日志和 Web 警告会提示先 `pinomad join`。从只用 `--allow-host` 白名单的老版本升级时，这个参数已经去掉（带着它启动会报未知参数）：按「服务端账号」配好数据目录和首个用户，在每台宿主上 `pinomad join`，再去掉 `--allow-host` 启动新版本。
+中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/server` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主没加入服务端账号时，宿主日志和 Web 警告会提示先 `pinomad join`。从只用 `--allow-host` 白名单的老版本升级时，这个参数已经去掉（带着它启动会报未知参数）：按「服务端账号」配好数据目录和首个用户，在每台宿主上 `pinomad join`，再去掉 `--allow-host` 启动新版本。服务端命令现在叫 `pinomad server`，旧名 `pinomad relay` 仍然可用。
 
 ### 更换服务端域名
 

@@ -10,10 +10,10 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/provid
 import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { openAccounts, type Accounts } from "@pinomad/relay/src/accounts.ts";
-import { openApns } from "@pinomad/relay/src/apns.ts";
-import { startRelay, type Relay } from "@pinomad/relay/src/relay.ts";
-import { fakeApns, type FakeApns } from "@pinomad/relay/test/apns-fake.ts";
+import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
+import { openApns } from "@pinomad/server/src/apns.ts";
+import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
+import { fakeApns, type FakeApns } from "@pinomad/server/test/apns-fake.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
