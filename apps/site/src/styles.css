@@ -446,15 +446,36 @@ html[lang="zh-CN"] .hero h1 {
   white-space: nowrap;
 }
 
-/* —— Screenshot placeholders. Each slot keeps the final image's aspect ratio, so
-   a real capture drops in without moving the layout. The skeleton is abstract on
-   purpose: it should read as "screenshot goes here", never as the product. —— */
+/* —— Screenshots. Each slot keeps its image's aspect ratio, so the layout doesn't
+   move while it loads. A slot still waiting for its capture shows an abstract
+   skeleton: it should read as "screenshot goes here", never as the product. —— */
 .shot {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* The dark captures' edges would melt into the page; a hairline drawn over the
+   image (not a border around it) keeps them crisp. */
+.shot:has(> img) {
+  border: 0;
+}
+
+.shot > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.shot:has(> img)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  pointer-events: none;
 }
 
 .shot-window {
