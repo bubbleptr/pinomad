@@ -36,7 +36,14 @@ export function createMentionFetcher(
 ): MentionFetcher {
   let generation = 0;
   let pending: { readonly cacheKey: string; readonly timer: ReturnType<typeof setTimeout> } | undefined;
-  const inFlight = new Set<string>();
+  // In-flight keys, tagged with the generation that started them: a request
+  // from before a cancel must neither block the same query reopened after it
+  // nor, when it finally settles, clear the newer request's marker.
+  const inFlight = new Map<string, number>();
+  const busy = (cacheKey: string): boolean => inFlight.get(cacheKey) === generation;
+  const settle = (cacheKey: string, captured: number): void => {
+    if (inFlight.get(cacheKey) === captured) inFlight.delete(cacheKey);
+  };
 
   return {
     request(cacheKey, scopeKey, list) {
@@ -44,23 +51,23 @@ export function createMentionFetcher(
         clearTimeout(pending.timer);
         pending = undefined;
       }
-      if (inFlight.has(cacheKey)) return;
+      if (busy(cacheKey)) return;
       const captured = generation;
       pending = {
         cacheKey,
         timer: setTimeout(() => {
           pending = undefined;
-          if (captured !== generation || inFlight.has(cacheKey)) return;
-          inFlight.add(cacheKey);
+          if (captured !== generation || busy(cacheKey)) return;
+          inFlight.set(cacheKey, captured);
           list().then(
             (listing) => {
-              inFlight.delete(cacheKey);
+              settle(cacheKey, captured);
               if (captured === generation) onItems(cacheKey, scopeKey, listing.files);
             },
             () => {
               // A failed request leaves the slot unanswered: the next search
               // for it retries, and the agent candidates stay as they were.
-              inFlight.delete(cacheKey);
+              settle(cacheKey, captured);
             },
           );
         }, MENTION_FETCH_DEBOUNCE_MS),

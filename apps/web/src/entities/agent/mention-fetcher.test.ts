@@ -67,6 +67,33 @@ describe("createMentionFetcher", () => {
     expect(onItems).toHaveBeenCalledWith("s:ab", "s", ["new.ts"]);
   });
 
+  it("refetches the same query after cancel, and the stale settle keeps the new dedupe", async () => {
+    const onItems = vi.fn();
+    const fetcher = createMentionFetcher(onItems);
+    const stale = deferred<ReturnType<typeof listing>>();
+    const fresh = deferred<ReturnType<typeof listing>>();
+    const list = vi.fn().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
+    fetcher.request("s:rev", "s", list);
+    await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
+    // The menu closes mid-flight and the same query reopens.
+    fetcher.cancel();
+    fetcher.request("s:rev", "s", list);
+    await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
+    expect(list).toHaveBeenCalledTimes(2);
+
+    stale.resolve(listing(["old.ts"]));
+    await Promise.resolve();
+    // The stale settle must not clear the fresh request's marker.
+    fetcher.request("s:rev", "s", list);
+    await vi.advanceTimersByTimeAsync(MENTION_FETCH_DEBOUNCE_MS);
+    expect(list).toHaveBeenCalledTimes(2);
+
+    fresh.resolve(listing(["new.ts"]));
+    await Promise.resolve();
+    expect(onItems).toHaveBeenCalledTimes(1);
+    expect(onItems).toHaveBeenCalledWith("s:rev", "s", ["new.ts"]);
+  });
+
   it("leaves a failed query unanswered so the next request retries", async () => {
     const onItems = vi.fn();
     const fetcher = createMentionFetcher(onItems);
