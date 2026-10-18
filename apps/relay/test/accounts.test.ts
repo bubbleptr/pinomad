@@ -574,7 +574,7 @@ describe("server CLI account mode", () => {
 
   it("refuses a first start without the bootstrap env vars", async () => {
     const home = await tempDir();
-    await expect(runMain(home, {})).rejects.toThrow(/exited 1: .*PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required/);
+    await expect(runMain(home, {})).rejects.toThrow(/exited 1: [\s\S]*PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required/);
   });
 
   it("reopens the default data dir after the bootstrap env vars are gone", async () => {
