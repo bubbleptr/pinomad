@@ -125,6 +125,7 @@ final class AppModel {
     var accountRefreshing = false
     var accountRefreshPending = false
     var accountPairingHostId: String?
+    var accountPairingGeneration: UInt64 = 0
     var accountRejectedHostKeys: Set<String> = []
     /// Push switches, permission, APNs token, and the system callbacks.
     let push = PushCenter.shared
@@ -243,6 +244,9 @@ final class AppModel {
     /// saved host record.
     @discardableResult
     func pair(link: String, account: AccountLink? = nil) -> Bool {
+        // A QR/pasted pairing starts a new target; an in-flight account ask
+        // for another host must not land after it.
+        if account == nil { invalidateAccountPairing() }
         do {
             let previous = currentHostKey ?? hosts.active?.hostKey
             let session = try PinomadSession.pair(
@@ -264,6 +268,7 @@ final class AppModel {
 
     /// Start a session for a stored host.
     func connect(_ host: HostRecord) {
+        invalidateAccountPairing()
         do {
             let session = try PinomadSession.connect(host: host)
             adopt(session, sameHost: host.hostKey == currentHostKey)
@@ -279,6 +284,7 @@ final class AppModel {
     /// Re-read the keychain and connect to the launch host, or wait for a
     /// link when there is none.
     func connectActive() {
+        invalidateAccountPairing()
         do {
             hosts = try store.load()
             hostsLoaded = true

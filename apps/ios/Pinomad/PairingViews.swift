@@ -219,6 +219,12 @@ struct HostsView: View {
                     await model.accountRefreshHosts()
                 }
             }
+            .onDisappear {
+                // Closing the sheet cancels a pairing ask that is still
+                // waiting; a late offer must not replace the session the
+                // reader went back to.
+                model.invalidateAccountPairing()
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }

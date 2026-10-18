@@ -186,7 +186,11 @@ extension AppModel {
             case .failure(let error): failure = error
             }
         }
-        guard accountSession == session else { return }
+        // A concurrent refresh may have cleared this same session first;
+        // that must not swallow a failed "everywhere" request.
+        let keptIdentity = accountRecord?.serverOrigin == session.serverOrigin
+            && accountRecord?.username == session.username
+        guard accountSession == session || (accountSession == nil && keptIdentity) else { return }
         let warning = endAccountSession(notice: nil)
         let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, failure: failure)
         let joined = [warning, serverWarning].compactMap { $0 }.joined(separator: "\n")
@@ -202,17 +206,22 @@ extension AppModel {
             return false
         }
         guard !accountBusy else { return false }
+        let generation = accountPairingGeneration
         accountBusy = true
         accountPairingHostId = hostId
         accountError = nil
         defer {
-            accountBusy = false
-            accountPairingHostId = nil
+            // A connection or another pairing invalidated this ask while it
+            // was waiting; that path already cleared the indicators.
+            if generation == accountPairingGeneration {
+                accountBusy = false
+                accountPairingHostId = nil
+            }
         }
 
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
-            guard accountSession == session else { return false }
+            guard accountSession == session, generation == accountPairingGeneration else { return false }
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: "登录已失效，请重新登录。")
             } else {
@@ -220,7 +229,7 @@ extension AppModel {
             }
             return false
         case .success(let offer):
-            guard accountSession == session else { return false }
+            guard accountSession == session, generation == accountPairingGeneration else { return false }
             guard let link = accountPairingLink(offer: offer) else {
                 accountError = AccountCopy.message(AccountFailure(code: "invalid_offer"))
                 return false
@@ -228,6 +237,16 @@ extension AppModel {
             return pair(
                 link: link,
                 account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId))
+        }
+    }
+
+    /// Make any in-flight account pairing ask stale. A connection the reader
+    /// chose while it waited wins; the late offer must not steal it.
+    func invalidateAccountPairing() {
+        accountPairingGeneration &+= 1
+        if accountPairingHostId != nil {
+            accountPairingHostId = nil
+            accountBusy = false
         }
     }
 
