@@ -32,11 +32,15 @@ struct NewConversationView: View {
     private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
     private var selectedAgent: String? { model.draftAgent.agent }
 
+    /// Whether this host knows `createConversation`'s agent arg.
+    private var agentPickerAvailable: Bool { model.hostSupports(.agentConversations) }
+
     /// The picker stays up while a pick survives a now-empty snapshot so the
     /// reader can clear it (the web's rule); an empty roles list alone hides
-    /// it.
+    /// it. A pick that outlived a host downgrade also keeps the chip, with
+    /// only "不指定" — otherwise there is no way back to a plain draft.
     private var showAgentPicker: Bool {
-        model.hostSupports(.agentConversations) && (!roles.isEmpty || selectedAgent != nil)
+        selectedAgent != nil || (agentPickerAvailable && !roles.isEmpty)
     }
 
     /// The capsule's label. While the source hint shares the line, the
@@ -212,7 +216,8 @@ struct NewConversationView: View {
                     checkoutMenu
                 }
                 if showAgentPicker {
-                    AgentMenuChip(roles: roles, selected: selectedAgent,
+                    AgentMenuChip(roles: agentPickerAvailable ? roles : [],
+                                  selected: selectedAgent,
                                   enabled: model.connected && !model.creating) {
                         model.setDraftAgent($0)
                     }
