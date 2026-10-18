@@ -73,7 +73,8 @@ pub enum Call {
         show: ForkShow,
     },
     Answer { kind: String, request_id: String, answers: Json, target: Option<u64> },
-    Changes,
+    /// `target` defaults to the shown conversation, like `submit`'s.
+    Changes { target: Option<u64> },
     CreatePairing,
     RevokeDevice { public_key: String },
     Logout { provider_id: String },
@@ -826,7 +827,7 @@ impl RemoteDurable {
             Call::AddProject { .. }
             | Call::ListFolders { .. }
             | Call::RenameConversation { .. }
-            | Call::Changes
+            | Call::Changes { .. }
             | Call::CreatePairing
             | Call::CreateAgent { .. }
             | Call::UpdateAgent { .. }
@@ -1026,8 +1027,8 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "answer", args });
             }
-            Call::Changes => {
-                let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
+            Call::Changes { target } => {
+                let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
                 let args = obj(&[("conversationId", Json::Number(conversation as f64))]);
                 steps.push_back(Step::Call { method: "changes", args });
             }

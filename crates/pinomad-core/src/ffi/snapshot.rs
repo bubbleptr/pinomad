@@ -36,6 +36,9 @@ pub struct ClientSnapshot {
     pub models: Vec<ModelSummary>,
     /// New-conversation defaults — `settings` stream when present.
     pub defaults: Defaults,
+    /// Named agents on the host (ADR-0023) — `None` before the `agents`
+    /// stream's snapshot or when the host predates it (5.6).
+    pub agents: Option<AgentRoles>,
     /// The shown conversation and everything its screen reads.
     pub conversation: Option<ConversationSnapshot>,
 }
@@ -118,6 +121,53 @@ fn defaults_of(view: &Json) -> Defaults {
             .and_then(Json::as_str)
             .map(|s| ThinkingLevel::from_units(s.units())),
     }
+}
+
+/// The `agents` stream's value, typed — `null` (host < 5.6 or the stream
+/// hasn't landed) decodes to `None`, anything else to a lenient record.
+fn agents_of(view: &Json) -> Option<AgentRoles> {
+    let agents = view.get("agents")?;
+    if matches!(agents, Json::Null) {
+        return None;
+    }
+    let text = |entry: &Json, key: &str| -> String {
+        entry
+            .get(key)
+            .and_then(Json::as_str)
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default()
+    };
+    let roles = agents
+        .get("roles")
+        .and_then(Json::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|entry| AgentRole {
+                    name: text(entry, "name"),
+                    description: text(entry, "description"),
+                    model: entry.get("model").and_then(Json::as_str).map(|s| s.to_string_lossy()),
+                    thinking_level: entry
+                        .get("thinkingLevel")
+                        .and_then(Json::as_str)
+                        .map(|s| ThinkingLevel::from_units(s.units())),
+                    prompt: text(entry, "prompt"),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let problems = agents
+        .get("problems")
+        .and_then(Json::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|entry| AgentRoleProblem {
+                    file: text(entry, "file"),
+                    reason: text(entry, "reason"),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(AgentRoles { roles, problems })
 }
 
 fn mismatch_of(view: &Json) -> Option<ProtocolMismatch> {
@@ -212,6 +262,7 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         notices: notices_of(&view),
         models: models_of(&view),
         defaults: defaults_of(&view),
+        agents: agents_of(&view),
         conversation: conversation_of(&view),
     })
 }

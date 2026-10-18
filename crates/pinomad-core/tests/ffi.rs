@@ -8,9 +8,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use pinomad_core::ffi::{
-    CallResult, ClientError, ConnectionState, ConversationCheckout, FfiCall, FfiCommand, FfiEvent,
-    MessageImage, ModelRef, NewConversationHome, PinomadClient, ReadyOutcome, StoredHost,
-    SubmitMode, ThinkingLevel,
+    CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout, FfiCall,
+    FfiCommand, FfiEvent, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
+    ReadyOutcome, StoredHost, SubmitMode, ThinkingLevel,
 };
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -60,11 +60,14 @@ fn snapshot_for(stream: &str, snapshots: &HashMap<String, Json>) -> Json {
 }
 
 /// Client frames in, server frames out — subscribes get a snapshot, calls
-/// get an ok result (or the configured error).
+/// get an ok result (or the configured error). `minor` shapes the hello's
+/// protocol minor so tests can pose as an older host.
 struct ScriptedHost {
     snapshots: HashMap<String, Json>,
     held: HashSet<String>,
     call_errors: HashMap<String, String>,
+    call_results: HashMap<String, Json>,
+    minor: f64,
     sent: Vec<Json>,
     conn: u64,
 }
@@ -75,6 +78,8 @@ impl ScriptedHost {
             snapshots: default_snapshots(),
             held: HashSet::new(),
             call_errors: HashMap::new(),
+            call_results: HashMap::new(),
+            minor: 9.0,
             sent: Vec::new(),
             conn: 0,
         }
@@ -83,7 +88,7 @@ impl ScriptedHost {
     fn hello(&self) -> String {
         obj(&[
             ("type", Json::from("hello")),
-            ("protocol", obj(&[("major", Json::from(5.0)), ("minor", Json::from(9.0))])),
+            ("protocol", obj(&[("major", Json::from(5.0)), ("minor", Json::from(self.minor))])),
             ("session", obj(&[("id", Json::from("fake")), ("directory", Json::from(""))])),
             ("models", Json::array(vec![])),
             ("docs", Json::array(vec![])),
@@ -120,19 +125,23 @@ impl ScriptedHost {
                     .and_then(Json::as_str)
                     .map(|s| s.to_string_lossy())
                     .unwrap_or_default();
-                let result = match self.call_errors.get(&method) {
-                    Some(error) => obj(&[
+                let result = if let Some(error) = self.call_errors.get(&method) {
+                    obj(&[
                         ("type", Json::from("result")),
                         ("id", id),
                         ("ok", Json::Bool(false)),
                         ("error", Json::from(error.clone())),
-                    ]),
-                    None => obj(&[
+                    ])
+                } else {
+                    obj(&[
                         ("type", Json::from("result")),
                         ("id", id),
                         ("ok", Json::Bool(true)),
-                        ("value", Json::Null),
-                    ]),
+                        (
+                            "value",
+                            self.call_results.get(&method).cloned().unwrap_or(Json::Null),
+                        ),
+                    ])
                 };
                 vec![result.to_json()]
             }
@@ -158,6 +167,12 @@ impl Harness {
     }
 
     fn new_with(request_id: &'static str) -> Self {
+        Self::boot(ScriptedHost::new(), request_id)
+    }
+
+    /// Connect with a preconfigured host — snapshots, held streams, call
+    /// results, and protocol minor are set before the client opens.
+    fn boot(host: ScriptedHost, request_id: &'static str) -> Self {
         let client = PinomadClient::with_options(RemoteDurableOptions {
             transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
             reconnect_delay_ms: Some((20, 20)),
@@ -165,7 +180,7 @@ impl Harness {
         });
         let mut harness = Harness {
             client: Arc::new(client),
-            host: ScriptedHost::new(),
+            host,
             ready: None,
             ops: HashMap::new(),
             view_changes: 0,
@@ -420,6 +435,172 @@ fn validate_stored_host_accepts_good_and_drops_bad_account() {
         ..validated.clone()
     };
     assert_eq!(validate_stored_host(bad_url), Err(StoredHostError::InvalidUrl));
+}
+
+const CHANGES_PATCH: &str = "diff --git a/t.txt b/t.txt\nindex 1111111..2222222 100644\n--- a/t.txt\n+++ b/t.txt\n@@ -1 +1 @@\n-old\n+new\n";
+
+/// The `changes` call's wire args — the shown conversation by default, the
+/// given `conversation_id` otherwise.
+#[test]
+fn changes_call_targets_a_conversation() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "changes".to_string(),
+        obj(&[
+            ("available", Json::Bool(true)),
+            ("base", Json::from("c0ffee")),
+            ("patch", Json::from(CHANGES_PATCH)),
+            ("truncated", Json::Bool(false)),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::Changes { conversation_id: Some(7) });
+    // No conversation shown and none given → the request fails before the wire.
+    h.invoke(2, FfiCall::Changes { conversation_id: None });
+    h.invoke(3, FfiCall::SwitchConversation { id: 4 });
+    h.invoke(4, FfiCall::Changes { conversation_id: None });
+
+    let calls = call_frames(&h);
+    let changes: Vec<&Json> = calls
+        .iter()
+        .filter(|f| f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "changes").unwrap_or(false))
+        .collect();
+    assert_eq!(changes.len(), 2);
+    assert_eq!(
+        changes[0].get("args").and_then(|a| a.get("conversationId")).cloned(),
+        Some(Json::Number(7.0))
+    );
+    // None fell back to the shown conversation (4).
+    assert_eq!(
+        changes[1].get("args").and_then(|a| a.get("conversationId")).cloned(),
+        Some(Json::Number(4.0))
+    );
+    assert!(matches!(h.ops.get(&2), Some(Err(error)) if error.contains("No conversation selected")));
+}
+
+#[test]
+fn changes_result_decodes_available_into_parsed_files() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "changes".to_string(),
+        obj(&[
+            ("available", Json::Bool(true)),
+            ("base", Json::from("c0ffee")),
+            ("patch", Json::from(CHANGES_PATCH)),
+            ("truncated", Json::Bool(true)),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::Changes { conversation_id: Some(7) });
+    let Some(Ok(CallResult::Changes { changes })) = h.ops.get(&1) else {
+        panic!("op 1 resolved: {:?}", h.ops.get(&1))
+    };
+    let ConversationChanges::Available { base, files, truncated } = changes else {
+        panic!("available result: {changes:?}")
+    };
+    assert_eq!(base, "c0ffee");
+    assert_eq!(*truncated, true);
+    assert_eq!(files.len(), 1);
+    let file = &files[0];
+    assert_eq!(file.path, "t.txt");
+    assert_eq!(file.old_path.as_deref(), Some("t.txt"));
+    assert_eq!((file.additions, file.deletions), (1, 1));
+    assert_eq!(file.lines.len(), 3);
+    assert_eq!(file.lines[0].kind, PatchLineKind::Meta);
+    assert_eq!(file.lines[1].kind, PatchLineKind::Del);
+    assert_eq!(file.lines[1].text, "-old");
+    assert_eq!(file.lines[2].kind, PatchLineKind::Add);
+}
+
+#[test]
+fn changes_result_decodes_unavailable() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "changes".to_string(),
+        obj(&[("available", Json::Bool(false)), ("reason", Json::from("Not in a git repository"))]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::Changes { conversation_id: Some(7) });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Changes {
+            changes: ConversationChanges::Unavailable {
+                reason: "Not in a git repository".to_string(),
+            },
+        }))
+    );
+}
+
+#[test]
+fn changes_result_malformed_fails_the_op() {
+    for (index, value) in [
+        obj(&[]),                                             // no `available`
+        obj(&[("available", Json::Number(1.0))]),             // wrong type
+        obj(&[("available", Json::Bool(true))]),              // missing patch/base
+        Json::Null,                                           // not an object
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("changes".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::Changes { conversation_id: Some(7) });
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed changes result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn snapshot_agents_is_none_before_the_stream() {
+    // A pre-5.6 host never subscribes `agents` — the view's `null` decodes
+    // to None rather than an empty record.
+    let mut host = ScriptedHost::new();
+    host.minor = 5.0;
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(h.ready, Some(ReadyOutcome::Connected));
+    assert_eq!(h.client.snapshot().unwrap().agents, None);
+}
+
+#[test]
+fn snapshot_agents_decodes_roles_and_problems() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "agents".to_string(),
+        obj(&[
+            (
+                "roles",
+                Json::array(vec![obj(&[
+                    ("name", Json::from("reviewer")),
+                    ("description", Json::from("Reviews code")),
+                    ("model", Json::from("anthropic/claude-x")),
+                    ("thinkingLevel", Json::from("high")),
+                    ("prompt", Json::from("Be strict.")),
+                ])]),
+            ),
+            (
+                "problems",
+                Json::array(vec![obj(&[
+                    ("file", Json::from("Broken.md")),
+                    ("reason", Json::from("bad frontmatter")),
+                ])]),
+            ),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    let agents = h.client.snapshot().unwrap().agents.expect("agents arrived");
+    assert_eq!(agents.roles.len(), 1);
+    let role = &agents.roles[0];
+    assert_eq!(role.name, "reviewer");
+    assert_eq!(role.description, "Reviews code");
+    assert_eq!(role.model.as_deref(), Some("anthropic/claude-x"));
+    assert_eq!(role.thinking_level, Some(ThinkingLevel::High));
+    assert_eq!(role.prompt, "Be strict.");
+    assert_eq!(agents.problems.len(), 1);
+    assert_eq!(agents.problems[0].file, "Broken.md");
+    assert_eq!(agents.problems[0].reason, "bad frontmatter");
 }
 
 #[test]

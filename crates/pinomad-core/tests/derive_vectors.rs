@@ -619,6 +619,19 @@ expect_text(case), "{name}");
 }
 
 #[test]
+fn parse_patch_replays() {
+    let file = load("patch");
+    for case in cases(&file, "parsePatch") {
+        let name = as_text(field(case, "name"));
+        let patch = as_text(field(case, "patch"));
+        let files = pinomad_core::patch::parse_patch(&patch);
+        assert_eq!(
+norm(&derive_vectors::out::patch_files_json(&files)),
+expect_text(case), "{name}");
+    }
+}
+
+#[test]
 fn tool_diff_stat_replays() {
     let file = load("tools");
     for case in cases(&file, "toolDiffStatFromResult") {

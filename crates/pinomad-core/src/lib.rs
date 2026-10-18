@@ -17,6 +17,7 @@ pub mod model;
 pub mod noise;
 pub mod organization;
 pub mod pairing_link;
+pub mod patch;
 pub mod presentation;
 pub mod provider_failure;
 pub mod questions;

@@ -25,6 +25,7 @@ use crate::remote_durable::{Command, Event, RemoteDurable, RemoteDurableOptions}
 pub(crate) enum ResultKind {
     Project,
     FolderListing,
+    Changes,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -42,7 +43,7 @@ struct Inner {
 ///
 /// Failure contract, following the reference `RemoteDurable` exactly:
 /// - Request-class calls (`addProject`, `listFolders`, `renameConversation`,
-///   `setPushToken`) reject the op: the platform sees
+///   `setPushToken`, `changes`) reject the op: the platform sees
 ///   `OperationFailed { op, error }`.
 /// - Command-class calls (everything else: `submit`, `switchConversation`,
 ///   `createConversation`, `archive`, `compact`, `answer`, `setModel`,
@@ -91,16 +92,26 @@ impl PinomadClient {
                     FfiCommand::Paired { url, host_key, private_key }
                 }
                 Command::OperationSucceeded { op, value } => {
-                    let result = match inner.result_kinds.remove(&op) {
-                        Some(ResultKind::Project) => {
-                            CallResult::Project { project: project_of(value.as_ref()) }
-                        }
-                        Some(ResultKind::FolderListing) => {
-                            CallResult::FolderListing { listing: folder_listing_of(value.as_ref()) }
-                        }
-                        None => CallResult::Unit,
-                    };
-                    FfiCommand::OperationSucceeded { op, value: result }
+                    match inner.result_kinds.remove(&op) {
+                        Some(ResultKind::Project) => FfiCommand::OperationSucceeded {
+                            op,
+                            value: CallResult::Project { project: project_of(value.as_ref()) },
+                        },
+                        Some(ResultKind::FolderListing) => FfiCommand::OperationSucceeded {
+                            op,
+                            value: CallResult::FolderListing { listing: folder_listing_of(value.as_ref()) },
+                        },
+                        // A changes result that doesn't fit the wire union
+                        // fails the op rather than delivering a guess.
+                        Some(ResultKind::Changes) => match changes_of(value.as_ref()) {
+                            Ok(changes) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::Changes { changes },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        None => FfiCommand::OperationSucceeded { op, value: CallResult::Unit },
+                    }
                 }
                 Command::OperationFailed { op, error } => {
                     inner.result_kinds.remove(&op);

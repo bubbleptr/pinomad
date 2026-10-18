@@ -337,6 +337,41 @@ pub fn model_pick_json(pick: &ModelPick) -> Json {
     ])
 }
 
+/// `ParsedFile[]` in the reference's key order — `oldPath` is assigned after
+/// the object literal is created, so it serializes last.
+pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {
+    Json::array(
+        files
+            .iter()
+            .map(|file| {
+                obj(&[
+                    ("path", Some(s(&file.path))),
+                    ("isNew", Some(Json::Bool(file.is_new))),
+                    ("isDeleted", Some(Json::Bool(file.is_deleted))),
+                    ("binary", Some(Json::Bool(file.binary))),
+                    ("additions", Some(num(file.additions as f64))),
+                    ("deletions", Some(num(file.deletions as f64))),
+                    (
+                        "lines",
+                        Some(Json::array(
+                            file.lines
+                                .iter()
+                                .map(|line| {
+                                    obj(&[
+                                        ("kind", Some(s(line.kind.as_str()))),
+                                        ("text", Some(s(&line.text))),
+                                    ])
+                                })
+                                .collect(),
+                        )),
+                    ),
+                    ("oldPath", file.old_path.as_deref().map(s)),
+                ])
+            })
+            .collect(),
+    )
+}
+
 /// The `thinkingLevelLabels` map in the reference's key order.
 pub fn level_labels_json() -> Json {
     let mut object = JsonObject::new();
