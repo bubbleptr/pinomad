@@ -116,6 +116,9 @@ final class AppModel {
     var hostsLoaded = false
     var pushSyncInFlight = false
     var pushSyncPending = false
+    /// Hosts whose pairing is being removed; no new token change may be
+    /// queued for them while the clearing request is in flight.
+    var forgettingHosts: Set<String> = []
     var lastSnapshotConnected = false
     private let monitor = NetworkMonitor()
     /// Marks each snapshot landing on the main actor — paired with the

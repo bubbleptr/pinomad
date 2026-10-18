@@ -33,6 +33,7 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     private let defaults = UserDefaults.standard
     private let tokenKey = "push.apnsToken"
     private let enabledPrefix = "push.enabled."
+    private let registeredPrefix = "push.registered."
     private let logger = Logger(subsystem: "build.kieran.pinomad", category: "push")
 
     private override init() {
@@ -65,10 +66,22 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         defaults.set(enabled, forKey: enabledPrefix + hostKey)
     }
 
-    /// A forgotten host must not keep a switch that would re-register if it
+    /// Whether this device may still be registered with the host. Turning
+    /// the switch off while offline cannot clear the host, so the flag stays
+    /// set and forgetting still asks the host (or warns).
+    func mayHaveRegistration(for hostKey: String) -> Bool {
+        defaults.bool(forKey: registeredPrefix + hostKey)
+    }
+
+    func setMayHaveRegistration(_ registered: Bool, for hostKey: String) {
+        defaults.set(registered, forKey: registeredPrefix + hostKey)
+    }
+
+    /// A forgotten host must not keep any state that would re-register if it
     /// were paired again.
     func forget(_ hostKey: String) {
         defaults.removeObject(forKey: enabledPrefix + hostKey)
+        defaults.removeObject(forKey: registeredPrefix + hostKey)
     }
 
     /// Read the current permission and refresh the APNs token when allowed.

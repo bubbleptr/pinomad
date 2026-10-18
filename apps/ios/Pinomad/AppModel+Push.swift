@@ -78,7 +78,8 @@ extension AppModel {
         }
         guard phase == .connected, let host = sessionHost, let session,
               let snapshot, snapshot.connection == .connected, !snapshot.unauthorized,
-              let hostMinor = snapshot.host?.protocol.minor
+              let hostMinor = snapshot.host?.protocol.minor,
+              !forgettingHosts.contains(host.hostKey)
         else { return }
 
         let action = pushRegistrationAction(
@@ -87,20 +88,35 @@ extension AppModel {
             deviceToken: push.deviceToken,
             environment: push.environment)
         let token: ApnsPushToken?
+        let registering: Bool
         switch action {
         case .none:
             return
         case .register(let value):
             token = value
+            registering = true
         case .unregister:
             token = nil
+            registering = false
         }
 
+        // Remember the attempt before it goes out: a host may accept a
+        // register whose reply (or this process) never comes back. Only a
+        // successful clear is proof that nothing is registered.
+        if registering, !forgettingHosts.contains(host.hostKey) {
+            push.setMayHaveRegistration(true, for: host.hostKey)
+        }
         pushSyncInFlight = true
         Task { [weak self] in
             guard let self else { return }
             do {
                 _ = try await session.invoke(.setPushToken(token: token))
+                // A host being forgotten owns the clearing request; a
+                // late clear must not resurrect or drop its flag.
+                if !registering, !self.forgettingHosts.contains(host.hostKey),
+                   self.hosts.hosts.contains(where: { $0.hostKey == host.hostKey }) {
+                    self.push.setMayHaveRegistration(false, for: host.hostKey)
+                }
                 if self.currentHostKey == host.hostKey { self.pushError = nil }
             } catch {
                 if self.currentHostKey == host.hostKey {

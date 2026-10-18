@@ -61,6 +61,31 @@ import Testing
         ) == .open(42))
     }
 
+    @Test func forgettingClearsWheneverAHostMayStillHoldARegistration() {
+        // The switch may be off after turning it off while offline; the
+        // host can still hold the last successful registration.
+        #expect(pushForgetPlan(
+            mayHaveRegistration: true, enabled: false, hasInFlight: false, canClear: true
+        ) == .clearThenForget)
+        #expect(pushForgetPlan(
+            mayHaveRegistration: true, enabled: false, hasInFlight: false, canClear: false
+        ) == .forgetWithWarning)
+        // An in-flight register can land after the switch was turned off.
+        #expect(pushForgetPlan(
+            mayHaveRegistration: false, enabled: false, hasInFlight: true, canClear: true
+        ) == .clearThenForget)
+        #expect(pushForgetPlan(
+            mayHaveRegistration: false, enabled: true, hasInFlight: false, canClear: true
+        ) == .clearThenForget)
+        #expect(pushForgetPlan(
+            mayHaveRegistration: false, enabled: true, hasInFlight: false, canClear: false
+        ) == .forgetWithWarning)
+        // Nothing was ever registered (and nothing is in flight).
+        #expect(pushForgetPlan(
+            mayHaveRegistration: false, enabled: false, hasInFlight: false, canClear: true
+        ) == .forget)
+    }
+
     @Test func aTargetNeedsBothPayloadFields() {
         #expect(PushTarget(hostKey: "home", conversationId: 7) == PushTarget(
             hostKey: "home", conversationId: 7))

@@ -49,6 +49,28 @@ public struct PushTarget: Equatable, Sendable {
     }
 }
 
+/// What forgetting a host should do about its push registration. The switch
+/// alone is not enough: it may have been turned off while offline after a
+/// successful registration, and an in-flight register can land after that.
+public enum PushForgetPlan: Equatable, Sendable {
+    /// Nothing was registered — drop the pairing directly.
+    case forget
+    /// The host is connected and can take `setPushToken(null)`; clear first.
+    case clearThenForget
+    /// A registration may still exist but cannot be cleared now.
+    case forgetWithWarning
+}
+
+public func pushForgetPlan(
+    mayHaveRegistration: Bool,
+    enabled: Bool,
+    hasInFlight: Bool,
+    canClear: Bool
+) -> PushForgetPlan {
+    guard mayHaveRegistration || enabled || hasInFlight else { return .forget }
+    return canClear ? .clearThenForget : .forgetWithWarning
+}
+
 /// What the pending tap does once the stored hosts and their connection
 /// state are known.
 public enum PushTargetAction: Equatable, Sendable {
