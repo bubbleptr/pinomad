@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use url::Url;
+use url::{Host, Url};
 
 use crate::json::{Json, JsonObject};
 use crate::pairing_link::encode_uri_component;
@@ -451,14 +451,20 @@ pub fn is_secure_server_origin(origin: &str) -> bool {
     let Ok(url) = Url::parse(origin) else {
         return false;
     };
-    let host = url.host_str().unwrap_or_default();
-    // The reference's prefix checks verbatim — `127.` is a string prefix,
-    // not an address check.
-    let loopback = host == "localhost"
-        || host.ends_with(".localhost")
-        || host.starts_with("127.")
-        || host == "::1"
-        || host == "[::1]";
+    let loopback = match url.host() {
+        // WHATWG parsing already canonicalized every IPv4 spelling (`127.1`,
+        // `0x7f.1`, `2130706433`) into a real address — a `127.example.com`
+        // domain no longer slips through a string prefix.
+        Some(Host::Ipv4(addr)) => addr.is_loopback(),
+        // `::1` only: an IPv4-mapped `[::ffff:127.0.0.1]` does reach loopback
+        // on the wire, but the reference can't see it back — both sides call
+        // it non-loopback rather than let the verdicts drift.
+        Some(Host::Ipv6(addr)) => addr.is_loopback(),
+        // `localhost.` keeps its trailing dot after parsing and matches
+        // neither branch — refused, conservatively.
+        Some(Host::Domain(domain)) => domain == "localhost" || domain.ends_with(".localhost"),
+        None => false,
+    };
     url.scheme() == "https" || (url.scheme() == "http" && loopback)
 }
 

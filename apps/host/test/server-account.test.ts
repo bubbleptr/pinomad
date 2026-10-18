@@ -212,6 +212,11 @@ describe("joinServer", () => {
     await expect(
       joinServer({ origin: "ws://relay.example.com", token: "tok", dataDir: data.path }, { manager: fake.manager }),
     ).rejects.toThrow(/https/);
+    // A domain starting with "127." is a remote host — not the loopback
+    // exception — so the join token must not ride plaintext to it.
+    await expect(
+      joinServer({ origin: "http://127.example.com", token: "tok", dataDir: data.path }, { manager: fake.manager }),
+    ).rejects.toThrow(/https/);
     expect(await readServerConfig(data.path)).toBeUndefined();
   });
 });

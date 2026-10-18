@@ -165,11 +165,24 @@ export const SECURE_ORIGIN_CASES: { name: string; origin: string; expect: boolea
   { name: "http-remote", origin: "http://relay.example.com", expect: false },
   { name: "http-lan-ip", origin: "http://192.168.1.5:7430", expect: false },
   { name: "http-ipv4-loopback", origin: "http://127.0.0.1:7430", expect: true },
+  // WHATWG normalizes every IPv4 spelling to dotted form, so `127.1` is a
+  // real 127.0.0.1 — while `127.example.com` stays a domain and must not
+  // pass (plaintext credentials would go to a remote host).
+  { name: "http-ipv4-short-loopback", origin: "http://127.1", expect: true },
+  { name: "http-ipv4-loopback-max", origin: "http://127.255.255.254", expect: true },
+  { name: "http-ipv4-just-outside", origin: "http://128.0.0.1", expect: false },
   { name: "http-localhost", origin: "http://localhost:7430", expect: true },
   { name: "http-sub-localhost", origin: "http://dev.localhost:7430", expect: true },
   { name: "http-ipv6-loopback", origin: "http://[::1]:7430", expect: true },
-  // The reference's `startsWith("127.")` is a prefix check, not an IP check.
-  { name: "http-127-name", origin: "http://127.example.com", expect: true },
+  { name: "http-127-name", origin: "http://127.example.com", expect: false },
+  { name: "http-127-subdomain", origin: "http://127.0.0.1.example.com", expect: false },
+  { name: "http-localhost-domain", origin: "http://localhost.example.com", expect: false },
+  // WHATWG keeps the trailing dot (`localhost.`), which matches neither the
+  // bare name nor the `.localhost` suffix — refused, conservatively.
+  { name: "http-localhost-trailing-dot", origin: "http://localhost.", expect: false },
+  // An IPv4-mapped IPv6 literal serializes as `[::ffff:7f00:1]` — not `::1`,
+  // so both parsers call it non-loopback rather than growing a mapped form.
+  { name: "http-ipv6-v4-mapped", origin: "http://[::ffff:127.0.0.1]", expect: false },
   { name: "ws", origin: "ws://relay.example.com", expect: false },
   { name: "wss-not-http", origin: "wss://relay.example.com", expect: false },
   { name: "not-a-url", origin: "not a url", expect: false },

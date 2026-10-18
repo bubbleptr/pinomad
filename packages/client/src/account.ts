@@ -112,7 +112,12 @@ export function isSecureServerOrigin(origin: string): boolean {
     return false;
   }
   const host = url.hostname;
-  const loopback = host === "localhost" || host.endsWith(".localhost") || host.startsWith("127.") || host === "::1" || host === "[::1]";
+  // The parser already canonicalized every IPv4 spelling (`127.1`, `0x7f.1`,
+  // `2130706433`) to dotted form, so a strict quad match is an address check
+  // — a `127.example.com` domain no longer slips through a string prefix.
+  const ipv4Loopback = /^127(?:\.\d{1,3}){3}$/.test(host);
+  const loopback =
+    host === "localhost" || host.endsWith(".localhost") || ipv4Loopback || host === "::1" || host === "[::1]";
   return url.protocol === "https:" || (url.protocol === "http:" && loopback);
 }
 

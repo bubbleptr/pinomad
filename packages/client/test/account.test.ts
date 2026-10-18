@@ -97,6 +97,14 @@ describe("isSecureServerOrigin", () => {
     expect(isSecureServerOrigin("https://relay.example.com:8443")).toBe(true);
     expect(isSecureServerOrigin("http://relay.example.com")).toBe(false);
     expect(isSecureServerOrigin("http://192.168.1.5:7430")).toBe(false);
+    // A domain that merely starts with "127." is a remote host, not loopback.
+    expect(isSecureServerOrigin("http://127.example.com")).toBe(false);
+    expect(isSecureServerOrigin("http://127.0.0.1.example.com")).toBe(false);
+    expect(isSecureServerOrigin("http://localhost.example.com")).toBe(false);
+    // IPv4-mapped IPv6 and a trailing-dot localhost normalize outside the
+    // loopback rule — refused rather than guessed.
+    expect(isSecureServerOrigin("http://[::ffff:127.0.0.1]")).toBe(false);
+    expect(isSecureServerOrigin("http://localhost.")).toBe(false);
     expect(isSecureServerOrigin("ws://relay.example.com")).toBe(false);
     expect(isSecureServerOrigin("not a url")).toBe(false);
     expect(isSecureServerOrigin("")).toBe(false);
@@ -104,6 +112,10 @@ describe("isSecureServerOrigin", () => {
 
   it("allows loopback http for development", () => {
     expect(isSecureServerOrigin("http://127.0.0.1:7430")).toBe(true);
+    // WHATWG normalizes the shorthand spellings to real 127/8 addresses.
+    expect(isSecureServerOrigin("http://127.1")).toBe(true);
+    expect(isSecureServerOrigin("http://127.255.255.254")).toBe(true);
+    expect(isSecureServerOrigin("http://128.0.0.1")).toBe(false);
     expect(isSecureServerOrigin("http://localhost:7430")).toBe(true);
     expect(isSecureServerOrigin("http://dev.localhost:7430")).toBe(true);
     expect(isSecureServerOrigin("http://[::1]:7430")).toBe(true);
