@@ -181,6 +181,13 @@
       "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":502}}"
     },
     {
+      "name": "me-redirect",
+      "kind": "me",
+      "status": 307,
+      "body": null,
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":307}}"
+    },
+    {
       "name": "logout-204",
       "kind": "logout",
       "status": 204,
@@ -441,6 +448,21 @@
       "expect": "true"
     },
     {
+      "name": "http-ipv4-short-loopback",
+      "origin": "http://127.1",
+      "expect": "true"
+    },
+    {
+      "name": "http-ipv4-loopback-max",
+      "origin": "http://127.255.255.254",
+      "expect": "true"
+    },
+    {
+      "name": "http-ipv4-just-outside",
+      "origin": "http://128.0.0.1",
+      "expect": "false"
+    },
+    {
       "name": "http-localhost",
       "origin": "http://localhost:7430",
       "expect": "true"
@@ -458,7 +480,27 @@
     {
       "name": "http-127-name",
       "origin": "http://127.example.com",
-      "expect": "true"
+      "expect": "false"
+    },
+    {
+      "name": "http-127-subdomain",
+      "origin": "http://127.0.0.1.example.com",
+      "expect": "false"
+    },
+    {
+      "name": "http-localhost-domain",
+      "origin": "http://localhost.example.com",
+      "expect": "false"
+    },
+    {
+      "name": "http-localhost-trailing-dot",
+      "origin": "http://localhost.",
+      "expect": "false"
+    },
+    {
+      "name": "http-ipv6-v4-mapped",
+      "origin": "http://[::ffff:127.0.0.1]",
+      "expect": "false"
     },
     {
       "name": "ws",
