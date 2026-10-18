@@ -1,8 +1,8 @@
 import "./styles.css";
 
-// Animation writes go through classes, SVG attributes, SMIL beginElement(), and
-// the CSSOM (el.style.x = …): all allowed under the page's style-src 'self',
-// unlike style="" in markup or setAttribute("style", …).
+// Animation writes go through classes, SVG attributes, and the CSSOM
+// (el.style.x = …): all allowed under the page's style-src 'self', unlike
+// style="" in markup or setAttribute("style", …).
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const lang = document.documentElement.lang.startsWith("zh") ? "zh" : "en";
@@ -19,9 +19,6 @@ const strings = {
     start: "Start a run",
     pull: "Pull the plug",
     again: "Run it again",
-    relayIdle: "Pick where you're sending from.",
-    relayDirect: "Same LAN or tailnet: straight to the host.",
-    relayRelay: "Can't reach home: through the relay, which only forwards ciphertext.",
   },
   zh: {
     durableIdle: "点「开始一个任务」，趁它在跑拔掉电源。",
@@ -34,21 +31,8 @@ const strings = {
     start: "开始一个任务",
     pull: "拔掉电源",
     again: "再来一次",
-    relayIdle: "选一个地方发条消息。",
-    relayDirect: "同一个局域网或 tailnet：直接连到宿主。",
-    relayRelay: "连不上家里：走中继。中继转发的是密文，看不到内容。",
   },
 }[lang];
-
-function restartClass(el, name) {
-  el.classList.remove(name);
-  void el.getBoundingClientRect();
-  el.classList.add(name);
-}
-
-function beginSmil(el) {
-  for (const anim of el.querySelectorAll("animate, animateMotion")) anim.beginElement();
-}
 
 // Keep a moving part in view when a diagram is wider than its scroller (phones).
 function follow(scroller, svg, x) {
@@ -85,56 +69,6 @@ if (navigator.clipboard) {
   }
 }
 
-// —— Hero: the drawing plays in once per session; a device replays its packet
-// on hover or tap. ——
-function setupHero(art) {
-  const copy = document.querySelector(".hero-copy");
-  const INTRO_KEY = "pinomad:hero-intro";
-
-  function send(device) {
-    const packet = art.querySelector(`[data-packet="${device}"]`);
-    const route = art.querySelector(`.route[data-route="${device}"]`);
-    const bubble = art.querySelector(`[data-device="${device}"] .bubble`);
-    if (packet.dataset.busy) return;
-    packet.dataset.busy = "1";
-    route.classList.add("is-hot");
-    beginSmil(packet);
-    setTimeout(() => restartClass(bubble, "pop"), 800);
-    setTimeout(() => {
-      route.classList.remove("is-hot");
-      delete packet.dataset.busy;
-    }, 950);
-  }
-
-  function seenIntro() {
-    try {
-      if (sessionStorage.getItem(INTRO_KEY)) return true;
-      sessionStorage.setItem(INTRO_KEY, "1");
-    } catch {
-      // Storage blocked: play it; it costs nothing.
-    }
-    return false;
-  }
-
-  if (!reduceMotion.matches && !seenIntro()) {
-    art.classList.add("is-intro");
-    copy.classList.add("is-intro-copy");
-    setTimeout(() => ["mac", "web", "phone"].forEach(send), 2300);
-    setTimeout(() => {
-      art.classList.remove("is-intro");
-      copy.classList.remove("is-intro-copy");
-    }, 3800);
-  }
-
-  for (const device of art.querySelectorAll("[data-device]")) {
-    const play = () => {
-      if (!reduceMotion.matches) send(device.dataset.device);
-    };
-    device.addEventListener("pointerenter", play);
-    device.addEventListener("click", play);
-  }
-}
-
 // —— Durable: start a run and pull the plug whenever you like. The run resumes
 // from the last flag it planted, never from the crash point and never from the
 // start once a flag is down — that's the claim the diagram makes. ——
@@ -168,7 +102,7 @@ function setupDurable(root) {
     return planted ? flags[planted - 1].x : START;
   }
 
-  // With reduced motion the ghost steps from flag to flag instead of gliding.
+  // With reduced motion the runner steps from flag to flag instead of gliding.
   function place() {
     const shown = reduceMotion.matches && x < END ? lastFlagX() : x;
     runner.style.transform = `translateX(${shown}px)`;
@@ -260,83 +194,5 @@ function setupDurable(root) {
   });
 }
 
-// —— Relay: send a sealed message by either route. While it passes through the
-// relay, the relay's view churns through ciphertext. ——
-function setupRelay(root) {
-  const svg = root.querySelector(".relay-art");
-  const scroller = root.querySelector("[data-scroll]");
-  const buttons = root.querySelector("[data-relay-buttons]");
-  const status = root.querySelector("[data-relay-status]");
-  const cipher = svg.querySelector("[data-cipher]");
-  const phoneBubble = svg.querySelector('[data-bubble="phone"]');
-  const hostBubble = svg.querySelector('[data-bubble="host"]');
-  const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  // Seconds of flight, and the share of the relay route spent inside the relay box.
-  const timing = { direct: { dur: 1600 }, relay: { dur: 2600, inside: [0.37, 0.68] } };
-  let busy = false;
-
-  function scramble() {
-    let out = "";
-    for (let i = 0; i < 13; i += 1) out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-    cipher.textContent = `${out}=`;
-  }
-
-  function followPacket(packet, until) {
-    const step = () => {
-      const box = packet.getBoundingClientRect();
-      const origin = svg.getBoundingClientRect();
-      follow(scroller, svg, ((box.left + box.width / 2 - origin.left) / origin.width) * 960);
-      if (performance.now() < until) requestAnimationFrame(step);
-    };
-    if (scroller.scrollWidth > scroller.clientWidth) requestAnimationFrame(step);
-  }
-
-  function send(route) {
-    if (busy) return;
-    busy = true;
-    const { dur, inside } = timing[route];
-    const path = svg.querySelector(`.route[data-route="${route}"]`);
-    const packet = svg.querySelector(`[data-packet="${route}"]`);
-    status.textContent = route === "relay" ? strings.relayRelay : strings.relayDirect;
-    restartClass(phoneBubble, "pop");
-    hostBubble.classList.remove("pop");
-
-    if (reduceMotion.matches) {
-      if (route === "relay") scramble();
-      busy = false;
-      return;
-    }
-
-    hostBubble.classList.add("is-waiting");
-    path.classList.add("is-hot");
-    beginSmil(packet);
-    followPacket(packet, performance.now() + dur);
-    if (inside) {
-      let churn;
-      setTimeout(() => {
-        churn = setInterval(scramble, 70);
-      }, dur * inside[0]);
-      setTimeout(() => clearInterval(churn), dur * inside[1]);
-    }
-    setTimeout(() => {
-      path.classList.remove("is-hot");
-      hostBubble.classList.remove("is-waiting");
-      restartClass(hostBubble, "pop");
-      busy = false;
-    }, dur);
-  }
-
-  follow(scroller, svg, 480); // phones: open on the relay
-  buttons.hidden = false;
-  status.textContent = strings.relayIdle;
-  for (const button of buttons.querySelectorAll("[data-relay-send]")) {
-    button.addEventListener("click", () => send(button.dataset.relaySend));
-  }
-}
-
-const heroArt = document.querySelector(".hero-art");
-if (heroArt) setupHero(heroArt);
 const durable = document.querySelector("[data-durable]");
 if (durable) setupDurable(durable);
-const relay = document.querySelector("[data-relay]");
-if (relay) setupRelay(relay);

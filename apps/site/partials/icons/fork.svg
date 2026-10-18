@@ -1,5 +1,0 @@
-<svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <path d="M16 29 V 20" />
-  <g class="part-left"><path d="M16 20 C 16 15, 9 14, 9 8" /><path d="M5.5 11 L 9 7.5 L 12.5 11" /></g>
-  <g class="part-right accent"><path d="M16 20 C 16 15, 23 14, 23 8" /><path d="M19.5 11 L 23 7.5 L 26.5 11" /></g>
-</svg>
