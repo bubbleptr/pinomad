@@ -138,9 +138,9 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 
 /// Every call the mobile UI can make, as typed data. `OperationFailed`
 /// only ever answers the Request-class variants (`AddProject`,
-/// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`); the
-/// rest fail into a view notice while reporting
-/// `OperationSucceeded { value: Unit }`.
+/// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
+/// `CreatePairing`) and the out-of-queue `ListFiles`; the rest fail into
+/// a view notice while reporting `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
     /// Prompt when idle; otherwise steer or queue a follow-up. `target`
@@ -208,6 +208,10 @@ pub enum FfiCall {
     /// `submit`'s `target`. Request-class; resolves `CallResult::Changes`.
     /// On the wire since 5.0 — no version gate.
     Changes { conversation_id: Option<u64> },
+    /// A one-time pairing offer for another device to scan (ADR-0022 §7).
+    /// Request-class; resolves `CallResult::Pairing`. On the wire since
+    /// 5.0 — no version gate.
+    CreatePairing,
     /// File candidates under `scope`'s root for `@./path` completion.
     /// Request-class, but sent outside the command queue — a slow scan
     /// must not stall submits or switches. Resolves `CallResult::Files`.
@@ -223,6 +227,7 @@ impl FfiCall {
             FfiCall::AddProject { .. } => Some(ResultKind::Project),
             FfiCall::ListFolders { .. } => Some(ResultKind::FolderListing),
             FfiCall::Changes { .. } => Some(ResultKind::Changes),
+            FfiCall::CreatePairing => Some(ResultKind::Pairing),
             FfiCall::ListFiles { .. } => Some(ResultKind::Files),
             _ => None,
         }
@@ -289,6 +294,7 @@ impl FfiCall {
             FfiCall::Changes { conversation_id } => Call::Changes {
                 target: conversation_id,
             },
+            FfiCall::CreatePairing => Call::CreatePairing,
             FfiCall::ListFiles { scope, query } => Call::ListFiles {
                 scope: scope.to_json(),
                 query,
