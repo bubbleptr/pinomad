@@ -338,23 +338,6 @@ extension AppModel {
         }
     }
 
-    /// After an explicit re-pair under a changed key, the old linked record
-    /// can never connect again. Same cleanup as the web model.
-    func pruneAccountPairing(link: AccountLink, keepingHostKey: String) {
-        do {
-            try store.update { stored in
-                stored = AccountHosts.pruningStale(
-                    stored,
-                    serverOrigin: link.serverOrigin,
-                    hostId: link.hostId,
-                    keepingHostKey: keepingHostKey)
-            }
-            reloadHosts()
-        } catch {
-            lastError = "没能清理旧的配对记录：\(describe(error))"
-        }
-    }
-
     private func rememberSignedOut(serverOrigin: String, username: String) {
         let record = AccountRecord(
             serverOrigin: normalizeServerOrigin(origin: serverOrigin),

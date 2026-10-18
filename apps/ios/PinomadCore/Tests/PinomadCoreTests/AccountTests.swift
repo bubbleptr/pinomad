@@ -161,19 +161,22 @@ struct AccountTests {
         #expect(result.stored.hosts[0].account?.hostId == "host1")
     }
 
-    /// After an explicit re-pair the stale linked record can never connect
-    /// again; it must stop matching the account host.
-    @Test func rePairPrunesTheStaleLinkedRecord() {
-        let stale = record("old", account: AccountLink(serverOrigin: "https://relay.example.com", hostId: "host1"))
-        let fresh = record("new", account: AccountLink(serverOrigin: "https://relay.example.com", hostId: "host1"))
-        let other = record("other", account: AccountLink(serverOrigin: "https://other.example.com", hostId: "host1"))
-        let pruned = AccountHosts.pruningStale(
-            StoredHosts(hosts: [stale, fresh, other], activeHostKey: "new"),
-            serverOrigin: "https://relay.example.com/",
-            hostId: "host1",
-            keepingHostKey: "new")
-        #expect(pruned.hosts.map { $0.hostKey } == ["new", "other"])
-        #expect(pruned.activeHostKey == "new")
+    /// Re-pairing under a changed key stores a fresh record and leaves the
+    /// old one alone — forgetting is the reader's action. Matching prefers
+    /// the key that still matches.
+    @Test func rePairKeepsTheOldRecordForTheUserToForget() {
+        let link = AccountLink(serverOrigin: "https://relay.example.com", hostId: "host1")
+        let stale = record("old", account: link)
+        let fresh = record("new", account: link)
+        let stored = StoredHosts(hosts: [stale, fresh], activeHostKey: "new")
+        let result = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com",
+            hosts: [accountHost("host1", key: "new", pairing: .available)],
+            stored: stored,
+            rejectedHostKeys: [])
+        #expect(result.rows[0].status == .paired)
+        #expect(result.rows[0].storedHostKey == "new")
+        #expect(result.stored == stored)
     }
 
     /// A server-vouched pairing writes its account link beside the host, in

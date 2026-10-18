@@ -524,34 +524,6 @@ public enum AccountHosts {
         return AccountReconciliation(rows: rows, stored: next, changed: changed)
     }
 
-    /// A re-pair under a changed key stores a fresh record; the stale linked
-    /// one can never connect again, so drop it from the account's identity.
-    public static func pruningStale(
-        _ stored: StoredHosts,
-        serverOrigin: String,
-        hostId: String,
-        keepingHostKey: String
-    ) -> StoredHosts {
-        let origin = normalizeServerOrigin(origin: serverOrigin)
-        let stale = stored.hosts
-            .filter { record in
-                guard let account = record.account else { return false }
-                return record.hostKey != keepingHostKey
-                    && normalizeServerOrigin(origin: account.serverOrigin) == origin
-                    && account.hostId == hostId
-            }
-            .map { $0.hostKey }
-        guard !stale.isEmpty else { return stored }
-
-        var next = stored
-        next.hosts.removeAll { stale.contains($0.hostKey) }
-        if let active = next.activeHostKey, stale.contains(active) {
-            next.activeHostKey = next.hosts.contains { $0.hostKey == keepingHostKey }
-                ? keepingHostKey
-                : nil
-        }
-        return next
-    }
 }
 
 // MARK: - Copy

@@ -421,9 +421,6 @@ final class AppModel {
             pairingAccount = nil
             accountRejectedHostKeys.remove(host.hostKey)
             reloadHosts()
-            if saveError == nil, let link = host.account {
-                pruneAccountPairing(link: link, keepingHostKey: host.hostKey)
-            }
             accountRefreshAfterPairing()
             advancePushTarget()
             if let saveError {
