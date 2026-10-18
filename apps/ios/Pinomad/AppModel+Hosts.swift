@@ -6,7 +6,7 @@ import PinomadCore
 /// would connect, or nil when the link isn't a usable pairing link.
 struct PendingPairing: Equatable {
     let link: String
-    let url: String?
+    let target: PairingTarget?
 }
 
 /// Pairing entry points and the host list: every link — pasted, scanned,
@@ -24,8 +24,8 @@ extension AppModel {
 
     /// What the screens call the host the session is for.
     var currentHostLabel: String? {
-        if let key = currentHostKey { return hostLabels[key] }
-        return pairingLink.flatMap { pairingLinkUrl(link: $0) }.map(hostOf)
+        if let key = currentHostKey, let label = hostLabels[key] { return label }
+        return pairingTarget.map { hostOf($0.url) }
     }
 
     /// Show the confirm page for `text` (an invalid link gets the page's
@@ -34,15 +34,15 @@ extension AppModel {
     @discardableResult
     func offerPairing(_ text: String) -> Bool {
         let link = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = pairingLinkUrl(link: link)
-        present(.confirm(PendingPairing(link: link, url: url)))
-        return url != nil
+        let target = PinomadCore.pairingTarget(link: link)
+        present(.confirm(PendingPairing(link: link, target: target)))
+        return target != nil
     }
 
     /// Whether `text` is a usable pairing link — for inline checks before
     /// leaving a field.
     func isPairingLink(_ text: String) -> Bool {
-        pairingLinkUrl(link: text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+        PinomadCore.pairingTarget(link: text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
     /// Back out of a failed pairing to the host the device used before

@@ -98,7 +98,7 @@ struct PairConfirmView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let url = pending.url {
+            if let url = pending.target?.url {
                 Text("要和这台宿主配对吗？")
                     .font(.title3.weight(.semibold))
                 Text("这台设备会和 \(hostOf(url)) 配对。")
@@ -187,7 +187,12 @@ struct HostsView: View {
                 presenting: forgetting
             ) { host in
                 Button("取消", role: .cancel) {}
-                Button("忘记", role: .destructive) { model.forget(host.hostKey) }
+                Button("忘记", role: .destructive) {
+                    model.forget(host.hostKey)
+                    // Nothing left to pick — the pairing page behind has
+                    // the same ways to pair.
+                    if model.hosts.hosts.isEmpty { dismiss() }
+                }
             } message: { _ in
                 Text("这台设备要用新的配对链接才能再连上它。")
             }
@@ -221,6 +226,8 @@ struct HostsView: View {
         }
         .swipeActions {
             Button("忘记", role: .destructive) { forgetting = host }
+                // The section's plain tint would turn it black.
+                .tint(.red)
         }
         .contextMenu {
             Button("忘记", systemImage: "trash", role: .destructive) { forgetting = host }

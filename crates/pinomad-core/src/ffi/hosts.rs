@@ -4,6 +4,14 @@
 
 use crate::b64::from_base64url;
 
+/// A pairing link's destination: the socket URL and the host's key
+/// (base64url, as `StoredHost.host_key`).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct PairingTarget {
+    pub url: String,
+    pub host_key: String,
+}
+
 /// The account linkage of a paired host (ADR-0022): which server bound the
 /// host and under what hostId.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]

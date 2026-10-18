@@ -45,6 +45,9 @@ final class AppModel {
     private(set) var currentHostKey: String?
     /// The link the session is pairing with; nil for a stored host.
     private(set) var pairingLink: String?
+    /// Where the latest pairing went — names the session's host until the
+    /// keychain has it (it may not, if saving the pairing failed).
+    private(set) var pairingTarget: PairingTarget?
     var modal: Modal?
     private var nextModal: Modal?
     /// The newest published view — the list and the open conversation
@@ -180,6 +183,7 @@ final class AppModel {
             adopt(session)
             currentHostKey = nil
             pairingLink = link
+            pairingTarget = PinomadCore.pairingTarget(link: link)
         } catch {
             // Links reach here through `offerPairing`, which already parsed
             // them — this is the core refusing to build the session.
@@ -194,6 +198,7 @@ final class AppModel {
             adopt(session)
             currentHostKey = host.hostKey
             pairingLink = nil
+            pairingTarget = nil
         } catch {
             fail(.unreachable(describe(error)))
         }
@@ -255,6 +260,7 @@ final class AppModel {
         snapshot = nil
         currentHostKey = nil
         pairingLink = nil
+        pairingTarget = nil
     }
 
     private func adopt(_ session: PinomadSession) {
@@ -292,11 +298,16 @@ final class AppModel {
                 return
             }
             if pairingLink != nil {
-                // `Paired` stored the host and made it the launch one
-                // before the first view — from here on it is a stored host.
+                // `Paired` lands before the first view and the session
+                // stores the host then — from here on it is that host,
+                // named by the link's key (not "whatever is active": a
+                // failed keychain write leaves the previous host active).
                 reloadHosts()
-                currentHostKey = hosts.active?.hostKey
+                currentHostKey = pairingTarget?.hostKey
                 pairingLink = nil
+                if let key = currentHostKey, !hosts.hosts.contains(where: { $0.hostKey == key }) {
+                    lastError = "没能记住这台宿主：重启 App 后会回到之前的宿主，要再用它得重新配对。"
+                }
             }
             phase = .connected
             if let id = pendingOpen {
@@ -310,7 +321,9 @@ final class AppModel {
                 fail(failure)
             }
             self.snapshot = snapshot
-            for notice in noticeFeed.fresh(snapshot.notices) { show(notice) }
+            // A failure page explains itself; the core's notice for the
+            // same thing (e.g. the 4401) would only repeat it in English.
+            for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             signposter.emitEvent("ui-publish")
             replyStreams.sync(chat: snapshot.conversation?.chat)
             PerfLog.shared.mark("ui-publish", version: snapshot.version)
