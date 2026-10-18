@@ -20,22 +20,36 @@ extension AppModel {
         hostSupportsCall(hostMinor: snapshot?.host?.protocol.minor ?? 0, method: method)
     }
 
-    /// The draft's model and level: the reader's pick while it's still
-    /// listed, else the host default, else the first model (core rule).
+    /// Whether the host honors a call-arg feature — older hosts silently
+    /// ignore the arg, so the picker stays hidden.
+    func hostSupports(_ feature: HostFeature) -> Bool {
+        hostSupportsFeature(hostMinor: snapshot?.host?.protocol.minor ?? 0, feature: feature)
+    }
+
+    /// The draft's model and level: the named-agent resolution while one is
+    /// picked, else the remembered pick reconciled against this host.
     var effectiveDraftPick: ModelPick {
-        let models = snapshot?.models ?? []
-        let defaults = snapshot?.defaults
-        let remembered = draftPick ?? ModelPick(model: defaults?.model, level: defaults?.thinkingLevel ?? .off)
-        return reconcileDraftPick(models: models, defaults: defaults, remembered: remembered)
+        draftAgent.pick(agents: snapshot?.agents, models: snapshot?.models ?? [],
+                        defaults: snapshot?.defaults)
+    }
+
+    /// The named-agent derivation (display values, sources, problem) while
+    /// one is picked; nil for an unassigned draft.
+    var draftResolution: AgentDraft? {
+        draftAgent.resolution(agents: snapshot?.agents, models: snapshot?.models ?? [],
+                              defaults: snapshot?.defaults)
+    }
+
+    func setDraftAgent(_ agent: String?) {
+        draftAgent.select(agent)
     }
 
     func setDraftModel(_ ref: ModelRef) {
-        let levels = summaryOf(models: snapshot?.models ?? [], model: ref)?.thinkingLevels ?? [.off]
-        draftPick = ModelPick(model: ref, level: clampLevel(levels: levels, want: effectiveDraftPick.level))
+        draftAgent.setModel(ref, models: snapshot?.models ?? [], defaults: snapshot?.defaults)
     }
 
     func setDraftLevel(_ level: ThinkingLevel) {
-        draftPick = ModelPick(model: effectiveDraftPick.model, level: level)
+        draftAgent.setLevel(level, models: snapshot?.models ?? [], defaults: snapshot?.defaults)
     }
 
     /// Create a conversation from the draft and show it in place of the
@@ -54,7 +68,26 @@ extension AppModel {
         guard let organized = snapshot?.organized else { return }
         let known = KnownConversations(organized)
         let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
+        let models = snapshot?.models ?? []
+        let defaults = snapshot?.defaults
+        // An unresolved or unavailable named agent blocks the create rather
+        // than silently falling back (ADR-0023).
+        if draftAgent.resolution(agents: snapshot?.agents, models: models, defaults: defaults)?.problem != nil {
+            return
+        }
         let pick = effectiveDraftPick
+        let send = draftAgent.send(agents: snapshot?.agents, models: models, defaults: defaults)
+        let modelArg: ModelRef?
+        let levelArg: ThinkingLevel?
+        if let send {
+            // Only overrides ride the call; the host resolves inherited sides
+            // from the role (ADR-0023).
+            modelArg = send.model
+            levelArg = send.level
+        } else {
+            modelArg = pick.model
+            levelArg = pick.level
+        }
         let checkout: ConversationCheckout? = {
             if case .project = draftHome, draftCheckout == .project { return .project }
             return nil
@@ -64,7 +97,7 @@ extension AppModel {
         do {
             _ = try await session.invoke(.createConversation(
                 home: draftHome, text: text, checkout: checkout,
-                model: pick.model, thinkingLevel: pick.level, agent: nil, images: tray.images))
+                model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images))
         } catch {
             lastError = "新建对话失败：\(describe(error))"
             return
@@ -74,6 +107,9 @@ extension AppModel {
             if let shown = known.created(shown: snapshot?.conversation?.id) {
                 drafts[key] = nil
                 trays[key] = nil
+                // The next draft starts from "no agent", as on the web; the
+                // remembered model/level stays.
+                draftAgent.clearAgent()
                 navPath = [.conversation(shown)]
                 return
             }

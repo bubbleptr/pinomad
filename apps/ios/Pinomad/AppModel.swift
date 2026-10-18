@@ -79,9 +79,9 @@ final class AppModel {
     /// and images live in `drafts` / `trays` under `draftKey`.
     var draftHome: NewConversationHome = .chat
     var draftCheckout: ConversationCheckout = .worktree
-    /// The reader's own pick; nil until they choose (then the host default
-    /// is used). Kept across navigation, not across launches.
-    var draftPick: ModelPick?
+    /// The draft's remembered pick, chosen agent and per-side overrides
+    /// (ADR-0023). Kept across navigation, reset when the host changes.
+    var draftAgent = AgentDraftPick()
     /// A create is in flight — the draft page holds its send.
     var creating = false
     /// Staged images per conversation, beside its draft text.
@@ -298,7 +298,7 @@ final class AppModel {
             viewing = nil
             draftHome = .chat
             draftCheckout = .worktree
-            draftPick = nil
+            draftAgent.reset()
         }
         phase = .connecting
         watchTask?.cancel()

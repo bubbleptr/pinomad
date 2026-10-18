@@ -18,6 +18,7 @@ struct NewConversationView: View {
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
     private var pick: ModelPick { model.effectiveDraftPick }
+    private var resolution: AgentDraft? { model.draftResolution }
     private var currentModel: ModelSummary? { summaryOf(models: model.snapshot?.models ?? [], model: pick.model) }
     private var acceptsImages: Bool { currentModel?.images == true }
     private var imagesBlocked: Bool { !acceptsImages && !tray.images.isEmpty }
@@ -28,6 +29,51 @@ struct NewConversationView: View {
     }
 
     private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+    private var selectedAgent: String? { model.draftAgent.agent }
+
+    /// Whether this host knows `createConversation`'s agent arg.
+    private var agentPickerAvailable: Bool { model.hostSupports(.agentConversations) }
+
+    /// The picker stays up while a pick survives a now-empty snapshot so the
+    /// reader can clear it (the web's rule); an empty roles list alone hides
+    /// it. A pick that outlived a host downgrade also keeps the chip, with
+    /// only "不指定" — otherwise there is no way back to a plain draft.
+    private var showAgentPicker: Bool {
+        selectedAgent != nil || (agentPickerAvailable && !roles.isEmpty)
+    }
+
+    /// An inherited side reads "来自 @name"; an overridden side drops it.
+    private var sourceHint: String? {
+        guard let agent = selectedAgent, let resolution else { return nil }
+        let modelInherited = resolution.modelFrom != .override
+        let levelInherited = resolution.levelFrom != .override
+        if modelInherited && levelInherited { return "来自 @\(agent)" }
+        if modelInherited { return "模型来自 @\(agent)" }
+        if levelInherited { return "等级来自 @\(agent)" }
+        return nil
+    }
+
+    /// The capsule's short red label and the card's full reason when the
+    /// named-agent create would be refused.
+    private var problemText: (label: String, reason: String)? {
+        guard let problem = resolution?.problem else { return nil }
+        switch problem {
+        case let .agentMissing(agent, reason):
+            let base = "这台宿主上没有具名 Agent @\(agent)"
+            return ("@\(agent) 不可用", reason.map { base + "：\($0)" } ?? base)
+        case let .modelMissing(agent):
+            return ("@\(agent) 没有可用模型", "@\(agent) 没指定模型，宿主也没有默认模型")
+        case let .modelUnavailable(agent, model, source):
+            let name = "\(model.provider)/\(model.modelId)"
+            let from: String
+            switch source {
+            case .agent: from = "@\(agent) 指定的模型"
+            case .`default`: from = "宿主默认模型"
+            case .override: from = "选中的模型"
+            }
+            return ("\(name) 不可用", "\(name)（\(from)）不在宿主的模型列表里")
+        }
+    }
 
     /// The draft's chosen checkout decides whether a fresh worktree's HEAD
     /// files or the project directory's live files are candidates. A Chat
@@ -41,6 +87,7 @@ struct NewConversationView: View {
 
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
+            && resolution?.problem == nil
             && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty)
     }
 
@@ -104,6 +151,12 @@ struct NewConversationView: View {
             .lineLimit(3...8)
             .focused($focused)
             .disabled(!model.connected || model.creating)
+            if let problemText {
+                Text(problemText.reason)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 PlusMenu(
                     connected: model.connected,
@@ -121,11 +174,16 @@ struct NewConversationView: View {
                 .disabled(model.creating)
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
-                    enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true)
+                    enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true),
+                    sourceHint: sourceHint,
+                    problem: problemText?.label
                 ) {
                     focused = false
                     showModels = true
                 }
+                // Let the capsule take its ideal width; the spacer gives up
+                // the room first so the model and source hint both read.
+                .layoutPriority(1)
                 Spacer(minLength: 0)
                 if model.creating {
                     ProgressView().frame(width: 34, height: 34)
@@ -145,6 +203,9 @@ struct NewConversationView: View {
                 projectMenu
                 if case .project = model.draftHome {
                     checkoutMenu
+                }
+                if showAgentPicker {
+                    agentMenu
                 }
             }
         }
@@ -220,6 +281,40 @@ struct NewConversationView: View {
         }
         .tint(.secondary)
         .disabled(!model.connected)
+    }
+
+    /// The draft's named agent (ADR-0023). A fixed order keeps "不指定"
+    /// above the section however the menu lays itself out around the chip.
+    /// Toggle supplies the checkmark; two Texts make the description a
+    /// subtitle in the menu.
+    private var agentMenu: some View {
+        Menu {
+            Toggle("不指定", isOn: Binding(
+                get: { selectedAgent == nil },
+                set: { isOn in if isOn { model.setDraftAgent(nil) } }
+            ))
+            if agentPickerAvailable && !roles.isEmpty {
+                Section("具名 Agent") {
+                    ForEach(roles, id: \.name) { role in
+                        Toggle(isOn: Binding(
+                            get: { selectedAgent == role.name },
+                            set: { isOn in if isOn { model.setDraftAgent(role.name) } }
+                        )) {
+                            Text("@\(role.name)")
+                            if !role.description.isEmpty {
+                                Text(role.description)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            LocationChip(icon: "person.crop.circle",
+                         label: selectedAgent.map { "@\($0)" } ?? "Agent")
+        }
+        .menuOrder(.fixed)
+        .tint(.secondary)
+        .disabled(!model.connected || model.creating)
     }
 }
 

@@ -100,6 +100,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum HostFeature {
     Images,
     AcceptAccountDevices,
