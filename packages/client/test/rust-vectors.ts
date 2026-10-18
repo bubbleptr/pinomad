@@ -23,6 +23,7 @@ import {
   filterModels,
   modelLabel,
   reconcileDraftPick,
+  resolveAgentDraft,
   sameModel,
   summaryOf,
   thinkingLevelLabels,
@@ -56,7 +57,14 @@ import {
   ROOT_OF_CASES,
   familyByName,
 } from "./family-cases.ts";
-import { CLAMP_CASES, FILTER_CASES, MODEL_LABEL_CASES, RECONCILE_CASES, SAME_MODEL_CASES } from "./models-cases.ts";
+import {
+  AGENT_DRAFT_CASES,
+  CLAMP_CASES,
+  FILTER_CASES,
+  MODEL_LABEL_CASES,
+  RECONCILE_CASES,
+  SAME_MODEL_CASES,
+} from "./models-cases.ts";
 import {
   ANSWER_CASES,
   CRUMB_CASES,
@@ -356,6 +364,17 @@ function modelsVector(): VectorFile {
       defaults: wire(c.defaults),
       remembered: wire(c.remembered),
       expect: expect(wire(reconcileDraftPick(c.models as never, c.defaults as never, c.remembered as never))),
+    })),
+    resolveAgentDraft: AGENT_DRAFT_CASES.map((c) => ({
+      name: c.name,
+      agent: c.agent,
+      agents: wire(c.agents),
+      models: wire(c.models),
+      defaults: wire(c.defaults),
+      overrides: wire(c.overrides),
+      expect: expect(
+        wire(resolveAgentDraft(c.agent, c.agents, c.models as never, c.defaults as never, c.overrides as never)),
+      ),
     })),
   });
 }

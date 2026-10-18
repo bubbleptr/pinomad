@@ -329,3 +329,189 @@ pub fn reconcile_draft_pick(models: &[Json], defaults: Option<&Json>, remembered
         level: clamp_level(&levels, &remembered.level),
     }
 }
+
+// ─── Named-agent drafts (ADR-0023) ─────────────────────────────────────────
+
+/// `AgentDraftSource` — which layer a shown value came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum AgentDraftSource {
+    Agent,
+    Default,
+    Override,
+}
+
+impl AgentDraftSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentDraftSource::Agent => "agent",
+            AgentDraftSource::Default => "default",
+            AgentDraftSource::Override => "override",
+        }
+    }
+}
+
+/// `AgentDraftProblem` — why the host would refuse the create, checked before
+/// anything is sent.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum AgentDraftProblem {
+    /// The name is not in the snapshot's roles (deleted, or its file failed
+    /// to load — `reason` carries the load error).
+    AgentMissing { agent: String, reason: Option<String> },
+    /// Nothing resolved to a model: no override, no role pin, no host default.
+    ModelMissing { agent: String },
+    /// The effective model — whichever source it came from — is not in the
+    /// host's advertised list.
+    ModelUnavailable {
+        agent: String,
+        model: ModelRef,
+        source: AgentDraftSource,
+    },
+}
+
+/// `AgentDraftResolution` — display values, their sources, the send args and
+/// the blocking problem.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AgentDraft {
+    /// Display: the effective model; `None` when none resolves (a
+    /// `ModelMissing` problem).
+    pub model: Option<ModelRef>,
+    /// Display: the effective level, clamped to the shown model only when it
+    /// is listed — as the host does.
+    pub level: ThinkingLevel,
+    /// Which layer each shown value came from; `model_from` is `None` when no
+    /// model resolved.
+    pub model_from: Option<AgentDraftSource>,
+    pub level_from: AgentDraftSource,
+    /// `createConversation` options beyond `agent`: only the user's
+    /// overrides — inherited values resolve host-side.
+    pub send_model: Option<ModelRef>,
+    pub send_level: Option<ThinkingLevel>,
+    /// Why sending would fail at the host; the composer blocks submit on it.
+    pub problem: Option<AgentDraftProblem>,
+}
+
+/// The `slice(0, -1)`/`slice(0)` shape of JS `indexOf("/")` returning -1 —
+/// unit-level, like the reference.
+fn split_role_model(model: &str) -> ModelRef {
+    let units: Vec<u16> = model.encode_utf16().collect();
+    let slash = units.iter().position(|unit| *unit == b'/' as u16);
+    let (provider, id) = match slash {
+        Some(i) => (&units[..i], &units[i + 1..]),
+        None => (&units[..units.len().saturating_sub(1)], &units[..]),
+    };
+    ModelRef {
+        provider: U16String(provider.to_vec()).to_string_lossy(),
+        model_id: U16String(id.to_vec()).to_string_lossy(),
+    }
+}
+
+fn str_of(json: Option<&Json>) -> Option<String> {
+    json.and_then(Json::as_str).map(|s| s.to_string_lossy())
+}
+
+fn level_of(json: Option<&Json>) -> Option<ThinkingLevel> {
+    json.and_then(Json::as_str)
+        .map(|s| ThinkingLevel::from_units(s.units()))
+}
+
+/// `resolveAgentDraft`: the draft's model/level resolution once a named agent
+/// is picked — override > role pin > host default, the same chain the host
+/// runs at `createConversation`. No first-model fallback.
+pub fn resolve_agent_draft(
+    agent: &str,
+    agents: Option<&Json>,
+    models: &[Json],
+    defaults: Option<&Json>,
+    overrides: &Json,
+) -> AgentDraft {
+    let agent_units: Vec<u16> = agent.encode_utf16().collect();
+    let role = agents
+        .and_then(|a| a.get("roles"))
+        .and_then(Json::as_array)
+        .and_then(|roles| {
+            roles.iter().find(|role| {
+                role.get("name")
+                    .and_then(Json::as_str)
+                    .is_some_and(|name| name.units() == agent_units.as_slice())
+            })
+        });
+    let role_model = role
+        .and_then(|role| role.get("model"))
+        .and_then(Json::as_str)
+        .map(|model| split_role_model(&model.to_string_lossy()));
+    let role_level = role.and_then(|role| level_of(role.get("thinkingLevel")));
+    let override_model = overrides.get("model").and_then(ModelRef::from_json);
+    let override_level = level_of(overrides.get("level"));
+    let default_model = defaults.and_then(|d| d.get("model")).and_then(ModelRef::from_json);
+    let default_level = defaults.and_then(|d| level_of(d.get("thinkingLevel")));
+
+    let model = override_model.clone().or_else(|| role_model.clone()).or(default_model);
+    let model_from = if override_model.is_some() {
+        Some(AgentDraftSource::Override)
+    } else if role_model.is_some() {
+        Some(AgentDraftSource::Agent)
+    } else {
+        model.as_ref().map(|_| AgentDraftSource::Default)
+    };
+    let level_from = if override_level.is_some() {
+        AgentDraftSource::Override
+    } else if role_level.is_some() {
+        AgentDraftSource::Agent
+    } else {
+        AgentDraftSource::Default
+    };
+    let want = override_level.clone().or(role_level).or(default_level).unwrap_or(ThinkingLevel::Off);
+    let summary = model.as_ref().and_then(|m| summary_of(models, Some(m.clone())));
+    // The host clamps only when the effective model resolves; an unlisted or
+    // missing model leaves the inherited level untouched (the create fails
+    // anyway).
+    let level = summary
+        .as_ref()
+        .map(|summary| clamp_level(&summary.thinking_levels(), &want))
+        .unwrap_or(want);
+    let reason = role.is_none().then(|| {
+        agents
+            .and_then(|a| a.get("problems"))
+            .and_then(Json::as_array)
+            .and_then(|problems| {
+                let file: Vec<u16> = format!("{agent}.md").encode_utf16().collect();
+                problems.iter().find(|problem| {
+                    problem
+                        .get("file")
+                        .and_then(Json::as_str)
+                        .is_some_and(|f| f.units() == file.as_slice())
+                })
+            })
+            .and_then(|problem| str_of(problem.get("reason")))
+    }).flatten();
+    let problem = if role.is_none() {
+        Some(AgentDraftProblem::AgentMissing {
+            agent: agent.to_string(),
+            reason,
+        })
+    } else if model.is_none() {
+        Some(AgentDraftProblem::ModelMissing {
+            agent: agent.to_string(),
+        })
+    } else if summary.is_none() {
+        Some(AgentDraftProblem::ModelUnavailable {
+            agent: agent.to_string(),
+            model: model.clone().unwrap(),
+            source: model_from.unwrap(),
+        })
+    } else {
+        None
+    };
+    AgentDraft {
+        model,
+        level,
+        model_from,
+        level_from,
+        send_model: override_model,
+        send_level: override_level,
+        problem,
+    }
+}

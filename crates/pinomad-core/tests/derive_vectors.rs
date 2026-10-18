@@ -487,6 +487,25 @@ expect_text(case), "{name}");
 norm(&derive_vectors::out::model_pick_json(&pick)),
 expect_text(case), "{name}");
     }
+    for case in cases(&file, "resolveAgentDraft") {
+        let name = as_text(field(case, "name"));
+        let agent = as_text(field(case, "agent"));
+        let agents = wire_field(case, "agents").filter(|v| !matches!(v, Json::Null));
+        let models = Json::parse(&as_text(field(case, "models"))).unwrap();
+        let models = models.as_array().expect("models");
+        let defaults = wire_field(case, "defaults").filter(|v| !matches!(v, Json::Null));
+        let overrides = wire_field(case, "overrides").unwrap_or(Json::Null);
+        let draft = pinomad_core::model::resolve_agent_draft(
+            &agent,
+            agents.as_ref(),
+            models,
+            defaults.as_ref(),
+            &overrides,
+        );
+        assert_eq!(
+norm(&derive_vectors::out::agent_draft_json(&draft, &agent)),
+expect_text(case), "{name}");
+    }
 }
 
 // ─── Small standalone derivations ──────────────────────────────────────────

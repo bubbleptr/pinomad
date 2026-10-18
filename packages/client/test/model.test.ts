@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { clampLevel, filterModels, modelLabel, reconcileDraftPick, sameModel } from "../src/model.ts";
+import { clampLevel, filterModels, modelLabel, reconcileDraftPick, resolveAgentDraft, sameModel } from "../src/model.ts";
 import {
+  AGENT_DRAFT_CASES,
   CLAMP_CASES,
   FILTER_CASES,
   MODEL_LABEL_CASES,
@@ -111,5 +112,94 @@ describe("reconcileDraftPick", () => {
     const fellBack = pick("clamps-after-fallback");
     expect(fellBack.model).toEqual({ provider: "openai", modelId: "gpt-b" });
     expect(fellBack.level).toBe("medium");
+  });
+});
+
+describe("resolveAgentDraft", () => {
+  const resolve = (name: string) => {
+    const c = C(AGENT_DRAFT_CASES, name);
+    return resolveAgentDraft(c.agent, c.agents, c.models, c.defaults, c.overrides);
+  };
+
+  it("inherits the role's pins and sends only the agent name", () => {
+    const result = resolve("inherit-pins");
+    expect(result.model).toEqual({ provider: "anthropic", modelId: "claude-a" });
+    expect(result.level).toBe("high");
+    expect(result.modelFrom).toBe("agent");
+    expect(result.levelFrom).toBe("agent");
+    expect(result.send).toEqual({ agent: "reviewer" });
+    expect(result.problem).toBeUndefined();
+  });
+
+  it("falls through unpinned fields to the host defaults", () => {
+    const result = resolve("inherit-defaults");
+    expect(result.model).toEqual({ provider: "openai", modelId: "gpt-b" });
+    expect(result.level).toBe("low");
+    expect(result.modelFrom).toBe("default");
+    expect(result.levelFrom).toBe("default");
+    expect(result.send).toEqual({ agent: "planner" });
+  });
+
+  it("sends an overridden model and clamps an inherited level to it", () => {
+    const result = resolve("override-model-clamps-inherited");
+    expect(result.model).toEqual({ provider: "openai", modelId: "gpt-b" });
+    // The role's "high" does not survive the pick — gpt-b tops out at medium.
+    expect(result.level).toBe("medium");
+    expect(result.modelFrom).toBe("override");
+    expect(result.levelFrom).toBe("agent");
+    expect(result.send).toEqual({ agent: "reviewer", model: { provider: "openai", modelId: "gpt-b" } });
+    expect(result.problem).toBeUndefined();
+  });
+
+  it("sends an overridden level clamped to the inherited model", () => {
+    const result = resolve("override-level");
+    expect(result.level).toBe("high");
+    expect(result.levelFrom).toBe("override");
+    expect(result.send).toEqual({ agent: "reviewer", thinkingLevel: "xhigh" });
+  });
+
+  it("flags an unadvertised role model instead of falling back", () => {
+    const result = resolve("role-model-unavailable");
+    expect(result.problem).toEqual({
+      kind: "model-unavailable",
+      agent: "reviewer",
+      model: { provider: "gone", modelId: "claude-z" },
+      source: "agent",
+    });
+    // The failed model still shows — the capsule explains what would be sent.
+    expect(result.model).toEqual({ provider: "gone", modelId: "claude-z" });
+    expect(result.level).toBe("high");
+  });
+
+  it("clears the model problem once the user picks an available model", () => {
+    const result = resolve("override-fixes-unavailable");
+    expect(result.problem).toBeUndefined();
+    expect(result.send).toEqual({ agent: "reviewer", model: { provider: "openai", modelId: "gpt-b" } });
+  });
+
+  it("flags the source layer of an unavailable default and of a bad override", () => {
+    expect(resolve("default-model-unavailable").problem).toMatchObject({
+      kind: "model-unavailable",
+      source: "default",
+    });
+    expect(resolve("override-model-unavailable").problem).toMatchObject({
+      kind: "model-unavailable",
+      source: "override",
+    });
+  });
+
+  it("flags a name that is not in the snapshot, with the file's load reason", () => {
+    expect(resolve("agent-missing").problem).toEqual({
+      kind: "agent-missing",
+      agent: "ghost",
+      reason: "unknown field 'tools'",
+    });
+    expect(resolve("agents-null").problem).toEqual({ kind: "agent-missing", agent: "ghost" });
+  });
+
+  it("flags a draft with no resolvable model", () => {
+    const result = resolve("model-missing");
+    expect(result.model).toBeUndefined();
+    expect(result.problem).toEqual({ kind: "model-missing", agent: "planner" });
   });
 });

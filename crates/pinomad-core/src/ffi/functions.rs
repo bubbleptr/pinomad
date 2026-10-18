@@ -96,15 +96,8 @@ pub fn model_label(models: Vec<ModelSummary>, selected: ModelPick) -> String {
     crate::model::model_label(&models_json(&models), selected)
 }
 
-/// Remembered if still listed → the host default → the first model → none;
-/// the level clamps to the resolved model.
-#[uniffi::export]
-pub fn reconcile_draft_pick(
-    models: Vec<ModelSummary>,
-    defaults: Option<Defaults>,
-    remembered: ModelPick,
-) -> ModelPick {
-    let defaults_json = defaults.map(|d| {
+fn defaults_json(defaults: Option<Defaults>) -> Option<Json> {
+    defaults.map(|d| {
         let mut object = crate::json::JsonObject::new();
         if let Some(model) = d.model {
             object.set(crate::u16str::U16String::from_str("model"), model.to_json());
@@ -116,8 +109,109 @@ pub fn reconcile_draft_pick(
             );
         }
         Json::Object(std::sync::Arc::new(object))
-    });
+    })
+}
+
+/// The `agents` stream value rebuilt as wire Json — what the model
+/// derivations read roles and problems from.
+fn agent_roles_json(agents: Option<AgentRoles>) -> Option<Json> {
+    agents.map(|agents| {
+        let mut object = crate::json::JsonObject::new();
+        object.set(
+            crate::u16str::U16String::from_str("roles"),
+            Json::array(
+                agents
+                    .roles
+                    .iter()
+                    .map(|role| {
+                        let mut entry = crate::json::JsonObject::new();
+                        entry.set(crate::u16str::U16String::from_str("name"), Json::from(role.name.clone()));
+                        entry.set(
+                            crate::u16str::U16String::from_str("description"),
+                            Json::from(role.description.clone()),
+                        );
+                        if let Some(model) = &role.model {
+                            entry.set(crate::u16str::U16String::from_str("model"), Json::from(model.clone()));
+                        }
+                        if let Some(level) = &role.thinking_level {
+                            entry.set(
+                                crate::u16str::U16String::from_str("thinkingLevel"),
+                                Json::from(level.as_str()),
+                            );
+                        }
+                        entry.set(
+                            crate::u16str::U16String::from_str("prompt"),
+                            Json::from(role.prompt.clone()),
+                        );
+                        Json::Object(std::sync::Arc::new(entry))
+                    })
+                    .collect(),
+            ),
+        );
+        object.set(
+            crate::u16str::U16String::from_str("problems"),
+            Json::array(
+                agents
+                    .problems
+                    .iter()
+                    .map(|problem| {
+                        let mut entry = crate::json::JsonObject::new();
+                        entry.set(crate::u16str::U16String::from_str("file"), Json::from(problem.file.clone()));
+                        entry.set(
+                            crate::u16str::U16String::from_str("reason"),
+                            Json::from(problem.reason.clone()),
+                        );
+                        Json::Object(std::sync::Arc::new(entry))
+                    })
+                    .collect(),
+            ),
+        );
+        Json::Object(std::sync::Arc::new(object))
+    })
+}
+
+/// Remembered if still listed → the host default → the first model → none;
+/// the level clamps to the resolved model.
+#[uniffi::export]
+pub fn reconcile_draft_pick(
+    models: Vec<ModelSummary>,
+    defaults: Option<Defaults>,
+    remembered: ModelPick,
+) -> ModelPick {
+    let defaults_json = defaults_json(defaults);
     crate::model::reconcile_draft_pick(&models_json(&models), defaults_json.as_ref(), remembered)
+}
+
+/// A named-agent draft's model/level resolution: display values, their
+/// sources, the create args (the agent name plus the overrides only), and the
+/// blocking problem (ADR-0023).
+#[uniffi::export]
+pub fn resolve_agent_draft(
+    agent: String,
+    agents: Option<AgentRoles>,
+    models: Vec<ModelSummary>,
+    defaults: Option<Defaults>,
+    overrides: AgentDraftOverride,
+) -> AgentDraft {
+    let agents_json = agent_roles_json(agents);
+    let defaults_json = defaults_json(defaults);
+    let mut overrides_json = crate::json::JsonObject::new();
+    if let Some(model) = overrides.model {
+        overrides_json.set(crate::u16str::U16String::from_str("model"), model.to_json());
+    }
+    if let Some(level) = overrides.level {
+        overrides_json.set(
+            crate::u16str::U16String::from_str("level"),
+            Json::from(level.as_str()),
+        );
+    }
+    crate::model::resolve_agent_draft(
+        &agent,
+        agents_json.as_ref(),
+        &models_json(&models),
+        defaults_json.as_ref(),
+        &Json::Object(std::sync::Arc::new(overrides_json)),
+    )
 }
 
 /// Keep `want` when supported, else the highest supported level not above

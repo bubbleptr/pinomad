@@ -337,6 +337,50 @@ pub fn model_pick_json(pick: &ModelPick) -> Json {
     ])
 }
 
+fn agent_draft_problem_json(problem: &pinomad_core::model::AgentDraftProblem) -> Json {
+    use pinomad_core::model::AgentDraftProblem;
+    match problem {
+        AgentDraftProblem::AgentMissing { agent, reason } => obj(&[
+            ("kind", Some(s("agent-missing"))),
+            ("agent", Some(s(agent))),
+            ("reason", reason.as_deref().map(s)),
+        ]),
+        AgentDraftProblem::ModelMissing { agent } => obj(&[
+            ("kind", Some(s("model-missing"))),
+            ("agent", Some(s(agent))),
+        ]),
+        AgentDraftProblem::ModelUnavailable { agent, model, source } => obj(&[
+            ("kind", Some(s("model-unavailable"))),
+            ("agent", Some(s(agent))),
+            ("model", Some(model.to_json())),
+            ("source", Some(s(source.as_str()))),
+        ]),
+    }
+}
+
+/// `AgentDraftResolution` in the reference's key order; `agent` is the input
+/// the `send` object echoes.
+pub fn agent_draft_json(draft: &pinomad_core::model::AgentDraft, agent: &str) -> Json {
+    obj(&[
+        ("model", draft.model.as_ref().map(ModelRef::to_json)),
+        ("level", Some(s(draft.level.as_str()))),
+        ("modelFrom", draft.model_from.map(|from| s(from.as_str()))),
+        ("levelFrom", Some(s(draft.level_from.as_str()))),
+        (
+            "send",
+            Some(obj(&[
+                ("agent", Some(s(agent))),
+                ("model", draft.send_model.as_ref().map(ModelRef::to_json)),
+                (
+                    "thinkingLevel",
+                    draft.send_level.as_ref().map(|level| s(level.as_str())),
+                ),
+            ])),
+        ),
+        ("problem", draft.problem.as_ref().map(agent_draft_problem_json)),
+    ])
+}
+
 /// `ParsedFile[]` in the reference's key order — `oldPath` is assigned after
 /// the object literal is created, so it serializes last.
 pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {

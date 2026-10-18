@@ -1,8 +1,9 @@
 // Shared inputs for the model derivations: the vitest suite and
 // packages/client/test/rust-vectors.ts both consume these tables.
 import type { ModelRef } from "@earendil-works/pi-durable";
+import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { ConversationDefaults, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
-import type { ModelPick } from "../src/model.ts";
+import type { AgentDraftOverrides, ModelPick } from "../src/model.ts";
 
 const model = (over: Partial<ModelSummary> = {}): ModelSummary => ({
   provider: "anthropic",
@@ -128,4 +129,112 @@ export const SAME_MODEL_CASES: { name: string; a?: ModelRef; b?: ModelRef }[] = 
   { name: "a-absent", b: { provider: "openai", modelId: "gpt-b" } },
   { name: "b-absent", a: { provider: "openai", modelId: "gpt-b" } },
   { name: "both-absent" },
+];
+
+const role = (name: string, over: Partial<AgentRole> = {}): AgentRole => ({
+  name,
+  description: `${name} does things`,
+  prompt: "Be helpful.",
+  ...over,
+});
+
+const rolesOf = (roles: AgentRole[], problems: AgentRoles["problems"] = []): AgentRoles => ({ roles, problems });
+
+export const AGENT_DRAFT_CASES: {
+  name: string;
+  agent: string;
+  agents: AgentRoles | null;
+  models: ModelSummary[];
+  defaults: ConversationDefaults;
+  overrides: AgentDraftOverrides;
+}[] = [
+  {
+    name: "inherit-pins",
+    agent: "reviewer",
+    agents: rolesOf([role("reviewer", { model: "anthropic/claude-a", thinkingLevel: "high" })]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b), thinkingLevel: "low" },
+    overrides: {},
+  },
+  {
+    name: "inherit-defaults",
+    agent: "planner",
+    agents: rolesOf([role("planner")]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b), thinkingLevel: "low" },
+    overrides: {},
+  },
+  {
+    // An inherited level clamps to the overridden model's levels, like the host.
+    name: "override-model-clamps-inherited",
+    agent: "reviewer",
+    agents: rolesOf([role("reviewer", { model: "anthropic/claude-a", thinkingLevel: "high" })]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: { model: ref(MODELS.b) },
+  },
+  {
+    name: "override-level",
+    agent: "reviewer",
+    agents: rolesOf([role("reviewer", { model: "anthropic/claude-a" })]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b), thinkingLevel: "low" },
+    overrides: { level: "xhigh" },
+  },
+  {
+    name: "role-model-unavailable",
+    agent: "reviewer",
+    agents: rolesOf([role("reviewer", { model: "gone/claude-z", thinkingLevel: "high" })]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: {},
+  },
+  {
+    name: "override-fixes-unavailable",
+    agent: "reviewer",
+    agents: rolesOf([role("reviewer", { model: "gone/claude-z" })]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: { model: ref(MODELS.b) },
+  },
+  {
+    name: "default-model-unavailable",
+    agent: "planner",
+    agents: rolesOf([role("planner")]),
+    models: MODEL_LIST,
+    defaults: { model: { provider: "gone", modelId: "claude-z" } },
+    overrides: {},
+  },
+  {
+    name: "override-model-unavailable",
+    agent: "planner",
+    agents: rolesOf([role("planner")]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: { model: { provider: "gone", modelId: "claude-z" } },
+  },
+  {
+    name: "agent-missing",
+    agent: "ghost",
+    agents: rolesOf([role("reviewer")], [{ file: "ghost.md", reason: "unknown field 'tools'" }]),
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: {},
+  },
+  {
+    name: "agents-null",
+    agent: "ghost",
+    agents: null,
+    models: MODEL_LIST,
+    defaults: { model: ref(MODELS.b) },
+    overrides: {},
+  },
+  {
+    name: "model-missing",
+    agent: "planner",
+    agents: rolesOf([role("planner")]),
+    models: MODEL_LIST,
+    defaults: {},
+    overrides: {},
+  },
 ];
