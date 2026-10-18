@@ -8,6 +8,17 @@ import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import { MAX_IMAGES_PER_MESSAGE, imageProblem } from "@pinomad/protocol/images.ts";
 import { checkoutOf, findConversation, homeOf, organize } from "@pinomad/protocol/organization.ts";
+import {
+  accountPairingFragment,
+  createAccountClient,
+  isSecureServerOrigin,
+  matchAccountHosts,
+  normalizeServerOrigin,
+  probeAccounts,
+  type AccountClient,
+  type AccountFetch,
+  type AccountFetchInit,
+} from "../src/account.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
@@ -43,6 +54,17 @@ import {
   type ToolItem,
 } from "../src/tool-item.ts";
 import { IMAGE_CASES } from "../../protocol/test/images-cases.ts";
+import {
+  MATCH_CASES,
+  NORMALIZE_ORIGIN_CASES,
+  OFFER_CASES,
+  PROBE_CASES,
+  PROBE_REQUEST_CASES,
+  REQUEST_CASES,
+  RESPONSE_CASES,
+  SECURE_ORIGIN_CASES,
+  type AccountOpDesc,
+} from "./account-cases.ts";
 import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES } from "./cot-view-cases.ts";
 import { AGENT_CASES, IS_BUSY_CASES, QUEUE_CASES, STATUS_CASES, TASK_GRAPH_CASES, USAGE_CASES } from "./chat-cases.ts";
 import {
@@ -456,6 +478,137 @@ function patchVector(): VectorFile {
   });
 }
 
-export function buildVectors(): VectorFile[] {
-  return [chatVector(), chatMetaVector(), toolsVector(), organizeVector(), familyVector(), modelsVector(), miscVector(), patchVector()];
+// ─── Account client (request building + response parsing are split — the
+// Rust core does both, the platform owns the socket) ─────────────────────────
+
+/** Records the request the client sent, answers with a canned 200. */
+const captureFetch = () => {
+  const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+  const impl: AccountFetch = (url, init) => {
+    calls.push({ url, init });
+    return Promise.resolve({
+      status: 200,
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("{}"),
+    });
+  };
+  return { impl, calls };
+};
+
+/** Answers `status`; `body` is the raw text — `json()` parses it, rejecting (like real fetch) when it's absent or not JSON. */
+const respondFetch = (status: number, body: string | null): AccountFetch => () =>
+  Promise.resolve({
+    status,
+    json: async () => {
+      if (body === null) throw new Error("empty body");
+      return JSON.parse(body) as unknown;
+    },
+    text: async () => {
+      if (body === null) throw new Error("empty body");
+      return body;
+    },
+  });
+
+const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> => {
+  switch (op.kind) {
+    case "login":
+      return client.login(op.username, op.password);
+    case "requestPairing":
+      return client.requestPairing(op.hostId);
+    case "me":
+      return client.me();
+    case "logout":
+      return client.logout();
+    case "revokeAllSessions":
+      return client.revokeAllSessions();
+    case "createJoinToken":
+      return client.createJoinToken();
+    case "listHosts":
+      return client.listHosts();
+  }
+};
+
+const bearerClient = (origin: string, token: string | undefined, fetchImpl: AccountFetch): AccountClient =>
+  createAccountClient({
+    origin,
+    credentials: token === undefined ? { mode: "bearer" } : { mode: "bearer", token },
+    fetch: fetchImpl,
+  });
+
+async function accountVector(): Promise<VectorFile> {
+  const requests = await Promise.all(
+    REQUEST_CASES.map(async (c) => {
+      const { impl, calls } = captureFetch();
+      await invokeOp(bearerClient(c.origin, c.token, impl), c.op);
+      const call = calls[0]!;
+      return { name: c.name, origin: c.origin, token: c.token ?? null, op: c.op, expect: wire({ url: call.url, init: call.init }) };
+    }),
+  );
+  const responses = await Promise.all(
+    RESPONSE_CASES.map(async (c) => {
+      const op: AccountOpDesc =
+        c.kind === "login"
+          ? { kind: "login", username: "u", password: "p" }
+          : c.kind === "requestPairing"
+            ? { kind: "requestPairing", hostId: "h" }
+            : { kind: c.kind };
+      const result = await invokeOp(bearerClient("https://relay.example.com", "tok", respondFetch(c.status, c.body)), op);
+      return { name: c.name, kind: c.kind, status: c.status, body: c.body, expect: wire(result) };
+    }),
+  );
+  const probe = await Promise.all(
+    PROBE_CASES.map(async (c) => {
+      const impl: AccountFetch =
+        c.status === null ? () => Promise.reject(new Error("ECONNREFUSED")) : respondFetch(c.status, c.body);
+      return { name: c.name, status: c.status, body: c.body, expect: wire(await probeAccounts("https://relay.example.com", impl)) };
+    }),
+  );
+  return write("account", {
+    requests,
+    responses,
+    probe,
+    probeRequest: await Promise.all(
+      PROBE_REQUEST_CASES.map(async (c) => {
+        const { impl, calls } = captureFetch();
+        await probeAccounts(c.origin, impl);
+        return { name: c.name, origin: c.origin, expect: wire(calls[0]!.url) };
+      }),
+    ),
+    isSecureServerOrigin: SECURE_ORIGIN_CASES.map((c) => ({
+      name: c.name,
+      origin: c.origin,
+      expect: wire(isSecureServerOrigin(c.origin)),
+    })),
+    normalizeServerOrigin: NORMALIZE_ORIGIN_CASES.map((c) => ({
+      name: c.name,
+      origin: c.origin,
+      expect: wire(normalizeServerOrigin(c.origin)),
+    })),
+    matchAccountHosts: MATCH_CASES.map((c) => ({
+      name: c.name,
+      origin: c.origin,
+      hosts: wire(c.hosts),
+      stored: wire(c.stored),
+      expect: expect(wire(matchAccountHosts(c.origin, c.hosts, c.stored))),
+    })),
+    accountPairingFragment: OFFER_CASES.map((c) => ({
+      name: c.name,
+      offer: wire(c.offer),
+      expect: wire(accountPairingFragment(c.offer) ?? null),
+    })),
+  });
+}
+
+export async function buildVectors(): Promise<VectorFile[]> {
+  return [
+    chatVector(),
+    chatMetaVector(),
+    toolsVector(),
+    organizeVector(),
+    familyVector(),
+    modelsVector(),
+    miscVector(),
+    patchVector(),
+    await accountVector(),
+  ];
 }

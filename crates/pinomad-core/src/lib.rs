@@ -4,6 +4,7 @@
 //! `packages/protocol` is the reference implementation; generated comparison
 //! vectors keep the two in lockstep.
 
+pub mod account;
 pub mod b64;
 pub mod chat;
 pub mod cot_view;

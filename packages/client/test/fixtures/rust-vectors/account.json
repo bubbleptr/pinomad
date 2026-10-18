@@ -1,0 +1,655 @@
+{
+  "requests": [
+    {
+      "name": "login",
+      "origin": "https://relay.example.com/",
+      "token": "tok",
+      "op": {
+        "kind": "login",
+        "username": "ad min",
+        "password": "p\"w\n"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/login\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"username\\\":\\\"ad min\\\",\\\"password\\\":\\\"p\\\\\\\"w\\\\n\\\"}\"}}"
+    },
+    {
+      "name": "login-no-token",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "login",
+        "username": "u",
+        "password": "p"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/login\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"username\\\":\\\"u\\\",\\\"password\\\":\\\"p\\\"}\"}}"
+    },
+    {
+      "name": "me",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "me"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me\",\"init\":{\"method\":\"GET\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "logout",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "logout"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/logout\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "revoke-all",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "revokeAllSessions"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/sessions/revoke-all\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "join-token",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "createJoinToken"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/join-tokens\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "list-hosts",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "listHosts"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/hosts\",\"init\":{\"method\":\"GET\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "pairing-encoded-id",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "requestPairing",
+        "hostId": "id a/b&c"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/hosts/id%20a%2Fb%26c/pairing\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "pairing-plain-id",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "requestPairing",
+        "hostId": "c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/hosts/c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg/pairing\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    }
+  ],
+  "responses": [
+    {
+      "name": "login-ok-token",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"admin\"},\"expiresAt\":1700000000000,\"token\":\"the-token\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"expiresAt\":1700000000000,\"token\":\"the-token\"}}"
+    },
+    {
+      "name": "login-ok-no-token",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"admin\"},\"expiresAt\":1}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"expiresAt\":1}}"
+    },
+    {
+      "name": "login-201",
+      "kind": "login",
+      "status": 201,
+      "body": "{\"user\":{\"username\":\"a\"},\"expiresAt\":2,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a\"},\"expiresAt\":2,\"token\":\"t\"}}"
+    },
+    {
+      "name": "login-user-not-object",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":\"x\",\"expiresAt\":1}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "login-missing-expiry",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a\"}}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "login-null-body",
+      "kind": "login",
+      "status": 200,
+      "body": "null",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "login-invalid-credentials",
+      "kind": "login",
+      "status": 401,
+      "body": "{\"error\":\"invalid_credentials\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_credentials\",\"status\":401}}"
+    },
+    {
+      "name": "login-401-no-body",
+      "kind": "login",
+      "status": 401,
+      "body": null,
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unauthenticated\",\"status\":401}}"
+    },
+    {
+      "name": "me-ok",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"admin\"}}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"}}}"
+    },
+    {
+      "name": "me-user-null",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":null}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "me-html-200",
+      "kind": "me",
+      "status": 200,
+      "body": "<html>app</html>",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "me-401-no-body",
+      "kind": "me",
+      "status": 401,
+      "body": null,
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unauthenticated\",\"status\":401}}"
+    },
+    {
+      "name": "me-502-html",
+      "kind": "me",
+      "status": 502,
+      "body": "<html>bad gateway</html>",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":502}}"
+    },
+    {
+      "name": "logout-204",
+      "kind": "logout",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "logout-200",
+      "kind": "logout",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "revoke-204",
+      "kind": "revokeAllSessions",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "join-ok",
+      "kind": "createJoinToken",
+      "status": 200,
+      "body": "{\"token\":\"jt\",\"expiresAt\":9,\"command\":\"pinomad join https://x jt\"}",
+      "expect": "{\"ok\":true,\"value\":{\"token\":\"jt\",\"expiresAt\":9,\"command\":\"pinomad join https://x jt\"}}"
+    },
+    {
+      "name": "join-missing-command",
+      "kind": "createJoinToken",
+      "status": 200,
+      "body": "{\"token\":\"jt\",\"expiresAt\":9}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "hosts-ok",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\"}]",
+      "expect": "{\"ok\":true,\"value\":[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\"}]}"
+    },
+    {
+      "name": "hosts-empty",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[]",
+      "expect": "{\"ok\":true,\"value\":[]}"
+    },
+    {
+      "name": "hosts-not-array",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "hosts-bad-entry",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"x\"}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "hosts-bad-pairing",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"h\",\"name\":\"n\",\"noisePublicKey\":\"k\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"bogus\"}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "hosts-rate-limited",
+      "kind": "listHosts",
+      "status": 429,
+      "body": "{\"error\":\"rate_limited\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"
+    },
+    {
+      "name": "hosts-error-not-string",
+      "kind": "listHosts",
+      "status": 503,
+      "body": "{\"error\":42}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":503}}"
+    },
+    {
+      "name": "pairing-ok",
+      "kind": "requestPairing",
+      "status": 200,
+      "body": "{\"url\":\"wss://relay.example.com/c/h\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":3}",
+      "expect": "{\"ok\":true,\"value\":{\"url\":\"wss://relay.example.com/c/h\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":3}}"
+    },
+    {
+      "name": "pairing-missing-secret",
+      "kind": "requestPairing",
+      "status": 200,
+      "body": "{\"url\":\"wss://x\",\"hostKey\":\"k\",\"expiresAt\":1}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "pairing-offline",
+      "kind": "requestPairing",
+      "status": 409,
+      "body": "{\"error\":\"host_offline\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"host_offline\",\"status\":409}}"
+    },
+    {
+      "name": "pairing-key-mismatch",
+      "kind": "requestPairing",
+      "status": 409,
+      "body": "{\"error\":\"key_mismatch\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"key_mismatch\",\"status\":409}}"
+    },
+    {
+      "name": "pairing-host-timeout",
+      "kind": "requestPairing",
+      "status": 504,
+      "body": "{\"error\":\"host_timeout\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"host_timeout\",\"status\":504}}"
+    }
+  ],
+  "probe": [
+    {
+      "name": "wants-session",
+      "status": 401,
+      "body": null,
+      "expect": "\"enabled\""
+    },
+    {
+      "name": "live-session",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a\"}}",
+      "expect": "\"enabled\""
+    },
+    {
+      "name": "user-array",
+      "status": 200,
+      "body": "{\"user\":[]}",
+      "expect": "\"enabled\""
+    },
+    {
+      "name": "user-null",
+      "status": 200,
+      "body": "{\"user\":null}",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "user-missing",
+      "status": 200,
+      "body": "{}",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "user-array-200",
+      "status": 200,
+      "body": "[]",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "html",
+      "status": 200,
+      "body": "<html>app</html>",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "not-json",
+      "status": 200,
+      "body": "not json at all",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "not-found",
+      "status": 404,
+      "body": null,
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "accounts-disabled",
+      "status": 404,
+      "body": "{\"error\":\"accounts_disabled\"}",
+      "expect": "\"disabled\""
+    },
+    {
+      "name": "bad-gateway",
+      "status": 502,
+      "body": null,
+      "expect": "\"unreachable\""
+    },
+    {
+      "name": "forbidden",
+      "status": 403,
+      "body": null,
+      "expect": "\"unreachable\""
+    },
+    {
+      "name": "redirect",
+      "status": 301,
+      "body": null,
+      "expect": "\"unreachable\""
+    },
+    {
+      "name": "network",
+      "status": null,
+      "body": null,
+      "expect": "\"unreachable\""
+    },
+    {
+      "name": "body-cut",
+      "status": 200,
+      "body": null,
+      "expect": "\"unreachable\""
+    }
+  ],
+  "probeRequest": [
+    {
+      "name": "plain",
+      "origin": "https://relay.example.com",
+      "expect": "\"https://relay.example.com/api/me\""
+    },
+    {
+      "name": "trailing-slash",
+      "origin": "https://relay.example.com/",
+      "expect": "\"https://relay.example.com/api/me\""
+    },
+    {
+      "name": "trailing-slashes",
+      "origin": "https://relay.example.com///",
+      "expect": "\"https://relay.example.com/api/me\""
+    }
+  ],
+  "isSecureServerOrigin": [
+    {
+      "name": "https",
+      "origin": "https://relay.example.com",
+      "expect": "true"
+    },
+    {
+      "name": "https-port",
+      "origin": "https://relay.example.com:8443",
+      "expect": "true"
+    },
+    {
+      "name": "https-upper",
+      "origin": "HTTPS://RELAY.EXAMPLE.COM:443/",
+      "expect": "true"
+    },
+    {
+      "name": "http-remote",
+      "origin": "http://relay.example.com",
+      "expect": "false"
+    },
+    {
+      "name": "http-lan-ip",
+      "origin": "http://192.168.1.5:7430",
+      "expect": "false"
+    },
+    {
+      "name": "http-ipv4-loopback",
+      "origin": "http://127.0.0.1:7430",
+      "expect": "true"
+    },
+    {
+      "name": "http-localhost",
+      "origin": "http://localhost:7430",
+      "expect": "true"
+    },
+    {
+      "name": "http-sub-localhost",
+      "origin": "http://dev.localhost:7430",
+      "expect": "true"
+    },
+    {
+      "name": "http-ipv6-loopback",
+      "origin": "http://[::1]:7430",
+      "expect": "true"
+    },
+    {
+      "name": "http-127-name",
+      "origin": "http://127.example.com",
+      "expect": "true"
+    },
+    {
+      "name": "ws",
+      "origin": "ws://relay.example.com",
+      "expect": "false"
+    },
+    {
+      "name": "wss-not-http",
+      "origin": "wss://relay.example.com",
+      "expect": "false"
+    },
+    {
+      "name": "not-a-url",
+      "origin": "not a url",
+      "expect": "false"
+    },
+    {
+      "name": "empty",
+      "origin": "",
+      "expect": "false"
+    }
+  ],
+  "normalizeServerOrigin": [
+    {
+      "name": "trailing-slash",
+      "origin": "https://relay.example.com/",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "trailing-slashes",
+      "origin": "https://relay.example.com///",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "default-port",
+      "origin": "https://relay.example.com:443",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "custom-port",
+      "origin": "https://relay.example.com:8443",
+      "expect": "\"https://relay.example.com:8443\""
+    },
+    {
+      "name": "http-default-port",
+      "origin": "http://127.0.0.1:80/",
+      "expect": "\"http://127.0.0.1\""
+    },
+    {
+      "name": "http-custom-port",
+      "origin": "http://127.0.0.1:7430/",
+      "expect": "\"http://127.0.0.1:7430\""
+    },
+    {
+      "name": "uppercase",
+      "origin": "HTTPS://RELAY.EXAMPLE.COM/",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "userinfo",
+      "origin": "https://user:pw@relay.example.com/",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "path-and-query",
+      "origin": "https://relay.example.com/p?q=1",
+      "expect": "\"https://relay.example.com\""
+    },
+    {
+      "name": "ws-default-port",
+      "origin": "ws://relay.example.com:80/",
+      "expect": "\"ws://relay.example.com\""
+    },
+    {
+      "name": "opaque-scheme",
+      "origin": "pinomad://pair",
+      "expect": "\"null\""
+    },
+    {
+      "name": "unparseable",
+      "origin": "not a url//",
+      "expect": "\"not a url\""
+    },
+    {
+      "name": "empty",
+      "origin": "",
+      "expect": "\"\""
+    }
+  ],
+  "matchAccountHosts": [
+    {
+      "name": "linked-paired",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "twin-linkable",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"},\"linkable\":true}]"
+    },
+    {
+      "name": "unpaired",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false}]"
+    },
+    {
+      "name": "key-changed",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "stale-and-fresh-link",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GKb4waf93yK9QQE4959ymM040dClQtQmbVVr6GCdiGI\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "linked-shadows-twin",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "other-origin-same-key",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "other-origin-other-key",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false}]"
+    },
+    {
+      "name": "origin-normalizes",
+      "origin": "https://relay.example.com:443/",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+    },
+    {
+      "name": "host-offline-row",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"l8OxC01sEzp46l3MHPZCHT-Brjex9ijOFMpvzncw8zM\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"offline\"}]",
+      "stored": "[]",
+      "expect": "[{\"host\":{\"hostId\":\"l8OxC01sEzp46l3MHPZCHT-Brjex9ijOFMpvzncw8zM\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"offline\"},\"status\":\"unpaired\",\"linkable\":false}]"
+    }
+  ],
+  "accountPairingFragment": [
+    {
+      "name": "valid",
+      "offer": "{\"url\":\"wss://relay.example.com/c/host\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":1}",
+      "expect": "\"pair=csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY.lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost\""
+    },
+    {
+      "name": "url-with-port",
+      "offer": "{\"url\":\"wss://relay.example.com:8443/c/h\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":1}",
+      "expect": "\"pair=csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY.lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY&url=wss%3A%2F%2Frelay.example.com%3A8443%2Fc%2Fh\""
+    },
+    {
+      "name": "url-not-socket",
+      "offer": "{\"url\":\"https://evil.example.com\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":1}",
+      "expect": "null"
+    },
+    {
+      "name": "host-key-short",
+      "offer": "{\"url\":\"wss://x\",\"hostKey\":\"short\",\"secret\":\"lzrCWIUPHKAGMLeqpc2at27ykmXrgQYWGLeHTPoroVY\",\"expiresAt\":1}",
+      "expect": "null"
+    },
+    {
+      "name": "secret-empty",
+      "offer": "{\"url\":\"wss://x\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"\",\"expiresAt\":1}",
+      "expect": "null"
+    },
+    {
+      "name": "secret-not-base64url",
+      "offer": "{\"url\":\"wss://x\",\"hostKey\":\"csrwV1GHNBMFsDUHRDlYYq6-l4s7LNeWNXUlGg7k5GY\",\"secret\":\"not+base64url/===\",\"expiresAt\":1}",
+      "expect": "null"
+    }
+  ]
+}

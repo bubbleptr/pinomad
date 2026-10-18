@@ -11,7 +11,7 @@ const dir = fileURLToPath(new URL("./fixtures/rust-vectors/", import.meta.url));
 
 describe("rust vectors", () => {
   it("fixtures match the TS reference output", async () => {
-    const files = buildVectors();
+    const files = await buildVectors();
     if (process.env.PINOMAD_UPDATE_VECTORS === "1") {
       await mkdir(dir, { recursive: true });
       for (const file of files) await writeFile(join(dir, `${file.name}.json`), file.text);
