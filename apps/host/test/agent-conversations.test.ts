@@ -245,6 +245,21 @@ describe("top-level conversations with a named agent", () => {
     );
     expect(typeof plain).toBe("number");
 
+    // No model at all — no arg, no pin, no host default — fails the same gate:
+    // an agent conversation with nothing to run on is refused before any write.
+    await expect(
+      createConversation(
+        host.harness,
+        dir.path,
+        { home: { kind: "chat" }, text: "hi", requestId: "m-5", agent: "bare" },
+        {},
+        models,
+        () => summaries,
+        roles,
+        context,
+      ),
+    ).rejects.toThrow('Agent "bare" has no model');
+
     expect(
       (await host.harness.snapshot(IndexDoc, context))!.conversations.every((entry) => entry.role === undefined),
     ).toBe(true);

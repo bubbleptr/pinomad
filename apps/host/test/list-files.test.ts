@@ -248,6 +248,8 @@ describe("listFiles", () => {
     expect(empty.files).not.toContain("with space.txt");
     expect(empty.files).not.toContain("tick`tock.txt");
     expect(empty.files).not.toContain("ctl\tname.txt");
+    // And no fabricated candidate from a mis-parsed tab name either.
+    expect(empty.files).not.toContain("name.txt");
 
     // Filename prefix beats filename-contains beats path-contains; shorter first within a tier.
     const matched = filesOf(await call(raw, "listFiles", { scope, query: "main" }));
@@ -379,5 +381,32 @@ describe("createCandidateLister", () => {
     await expect(list("/r", "live")).rejects.toThrow("boom");
     expect(await list("/r", "live")).toEqual({ files: [], truncated: false });
     expect(n).toBe(2);
+  });
+
+  it("evicts expired entries on write and the oldest root past the bound", async () => {
+    const clock = manual();
+    const scans: string[] = [];
+    const list = createCandidateLister(
+      async (root): Promise<FileCandidates> => {
+        scans.push(root);
+        return { files: [], truncated: false };
+      },
+      { now: clock.now, ttlMs: 1000, maxCached: 2 },
+    );
+    await list("/a", "live");
+    await list("/b", "live");
+    // Stale entries are swept on the next write, not just skipped on read:
+    // /a rescans and its write drops the expired /b.
+    clock.advance(1100);
+    await list("/a", "live");
+    expect(scans).toEqual(["/a", "/b", "/a"]);
+    // maxCached 2: /a then /c fit; /d evicts the oldest (/a).
+    await list("/c", "live");
+    await list("/d", "live");
+    await list("/a", "live"); // evicted — rescans, /d is evicted in turn... no: oldest is /c
+    expect(scans).toEqual(["/a", "/b", "/a", "/c", "/d", "/a"]);
+    // /d survived (/c left first): it answers from cache.
+    await list("/d", "live");
+    expect(scans).toEqual(["/a", "/b", "/a", "/c", "/d", "/a"]);
   });
 });

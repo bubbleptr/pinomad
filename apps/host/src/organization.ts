@@ -166,15 +166,17 @@ export async function createConversation(
   // With a named agent the effective model — whether it came from the args,
   // the role, or the host default — must be one the host advertises (the same
   // check `subagent` runs, ADR-0023 §8). Without `agent` nothing changes.
-  if (
-    role !== undefined
-    && modelRef !== undefined
-    && (model === undefined || !modelSummaries().some((m) => m.provider === modelRef.provider && m.modelId === modelRef.modelId))
-  ) {
+  if (role !== undefined) {
     const listed = modelSummaries().map((m) => `${m.provider}/${m.modelId}`).join(", ");
-    throw new Error(
-      `Model ${modelRef.provider}/${modelRef.modelId} is not available${listed === "" ? "" : `. Available models: ${listed}`}`,
-    );
+    const suffix = listed === "" ? "" : `. Available models: ${listed}`;
+    // No model resolved at all — no arg, no pin, no host default — is also a
+    // refusal: the conversation could never run.
+    if (modelRef === undefined) {
+      throw new Error(`Agent "${role.name}" has no model: the role pins none and the host has no default${suffix}`);
+    }
+    if (model === undefined || !modelSummaries().some((m) => m.provider === modelRef.provider && m.modelId === modelRef.modelId)) {
+      throw new Error(`Model ${modelRef.provider}/${modelRef.modelId} is not available${suffix}`);
+    }
   }
   const thinkingLevel =
     model === undefined

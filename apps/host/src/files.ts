@@ -26,6 +26,9 @@ export type FileLister = (root: string, mode: RootMode) => Promise<FileCandidate
 // The composer's debounce makes a burst of queries share one scan; the cache
 // only needs to outlive a few seconds of typing.
 const CACHE_TTL_MS = 3_000;
+// Entries past the TTL are dead weight — sweep them on write, and bound the
+// map so a long-lived host can't accumulate one candidate list per checkout.
+const MAX_CACHED_ROOTS = 64;
 const MAX_CONCURRENT_SCANS = 4;
 // Per-scan bounds: a slow or huge tree is cut, never queued forever.
 const SCAN_BUDGET_MS = 5_000;
@@ -51,11 +54,17 @@ export interface ScanLimits {
  */
 export function createCandidateLister(
   enumerate: (root: string, mode: RootMode) => Promise<FileCandidates>,
-  options: { readonly now?: () => number; readonly ttlMs?: number; readonly maxConcurrent?: number } = {},
+  options: {
+    readonly now?: () => number;
+    readonly ttlMs?: number;
+    readonly maxConcurrent?: number;
+    readonly maxCached?: number;
+  } = {},
 ): FileLister {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? CACHE_TTL_MS;
   const maxConcurrent = options.maxConcurrent ?? MAX_CONCURRENT_SCANS;
+  const maxCached = options.maxCached ?? MAX_CACHED_ROOTS;
   const cache = new Map<string, { value: FileCandidates; expiresAt: number }>();
   const inflight = new Map<string, Promise<FileCandidates>>();
   let running = 0;
@@ -64,7 +73,10 @@ export function createCandidateLister(
   return (root, mode) => {
     const key = `${mode}${root}`;
     const hit = cache.get(key);
-    if (hit !== undefined && hit.expiresAt > now()) return Promise.resolve(hit.value);
+    if (hit !== undefined) {
+      if (hit.expiresAt > now()) return Promise.resolve(hit.value);
+      cache.delete(key);
+    }
     const pending = inflight.get(key);
     if (pending !== undefined) return pending;
     const scan = (async () => {
@@ -79,7 +91,15 @@ export function createCandidateLister(
     })();
     inflight.set(key, scan);
     void scan.then(
-      (value) => cache.set(key, { value, expiresAt: now() + ttlMs }),
+      (value) => {
+        const at = now();
+        for (const [cached, entry] of cache) {
+          if (entry.expiresAt <= at) cache.delete(cached);
+        }
+        // Over the bound, the oldest entries go first (Map iterates in insert order).
+        while (cache.size >= maxCached) cache.delete(cache.keys().next().value!);
+        cache.set(key, { value, expiresAt: at + ttlMs });
+      },
       () => {},
     );
     return scan.finally(() => inflight.delete(key));
@@ -159,6 +179,11 @@ async function hasHead(root: string): Promise<boolean> {
   });
 }
 
+// A staged record's header: octal mode, hex sha, stage digit, then a tab and
+// the path. Untracked entries print bare — a filename containing a tab is not
+// metadata, so the header must match before anything is stripped.
+const STAGED_RECORD = /^([0-7]{6}) [0-9a-f]{40,64} [0-7]\t/;
+
 /**
  * The working tree's files under `root`: `git ls-files` in the root lists
  * only paths below it (relative to it). Staged entries carry `mode sha
@@ -175,9 +200,9 @@ async function gitWorkingFiles(
   const gone = new Set(deleted.lines);
   const files = new Set<string>();
   for (const line of listing.lines) {
-    const tab = line.indexOf("\t");
-    const path = tab === -1 ? line : line.slice(tab + 1);
-    if (tab !== -1 && line.startsWith("160000 ")) continue;
+    const staged = STAGED_RECORD.exec(line);
+    const path = staged === null ? line : line.slice(staged[0].length);
+    if (staged !== null && staged[1] === "160000") continue;
     if (path === "" || path.endsWith("/") || gone.has(path)) continue;
     files.add(path);
   }
