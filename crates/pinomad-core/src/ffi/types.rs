@@ -16,7 +16,7 @@ pub use crate::cot_view::{
     ChatEntry, CotAnswer, CotPhase, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents,
 };
 pub use crate::folder_path::FolderCrumb;
-pub use crate::frames::{ApnsEnvironment, ApnsPushToken, ProtocolVersion};
+pub use crate::frames::{ApnsEnvironment, ApnsPushToken, HostFeature, ProtocolVersion};
 pub use crate::model::{AgentDraft, AgentDraftProblem, AgentDraftSource, ModelPick, ModelRef, ThinkingLevel};
 pub use crate::organization::{
     ConversationStatus, HomeKind, SummaryActivity, SummaryKind,

@@ -331,6 +331,14 @@ pub fn host_supports_call(host_minor: u32, method: String) -> bool {
     crate::frames::host_supports_call(host_minor, &method)
 }
 
+/// Whether a host speaking protocol minor `host_minor` knows a call-arg
+/// feature (e.g. "agentConversations") — an older host would silently ignore
+/// the arg, so the UI hides what it can't honor.
+#[uniffi::export]
+pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
+    crate::frames::host_supports_feature(host_minor, feature)
+}
+
 /// Where a pairing link would connect and which host it names, or `None`
 /// when it is not a usable pairing link — what the confirm page shows, and
 /// how the app knows which stored host a finished pairing became.
