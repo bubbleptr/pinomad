@@ -49,6 +49,23 @@
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* —— Dark surface ladder ——
+   theme-neutral's dark leg puts the main pane at #262626 over a #1b1b1b
+   frame and gives the composer (card) and menus (popover) the frame color,
+   so the sidebar and composer become the deepest, highest-contrast areas and
+   the conversation reads as a grey veil. Dark mode keeps light mode's
+   layering instead: frame darkest, main pane just above it, inset fills
+   (muted) and raised surfaces lighter in that order, popovers on top. Same
+   specificity lift as the font override. Light legs are theme-neutral's
+   values verbatim. */
+[data-astryx-theme][data-astryx-theme] {
+  --color-background-body: light-dark(#f1f1f1, oklch(0.19 0 0));
+  --color-background-surface: light-dark(#ffffff, oklch(0.218 0 0));
+  --color-background-muted: light-dark(#f1f1f1, oklch(0.248 0 0));
+  --color-background-card: light-dark(#ffffff, oklch(0.26 0 0));
+  --color-background-popover: light-dark(#ffffff, oklch(0.285 0 0));
+}
+
 /* —— Semantic token bridge ——
    Composes Astryx first-level tokens into the app-level semantic vocabulary.
    Declared on both :root and the
