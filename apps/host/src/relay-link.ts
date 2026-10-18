@@ -41,7 +41,7 @@ export type AccountOfferResult =
   | { readonly ok: false; readonly reason: string };
 
 export interface RelayLink {
-  /** This host's relay identity — what goes in the relay's `--allow-host`. */
+  /** This host's relay identity — what the server binds to an account. */
   readonly hostId: string;
   readonly origin: string;
   state(): RelayLinkState;
@@ -66,7 +66,7 @@ export function relayWsBase(origin: string): string {
 const REJECTION_REASONS: Record<number, (hostId: string) => string> = {
   [RELAY_CLOSE.badSignature]: () => `the relay rejected this host's registration signature — a version mismatch?`,
   [RELAY_CLOSE.hostNotAllowed]: (hostId) =>
-    `the server does not allow this host; join it to an account (\`pinomad join\`) or add --allow-host ${hostId} to the server's arguments`,
+    `the server does not allow this host (${hostId}); join it to an account with \`pinomad join\``,
   [RELAY_CLOSE.replaced]: () => `the relay replaced this control connection — another process registered the same hostId`,
 };
 

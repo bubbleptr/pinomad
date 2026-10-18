@@ -12,7 +12,7 @@
 pub mod close_codes {
     /// The host's Ed25519 signature on the control channel did not verify.
     pub const BAD_SIGNATURE: u16 = 4601;
-    /// The control connection's hostId is not on the allowlist.
+    /// The control connection's hostId is not bound to an account.
     pub const HOST_NOT_ALLOWED: u16 = 4603;
     /// A device dialed a hostId that has no registered control channel —
     /// the host is offline, not a client error.

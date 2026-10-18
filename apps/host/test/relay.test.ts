@@ -9,11 +9,11 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
-import { startRelay } from "@pinomad/relay/src/relay.ts";
+import { startRelay, type Relay } from "@pinomad/relay/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { startRelayLink, type AccountOfferResult, type RelayLinkState } from "../src/relay-link.ts";
-import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, freePort, openBoundAccounts, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -48,19 +48,32 @@ function pairParams(url: string): { hostKey: string; secret: string; target: str
   return { hostKey: hostKey!, secret: secret!, target: params.get("url")! };
 }
 
-/** A relay wired to `dir`'s relay key, on its own port; returns it and the device URL. */
-async function startTestRelay(dir: string, options?: { allow?: readonly string[] }) {
+/**
+ * A relay on its own port with `dir`'s relay key bound to an account (unless
+ * `bound: false`), plus the device URL. `stop` and `restart` cycle it on the
+ * same port and accounts directory; cleanup stops whichever one is live.
+ */
+async function startTestRelay(dir: string, options?: { bound?: boolean }) {
   const port = await freePort();
   const key = await loadRelayKey(dir);
   const hostId = relayHostId(key.publicKey);
   const origin = `http://127.0.0.1:${port}`;
-  const relay = await startRelay({
-    port,
-    publicOrigin: origin,
-    allowedHosts: options?.allow ?? [hostId],
-  });
-  defer(() => relay.close());
-  return { relay, port, origin, hostId, deviceUrl: `ws://127.0.0.1:${port}/c/${hostId}` };
+  const server = await tempDir();
+  defer(server.remove);
+  let relay: Relay | undefined;
+  let stopping: Promise<void> | undefined;
+  const restart = async (): Promise<void> => {
+    relay = await startRelay({
+      port,
+      publicOrigin: origin,
+      accounts: await openBoundAccounts(server.path, options?.bound === false ? "x".repeat(43) : hostId),
+    });
+    stopping = undefined;
+  };
+  const stop = (): Promise<void> => (stopping ??= relay!.close());
+  await restart();
+  defer(stop);
+  return { stop, restart, port, origin, hostId, deviceUrl: `ws://127.0.0.1:${port}/c/${hostId}` };
 }
 
 function connectDevice(
@@ -355,7 +368,7 @@ describe("relay link", () => {
   it("re-registers after a relay restart and carries devices again", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const { relay, port, origin, deviceUrl } = await startTestRelay(dir.path);
+    const { stop, restart, origin, deviceUrl } = await startTestRelay(dir.path);
     const host = await startFauxHost(defer, {
       dataDir: dir.path,
       relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
@@ -368,10 +381,10 @@ describe("relay link", () => {
     const first = await connectDevice(deviceUrl, fromBase64Url(hostKey), device, { secret, name: "phone" });
     await first.close();
 
-    await relay.close();
+    await stop();
     await waitForRelayState(host, "connecting");
-    const restarted = await startRelay({ port, publicOrigin: origin, allowedHosts: [relayHostId((await loadRelayKey(dir.path)).publicKey)] });
-    defer(() => restarted.close());
+    // The binding survives the restart in the server's database.
+    await restart();
     await waitForRelayState(host, "registered");
 
     const second = await connectDevice(deviceUrl, fromBase64Url(hostKey), device);
@@ -381,8 +394,8 @@ describe("relay link", () => {
   it("reports a rejected hostId while the host keeps serving local clients", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    // The relay allowlists somebody else: this host's hostId gets a 4603.
-    const { origin, hostId } = await startTestRelay(dir.path, { allow: ["x".repeat(43)] });
+    // The server binds somebody else: this host's hostId gets a 4603.
+    const { origin, hostId } = await startTestRelay(dir.path, { bound: false });
     const host = await startFauxHost(defer, {
       dataDir: dir.path,
       relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
@@ -390,7 +403,7 @@ describe("relay link", () => {
     const state = await waitForRelayState(host, "rejected");
     if (state.status !== "rejected") throw new Error("unreachable");
     expect(state.reason).toContain(hostId);
-    expect(state.reason).toContain("--allow-host");
+    expect(state.reason).toContain("pinomad join");
 
     const tokenClient = await connectTo(defer, host);
     await tokenClient.controller.createConversation({ kind: "chat" }, "still local");
@@ -438,7 +451,7 @@ describe("relay link resilience", () => {
   it("reports state transitions: registered, connecting on relay loss, registered again", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const { relay, port, origin } = await startTestRelay(dir.path);
+    const { stop, restart, port, origin } = await startTestRelay(dir.path);
     const states: RelayLinkState["status"][] = [];
     const link = startRelayLink({
       origin,
@@ -451,7 +464,7 @@ describe("relay link resilience", () => {
     defer(() => link.close());
     await until(() => states.length === 1);
 
-    await relay.close();
+    await stop();
     await until(() => states.length === 2);
 
     // Hold the port so at least two reconnect dials fail before the relay
@@ -465,12 +478,7 @@ describe("relay link resilience", () => {
     await until(() => dials >= 2);
     await new Promise<void>((resolve) => blocker.close(() => resolve()));
 
-    const restarted = await startRelay({
-      port,
-      publicOrigin: origin,
-      allowedHosts: [relayHostId((await loadRelayKey(dir.path)).publicKey)],
-    });
-    defer(() => restarted.close());
+    await restart();
     await until(() => states.length === 3);
     expect(states).toEqual(["registered", "connecting", "registered"]);
   });

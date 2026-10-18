@@ -38,9 +38,9 @@ const run = (command: string, args: readonly string[]): Promise<{ code: number; 
   });
 
 /** Spawn a long-running subcommand; resolve once stdout prints the ready line. */
-function untilReady(command: string, args: readonly string[], timeoutMs = 30_000): Promise<ChildProcess> {
+function untilReady(command: string, args: readonly string[], env?: Record<string, string>, timeoutMs = 30_000): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [...args]);
+    const child = spawn(command, [...args], { env: { ...process.env, ...env } });
     let output = "";
     const timer = setTimeout(() => reject(new Error(`no ready line within ${timeoutMs}ms; output: ${output}`)), timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
@@ -83,10 +83,6 @@ try {
   const ver = await run(bin, ["--version"]);
   if (ver.code !== 0 || ver.output.trim() !== version) fail(`--version printed ${JSON.stringify(ver.output)}`);
 
-  const relayId = await run(bin, ["relay-id", "--data-dir", work]);
-  const hostId = relayId.output.trim();
-  if (relayId.code !== 0 || !/^[A-Za-z0-9_-]{43}$/.test(hostId)) fail(`relay-id printed ${JSON.stringify(relayId.output)}`);
-
   const hostPort = await freePort();
   const host = await untilReady(bin, ["host", "--faux", "hi", "--data-dir", work, "--port", String(hostPort)]);
   const index = await get(hostPort);
@@ -94,20 +90,17 @@ try {
   await stop(host);
 
   const relayPort = await freePort();
-  const relay = await untilReady(bin, [
-    "relay",
-    "--public-origin",
-    `http://127.0.0.1:${relayPort}`,
-    "--allow-host",
-    hostId,
-    "--port",
-    String(relayPort),
-  ]);
+  // First start: the bootstrap env vars create the account in a fresh data dir.
+  const relay = await untilReady(
+    bin,
+    ["relay", "--public-origin", `http://127.0.0.1:${relayPort}`, "--data-dir", join(work, "server"), "--port", String(relayPort)],
+    { PINOMAD_SERVER_USER: "smoke", PINOMAD_SERVER_PASSWORD: "smoke-password-long-enough" },
+  );
   const relayIndex = await get(relayPort);
   if (relayIndex.status !== 200 || !relayIndex.body.includes("<")) fail(`GET / on packaged relay: ${relayIndex.status}`);
   await stop(relay);
 
-  console.log(`smoke ok: pinomad@${version} (version, relay-id, host+web, relay+web)`);
+  console.log(`smoke ok: pinomad@${version} (version, host+web, relay+web)`);
 } finally {
   await rm(prefix, { recursive: true, force: true });
   await rm(work, { recursive: true, force: true });

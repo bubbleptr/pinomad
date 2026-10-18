@@ -42,21 +42,21 @@ Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面
 
 宿主在家里局域网、手机在外面时，把中继跑在一台有公网地址的 VPS 上：宿主和手机都只往外连中继，中继按宿主身份把两端的连接接起来，只转发密文、不存东西；Web 客户端也由中继用 HTTPS 提供，手机扫二维码直接打开。
 
-宿主这边：先打印中继身份（Ed25519 公钥，存在 `<dataDir>/relay-key`）：
-
-```sh
-pinomad relay-id [--data-dir DIR]        # 输出 hostId，把它加进中继的 --allow-host
-pinomad host --relay https://relay.example.com
-# 常驻：pinomad service install --relay https://relay.example.com
-pinomad pair                             # 打出的二维码指向中继
-```
-
-VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来自同一个 `pinomad` 安装，版本天然一致：
+VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来自同一个 `pinomad` 安装，版本天然一致。首次启动用两个环境变量建出唯一用户（细节见下面的「服务端账号」）：
 
 ```sh
 npm i -g pinomad
-pinomad relay --public-origin https://relay.example.com --allow-host <hostId>
-# 默认只监听 127.0.0.1:7430，--port / --listen 可改；多台宿主就写多个 --allow-host
+export PINOMAD_SERVER_USER=<用户名>
+export PINOMAD_SERVER_PASSWORD=<至少 12 位>
+pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
+# 默认只监听 127.0.0.1:7430，--port / --listen 可改；--trust-proxy 是因为前面有 Caddy
+```
+
+宿主这边：浏览器打开 `https://relay.example.com` 登录，"Add a host" 给出一条一次性的 `pinomad join` 命令（十分钟内有效），在宿主机器上运行。宿主只有加入账号后才能在服务端登记：
+
+```sh
+pinomad join https://relay.example.com <token>   # 登记到账号、写好 server.json、装好宿主服务
+pinomad pair                                     # 打出的二维码指向中继
 ```
 
 Caddy 终止 TLS（自动签证书，WebSocket 无需额外配置）：
@@ -67,7 +67,7 @@ relay.example.com {
 }
 ```
 
-systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）：
+systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后这个文件可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
 
 ```ini
 [Unit]
@@ -76,7 +76,9 @@ After=network-online.target
 
 [Service]
 User=pinomad
-ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --allow-host <hostId>
+StateDirectory=pinomad
+EnvironmentFile=-/etc/pinomad-server.env
+ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 Restart=always
 
 [Install]
@@ -91,7 +93,6 @@ WantedBy=multi-user.target
 |---|---|
 | `PINOMAD_PUBLIC_ORIGIN` | 客户端打开的 https origin，比如 `https://nomad.example.com` |
 | `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD` | 第一次启动时建出唯一的用户（密码至少 12 位）；之后留着也没关系，用户已存在时不再读 |
-| `PINOMAD_ALLOW_HOST` | 可选：不经账号也允许登记的 hostId，多个用空格分隔。迁移期给还没 `pinomad join` 的宿主用，全部 join 后删掉 |
 | `ZBPACK_DOCKERFILE_PATH=Dockerfile` | **Zeabur 必加**：目录里只有一个 Dockerfile 时，Zeabur 会把它识别成静态站点、用 Caddy 托管文件，中继根本没启动；这个变量强制按 Dockerfile 构建（部署日志里应是 `PLANTYPE=docker`） |
 
 Zeabur 上的步骤（在 Dedicated Server 上部署，用 CLI 上传目录，不接 GitHub）：
@@ -107,7 +108,7 @@ zeabur deploy --service-id <服务 id>
 
 ```sh
 curl -sI https://nomad.example.com/          # 200，中继托管的 Web 客户端
-pinomad service install --relay https://nomad.example.com …   # 宿主接上中继
+pinomad join https://nomad.example.com <token>   # 宿主加入账号、接上中继
 ```
 
 宿主登记成功会在日志里写一行 `{"event":"relay","status":"registered",…}`，掉线重连时写 `"status":"connecting"`（`pinomad service logs` 查看）；也可以从外面连设备入口 `wss://<origin>/c/<hostId>` 确认：宿主在线时连接保持打开（等握手），没登记会立刻以 `4604`（hostOffline）关闭。
@@ -116,21 +117,20 @@ pinomad service install --relay https://nomad.example.com …   # 宿主接上�
 
 ### 服务端账号（ADR-0022）
 
-只给 `--allow-host` 时服务端维持老行为：纯白名单、什么都不存。要开账号，给它一个数据目录（`--data-dir`，或环境变量 `PINOMAD_SERVER_DATA_DIR`，默认 `~/.pinomad-server`），首次启动时用两个环境变量建出唯一用户：
+服务端把账号存在数据目录里（`--data-dir`，或环境变量 `PINOMAD_SERVER_DATA_DIR`，默认 `~/.pinomad-server`），首次启动时用两个环境变量建出唯一用户。宿主只有加入账号（`pinomad join`，见下）后才能登记：
 
 ```sh
 export PINOMAD_SERVER_USER=<用户名>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位，建议密码管理器生成>
-pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad-server --trust-proxy
+pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 ```
 
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
 - 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、Zeabur）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
-- 老部署不设账号变量、只给 `--allow-host` 时行为不变，两种准入可以并存（迁移期间白名单继续生效）。
 - 改密码用 `pinomad relay passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
 
   ```sh
-  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad-server
+  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad/server
   ```
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
@@ -153,12 +153,6 @@ pinomad leave [--data-dir DIR]
 `leave` 向服务端解绑这台宿主（服务端会立刻断开它现存的控制连接），删掉本地 `server.json`，重写服务定义去掉 `--relay` 后等空闲重启。服务端不在线时本地文件照样删，但会明确提示服务端的绑定记录没清掉。
 
 `server.json` 和 `--relay` 参数表达同一个东西；宿主启动时两者都给出且不一致会直接报错。对着没开账号的旧服务端跑 `join` 会得到明确报错（先探测 `GET /api/me`），不会误报成功。账号操作只接受 `https://` 地址（本机回环的 `http://` 留给开发），明文会把一次性令牌暴露给链路上的人。
-
-##### 从 `--allow-host` + `--relay` 迁移
-
-1. 服务端升级到有账号的版本，配好 `--data-dir`（挂持久卷）和首次启动的 `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD`；`--allow-host` 先留着，两种准入可以并存。
-2. 在每台宿主上 `pinomad join <origin> <token>`。join 会把服务定义里的 `--relay` 摘掉，重启后宿主经账号绑定登记。
-3. 确认宿主在线（`pinomad service logs`，或连 `wss://<origin>/c/<hostId>` 看会不会以 4604 关闭）之后，把 `--allow-host` 从服务端参数里删掉。
 
 #### 在客户端里用账号
 
@@ -183,11 +177,11 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 `POST /api/hosts/:hostId/pairing` 让服务端经宿主的控制连接要一份一次性邀请。宿主必须在 register 里声明 `features: ["pairing"]` 才会被问——旧宿主的解码器遇到不认识的帧会断开，所以服务端只对声明过的控制连接发 `pairing-request`。成功返回 `{url, hostKey, secret, expiresAt}`：客户端拼 `pair=<hostKey>.<secret>&url=<url>`，照 ADR-0008 的 IK 流程经 `/c/<hostId>` 连上宿主。错误：宿主不属于本账号或不存在 → 404；离线 → 409 `host_offline`；太旧或公钥不一致 → 409 `host_too_old` / `key_mismatch`；宿主拒绝 → 409，错误码是宿主给的原因（`disabled` 是开关关闭、`not_joined` 是没加入账号）；10 秒没应答 → 504 `host_timeout`；在途请求超限（每台宿主 4 个、每个会话 2 个）→ 429 `rate_limited`。提前拒绝只是给客户端看的错误，真正是否准入仍由宿主的 `admitDevice` 在握手时判定——被吊销的公钥照走邀请但登记时被拒。
 
-凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。服务端没开账号（纯 `--allow-host` 模式）时 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端可据此探测。
+凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。旧版服务端的纯 `--allow-host` 模式下 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端据此判断服务端没开账号。
 
 ### 推送通知（ADR-0025）
 
-推送由服务端直连 APNs：宿主经自己的账号控制连接请服务端发，APNs 密钥（`.p8`）只存在服务端，宿主上不用配任何东西——宿主必须 `pinomad join` 进账号，只列在 `--allow-host` 白名单里的宿主发不了推送。不配下面的变量时服务端照常运行，只是不向宿主声明推送能力。
+推送由服务端直连 APNs：宿主经自己的账号控制连接请服务端发，APNs 密钥（`.p8`）只存在服务端，宿主上不用配任何东西，只要已经 `pinomad join` 进账号。不配下面的变量时服务端照常运行，只是不向宿主声明推送能力。
 
 | 环境变量 | 含义 |
 |---|---|
@@ -204,7 +198,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 ### 升级
 
-中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主不在中继的 `--allow-host` 里时，宿主日志和 Web 警告会带着要补的 `--allow-host <hostId>`。
+中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/relay` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主没加入服务端账号时，宿主日志和 Web 警告会提示先 `pinomad join`。从只用 `--allow-host` 白名单的老版本升级时，这个参数已经去掉（带着它启动会报未知参数）：按「服务端账号」配好数据目录和首个用户，在每台宿主上 `pinomad join`，再去掉 `--allow-host` 启动新版本。
 
 ### 更换服务端域名
 

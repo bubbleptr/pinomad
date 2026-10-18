@@ -13,7 +13,6 @@ const COMMANDS: Record<string, () => Promise<CommandModule>> = {
   upgrade: () => import("@pinomad/host/src/cli/upgrade.ts"),
   link: () => import("@pinomad/host/src/cli/web-link.ts"),
   pair: () => import("@pinomad/host/src/cli/pair.ts"),
-  "relay-id": () => import("@pinomad/host/src/cli/relay-id.ts"),
   join: () => import("@pinomad/host/src/cli/join.ts"),
   leave: () => import("@pinomad/host/src/cli/leave.ts"),
 };
@@ -23,13 +22,12 @@ const USAGE = `pinomad — PiNomad host, relay, and utilities
 usage: pinomad <command> [args…]
 
   host [host args…]                    run the host in the foreground
-  relay --public-origin O [--allow-host H…] [--data-dir D] [--trust-proxy]   run the server
+  relay --public-origin O [--data-dir D] [--trust-proxy]   run the server
   relay passwd [--data-dir D] [--user U]   change the account password (stdin)
   service install|uninstall|status|restart|logs   user-level host service
   upgrade [--force] [address flags]    upgrade the package and restart the service
   link [--data-dir D|--url U …]        print the browser link
   pair [--data-dir D|--url U …]        print a pairing QR
-  relay-id [--data-dir D]              print this host's relay id (for --allow-host)
   join <origin> <token> [--data-dir D] join this host to a server account
   leave [--data-dir D]                 leave the server account
   --version, -v                        print the version

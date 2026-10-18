@@ -1,6 +1,6 @@
 // Server push over the control connection (ADR-0025 §3-4): `registered`
 // declares the configured environments, every `push` is re-checked against
-// the account binding (the static allowlist is never enough), per-host and
+// the account binding, per-host and
 // global in-flight caps answer `retry`, and a malformed push is a protocol
 // violation like any other. Raw /host sockets stand in for hosts.
 import { mkdtemp, rm } from "node:fs/promises";
@@ -86,14 +86,12 @@ function fakeApnsSender(
 async function startServer(options?: {
   readonly push?: ApnsSender;
   readonly pushLimits?: { perHost?: number; total?: number };
-  readonly allow?: readonly string[];
 }): Promise<{ relay: Relay; accounts: Accounts }> {
   const dataDir = await tempDir();
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
   const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
-    allowedHosts: options?.allow ?? [],
     registerTimeoutMs: 300,
     accounts,
     ...(options?.push === undefined ? {} : { push: options.push }),
@@ -166,7 +164,7 @@ const pushFrame = (overrides?: Partial<PushFrame>): PushFrame => ({
 });
 
 describe("push declaration and authorization", () => {
-  it("declares the environments on registered — bound hosts always see the field, allowlist-only never", async () => {
+  it("declares the environments on registered — bound hosts always see the field", async () => {
     const { relay, accounts } = await startServer({ push: fakeApnsSender().sender });
     const bound = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
     expect(await nextFrame(bound)).toEqual({ t: "registered", push: ["production"] });
@@ -181,13 +179,6 @@ describe("push declaration and authorization", () => {
     const plain = await startServer();
     const control = await controlFor(plain.relay, bindHost(plain.accounts), { noisePublicKey: NOISE_KEY });
     expect(await nextFrame(control)).toEqual({ t: "registered", push: [] });
-
-    // Allowlist-only: the host is admitted but could never be authorized for
-    // push, so it gets no declaration at all.
-    const keys = ed25519.keygen();
-    const allowed = await startServer({ push: fakeApnsSender().sender, allow: [relayHostId(keys.publicKey)] });
-    const listed = await controlFor(allowed.relay, keys, { noisePublicKey: NOISE_KEY });
-    expect(await nextFrame(listed)).toEqual({ t: "registered" });
   });
 
   it("forwards a bound host's push and returns the classified verdict", async () => {
@@ -212,13 +203,16 @@ describe("push declaration and authorization", () => {
     expect(apns.calls.map((call) => call.token)).toEqual(["aa".repeat(32), "gone"]);
   });
 
-  it("rejects pushes from hosts that are only on the static allowlist", async () => {
+  it("rejects a push once the host's binding is gone, even on a live control", async () => {
     const apns = fakeApnsSender();
-    const keys = ed25519.keygen();
-    const { relay } = await startServer({ push: apns.sender, allow: [relayHostId(keys.publicKey)] });
-    // Allowlisted but never joined: registered, yet unauthorized for push.
+    const { relay, accounts } = await startServer({ push: apns.sender });
+    const keys = bindHost(accounts);
     const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY });
     await nextFrame(control);
+    // Registered while bound; the row disappears underneath the live control.
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("DELETE FROM hosts WHERE host_id = ?").run(relayHostId(keys.publicKey));
+    db.close();
     control.send(encodeRelayFrame(pushFrame()));
     expect(await nextFrame(control)).toEqual({
       t: "push-result",

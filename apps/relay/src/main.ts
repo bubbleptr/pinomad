@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// The server (ADR-0022): still does the ADR-0015 relay splice, and in account
-// mode also persists accounts and serves /api/*. Run on Node with native TS
-// stripping — same as the host.
+// The server (ADR-0022): still does the ADR-0015 relay splice, persists
+// accounts, admits hosts bound to them, and serves /api/*. Run on Node with
+// native TS stripping — same as the host.
 //
-//   bun run relay -- --public-origin ORIGIN --allow-host HOST_ID...   # legacy allowlist only
-//   bun run relay -- --public-origin ORIGIN --data-dir DIR            # account mode
-//   PINOMAD_SERVER_USER=… PINOMAD_SERVER_PASSWORD=… bun run relay -- --public-origin ORIGIN
+//   PINOMAD_SERVER_USER=… PINOMAD_SERVER_PASSWORD=… bun run relay -- --public-origin ORIGIN   # first start
+//   bun run relay -- --public-origin ORIGIN --data-dir DIR
 //   bun run relay -- passwd [--data-dir DIR]                          # new password on stdin
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -65,45 +64,31 @@ export async function main(argv: readonly string[]): Promise<void> {
       port: { type: "string", default: "7430" },
       listen: { type: "string", default: "127.0.0.1" },
       "public-origin": { type: "string" },
-      "allow-host": { type: "string", multiple: true },
       "data-dir": { type: "string" },
       "trust-proxy": { type: "boolean", default: false },
     },
   });
 
-  const allowedHosts = values["allow-host"] ?? [];
-  const bootstrapUser = process.env.PINOMAD_SERVER_USER;
-  const bootstrapPassword = process.env.PINOMAD_SERVER_PASSWORD;
-  // Legacy stateless mode is the explicit opt-out: --allow-host with no
-  // account inputs at all. Otherwise the server opens the (default) data dir
-  // — bootstrapped accounts must be found again after the env vars that
-  // created them are gone (ADR-0022 §2).
-  const accountMode =
-    allowedHosts.length === 0 ||
-    values["data-dir"] !== undefined ||
-    process.env.PINOMAD_SERVER_DATA_DIR !== undefined ||
-    bootstrapUser !== undefined ||
-    bootstrapPassword !== undefined;
-
   if (values["public-origin"] === undefined) {
     console.error(
-      `usage: ${commandHint("relay")} --public-origin ORIGIN [--allow-host HOST_ID ...] [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
+      `usage: ${commandHint("relay")} --public-origin ORIGIN [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
         `       ${commandHint("relay")} passwd [--data-dir DIR] [--user NAME]   (server stopped; new password on stdin)\n` +
         "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR",
     );
     process.exit(1);
   }
 
-  const accounts = accountMode
-    ? await openAccounts({
-        dataDir: resolveDataDir(values["data-dir"]),
-        bootstrapUser,
-        bootstrapPassword,
-      }).catch((error: unknown) => {
-        console.error(error instanceof Error ? error.message : String(error));
-        process.exit(1);
-      })
-    : undefined;
+  // The data dir is always opened (default included): bootstrapped accounts
+  // must be found again after the env vars that created them are gone
+  // (ADR-0022 §2).
+  const accounts = await openAccounts({
+    dataDir: resolveDataDir(values["data-dir"]),
+    bootstrapUser: process.env.PINOMAD_SERVER_USER,
+    bootstrapPassword: process.env.PINOMAD_SERVER_PASSWORD,
+  }).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
 
   // APNs credentials live only here (ADR-0025 §1): whichever environments
   // fully configure get declared to hosts on `registered`.
@@ -114,7 +99,6 @@ export async function main(argv: readonly string[]): Promise<void> {
     port: Number(values.port),
     listenHost: values.listen,
     publicOrigin: values["public-origin"],
-    allowedHosts,
     // The relay serves its own build; version skew with the host is covered by
     // the client's `outdated` state + one reload.
     webRoot,
@@ -127,8 +111,6 @@ export async function main(argv: readonly string[]): Promise<void> {
       event: "ready",
       url: relay.url,
       publicOrigin: values["public-origin"],
-      allowedHosts: allowedHosts.length,
-      accounts: accounts !== undefined,
       push: apns?.environments ?? [],
     }),
   );

@@ -50,7 +50,7 @@ interface Started {
   readonly dataDir: string;
 }
 
-async function startServer(options?: { readonly allowedHosts?: readonly string[]; readonly now?: () => number }): Promise<Started> {
+async function startServer(options?: { readonly now?: () => number }): Promise<Started> {
   const dataDir = await tempDir();
   const accounts = await openAccounts({
     dataDir,
@@ -61,7 +61,6 @@ async function startServer(options?: { readonly allowedHosts?: readonly string[]
   const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
-    allowedHosts: options?.allowedHosts ?? [],
     registerTimeoutMs: 150,
     accounts,
   });
@@ -236,7 +235,7 @@ describe("join op connection", () => {
     expect(row?.noiseKey).toBe(NOISE_KEY);
     expect(row?.name).toBe("omarchy");
 
-    // The hostId now registers as a normal control connection, no allowlist.
+    // The hostId now registers as a normal control connection.
     const { socket, nonce } = await dialHost(relay);
     socket.send(encodeRelayFrame(registerFrame(keys, nonce)));
     expect(await answered(socket)).toEqual({ frame: { t: "registered", push: [] } });
@@ -337,7 +336,7 @@ describe("join op connection", () => {
   });
 
   it("refuses join operations when the server runs without accounts", async () => {
-    const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, allowedHosts: [], registerTimeoutMs: 150 });
+    const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, registerTimeoutMs: 150 });
     relays.push(relay);
     const keys = ed25519.keygen();
     const { socket, nonce } = await dialHost(relay);
@@ -377,27 +376,6 @@ describe("leave op connection", () => {
     expect(await closeEvent(control)).toEqual([RELAY_CLOSE.hostNotAllowed, ""]);
   });
 
-  it("keeps the control alive on leave when the hostId is still allowlisted", async () => {
-    const keys = ed25519.keygen();
-    const hostId = relayHostId(keys.publicKey);
-    const { relay, accounts } = await startServer({ allowedHosts: [hostId] });
-    const { token } = await mintToken(relay, await login(relay));
-    await register(relay, keys, { op: "join", joinToken: token, noisePublicKey: NOISE_KEY });
-
-    const control = await controlFor(relay, keys);
-    const { socket, nonce } = await dialHost(relay);
-    socket.send(encodeRelayFrame(registerFrame(keys, nonce, { op: "leave", noisePublicKey: NOISE_KEY })));
-    expect(await answered(socket)).toEqual({ frame: { t: "left" } });
-    expect(hostRow(accounts, hostId)).toBeUndefined();
-
-    // The allowlisted control keeps working: a device dial still announces.
-    const incomingP = once(control, "message");
-    const device = new WebSocket(`${relay.url}/c/${hostId}`);
-    sockets.add(device);
-    await once(device, "open");
-    expect(decodeRelayToHost(asText((await incomingP)[0])).t).toBe("incoming");
-  });
-
   it("refuses leave for a hostId that was never bound", async () => {
     const { relay } = await startServer();
     const keys = ed25519.keygen();
@@ -410,7 +388,7 @@ describe("leave op connection", () => {
 describe("old and new interop", () => {
   const NOISE_KEY = "abcdefghijklmnopqrstuvwx1234567890_-abcdefg";
 
-  it("admits a v1-only register on a bound or allowlisted hostId", async () => {
+  it("admits a v1-only register on a bound hostId", async () => {
     const bound = await startServer();
     const db = new DatabaseSync(bound.accounts.dbPath);
     const keys = ed25519.keygen();
@@ -422,10 +400,6 @@ describe("old and new interop", () => {
     // Old hosts send {t, hostId, signature} and nothing else. A bound one
     // still gets the push declaration ([] = push-aware, nothing configured).
     expect(await register(bound.relay, keys)).toEqual({ frame: { t: "registered", push: [] } });
-
-    const allowKeys = ed25519.keygen();
-    const allowed = await startServer({ allowedHosts: [relayHostId(allowKeys.publicKey)] });
-    expect(await register(allowed.relay, allowKeys)).toEqual({ frame: { t: "registered" } });
   });
 
   it("a new-style register still verifies under the old server's rules", async () => {
@@ -443,8 +417,8 @@ describe("old and new interop", () => {
     expect(
       verifyRelayChallenge(decoded.signature, { relayOrigin: ORIGIN, hostId: decoded.hostId, nonce }),
     ).toBe(true);
-    // And an old server would find the hostId in its allowlist untouched.
-    expect(new Set([hostId]).has(decoded.hostId)).toBe(true);
+    // And the hostId an old server keyed its allowlist on is untouched.
+    expect(decoded.hostId).toBe(hostId);
   });
 
   it("records the v2-bound Noise key and features on the live control", async () => {

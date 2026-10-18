@@ -35,7 +35,7 @@ async function startServer(): Promise<Started> {
   // publicOrigin must be the address hosts dial — the register signs it.
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
-  const relay = await startRelay({ port, publicOrigin: origin, allowedHosts: [], accounts });
+  const relay = await startRelay({ port, publicOrigin: origin, accounts });
   defer(() => relay.close());
   return { relay, accounts, origin };
 }
@@ -158,7 +158,7 @@ describe("joinServer", () => {
     defer(data.remove);
     const fake = fakeManager();
     // Old-style relay: no accounts mounted.
-    const old = await startRelay({ port: 0, publicOrigin: "http://127.0.0.1:0", allowedHosts: [] });
+    const old = await startRelay({ port: 0, publicOrigin: "http://127.0.0.1:0" });
     defer(() => old.close());
     await expect(
       joinServer({ origin: old.url.replace(/^ws/, "http"), token: "tok", dataDir: data.path }, { manager: fake.manager }),
