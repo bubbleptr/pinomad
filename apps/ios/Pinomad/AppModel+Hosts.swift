@@ -96,20 +96,46 @@ extension AppModel {
         }
     }
 
-    /// Drop `hostKey`'s pairing. Forgetting the host on screen moves to the
-    /// next one (or to pairing when none is left).
+    /// Drop `hostKey`'s pairing, clearing this device's push registration
+    /// first when it can (ADR-0025 §9). A host that can't be reached — or
+    /// refuses the clear — is still forgotten; the reader is sent to the
+    /// host's Devices page instead.
     func forget(_ hostKey: String) {
+        let enabled = push.isEnabled(for: hostKey)
+        let isCurrentConnected = hostKey == currentHostKey && phase == .connected && connected
+        let canClear = isCurrentConnected && hostSupports("setPushToken")
+        Task { [weak self] in
+            guard let self else { return }
+            var warning: String?
+            if enabled && canClear {
+                do {
+                    guard let session = self.session else { throw SessionError.sessionClosed }
+                    _ = try await session.invoke(.setPushToken(token: nil))
+                } catch {
+                    warning = "已忘记这台宿主，但没能注销推送登记（\(self.describe(error))）。到宿主的「设备」页面吊销这台设备后，推送就会停止。"
+                }
+            } else if enabled && !isCurrentConnected {
+                warning = "已忘记这台宿主。它可能还留着这台设备的推送登记；到宿主的「设备」页面吊销这台设备后，推送就会停止。"
+            }
+            self.forgetNow(hostKey, warning: warning)
+        }
+    }
+
+    private func forgetNow(_ hostKey: String, warning: String?) {
         do {
             try store.save(hosts.forgetting(hostKey))
         } catch {
             lastError = "没能忘记这台宿主：\(describe(error))"
             return
         }
+        push.forget(hostKey)
         if hostKey == currentHostKey {
             connectActive()
         } else {
             reloadHosts()
         }
+        if let warning { pushForgetWarning = warning }
+        advancePushTarget()
     }
 }
 

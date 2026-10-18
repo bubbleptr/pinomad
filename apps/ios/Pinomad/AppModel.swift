@@ -104,12 +104,32 @@ final class AppModel {
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
     let store = KeychainHostStore()
+    /// Push switches, permission, APNs token, and the system callbacks.
+    let push = PushCenter.shared
+    /// The host's reason the last token change failed, shown by the switch.
+    var pushError: String?
+    /// A forgotten host whose push registration could not be cleared.
+    var pushForgetWarning: String?
+    var pendingPush: PushTarget?
+    /// Set once the keychain answered — a cold-start tap must not be
+    /// dropped as "unknown host" before the stored hosts are read.
+    var hostsLoaded = false
+    var pushSyncInFlight = false
+    var pushSyncPending = false
+    var lastSnapshotConnected = false
     private let monitor = NetworkMonitor()
     /// Marks each snapshot landing on the main actor — paired with the
     /// session's `bytes`/`publish` events for the byte-to-UI latency.
     private let signposter = OSSignposter(subsystem: "build.kieran.pinomad", category: "delivery")
 
     func start() {
+        push.onTarget = { [weak self] target in self?.receivePushTarget(target) }
+        push.onToken = { [weak self] in self?.syncPushToken() }
+        if let target = push.takePendingTarget() { receivePushTarget(target) }
+        Task { [weak self] in
+            await self?.push.bootstrap()
+            self?.syncPushToken()
+        }
         // The monitor runs for the app's lifetime; it only yields into
         // whatever session exists at the moment.
         monitor.start { [weak self] in
@@ -156,7 +176,13 @@ final class AppModel {
         if !injected.isEmpty { offerPairing(injected) }
     }
 
-    func didEnterForeground() { session?.notifyForeground() }
+    func didEnterForeground() {
+        session?.notifyForeground()
+        Task { [weak self] in
+            await self?.push.refreshAuthorization()
+            self?.syncPushToken()
+        }
+    }
     func didEnterBackground() { session?.notifyBackground() }
 
     /// Show and talk to a conversation — command-class, so a refused
@@ -221,6 +247,7 @@ final class AppModel {
     func connectActive() {
         do {
             hosts = try store.load()
+            hostsLoaded = true
         } catch {
             closeSession()
             fail(.unreachable("读取配对信息失败：\(describe(error))"))
@@ -232,16 +259,22 @@ final class AppModel {
             closeSession()
             phase = .pairing
         }
+        advancePushTarget()
     }
 
     /// Refresh `hosts` from the keychain; a failed read keeps the last
     /// good list (connecting reports it, see `connectActive`).
     func reloadHosts() {
-        if let stored = try? store.load() { hosts = stored }
+        if let stored = try? store.load() {
+            hosts = stored
+            hostsLoaded = true
+        }
     }
 
     func fail(_ failure: ConnectFailure) {
         phase = .failed(failure)
+        push.currentConnectedHostKey = nil
+        lastSnapshotConnected = false
         // The failure screen replaces the list; pages pushed over it
         // would keep showing a session that is gone.
         navPath = []
@@ -273,6 +306,8 @@ final class AppModel {
         sessionHost = nil
         pairingLink = nil
         pairingTarget = nil
+        push.currentConnectedHostKey = nil
+        lastSnapshotConnected = false
     }
 
     /// Take over `session`. `sameHost` is a rebuilt session for the host
@@ -284,6 +319,9 @@ final class AppModel {
         self.session = session
         snapshot = nil
         lastError = ""
+        pushError = nil
+        push.currentConnectedHostKey = nil
+        lastSnapshotConnected = false
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()
@@ -318,6 +356,7 @@ final class AppModel {
             }
             phase = .connected
             hostBeforePairing = nil
+            push.currentConnectedHostKey = sessionHost?.hostKey
             if let id = pendingOpen {
                 pendingOpen = nil
                 navPath = [.conversation(id)]
@@ -326,6 +365,7 @@ final class AppModel {
                 reopenAfterReady = nil
                 openConversation(id)
             }
+            advancePushTarget()
         case .paired(let host, let saveError):
             // The handshake spent the link's code and (normally) made this
             // the launch host — the session is this host's device now,
@@ -333,6 +373,7 @@ final class AppModel {
             sessionHost = host
             pairingLink = nil
             reloadHosts()
+            advancePushTarget()
             if let saveError {
                 lastError = "没能记住这台宿主（\(saveError)）：重启 App 后会回到之前的宿主，要再用它得重新配对。"
             }
@@ -346,6 +387,11 @@ final class AppModel {
             // A failure page explains itself; the core's notice for the
             // same thing (e.g. the 4401) would only repeat it in English.
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
+            let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
+            push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
+            if connectedNow && !lastSnapshotConnected { syncPushToken() }
+            lastSnapshotConnected = connectedNow
+            advancePushTarget()
             signposter.emitEvent("ui-publish")
             replyStreams.sync(chat: snapshot.conversation?.chat)
             PerfLog.shared.mark("ui-publish", version: snapshot.version)

@@ -1,5 +1,6 @@
 import PinomadCore
 import SwiftUI
+import UIKit
 
 /// Where a link comes from when there's no deep link: scan the host's QR
 /// code, or paste the link `pinomad pair` printed.
@@ -154,6 +155,7 @@ struct HostsView: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var forgetting: HostRecord?
 
     var body: some View {
@@ -167,6 +169,9 @@ struct HostsView: View {
                     }
                     // Rows are choices, not links — plain text, not tinted.
                     .tint(.primary)
+                }
+                if let hostKey = model.currentHostKey {
+                    pushSection(hostKey)
                 }
                 Section("再配对一台") {
                     PairingSources(model: model)
@@ -188,10 +193,12 @@ struct HostsView: View {
             ) { host in
                 Button("取消", role: .cancel) {}
                 Button("忘记", role: .destructive) {
+                    let wasLast = model.hosts.hosts.count == 1
                     model.forget(host.hostKey)
                     // Nothing left to pick — the pairing page behind has
-                    // the same ways to pair.
-                    if model.hosts.hosts.isEmpty { dismiss() }
+                    // the same ways to pair. Forgetting waits for the
+                    // unregister call, so decide from the list we had.
+                    if wasLast { dismiss() }
                 }
             } message: { _ in
                 Text("这台设备要用新的配对链接才能再连上它。")
@@ -201,6 +208,56 @@ struct HostsView: View {
 
     private func label(_ host: HostRecord) -> String {
         model.hostLabels[host.hostKey] ?? host.url
+    }
+
+    /// The switch for the host on screen. The preference is per host; the
+    /// registration itself needs that host connected and at least 5.9.
+    private func pushSection(_ hostKey: String) -> some View {
+        Section {
+            Toggle("推送通知", isOn: Binding(
+                get: { model.pushEnabled(for: hostKey) },
+                set: { model.setPushEnabled($0, for: hostKey) }
+            ))
+            .disabled(!model.pushAvailable(for: hostKey))
+
+            if model.snapshot != nil && !model.hostSupports(.apnsPush) {
+                Text("需要把宿主升级到 5.9 或更新才能推送。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if !model.connected {
+                Text("连上宿主后登记；现在打开会在下次连接时生效。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if model.pushEnabled(for: hostKey) {
+                if model.push.isDenied {
+                    Text("通知权限被拒绝了，推送不会送达。")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                    Button("去系统设置打开通知") {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        openURL(url)
+                    }
+                    .font(.footnote)
+                }
+
+                if let error = model.pushError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+                if let error = model.push.registrationError {
+                    Text("APNs 注册失败：\(error)")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+            }
+        } header: {
+            Text("推送")
+        } footer: {
+            Text("只带对话标题和事件（「等你回答」「完成」「失败」），标题会经过服务端和 Apple。设置按宿主分别保存。")
+        }
     }
 
     private func row(_ host: HostRecord) -> some View {
