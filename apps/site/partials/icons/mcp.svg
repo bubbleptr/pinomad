@@ -1,8 +1,0 @@
-<svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <path class="accent" d="M7 5 H 25" />
-  <g class="part-plug">
-    <path d="M13 13 V 8 M19 13 V 8" />
-    <rect x="10" y="13" width="12" height="9" rx="2.5" />
-    <path d="M16 22 V 25 C 16 27.5, 14 28.5, 11 28.5" />
-  </g>
-</svg>
