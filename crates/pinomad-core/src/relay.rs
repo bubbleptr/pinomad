@@ -3,7 +3,7 @@
 // pairing link hands it a ready-made `wss://relay/c/<hostId>` URL and the
 // IK handshake then runs end-to-end with the host, so the only client-
 // facing surface here is the close-code table: relay rejections arrive as
-// socket close codes, and the splice in apps/relay also forwards the
+// socket close codes, and the splice in apps/server also forwards the
 // host's own codes (a 4401 through the relay is a real 4401).
 // Registration, challenge signing, and the control channel stay host-side.
 

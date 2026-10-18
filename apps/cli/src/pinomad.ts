@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The published `pinomad` CLI (ADR-0016): one package holds the host, the
-// relay, and the built web client. Subcommands load lazily so `pinomad pair`
+// server, and the built web client. Subcommands load lazily so `pinomad pair`
 // doesn't pay for the pi stack; bundled, each lazy import is a sibling chunk.
 import { packagedVersion } from "@pinomad/host/src/distribution.ts";
 
@@ -8,7 +8,10 @@ type CommandModule = { main(argv: readonly string[]): Promise<void> };
 
 const COMMANDS: Record<string, () => Promise<CommandModule>> = {
   host: () => import("@pinomad/host/src/main.ts"),
-  relay: () => import("@pinomad/relay/src/main.ts"),
+  server: () => import("@pinomad/server/src/main.ts"),
+  // The old name of `server`. Deployed images run `pinomad relay` (the
+  // pinned 0.4.0 has no `server`), so it stays an alias.
+  relay: () => import("@pinomad/server/src/main.ts"),
   service: () => import("@pinomad/host/src/cli/service.ts"),
   upgrade: () => import("@pinomad/host/src/cli/upgrade.ts"),
   link: () => import("@pinomad/host/src/cli/web-link.ts"),
@@ -17,13 +20,14 @@ const COMMANDS: Record<string, () => Promise<CommandModule>> = {
   leave: () => import("@pinomad/host/src/cli/leave.ts"),
 };
 
-const USAGE = `pinomad — PiNomad host, relay, and utilities
+const USAGE = `pinomad — PiNomad host, server, and utilities
 
 usage: pinomad <command> [args…]
 
   host [host args…]                    run the host in the foreground
-  relay --public-origin O [--data-dir D] [--trust-proxy]   run the server
-  relay passwd [--data-dir D] [--user U]   change the account password (stdin)
+  server --public-origin O [--data-dir D] [--trust-proxy]   run the server
+  server passwd [--data-dir D] [--user U]   change the account password (stdin)
+  relay …                              old name of server
   service install|uninstall|status|restart|logs   user-level host service
   upgrade [--force] [address flags]    upgrade the package and restart the service
   link [--data-dir D|--url U …]        print the browser link

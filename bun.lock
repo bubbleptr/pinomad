@@ -15,7 +15,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@pinomad/host": "workspace:*",
-        "@pinomad/relay": "workspace:*",
+        "@pinomad/server": "workspace:*",
       },
     },
     "apps/desktop": {
@@ -55,7 +55,7 @@
         "ws": "8.22.0",
       },
       "devDependencies": {
-        "@pinomad/relay": "workspace:*",
+        "@pinomad/server": "workspace:*",
         "@types/proper-lockfile": "4.1.4",
         "@types/ws": "8.18.2",
       },
@@ -104,8 +104,8 @@
         "babel-preset-expo": "57.0.13",
       },
     },
-    "apps/relay": {
-      "name": "@pinomad/relay",
+    "apps/server": {
+      "name": "@pinomad/server",
       "version": "0.0.0",
       "dependencies": {
         "@pinomad/host": "workspace:*",
@@ -657,7 +657,7 @@
 
     "@pinomad/protocol": ["@pinomad/protocol@workspace:packages/protocol"],
 
-    "@pinomad/relay": ["@pinomad/relay@workspace:apps/relay"],
+    "@pinomad/server": ["@pinomad/server@workspace:apps/server"],
 
     "@pinomad/site": ["@pinomad/site@workspace:apps/site"],
 

@@ -9,7 +9,7 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
-import { startRelay, type Relay } from "@pinomad/relay/src/relay.ts";
+import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { startRelayLink, type AccountOfferResult, type RelayLinkState } from "../src/relay-link.ts";

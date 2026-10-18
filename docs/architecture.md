@@ -7,7 +7,7 @@ PiNomad 由宿主、服务端和几种客户端组成，用到 TypeScript、Rust
 | 部分 | 位置 | 语言 | 做什么 |
 |---|---|---|---|
 | 宿主 | `apps/host` | TypeScript（Node） | 跑在你的电脑上，真正干活：跑 agent、读写代码、存对话 |
-| 服务端 | `apps/relay` | TypeScript（Node） | 账号；外网连不上家里时转发加密数据（看不到内容）；持有推送密钥，代宿主给 Apple 发通知 |
+| 服务端 | `apps/server` | TypeScript（Node） | 账号；外网连不上家里时转发加密数据（看不到内容）；持有推送密钥，代宿主给 Apple 发通知 |
 | Web / 桌面端 | `apps/web`、`apps/desktop` | TypeScript + React | 直接用 `packages/protocol`（协议）和 `packages/client`（界面数据的推导） |
 | 移动端核心 | `crates/pinomad-core` | Rust | 手机端的"大脑"：加密、协议、同步数据、整理界面要显示的内容；iOS 和安卓共用一份 |
 | iOS App | `apps/ios`（还没建） | Swift | 只管界面（SwiftUI + AgentChatKit）和替 Rust 收发网络数据 |

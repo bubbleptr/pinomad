@@ -498,7 +498,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 }
 
 /**
- * `pinomad relay passwd`: changes the password while the server is stopped —
+ * `pinomad server passwd`: changes the password while the server is stopped —
  * the directory lock doubles as the "is it running" check. One transaction
  * swaps the hash and drops every session and unused join token, so a leaked
  * password can't leave live credentials behind.
