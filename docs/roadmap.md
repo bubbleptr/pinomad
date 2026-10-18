@@ -4,9 +4,8 @@
 
 ## 现在
 
-1. **[iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1)**：推送接入 → 替换验收、TestFlight 替换 Expo 版 → 用满一周后删除 `apps/mobile`。账号和它并行，不挡替换。
-2. **[M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)**：一整天只用手机，能发起任务、知道它跑完了或在等你、看懂它改了什么、给它截图或看它的截图。推送在上一条里（它也是替换验收的条件）。
-3. **[M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3)**：各客户端切到 `app.pinomad.si` 后摘掉旧域名。
+1. **[iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1)**：推送接入 → 替换验收、TestFlight 替换 Expo 版 → 用满一周后删除 `apps/mobile`。账号和它并行，不挡替换。推送也补上 M5"知道它跑完了或在等你"的最后一块。
+2. **[M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3)**：各客户端切到 `app.pinomad.si` 后摘掉旧域名。
 
 ## 以后
 
@@ -16,7 +15,7 @@
 
 ## 已完成的阶段
 
-M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置）。细节在对应的 ADR 和 PR 里。
+M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置） · [M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)（推送随 iOS 原生替换交付）。细节在对应的 ADR 和 PR 里。
 
 ## 不在计划内
 
