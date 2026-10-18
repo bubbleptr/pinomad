@@ -325,6 +325,12 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-3);
 }
 
+/* The durable demo's button ships hidden until main.js wires it up; display above
+   would otherwise override the hidden attribute and leave a dead button without JS. */
+.button[hidden] {
+  display: none;
+}
+
 .button-quiet {
   border-color: var(--border-strong);
   background: transparent;
@@ -442,8 +448,14 @@ html[lang="zh-CN"] .hero h1 {
   margin-top: clamp(2.5rem, 6vw, 3.5rem);
 }
 
-.nowrap {
-  white-space: nowrap;
+/* Keeps the Chinese h1's first clause on one line — but only when it fits. The
+   clause is 10 characters at the h1's 2rem floor plus the gutters, about 23rem;
+   media-query rem follows the browser's default font size, so a larger default
+   (or a narrower phone) drops the rule and lets the clause wrap. */
+@media (min-width: 23rem) {
+  .nowrap {
+    white-space: nowrap;
+  }
 }
 
 /* —— Screenshots. Each slot keeps its image's aspect ratio, so the layout doesn't
