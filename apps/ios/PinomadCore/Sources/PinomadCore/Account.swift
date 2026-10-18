@@ -197,11 +197,12 @@ public protocol AccountTransport: Sendable {
     func send(_ request: AccountHttpRequest) async throws -> AccountHTTPResponse
 }
 
-public struct URLSessionAccountTransport: AccountTransport {
+public final class URLSessionAccountTransport: NSObject, AccountTransport, @unchecked Sendable {
     private let session: URLSession
 
     public init(session: URLSession? = nil) {
         self.session = session ?? Self.makeSession()
+        super.init()
     }
 
     private static func makeSession() -> URLSession {
@@ -224,9 +225,24 @@ public struct URLSessionAccountTransport: AccountTransport {
         if let body = request.body {
             urlRequest.httpBody = Data(body.utf8)
         }
-        let (data, response) = try await session.data(for: urlRequest)
+        // The task delegate refuses redirects: a 307 from a trustworthy
+        // origin must not carry the password or bearer token to a plaintext
+        // host. The 3xx itself comes back and the core reports an API error.
+        let (data, response) = try await session.data(for: urlRequest, delegate: self)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return AccountHTTPResponse(status: UInt16(http.statusCode), body: data)
+    }
+}
+
+extension URLSessionAccountTransport: URLSessionTaskDelegate {
+    public func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }
 
@@ -299,6 +315,11 @@ public struct AccountAPI: Sendable {
         kind: AccountOpKind
     ) async -> Result<AccountValue, AccountFailure> {
         let built = accountRequest(origin: origin, token: token, op: op)
+        // Defense in depth: even an API value built somewhere other than the
+        // login form never sends credentials over plaintext.
+        guard isSecureServerOrigin(origin: built.url) else {
+            return .failure(AccountFailure(code: "insecure_origin"))
+        }
         do {
             let response = try await transport.send(built)
             do {
@@ -331,6 +352,9 @@ public struct AccountProbe: Sendable {
 
     public func probe(origin: String) async -> AccountsProbe {
         let request = accountProbeRequest(origin: origin)
+        guard isSecureServerOrigin(origin: request.url) else {
+            return .unreachable
+        }
         let response = await withTaskGroup(of: AccountHTTPResponse?.self) { group in
             group.addTask { try? await transport.send(request) }
             group.addTask {

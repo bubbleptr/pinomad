@@ -11,8 +11,11 @@ extension AppModel {
     /// The stored host whose snapshot said 4401 — only a stored host can
     /// carry an account link to repair.
     var revokedHost: HostRecord? {
-        if let sessionHost { return sessionHost }
-        return hosts.hosts.first { $0.hostKey == currentHostKey }
+        // sessionHost holds the record from connect time; adoption may have
+        // added the account link to the keychain copy since. Prefer the
+        // latest stored record so a 4401 can still be reported.
+        guard let key = sessionHost?.hostKey ?? currentHostKey else { return nil }
+        return hosts.hosts.first { $0.hostKey == key } ?? sessionHost
     }
 
     func loadAccount() {
@@ -139,8 +142,19 @@ extension AppModel {
             if result.changed {
                 // Adopting a pre-account pairing is bookkeeping, not a
                 // pairing: a failed write just leaves it to the next refresh.
-                if (try? store.save(result.stored)) != nil {
+                // Re-reconcile inside the locked update so a pairing that
+                // landed meanwhile keeps its fresh private key.
+                do {
+                    try store.update { current in
+                        current = AccountHosts.reconcile(
+                            serverOrigin: session.serverOrigin,
+                            hosts: hosts,
+                            stored: current,
+                            rejectedHostKeys: accountRejectedHostKeys).stored
+                    }
                     reloadHosts()
+                } catch {
+                    // Bookkeeping only; the next refresh tries again.
                 }
             }
             accountRows = result.rows
@@ -279,16 +293,14 @@ extension AppModel {
     /// can never connect again. Same cleanup as the web model.
     func pruneAccountPairing(link: AccountLink, keepingHostKey: String) {
         do {
-            let stored = try store.load()
-            let pruned = AccountHosts.pruningStale(
-                stored,
-                serverOrigin: link.serverOrigin,
-                hostId: link.hostId,
-                keepingHostKey: keepingHostKey)
-            if pruned != stored {
-                try store.save(pruned)
-                reloadHosts()
+            try store.update { stored in
+                stored = AccountHosts.pruningStale(
+                    stored,
+                    serverOrigin: link.serverOrigin,
+                    hostId: link.hostId,
+                    keepingHostKey: keepingHostKey)
             }
+            reloadHosts()
         } catch {
             lastError = "没能清理旧的配对记录：\(describe(error))"
         }

@@ -227,6 +227,30 @@ struct AccountTests {
         #expect(failure == AccountFailure(code: "unauthenticated", status: 401))
     }
 
+    @Test func insecureOriginNeverReachesTheTransport() async {
+        let transport = StubAccountTransport()
+        let api = AccountAPI(origin: "http://relay.example.com", token: "tok", transport: transport)
+        let result = await api.listHosts()
+        guard case .failure(let failure) = result else {
+            Issue.record("expected insecure_origin, got \(result)")
+            return
+        }
+        #expect(failure == AccountFailure(code: "insecure_origin"))
+        #expect(transport.requests.isEmpty)
+    }
+
+    /// A 307 must not carry the bearer or login body to a plaintext host;
+    /// the 3xx itself comes back for the core to report.
+    @Test func redirectsAreNotFollowed() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let transport = URLSessionAccountTransport(session: URLSession(configuration: configuration))
+        let response = try await transport.send(
+            accountProbeRequest(origin: "https://relay.example.com"))
+        #expect(response.status == 307)
+        #expect(RedirectURLProtocol.requested == [URL(string: "https://relay.example.com/api/me")!])
+    }
+
     @Test func probeReadsTheVerdicts() async {
         let transport = StubAccountTransport()
         transport.outcome = .response(AccountHTTPResponse(status: 401, body: Data()))
@@ -300,4 +324,34 @@ private struct HangingAccountTransport: AccountTransport {
         try await Task.sleep(for: .seconds(30))
         throw CancellationError()
     }
+}
+
+/// Answers every request with a 307 to a plaintext address, recording each
+/// URL URLSession actually asks for.
+private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let state = OSAllocatedUnfairLock(initialState: [URL]())
+
+    static var requested: [URL] { state.withLock { $0 } }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: 307,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Location": "http://insecure.example/steal"])
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        Self.state.withLock { $0.append(url) }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

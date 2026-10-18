@@ -53,6 +53,9 @@ final class AppModel {
     /// The link the session is pairing with, until its handshake spends the
     /// one-time code (then retrying must reconnect, not pair again).
     private(set) var pairingLink: String?
+    /// The account link a server-vouched pairing must carry into the saved
+    /// host — kept beside the link so Retry doesn't lose it.
+    private(set) var pairingAccount: AccountLink?
     /// Where that link goes — names the host while pairing.
     private(set) var pairingTarget: PairingTarget?
     /// The host the device was on before the latest pairing, so a pairing
@@ -248,6 +251,7 @@ final class AppModel {
             hostBeforePairing = hostBeforePairing ?? previous
             sessionHost = nil
             pairingLink = link
+            pairingAccount = account
             pairingTarget = PinomadCore.pairingTarget(link: link)
             return true
         } catch {
@@ -265,6 +269,7 @@ final class AppModel {
             adopt(session, sameHost: host.hostKey == currentHostKey)
             sessionHost = host
             pairingLink = nil
+            pairingAccount = nil
             pairingTarget = nil
         } catch {
             fail(.unreachable(describe(error)))
@@ -334,6 +339,7 @@ final class AppModel {
         snapshot = nil
         sessionHost = nil
         pairingLink = nil
+        pairingAccount = nil
         pairingTarget = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
@@ -401,6 +407,8 @@ final class AppModel {
             // whatever the first view turns out to say.
             sessionHost = host
             pairingLink = nil
+            pairingAccount = nil
+            accountRejectedHostKeys.remove(host.hostKey)
             reloadHosts()
             if saveError == nil, let link = host.account {
                 pruneAccountPairing(link: link, keepingHostKey: host.hostKey)

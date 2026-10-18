@@ -95,12 +95,20 @@ public enum HostStoreError: Error, Equatable {
 public protocol HostStore: Sendable {
     func load() throws -> StoredHosts
     func save(_ hosts: StoredHosts) throws
+    /// One locked load/mutate/save. Account-link adoption, pairing handshakes
+    /// and forget all rewrite the same item; a plain load+save pair would
+    /// clobber a concurrent writer's private key.
+    func update(_ body: (inout StoredHosts) throws -> Void) throws
 }
 
 /// One generic-password item holding the `StoredHosts` JSON —
 /// `ThisDeviceOnly` keeps keys off iCloud Keychain, matching the Expo
 /// version's `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`.
 public struct KeychainHostStore: HostStore {
+    /// Shared by every instance (the app and each session loop create their
+    /// own), so all read-modify-write sequences are serialized.
+    private static let lock = NSLock()
+
     private let service: String
     private let account: String
 
@@ -119,6 +127,26 @@ public struct KeychainHostStore: HostStore {
     }
 
     public func load() throws -> StoredHosts {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        return try read()
+    }
+
+    public func save(_ hosts: StoredHosts) throws {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        try write(hosts)
+    }
+
+    public func update(_ body: (inout StoredHosts) throws -> Void) throws {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        var hosts = try read()
+        try body(&hosts)
+        try write(hosts)
+    }
+
+    private func read() throws -> StoredHosts {
         var request = query
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -137,7 +165,7 @@ public struct KeychainHostStore: HostStore {
         }
     }
 
-    public func save(_ hosts: StoredHosts) throws {
+    private func write(_ hosts: StoredHosts) throws {
         let data = try JSONEncoder().encode(hosts)
         var request = query
         request[kSecValueData as String] = data

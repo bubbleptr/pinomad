@@ -422,12 +422,12 @@ public final class PinomadSession: @unchecked Sendable {
     private func persistPairing(url: String, hostKey: String, privateKey: String) {
         var record = HostRecord(url: url, hostKey: hostKey, privateKey: privateKey, pairedAt: Date())
         do {
-            var stored = try dependencies.hostStore.load()
-            record.account = pairingAccount ?? stored.hosts.first { $0.hostKey == hostKey }?.account
-            stored.hosts.removeAll { $0.hostKey == hostKey }
-            stored.hosts.append(record)
-            stored.activeHostKey = hostKey
-            try dependencies.hostStore.save(stored)
+            try dependencies.hostStore.update { stored in
+                record.account = pairingAccount ?? stored.hosts.first { $0.hostKey == hostKey }?.account
+                stored.hosts.removeAll { $0.hostKey == hostKey }
+                stored.hosts.append(record)
+                stored.activeHostKey = hostKey
+            }
             updateSink.yield(.paired(record, saveError: nil))
         } catch {
             updateSink.yield(.paired(record, saveError: error.localizedDescription))

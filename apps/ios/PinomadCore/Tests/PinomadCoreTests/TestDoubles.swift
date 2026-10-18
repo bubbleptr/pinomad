@@ -173,6 +173,14 @@ final class StubHostStore: HostStore, @unchecked Sendable {
         if let saveError { throw saveError }
         stored = hosts
     }
+
+    func update(_ body: (inout StoredHosts) throws -> Void) throws {
+        if let loadError { throw loadError }
+        var next = stored
+        try body(&next)
+        if let saveError { throw saveError }
+        stored = next
+    }
 }
 
 /// Reads `session.updates` without polling: `next` suspends until an
