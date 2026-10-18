@@ -7,7 +7,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc, AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
-import { chromium, type Page } from "@playwright/test";
+import { chromium, type Locator, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import type { AgentRoleStore } from "@pinomad/host/src/agent-roles.ts";
@@ -39,13 +39,22 @@ async function startWeb(): Promise<string> {
   return new URL(vite.resolvedUrls!.local[0]!).origin;
 }
 
+/**
+ * The composer editable by its accessible name, whichever role Astryx gives
+ * it: a configured trigger menu (named agents, @ file completion) turns the
+ * contenteditable into a combobox — the standard pattern for an input that
+ * can pop a listbox — and with no triggers it stays a plain textbox. Which
+ * applies depends on host version, scope and agents, so locate by name.
+ */
+const prompt = (root: Page | Locator): Locator =>
+  root.getByRole("textbox", { name: "Prompt" }).or(root.getByRole("combobox", { name: "Prompt" }));
+
 async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   const browser = await chromium.launch();
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 844 } });
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
-  // The prompt is a plain textbox until an agent file gives it a trigger menu.
-  await page.getByRole("textbox").or(page.getByRole("combobox", { name: "Prompt" })).waitFor();
+  await prompt(page).waitFor();
   return page;
 }
 
@@ -253,7 +262,7 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 390, webOrigin);
 
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   expect((await composer.boundingBox())!.width).toBeGreaterThan(300);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
@@ -306,8 +315,8 @@ it("replaces a draft pick the restarted host no longer offers", async () => {
 
   // The draft falls back to an available model and submits with it.
   await expect.poll(() => capsule.textContent(), { timeout: 15000 }).toContain("Faux Other");
-  await page.getByRole("textbox").fill("after reconnect");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("after reconnect");
+  await prompt(page).press("Enter");
   await page.getByText("new host answer", { exact: true }).waitFor();
 });
 
@@ -315,7 +324,7 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["An answer to fork."] });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("hello");
   await composer.press("Enter");
   await page.getByRole("button", { name: "Fork", exact: true }).waitFor();
@@ -337,7 +346,7 @@ it("sends a typed steer from the button without stopping the run, and still stop
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], tokensPerSecond: 20 });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("look into it");
   await composer.press("Enter");
   await followFirst(observer);
@@ -367,7 +376,7 @@ it.each([
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "The fork continued."] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   const conversationId = await followFirst(observer);
@@ -402,7 +411,7 @@ it("shows no Fork action inside a fork's transcript", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   const fork = page.getByRole("button", { name: "Fork", exact: true });
@@ -419,7 +428,7 @@ it("replaces the Fork action with a 1 fork chip once a message is forked", async
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   await page.getByRole("button", { name: "Fork", exact: true }).click();
@@ -444,7 +453,7 @@ it("shows the 1 fork chip for a legacy nested fork inside the panel's thread", a
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   const parentId = await followFirst(observer);
@@ -489,7 +498,7 @@ it("opens the existing fork instead of the dialog when a message was already for
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   const parentId = await followFirst(observer);
@@ -523,7 +532,7 @@ it("forks into the panel's Threads detail and talks to it there", async () => {
     answers: ["parent answer", "fork answer", "side answer"],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   await page.getByText("parent answer", { exact: true }).waitFor();
@@ -542,8 +551,8 @@ it("forks into the panel's Threads detail and talks to it there", async () => {
   expect(await panel.getByText("parent answer", { exact: true }).count()).toBe(0);
 
   // The panel composer talks to the fork only.
-  await panel.getByRole("textbox").fill("side question");
-  await panel.getByRole("textbox").press("Enter");
+  await prompt(panel).fill("side question");
+  await prompt(panel).press("Enter");
   await panel.getByText("side answer", { exact: true }).waitFor();
   // It appears exactly once: inside the panel, never in the main transcript.
   expect(await page.getByText("side answer", { exact: true }).count()).toBe(1);
@@ -560,7 +569,7 @@ it("closes the side detail when the main column switches to another family", asy
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("first chat");
   await composer.press("Enter");
   await page.getByText("first answer", { exact: true }).waitFor();
@@ -586,7 +595,7 @@ it("resets the thread composer when the panel switches to another fork", async (
   });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("one");
   await composer.press("Enter");
   await page.getByText("first answer", { exact: true }).waitFor();
@@ -611,7 +620,7 @@ it("resets the thread composer when the panel switches to another fork", async (
   await page.getByRole("button", { name: "Side panel", exact: true }).click();
   await panel.getByRole("button", { name: "Threads", exact: true }).click();
   await panel.getByRole("button", { name: "fork one", exact: true }).click();
-  const threadComposer = panel.getByRole("textbox");
+  const threadComposer = prompt(panel);
   await threadComposer.fill("draft");
 
   // Opening fork B through its own message's chip replaces the side;
@@ -626,7 +635,7 @@ it("shows an empty family in the panel while drafting a new conversation", async
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   await page.getByText("first answer", { exact: true }).waitFor();
@@ -651,7 +660,7 @@ it("on a phone, Open in main closes the panel dialog too", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 390, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   await page.getByText("first answer", { exact: true }).waitFor();
@@ -678,7 +687,7 @@ it("shows no Fork action when the shown fork's root left navigation", async () =
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("start");
   await composer.press("Enter");
   const parentId = await followFirst(observer);
@@ -728,8 +737,8 @@ it("renders todo and a pending question card on every page and shares one answer
   const a = await openPage(host, 1280, webOrigin);
   const b = await openPage(host, 1280, webOrigin);
 
-  await a.getByRole("textbox").fill("plan and deploy");
-  await a.getByRole("textbox").press("Enter");
+  await prompt(a).fill("plan and deploy");
+  await prompt(a).press("Enter");
   // Page B joins the conversation from the navigation.
   await b.getByRole("button", { name: "plan and deploy", exact: true }).click();
 
@@ -769,8 +778,8 @@ it("renders a document that fails its presentation schema as key-value fallback"
   await panel.getByText("items", { exact: true }).waitFor();
   await panel.getByText('"not-an-array"', { exact: true }).waitFor();
   // The rest of the workbench still works.
-  await page.getByRole("textbox").fill("still alive");
-  expect(await page.getByRole("textbox").textContent()).toBe("still alive");
+  await prompt(page).fill("still alive");
+  expect(await prompt(page).textContent()).toBe("still alive");
 });
 
 it("shows interruption without a text bubble and never offers a fork for streaming or aborted thinking", async () => {
@@ -798,8 +807,8 @@ it("shows interruption without a text bubble and never offers a fork for streami
   defer(() => host.close());
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 390, webOrigin);
-  await page.getByRole("textbox").fill("Investigate the release.");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("Investigate the release.");
+  await prompt(page).press("Enter");
   await page.getByText("Thinking…", { exact: true }).waitFor();
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
@@ -827,8 +836,8 @@ it("retries a failed run by resubmitting the user message it answered", async ()
     ],
   });
   const page = await openPage(host, 1280, webOrigin);
-  await page.getByRole("textbox").fill("go");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("go");
+  await prompt(page).press("Enter");
 
   await page.getByText("Run failed", { exact: true }).waitFor();
   const retry = page.getByRole("button", { name: "Retry request", exact: true });
@@ -848,14 +857,14 @@ it("sends a pasted image with a message and shows it in the transcript", async (
   const page = await openPage(host, 1280, webOrigin);
 
   // One plain first message takes the page from draft into the conversation.
-  await page.getByRole("textbox").fill("hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
   await page.getByText("step-0", { exact: false }).waitFor();
 
   await pasteImage(page, 3000, 1000);
   await staged(page).waitFor();
-  await page.getByRole("textbox").fill("look at this");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("look at this");
+  await prompt(page).press("Enter");
   // The thumbnail renders off the user entry — its arrival means the
   // host has written it.
   const transcript = page.getByTestId("message-images");
@@ -884,8 +893,8 @@ it("keeps at most four dropped images and lets one be removed", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
   await page.getByText("step-0", { exact: false }).waitFor();
 
   await dropImages(page, 5);
@@ -904,8 +913,8 @@ it("rejects a rapid second add once the four slots are taken", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
   await page.getByText("step-0", { exact: false }).waitFor();
 
   await dropImages(page, 3);
@@ -940,8 +949,8 @@ it("lets a drop that carries only text reach the composer editor", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
   await page.getByText("step-0", { exact: false }).waitFor();
 
   const prevented = await page.evaluate(() => {
@@ -964,7 +973,7 @@ it("creates a conversation from an image-only first message", async () => {
 
   await pasteImage(page, 400, 300);
   await staged(page).waitFor();
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).press("Enter");
   await page.getByTestId("message-images").getByRole("button", { name: /Image 1/ }).waitFor();
 
   const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
@@ -985,8 +994,8 @@ it("resends the failed prompt's images on retry", async () => {
 
   await pasteImage(page, 400, 300);
   await staged(page).waitFor();
-  await page.getByRole("textbox").fill("look");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("look");
+  await prompt(page).press("Enter");
   await page.getByRole("button", { name: "Retry request", exact: true }).waitFor();
 
   const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
@@ -1036,8 +1045,8 @@ it("rolls a subagent's failure up to the family's root row", async () => {
   });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
-  await page.getByRole("textbox").fill("delegate");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("delegate");
+  await prompt(page).press("Enter");
   await page.getByText("parent final", { exact: true }).waitFor();
 
   // The child failed; the root's own run ended cleanly.
@@ -1073,7 +1082,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
     ],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("delegate");
   await composer.press("Enter");
   await page.getByText("parent final", { exact: true }).waitFor();
@@ -1091,7 +1100,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
   await panel.getByRole("button", { name: "Tasks", exact: true }).waitFor();
   await panel.getByText("child answer", { exact: true }).waitFor();
   await panel.getByText("Read-only · subagent", { exact: true }).waitFor();
-  expect(await panel.getByRole("textbox").count()).toBe(0);
+  expect(await prompt(panel).count()).toBe(0);
   // The main column still shows the parent.
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate");
 
@@ -1124,8 +1133,8 @@ it("renders a real edit's diff inside the tool row instead of the raw args", asy
 
   await page.getByRole("button", { name: projectName, exact: true }).hover();
   await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
-  await page.getByRole("textbox").fill("fix the notes");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("fix the notes");
+  await prompt(page).press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
 
   // Expand the run's folded steps: each round is its own single-call step,
@@ -1168,8 +1177,8 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
 
   await page.getByRole("button", { name: projectName, exact: true }).hover();
   await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
-  await page.getByRole("textbox").fill("fix the notes");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("fix the notes");
+  await prompt(page).press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
 
   await page.getByRole("button", { name: /Worked for/ }).click();
@@ -1202,8 +1211,8 @@ it("shows the draft home and fills the composer from a suggestion without creati
 
   // A suggestion fills the composer and focuses it; nothing is created.
   await page.getByRole("button", { name: "Fix the failing test", exact: true }).click();
-  expect(await page.getByRole("textbox").textContent()).toBe("Fix the failing test");
-  expect(await page.getByRole("textbox").evaluate((el) => document.activeElement === el || el.contains(document.activeElement))).toBe(true);
+  expect(await prompt(page).textContent()).toBe("Fix the failing test");
+  expect(await prompt(page).evaluate((el) => document.activeElement === el || el.contains(document.activeElement))).toBe(true);
   await expect.poll(() => page.getByRole("button", { name: "No chats", exact: true }).count()).toBe(1);
 });
 
@@ -1219,8 +1228,8 @@ it("creates the draft conversation under the picked project", async () => {
   await page.getByRole("option", { name: projectName, exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
 
-  await page.getByRole("textbox").fill("picked work");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("picked work");
+  await prompt(page).press("Enter");
   await page.getByText("picked answer", { exact: true }).waitFor();
   await page.getByRole("group", { name: projectName }).getByRole("button", { name: "picked work", exact: true }).waitFor();
 });
@@ -1245,8 +1254,8 @@ it("creates the draft with the picked model and thinking level", async () => {
   await page.getByRole("button", { name: "Medium", exact: true }).click();
   await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · Medium");
   await page.keyboard.press("Escape");
-  await page.getByRole("textbox").fill("deep work");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("deep work");
+  await prompt(page).press("Enter");
   await page.getByText("thinking answer", { exact: true }).waitFor();
 
   // The new conversation's composer shows the picked model, and the agent doc carries it.
@@ -1273,8 +1282,8 @@ it("changes the model and thinking level from the composer capsule", async () =>
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("hello");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
   // The default model is non-reasoning: plain name, no Thinking section.
@@ -1329,8 +1338,8 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByRole("group", { name: projectName }).waitFor();
   await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
   await expect.poll(async () => await addRow.count()).toBe(0);
-  await page.getByRole("textbox").fill("project work");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("project work");
+  await prompt(page).press("Enter");
   await page.getByText("project answer", { exact: true }).waitFor();
   const projectSection = page.getByRole("group", { name: projectName });
   await projectSection.getByRole("button", { name: "project work", exact: true }).waitFor();
@@ -1338,8 +1347,8 @@ it("organizes conversations under projects and chats", async () => {
   // A new chat lands under Chats, then archives away.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe("New chat");
-  await page.getByRole("textbox").fill("chat work");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("chat work");
+  await prompt(page).press("Enter");
   await page.getByText("chat answer", { exact: true }).waitFor();
   const chats = page.getByRole("group", { name: "Chats" });
   await chats.getByRole("button", { name: "chat work", exact: true }).waitFor();
@@ -1393,8 +1402,8 @@ it("renames a conversation from its sidebar row menu", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const page = await openPage(host, 1280, webOrigin);
-  await page.getByRole("textbox").fill("hello");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
   const chats = page.getByRole("group", { name: "Chats" });
@@ -1424,7 +1433,7 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("first chat");
   await composer.press("Enter");
   await page.getByText("first answer", { exact: true }).waitFor();
@@ -1455,7 +1464,7 @@ it("puts the conversation title in the header and the path inside the dock", asy
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
   const page = await openPage(host, 1280, webOrigin);
 
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("title me");
   await composer.press("Enter");
   await page.getByText("an answer", { exact: true }).waitFor();
@@ -1497,7 +1506,7 @@ it("creates exactly one conversation when Enter is pressed twice quickly", async
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("double tap");
   // Two Enters before the first submit resolves: the second must not create
   // a second conversation (each submit carries a fresh requestId).
@@ -1524,7 +1533,7 @@ it("disables the follow-up and stop controls while disconnected", async () => {
     tokensPerSecond: 10,
   });
   const page = await openPage(host, 1280, webOrigin);
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
 
   // Busy run + empty input: the disconnected Stop is disabled.
   await composer.fill("keep busy");
@@ -1565,8 +1574,8 @@ it("compacts the conversation from the more-actions menu", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("hello");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
   await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -1583,12 +1592,12 @@ it("shows a queued follow-up above the composer until the run takes it", async (
   });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("textbox").fill("go");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("go");
+  await prompt(page).press("Enter");
   // Wait for the live composer (the draft's input would eat the fill otherwise)
   // and for the run to be provably busy.
   await page.getByText("word", { exact: false }).first().waitFor();
-  await page.getByRole("textbox").fill("next task");
+  await prompt(page).fill("next task");
   await page.getByRole("button", { name: "Follow-up", exact: true }).click();
 
   const queued = page.locator(".chat-queued-message");
@@ -1621,8 +1630,8 @@ it("shows the location row and honors the draft checkout picker", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   // A chat conversation carries the static "Chat" chip.
-  await page.getByRole("textbox").fill("chat hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("chat hi");
+  await prompt(page).press("Enter");
   await page.getByText("chat done", { exact: true }).waitFor();
   await page.getByText("Chat", { exact: true }).waitFor();
 
@@ -1631,8 +1640,8 @@ it("shows the location row and honors the draft checkout picker", async () => {
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: repoName, exact: true }).click();
   await page.getByRole("combobox", { name: "Where to work", exact: true }).waitFor();
-  await page.getByRole("textbox").fill("tree hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("tree hi");
+  await prompt(page).press("Enter");
   await page.getByText("tree done", { exact: true }).waitFor();
   await page.getByText("Git worktree", { exact: true }).waitFor();
   await page.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
@@ -1643,8 +1652,8 @@ it("shows the location row and honors the draft checkout picker", async () => {
   await page.getByRole("option", { name: plainName, exact: true }).click();
   await page.getByRole("combobox", { name: "Where to work", exact: true }).click();
   await page.getByRole("option", { name: "Project folder", exact: true }).click();
-  await page.getByRole("textbox").fill("direct hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("direct hi");
+  await prompt(page).press("Enter");
   await page.getByText("direct done", { exact: true }).waitFor();
   await page.getByText("Project folder", { exact: true }).waitFor();
   await expect.poll(async () => {
@@ -1671,8 +1680,8 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: projectName, exact: true }).click();
   await observer.controller.removeProject(project.path);
-  await page.getByRole("textbox").fill("hi");
-  await page.getByRole("textbox").press("Enter");
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
   // Scope to the toast itself: the message also lands in Astryx's hidden
   // assertive live region, making a bare role=alert match ambiguous.
   const toast = page.locator("[data-toast-id]");
@@ -1685,7 +1694,7 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
     document.querySelector("[data-toast-id]")?.getAnimations({ subtree: true }).every((a) => a.playState !== "running"),
   );
   const toastBox = (await toast.boundingBox())!;
-  const composerBox = (await page.getByRole("textbox").boundingBox())!;
+  const composerBox = (await prompt(page).boundingBox())!;
   const dockBox = (await page.getByRole("button", { name: "Side panel", exact: true }).boundingBox())!;
   const intersects = (a: typeof toastBox, b: typeof toastBox) =>
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -1746,7 +1755,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   // Pairing completes after the confirmation: the composer is usable and the
   // secret leaves the URL.
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.waitFor();
   await composer.fill("hello from phone");
   await composer.press("Enter");
@@ -1758,7 +1767,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
 
   // The stored device reconnects without a fragment.
   await page.goto(`${webOrigin}/`);
-  await page.getByRole("textbox").waitFor();
+  await prompt(page).waitFor();
 
   // Revocation drops the client into the rejected state; forgetting shows the entry screen.
   await tokenClient.controller.revokeDevice(tokenClient.view.current().devices[0]!.publicKey);
@@ -1831,7 +1840,7 @@ it("pairs a device by pasting the loopback link on the no-link screen", async ()
   await page.getByLabel("Pairing link").fill(pairingUrl);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.waitFor();
   await composer.fill("hello");
   await composer.press("Enter");
@@ -1858,7 +1867,7 @@ it("names the host and opens no socket until a pair link is confirmed", async ()
   expect(tokenClient.view.current().devices).toHaveLength(0);
 
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  await page.getByRole("textbox").waitFor();
+  await prompt(page).waitFor();
   await waitForView(tokenClient.view, (view) => view.devices.length === 1);
 });
 
@@ -1899,7 +1908,7 @@ it("re-resolves the address when the hash changes in place", async () => {
   }, `pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
   await page.getByText("Pair with this host?").waitFor();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  await page.getByRole("textbox").waitFor();
+  await prompt(page).waitFor();
 });
 
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
@@ -1914,7 +1923,7 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  await page.getByRole("textbox").waitFor();
+  await prompt(page).waitFor();
 
   // Host dies; the stored device mode must not claim the pairing is bad.
   await tokenClient.close();
@@ -1944,9 +1953,9 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   const first = await context.newPage();
   await first.goto(pairLink);
   await first.getByRole("button", { name: "Pair", exact: true }).click();
-  await first.getByRole("textbox").waitFor();
-  await first.getByRole("textbox").fill("hello");
-  await first.getByRole("textbox").press("Enter");
+  await prompt(first).waitFor();
+  await prompt(first).fill("hello");
+  await prompt(first).press("Enter");
   await first.getByText("paired answer", { exact: true }).waitFor();
   const savedKey = await first.evaluate(
     () => (JSON.parse(localStorage.getItem("pinomad.hosts")!) as { privateKey: string }[])[0]!.privateKey,
@@ -1956,15 +1965,15 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   const again = await context.newPage();
   await again.goto(pairLink);
   await again.getByRole("button", { name: "Pair", exact: true }).click();
-  await again.getByRole("textbox").waitFor();
+  await prompt(again).waitFor();
   expect(again.url()).not.toContain("#pair=");
   const afterKey = await again.evaluate(
     () => (JSON.parse(localStorage.getItem("pinomad.hosts")!) as { privateKey: string }[])[0]!.privateKey,
   );
   expect(afterKey).toBe(savedKey);
 
-  await again.getByRole("textbox").fill("hi again");
-  await again.getByRole("textbox").press("Enter");
+  await prompt(again).fill("hi again");
+  await prompt(again).press("Enter");
   await again.getByText("second answer", { exact: true }).waitFor();
   // Still just the one registered device — no new identity was created.
   await waitForView(tokenClient.view, (view) => view.devices.length === 1);
@@ -1983,7 +1992,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
   await first.getByRole("button", { name: "Pair", exact: true }).click();
-  await first.getByRole("textbox").waitFor();
+  await prompt(first).waitFor();
   await first.close();
 
   // A context with no stored device sees the spent-code explanation, nothing destructive.
@@ -2010,7 +2019,7 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   const first = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await first.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
   await first.getByRole("button", { name: "Pair", exact: true }).click();
-  await first.getByRole("textbox").waitFor();
+  await prompt(first).waitFor();
   await first.close();
 
   // A saved pairing for a different host renders the spent-code screen plus a
@@ -2073,7 +2082,7 @@ it("scrolls a long conversation with the mouse wheel over the message column", a
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long] });
   const page = await openPage(host, 1280, webOrigin);
 
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("long chat");
   await composer.press("Enter");
   const last = page.getByText("line 149", { exact: true });
@@ -2094,7 +2103,7 @@ it("opens a switched conversation at its latest answer instead of the old scroll
   const page = await openPage(host, 1280, webOrigin);
 
   // Chat A through the page; chat B through a second client so the page stays on A.
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.fill("first chat");
   await composer.press("Enter");
   const lastA = page.getByText("A 149", { exact: true });
@@ -2179,7 +2188,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await page.getByLabel("Pairing link").fill(pairA);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.waitFor();
   await composer.fill("hello A");
   await composer.press("Enter");
@@ -2270,7 +2279,7 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
   await page.getByLabel("Pairing link").fill(pairA);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  const composer = page.getByRole("textbox");
+  const composer = prompt(page);
   await composer.waitFor();
   await composer.fill("hello");
   await composer.press("Enter");
@@ -2354,7 +2363,7 @@ it("offers Restart to update in the sidebar when the desktop bridge has one down
   await context.addInitScript(fakeUpdatesBridge);
   const page = await context.newPage();
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
-  await page.getByRole("textbox").waitFor();
+  await prompt(page).waitFor();
 
   // Nothing until the download completes.
   expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
