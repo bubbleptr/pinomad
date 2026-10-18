@@ -371,14 +371,19 @@ struct FileDiffView: View {
         }
     }
 
-    /// Measure the rendered text rather than counting scalars: emoji and
-    /// combining sequences can be wider than one monospaced cell, and an
-    /// underestimate would clip the end of the horizontal scroll range.
+    /// ASCII in a monospaced font is exactly one advance per character;
+    /// everything else is measured because emoji and CJK can be wider than
+    /// one cell. An underestimate would clip the end of the scroll range.
     private var lineWidth: CGFloat {
         let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let advance = ("M" as NSString).size(withAttributes: attributes).width
         let widest = file.lines.reduce(CGFloat.zero) { width, line in
-            max(width, (line.text as NSString).size(withAttributes: attributes).width)
+            let text = line.text
+            if text.allSatisfy(\.isASCII) && !text.contains("\t") {
+                return max(width, CGFloat(text.count) * advance)
+            }
+            return max(width, (text as NSString).size(withAttributes: attributes).width)
         }
         return widest + 28
     }
