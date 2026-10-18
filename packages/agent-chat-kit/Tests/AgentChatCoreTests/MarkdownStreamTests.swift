@@ -83,6 +83,32 @@ import Testing
         #expect(stream.blocks.map { tree(of: $0.markup) } == trees(parsing: text))
     }
 
+    // Speculation splits the open tail into lines, so a half-written setext
+    // underline must wait for every line ending, not just LF.
+    @Test(arguments: ["\r\n", "\r"])
+    func partialHeadingWaitsWithEveryLineEnding(lineEnding: String) {
+        var stream = MarkdownStream()
+        stream.append("Title\(lineEnding)-")
+
+        var reference = MarkdownStream()
+        reference.append("Title\n-")
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == reference.blocks.map { tree(of: $0.markup) })
+    }
+
+    // A table header is held back until its delimiter row arrives; CRLF must
+    // not make the whole tail look like one line.
+    @Test(arguments: ["\r\n", "\r"])
+    func partialTableHeaderWaitsWithEveryLineEnding(lineEnding: String) {
+        var stream = MarkdownStream()
+        stream.append("Intro\(lineEnding)\(lineEnding)| a | b |")
+
+        var reference = MarkdownStream()
+        reference.append("Intro\n\n| a | b |")
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == reference.blocks.map { tree(of: $0.markup) })
+    }
+
     @Test(arguments: Fixtures.replies.indices, [1, 3, 7, 0])
     func chunkingNeverChangesTheResult(reply: Int, seed: UInt64) {
         let text = Fixtures.replies[reply]

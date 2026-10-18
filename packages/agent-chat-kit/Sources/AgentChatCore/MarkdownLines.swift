@@ -53,22 +53,25 @@ enum MarkdownLines {
     }
 
     /// Lines split at any line ending, without the endings themselves.
+    /// Scans bytes because "\r\n" is one Character and would never match a
+    /// Character comparison against "\r" or "\n".
     static func lines(of text: String) -> [Substring] {
         var lines: [Substring] = []
-        var start = text.startIndex
-        var index = text.startIndex
-        while index < text.endIndex {
-            let character = text[index]
-            if character == "\r" || character == "\n" {
+        let bytes = text.utf8
+        var start = bytes.startIndex
+        var index = start
+        while index < bytes.endIndex {
+            let byte = bytes[index]
+            if byte == carriageReturn || byte == lineFeed {
                 lines.append(text[start..<index])
-                let next = text.index(after: index)
-                if character == "\r", next < text.endIndex, text[next] == "\n" {
-                    index = next
+                var next = bytes.index(after: index)
+                if byte == carriageReturn, next < bytes.endIndex, bytes[next] == lineFeed {
+                    next = bytes.index(after: next)
                 }
-                index = text.index(after: index)
-                start = index
+                start = next
+                index = next
             } else {
-                index = text.index(after: index)
+                index = bytes.index(after: index)
             }
         }
         lines.append(text[start...])

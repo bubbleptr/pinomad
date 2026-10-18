@@ -33,7 +33,7 @@ enum Speculation {
     }
 
     private static func holdingBackAmbiguousLines(_ text: String) -> String {
-        var lines = MarkdownLines.lines(of: text).map { $0.trimmingSuffix("\r") }
+        var lines = MarkdownLines.lines(of: text)
         // "-" or "==" under a paragraph would make it a heading; "- x" would not.
         if let last = lines.last, isUnderlineCandidate(last) {
             lines[lines.count - 1] = ""
