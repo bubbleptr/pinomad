@@ -187,14 +187,10 @@ extension AppModel {
             }
         }
         guard accountSession == session else { return }
-        var warning = endAccountSession(notice: nil)
-        if let failure, !failure.clearsSession {
-            let server = everywhere
-                ? "其他设备可能还没退出；请重新登录后再试一次「在所有设备上退出」。"
-                : "已在这台设备退出，但服务端没有确认；会话会在 30 天内自然过期。"
-            warning = [warning, server].compactMap { $0 }.joined(separator: "\n")
-        }
-        accountSignOutWarning = warning
+        let warning = endAccountSession(notice: nil)
+        let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, failure: failure)
+        let joined = [warning, serverWarning].compactMap { $0 }.joined(separator: "\n")
+        accountSignOutWarning = joined.isEmpty ? nil : joined
     }
 
     /// Pair one account host through a server-vouched offer, then the same
@@ -258,12 +254,14 @@ extension AppModel {
     /// A 4401 only marks the stored pairing. Asking for an invite is the
     /// reader's explicit action, never something this hook does.
     func markAccountRejected(_ host: HostRecord) {
+        // The 4401 is about this stored pairing, not about being signed in:
+        // record it now so a later login/adoption still labels the row.
+        accountRejectedHostKeys.insert(host.hostKey)
         guard let link = host.account,
               let session = accountSession,
               normalizeServerOrigin(origin: link.serverOrigin)
                 == normalizeServerOrigin(origin: session.serverOrigin)
         else { return }
-        accountRejectedHostKeys.insert(host.hostKey)
         accountRows = accountRows.map { row in
             guard row.storedHostKey == host.hostKey else { return row }
             return AccountHostRow(

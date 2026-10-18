@@ -146,6 +146,21 @@ struct AccountTests {
         #expect(result.rows[0].action == .rePair)
     }
 
+    /// A 4401 heard before the account was signed in (or before the entry
+    /// adopted its link) still applies when the row is finally built.
+    @Test func rejectionSurvivesLinkAdoption() {
+        let stored = StoredHosts(hosts: [record("key1")])
+        let result = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com",
+            hosts: [accountHost("host1", key: "key1", pairing: .available)],
+            stored: stored,
+            rejectedHostKeys: ["key1"])
+        #expect(result.rows[0].status == .rejected)
+        #expect(result.rows[0].action == .rePair)
+        #expect(result.changed)
+        #expect(result.stored.hosts[0].account?.hostId == "host1")
+    }
+
     /// After an explicit re-pair the stale linked record can never connect
     /// again; it must stop matching the account host.
     @Test func rePairPrunesTheStaleLinkedRecord() {
@@ -271,6 +286,16 @@ struct AccountTests {
         #expect(AccountCopy.message(AccountFailure.network) == "连不上服务端，检查地址和网络。")
         #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "用户名或密码不对。")
         #expect(AccountCopy.message(AccountFailure(code: "surprise")).contains("surprise"))
+    }
+
+    /// "Sign out everywhere" must warn even on 401: that only proves this
+    /// device's token was dead, not that the other sessions were revoked.
+    @Test func signOutWarningDistinguishesScope() {
+        let dead = AccountFailure(code: "unauthenticated")
+        #expect(AccountCopy.signOutWarning(everywhere: false, failure: dead) == nil)
+        #expect(AccountCopy.signOutWarning(everywhere: true, failure: dead) != nil)
+        #expect(AccountCopy.signOutWarning(everywhere: false, failure: .network) != nil)
+        #expect(AccountCopy.signOutWarning(everywhere: true, failure: nil) == nil)
     }
 }
 

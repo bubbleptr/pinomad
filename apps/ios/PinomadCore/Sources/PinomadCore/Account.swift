@@ -533,6 +533,16 @@ public enum AccountCopy {
     public static let signOutExplanation =
         "退出只是服务端不再替这台设备担保，已配对的宿主不受影响。"
 
+    /// The warning after a sign-out request failed. On this device an
+    /// unauthenticated answer just means the local token was already dead;
+    /// for "everywhere" it proves nothing about the other sessions.
+    public static func signOutWarning(everywhere: Bool, failure: AccountFailure?) -> String? {
+        guard let failure, everywhere || !failure.clearsSession else { return nil }
+        return everywhere
+            ? "其他设备可能还没退出；请重新登录后再试一次「在所有设备上退出」。"
+            : "已在这台设备退出，但服务端没有确认；会话会在 30 天内自然过期。"
+    }
+
     public static func message(_ failure: AccountFailure) -> String {
         switch failure.code {
         case "invalid_credentials": "用户名或密码不对。"
