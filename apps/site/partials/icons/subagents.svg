@@ -1,9 +1,7 @@
 <svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <g class="sketch-sm">
-    <circle cx="16" cy="7" r="3.5" />
-    <path d="M14 10 L 7 21.5 M16 10.5 V 21.5 M18 10 L 25 21.5" />
-    <circle class="part-hop part-1" cx="6" cy="25" r="3" />
-    <circle class="part-hop part-2 accent" cx="16" cy="25" r="3" />
-    <circle class="part-hop part-3" cx="26" cy="25" r="3" />
-  </g>
+  <circle cx="16" cy="7" r="3.5" />
+  <path d="M14 10 L 7 21.5 M16 10.5 V 21.5 M18 10 L 25 21.5" />
+  <circle class="part-hop part-1" cx="6" cy="25" r="3" />
+  <circle class="part-hop part-2 accent" cx="16" cy="25" r="3" />
+  <circle class="part-hop part-3" cx="26" cy="25" r="3" />
 </svg>

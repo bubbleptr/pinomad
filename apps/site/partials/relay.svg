@@ -11,11 +11,8 @@
   </text>
 
   <!-- Phone -->
-  <rect class="sheet-fill" x="60" y="70" width="98" height="186" rx="18" />
-  <g class="rough">
-    <rect class="ink-line" x="60" y="70" width="98" height="186" rx="18" />
-    <path class="ink-detail" d="M96 86 H 122 M76 120 H 132 M76 136 H 116" />
-  </g>
+  <rect class="ink-line sheet" x="60" y="70" width="98" height="186" rx="18" />
+  <path class="ink-detail" d="M96 86 H 122 M76 120 H 132 M76 136 H 116" />
   <g class="bubble is-out" data-bubble="phone">
     <rect x="70" y="200" width="78" height="28" rx="14" />
     <text x="109" y="219" text-anchor="middle"><tspan class="zh">跑一下测试</tspan><tspan class="en">run tests</tspan></text>
@@ -26,11 +23,8 @@
   </text>
 
   <!-- Relay -->
-  <rect class="sheet-fill" x="384" y="232" width="192" height="76" rx="12" />
-  <g class="rough">
-    <rect class="ink-line" x="384" y="232" width="192" height="76" rx="12" />
-    <path class="ink-detail" d="M400 256 H 412 M420 256 H 432" />
-  </g>
+  <rect class="ink-line sheet" x="384" y="232" width="192" height="76" rx="12" />
+  <path class="ink-detail" d="M400 256 H 412 M420 256 H 432" />
   <text class="relay-name" x="560" y="261" text-anchor="end"><tspan class="zh">中继</tspan><tspan class="en">relay</tspan></text>
   <text class="cipher" x="400" y="290" data-cipher>kq8+Zr0x/Fw9a=</text>
   <text class="art-note" x="480" y="332" text-anchor="middle">
@@ -41,11 +35,8 @@
   <g class="host-ghost">
     <use href="#ghost" x="790" y="116" width="112" height="98" />
   </g>
-  <rect class="sheet-fill" x="770" y="222" width="150" height="50" rx="12" />
-  <g class="rough">
-    <rect class="ink-line" x="770" y="222" width="150" height="50" rx="12" />
-    <path class="ink-detail" d="M790 247 H 846" />
-  </g>
+  <rect class="ink-line sheet" x="770" y="222" width="150" height="50" rx="12" />
+  <path class="ink-detail" d="M790 247 H 846" />
   <circle class="led" cx="896" cy="247" r="5" />
   <use class="lock" href="#lock" x="736" y="196" width="20" height="22" />
   <g class="bubble is-in" data-bubble="host">

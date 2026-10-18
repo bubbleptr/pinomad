@@ -1,5 +1,4 @@
-/* Ink on paper: the brand icon's warm paper and ink, one vermilion accent, a
-   hand-drawn stroke on the illustrations. Everything is in this file — no inline
+/* Ink on cool grey paper, one accent, smooth line illustrations. Everything is in this file — no inline
    style and no <style> inside the SVGs — so the page runs under style-src 'self'. */
 
 @font-face {
@@ -48,20 +47,21 @@
 
 :root {
   color-scheme: light;
-  --paper: oklch(0.972 0.008 85);
-  --paper-dot: oklch(0.2 0.01 80 / 0.09);
+  --paper: oklch(0.965 0.008 250);
+  --paper-dot: oklch(0.35 0.03 250 / 0.12);
   --sheet: oklch(1 0 0);
-  --ink: oklch(0.2 0 0);
-  --ink-2: oklch(0.45 0.012 70);
-  --vermilion: oklch(0.62 0.19 35);
-  --vermilion-text: oklch(0.52 0.18 33);
-  --vermilion-wash: oklch(0.62 0.19 35 / 0.1);
-  --tape: oklch(0.88 0.05 85 / 0.8);
+  --ink: oklch(0.21 0.015 260);
+  --ink-2: oklch(0.46 0.018 255);
+  /* The one accent; text and tint variants derive from it. Placeholder hue. */
+  --accent: oklch(0.62 0.19 35);
+  --accent-text: color-mix(in oklch, var(--accent) 80%, black);
+  --accent-wash: color-mix(in oklch, var(--accent) 10%, transparent);
+  --tape: oklch(0.88 0.02 250 / 0.85);
   --code-bg: oklch(0.21 0 0);
   --code-text: oklch(0.94 0 0);
   --code-muted: oklch(0.72 0 0);
-  --line: 2.75px;
-  --detail: 1.75px;
+  --line: 2.5px;
+  --detail: 1.5px;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
@@ -131,7 +131,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--vermilion);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -144,7 +144,7 @@ code {
 :not(pre) > code {
   padding: 0.1em 0.35em;
   border-radius: 0.3rem;
-  background: oklch(0.2 0.01 80 / 0.06);
+  background: color-mix(in oklch, var(--ink) 6%, transparent);
   overflow-wrap: anywhere;
 }
 
@@ -329,7 +329,7 @@ html[lang="zh-CN"] h1 {
 
 .roam-line path {
   fill: none;
-  stroke: var(--vermilion);
+  stroke: var(--accent);
   stroke-width: 5;
   stroke-linecap: round;
   stroke-dasharray: 1;
@@ -381,7 +381,7 @@ html[lang="zh-CN"] h1 {
 }
 
 .button:hover {
-  background: color-mix(in oklch, var(--ink) 82%, var(--vermilion));
+  background: color-mix(in oklch, var(--ink) 82%, var(--accent));
 }
 
 .button:active {
@@ -412,7 +412,7 @@ html[lang="zh-CN"] h1 {
 }
 
 .button-quiet:hover {
-  background: var(--vermilion-wash);
+  background: var(--accent-wash);
 }
 
 .text-link {
@@ -448,7 +448,7 @@ html[lang="zh-CN"] h1 {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: var(--vermilion);
+  background: var(--accent);
   transform: translateY(-0.05em);
 }
 
@@ -494,14 +494,6 @@ html[lang="zh-CN"] h1 {
   overflow: visible;
 }
 
-.rough {
-  filter: url(#sketch);
-}
-
-.sheet-fill,
-.ghost-fill {
-  fill: var(--sheet);
-}
 
 .ink-line,
 .ink-detail {
@@ -513,6 +505,10 @@ html[lang="zh-CN"] h1 {
 
 .ink-line {
   stroke-width: var(--line);
+}
+
+.ink-line.sheet {
+  fill: var(--sheet);
 }
 
 .ink-detail {
@@ -531,7 +527,7 @@ html[lang="zh-CN"] h1 {
 }
 
 .led {
-  fill: var(--vermilion);
+  fill: var(--accent);
 }
 
 .dot {
@@ -569,7 +565,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 /* The ghost: the hero draws it at 0.62 scale, the diagrams through the #ghost
    symbol at their own sizes, each dividing so the outline matches --line. */
 .ghost-body {
-  fill: none;
+  fill: var(--sheet);
   stroke: var(--ink);
   stroke-width: var(--ghost-stroke, calc(var(--line) / 0.62));
   stroke-linejoin: round;
@@ -603,7 +599,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 
 .route {
   fill: none;
-  stroke: var(--vermilion);
+  stroke: var(--accent);
   stroke-width: 4;
   stroke-linecap: round;
   stroke-dasharray: 0 11;
@@ -623,7 +619,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 }
 
 .packet {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: var(--ink);
   stroke-width: var(--detail);
 }
@@ -648,7 +644,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 
 .bubble .check {
   fill: none;
-  stroke: var(--vermilion);
+  stroke: var(--accent);
   stroke-width: 3.5;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -677,7 +673,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 }
 
 .lock-body {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: var(--ink);
   stroke-width: 2;
 }
@@ -698,10 +694,6 @@ html[lang="zh-CN"] :is(.label, .art-note) {
 
 .is-intro .d3 {
   animation-delay: 0.6s;
-}
-
-.is-intro .sheet-fill {
-  animation: fade-in 0.6s ease 0.4s both;
 }
 
 .is-intro .ghost {
@@ -791,7 +783,7 @@ html[lang="zh-CN"] :is(.label, .art-note) {
   align-items: center;
   gap: 0.6rem;
   margin-bottom: 0.9rem;
-  color: var(--vermilion-text);
+  color: var(--accent-text);
   font-family: var(--font-display);
   font-size: 1.05rem;
   font-style: italic;
@@ -823,7 +815,7 @@ html[lang="zh-CN"] .stop {
     inset-block: 0;
     left: calc((100% - var(--measure)) / 2 + var(--gutter) - 2.25rem);
     width: 4px;
-    background: radial-gradient(circle, var(--vermilion) 1.7px, transparent 2.1px) center top /
+    background: radial-gradient(circle, var(--accent) 1.7px, transparent 2.1px) center top /
       4px 12px repeat-y;
   }
 
@@ -873,7 +865,7 @@ html[lang="zh-CN"] .stop {
 /* Durable: the run's track, flags, crash, and resume. */
 .trail {
   fill: none;
-  stroke: var(--vermilion);
+  stroke: var(--accent);
   stroke-width: 4;
   stroke-linecap: round;
   stroke-dasharray: 840;
@@ -895,7 +887,7 @@ html[lang="zh-CN"] .stop {
 }
 
 .finish circle {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: var(--ink);
   stroke-width: 2;
 }
@@ -932,7 +924,7 @@ html[lang="zh-CN"] .stop {
 }
 
 .flag-cloth {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: var(--ink);
   stroke-width: 1.5;
   stroke-linejoin: round;
@@ -953,7 +945,7 @@ html[lang="zh-CN"] .stop {
 }
 
 .bolt {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: var(--ink);
   stroke-width: 2;
   stroke-linejoin: round;
@@ -1103,7 +1095,7 @@ html[lang="zh-CN"] .stop {
   color: var(--code-muted);
 }
 
-/* —— Icons: 32-unit grid, 2-unit round strokes, ink with one vermilion part —— */
+/* —— Icons: 32-unit grid, 1.75-unit round strokes, ink with one accent part —— */
 .icon-art {
   display: block;
   width: 2.75rem;
@@ -1111,21 +1103,17 @@ html[lang="zh-CN"] .stop {
   overflow: visible;
   fill: none;
   stroke: var(--ink);
-  stroke-width: 2;
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.sketch-sm {
-  filter: url(#sketch-sm);
-}
-
 .icon-art .accent {
-  stroke: var(--vermilion);
+  stroke: var(--accent);
 }
 
 .icon-art .accent-fill {
-  fill: var(--vermilion);
+  fill: var(--accent);
   stroke: none;
 }
 
@@ -1244,7 +1232,7 @@ html[lang="zh-CN"] .stop {
 }
 
 .client a {
-  color: var(--vermilion-text);
+  color: var(--accent-text);
   font-weight: 600;
   text-underline-offset: 0.2em;
   overflow-wrap: anywhere;
@@ -1254,8 +1242,8 @@ html[lang="zh-CN"] .stop {
   align-self: flex-start;
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  background: var(--vermilion-wash);
-  color: var(--vermilion-text);
+  background: var(--accent-wash);
+  color: var(--accent-text);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -1316,7 +1304,7 @@ html[lang="zh-CN"] .stop {
 /* —— Footer —— */
 .site-footer {
   padding-block: 2.5rem 3rem;
-  border-top: 1.5px dashed oklch(0.2 0.01 80 / 0.2);
+  border-top: 1.5px dashed color-mix(in oklch, var(--ink) 20%, transparent);
   color: var(--ink-2);
   font-size: 0.875rem;
 }
@@ -1366,15 +1354,10 @@ html[lang="zh-CN"] .stop {
   from {
     stroke-dashoffset: 1;
     stroke-opacity: 0;
+    fill-opacity: 0;
   }
   4% {
     stroke-opacity: 1;
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
   }
 }
 

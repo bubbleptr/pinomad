@@ -1,7 +1,5 @@
 <svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <g class="sketch-sm">
-    <rect x="4" y="6" width="24" height="20" rx="3" />
-    <path d="M4 23 L 11 16 L 16 21 L 20 17 L 28 25" />
-    <circle class="accent-fill part-rise" cx="22" cy="12" r="2.6" />
-  </g>
+  <rect x="4" y="6" width="24" height="20" rx="3" />
+  <path d="M4 23 L 11 16 L 16 21 L 20 17 L 28 25" />
+  <circle class="accent-fill part-rise" cx="22" cy="12" r="2.6" />
 </svg>

@@ -18,7 +18,7 @@ cd apps/site && bun run build && bun run preview
 
 页面是纯 HTML + CSS，加一点原生 JS 驱动示意动画，不用框架。图标和演示图直接引用 `apps/web/public/` 和 `docs/assets/` 里的文件，构建时打上哈希，改图标时不用另外更新这里。改文案时中英两页一起改，内容以两份 README 为准。`public/_headers` 是 Cloudflare Pages 的响应头（CSP 等），页面新加外部资源时要同步放行。
 
-插画、示意图和图标只存一份，放在 `partials/`，页面里写 `<!-- include 文件名.svg -->`，由 `vite.config.js` 的 `partials` 插件在开发和构建时内联。片段里中英文各一份（`.zh` / `.en`），按页面的 `lang` 显示其中一种；所以 SVG 本身 `aria-hidden`，读屏用的描述写在各页面里。CSP 是 `style-src 'self'`，动画只能用样式表里的类、SVG 属性、SMIL 和 JS 的 CSSOM（`el.style.x = …`），不能写 `style=""` 或 `setAttribute("style", …)`；构建后可以 `grep -c 'style="' dist/index.html dist/zh/index.html` 确认是 0。手绘线条来自 `partials/defs.svg` 里的 `#sketch` 滤镜，只加在不动的描边上。
+插画、示意图和图标只存一份，放在 `partials/`，页面里写 `<!-- include 文件名.svg -->`，由 `vite.config.js` 的 `partials` 插件在开发和构建时内联。片段里中英文各一份（`.zh` / `.en`），按页面的 `lang` 显示其中一种；所以 SVG 本身 `aria-hidden`，读屏用的描述写在各页面里。CSP 是 `style-src 'self'`，动画只能用样式表里的类、SVG 属性、SMIL 和 JS 的 CSSOM（`el.style.x = …`），不能写 `style=""` 或 `setAttribute("style", …)`；构建后可以 `grep -c 'style="' dist/index.html dist/zh/index.html` 确认是 0。
 
 ## Cloudflare Pages
 

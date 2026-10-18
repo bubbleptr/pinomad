@@ -1,7 +1,5 @@
 <svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <g class="sketch-sm">
-    <path class="part-left" d="M11 6 C 8 6, 7 7.5, 7 10 V 12.5 C 7 14.5, 6 16, 4 16 C 6 16, 7 17.5, 7 19.5 V 22 C 7 24.5, 8 26, 11 26" />
-    <path class="part-right" d="M21 6 C 24 6, 25 7.5, 25 10 V 12.5 C 25 14.5, 26 16, 28 16 C 26 16, 25 17.5, 25 19.5 V 22 C 25 24.5, 24 26, 21 26" />
-    <path class="accent-fill part-pop" d="M13.5 12 V 20 L 20 16 Z" />
-  </g>
+  <path class="part-left" d="M11 6 C 8 6, 7 7.5, 7 10 V 12.5 C 7 14.5, 6 16, 4 16 C 6 16, 7 17.5, 7 19.5 V 22 C 7 24.5, 8 26, 11 26" />
+  <path class="part-right" d="M21 6 C 24 6, 25 7.5, 25 10 V 12.5 C 25 14.5, 26 16, 28 16 C 26 16, 25 17.5, 25 19.5 V 22 C 25 24.5, 24 26, 21 26" />
+  <path class="accent-fill part-pop" d="M13.5 12 V 20 L 20 16 Z" />
 </svg>

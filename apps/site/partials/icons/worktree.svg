@@ -1,9 +1,7 @@
 <svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-  <g class="sketch-sm">
-    <circle cx="9" cy="7" r="3" />
-    <circle cx="9" cy="25" r="3" />
-    <path d="M9 10 V 22" />
-    <path class="part-grow" d="M23 12 C 23 19, 9 17, 9 22" pathLength="1" />
-    <circle class="accent part-pop" cx="23" cy="9" r="3" />
-  </g>
+  <circle cx="9" cy="7" r="3" />
+  <circle cx="9" cy="25" r="3" />
+  <path d="M9 10 V 22" />
+  <path class="part-grow" d="M23 12 C 23 19, 9 17, 9 22" pathLength="1" />
+  <circle class="accent part-pop" cx="23" cy="9" r="3" />
 </svg>

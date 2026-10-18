@@ -3,10 +3,8 @@
      steps and the run resuming from the last flag — so it reads without JS;
      main.js turns it into a run the visitor can start and pull the plug on. -->
 <svg class="durable-art" viewBox="0 0 960 300" aria-hidden="true" focusable="false">
-  <g class="rough">
-    <path class="ink-line" d="M60 180 H 900" />
-    <circle class="ink-line start-cap" cx="60" cy="180" r="7" />
-  </g>
+  <path class="ink-line" d="M60 180 H 900" />
+  <circle class="ink-line start-cap" cx="60" cy="180" r="7" />
   <path class="trail" d="M60 180 H 900" />
 
   <g class="flags">
