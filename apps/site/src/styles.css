@@ -1,0 +1,635 @@
+/* Montserrat, same faces apps/web declares (fontsource registers it as
+   "Montserrat Variable"; declared here under the plain name). */
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Palette borrowed from @astryxdesign/theme-neutral (text, borders, surfaces),
+   with the brand icon's warm paper (#F7F5F0) as the page and the theme's teal
+   as the single accent. */
+:root {
+  color-scheme: light dark;
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --surface-muted: #efede7;
+  --text: #171717;
+  --text-secondary: #525252;
+  --border: #00000014;
+  --border-strong: #d4d4d4;
+  --accent: #005348;
+  --accent-muted: #a5e3d6;
+  --button-bg: #262626;
+  --button-text: #ffffff;
+  --code-bg: #1b1b1b;
+  --code-text: #ebebeb;
+  --code-muted: #a3a3a3;
+  --radius-element: 0.625rem;
+  --radius-container: 0.75rem;
+  --radius-page: 1.75rem;
+  --font: Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --measure: 72rem;
+  --gutter: clamp(1rem, 4vw, 2rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1b;
+    --surface: #222222;
+    --surface-muted: #262626;
+    --text: #fafafa;
+    --text-secondary: #a3a3a3;
+    --border: #ffffff1a;
+    --border-strong: #525252;
+    --accent: #7ec6b8;
+    --accent-muted: #7ec6b83d;
+    --button-bg: #ebebeb;
+    --button-text: #171717;
+    --code-bg: #111111;
+  }
+}
+
+/* Montserrat has no CJK glyphs; pick a system CJK face of matching weight. */
+html[lang="zh-CN"] {
+  --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI",
+    sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+pre,
+figure {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+:not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: var(--surface-muted);
+  overflow-wrap: anywhere;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--gutter);
+  top: -4rem;
+  z-index: 10;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-element);
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* —— Header —— */
+.site-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.75rem, 3vw, 1.5rem);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.header-nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.header-nav a:hover {
+  color: var(--text);
+}
+
+/* —— Sections —— */
+section {
+  padding-block: clamp(3.5rem, 8vw, 6rem);
+}
+
+section + section {
+  border-top: 1px solid var(--border);
+}
+
+.eyebrow {
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-size: clamp(1.6rem, 3.5vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.section-lead {
+  max-width: 40rem;
+  margin-top: 0.9rem;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+}
+
+/* —— Hero —— */
+.hero {
+  padding-block: clamp(3.5rem, 10vw, 7rem) clamp(2.5rem, 6vw, 4rem);
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(2.6rem, 8vw, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-weight: 800;
+}
+
+.hero .tagline {
+  max-width: 44rem;
+  margin: 1.25rem auto 0;
+  font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-wrap: balance;
+}
+
+.hero .tagline strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2.25rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.875rem;
+  padding: 0.65rem 1.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-element);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.button-primary {
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+
+.button-primary:hover {
+  background: color-mix(in srgb, var(--button-bg) 85%, var(--bg));
+}
+
+.button-secondary {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.button-secondary:hover {
+  border-color: var(--text-secondary);
+}
+
+.button svg {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  fill: currentColor;
+}
+
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  max-width: 40rem;
+  margin-top: 2rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.status::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-0.05em);
+}
+
+.status strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* —— Demo —— */
+.demo {
+  padding-top: 0;
+}
+
+section.demo {
+  border-top: 0;
+}
+
+.demo figure {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  background: var(--surface);
+  box-shadow: 0 1px 2px #0000000d, 0 12px 40px -12px #0000002e;
+}
+
+.demo img {
+  width: 100%;
+  aspect-ratio: 1920 / 990;
+}
+
+.demo figcaption {
+  padding: 0.9rem 1.1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* —— Pillars —— */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: clamp(1.5rem, 4vw, 2.5rem);
+  margin-top: 2.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.pillars h3 {
+  font-size: 1.15rem;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pillars h3::before {
+  content: "";
+  display: block;
+  width: 2rem;
+  height: 3px;
+  margin-bottom: 1rem;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.pillars p {
+  margin-top: 0.6rem;
+  color: var(--text-secondary);
+}
+
+/* —— Quick start —— */
+.quickstart-grid {
+  display: grid;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (min-width: 56rem) {
+  .quickstart-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 3.5rem;
+  }
+}
+
+.quickstart-grid > * {
+  min-width: 0;
+}
+
+.note {
+  margin-top: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.code-card {
+  overflow: hidden;
+  border-radius: var(--radius-container);
+  background: var(--code-bg);
+  color: var(--code-text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.code-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.5rem 0.4rem 1rem;
+  border-bottom: 1px solid #ffffff1a;
+  color: var(--code-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.copy-button {
+  min-height: 2rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid #ffffff2e;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--code-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  background: #ffffff14;
+}
+
+.copy-button[hidden] {
+  display: none;
+}
+
+.code-card pre {
+  overflow-x: auto;
+  padding: 1.1rem 1.25rem 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.85;
+  tab-size: 2;
+}
+
+.code-card code {
+  font-size: inherit;
+}
+
+.code-card .prompt {
+  color: var(--code-muted);
+  user-select: none;
+}
+
+.code-card .comment {
+  color: var(--code-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* —— Clients —— */
+.clients {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+  margin-top: 2.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.client {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  background: var(--surface);
+}
+
+.client h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.client p {
+  color: var(--text-secondary);
+  font-size: 0.925rem;
+}
+
+.client a {
+  color: var(--accent);
+  font-weight: 600;
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+}
+
+.tag {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* —— Features —— */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1px;
+  margin-top: 2.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  background: var(--border);
+}
+
+.features > div {
+  padding: 1.4rem;
+  background: var(--surface);
+}
+
+.features dt {
+  font-weight: 700;
+}
+
+.features dd {
+  margin-top: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.925rem;
+}
+
+/* —— Footer —— */
+.site-footer {
+  border-top: 1px solid var(--border);
+  padding-block: 2.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.site-footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+}
+
+.site-footer nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer a {
+  text-underline-offset: 0.2em;
+}
+
+.site-footer a:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 30rem) {
+  .header-nav .nav-optional {
+    display: none;
+  }
+}
