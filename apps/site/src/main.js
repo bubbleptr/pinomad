@@ -196,3 +196,31 @@ function setupDurable(root) {
 
 const durable = document.querySelector("[data-durable]");
 if (durable) setupDurable(durable);
+
+// Blocks that start below the first screen fade up once as they scroll in.
+// Anything on screen at load is left alone, so the first paint never animates.
+function setupReveal() {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      let shown = 0;
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.style.transitionDelay = `${Math.min(shown, 3) * 80}ms`;
+        entry.target.classList.add("is-revealed");
+        observer.unobserve(entry.target);
+        shown += 1;
+      }
+    },
+    { rootMargin: "0px 0px -10% 0px" },
+  );
+  const blocks = document.querySelectorAll(
+    ".section-head, .shot-phone, .panel, .feature-row > *, .more, .client, .code-card, .closing .wrap",
+  );
+  for (const block of blocks) {
+    if (block.getBoundingClientRect().top < innerHeight) continue;
+    block.classList.add("reveal");
+    observer.observe(block);
+  }
+}
+
+if (!reduceMotion.matches) setupReveal();

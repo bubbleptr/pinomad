@@ -1043,6 +1043,21 @@ html[lang="zh-CN"] .node-labels text {
   color: var(--fg);
 }
 
+/* —— Scroll reveal. main.js adds .reveal only to blocks that start below the first
+   screen and only without reduced motion, so nothing is hidden without JS; print
+   always shows everything. The transition sits on .is-revealed so hiding is
+   instant and only the reveal animates. —— */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .reveal:not(.is-revealed) {
+    opacity: 0;
+    translate: 0 1rem;
+  }
+
+  .reveal.is-revealed {
+    transition: opacity 0.6s var(--ease-out), translate 0.6s var(--ease-out);
+  }
+}
+
 /* —— Keyframes —— */
 @keyframes pop {
   from {
