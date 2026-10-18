@@ -1,0 +1,73 @@
+<!-- A message from the phone to the host by either route the README names: direct
+     on the LAN or tailnet, or through the relay, which only ever holds ciphertext.
+     Static markup shows both routes and what the relay sees; main.js sends a
+     packet down the route the visitor picks. -->
+<svg class="relay-art" viewBox="0 0 960 340" aria-hidden="true" focusable="false">
+  <path class="route" data-route="direct" d="M166 112 C 360 20, 620 30, 780 182" />
+  <path class="route" data-route="relay" d="M166 236 C 250 286, 310 286, 384 270 L 576 270 C 650 270, 700 262, 768 250" />
+
+  <text class="art-note" x="470" y="44" text-anchor="middle">
+    <tspan class="zh">在家：局域网 / tailnet 直连</tspan><tspan class="en">at home: straight over the LAN or tailnet</tspan>
+  </text>
+
+  <!-- Phone -->
+  <rect class="sheet-fill" x="60" y="70" width="98" height="186" rx="18" />
+  <g class="rough">
+    <rect class="ink-line" x="60" y="70" width="98" height="186" rx="18" />
+    <path class="ink-detail" d="M96 86 H 122 M76 120 H 132 M76 136 H 116" />
+  </g>
+  <g class="bubble is-out" data-bubble="phone">
+    <rect x="70" y="200" width="78" height="28" rx="14" />
+    <text x="109" y="219" text-anchor="middle"><tspan class="zh">跑一下测试</tspan><tspan class="en">run tests</tspan></text>
+  </g>
+  <use class="lock" href="#lock" x="170" y="150" width="20" height="22" />
+  <text class="label" x="109" y="288" text-anchor="middle">
+    <tspan class="zh">你的手机</tspan><tspan class="en">your phone</tspan>
+  </text>
+
+  <!-- Relay -->
+  <rect class="sheet-fill" x="384" y="232" width="192" height="76" rx="12" />
+  <g class="rough">
+    <rect class="ink-line" x="384" y="232" width="192" height="76" rx="12" />
+    <path class="ink-detail" d="M400 256 H 412 M420 256 H 432" />
+  </g>
+  <text class="relay-name" x="560" y="261" text-anchor="end"><tspan class="zh">中继</tspan><tspan class="en">relay</tspan></text>
+  <text class="cipher" x="400" y="290" data-cipher>kq8+Zr0x/Fw9a=</text>
+  <text class="art-note" x="480" y="332" text-anchor="middle">
+    <tspan class="zh">在外面：经过中继，它只看得到密文</tspan><tspan class="en">away: through the relay, which only sees ciphertext</tspan>
+  </text>
+
+  <!-- Host -->
+  <g class="host-ghost">
+    <use href="#ghost" x="790" y="116" width="112" height="98" />
+  </g>
+  <rect class="sheet-fill" x="770" y="222" width="150" height="50" rx="12" />
+  <g class="rough">
+    <rect class="ink-line" x="770" y="222" width="150" height="50" rx="12" />
+    <path class="ink-detail" d="M790 247 H 846" />
+  </g>
+  <circle class="led" cx="896" cy="247" r="5" />
+  <use class="lock" href="#lock" x="736" y="196" width="20" height="22" />
+  <g class="bubble is-in" data-bubble="host">
+    <rect x="800" y="70" width="98" height="28" rx="14" />
+    <path class="check" d="M812 84 l5 5 l9 -10" />
+    <text x="832" y="89"><tspan class="zh">收到</tspan><tspan class="en">got it</tspan></text>
+  </g>
+  <text class="label" x="845" y="304" text-anchor="middle">
+    <tspan class="zh">家里的宿主</tspan><tspan class="en">the host at home</tspan>
+  </text>
+
+  <!-- The message in flight: sealed the whole way. -->
+  <g class="packet-env" data-packet="direct" opacity="0">
+    <rect x="-17" y="-12" width="34" height="24" rx="5" />
+    <use href="#lock" x="-7" y="-8" width="14" height="15" />
+    <animateMotion dur="1.6s" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.25 1" path="M166 112 C 360 20, 620 30, 780 182" />
+    <animate attributeName="opacity" dur="1.6s" begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.06;0.9;1" />
+  </g>
+  <g class="packet-env" data-packet="relay" opacity="0">
+    <rect x="-17" y="-12" width="34" height="24" rx="5" />
+    <use href="#lock" x="-7" y="-8" width="14" height="15" />
+    <animateMotion dur="2.6s" begin="indefinite" fill="freeze" calcMode="linear" path="M166 236 C 250 286, 310 286, 384 270 L 576 270 C 650 270, 700 262, 768 250" />
+    <animate attributeName="opacity" dur="2.6s" begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.04;0.94;1" />
+  </g>
+</svg>

@@ -1,0 +1,7 @@
+<svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+  <g class="sketch-sm">
+    <rect x="10" y="3" width="12" height="26" rx="3" />
+    <path d="M14.5 6.5 H 17.5" />
+    <path class="accent" d="M13 20 l 2 2 l 4 -4.5" />
+  </g>
+</svg>
