@@ -39,6 +39,7 @@ struct RootView: View {
             switch modal {
             case .hosts: HostsView(model: model)
             case .account: AccountLoginView(model: model)
+            case .pairingCode: PairingCodeView(model: model)
             case .scanner: ScannerView(model: model)
             case .confirm(let pending): PairConfirmView(model: model, pending: pending)
             }

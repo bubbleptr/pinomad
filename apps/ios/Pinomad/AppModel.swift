@@ -25,6 +25,7 @@ final class AppModel {
     enum Modal: Identifiable {
         case hosts
         case account
+        case pairingCode
         case scanner
         case confirm(PendingPairing)
 
@@ -32,6 +33,7 @@ final class AppModel {
             switch self {
             case .hosts: "hosts"
             case .account: "account"
+            case .pairingCode: "pairingCode"
             case .scanner: "scanner"
             case .confirm(let pending): "confirm:\(pending.link)"
             }

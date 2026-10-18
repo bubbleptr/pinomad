@@ -200,6 +200,7 @@ struct HostsView: View {
                     .tint(.primary)
                 }
                 if let hostKey = model.currentHostKey {
+                    pairingCodeSection
                     pushSection(hostKey)
                 }
                 Section("再配对一台") {
@@ -432,6 +433,28 @@ struct HostsView: View {
             if await model.pairViaAccount(hostId: row.hostId) {
                 dismiss()
             }
+        }
+    }
+
+    /// Pair another device from the host on screen (ADR-0022 §7).
+    private var pairingCodeSection: some View {
+        Section {
+            Button {
+                model.present(.pairingCode)
+            } label: {
+                Label("给另一台设备配对", systemImage: "qrcode")
+            }
+            .disabled(!model.connected)
+
+            if !model.connected {
+                Text("连上宿主后才能生成二维码。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("配对另一台设备")
+        } footer: {
+            Text("对方用相机扫码或打开链接即可配对。")
         }
     }
 

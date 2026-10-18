@@ -172,6 +172,34 @@ extension AppModel {
         if let warning { pushForgetWarning = warning }
         advancePushTarget()
     }
+
+    /// The host's one-time pairing offer for another device. Request-class:
+    /// the host rejects with a message the sheet shows.
+    func createPairingOffer() async -> Result<PairingCodeOffer, PairingCodeFailure> {
+        guard let session else {
+            return .failure(PairingCodeFailure(message: "还没连上宿主。"))
+        }
+        do {
+            switch try await session.invoke(.createPairing) {
+            case .pairing(let url, let expiresAt):
+                return .success(PairingCodeOffer(url: url, expiresAt: expiresAt))
+            default:
+                return .failure(PairingCodeFailure(message: "宿主没有返回配对信息。"))
+            }
+        } catch {
+            return .failure(PairingCodeFailure(message: describe(error)))
+        }
+    }
+}
+
+/// A one-time pairing URL and when it dies (epoch ms).
+struct PairingCodeOffer: Equatable {
+    let url: String
+    let expiresAt: Double
+}
+
+struct PairingCodeFailure: Error, Equatable {
+    let message: String
 }
 
 /// `host[:port]` of a URL, for "pair with …".
