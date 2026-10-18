@@ -17,8 +17,8 @@ enum Speculation {
               var line = leaf.range?.lowerBound.line
         else { return text }
         // Emphasis never crosses table cells, let alone rows.
-        if leaf is Table { line = text.utf8.count { $0 == UInt8(ascii: "\n") } + 1 }
-        let start = text.utf8.index(text.startIndex, offsetBy: offset(ofLine: line, in: text.utf8))
+        if leaf is Table { line = MarkdownLines.lineBreakCount(in: text.utf8) + 1 }
+        let start = text.utf8.index(text.startIndex, offsetBy: MarkdownLines.offset(ofLine: line, in: text.utf8))
         return String(text[..<start]) + closingInlines(text[start...])
     }
 
@@ -33,7 +33,7 @@ enum Speculation {
     }
 
     private static func holdingBackAmbiguousLines(_ text: String) -> String {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingSuffix("\r") }
+        var lines = MarkdownLines.lines(of: text).map { $0.trimmingSuffix("\r") }
         // "-" or "==" under a paragraph would make it a heading; "- x" would not.
         if let last = lines.last, isUnderlineCandidate(last) {
             lines[lines.count - 1] = ""
@@ -133,16 +133,6 @@ enum Speculation {
         return end - start
     }
 
-    private static func offset(ofLine line: Int, in text: String.UTF8View) -> Int {
-        var offset = 0
-        var remaining = line - 1
-        for byte in text {
-            if remaining == 0 { break }
-            offset += 1
-            if byte == UInt8(ascii: "\n") { remaining -= 1 }
-        }
-        return offset
-    }
 }
 
 /// CommonMark's left- and right-flanking rules for a delimiter run.

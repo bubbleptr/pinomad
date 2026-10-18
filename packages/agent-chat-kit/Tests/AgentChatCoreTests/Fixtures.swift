@@ -1,7 +1,10 @@
 /// Replies shaped like a coding agent's, covering the block structures whose
 /// boundaries are easy to get wrong while streaming.
 enum Fixtures {
-    static let replies = lf + [lf[0].replacing("\n", with: "\r\n")]
+    static let replies = lf + [
+        lf[0].replacing("\n", with: "\r\n"),
+        lf[0].replacing("\n", with: "\r"),
+    ]
 
     private static let lf: [String] = [
         """

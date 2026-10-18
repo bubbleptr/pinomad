@@ -57,6 +57,32 @@ import Testing
         #expect(stream.blocks.map { tree(of: $0.markup) } == trees(parsing: completed))
     }
 
+    // A first chunk of only spaces can still become an indented code block.
+    @Test func leadingWhitespaceSurvivesUntilABlockStarts() {
+        var stream = MarkdownStream()
+        stream.append("    ")
+        stream.append("print(1)\n")
+        stream.finish()
+
+        var whole = MarkdownStream()
+        whole.append("    print(1)\n")
+        whole.finish()
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == whole.blocks.map { tree(of: $0.markup) })
+        #expect(stream.blocks.first?.markup is CodeBlock)
+    }
+
+    // cmark treats LF, CRLF and CR alike; line offsets must too.
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func lineEndingsOfEveryKind(lineEnding: String) {
+        let text = ["A", "B", "C"].joined(separator: lineEnding + lineEnding)
+        var stream = MarkdownStream()
+        stream.append(text)
+        stream.finish()
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == trees(parsing: text))
+    }
+
     @Test(arguments: Fixtures.replies.indices, [1, 3, 7, 0])
     func chunkingNeverChangesTheResult(reply: Int, seed: UInt64) {
         let text = Fixtures.replies[reply]

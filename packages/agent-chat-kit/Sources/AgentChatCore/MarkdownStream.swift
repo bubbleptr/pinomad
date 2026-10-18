@@ -44,8 +44,8 @@ public struct MarkdownStream: Sendable {
         // item of the list before it ("3" becoming "3. "), so that block stays
         // open too.
         let lastStartLine = children.last?.range?.lowerBound.line ?? 1
-        let newlines = tail.utf8.count { $0 == UInt8(ascii: "\n") }
-        let openCount = isFinished ? 0 : newlines >= lastStartLine ? 1 : 2
+        let lineBreaks = MarkdownLines.lineBreakCount(in: tail.utf8)
+        let openCount = isFinished ? 0 : lineBreaks >= lastStartLine ? 1 : 2
         let closedCount = max(children.count - openCount, 0)
 
         var kept = blocks.prefix { $0.isClosed }
@@ -54,27 +54,17 @@ public struct MarkdownStream: Sendable {
         }
 
         if closedCount < children.count, let line = children[closedCount].range?.lowerBound.line {
-            tailOffset += Self.offset(ofLine: line, in: tail.utf8)
+            tailOffset += MarkdownLines.offset(ofLine: line, in: tail.utf8)
             let open = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
             for markup in Document(parsing: Speculation.complete(String(open))).blockChildren {
                 kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: false))
             }
+        } else if children.isEmpty, !isFinished {
+            // Whitespace alone has no block yet, but may still start an
+            // indented code block: keep it as the tail instead of dropping it.
         } else {
             tailOffset = source.utf8.count
         }
         blocks = Array(kept)
-    }
-
-    /// UTF-8 offset of a 1-based line from the start of `text`. Scans bytes,
-    /// not Characters, because "\r\n" is a single Character.
-    private static func offset(ofLine line: Int, in text: Substring.UTF8View) -> Int {
-        var offset = 0
-        var remaining = line - 1
-        for byte in text {
-            if remaining == 0 { break }
-            offset += 1
-            if byte == UInt8(ascii: "\n") { remaining -= 1 }
-        }
-        return offset
     }
 }
