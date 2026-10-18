@@ -59,6 +59,7 @@ struct ConversationView: View {
         .environment(\.inlineImageAction, InlineImageAction { image in
             model.viewing = MessageImage(data: image.data, mimeType: image.mimeType)
         })
+        .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
         .safeAreaInset(edge: .bottom) {
             if let conversation {
                 ConversationComposer(model: model, conversation: conversation)

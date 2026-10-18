@@ -20,8 +20,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>build.kieran.pinomad.pair</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pinomad</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>拍照后作为图片发给 agent。</string>
+	<string>扫描宿主的配对二维码，或拍照后作为图片发给 agent。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchScreen</key>

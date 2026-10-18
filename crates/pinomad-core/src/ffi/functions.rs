@@ -237,6 +237,13 @@ pub fn host_supports_call(host_minor: u32, method: String) -> bool {
     crate::frames::host_supports_call(host_minor, &method)
 }
 
+/// The socket URL a pairing link would connect to, or `None` when it is not
+/// a usable pairing link — what the confirm page shows before pairing.
+#[uniffi::export]
+pub fn pairing_link_url(link: String) -> Option<String> {
+    crate::pairing_link::parse_pairing_link(&link).map(|parsed| parsed.url)
+}
+
 /// How many images one message may carry — sizes the client's picker so
 /// it never offers more than `image_problem` would admit.
 #[uniffi::export]

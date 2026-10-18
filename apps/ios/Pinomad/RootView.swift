@@ -1,6 +1,6 @@
+import PinomadChat
 import PinomadCore
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct RootView: View {
     @Bindable var model: AppModel
@@ -12,13 +12,13 @@ struct RootView: View {
                 case .loading:
                     ProgressView("正在启动…")
                 case .pairing:
-                    pairingView.padding()
+                    PairingStartView(model: model)
                 case .connecting:
-                    ProgressView(model.connectionText.isEmpty ? "正在连接…" : model.connectionText)
+                    connectingView
                 case .connected:
                     ConversationListView(model: model)
-                case .failed(let message):
-                    failedView(message).padding()
+                case .failed(let failure):
+                    FailureView(model: model, failure: failure).padding()
                 }
             }
             .navigationTitle("PiNomad")
@@ -35,48 +35,139 @@ struct RootView: View {
             ImageViewer(image: viewed.image) { model.viewing = nil }
                 .presentationBackground(.clear)
         }
+        .sheet(item: $model.modal, onDismiss: model.modalDismissed) { modal in
+            switch modal {
+            case .hosts: HostsView(model: model)
+            case .scanner: ScannerView(model: model)
+            case .confirm(let pending): PairConfirmView(model: model, pending: pending)
+            }
+        }
+        // `pinomad://pair#…` — the confirm page decides what to do with it.
+        .onOpenURL { url in model.offerPairing(url.absoluteString) }
     }
 
-    private var pairingView: some View {
-        VStack(spacing: 20) {
-            Text("粘贴配对链接，把这台设备连到你的 PiNomad 宿主。")
-                .foregroundStyle(.secondary)
-            TextField("pinomad:// 或 https://…#pair=…", text: $model.link)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-            PasteButton(supportedContentTypes: [.plainText, .url]) { providers in
-                guard let provider = providers.first else { return }
-                _ = provider.loadObject(ofClass: String.self) { text, _ in
-                    if let text {
-                        Task { @MainActor in model.link = text }
-                    }
-                }
+    private var connectingView: some View {
+        VStack(spacing: 16) {
+            ProgressView(model.currentHostLabel.map { "正在连接 \($0)…" } ?? "正在连接…")
+            if model.pairingLink != nil {
+                Button("取消") { model.cancelPairing() }
+            } else if model.hosts.hosts.count > 1 {
+                Button("换一台宿主") { model.present(.hosts) }
             }
-            Button("连接") { model.pair() }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
+}
 
-    private func failedView(_ message: String) -> some View {
+/// Why the host can't be used, and the ways out that fit: a fresh link,
+/// forgetting the host, updating one side, retrying, or another host.
+private struct FailureView: View {
+    let model: AppModel
+    let failure: ConnectFailure
+
+    private var pairing: Bool { model.pairingLink != nil }
+
+    var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 40))
                 .foregroundStyle(.orange)
-            Text("连接失败")
+            Text(title)
                 .font(.title2)
-            Text(message)
+                .multilineTextAlignment(.center)
+            Text(detail)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            HStack(spacing: 16) {
-                Button("重试") { model.retry() }
-                    .buttonStyle(.bordered)
-                Button("重新配对") { model.phase = .pairing }
-                    .buttonStyle(.borderedProminent)
+            VStack(spacing: 10) {
+                if canRetry {
+                    Button("重试") { model.retryConnection() }
+                        .buttonStyle(.borderedProminent)
+                }
+                if failure == .revoked, let key = model.currentHostKey {
+                    Button("忘记这台宿主", role: .destructive) { model.forget(key) }
+                        .buttonStyle(.bordered)
+                }
+                if pairing {
+                    Button("取消") { model.cancelPairing() }
+                        .buttonStyle(.bordered)
+                } else if !model.hosts.hosts.isEmpty {
+                    Button("宿主") { model.present(.hosts) }
+                        .buttonStyle(.bordered)
+                }
+            }
+            .controlSize(.large)
+        }
+    }
+
+    private var canRetry: Bool {
+        switch failure {
+        case .unreachable, .hostOutdated: true
+        case .pairingRefused, .revoked, .appOutdated: false
+        }
+    }
+
+    private var title: String {
+        switch failure {
+        case .pairingRefused: "这个配对码已失效"
+        case .revoked: "这台设备被宿主拒绝或吊销了"
+        case .appOutdated: "请更新 App"
+        case .hostOutdated: "请升级宿主"
+        case .unreachable: "连不上宿主"
+        }
+    }
+
+    private var detail: String {
+        switch failure {
+        case .pairingRefused:
+            "它已经用过或过期了。在宿主上运行 pinomad pair，或在「设备 → 配对设备」里生成新的链接。"
+        case .revoked:
+            "它没有和\(model.currentHostLabel ?? "这台宿主")配对，或配对已被撤销。"
+        case .appOutdated(let host, let client):
+            "宿主使用协议 \(Int(host)) 版，这个 App 是 \(Int(client)) 版。"
+        case .hostOutdated(let host, let client):
+            "这个 App 使用协议 \(Int(client)) 版，宿主是 \(Int(host)) 版。在宿主上运行 pinomad upgrade。"
+        case .unreachable(let message):
+            message
+        }
+    }
+}
+
+/// The live connection's trouble, above a page's content: reconnecting on
+/// its own, or closed and waiting for the reader to reconnect.
+struct ConnectionBanner: View {
+    let model: AppModel
+
+    var body: some View {
+        if let connection = model.snapshot?.connection, model.phase == .connected {
+            switch connection {
+            case .reconnecting:
+                bar {
+                    ProgressView().controlSize(.small)
+                    Text("重连中…")
+                }
+            case .closed:
+                bar {
+                    Image(systemName: "bolt.horizontal.circle")
+                    Text("已断开")
+                    Spacer(minLength: 8)
+                    Button("重连") { model.retryConnection() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            case .connected, .outdated:
+                EmptyView()
             }
         }
+    }
+
+    private func bar(@ViewBuilder _ content: () -> some View) -> some View {
+        HStack(spacing: 8) { content() }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .padding(.horizontal, 12)
     }
 }
 
