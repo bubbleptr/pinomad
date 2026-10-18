@@ -94,7 +94,8 @@ export function ConversationComposer({
         triggers={useAtMentions(
           view.agents,
           inputRef,
-          hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+          // A Chat conversation has no project files; like a Chat draft, it offers agents only.
+          view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
             ? {
                 key: `conversation:${conversation.conversation.id}`,
                 list: (query) =>

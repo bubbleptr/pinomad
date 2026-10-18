@@ -381,7 +381,8 @@ function ThreadDetail({
           triggers={useAtMentions(
             view.agents,
             inputRef,
-            hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+            // A fork shares its family's home: a Chat family has no project files.
+            view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
               ? {
                   // The fork lists its own checkout — forks and subagents keep
                   // separate cwds, never the parent's.
