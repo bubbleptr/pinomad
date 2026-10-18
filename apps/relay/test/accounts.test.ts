@@ -566,7 +566,8 @@ describe("server CLI account mode", () => {
       };
       child.stdout.on("data", onData);
       child.stderr.on("data", onData);
-      child.on("exit", (code) => reject(new Error(`exited ${code}: ${log}`)));
+      // `close`, not `exit`: the refusal's stderr may still be draining at exit.
+      child.on("close", (code) => reject(new Error(`exited ${code}: ${log}`)));
       setTimeout(() => reject(new Error(`no ready event: ${log}`)), 15_000);
     });
   }

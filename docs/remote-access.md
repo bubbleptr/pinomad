@@ -48,7 +48,7 @@ VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来�
 npm i -g pinomad
 export PINOMAD_SERVER_USER=<用户名>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位>
-pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad-server --trust-proxy
+pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 # 默认只监听 127.0.0.1:7430，--port / --listen 可改；--trust-proxy 是因为前面有 Caddy
 ```
 
@@ -67,7 +67,7 @@ relay.example.com {
 }
 ```
 
-systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后这个文件可以删掉：
+systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后这个文件可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
 
 ```ini
 [Unit]
@@ -76,9 +76,9 @@ After=network-online.target
 
 [Service]
 User=pinomad
-StateDirectory=pinomad-server
+StateDirectory=pinomad
 EnvironmentFile=-/etc/pinomad-server.env
-ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad-server --trust-proxy
+ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 Restart=always
 
 [Install]
@@ -122,7 +122,7 @@ pinomad join https://nomad.example.com <token>   # 宿主加入账号、接上�
 ```sh
 export PINOMAD_SERVER_USER=<用户名>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位，建议密码管理器生成>
-pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad-server --trust-proxy
+pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 ```
 
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
@@ -130,7 +130,7 @@ pinomad relay --public-origin https://relay.example.com --data-dir /var/lib/pino
 - 改密码用 `pinomad relay passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
 
   ```sh
-  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad-server
+  printenv NEW_PASSWORD | pinomad relay passwd --data-dir /var/lib/pinomad/server
   ```
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
