@@ -667,3 +667,126 @@ norm(&got),
 expect_text(case), "{name}");
     }
 }
+
+// ─── Account client ────────────────────────────────────────────────────────
+
+use pinomad_core::account::{
+    account_pairing_link, account_probe_request, account_request, account_response, is_secure_server_origin,
+    match_account_hosts, normalize_server_origin, probe_verdict,
+};
+
+#[test]
+fn account_requests_replay() {
+    let file = load("account");
+    for case in cases(&file, "requests") {
+        let name = as_text(field(case, "name"));
+        let token = field(case, "token").as_str().map(|s| s.to_string_lossy());
+        let op = derive_vectors::input::account_op(field(case, "op"));
+        let request = account_request(&as_text(field(case, "origin")), token.as_deref(), &op);
+        assert_eq!(
+            norm(&derive_vectors::out::account_request_json(&request)),
+            expect_text(case),
+            "{name}"
+        );
+    }
+    for case in cases(&file, "probeRequest") {
+        let name = as_text(field(case, "name"));
+        let request = account_probe_request(&as_text(field(case, "origin")));
+        assert_eq!(request.method, "GET", "{name}");
+        assert!(request.headers.is_empty() && request.body.is_none(), "{name}");
+        let got = Json::String(U16String::from_str(&request.url));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+#[test]
+fn account_responses_replay() {
+    let file = load("account");
+    for case in cases(&file, "responses") {
+        let name = as_text(field(case, "name"));
+        let kind = derive_vectors::input::account_op_kind(&as_text(field(case, "kind")));
+        let status = field(case, "status").as_number().unwrap() as u16;
+        // The transport hands over the body text; an absent/204 body is "".
+        let body = field(case, "body").as_str().map(|s| s.to_string_lossy()).unwrap_or_default();
+        let result = account_response(kind, status, &body);
+        assert_eq!(
+            norm(&derive_vectors::out::account_result_json(&result)),
+            expect_text(case),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn account_probe_replays() {
+    let file = load("account");
+    for case in cases(&file, "probe") {
+        let name = as_text(field(case, "name"));
+        let status = field(case, "status").as_number().map(|v| v as u16);
+        let body = field(case, "body").as_str().map(|s| s.to_string_lossy());
+        let got = Json::String(U16String::from_str(probe_verdict(status, body.as_deref()).as_str()));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+#[test]
+fn account_origins_replay() {
+    let file = load("account");
+    for case in cases(&file, "isSecureServerOrigin") {
+        let name = as_text(field(case, "name"));
+        let got = Json::Bool(is_secure_server_origin(&as_text(field(case, "origin"))));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+    for case in cases(&file, "normalizeServerOrigin") {
+        let name = as_text(field(case, "name"));
+        let got = Json::String(U16String::from_str(&normalize_server_origin(&as_text(field(case, "origin")))));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+#[test]
+fn account_host_matches_replay() {
+    let file = load("account");
+    for case in cases(&file, "matchAccountHosts") {
+        let name = as_text(field(case, "name"));
+        let hosts_json = Json::parse(&as_text(field(case, "hosts"))).unwrap();
+        let hosts: Vec<_> = hosts_json
+            .as_array()
+            .expect("hosts array")
+            .iter()
+            .map(derive_vectors::input::account_host)
+            .collect();
+        let stored_json = Json::parse(&as_text(field(case, "stored"))).unwrap();
+        let stored: Vec<_> = stored_json
+            .as_array()
+            .expect("stored array")
+            .iter()
+            .map(derive_vectors::input::stored_host_full)
+            .collect();
+        let matches = match_account_hosts(&as_text(field(case, "origin")), &hosts, &stored);
+        let got = Json::array(matches.iter().map(derive_vectors::out::account_match_json).collect());
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+#[test]
+fn account_pairing_links_replay() {
+    let file = load("account");
+    for case in cases(&file, "accountPairingFragment") {
+        let name = as_text(field(case, "name"));
+        let offer = derive_vectors::input::pairing_offer(&Json::parse(&as_text(field(case, "offer"))).unwrap());
+        // The vector's expect is the validated fragment; the link the FFI
+        // hands back wraps it as a `pinomad://pair` deep link.
+        let expect = match expect_text(case).as_str() {
+            "null" => None,
+            text => Json::parse(text).unwrap().as_str().map(|s| s.to_string_lossy()),
+        };
+        let link = account_pairing_link(&offer);
+        assert_eq!(link, expect.map(|f| format!("pinomad://pair#{f}")), "{name}");
+        // And the produced link must re-parse through the existing flow.
+        if let Some(link) = &link {
+            let reparsed = pinomad_core::pairing_link::pairing_fragment(link);
+            assert_eq!(reparsed.as_deref(), link.strip_prefix("pinomad://pair#"), "{name}");
+        }
+    }
+}

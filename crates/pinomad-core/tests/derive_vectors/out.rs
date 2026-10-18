@@ -416,6 +416,102 @@ pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {
     )
 }
 
+// ─── Account client ─────────────────────────────────────────────────────────
+
+use pinomad_core::account::{
+    AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountValue, JoinToken,
+    LoginSuccess, PairingOffer,
+};
+
+/// The `{url, init}` the capture fetch recorded — `init` keys in the
+/// reference literal's order: method, headers, then body when there is one.
+pub fn account_request_json(request: &AccountHttpRequest) -> Json {
+    let mut headers = JsonObject::new();
+    for header in &request.headers {
+        headers.set(U16String::from_str(&header.name), s(&header.value));
+    }
+    obj(&[
+        ("url", Some(s(&request.url))),
+        (
+            "init",
+            Some(obj(&[
+                ("method", Some(s(&request.method))),
+                ("headers", Some(Json::Object(Arc::new(headers)))),
+                ("body", request.body.as_deref().map(s)),
+            ])),
+        ),
+    ])
+}
+
+fn account_user_json(user: &pinomad_core::account::AccountUser) -> Json {
+    obj(&[("username", Some(s(&user.username)))])
+}
+
+/// The per-op success payload, in the reference's key order.
+fn account_value_json(value: &AccountValue) -> Json {
+    match value {
+        AccountValue::Login(LoginSuccess { user, expires_at, token }) => obj(&[
+            ("user", Some(account_user_json(user))),
+            ("expiresAt", Some(num(*expires_at))),
+            ("token", token.as_deref().map(s)),
+        ]),
+        AccountValue::Me(user) => obj(&[("user", Some(account_user_json(user)))]),
+        // Handled by `account_result_json` — `value` is absent, not null.
+        AccountValue::Unit => Json::Null,
+        AccountValue::JoinToken(JoinToken { token, expires_at, command }) => obj(&[
+            ("token", Some(s(token))),
+            ("expiresAt", Some(num(*expires_at))),
+            ("command", Some(s(command))),
+        ]),
+        AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
+        AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at }) => obj(&[
+            ("url", Some(s(url))),
+            ("hostKey", Some(s(host_key))),
+            ("secret", Some(s(secret))),
+            ("expiresAt", Some(num(*expires_at))),
+        ]),
+    }
+}
+
+/// `AccountResult` on the wire: `{ok:true, value?}` or `{ok:false, error}` —
+/// `value` drops out entirely for void results (stringify skips undefined),
+/// and `error.status` is absent for client-invented codes.
+pub fn account_result_json(result: &Result<AccountValue, AccountError>) -> Json {
+    match result {
+        Ok(AccountValue::Unit) => obj(&[("ok", Some(Json::Bool(true)))]),
+        Ok(value) => obj(&[("ok", Some(Json::Bool(true))), ("value", Some(account_value_json(value)))]),
+        Err(AccountError::Api { code, status }) => obj(&[
+            ("ok", Some(Json::Bool(false))),
+            (
+                "error",
+                Some(obj(&[("code", Some(s(code))), ("status", status.map(|v| num(v as f64)))])),
+            ),
+        ]),
+    }
+}
+
+fn account_host_json(host: &AccountHost) -> Json {
+    obj(&[
+        ("hostId", Some(s(&host.host_id))),
+        ("name", Some(s(&host.name))),
+        ("noisePublicKey", Some(s(&host.noise_public_key))),
+        ("online", Some(Json::Bool(host.online))),
+        ("lastSeenAt", Some(num(host.last_seen_at))),
+        ("pairing", Some(s(host.pairing.as_str()))),
+    ])
+}
+
+/// `{host, status, stored?, linkable}` — `stored` only when a stored entry
+/// backs the verdict.
+pub fn account_match_json(m: &AccountHostMatch) -> Json {
+    obj(&[
+        ("host", Some(account_host_json(&m.host))),
+        ("status", Some(s(m.status.as_str()))),
+        ("stored", m.stored.as_ref().map(|host| stored_host_json(Some(host)))),
+        ("linkable", Some(Json::Bool(m.linkable))),
+    ])
+}
+
 /// The `thinkingLevelLabels` map in the reference's key order.
 pub fn level_labels_json() -> Json {
     let mut object = JsonObject::new();

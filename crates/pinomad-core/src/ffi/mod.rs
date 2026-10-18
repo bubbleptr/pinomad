@@ -2,12 +2,14 @@
 // machine in a Mutex so the platform layer can drive it from any thread.
 // No `Json` crosses this boundary — calls, events, commands, and the
 // delivered snapshot are all typed records and enums.
+mod account;
 mod calls;
 mod functions;
 mod hosts;
 mod snapshot;
 mod types;
 
+pub use account::*;
 pub use calls::*;
 pub use functions::*;
 pub use hosts::*;

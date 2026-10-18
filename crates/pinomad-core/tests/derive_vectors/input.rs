@@ -125,6 +125,7 @@ pub fn cot(json: &Json) -> CotView {
     }
 }
 
+use pinomad_core::account::{AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer};
 use pinomad_core::model::{ModelPick, ModelRef};
 use pinomad_core::stored_host::StoredHost;
 
@@ -152,5 +153,69 @@ pub fn stored_host(json: &Json) -> StoredHost {
         host_key: text(json.get("hostKey")).unwrap_or_default(),
         private_key: text(json.get("privateKey")).unwrap_or_default(),
         account: None,
+    }
+}
+
+/// The op the request-shape cases name: `{kind, username?, password?, hostId?}`.
+pub fn account_op(json: &Json) -> AccountOp {
+    match account_op_kind(&text(json.get("kind")).unwrap_or_default()) {
+        AccountOpKind::Login => AccountOp::Login {
+            username: text(json.get("username")).unwrap_or_default(),
+            password: text(json.get("password")).unwrap_or_default(),
+        },
+        AccountOpKind::RequestPairing => AccountOp::RequestPairing {
+            host_id: text(json.get("hostId")).unwrap_or_default(),
+        },
+        AccountOpKind::Me => AccountOp::Me,
+        AccountOpKind::Logout => AccountOp::Logout,
+        AccountOpKind::RevokeAllSessions => AccountOp::RevokeAllSessions,
+        AccountOpKind::CreateJoinToken => AccountOp::CreateJoinToken,
+        AccountOpKind::ListHosts => AccountOp::ListHosts,
+    }
+}
+
+/// The op discriminant the response cases carry — the client's method names.
+pub fn account_op_kind(name: &str) -> AccountOpKind {
+    match name {
+        "login" => AccountOpKind::Login,
+        "me" => AccountOpKind::Me,
+        "logout" => AccountOpKind::Logout,
+        "revokeAllSessions" => AccountOpKind::RevokeAllSessions,
+        "createJoinToken" => AccountOpKind::CreateJoinToken,
+        "listHosts" => AccountOpKind::ListHosts,
+        "requestPairing" => AccountOpKind::RequestPairing,
+        other => panic!("unknown account op kind {other}"),
+    }
+}
+
+/// A `GET /api/hosts` row — the same strict shape the response parser wants.
+pub fn account_host(json: &Json) -> AccountHost {
+    AccountHost {
+        host_id: text(json.get("hostId")).unwrap_or_default(),
+        name: text(json.get("name")).unwrap_or_default(),
+        noise_public_key: text(json.get("noisePublicKey")).unwrap_or_default(),
+        online: json.get("online").is_some_and(Json::truthy),
+        last_seen_at: num(json.get("lastSeenAt")).unwrap_or_default(),
+        pairing: match text(json.get("pairing")).as_deref() {
+            Some("offline") => AccountHostPairing::Offline,
+            Some("host_too_old") => AccountHostPairing::HostTooOld,
+            Some("key_mismatch") => AccountHostPairing::KeyMismatch,
+            _ => AccountHostPairing::Available,
+        },
+    }
+}
+
+/// `matchAccountHosts`'s stored inputs are the validated entries a client
+/// would load back, so they decode through the same `parse_stored_host`.
+pub fn stored_host_full(json: &Json) -> StoredHost {
+    pinomad_core::stored_host::parse_stored_host(json).expect("match vector stored entry")
+}
+
+pub fn pairing_offer(json: &Json) -> PairingOffer {
+    PairingOffer {
+        url: text(json.get("url")).unwrap_or_default(),
+        host_key: text(json.get("hostKey")).unwrap_or_default(),
+        secret: text(json.get("secret")).unwrap_or_default(),
+        expires_at: num(json.get("expiresAt")).unwrap_or_default(),
     }
 }

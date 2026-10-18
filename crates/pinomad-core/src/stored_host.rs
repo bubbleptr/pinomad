@@ -1,11 +1,13 @@
 // Stored host entry validation from packages/client/src/stored-host.ts: only
 // ws/wss urls, and keys that are base64url of exactly 32 bytes.
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use url::Url;
 
 use crate::b64::from_base64url;
-use crate::json::Json;
+use crate::json::{Json, JsonObject};
+use crate::u16str::U16String;
 
 fn lossy(value: Option<&Json>) -> String {
     value
@@ -48,6 +50,22 @@ pub struct StoredHostAccount {
 }
 
 impl StoredHostAccount {
+    /// A link from the two fields alone — FFI records and generated inputs
+    /// carry no extra fields, so `raw` recomposes as `{serverOrigin, hostId}`.
+    pub fn new(server_origin: String, host_id: String) -> Self {
+        let mut raw = JsonObject::new();
+        raw.set(
+            U16String::from_str("serverOrigin"),
+            Json::from(server_origin.clone()),
+        );
+        raw.set(U16String::from_str("hostId"), Json::from(host_id.clone()));
+        StoredHostAccount {
+            server_origin,
+            host_id,
+            raw: Json::Object(Arc::new(raw)),
+        }
+    }
+
     /// The account object as stored — the reference emits it verbatim.
     pub fn to_json(&self) -> Json {
         self.raw.clone()

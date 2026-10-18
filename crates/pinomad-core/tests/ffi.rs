@@ -731,3 +731,157 @@ fn connect_rejects_bad_key_material() {
     });
     assert!(matches!(result, Err(ClientError::KeyMaterial { .. })));
 }
+
+// ─── Account client ─────────────────────────────────────────────────────────
+// Behavior coverage lives in the derive_vectors replay; these check that the
+// FFI records round-trip through the facade conversions.
+
+#[test]
+fn account_request_builds_bearer_http() {
+    use pinomad_core::ffi::{AccountOp, account_request};
+    let request = account_request(
+        "https://relay.example.com/".to_string(),
+        Some("tok".to_string()),
+        AccountOp::Login {
+            username: "ad min".to_string(),
+            password: "p\"w".to_string(),
+        },
+    );
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.url, "https://relay.example.com/api/login");
+    let headers: Vec<(&str, &str)> = request
+        .headers
+        .iter()
+        .map(|h| (h.name.as_str(), h.value.as_str()))
+        .collect();
+    assert_eq!(
+        headers,
+        [("authorization", "Bearer tok"), ("content-type", "application/json")]
+    );
+    assert_eq!(
+        request.body.as_deref(),
+        Some(r#"{"username":"ad min","password":"p\"w"}"#)
+    );
+
+    // A path arg goes through encodeURIComponent.
+    let request = account_request(
+        "https://relay.example.com".to_string(),
+        None,
+        AccountOp::RequestPairing {
+            host_id: "id a/b".to_string(),
+        },
+    );
+    assert_eq!(request.url, "https://relay.example.com/api/hosts/id%20a%2Fb/pairing");
+    assert_eq!(request.headers.len(), 0);
+}
+
+#[test]
+fn account_response_parses_values_and_errors() {
+    use pinomad_core::ffi::{AccountError, AccountOpKind, AccountValue, account_response};
+    let ok = account_response(
+        AccountOpKind::Login,
+        200,
+        r#"{"user":{"username":"a"},"expiresAt":1,"token":"t"}"#.to_string(),
+    );
+    let AccountValue::Login(login) = ok.unwrap() else {
+        panic!("expected a login result")
+    };
+    assert_eq!(login.user.username, "a");
+    assert_eq!(login.token.as_deref(), Some("t"));
+
+    // The server's `error` code passes through verbatim, with the status.
+    let err = account_response(AccountOpKind::ListHosts, 429, r#"{"error":"rate_limited"}"#.to_string());
+    assert_eq!(
+        err.err(),
+        Some(AccountError::Api {
+            code: "rate_limited".to_string(),
+            status: Some(429)
+        })
+    );
+    // A 2xx that fails the shape check is invalid_response with no status.
+    let err = account_response(AccountOpKind::Me, 200, "<html>x</html>".to_string());
+    assert_eq!(
+        err.err(),
+        Some(AccountError::Api {
+            code: "invalid_response".to_string(),
+            status: None
+        })
+    );
+}
+
+#[test]
+fn account_probe_and_origin_helpers() {
+    use pinomad_core::ffi::{
+        AccountsProbe, account_probe_request, is_secure_server_origin, normalize_server_origin, probe_verdict,
+    };
+    let probe = account_probe_request("https://relay.example.com/".to_string());
+    assert_eq!(probe.url, "https://relay.example.com/api/me");
+    assert!(probe.headers.is_empty() && probe.body.is_none());
+    assert_eq!(probe_verdict(Some(401), None), AccountsProbe::Enabled);
+    assert_eq!(probe_verdict(None, None), AccountsProbe::Unreachable);
+    assert_eq!(
+        probe_verdict(Some(200), Some("<html>".to_string())),
+        AccountsProbe::Disabled
+    );
+    assert!(is_secure_server_origin("http://localhost:7430".to_string()));
+    assert!(!is_secure_server_origin("http://relay.example.com".to_string()));
+    assert_eq!(
+        normalize_server_origin("HTTPS://relay.example.com:443/".to_string()),
+        "https://relay.example.com"
+    );
+}
+
+#[test]
+fn account_pairing_link_and_host_matching() {
+    use pinomad_core::ffi::{
+        AccountHost, AccountHostPairing, AccountHostStatus, PairingOffer, StoredHostAccount, account_pairing_link,
+        match_account_hosts, pairing_target,
+    };
+    let key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let secret = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    let offer = PairingOffer {
+        url: "wss://relay.example.com/c/h".to_string(),
+        host_key: key.to_string(),
+        secret: secret.to_string(),
+        expires_at: 1.0,
+    };
+    // The produced link is acceptable to the existing pairing flow.
+    let link = account_pairing_link(offer.clone()).expect("valid offer links");
+    let target = pairing_target(link).expect("the offer link parses");
+    assert_eq!(target.url, "wss://relay.example.com/c/h");
+    assert_eq!(target.host_key, key);
+    // A malformed offer is refused before a socket opens.
+    assert_eq!(
+        account_pairing_link(PairingOffer {
+            url: "https://not-a-socket".to_string(),
+            ..offer
+        }),
+        None
+    );
+
+    let host = AccountHost {
+        host_id: key.to_string(),
+        name: "omarchy".to_string(),
+        noise_public_key: secret.to_string(),
+        online: true,
+        last_seen_at: 1.0,
+        pairing: AccountHostPairing::Available,
+    };
+    // Linked entry: same origin+hostId, matching key → paired, not linkable.
+    let linked = StoredHost {
+        url: "wss://relay.example.com/c/x".to_string(),
+        host_key: secret.to_string(),
+        private_key: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC".to_string(),
+        account: Some(StoredHostAccount {
+            server_origin: "https://relay.example.com/".to_string(),
+            host_id: key.to_string(),
+        }),
+    };
+    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host.clone()], vec![linked]);
+    assert_eq!(matches[0].status, AccountHostStatus::Paired);
+    assert_eq!(matches[0].stored.as_ref().map(|s| s.host_key.as_str()), Some(secret));
+    assert!(!matches[0].linkable);
+    // Nothing stored: unpaired.
+    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host], vec![]);
+    assert_eq!(matches[0].status, AccountHostStatus::Unpaired);
+}
