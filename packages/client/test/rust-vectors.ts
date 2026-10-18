@@ -27,6 +27,7 @@ import {
   summaryOf,
   thinkingLevelLabels,
 } from "../src/model.ts";
+import { parsePatch } from "../src/patch.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
 import { pendingQuestions, questionAnswers } from "../src/questions.ts";
 import { hostLabels, parseStoredHost, type StoredHost } from "../src/stored-host.ts";
@@ -65,6 +66,7 @@ import {
   PENDING_QUESTION_CASES,
   PARENT_FOLDER_CASES,
 } from "./misc-cases.ts";
+import { PATCH_CASES } from "./patch-cases.ts";
 import {
   CLASSIFY_CASES,
   DIFF_STAT_CASES,
@@ -425,6 +427,16 @@ function miscVector(): VectorFile {
   });
 }
 
+function patchVector(): VectorFile {
+  return write("patch", {
+    parsePatch: PATCH_CASES.map((c) => ({
+      name: c.name,
+      patch: c.patch,
+      expect: expect(wire(parsePatch(c.patch))),
+    })),
+  });
+}
+
 export function buildVectors(): VectorFile[] {
-  return [chatVector(), chatMetaVector(), toolsVector(), organizeVector(), familyVector(), modelsVector(), miscVector()];
+  return [chatVector(), chatMetaVector(), toolsVector(), organizeVector(), familyVector(), modelsVector(), miscVector(), patchVector()];
 }

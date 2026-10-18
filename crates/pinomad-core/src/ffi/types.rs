@@ -21,6 +21,7 @@ pub use crate::model::{ModelPick, ModelRef, ThinkingLevel};
 pub use crate::organization::{
     ConversationStatus, HomeKind, SummaryActivity, SummaryKind,
 };
+pub use crate::patch::{PatchFile, PatchLine, PatchLineKind};
 pub use crate::presentation::{
     CodemodeCallStatus, DocType, QuestionAnswer, QuestionItem, QuestionOption, QuestionResolution,
     TodoItem, TodoStatus,
@@ -130,6 +131,51 @@ pub enum CallResult {
     Project { project: Project },
     /// `listFolders` — one page of the folder picker.
     FolderListing { listing: FolderListing },
+    /// `changes` — the conversation's file changes, already parsed into
+    /// per-file records. Swift never sees the raw unified diff.
+    Changes { changes: ConversationChanges },
+}
+
+/// The `changes` call's payload, mirroring the wire union
+/// `{available:false, reason}` | `{available:true, base, patch, truncated}`
+/// — the `patch` string is parsed into `files` at the facade.
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum ConversationChanges {
+    /// Chat checkouts and non-git directories have no diff — `reason` is
+    /// the host's.
+    Unavailable { reason: String },
+    /// `truncated` marks a host-side 1 MiB cut at a line boundary.
+    Available { base: String, files: Vec<PatchFile>, truncated: bool },
+}
+
+/// `changes`'s typed result — strict decode: a malformed shape is a
+/// host-contract violation, so the op reports `OperationFailed` rather than
+/// guessing at a value (unlike the lenient stream-state decodes).
+pub(crate) fn changes_of(value: Option<&Json>) -> Result<ConversationChanges, String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed changes result".to_string())?;
+    let string = |name: &str| -> Result<String, String> {
+        value
+            .get(name)
+            .and_then(Json::as_str)
+            .map(|s| s.to_string_lossy())
+            .ok_or_else(|| format!("malformed changes result: {name}"))
+    };
+    match value.get("available") {
+        Some(Json::Bool(true)) => Ok(ConversationChanges::Available {
+            base: string("base")?,
+            files: crate::patch::parse_patch(&string("patch")?),
+            truncated: match value.get("truncated") {
+                Some(Json::Bool(truncated)) => *truncated,
+                _ => return Err("malformed changes result: truncated".to_string()),
+            },
+        }),
+        Some(Json::Bool(false)) => Ok(ConversationChanges::Unavailable {
+            reason: string("reason")?,
+        }),
+        _ => Err("malformed changes result: available".to_string()),
+    }
 }
 
 // ─── Delivery records ───────────────────────────────────────────────────────
@@ -524,6 +570,35 @@ pub struct AgentState {
 pub struct Defaults {
     pub model: Option<ModelRef>,
     pub thinking_level: Option<ThinkingLevel>,
+}
+
+/// One named agent (ADR-0023) — an `<name>.md` on the host.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AgentRole {
+    /// The file name without `.md`; what `subagent`'s `role` arg takes.
+    pub name: String,
+    pub description: String,
+    /// `provider/modelId`, pinned when set.
+    pub model: Option<String>,
+    pub thinking_level: Option<ThinkingLevel>,
+    /// The Markdown body, trimmed; may be "".
+    pub prompt: String,
+}
+
+/// A file under the host's agents dir that failed to load.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AgentRoleProblem {
+    /// The file's basename, e.g. `Reviewer.md`.
+    pub file: String,
+    pub reason: String,
+}
+
+/// The `agents` stream's value (`AgentRoles` on the wire): the loadable
+/// roles plus the files that didn't parse.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AgentRoles {
+    pub roles: Vec<AgentRole>,
+    pub problems: Vec<AgentRoleProblem>,
 }
 
 /// One `listFolders` page — the project picker's folder list.

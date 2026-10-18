@@ -109,8 +109,9 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 
 /// Every call the mobile UI can make, as typed data. `OperationFailed`
 /// only ever answers the Request-class variants (`AddProject`,
-/// `ListFolders`, `RenameConversation`, `SetPushToken`); the rest fail into
-/// a view notice while reporting `OperationSucceeded { value: Unit }`.
+/// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`); the
+/// rest fail into a view notice while reporting
+/// `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
     /// Prompt when idle; otherwise steer or queue a follow-up. `target`
@@ -169,6 +170,12 @@ pub enum FfiCall {
     /// Register (`Some`) or clear (`None`) this device's APNs token.
     /// Request-class. The `{apns, environment}` form needs a 5.9 host.
     SetPushToken { token: Option<ApnsPushToken> },
+    /// The conversation's file changes, already parsed — the payload can
+    /// reach 1 MiB, so it rides a call result, not the snapshot (ADR-0024
+    /// §5). `conversation_id` defaults to the shown conversation, like
+    /// `submit`'s `target`. Request-class; resolves `CallResult::Changes`.
+    /// On the wire since 5.0 — no version gate.
+    Changes { conversation_id: Option<u64> },
 }
 
 impl FfiCall {
@@ -178,6 +185,7 @@ impl FfiCall {
         match self {
             FfiCall::AddProject { .. } => Some(ResultKind::Project),
             FfiCall::ListFolders { .. } => Some(ResultKind::FolderListing),
+            FfiCall::Changes { .. } => Some(ResultKind::Changes),
             _ => None,
         }
     }
@@ -238,6 +246,9 @@ impl FfiCall {
             FfiCall::Abort { target } => Call::Abort { target },
             FfiCall::Archive { id, archived } => Call::Archive { id, archived },
             FfiCall::SetPushToken { token } => Call::SetPushToken { token },
+            FfiCall::Changes { conversation_id } => Call::Changes {
+                target: conversation_id,
+            },
         }
     }
 }

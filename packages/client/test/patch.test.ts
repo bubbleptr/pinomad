@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { createPatch } from "diff";
 import { describe, expect, it } from "vitest";
-import { parsePatch } from "../src/presentation/diff.tsx";
+import { parsePatch } from "../src/patch.ts";
+import { CREATE_PATCH_CASES } from "./patch-cases.ts";
 
 const run = promisify(execFile);
 const git = (dir: string, args: readonly string[]) => run("git", ["-C", dir, ...args]).then(({ stdout }) => stdout);
@@ -69,13 +69,16 @@ describe("parsePatch", () => {
   });
 
   it("parses the diff package's createPatch output (Index/---/+++ without git headers)", () => {
-    const created = createPatch("x.txt", "", "a\nb\n");
-    const files = parsePatch(created);
+    // The literals are captured createPatch() output — the `diff` package is a
+    // web-side dependency, so the cases live in patch-cases.ts for the Rust
+    // comparison vectors too.
+    const created = CREATE_PATCH_CASES[0]!;
+    const files = parsePatch(created.patch);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({ path: "x.txt", additions: 2, deletions: 0 });
 
-    const overwritten = createPatch("x.txt", "a\n", "c\n");
-    const files2 = parsePatch(overwritten);
+    const overwritten = CREATE_PATCH_CASES[1]!;
+    const files2 = parsePatch(overwritten.patch);
     expect(files2).toHaveLength(1);
     expect(files2[0]).toMatchObject({ path: "x.txt", additions: 1, deletions: 1 });
   });
