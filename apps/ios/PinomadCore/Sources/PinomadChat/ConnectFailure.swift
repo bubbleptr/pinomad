@@ -42,6 +42,14 @@ public enum ConnectFailure: Equatable, Sendable {
         }
     }
 
+    /// A protocol major for display. It comes off the wire as a double —
+    /// NaN when the hello's was missing or junk — and `Int(_:)` traps on
+    /// anything non-finite or out of range.
+    public static func versionText(_ major: Double) -> String {
+        guard major.isFinite, abs(major) < 1_000_000 else { return "未知" }
+        return String(Int(major))
+    }
+
     private static func mismatch(hostMajor: Double, clientMajor: Double, direction: String) -> Self {
         direction == "host-older"
             ? .hostOutdated(hostMajor: hostMajor, clientMajor: clientMajor)

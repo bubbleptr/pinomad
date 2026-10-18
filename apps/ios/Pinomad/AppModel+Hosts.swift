@@ -24,7 +24,7 @@ extension AppModel {
 
     /// What the screens call the host the session is for.
     var currentHostLabel: String? {
-        if let key = currentHostKey, let label = hostLabels[key] { return label }
+        if let host = sessionHost { return hostLabels[host.hostKey] ?? hostOf(host.url) }
         return pairingTarget.map { hostOf($0.url) }
     }
 
@@ -45,10 +45,20 @@ extension AppModel {
         PinomadCore.pairingTarget(link: text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
-    /// Back out of a failed pairing to the host the device used before
-    /// (the keychain only changes once a pairing succeeds).
+    /// Back out of a pairing whose handshake never completed — the
+    /// keychain is unchanged, so its launch host is the one from before.
     func cancelPairing() {
         connectActive()
+    }
+
+    /// The host to offer going back to from a failure page: the one the
+    /// device was on before a pairing whose handshake went through (making
+    /// the new host the launch one) but whose session then failed.
+    var previousHostKey: String? {
+        guard let key = hostBeforePairing, key != currentHostKey,
+              hosts.hosts.contains(where: { $0.hostKey == key })
+        else { return nil }
+        return key
     }
 
     /// Try the same thing again — the link for a pairing, else the host.
@@ -57,7 +67,9 @@ extension AppModel {
     func retryConnection() {
         if let link = pairingLink {
             pair(link: link)
-        } else if let key = currentHostKey, let host = hosts.hosts.first(where: { $0.hostKey == key }) {
+        } else if let host = sessionHost {
+            // After a pairing's handshake this is the identity it stored —
+            // the link's code is spent, so pairing again would be refused.
             connect(host)
         } else {
             connectActive()
@@ -67,15 +79,20 @@ extension AppModel {
     /// Make `hostKey` the launch host and connect to it.
     func switchHost(_ hostKey: String) {
         guard hostKey != currentHostKey || phase != .connected else { return }
+        var saveError: String?
         do {
             try store.save(hosts.activating(hostKey))
         } catch {
-            // Still connect: only the next launch would open the old one.
-            lastError = "没能记住所选宿主：\(describe(error))"
+            saveError = describe(error)
         }
         reloadHosts()
-        if let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) {
-            connect(host)
+        guard let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) else { return }
+        connect(host)
+        // After `connect`: starting a session clears the last one's error.
+        // Connecting anyway is right — only the next launch would open the
+        // old host — but the reader should know.
+        if let saveError {
+            lastError = "没能记住所选宿主（\(saveError)）：重启 App 后会打开之前的宿主。"
         }
     }
 

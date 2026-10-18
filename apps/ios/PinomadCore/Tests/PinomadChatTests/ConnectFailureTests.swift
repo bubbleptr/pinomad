@@ -23,6 +23,15 @@ import PinomadCore
         #expect(ConnectFailure(outcome: .error(message: "boom"), pairing: true) == .unreachable("boom"))
     }
 
+    /// A hello's major comes off the wire: a missing or junk one decodes to
+    /// NaN and a huge one won't fit an Int — the page must still render.
+    @Test func versionTextSurvivesJunkMajors() {
+        #expect(ConnectFailure.versionText(5) == "5")
+        #expect(ConnectFailure.versionText(.nan) == "未知")
+        #expect(ConnectFailure.versionText(1e100) == "未知")
+        #expect(ConnectFailure.versionText(-.infinity) == "未知")
+    }
+
     /// After the first view, a revoke (4401) or an outdated hello lands in
     /// the snapshot instead — the device is paired by then, so a 4401 is a
     /// revoke even if this session began as a pairing.

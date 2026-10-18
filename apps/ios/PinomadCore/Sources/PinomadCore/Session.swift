@@ -38,6 +38,10 @@ public enum SessionUpdate: Sendable {
     case ready(ReadyOutcome)
     /// The newest consistent view, monotonically versioned.
     case snapshot(ClientSnapshot)
+    /// The pairing handshake finished and spent the link's one-time code:
+    /// from here on this session is `host`'s device, before and whatever
+    /// the first view says. `saveError` is why the keychain didn't keep it.
+    case paired(HostRecord, saveError: String?)
     /// Platform-side failure the core cannot see (keychain, decoding).
     case platformError(String)
 }
@@ -406,23 +410,20 @@ public final class PinomadSession: @unchecked Sendable {
     }
 
     /// `Paired` is delivered inside dispatch, so the write happens
-    /// synchronously — failures surface as `platformError`, never swallowed.
+    /// synchronously and `.paired` reaches the app before `.ready` — a
+    /// failed write rides along on it, never swallowed.
     private func persistPairing(url: String, hostKey: String, privateKey: String) {
+        var record = HostRecord(url: url, hostKey: hostKey, privateKey: privateKey, pairedAt: Date())
         do {
             var stored = try dependencies.hostStore.load()
-            let existing = stored.hosts.first { $0.hostKey == hostKey }
+            record.account = stored.hosts.first { $0.hostKey == hostKey }?.account
             stored.hosts.removeAll { $0.hostKey == hostKey }
-            stored.hosts.append(HostRecord(
-                url: url,
-                hostKey: hostKey,
-                privateKey: privateKey,
-                account: existing?.account,
-                pairedAt: Date()
-            ))
+            stored.hosts.append(record)
             stored.activeHostKey = hostKey
             try dependencies.hostStore.save(stored)
+            updateSink.yield(.paired(record, saveError: nil))
         } catch {
-            updateSink.yield(.platformError("保存配对信息失败: \(error.localizedDescription)"))
+            updateSink.yield(.paired(record, saveError: error.localizedDescription))
         }
     }
 }

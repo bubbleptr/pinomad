@@ -89,7 +89,11 @@ private struct FailureView: View {
                 if pairing {
                     Button("取消") { model.cancelPairing() }
                         .buttonStyle(.bordered)
-                } else if !model.hosts.hosts.isEmpty {
+                } else if let previous = model.previousHostKey {
+                    Button("回到 \(model.hostLabels[previous] ?? "之前的宿主")") { model.switchHost(previous) }
+                        .buttonStyle(.bordered)
+                }
+                if !pairing, !model.hosts.hosts.isEmpty {
                     Button("宿主") { model.present(.hosts) }
                         .buttonStyle(.bordered)
                 }
@@ -122,9 +126,9 @@ private struct FailureView: View {
         case .revoked:
             "它没有和\(model.currentHostLabel ?? "这台宿主")配对，或配对已被撤销。"
         case .appOutdated(let host, let client):
-            "宿主使用协议 \(Int(host)) 版，这个 App 是 \(Int(client)) 版。"
+            "宿主使用协议 \(ConnectFailure.versionText(host)) 版，这个 App 是 \(ConnectFailure.versionText(client)) 版。"
         case .hostOutdated(let host, let client):
-            "这个 App 使用协议 \(Int(client)) 版，宿主是 \(Int(host)) 版。在宿主上运行 pinomad upgrade。"
+            "这个 App 使用协议 \(ConnectFailure.versionText(client)) 版，宿主是 \(ConnectFailure.versionText(host)) 版。在宿主上运行 pinomad upgrade。"
         case .unreachable(let message):
             message
         }

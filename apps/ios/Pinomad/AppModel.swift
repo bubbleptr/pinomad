@@ -41,13 +41,23 @@ final class AppModel {
     /// Every paired host and which one opens on launch, as last read from
     /// the keychain.
     private(set) var hosts = StoredHosts()
-    /// The stored host the session talks to; nil while pairing.
-    private(set) var currentHostKey: String?
-    /// The link the session is pairing with; nil for a stored host.
+    /// The host the session is this device on — a stored host, or the one
+    /// a pairing just made (even if the keychain failed to keep it); nil
+    /// until a pairing's handshake completes.
+    private(set) var sessionHost: HostRecord?
+    var currentHostKey: String? { sessionHost?.hostKey }
+    /// The link the session is pairing with, until its handshake spends the
+    /// one-time code (then retrying must reconnect, not pair again).
     private(set) var pairingLink: String?
-    /// Where the latest pairing went — names the session's host until the
-    /// keychain has it (it may not, if saving the pairing failed).
+    /// Where that link goes — names the host while pairing.
     private(set) var pairingTarget: PairingTarget?
+    /// The host the device was on before the latest pairing, so a pairing
+    /// that fails after its handshake (which already made the new host the
+    /// launch one) still offers the way back. Cleared once a session is up.
+    private(set) var hostBeforePairing: String?
+    /// The conversation on screen when the same host's session was rebuilt
+    /// — the new session has to be told to show it again once up.
+    private var reopenAfterReady: UInt64?
     var modal: Modal?
     private var nextModal: Modal?
     /// The newest published view — the list and the open conversation
@@ -179,9 +189,11 @@ final class AppModel {
     /// Start a session pairing with `link` — replaces whatever session ran.
     func pair(link: String) {
         do {
+            let previous = currentHostKey ?? hosts.active?.hostKey
             let session = try PinomadSession.pair(link: link, deviceName: UIDevice.current.name)
-            adopt(session)
-            currentHostKey = nil
+            adopt(session, sameHost: false)
+            hostBeforePairing = hostBeforePairing ?? previous
+            sessionHost = nil
             pairingLink = link
             pairingTarget = PinomadCore.pairingTarget(link: link)
         } catch {
@@ -195,8 +207,8 @@ final class AppModel {
     func connect(_ host: HostRecord) {
         do {
             let session = try PinomadSession.connect(host: host)
-            adopt(session)
-            currentHostKey = host.hostKey
+            adopt(session, sameHost: host.hostKey == currentHostKey)
+            sessionHost = host
             pairingLink = nil
             pairingTarget = nil
         } catch {
@@ -258,29 +270,36 @@ final class AppModel {
         session?.close()
         session = nil
         snapshot = nil
-        currentHostKey = nil
+        sessionHost = nil
         pairingLink = nil
         pairingTarget = nil
     }
 
-    private func adopt(_ session: PinomadSession) {
+    /// Take over `session`. `sameHost` is a rebuilt session for the host
+    /// already on screen (Retry, Reconnect): the reader's unsent work and
+    /// place stay. Anything else is another host, whose conversations
+    /// those drafts and pages don't belong to.
+    private func adopt(_ session: PinomadSession, sameHost: Bool) {
         self.session?.close()
         self.session = session
-        // A new session is a new host — display state from the previous
-        // one (snapshots, errors, pages) must not bleed into this screen.
         snapshot = nil
-        navPath = []
         lastError = ""
         replyStreams.sync(chat: nil)
-        drafts = [:]
-        questionDrafts = [:]
-        trays = [:]
-        viewing = nil
-        draftHome = .chat
-        draftCheckout = .worktree
-        draftPick = nil
         toasts = []
         noticeFeed = NoticeFeed()
+        if sameHost {
+            if case .conversation(let id) = navPath.last { reopenAfterReady = id }
+        } else {
+            navPath = []
+            reopenAfterReady = nil
+            drafts = [:]
+            questionDrafts = [:]
+            trays = [:]
+            viewing = nil
+            draftHome = .chat
+            draftCheckout = .worktree
+            draftPick = nil
+        }
         phase = .connecting
         watchTask?.cancel()
         watchTask = Task { [weak self] in
@@ -297,22 +316,25 @@ final class AppModel {
                 fail(failure)
                 return
             }
-            if pairingLink != nil {
-                // `Paired` lands before the first view and the session
-                // stores the host then — from here on it is that host,
-                // named by the link's key (not "whatever is active": a
-                // failed keychain write leaves the previous host active).
-                reloadHosts()
-                currentHostKey = pairingTarget?.hostKey
-                pairingLink = nil
-                if let key = currentHostKey, !hosts.hosts.contains(where: { $0.hostKey == key }) {
-                    lastError = "没能记住这台宿主：重启 App 后会回到之前的宿主，要再用它得重新配对。"
-                }
-            }
             phase = .connected
+            hostBeforePairing = nil
             if let id = pendingOpen {
                 pendingOpen = nil
                 navPath = [.conversation(id)]
+            }
+            if let id = reopenAfterReady {
+                reopenAfterReady = nil
+                openConversation(id)
+            }
+        case .paired(let host, let saveError):
+            // The handshake spent the link's code and (normally) made this
+            // the launch host — the session is this host's device now,
+            // whatever the first view turns out to say.
+            sessionHost = host
+            pairingLink = nil
+            reloadHosts()
+            if let saveError {
+                lastError = "没能记住这台宿主（\(saveError)）：重启 App 后会回到之前的宿主，要再用它得重新配对。"
             }
         case .snapshot(let snapshot):
             // Terminal after the first view: revoked (4401) or a hello

@@ -99,12 +99,15 @@ struct SnapshotDeliveryTests {
     }
 }
 
-/// `Paired` persistence through the real dispatch path; store failures
-/// surface as `platformError` instead of being swallowed.
+/// `Paired` persistence through the real dispatch path. The app hears of
+/// every pairing the moment the handshake stores it — the one-time code is
+/// spent then, before (and whether or not) the first view arrives — and
+/// store failures ride along instead of being swallowed.
 @Suite("Host store")
 struct HostStoreTests {
     @Test func pairedPersistsAndMarksActive() async throws {
         let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
         await session.waitForIdle()
 
         session.enqueue(.commands([.paired(
@@ -116,10 +119,15 @@ struct HostStoreTests {
 
         #expect(store.stored.active?.hostKey == String(repeating: "B", count: 43))
         #expect(store.stored.hosts.count == 1)
+        guard case .paired(let host, nil) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected paired with no save error")
+            return
+        }
+        #expect(host.hostKey == String(repeating: "B", count: 43))
         session.close()
     }
 
-    @Test func storeSaveFailureSurfacesAsPlatformError() async throws {
+    @Test func storeSaveFailureRidesOnPaired() async throws {
         let (session, _, _, store) = try makeSession()
         let reader = UpdateReader(session)
         store.saveError = FakeError.storeBroken
@@ -132,14 +140,14 @@ struct HostStoreTests {
         )]))
         await session.waitForIdle()
 
-        guard case .platformError = await reader.next(timeout: .seconds(5)) else {
-            Issue.record("expected platformError for the failed save")
+        guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected paired with a save error for the failed save")
             return
         }
         session.close()
     }
 
-    @Test func storeLoadFailureSurfacesAsPlatformError() async throws {
+    @Test func storeLoadFailureRidesOnPaired() async throws {
         let (session, _, _, store) = try makeSession()
         let reader = UpdateReader(session)
         store.loadError = FakeError.storeBroken
@@ -152,8 +160,8 @@ struct HostStoreTests {
         )]))
         await session.waitForIdle()
 
-        guard case .platformError = await reader.next(timeout: .seconds(5)) else {
-            Issue.record("expected platformError for the failed load")
+        guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected paired with a save error for the failed load")
             return
         }
         session.close()
