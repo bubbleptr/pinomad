@@ -92,6 +92,18 @@ extension AppModel {
         return listing
     }
 
+    /// File candidates under a conversation's cwd or a project checkout
+    /// (request-class: throws the host's reason).
+    func listFiles(scope: FileScope, query: String) async throws -> (files: [String], truncated: Bool) {
+        guard let session else { throw SessionError.sessionClosed }
+        guard case .files(let files, let truncated) = try await session.invoke(
+            .listFiles(scope: scope, query: query))
+        else {
+            throw SessionError.operationFailed("宿主的回复不是文件列表")
+        }
+        return (files, truncated)
+    }
+
     /// Register a folder as a project and make it the draft's home.
     func addProject(_ path: String) async throws {
         guard let session else { throw SessionError.sessionClosed }

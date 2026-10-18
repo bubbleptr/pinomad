@@ -26,6 +26,15 @@ struct ConversationView: View {
         return displayName(summary: node.summary)
     }
 
+    /// The named agent the conversation was created with (forks inherit
+    /// the projection); nil for an ordinary conversation.
+    private var role: String? {
+        guard let organized = model.snapshot?.organized,
+              let node = findConversation(organized: organized, id: conversationId)
+        else { return nil }
+        return node.summary.role
+    }
+
     var body: some View {
         Group {
             if let conversation {
@@ -69,6 +78,7 @@ struct ConversationView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .conversationRoleSubtitle(role)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -134,6 +144,18 @@ struct ConversationView: View {
             MarkerRow("上下文已压缩")
         case .reset:
             MarkerRow("对话已重置")
+        }
+    }
+}
+
+private extension View {
+    /// An empty subtitle would still reserve a line under the title.
+    @ViewBuilder
+    func conversationRoleSubtitle(_ role: String?) -> some View {
+        if let role {
+            navigationSubtitle("@\(role)")
+        } else {
+            self
         }
     }
 }
