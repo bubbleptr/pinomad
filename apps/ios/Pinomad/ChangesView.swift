@@ -267,14 +267,18 @@ private struct FileRow: View {
 
             Spacer(minLength: 4)
 
-            HStack(spacing: 3) {
-                Text("+\(file.additions)")
-                    .foregroundStyle(.green)
-                Text("−\(file.deletions)")
-                    .foregroundStyle(.red)
+            // A binary file, a pure rename, or a mode-only change has no
+            // line counts; "+0 −0" would read like a real measurement.
+            if file.additions != 0 || file.deletions != 0 {
+                HStack(spacing: 3) {
+                    Text("+\(file.additions)")
+                        .foregroundStyle(.green)
+                    Text("−\(file.deletions)")
+                        .foregroundStyle(.red)
+                }
+                .font(.caption.monospacedDigit())
+                .fixedSize()
             }
-            .font(.caption.monospacedDigit())
-            .fixedSize()
         }
         .padding(.vertical, 2)
     }
