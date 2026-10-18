@@ -50,6 +50,8 @@ private struct Grammar {
     var caseInsensitive = false
     /// A string or bare word followed by a colon is a key, as in JSON and YAML.
     var keys = false
+    /// A line comment only starts at a token boundary, as shell's `#` does.
+    var lineCommentsNeedWordStart = false
 
     static func named(_ name: String) -> Grammar? {
         switch name {
@@ -64,7 +66,7 @@ private struct Grammar {
         case "rust", "rs":
             Grammar(keywords: rust, lineComments: ["//"], blockComment: ("/*", "*/"), quotes: ["\""], capitalizedTypes: true)
         case "bash", "sh", "shell", "zsh", "console", "shellsession":
-            Grammar(keywords: shell, lineComments: ["#"])
+            Grammar(keywords: shell, lineComments: ["#"], lineCommentsNeedWordStart: true)
         case "c", "h", "cpp", "c++", "cc", "objc", "objective-c", "java", "kotlin", "kt", "cs", "csharp", "c#", "scala", "dart":
             Grammar(keywords: cFamily, lineComments: ["//"], blockComment: ("/*", "*/"), capitalizedTypes: true)
         case "ruby", "rb":
@@ -73,7 +75,9 @@ private struct Grammar {
             Grammar(keywords: sql, lineComments: ["--"], blockComment: ("/*", "*/"), caseInsensitive: true)
         case "json", "jsonc", "json5":
             Grammar(keywords: ["true", "false", "null"], lineComments: ["//"], blockComment: ("/*", "*/"), quotes: ["\""], keys: true)
-        case "yaml", "yml", "toml":
+        case "yaml", "yml":
+            Grammar(keywords: ["true", "false", "null", "yes", "no", "on", "off"], lineComments: ["#"], keys: true, lineCommentsNeedWordStart: true)
+        case "toml":
             Grammar(keywords: ["true", "false", "null", "yes", "no", "on", "off"], lineComments: ["#"], keys: true)
         default:
             nil
@@ -110,7 +114,8 @@ private struct Lexer {
             if let block = grammar.blockComment, code[index...].hasPrefix(block.open) {
                 index = code.range(of: block.close, range: code.index(index, offsetBy: block.open.count)..<code.endIndex)?.upperBound ?? code.endIndex
                 emit(start, .comment)
-            } else if let marker = grammar.lineComments.first(where: { code[index...].hasPrefix($0) }), marker != "#" || atWordStart {
+            } else if let marker = grammar.lineComments.first(where: { code[index...].hasPrefix($0) }),
+                      !grammar.lineCommentsNeedWordStart || marker != "#" || atWordStart {
                 index = endOfLine
                 emit(start, .comment)
             } else if grammar.tripleQuotes, let triple = ["\"\"\"", "'''"].first(where: { code[index...].hasPrefix($0) }) {
