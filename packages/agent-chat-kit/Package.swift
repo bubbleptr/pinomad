@@ -20,7 +20,7 @@ let package = Package(
         ),
         .target(
             name: "AgentChatKit",
-            dependencies: ["AgentChatCore", .product(name: "Markdown", package: "swift-markdown")],
+            dependencies: ["AgentChatCore"],
             resources: [.process("Resources")]
         ),
         .testTarget(name: "AgentChatCoreTests", dependencies: ["AgentChatCore"]),

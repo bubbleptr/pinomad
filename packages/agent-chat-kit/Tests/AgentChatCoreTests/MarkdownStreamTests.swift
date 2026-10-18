@@ -1,4 +1,4 @@
-import AgentChatCore
+@testable import AgentChatCore
 import Markdown
 import Testing
 

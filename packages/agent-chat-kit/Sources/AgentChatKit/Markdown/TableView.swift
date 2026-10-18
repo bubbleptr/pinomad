@@ -1,22 +1,22 @@
-import Markdown
+import AgentChatCore
 import SwiftUI
 
 struct TableView: View {
-    let table: Markdown.Table
+    let table: MarkdownTable
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
-                    ForEach(Array(table.head.cells.enumerated()), id: \.offset) { column, cell in
-                        cellText(cell, column: column).fontWeight(.semibold)
+                    ForEach(Array(table.header.enumerated()), id: \.offset) { column, inline in
+                        cellText(inline, column: column).fontWeight(.semibold)
                     }
                 }
                 Divider()
-                ForEach(Array(table.body.rows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
-                        ForEach(Array(row.cells.enumerated()), id: \.offset) { column, cell in
-                            cellText(cell, column: column)
+                        ForEach(Array(row.enumerated()), id: \.offset) { column, inline in
+                            cellText(inline, column: column)
                         }
                     }
                 }
@@ -25,17 +25,17 @@ struct TableView: View {
         }
     }
 
-    private func cellText(_ cell: Markdown.Table.Cell, column: Int) -> some View {
-        SwiftUI.Text(InlineText.attributed(cell))
+    private func cellText(_ inline: MarkdownInline, column: Int) -> some View {
+        SwiftUI.Text(InlineText.attributed(inline))
             .gridColumnAlignment(alignment(of: column))
     }
 
     private func alignment(of column: Int) -> HorizontalAlignment {
-        guard column < table.columnAlignments.count else { return .leading }
-        switch table.columnAlignments[column] {
+        guard column < table.alignments.count else { return .leading }
+        switch table.alignments[column] {
         case .center: return .center
-        case .right: return .trailing
-        default: return .leading
+        case .trailing: return .trailing
+        case .leading: return .leading
         }
     }
 }

@@ -5,9 +5,27 @@ import Markdown
 public struct MarkdownBlock: Identifiable, @unchecked Sendable {
     /// Position in the document; stable for the life of the stream.
     public let id: Int
-    public let markup: any BlockMarkup
+    /// What the views draw, already converted from the parser's tree.
+    public let content: MarkdownContent
     /// A closed block never changes again, and is never parsed again.
     public let isClosed: Bool
+    /// The parser's tree, kept for the streaming tests that compare structure.
+    let markup: any BlockMarkup
+
+    init(id: Int, markup: any BlockMarkup, isClosed: Bool) {
+        self.id = id
+        self.markup = markup
+        self.content = MarkdownContent(markup)
+        self.isClosed = isClosed
+    }
+}
+
+extension MarkdownBlock: Equatable {
+    /// Compares the parser's O(1) node identity instead of walking the
+    /// converted content, which the views compare on every stream update.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.markup.isIdentical(to: rhs.markup)
+    }
 }
 
 /// Markdown that arrives a token at a time, as a language model writes it.
