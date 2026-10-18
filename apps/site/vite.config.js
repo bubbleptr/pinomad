@@ -52,8 +52,33 @@ function sharedAssets() {
   };
 }
 
+// The illustrations and icons are shared by the English and Chinese pages, so
+// they live once under partials/ and each page writes `<!-- include name.svg -->`.
+// Partials carry both languages (.en / .zh spans); the page's lang picks one.
+const partialsDir = here("partials");
+
+function partials() {
+  return {
+    name: "pinomad-partials",
+    transformIndexHtml: {
+      order: "pre",
+      handler(html) {
+        return html.replace(/<!-- include ([\w./-]+) -->/g, (_, name) =>
+          readFileSync(`${partialsDir}/${name}`, "utf8").trim(),
+        );
+      },
+    },
+    configureServer(server) {
+      server.watcher.add(partialsDir);
+      server.watcher.on("change", (file) => {
+        if (file.startsWith(partialsDir)) server.ws.send({ type: "full-reload" });
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [sharedAssets(), ogImage()],
+  plugins: [partials(), sharedAssets(), ogImage()],
   clearScreen: false,
   build: {
     // Keep every asset (including the ~1.6 KB favicon used as the header mark) a

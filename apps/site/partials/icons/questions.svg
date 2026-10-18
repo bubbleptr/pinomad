@@ -1,0 +1,7 @@
+<svg class="icon-art" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+  <rect x="4" y="5" width="24" height="22" rx="4" />
+  <circle cx="10" cy="12" r="2.2" />
+  <circle cx="10" cy="20" r="2.2" />
+  <path d="M15 12 H 23 M15 20 H 22" />
+  <circle class="accent-fill part-pick" cx="10" cy="20" r="2.2" />
+</svg>

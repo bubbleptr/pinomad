@@ -1,0 +1,58 @@
+<!-- One run as a track: each finished model or tool call plants a flag (a Pi
+     Durable checkpoint). The markup is the finished story — a crash between two
+     steps and the run resuming from the last flag — so it reads without JS;
+     main.js turns it into a run the visitor can start and pull the plug on. -->
+<svg class="durable-art" viewBox="0 0 960 300" aria-hidden="true" focusable="false">
+  <path class="ink-line" d="M60 180 H 900" />
+  <circle class="ink-line start-cap" cx="60" cy="180" r="7" />
+  <path class="trail" d="M60 180 H 900" />
+
+  <g class="flags">
+    <g class="flag" data-x="120"><path class="flag-pole" d="M120 172 V 116" /><path class="flag-cloth" d="M120 116 L 150 126 L 120 136 Z" /></g>
+    <g class="flag" data-x="240"><path class="flag-pole" d="M240 172 V 116" /><path class="flag-cloth" d="M240 116 L 270 126 L 240 136 Z" /></g>
+    <g class="flag" data-x="360"><path class="flag-pole" d="M360 172 V 116" /><path class="flag-cloth" d="M360 116 L 390 126 L 360 136 Z" /></g>
+    <g class="flag" data-x="480"><path class="flag-pole" d="M480 172 V 116" /><path class="flag-cloth" d="M480 116 L 510 126 L 480 136 Z" /></g>
+    <g class="flag" data-x="600"><path class="flag-pole" d="M600 172 V 116" /><path class="flag-cloth" d="M600 116 L 630 126 L 600 136 Z" /></g>
+    <g class="flag" data-x="720"><path class="flag-pole" d="M720 172 V 116" /><path class="flag-cloth" d="M720 116 L 750 126 L 720 136 Z" /></g>
+    <g class="flag" data-x="840"><path class="flag-pole" d="M840 172 V 116" /><path class="flag-cloth" d="M840 116 L 870 126 L 840 136 Z" /></g>
+  </g>
+
+  <g class="nodes">
+    <circle cx="120" cy="180" r="8" />
+    <circle cx="240" cy="180" r="8" />
+    <circle cx="360" cy="180" r="8" />
+    <circle cx="480" cy="180" r="8" />
+    <circle cx="600" cy="180" r="8" />
+    <circle cx="720" cy="180" r="8" />
+    <circle cx="840" cy="180" r="8" />
+  </g>
+  <g class="finish">
+    <circle cx="900" cy="180" r="13" />
+    <path d="M893 180 l5 5 l9 -10" />
+  </g>
+
+  <g class="node-labels">
+    <text x="120" y="216"><tspan class="zh">模型</tspan><tspan class="en">model</tspan></text>
+    <text x="240" y="216">bash</text>
+    <text x="360" y="216"><tspan class="zh">模型</tspan><tspan class="en">model</tspan></text>
+    <text x="480" y="216">edit</text>
+    <text x="600" y="216"><tspan class="zh">模型</tspan><tspan class="en">model</tspan></text>
+    <text x="720" y="216">bash</text>
+    <text x="840" y="216"><tspan class="zh">模型</tspan><tspan class="en">model</tspan></text>
+  </g>
+
+  <!-- Crash mark and resume arc; main.js moves them to where the plug was pulled. -->
+  <g class="crash" data-crash>
+    <path class="bolt" d="M668 92 L 648 136 L 662 136 L 644 178 L 684 124 L 669 124 L 684 92 Z" />
+    <text class="art-note" x="664" y="78"><tspan class="zh">宿主崩溃</tspan><tspan class="en">host crashes</tspan></text>
+  </g>
+  <g class="resume" data-resume>
+    <path class="resume-arc" data-resume-arc d="M660 232 C 652 270, 610 270, 602 236" />
+    <path class="resume-head" data-resume-head d="M596 244 L 602 233 L 611 242" />
+    <text class="art-note" data-resume-note x="630" y="294"><tspan class="zh">从这面旗接着跑</tspan><tspan class="en">picks up at this flag</tspan></text>
+  </g>
+
+  <g class="runner" data-runner>
+    <use href="#ghost" x="-32" y="118" width="64" height="56" />
+  </g>
+</svg>

@@ -1,0 +1,115 @@
+<svg
+  class="hero-art"
+  viewBox="0 0 600 470"
+  aria-hidden="true"
+  focusable="false"
+>
+  <defs>
+    <mask id="m-mac" maskUnits="userSpaceOnUse">
+      <path class="route-reveal" d="M212 338 C 262 300, 270 122, 352 104" pathLength="1" />
+    </mask>
+    <mask id="m-web" maskUnits="userSpaceOnUse">
+      <path class="route-reveal" d="M214 352 C 248 346, 262 304, 292 292" pathLength="1" />
+    </mask>
+    <mask id="m-phone" maskUnits="userSpaceOnUse">
+      <path class="route-reveal" d="M210 368 C 290 446, 420 452, 488 382" pathLength="1" />
+    </mask>
+  </defs>
+
+  <!-- Routes: dotted travel lines, revealed by their masks. -->
+  <g class="routes">
+    <path class="route" data-route="mac" mask="url(#m-mac)" d="M212 338 C 262 300, 270 122, 352 104" />
+    <path class="route" data-route="web" mask="url(#m-web)" d="M214 352 C 248 346, 262 304, 292 292" />
+    <path class="route" data-route="phone" mask="url(#m-phone)" d="M210 368 C 290 446, 420 452, 488 382" />
+  </g>
+
+  <!-- Packets ride the routes when replayed. -->
+  <g class="packets">
+    <circle class="packet" r="6" opacity="0" data-packet="mac">
+      <animateMotion dur="0.9s" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.2 1" path="M212 338 C 262 300, 270 122, 352 104" />
+      <animate attributeName="opacity" dur="0.9s" begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.08;0.85;1" />
+    </circle>
+    <circle class="packet" r="6" opacity="0" data-packet="web">
+      <animateMotion dur="0.9s" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.2 1" path="M214 352 C 248 346, 262 304, 292 292" />
+      <animate attributeName="opacity" dur="0.9s" begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.08;0.85;1" />
+    </circle>
+    <circle class="packet" r="6" opacity="0" data-packet="phone">
+      <animateMotion dur="0.9s" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.2 1" path="M210 368 C 290 446, 420 452, 488 382" />
+      <animate attributeName="opacity" dur="0.9s" begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.08;0.85;1" />
+    </circle>
+  </g>
+
+  <!-- Host machine. -->
+  <g class="host">
+    <ellipse class="shadow" cx="122" cy="322" rx="54" ry="5" />
+    <rect class="ink-line draw sheet" x="28" y="330" width="186" height="52" rx="12" pathLength="1" />
+    <path class="ink-detail draw d2" d="M50 356 H 120" pathLength="1" />
+    <circle class="led" cx="190" cy="356" r="5" />
+    <text class="label" x="121" y="414" text-anchor="middle">
+      <tspan class="zh">家里的机器</tspan><tspan class="en">your machine at home</tspan>
+    </text>
+  </g>
+
+  <!-- The ghost: favicon paths verbatim, stroke rescaled to the ink weight. -->
+  <g class="ghost">
+    <g class="float">
+    <g transform="translate(34 150) scale(0.62) translate(-149 -147)">
+      <path class="ghost-body" d="M 368 244 C 384 278 372 326 348 353 C 322 382 287 398 255 396 C 234 395 221 387 228 368 C 230 362 223 365 215 366 C 185 369 165 359 159 346 C 154 337 157 337 168 335 C 197 332 211 308 221 282 C 231 254 253 244 283 233 C 318 219 350 212 362 232 Z" />
+      <g class="hat">
+        <path class="ghost-ink" d="M 214 234 C 213 199 224 176 246 165 C 267 153 282 147 296 149 C 317 151 333 172 343 194 C 300 201 254 226 214 234 Z" />
+        <path class="ghost-ink" d="M 195 239 C 229 241 262 226 306 209 C 347 193 385 177 410 185 C 437 191 438 210 425 229 C 414 244 397 257 377 267 C 373 246 365 227 350 223 C 331 217 311 226 285 236 C 255 246 238 251 227 271 C 216 291 215 305 200 312 C 172 311 153 302 149 287 C 142 264 164 244 195 239 Z" />
+      </g>
+      <g class="eyes">
+        <ellipse class="ghost-ink" cx="304" cy="272" rx="9.5" ry="15.5" />
+        <ellipse class="ghost-ink" cx="343" cy="269" rx="9.5" ry="15.5" />
+      </g>
+    </g>
+    </g>
+  </g>
+
+  <!-- Mac -->
+  <g class="device" data-device="mac">
+    <rect class="hit" x="340" y="30" width="236" height="180" />
+    <rect class="ink-line screen draw d1 sheet" x="360" y="44" width="186" height="114" rx="9" pathLength="1" />
+    <path class="ink-line draw d2" d="M344 166 H 562" pathLength="1" />
+    <path class="ink-detail draw d3" d="M378 68 H 462 M378 84 H 500 M378 100 H 438" pathLength="1" />
+    <g class="bubble">
+      <rect x="412" y="118" width="118" height="28" rx="14" />
+      <path class="check" d="M424 132 l5 5 l9 -10" />
+      <text x="444" y="137"><tspan class="zh">测试全部通过</tspan><tspan class="en">tests pass</tspan></text>
+    </g>
+    <text class="label" x="453" y="196" text-anchor="middle">Mac</text>
+  </g>
+
+  <!-- Browser -->
+  <g class="device" data-device="web">
+    <rect class="hit" x="290" y="214" width="196" height="160" />
+    <rect class="ink-line screen draw d1 sheet" x="298" y="226" width="178" height="118" rx="9" pathLength="1" />
+    <path class="ink-detail draw d2" d="M298 248 H 476" pathLength="1" />
+    <path class="ink-detail draw d3" d="M318 270 H 400 M318 286 H 440" pathLength="1" />
+    <circle class="dot" cx="312" cy="237" r="3" />
+    <circle class="dot" cx="324" cy="237" r="3" />
+    <circle class="dot" cx="336" cy="237" r="3" />
+    <g class="bubble">
+      <rect x="350" y="304" width="118" height="28" rx="14" />
+      <path class="check" d="M362 318 l5 5 l9 -10" />
+      <text x="382" y="323"><tspan class="zh">测试全部通过</tspan><tspan class="en">tests pass</tspan></text>
+    </g>
+    <text class="label" x="387" y="366" text-anchor="middle">
+      <tspan class="zh">浏览器</tspan><tspan class="en">browser</tspan>
+    </text>
+  </g>
+
+  <!-- iPhone -->
+  <g class="device" data-device="phone">
+    <rect class="hit" x="486" y="240" width="96" height="200" />
+    <rect class="ink-line screen draw d1 sheet" x="496" y="250" width="74" height="140" rx="16" pathLength="1" />
+    <path class="ink-detail draw d2" d="M522 262 H 544" pathLength="1" />
+    <path class="ink-detail draw d3" d="M508 288 H 548 M508 302 H 556" pathLength="1" />
+    <g class="bubble">
+      <rect x="506" y="344" width="54" height="28" rx="14" />
+      <path class="check" d="M524 358 l5 5 l9 -10" />
+    </g>
+    <text class="label" x="533" y="420" text-anchor="middle">iPhone</text>
+  </g>
+</svg>
