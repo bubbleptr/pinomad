@@ -14,6 +14,16 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Plans: milestones and backlog
+
+All plans and to-dos are issues; `docs/roadmap.md` only states direction and order and links here.
+
+- **Milestones** hold the phases that have an end (e.g. `iOS 原生替换（ADR-0024）`, `M5 手机推进 side project`, `M3 在哪都能连`). The milestone description states the phase's goal or success criterion. List a phase with `gh issue list --milestone "<title>"`.
+- **Backlog** is every open issue without a milestone. Two extra labels sort it: `later` (ideas to pick up only when a real need appears; related ideas share one umbrella issue with a checklist) and `tech-debt`.
+- **Specs live in the issue body**: what to do, constraints, known pitfalls, related ADRs. Keep it current when the plan changes; record finished detail in the PR, not back in the issue or the roadmap.
+- **Closing**: the PR says `Closes #N`. Partial progress on a checklist issue is ticked in the body.
+- **Ordering inside a phase** uses native blocked-by dependencies (see **Blocking** below).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

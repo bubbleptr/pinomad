@@ -90,7 +90,7 @@ These docs are written in Chinese.
 | [Website](docs/website.md) | The pinomad.si landing page and the hosted app.pinomad.si instance |
 | [Architecture overview](docs/architecture.md) | How the parts and languages fit together, with send/receive diagrams |
 | [Architecture decisions](docs/adr/README.md) | Why things are the way they are |
-| [Roadmap](docs/roadmap.md) | What's done and what's next |
+| [Roadmap](docs/roadmap.md) | Direction and order; items live in GitHub Issues |
 | [Glossary](GLOSSARY.md) | Domain terms |
 
 ## Contributing

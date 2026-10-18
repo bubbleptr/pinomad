@@ -1,8 +1,8 @@
 # PiNomad — Agent 说明
 
-架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0025，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办只记在 `docs/roadmap.md`：做完一项就更新它。
+架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0025，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办记在 GitHub Issues，按 milestone 分组（用法见 `docs/agents/issue-tracker.md`）；`docs/roadmap.md` 只放方向和顺序，阶段或顺序变了才改。PR 用 `Closes #N` 关闭对应的 issue，不往 roadmap 里写进度。
 
-新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 roadmap，用法进 README（中英两份 `README.md` / `README.zh-CN.md` 要同步）和 `docs/` 下的使用文档（`usage.md`、`remote-access.md`、`service.md`、`website.md`），不写进 ADR。新增 ADR 时同步更新索引。
+新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 milestone 和 issue，用法进 README（中英两份 `README.md` / `README.zh-CN.md` 要同步）和 `docs/` 下的使用文档（`usage.md`、`remote-access.md`、`service.md`、`website.md`），不写进 ADR。新增 ADR 时同步更新索引。
 
 ## 布局
 
@@ -101,7 +101,7 @@ App 图标源文件是 `apps/desktop/build/icon.icon`（戴帽子的幽灵，全
 
 - 宿主必须用 Node 跑（`node apps/host/src/main.ts`，`bun run host` 就是这条命令）：依赖 `node:sqlite` 和 Node 原生 TS 类型剥离，不能用 Bun。
 - 一个数据目录（默认 `~/.pinomad`，`--data-dir` / `PINOMAD_DATA_DIR` 覆盖）同时只能有一个宿主进程；目录锁会拒绝第二个。
-- `@earendil-works/*` 锁精确版本（当前 `1.2.0`，ADR-0002），升级要显式评审。
+- `@earendil-works/*` 锁精确版本（当前 `1.2.0`，ADR-0002），升级要显式评审：用 `PINOMAD_UPDATE_CONTRACT=1` 重录契约快照（`apps/host/test/protocol-contract.test.ts`，基准在 `packages/protocol/test/fixtures/`），重新生成 Rust 对照向量，再看差异。
 - 服务命令（`bun run service -- …`，ADR-0009）操作真实的服务管理器；测试里绝不要 `install` 真正的服务，开发用前台的 `bun run host` / `bun run start`。
 
 ## Agent skills

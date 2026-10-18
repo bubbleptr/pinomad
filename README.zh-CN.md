@@ -90,7 +90,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | [官网](docs/website.md) | pinomad.si 落地页和 app.pinomad.si 托管实例 |
 | [架构概览](docs/architecture.md) | 各部分和语言怎么配合，收发流程图 |
 | [架构决策](docs/adr/README.md) | 为什么这样设计 |
-| [路线图](docs/roadmap.md) | 做完了什么、接下来做什么 |
+| [路线图](docs/roadmap.md) | 方向和顺序；具体条目在 GitHub Issues |
 | [术语表](GLOSSARY.md) | 领域术语 |
 
 ## 参与开发

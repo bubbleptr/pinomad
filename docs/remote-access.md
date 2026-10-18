@@ -29,6 +29,15 @@ bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 
 </details>
 
+### 经 tailnet 直连
+
+宿主带 `--remote-port 7422`，tailnet 里的设备用宿主的 MagicDNS 名直连（经局域网时 2–7ms，不走 DERP）；同时开着 `--relay` 或加入了账号时，不在 tailnet 里的设备照旧走中继。`pinomad pair` 这时只给出中继链接，要走直连就取出其中的 `pair=…`，拼到 tailnet 地址后面。
+
+Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面连不上或流量被 tun 截走：
+
+- DNS 规则让 `tailscale.com`、`tailscale.io` 不走 FakeIP；
+- tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。
+
 ## 经自部署中继访问
 
 宿主在家里局域网、手机在外面时，把中继跑在一台有公网地址的 VPS 上：宿主和手机都只往外连中继，中继按宿主身份把两端的连接接起来，只转发密文、不存东西；Web 客户端也由中继用 HTTPS 提供，手机扫二维码直接打开。
@@ -76,7 +85,7 @@ WantedBy=multi-user.target
 
 ### 容器平台（Zeabur 等）
 
-镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
+镜像在 `deploy/relay/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`，所以数据目录不能直接是卷的根），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
 
 | 环境变量 | 含义 |
 |---|---|
