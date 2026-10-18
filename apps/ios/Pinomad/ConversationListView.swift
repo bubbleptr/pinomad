@@ -73,14 +73,24 @@ struct ConversationListView: View {
                 }
                 .disabled(!model.connected)
             }
-            if model.connectionText != "已连接" {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text(model.connectionText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            ToolbarItem(placement: .topBarLeading) {
+                // The host on screen; opens the list to switch, forget or
+                // pair another.
+                Button {
+                    model.present(.hosts)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(model.currentHostLabel ?? "宿主")
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .font(.subheadline)
                 }
+                .accessibilityLabel("宿主：\(model.currentHostLabel ?? "")")
             }
         }
+        .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
     }
 
     @ViewBuilder

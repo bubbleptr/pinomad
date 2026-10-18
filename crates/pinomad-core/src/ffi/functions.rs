@@ -3,7 +3,7 @@
 // the delivery record rebuilds the wire object it came from — the
 // derivation itself is not duplicated here.
 
-use crate::ffi::hosts::StoredHost;
+use crate::ffi::hosts::{PairingTarget, StoredHost};
 use crate::ffi::types::*;
 use crate::json::Json;
 
@@ -235,6 +235,18 @@ pub fn question_answers(
 #[uniffi::export]
 pub fn host_supports_call(host_minor: u32, method: String) -> bool {
     crate::frames::host_supports_call(host_minor, &method)
+}
+
+/// Where a pairing link would connect and which host it names, or `None`
+/// when it is not a usable pairing link — what the confirm page shows, and
+/// how the app knows which stored host a finished pairing became.
+#[uniffi::export]
+pub fn pairing_target(link: String) -> Option<PairingTarget> {
+    crate::pairing_link::parse_pairing_link(&link).map(|parsed| PairingTarget {
+        url: parsed.url,
+        // The same encoding `Paired` reports and the keychain keeps.
+        host_key: crate::b64::to_base64url(&parsed.host_key),
+    })
 }
 
 /// How many images one message may carry — sizes the client's picker so

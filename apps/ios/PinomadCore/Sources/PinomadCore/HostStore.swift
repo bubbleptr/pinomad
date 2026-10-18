@@ -39,7 +39,7 @@ public struct HostRecord: Codable, Sendable, Equatable {
 
     /// The FFI record `PinomadClient.connect` takes — run through
     /// `validateStoredHost` before use.
-    var ffi: StoredHost {
+    public var ffi: StoredHost {
         StoredHost(
             url: url,
             hostKey: hostKey,
@@ -63,6 +63,23 @@ public struct StoredHosts: Codable, Sendable, Equatable {
 
     public var active: HostRecord? {
         hosts.first { $0.hostKey == activeHostKey } ?? hosts.first
+    }
+
+    /// Without `hostKey`; if it was the active one, the first host left
+    /// takes over.
+    public func forgetting(_ hostKey: String) -> StoredHosts {
+        var next = self
+        next.hosts.removeAll { $0.hostKey == hostKey }
+        if next.activeHostKey == hostKey { next.activeHostKey = nil }
+        return next
+    }
+
+    /// With `hostKey` active — unchanged if no such host is stored.
+    public func activating(_ hostKey: String) -> StoredHosts {
+        guard hosts.contains(where: { $0.hostKey == hostKey }) else { return self }
+        var next = self
+        next.activeHostKey = hostKey
+        return next
     }
 }
 
