@@ -1,5 +1,4 @@
 import AgentChatCore
-import Markdown
 import SwiftUI
 
 /// Markdown, finished or still streaming in. Closed blocks are not rendered
@@ -61,11 +60,11 @@ private struct BlockCell: View, Equatable {
     nonisolated let tailFade: [Double]?
 
     var body: some View {
-        MarkdownBlockView(markup: block.markup)
+        MarkdownBlockView(content: block.content)
             .environment(\.tailFade, tailFade)
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.block.id == rhs.block.id && lhs.block.markup.isIdentical(to: rhs.block.markup) && lhs.tailFade == rhs.tailFade
+        lhs.block == rhs.block && lhs.tailFade == rhs.tailFade
     }
 }

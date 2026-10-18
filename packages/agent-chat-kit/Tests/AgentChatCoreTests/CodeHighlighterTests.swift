@@ -52,6 +52,18 @@ import Testing
             == [.keyword, .string, .comment, .keyword, .keyword, .keyword])
     }
 
+    // Python starts a comment at any # outside a string, with no space needed.
+    @Test func pythonCommentsNeedNoLeadingWhitespace() {
+        let code = "x = 1# return False"
+        #expect(kinds(code, "python", ["1", "# return False"]) == [.number, .comment])
+        #expect(CodeHighlighter.tokens(in: code, language: "python").contains { $0.kind == .keyword } == false)
+    }
+
+    // Shell keeps the word-start rule: a # inside a word is not a comment.
+    @Test func shellCommentsStillNeedAWordStart() {
+        #expect(CodeHighlighter.tokens(in: "echo foo#not-a-comment", language: "bash").contains { $0.kind == .comment } == false)
+    }
+
     @Test func diffLines() {
         let code = "@@ -1,2 +1,2 @@\n-try data.write(to: url)\n+try data.write(to: tmp)\n context"
         #expect(kinds(code, "diff", ["@@ -1,2 +1,2 @@", "-try data.write(to: url)", "+try data.write(to: tmp)"])

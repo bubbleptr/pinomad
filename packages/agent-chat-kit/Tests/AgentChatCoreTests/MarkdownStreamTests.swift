@@ -1,4 +1,4 @@
-import AgentChatCore
+@testable import AgentChatCore
 import Markdown
 import Testing
 
@@ -55,6 +55,58 @@ import Testing
         var stream = MarkdownStream()
         stream.append(partial)
         #expect(stream.blocks.map { tree(of: $0.markup) } == trees(parsing: completed))
+    }
+
+    // A first chunk of only spaces can still become an indented code block.
+    @Test func leadingWhitespaceSurvivesUntilABlockStarts() {
+        var stream = MarkdownStream()
+        stream.append("    ")
+        stream.append("print(1)\n")
+        stream.finish()
+
+        var whole = MarkdownStream()
+        whole.append("    print(1)\n")
+        whole.finish()
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == whole.blocks.map { tree(of: $0.markup) })
+        #expect(stream.blocks.first?.markup is CodeBlock)
+    }
+
+    // cmark treats LF, CRLF and CR alike; line offsets must too.
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func lineEndingsOfEveryKind(lineEnding: String) {
+        let text = ["A", "B", "C"].joined(separator: lineEnding + lineEnding)
+        var stream = MarkdownStream()
+        stream.append(text)
+        stream.finish()
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == trees(parsing: text))
+    }
+
+    // Speculation splits the open tail into lines, so a half-written setext
+    // underline must wait for every line ending, not just LF.
+    @Test(arguments: ["\r\n", "\r"])
+    func partialHeadingWaitsWithEveryLineEnding(lineEnding: String) {
+        var stream = MarkdownStream()
+        stream.append("Title\(lineEnding)-")
+
+        var reference = MarkdownStream()
+        reference.append("Title\n-")
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == reference.blocks.map { tree(of: $0.markup) })
+    }
+
+    // A table header is held back until its delimiter row arrives; CRLF must
+    // not make the whole tail look like one line.
+    @Test(arguments: ["\r\n", "\r"])
+    func partialTableHeaderWaitsWithEveryLineEnding(lineEnding: String) {
+        var stream = MarkdownStream()
+        stream.append("Intro\(lineEnding)\(lineEnding)| a | b |")
+
+        var reference = MarkdownStream()
+        reference.append("Intro\n\n| a | b |")
+
+        #expect(stream.blocks.map { tree(of: $0.markup) } == reference.blocks.map { tree(of: $0.markup) })
     }
 
     @Test(arguments: Fixtures.replies.indices, [1, 3, 7, 0])
