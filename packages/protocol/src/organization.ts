@@ -23,6 +23,22 @@ export interface FolderListing {
 /** Where a top-level conversation lives: inside a project, or a project-less Chat. */
 export type Home = { readonly kind: "project"; readonly path: string } | { readonly kind: "chat" };
 
+/**
+ * What `listFiles` scans (5.10): a conversation's persisted working directory,
+ * or a registered project's directory — `worktree` lists the committed HEAD
+ * tree a fresh worktree would hold (ADR-0010), `project` the live directory.
+ */
+export type FileScope =
+  | { readonly kind: "conversation"; readonly conversationId: ConversationId }
+  | { readonly kind: "project"; readonly path: string; readonly checkout: "worktree" | "project" };
+
+/** One `listFiles` answer: `/`-separated paths relative to the scope's root. */
+export interface FileListing {
+  readonly files: readonly string[];
+  /** True when enumeration or result capping cut the answer short. */
+  readonly truncated: boolean;
+}
+
 /** One top-level conversation in the index; forks and subagents nest under it instead. */
 export type IndexEntry = {
   readonly id: ConversationId;
@@ -31,6 +47,8 @@ export type IndexEntry = {
   readonly archived?: boolean;
   /** Client-generated idempotency key for the creation request. */
   readonly requestId?: string;
+  /** The named agent the conversation was created with (ADR-0023, 5.10); its forks show the same name. */
+  readonly role?: string;
 };
 
 /** A per-conversation git worktree (ADR-0010). Absent for project-dir, non-git, and Chat checkouts. */

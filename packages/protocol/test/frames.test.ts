@@ -38,6 +38,41 @@ describe("parseClientFrame", () => {
     ).toBe("malformed");
   });
 
+  it("accepts a named agent on createConversation; rejects a malformed one", () => {
+    const base = { home: { kind: "chat" }, text: "hi", requestId: "req" };
+    expect(
+      kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, agent: "reviewer" } }),
+    ).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, agent: "" } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, agent: 7 } })).toBe("malformed");
+  });
+
+  it("accepts listFiles with either scope kind; rejects malformed scopes and queries", () => {
+    const call = (args: unknown): unknown => ({ type: "call", id: 1, method: "listFiles", args });
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 }, query: "src/" }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "worktree" }, query: "" }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "project" }, query: "a" }))).toBe("frame");
+    // Unknown extension fields ride along (ADR-0018 §2).
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "project", extra: 1 }, query: "" }))).toBe("frame");
+
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: "7" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "conversation" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "/x" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "", checkout: "project" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "both" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "root" }, query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: "conversation:7", query: "" }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 }, query: 3 }))).toBe("malformed");
+  });
+
+  it("introduces agentConversations and listFiles at minor 10", () => {
+    expect(hostSupportsFeature(9, "agentConversations")).toBe(false);
+    expect(hostSupportsFeature(10, "agentConversations")).toBe(true);
+    expect(hostSupportsCall(9, "listFiles")).toBe(false);
+    expect(hostSupportsCall(10, "listFiles")).toBe(true);
+  });
+
   it("accepts setThinkingLevel; the removed cycleThinking is an unknown call", () => {
     expect(
       kinds({

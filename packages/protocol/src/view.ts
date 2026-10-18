@@ -9,7 +9,7 @@ import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
+import type { FileListing, FileScope, FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 import type { MessageImage } from "./images.ts";
@@ -54,7 +54,12 @@ export interface ConversationSummary {
   readonly updatedAt?: number;
   /** Subagents only: the `description` the delegating agent gave the call. */
   readonly label?: string;
-  /** Subagents only: the named agent it ran as (ADR-0023). */
+  /**
+   * The named agent the conversation was created with (ADR-0023): a top-level
+   * conversation's `createConversation.agent`, inherited by its forks; for a
+   * subagent, the `role` the delegating call gave. It names the prompt the
+   * conversation started with, not a current model match.
+   */
   readonly role?: string;
   /** Running only: the tool call in flight, e.g. { tool: "read", target: "src/a.ts" }; absent while thinking/writing or idle. */
   readonly activity?: { readonly tool: string; readonly target?: string };
@@ -170,6 +175,14 @@ export interface DurableController {
       thinkingLevel?: ThinkingLevel;
       /** Up to 4 attached images; needs a 5.5 host. */
       images?: readonly MessageImage[];
+      /**
+       * A named agent to create the conversation with (ADR-0023): its prompt is
+       * copied into the new agent's instructions; `model`/`thinkingLevel`
+       * override the role's, falling back to the host's defaults. Fails —
+       * rather than silently dropping the field — when the host predates 5.10
+       * (`agentConversations` in FEATURE_SINCE).
+       */
+      agent?: string;
     },
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
@@ -204,6 +217,12 @@ export interface DurableController {
   answer(kind: string, requestId: string, answers: QuestionAnswer[], target?: ConversationId): Promise<void>;
   /** The shown conversation's file changes; unavailable for Chat and non-git checkouts. */
   changes(): Promise<{ available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean }>;
+  /**
+   * File candidates under `scope`'s root matching `query`, for `@./path`
+   * completion. A read-only request that never queues behind commands — a slow
+   * scan must not block sending or switching. Needs a 5.10 host.
+   */
+  listFiles(scope: FileScope, query: string): Promise<FileListing>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */

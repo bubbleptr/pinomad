@@ -3,6 +3,7 @@
 - 状态：Accepted
 - 日期：2026-10-13
 - 2026-10-14 修订：§4 中"工具描述列出所有可用的名字"改为由 `agent_roles` 系统提示词小节列出——工具描述在宿主启动时只构建一次，小节按每次请求渲染，文件一改下轮就生效，且只有 agent 文件变化时小节才变；`@` 提及不再有每轮的宿主指令，同一小节里的固定规则让主模型看到 `@name` 就派给对应具名 Agent，客户端只负责补全名字，宿主不做专门处理。
+- 2026-10-18 修订：顶层对话选择落地（§4 第三条）——`createConversation` 加 `agent` 参数（协议 5.10）。模型解析按"调用参数 > 具名 Agent 的 `model`/`thinkingLevel` > 宿主默认"，与 §5 一致：顶层对话里具名 Agent 的模型/思考等级只是初始值，参数可以覆盖；但带 `agent` 时最终生效的模型必须在宿主通告的模型列表里（参数、role 定义、宿主默认三种来源都一样校验），否则拒绝且不写任何对话。对话只把名字记进顶层 `IndexEntry.role`，`ConversationSummary.role` 从它投影——fork 显示继承的 `@name`（沿 `parent` 链取顶层条目），子代理照旧来自 `SubagentDoc.role`。同一条修订引入 `@./path` 文件引用约定（#138）：用户在消息里写 `@./path` 就是工作目录里的一个路径——系统提示词有固定小节说明这一点（没有具名 Agent 也在），宿主只按 `listFiles` 调用返回候选路径，不把文件内容注入消息。
 
 ## 背景
 
@@ -64,7 +65,7 @@ PiNomad 的优势之一是多 provider 和可定制。最直接的需求是"某�
 ## 后果
 
 - ADR-0006 "上下文只从项目和 `~/.agents` 读取"不受影响：具名 Agent 是宿主配置，不是上下文来源。
-- 协议新增（5.6）：`agents` 宿主流、`createAgent` / `updateAgent` / `deleteAgent` 三个调用、`subagent` 的 `role` 参数；`createConversation` 还没有具名 Agent 参数，随顶层对话选择一起做。都是新增，按 ADR-0018 涨次版本号。
+- 协议新增（5.6）：`agents` 宿主流、`createAgent` / `updateAgent` / `deleteAgent` 三个调用、`subagent` 的 `role` 参数；（5.10）`createConversation` 的 `agent` 参数和 `listFiles` 调用（`@./path` 补全的候选枚举）。都是新增，按 ADR-0018 涨次版本号。
 - 备份数据目录时多一个 `agents/` 目录。
 - 移动端第一版只显示列表、能选，编辑以后单独做；`@` 菜单以后和 @ 文件补全共用。
 - 以后可能的后续：项目级具名 Agent、工具白名单（等不带 `bash` 的只读工具集）、`skills` 字段、对话中途换具名 Agent、workflow。都记在路线图。

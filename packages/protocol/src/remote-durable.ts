@@ -562,6 +562,11 @@ class RemoteClient {
           if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
             throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
           }
+          // A pre-5.10 host would silently ignore `agent` and create an
+          // unassigned conversation — fail instead (ADR-0023 §8).
+          if (options?.agent !== undefined && !hostSupportsFeature(this.#hostMinor, "agentConversations")) {
+            throw new Error("The host is too old for named agents (needs protocol 5.10); run `pinomad upgrade` on the host");
+          }
           const { conversationId } = await this.#call("createConversation", {
             home,
             text,
@@ -569,6 +574,7 @@ class RemoteClient {
             ...(options?.checkout === undefined ? {} : { checkout: options.checkout }),
             ...(options?.model === undefined ? {} : { model: options.model }),
             ...(options?.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
+            ...(options?.agent === undefined ? {} : { agent: options.agent }),
             ...(images.length === 0 ? {} : { images }),
           });
           await this.#switch(conversationId);
@@ -643,6 +649,14 @@ class RemoteClient {
       answer: (kind, requestId, answers, target) =>
         this.#command(() => this.#call("answer", { conversationId: target ?? conversationId(), kind, requestId, answers })),
       changes: () => this.#request(() => this.#call("changes", { conversationId: conversationId() })),
+      // Sent directly, not through #request: a read-only completion query must
+      // not queue behind a hanging command — that would stall the composer.
+      listFiles: (scope, query) => {
+        if (!hostSupportsCall(this.#hostMinor, "listFiles")) {
+          return Promise.reject(new Error("The host is too old for this (needs protocol 5.10); run `pinomad upgrade` on the host"));
+        }
+        return this.#call("listFiles", { scope, query });
+      },
       createPairing: () => this.#request(() => this.#call("createPairing", {})),
       revokeDevice: (publicKey) => this.#command(() => this.#call("revokeDevice", { publicKey })),
       logout: (providerId) =>

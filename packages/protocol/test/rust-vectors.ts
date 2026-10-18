@@ -6,7 +6,7 @@
 // the shape the wire actually carries: JSON texts, hex blobs, decoded ops.
 import { applyImmutable } from "@earendil-works/chord/delta";
 import { UnsafePathError, PathError } from "@earendil-works/chord/delta";
-import { PROTOCOL } from "../src/frames.ts";
+import { hostSupportsCall, hostSupportsFeature, PROTOCOL } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession } from "../src/secure-channel.ts";
 import { pairingFragment, parsePairParam } from "../src/pairing-link.ts";
@@ -72,10 +72,38 @@ function framesVector(): VectorFile {
       name: "call-createConversation",
       wire: wire({ type: "call", id: 8, method: "createConversation", args: { home: { kind: "project", path: "/home/u/app" }, text: "go", requestId: "r", checkout: "worktree", model: { provider: "p", modelId: "m" }, thinkingLevel: "high" } }),
     },
+    // 5.10: the named-agent field rides the same call (ADR-0023 §8).
+    {
+      name: "call-createConversation-agent",
+      wire: wire({ type: "call", id: 11, method: "createConversation", args: { home: { kind: "chat" }, text: "go", requestId: "r", agent: "reviewer" } }),
+    },
+    {
+      name: "call-listFiles-conversation",
+      wire: wire({ type: "call", id: 12, method: "listFiles", args: { scope: { kind: "conversation", conversationId: 7 }, query: "src/" } }),
+    },
+    {
+      name: "call-listFiles-project",
+      wire: wire({ type: "call", id: 13, method: "listFiles", args: { scope: { kind: "project", path: "/home/u/app", checkout: "worktree" }, query: "" } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];
-  return write("frames", { serverFrames, badJson, clientFrames });
+  // The version gates the two ends must agree on (ADR-0018 §2): each case is
+  // `hostSupportsCall`/`hostSupportsFeature` at the boundary minor.
+  const versionGates = [
+    { name: "listFiles@9", minor: 9, call: "listFiles", expect: false },
+    { name: "listFiles@10", minor: 10, call: "listFiles", expect: true },
+    { name: "agentConversations@9", minor: 9, feature: "agentConversations", expect: false },
+    { name: "agentConversations@10", minor: 10, feature: "agentConversations", expect: true },
+    { name: "apnsPush@9", minor: 9, feature: "apnsPush", expect: true },
+  ].map((gate) => ({
+    ...gate,
+    expect:
+      gate.call !== undefined
+        ? hostSupportsCall(gate.minor, gate.call as never)
+        : hostSupportsFeature(gate.minor, gate.feature as never),
+  }));
+  return write("frames", { serverFrames, badJson, clientFrames, versionGates });
 }
 
 // ─── Delta ───────────────────────────────────────────────────────────────────

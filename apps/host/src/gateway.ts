@@ -56,6 +56,7 @@ import type { ExtensionDoc } from "./builtin-extension.ts";
 import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
+import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem } from "@pinomad/protocol/images.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
@@ -80,6 +81,7 @@ import {
   IndexDoc,
   removeProject,
 } from "./organization.ts";
+import type { HostIndex } from "@pinomad/protocol/organization.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
@@ -187,6 +189,9 @@ export const LOOPBACK_SECURE_PATH = "/secure";
 
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const conversations = await ConversationList.open(options.harness, options.docs);
+  // One lister for the gateway: all clients' `listFiles` share its cache and
+  // its concurrency bound (issue #138 §成本控制).
+  const fileLister = createCandidateLister(enumerateRoot);
   const detachAutoTitle =
     options.autoTitle === false
       ? undefined
@@ -226,7 +231,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     if (joined?.source === "account") {
       broadcast("info", `New device "${joined.name}" joined through your account`);
     }
-    const client = new GatewayClient(connection, options, conversations, {
+    const client = new GatewayClient(connection, options, conversations, fileLister, {
       devicePublicKey,
       closed: (self) => {
         clients.delete(self);
@@ -613,6 +618,8 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
   readonly #questionKinds: ReadonlySet<string>;
   readonly #records = new Map<ConversationId, ConversationRecord>();
   readonly #facts = new Map<ConversationId, ConversationFacts>();
+  /** Top-level conversation id → its index entry's `role` (ADR-0023): the only source a summary's role derives from. */
+  #roles = new Map<ConversationId, string>();
   /** Slot of each summary in #list; in-place updates keep positions stable. */
   readonly #index = new Map<ConversationId, number>();
   /** Run-end listeners (auto-title); they fire inside the commit listener. */
@@ -630,20 +637,31 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     const list = new ConversationList(docs);
     const summaries: ConversationSummary[] = [];
     let cursor: Cursor | undefined;
+    const records: ConversationRecord[] = [];
     do {
       const page = await harness.commit((tx) => tx.scanConversations({}, 256, cursor), context);
       for (const record of page.items) {
         list.#records.set(record.id, record);
-        const facts = await list.#load(harness, record);
-        list.#facts.set(record.id, facts);
-        list.#index.set(record.id, summaries.length);
-        summaries.push(summaryOf(record, facts));
+        list.#facts.set(record.id, await list.#load(harness, record));
+        records.push(record);
       }
       cursor = page.next;
     } while (cursor !== undefined);
+    // Roles resolve after the scan: a fork may arrive before its top-level
+    // ancestor in scan order, so the whole map is read before deriving.
+    list.#roles = rolesOf(await harness.snapshot(IndexDoc, context));
+    for (const record of records) {
+      list.#index.set(record.id, summaries.length);
+      summaries.push(list.#summaryOf(record));
+    }
     list.#list = summaries;
     // A commit listener only records; it calls no Session API.
     list.#unsubscribe = harness.subscribeCommits((publication) => list.#observe(publication));
+    // A commit between the index snapshot and the subscription is applied to
+    // the store but reaches no listener — re-read and re-derive what moved.
+    const touched = new Set<ConversationId>();
+    list.#reindex(await harness.snapshot(IndexDoc, context), touched);
+    list.#refreshSummaries(touched);
     return list;
   }
 
@@ -701,7 +719,12 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
         facts.calls = entry.kind === "pi.assistant" ? callsOf(message) : undefined;
       } else if (change.type === "document") {
         const id = change.conversationId;
-        if (id === undefined) continue;
+        if (id === undefined) {
+          // The session-scoped index carries each top-level conversation's
+          // `role` — a write re-derives every summary that resolves to it.
+          if (change.record.kind === IndexDoc.definition.kind) this.#reindex(change.value as HostIndex | null, touched);
+          continue;
+        }
         const facts = this.#fact(id);
         if (change.record.kind === "pi.live") {
           const live = change.value as LiveState | null;
@@ -735,11 +758,49 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     }
     // pi.live republishes on every streamed token: only conversations a change
     // touched are re-derived, and only a real difference allocates a new list.
+    this.#refreshSummaries(touched);
+    // Last: listeners must see the summaries this commit produced. They may
+    // not call Session APIs while the commit listener is still on the stack.
+    for (const id of ended) for (const listener of this.#runEnd) listener(id);
+  }
+
+  /** `listener` fires inside the commit listener — defer any Session work out of it. */
+  onRunEnd(listener: (id: ConversationId) => void): () => void {
+    this.#runEnd.add(listener);
+    return () => this.#runEnd.delete(listener);
+  }
+
+  /** Rebuild the role column after an index write; summaries whose resolved name moved are touched. */
+  #reindex(index: HostIndex | null | undefined, touched: Set<ConversationId>): void {
+    const next = rolesOf(index);
+    for (const record of this.#records.values()) {
+      if (
+        record.owner === undefined
+        && topLevelRole(record, this.#records, this.#roles) !== topLevelRole(record, this.#records, next)
+      ) {
+        touched.add(record.id);
+      }
+    }
+    this.#roles = next;
+  }
+
+  /** A summary's role: the subagent's own call-given name, else the top-level index entry's (inherited by forks). */
+  #summaryOf(record: ConversationRecord): ConversationSummary {
+    const facts = this.#fact(record.id);
+    return summaryOf(
+      record,
+      facts,
+      record.owner === undefined ? topLevelRole(record, this.#records, this.#roles) : facts.role,
+    );
+  }
+
+  /** Re-derive the touched ids' summaries; publishes #list only on a real difference. */
+  #refreshSummaries(touched: Set<ConversationId>): void {
     let next: ConversationSummary[] | undefined;
     for (const id of touched) {
       const record = this.#records.get(id);
       if (record === undefined) continue;
-      const summary = summaryOf(record, this.#fact(id));
+      const summary = this.#summaryOf(record);
       const index = this.#index.get(id);
       if (index === undefined) {
         next ??= this.#list.slice();
@@ -751,15 +812,6 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       }
     }
     if (next !== undefined) this.#set(next);
-    // Last: listeners must see the summaries this commit produced. They may
-    // not call Session APIs while the commit listener is still on the stack.
-    for (const id of ended) for (const listener of this.#runEnd) listener(id);
-  }
-
-  /** `listener` fires inside the commit listener — defer any Session work out of it. */
-  onRunEnd(listener: (id: ConversationId) => void): () => void {
-    this.#runEnd.add(listener);
-    return () => this.#runEnd.delete(listener);
   }
 
   #fact(id: ConversationId): ConversationFacts {
@@ -815,7 +867,36 @@ type ConversationFacts = {
   role?: string;
 };
 
-function summaryOf(record: ConversationRecord, facts: ConversationFacts): ConversationSummary {
+/** The top-level id → role column of an index value; absent/corrupt entries read as no role. */
+function rolesOf(index: HostIndex | null | undefined): Map<ConversationId, string> {
+  const roles = new Map<ConversationId, string>();
+  for (const entry of index?.conversations ?? []) {
+    if (typeof entry.role === "string" && entry.role !== "") roles.set(entry.id, entry.role);
+  }
+  return roles;
+}
+
+/**
+ * The index-entry role a conversation shows: its own top-level entry's, or —
+ * walking `parent` links — the ancestor's it forked from (ADR-0023 §7). A
+ * broken chain (defensive; parents are never rewritten) resolves to none.
+ */
+function topLevelRole(
+  record: ConversationRecord,
+  records: ReadonlyMap<ConversationId, ConversationRecord>,
+  roles: ReadonlyMap<ConversationId, string>,
+): string | undefined {
+  let current: ConversationRecord | undefined = record;
+  const seen = new Set<ConversationId>();
+  while (current !== undefined && !seen.has(current.id)) {
+    seen.add(current.id);
+    if (current.parent === undefined) return roles.get(current.id);
+    current = records.get(current.parent.conversationId);
+  }
+  return undefined;
+}
+
+function summaryOf(record: ConversationRecord, facts: ConversationFacts, role?: string): ConversationSummary {
   const parent = record.parent?.conversationId ?? record.owner?.conversationId;
   const status =
     facts.pending.size > 0 ? "needs-answer" : facts.running === true ? "running" : facts.failed === true ? "failed" : undefined;
@@ -839,7 +920,7 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts): Conver
     ...(status === undefined ? {} : { status }),
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
-    ...(facts.role === undefined ? {} : { role: facts.role }),
+    ...(role === undefined ? {} : { role }),
     ...(activity === undefined ? {} : { activity }),
   };
 }
@@ -948,14 +1029,17 @@ class GatewayClient {
   readonly #connection: GatewayConnection;
   readonly #hooks: ClientHooks;
   readonly #options: GatewayOptions;
+  /** The gateway-wide file enumerator — shared so concurrent clients' queries ride one scan per root. */
+  readonly #files: FileLister;
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
-  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, hooks: ClientHooks) {
+  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, hooks: ClientHooks) {
     this.#connection = connection;
     this.#options = options;
+    this.#files = files;
     this.#hostValues = {
       conversations,
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
@@ -1195,9 +1279,12 @@ class GatewayClient {
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
             ...(create.model === undefined ? {} : { model: create.model }),
             ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
+            ...(create.agent === undefined ? {} : { agent: create.agent }),
           },
           settingsDefaults(this.#options.settings.value),
           this.#options.models,
+          this.#options.modelSummaries,
+          this.#options.agents?.value ?? { roles: [], problems: [] },
           context,
         );
         return { conversationId };
@@ -1267,6 +1354,10 @@ class GatewayClient {
       }
       case "listFolders":
         return listFolders((args as CallMethods["listFolders"]["args"]).path, homedir());
+      case "listFiles": {
+        const input = args as CallMethods["listFiles"]["args"];
+        return listFiles(this.#options.harness, this.#options.dataDir, this.#files, input.scope, input.query, context);
+      }
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {

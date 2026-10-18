@@ -311,6 +311,7 @@ fn interop_pairs_and_synchronizes_a_conversation() {
         checkout: None,
         model: None,
         thinking_level: None,
+        agent: None,
         images: vec![],
     });
     remote.wait_until(Duration::from_secs(15), |driver| {
@@ -555,6 +556,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         checkout: None,
         model: None,
         thinking_level: None,
+        agent: None,
         images: vec![],
     });
     remote.wait_until(Duration::from_secs(15), |driver| {

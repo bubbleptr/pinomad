@@ -134,6 +134,34 @@ pub enum CallResult {
     /// `changes` — the conversation's file changes, already parsed into
     /// per-file records. Swift never sees the raw unified diff.
     Changes { changes: ConversationChanges },
+    /// `listFiles` — `/`-separated paths relative to the scope's root;
+    /// `truncated` marks any enumeration or result cap the answer hit.
+    Files { files: Vec<String>, truncated: bool },
+}
+
+/// `listFiles`'s typed result — strict like `changes_of`: a malformed shape
+/// is a host-contract violation and fails the op.
+pub(crate) fn files_of(value: Option<&Json>) -> Result<(Vec<String>, bool), String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed listFiles result".to_string())?;
+    let files = value
+        .get("files")
+        .and_then(Json::as_array)
+        .ok_or_else(|| "malformed listFiles result: files".to_string())?
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(|s| s.to_string_lossy())
+                .ok_or_else(|| "malformed listFiles result: files".to_string())
+        })
+        .collect::<Result<Vec<String>, String>>()?;
+    let truncated = match value.get("truncated") {
+        Some(Json::Bool(truncated)) => *truncated,
+        _ => return Err("malformed listFiles result: truncated".to_string()),
+    };
+    Ok((files, truncated))
 }
 
 /// The `changes` call's payload, mirroring the wire union
