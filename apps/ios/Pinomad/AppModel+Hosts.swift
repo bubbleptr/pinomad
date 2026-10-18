@@ -164,6 +164,7 @@ extension AppModel {
             return
         }
         push.forget(hostKey)
+        accountHostForgotten(hostKey)
         if hostKey == currentHostKey {
             connectActive()
         } else {

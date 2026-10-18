@@ -27,7 +27,11 @@ extension AppModel {
             if let session = record.session, session.isExpired() {
                 record = record.clearingToken()
                 accountRecord = record
-                try? accountStore.save(record)
+                do {
+                    try accountStore.save(record)
+                } catch {
+                    accountSignOutWarning = "登录已过期，但没能清除钥匙串里的令牌；重启 App 后可能仍保持登录。"
+                }
                 accountNotice = "登录已过期，请重新登录。"
             } else {
                 accountRecord = record
@@ -127,7 +131,7 @@ extension AppModel {
         case .failure(let failure):
             guard accountSession == session else { return }
             if failure.clearsSession {
-                endAccountSession(notice: "登录已失效，请重新登录。")
+                accountSignOutWarning = endAccountSession(notice: "登录已失效，请重新登录。")
             } else {
                 accountHostsError = AccountCopy.message(failure)
             }
@@ -183,12 +187,14 @@ extension AppModel {
             }
         }
         guard accountSession == session else { return }
-        endAccountSession(notice: nil)
+        var warning = endAccountSession(notice: nil)
         if let failure, !failure.clearsSession {
-            accountSignOutWarning = everywhere
+            let server = everywhere
                 ? "其他设备可能还没退出；请重新登录后再试一次「在所有设备上退出」。"
                 : "已在这台设备退出，但服务端没有确认；会话会在 30 天内自然过期。"
+            warning = [warning, server].compactMap { $0 }.joined(separator: "\n")
         }
+        accountSignOutWarning = warning
     }
 
     /// Pair one account host through a server-vouched offer, then the same
@@ -212,7 +218,7 @@ extension AppModel {
         case .failure(let failure):
             guard accountSession == session else { return false }
             if failure.clearsSession {
-                endAccountSession(notice: "登录已失效，请重新登录。")
+                accountSignOutWarning = endAccountSession(notice: "登录已失效，请重新登录。")
             } else {
                 accountError = AccountCopy.message(failure)
             }
@@ -271,6 +277,23 @@ extension AppModel {
         }
     }
 
+    /// Forgetting a stored host leaves the account row for the same host
+    /// unpaired, so the list doesn't offer to connect to a key that is gone.
+    func accountHostForgotten(_ hostKey: String) {
+        accountRejectedHostKeys.remove(hostKey)
+        accountRows = accountRows.map { row in
+            guard row.storedHostKey == hostKey else { return row }
+            return AccountHostRow(
+                hostId: row.hostId,
+                name: row.name,
+                online: row.online,
+                pairing: row.pairing,
+                status: .unpaired,
+                action: .pair,
+                storedHostKey: nil)
+        }
+    }
+
     /// Refresh the host list and the account list together — pull-to-refresh
     /// and the hosts sheet's first appearance.
     func refreshHostsAndAccount() async {
@@ -314,8 +337,11 @@ extension AppModel {
         try? accountStore.save(record)
     }
 
-    private func endAccountSession(notice: String?) {
-        guard let record = accountRecord else { return }
+    /// Clears the in-memory session and the keychain token. Returns a warning
+    /// when the keychain still holds the token — the next launch would sign
+    /// the reader back in despite this screen saying they are out.
+    private func endAccountSession(notice: String?) -> String? {
+        guard let record = accountRecord else { return nil }
         let cleared = record.clearingToken()
         accountRecord = cleared
         accountRows = []
@@ -323,6 +349,17 @@ extension AppModel {
         accountError = nil
         accountSignOutWarning = nil
         accountNotice = notice
-        try? accountStore.save(cleared)
+        do {
+            try accountStore.save(cleared)
+            return nil
+        } catch {
+            // Last resort: drop the whole item. Either way, say so.
+            do {
+                try accountStore.clear()
+                return nil
+            } catch {
+                return "账号已退出，但没能清除钥匙串里的令牌；重启 App 后可能仍保持登录。"
+            }
+        }
     }
 }
