@@ -24,12 +24,16 @@ final class AppModel {
     /// instead of being dropped by SwiftUI.
     enum Modal: Identifiable {
         case hosts
+        case account
+        case pairingCode
         case scanner
         case confirm(PendingPairing)
 
         var id: String {
             switch self {
             case .hosts: "hosts"
+            case .account: "account"
+            case .pairingCode: "pairingCode"
             case .scanner: "scanner"
             case .confirm(let pending): "confirm:\(pending.link)"
             }
@@ -49,6 +53,9 @@ final class AppModel {
     /// The link the session is pairing with, until its handshake spends the
     /// one-time code (then retrying must reconnect, not pair again).
     private(set) var pairingLink: String?
+    /// The account link a server-vouched pairing must carry into the saved
+    /// host — kept beside the link so Retry doesn't lose it.
+    private(set) var pairingAccount: AccountLink?
     /// Where that link goes — names the host while pairing.
     private(set) var pairingTarget: PairingTarget?
     /// The host the device was on before the latest pairing, so a pairing
@@ -104,6 +111,22 @@ final class AppModel {
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
     let store = KeychainHostStore()
+    // Account state (ADR-0022). The token lives in the keychain and the
+    // in-memory record only; everything else here is view state.
+    let accountStore = KeychainAccountStore()
+    let accountTransport: any AccountTransport = URLSessionAccountTransport()
+    var accountRecord: AccountRecord?
+    var accountRows: [AccountHostRow] = []
+    var accountHostsError: String?
+    var accountError: String?
+    var accountNotice: String?
+    var accountSignOutWarning: String?
+    var accountBusy = false
+    var accountRefreshing = false
+    var accountRefreshPending = false
+    var accountPairingHostId: String?
+    var accountPairingGeneration: UInt64 = 0
+    var accountRejectedHostKeys: Set<String> = []
     /// Push switches, permission, APNs token, and the system callbacks.
     let push = PushCenter.shared
     /// The host's reason the last token change failed, shown by the switch.
@@ -175,6 +198,7 @@ final class AppModel {
             startDemo()
             return
         }
+        loadAccount()
         connectActive()
         if !injected.isEmpty { offerPairing(injected) }
     }
@@ -216,29 +240,41 @@ final class AppModel {
     }
 
     /// Start a session pairing with `link` — replaces whatever session ran.
-    func pair(link: String) {
+    /// `account` is set only for a server-vouched pairing; it rides into the
+    /// saved host record.
+    @discardableResult
+    func pair(link: String, account: AccountLink? = nil) -> Bool {
+        // A QR/pasted pairing starts a new target; an in-flight account ask
+        // for another host must not land after it.
+        if account == nil { invalidateAccountPairing() }
         do {
             let previous = currentHostKey ?? hosts.active?.hostKey
-            let session = try PinomadSession.pair(link: link, deviceName: UIDevice.current.name)
+            let session = try PinomadSession.pair(
+                link: link, deviceName: UIDevice.current.name, account: account)
             adopt(session, sameHost: false)
             hostBeforePairing = hostBeforePairing ?? previous
             sessionHost = nil
             pairingLink = link
+            pairingAccount = account
             pairingTarget = PinomadCore.pairingTarget(link: link)
+            return true
         } catch {
             // Links reach here through `offerPairing`, which already parsed
             // them — this is the core refusing to build the session.
             fail(.unreachable(describe(error)))
+            return false
         }
     }
 
     /// Start a session for a stored host.
     func connect(_ host: HostRecord) {
+        invalidateAccountPairing()
         do {
             let session = try PinomadSession.connect(host: host)
             adopt(session, sameHost: host.hostKey == currentHostKey)
             sessionHost = host
             pairingLink = nil
+            pairingAccount = nil
             pairingTarget = nil
         } catch {
             fail(.unreachable(describe(error)))
@@ -248,6 +284,7 @@ final class AppModel {
     /// Re-read the keychain and connect to the launch host, or wait for a
     /// link when there is none.
     func connectActive() {
+        invalidateAccountPairing()
         do {
             hosts = try store.load()
             hostsLoaded = true
@@ -308,6 +345,7 @@ final class AppModel {
         snapshot = nil
         sessionHost = nil
         pairingLink = nil
+        pairingAccount = nil
         pairingTarget = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
@@ -353,6 +391,11 @@ final class AppModel {
     private func apply(_ update: SessionUpdate) {
         switch update {
         case .ready(let outcome):
+            // A revoked device can be refused before the first snapshot; the
+            // account list still needs the marker.
+            if outcome == .unauthorized, let host = revokedHost {
+                markAccountRejected(host)
+            }
             if let failure = ConnectFailure(outcome: outcome, pairing: pairingLink != nil) {
                 fail(failure)
                 return
@@ -375,7 +418,10 @@ final class AppModel {
             // whatever the first view turns out to say.
             sessionHost = host
             pairingLink = nil
+            pairingAccount = nil
+            accountRejectedHostKeys.remove(host.hostKey)
             reloadHosts()
+            accountRefreshAfterPairing()
             advancePushTarget()
             if let saveError {
                 lastError = "没能记住这台宿主（\(saveError)）：重启 App 后会回到之前的宿主，要再用它得重新配对。"
@@ -385,6 +431,9 @@ final class AppModel {
             // with another protocol major.
             if let failure = ConnectFailure(snapshot: snapshot) {
                 fail(failure)
+            }
+            if snapshot.unauthorized, let host = revokedHost {
+                markAccountRejected(host)
             }
             self.snapshot = snapshot
             // A failure page explains itself; the core's notice for the

@@ -70,7 +70,7 @@ extension AppModel {
     /// retries on its own.
     func retryConnection() {
         if let link = pairingLink {
-            pair(link: link)
+            pair(link: link, account: pairingAccount)
         } else if let host = sessionHost {
             // After a pairing's handshake this is the identity it stored —
             // the link's code is spent, so pairing again would be refused.
@@ -85,7 +85,7 @@ extension AppModel {
         guard hostKey != currentHostKey || phase != .connected else { return }
         var saveError: String?
         do {
-            try store.save(hosts.activating(hostKey))
+            try store.update { $0 = $0.activating(hostKey) }
         } catch {
             saveError = describe(error)
         }
@@ -158,12 +158,13 @@ extension AppModel {
     private func forgetNow(_ hostKey: String, warning: String?) {
         forgettingHosts.remove(hostKey)
         do {
-            try store.save(hosts.forgetting(hostKey))
+            try store.update { $0 = $0.forgetting(hostKey) }
         } catch {
             lastError = "没能忘记这台宿主：\(describe(error))"
             return
         }
         push.forget(hostKey)
+        accountHostForgotten(hostKey)
         if hostKey == currentHostKey {
             connectActive()
         } else {
@@ -172,6 +173,34 @@ extension AppModel {
         if let warning { pushForgetWarning = warning }
         advancePushTarget()
     }
+
+    /// The host's one-time pairing offer for another device. Request-class:
+    /// the host rejects with a message the sheet shows.
+    func createPairingOffer() async -> Result<PairingCodeOffer, PairingCodeFailure> {
+        guard let session else {
+            return .failure(PairingCodeFailure(message: "还没连上宿主。"))
+        }
+        do {
+            switch try await session.invoke(.createPairing) {
+            case .pairing(let url, let expiresAt):
+                return .success(PairingCodeOffer(url: url, expiresAt: expiresAt))
+            default:
+                return .failure(PairingCodeFailure(message: "宿主没有返回配对信息。"))
+            }
+        } catch {
+            return .failure(PairingCodeFailure(message: describe(error)))
+        }
+    }
+}
+
+/// A one-time pairing URL and when it dies (epoch ms).
+struct PairingCodeOffer: Equatable {
+    let url: String
+    let expiresAt: Double
+}
+
+struct PairingCodeFailure: Error, Equatable {
+    let message: String
 }
 
 /// `host[:port]` of a URL, for "pair with …".
