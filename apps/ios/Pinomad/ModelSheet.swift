@@ -1,30 +1,25 @@
 import PinomadCore
 import SwiftUI
 
-/// Pick the shown conversation's model and thinking level. Changes go to
-/// the host straight away; the sheet reads the agent state back from the
-/// snapshot, so a refused change simply doesn't stick (and toasts).
+/// Pick a model and thinking level. Used for the shown conversation (the
+/// callbacks call the host; the selection reads back from the snapshot, so
+/// a refused change doesn't stick) and for the new-conversation draft (the
+/// callbacks set the local pick).
 struct ModelSheet: View {
     let model: AppModel
-    let agent: AgentState
+    let models: [ModelSummary]
+    let selected: ModelPick
+    let onModel: (ModelRef) -> Void
+    let onLevel: (ThinkingLevel) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
-    private var models: [ModelSummary] { model.snapshot?.models ?? [] }
-
     /// Offline changes "succeed" into a notice only — don't offer them.
-    private var connected: Bool {
-        guard let snapshot = model.snapshot else { return false }
-        return snapshot.connection == .connected && !snapshot.unauthorized
-    }
-
-    /// Live agent state when the conversation is still shown, else what
-    /// the sheet opened with.
-    private var current: AgentState { model.snapshot?.conversation?.agent ?? agent }
+    private var connected: Bool { model.connected }
 
     private var levels: [ThinkingLevel] {
-        summaryOf(models: models, model: current.model)?.thinkingLevels ?? []
+        summaryOf(models: models, model: selected.model)?.thinkingLevels ?? []
     }
 
     var body: some View {
@@ -32,14 +27,14 @@ struct ModelSheet: View {
             List {
                 if levels.count > 1, query.isEmpty {
                     Section("思考等级") {
-                        let selected = clampLevel(levels: levels, want: current.thinkingLevel ?? .off)
+                        let current = clampLevel(levels: levels, want: selected.level)
                         ForEach(levels, id: \.self) { level in
                             Button {
-                                model.setThinkingLevel(level)
+                                onLevel(level)
                                 dismiss()
                             } label: {
                                 Row(title: thinkingLevelLabel(level: level) ?? "\(level)", subtitle: nil,
-                                    checked: level == selected)
+                                    checked: level == current)
                             }
                         }
                     }
@@ -51,7 +46,7 @@ struct ModelSheet: View {
                         } label: {
                             Row(title: summary.name ?? summary.modelId, subtitle: summary.provider,
                                 checked: sameModel(a: ModelRef(provider: summary.provider, modelId: summary.modelId),
-                                                   b: current.model))
+                                                   b: selected.model))
                         }
                     }
                 }
@@ -78,7 +73,7 @@ struct ModelSheet: View {
     /// else is done.
     private func pick(_ summary: ModelSummary) {
         let ref = ModelRef(provider: summary.provider, modelId: summary.modelId)
-        if !sameModel(a: ref, b: current.model) { model.setModel(ref) }
+        if !sameModel(a: ref, b: selected.model) { onModel(ref) }
         query = ""
         if summary.thinkingLevels.count <= 1 { dismiss() }
     }

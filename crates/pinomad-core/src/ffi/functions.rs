@@ -229,6 +229,14 @@ pub fn question_answers(
     crate::questions::question_answers(question_count as usize, &selections, &others)
 }
 
+/// Whether a host speaking protocol minor `host_minor` knows `method` (the
+/// wire name, e.g. "renameConversation") — older hosts reject unknown calls,
+/// so the UI hides what they can't do.
+#[uniffi::export]
+pub fn host_supports_call(host_minor: u32, method: String) -> bool {
+    crate::frames::host_supports_call(host_minor, &method)
+}
+
 /// How many images one message may carry — sizes the client's picker so
 /// it never offers more than `image_problem` would admit.
 #[uniffi::export]
