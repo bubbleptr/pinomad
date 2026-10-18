@@ -1,7 +1,7 @@
 // The paired-device registry and pairing offers for the secure channel, plus
 // the host's long-term X25519 identity. Session-scoped like IndexDoc.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { link, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
@@ -114,14 +114,9 @@ export async function loadHostKey(dataDir: string): Promise<KeyPair> {
   } catch (error) {
     if ((error as { code?: string }).code !== "ENOENT") throw error;
     const pair = generateKeyPair();
-    // `wx` like loadRelayKey: `pinomad join` beside a starting host must not
-    // see two processes write different identities over the same file.
-    try {
-      await writeFile(path, `${toBase64Url(pair.privateKey)}\n`, { flag: "wx", mode: 0o600 });
-    } catch (race) {
-      if ((race as { code?: string }).code !== "EEXIST") throw race;
-      return loadHostKey(dataDir);
-    }
+    // Like loadRelayKey: `pinomad join` beside a starting host must not see
+    // two processes write different identities over the same file.
+    if (!(await createKeyFile(path, toBase64Url(pair.privateKey)))) return loadHostKey(dataDir);
     return pair;
   }
 }
@@ -131,7 +126,8 @@ export async function loadHostKey(dataDir: string): Promise<KeyPair> {
  * mode 0600). Deliberately a separate key from the X25519 `host-key` — no
  * cross-protocol key reuse: this one only signs relay challenges (proving the
  * right to a hostId); end-to-end security still rests on the Noise host key.
- * `wx` + EEXIST re-read keeps `pinomad join` beside a live host single-writer safe.
+ * Created via createKeyFile, which keeps `pinomad join` beside a live host
+ * single-writer safe.
  */
 export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8Array; publicKey: Uint8Array }> {
   const path = join(dataDir, "relay-key");
@@ -142,13 +138,30 @@ export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8A
   } catch (error) {
     if ((error as { code?: string }).code !== "ENOENT") throw error;
     const { secretKey, publicKey } = ed25519.keygen();
-    try {
-      await writeFile(path, `${toBase64Url(secretKey)}\n`, { flag: "wx", mode: 0o600 });
-    } catch (race) {
-      if ((race as { code?: string }).code !== "EEXIST") throw race;
-      return loadRelayKey(dataDir);
-    }
+    if (!(await createKeyFile(path, toBase64Url(secretKey)))) return loadRelayKey(dataDir);
     return { secretKey, publicKey };
+  }
+}
+
+/**
+ * Publishes a new 0600 key file only if none exists yet; false when another
+ * process won, so the caller re-reads theirs. The key is written in full to a
+ * private temp file first and then hard-linked into place: `link` fails with
+ * EEXIST instead of overwriting, and a reader never sees the file half written
+ * (a plain `wx` write creates it empty before filling it).
+ */
+async function createKeyFile(path: string, key: string): Promise<boolean> {
+  const tmp = `${path}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, `${key}\n`, { flag: "wx", mode: 0o600 });
+    await link(tmp, path);
+    return true;
+  } catch (race) {
+    if ((race as { code?: string }).code !== "EEXIST") throw race;
+    return false;
+  } finally {
+    // Best effort: a leftover temp file must not fail host startup.
+    await unlink(tmp).catch(() => {});
   }
 }
 
