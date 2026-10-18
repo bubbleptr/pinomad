@@ -67,7 +67,7 @@
         <div class="wrap">
           <h1 id="hero-title"><span class="nowrap">崩溃重启也不丢进度的</span> <span class="nowrap">coding agent</span></h1>
           <p class="lead">
-            PiNomad 跑在你自己的机器上，用那台机器的 shell 和代码仓库，每次模型调用和工具调用都存检查点：宿主崩溃或重启后，任务从停下的地方接着跑。Mac
+            PiNomad 跑在你自己的机器上，用那台机器的 shell 和代码仓库，每次模型调用和工具调用都存检查点。宿主崩溃或重启后，任务从停下的地方接着跑。Mac
             App、Web 和 iPhone App 连的是同一批运行中的任务。
           </p>
           <div class="actions">
@@ -132,7 +132,7 @@
             <p class="eyebrow">崩溃恢复</p>
             <h2 id="durable-title">崩溃、重启都不丢进度</h2>
             <p class="section-lead">
-              Pi Durable 会给每次模型调用和工具调用存检查点，宿主重启后从断掉的地方接着跑，不用从头再来。
+              Pi Durable 在每次模型调用和工具调用完成后存检查点。重启后从最后一个检查点接着跑，只有当时没跑完的那一步要重做。
             </p>
           </div>
           <div class="panel" data-durable>
@@ -198,8 +198,8 @@
               <div>
                 <h3>子代理和具名 Agent</h3>
                 <p>
-                  把自成一体的任务交给并行执行的子代理，或者用 <code>@名字</code>
-                  派给一个可复用的角色，可选锁定它的模型和思考等级。
+                  把能独立完成的任务交给并行执行的子代理，或者用 <code>@名字</code>
+                  派给一个具名 Agent，还可以给它固定模型和思考等级。
                 </p>
               </div>
               <figure class="shot shot-crop">
@@ -291,7 +291,7 @@
               pi？<code>pinomad host --faux "hi"</code> 会用一个脚本化的假模型跑起来，可以先点点看。
             </p>
             <p class="note">
-              还在早期，迭代很快。Pi Durable 本身也是实验性的；宿主和客户端的协议主版本号必须一致。
+              还在早期。Pi Durable 本身也是实验性的；宿主和客户端的协议主版本号必须一致。
             </p>
           </div>
           <div class="code-card">
