@@ -95,6 +95,8 @@
           <figure class="shot shot-window hero-shot">
             <img
               src="../shots/zh/hero.webp"
+              srcset="../shots/zh/hero-1200.webp 1200w, ../shots/zh/hero.webp 2400w"
+              sizes="(min-width: 72rem) 68rem, 100vw"
               width="2400"
               height="1500"
               alt="运行中的 PiNomad Web 客户端：侧栏是各个对话；agent 已经回答过一轮，正在按追问改测试、跑测试"
@@ -162,8 +164,16 @@
                 <p>Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到。</p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：对话和各自的分支。</figcaption>
+                <img
+                  src="../shots/zh/worktree.webp"
+                  srcset="../shots/zh/worktree-560.webp 560w, ../shots/zh/worktree.webp 1120w"
+                  sizes="(min-width: 56rem) 35rem, 100vw"
+                  width="1120"
+                  height="840"
+                  alt="侧栏是 slugkit 项目下的各个对话。打开的这个读过、写过、改过文件并跑了测试，输入框下面一行显示它在自己的 Git worktree 里，分支是 pinomad/ 开头的"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -172,8 +182,16 @@
                 <p>工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题。</p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：一张选择题卡片。</figcaption>
+                <img
+                  src="../shots/zh/question.webp"
+                  srcset="../shots/zh/question-560.webp 560w, ../shots/zh/question.webp 1120w"
+                  sizes="(min-width: 56rem) 35rem, 100vw"
+                  width="1120"
+                  height="840"
+                  alt="agent 提出的选择题卡片：命令叫 slugkit 还是 slug；标题只从参数读，还是也从标准输入读；每题都可以自己填答案"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
             <div class="feature-row split">
@@ -185,8 +203,16 @@
                 </p>
               </div>
               <figure class="shot shot-crop">
-                <!-- include skeleton-crop.html -->
-                <figcaption class="shot-label">截图待补：并行运行的子代理。</figcaption>
+                <img
+                  src="../shots/zh/subagents.webp"
+                  srcset="../shots/zh/subagents-560.webp 560w, ../shots/zh/subagents.webp 1120w"
+                  sizes="(min-width: 56rem) 35rem, 100vw"
+                  width="1120"
+                  height="840"
+                  alt="一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突"
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             </div>
           </div>
