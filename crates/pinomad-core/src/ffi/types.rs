@@ -17,7 +17,7 @@ pub use crate::cot_view::{
 };
 pub use crate::folder_path::FolderCrumb;
 pub use crate::frames::{ApnsEnvironment, ApnsPushToken, ProtocolVersion};
-pub use crate::model::{ModelPick, ModelRef, ThinkingLevel};
+pub use crate::model::{AgentDraft, AgentDraftProblem, AgentDraftSource, ModelPick, ModelRef, ThinkingLevel};
 pub use crate::organization::{
     ConversationStatus, HomeKind, SummaryActivity, SummaryKind,
 };
@@ -598,6 +598,14 @@ pub struct AgentState {
 pub struct Defaults {
     pub model: Option<ModelRef>,
     pub thinking_level: Option<ThinkingLevel>,
+}
+
+/// The user's per-side overrides on a picked named agent — the second operand
+/// of `resolveAgentDraft` (`{model?, level?}` on the wire).
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AgentDraftOverride {
+    pub model: Option<ModelRef>,
+    pub level: Option<ThinkingLevel>,
 }
 
 /// One named agent (ADR-0023) — an `<name>.md` on the host.

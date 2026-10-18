@@ -12,9 +12,10 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
+import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -24,8 +25,8 @@ import { requestNotificationPermission } from "../../entities/conversation/notif
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
-import { useAgentMentions } from "../../entities/agent/agent-mentions.tsx";
-import { ChatPromptInput } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { LiveState } from "./live-state.tsx";
@@ -213,7 +214,18 @@ function SideRow({
 }) {
   return (
     <ListItem
-      label={displayName(summary)}
+      label={
+        // A fork carries the named agent its top-level was created with;
+        // subagent rows keep their existing look.
+        summary.kind !== "fork" || summary.role === undefined ? (
+          displayName(summary)
+        ) : (
+          <span className="inline-flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate">{displayName(summary)}</span>
+            <span className="shrink-0 text-xs text-muted">@{summary.role}</span>
+          </span>
+        )
+      }
       description={
         summary.status === "running" && summary.activity !== undefined
           ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
@@ -317,6 +329,7 @@ function ThreadDetail({
   const conversation: ConversationView | undefined = side.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
   const [draft, setDraft] = useState("");
+  const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const submit = (): void => {
     const text = draft.trim();
     if (text === "") return;
@@ -358,13 +371,27 @@ function ThreadDetail({
       <div className="shrink-0 border-t border-border p-2">
         <ChatPromptInput
           value={draft}
+          inputRef={inputRef}
           placeholder="Reply in this thread…"
           status={busy ? "streaming" : "ready"}
           isDisabled={view.connection !== "connected"}
           onSubmit={submit}
           onStop={() => void remote.controller.abort(side.id)}
           onValueChange={setDraft}
-          triggers={useAgentMentions(view.agents)}
+          triggers={useAtMentions(
+            view.agents,
+            inputRef,
+            // A fork shares its family's home: a Chat family has no project files.
+            view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+              ? {
+                  // The fork lists its own checkout — forks and subagents keep
+                  // separate cwds, never the parent's.
+                  key: `conversation:${side.id}`,
+                  list: (query) =>
+                    remote.controller.listFiles({ kind: "conversation", conversationId: side.id }, query),
+                }
+              : undefined,
+          )}
         />
       </div>
     </div>

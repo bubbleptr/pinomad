@@ -240,5 +240,106 @@
       "remembered": "{\"level\":\"medium\"}",
       "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"medium\"}"
     }
+  ],
+  "resolveAgentDraft": [
+    {
+      "name": "inherit-pins",
+      "agent": "reviewer",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\",\"model\":\"anthropic/claude-a\",\"thinkingLevel\":\"high\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"thinkingLevel\":\"low\"}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"high\",\"modelFrom\":\"agent\",\"levelFrom\":\"agent\",\"send\":{\"agent\":\"reviewer\"}}"
+    },
+    {
+      "name": "inherit-defaults",
+      "agent": "planner",
+      "agents": "{\"roles\":[{\"name\":\"planner\",\"description\":\"planner does things\",\"prompt\":\"Be helpful.\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"thinkingLevel\":\"low\"}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"low\",\"modelFrom\":\"default\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"planner\"}}"
+    },
+    {
+      "name": "override-model-clamps-inherited",
+      "agent": "reviewer",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\",\"model\":\"anthropic/claude-a\",\"thinkingLevel\":\"high\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"medium\",\"modelFrom\":\"override\",\"levelFrom\":\"agent\",\"send\":{\"agent\":\"reviewer\",\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}}"
+    },
+    {
+      "name": "override-level",
+      "agent": "reviewer",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\",\"model\":\"anthropic/claude-a\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"thinkingLevel\":\"low\"}",
+      "overrides": "{\"level\":\"xhigh\"}",
+      "expect": "{\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-a\"},\"level\":\"high\",\"modelFrom\":\"agent\",\"levelFrom\":\"override\",\"send\":{\"agent\":\"reviewer\",\"thinkingLevel\":\"xhigh\"}}"
+    },
+    {
+      "name": "role-model-unavailable",
+      "agent": "reviewer",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\",\"model\":\"gone/claude-z\",\"thinkingLevel\":\"high\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"high\",\"modelFrom\":\"agent\",\"levelFrom\":\"agent\",\"send\":{\"agent\":\"reviewer\"},\"problem\":{\"kind\":\"model-unavailable\",\"agent\":\"reviewer\",\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"source\":\"agent\"}}"
+    },
+    {
+      "name": "override-fixes-unavailable",
+      "agent": "reviewer",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\",\"model\":\"gone/claude-z\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"off\",\"modelFrom\":\"override\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"reviewer\",\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}}"
+    },
+    {
+      "name": "default-model-unavailable",
+      "agent": "planner",
+      "agents": "{\"roles\":[{\"name\":\"planner\",\"description\":\"planner does things\",\"prompt\":\"Be helpful.\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"}}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"off\",\"modelFrom\":\"default\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"planner\"},\"problem\":{\"kind\":\"model-unavailable\",\"agent\":\"planner\",\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"source\":\"default\"}}"
+    },
+    {
+      "name": "override-model-unavailable",
+      "agent": "planner",
+      "agents": "{\"roles\":[{\"name\":\"planner\",\"description\":\"planner does things\",\"prompt\":\"Be helpful.\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"}}",
+      "expect": "{\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"level\":\"off\",\"modelFrom\":\"override\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"planner\",\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"}},\"problem\":{\"kind\":\"model-unavailable\",\"agent\":\"planner\",\"model\":{\"provider\":\"gone\",\"modelId\":\"claude-z\"},\"source\":\"override\"}}"
+    },
+    {
+      "name": "agent-missing",
+      "agent": "ghost",
+      "agents": "{\"roles\":[{\"name\":\"reviewer\",\"description\":\"reviewer does things\",\"prompt\":\"Be helpful.\"}],\"problems\":[{\"file\":\"ghost.md\",\"reason\":\"unknown field 'tools'\"}]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"off\",\"modelFrom\":\"default\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"ghost\"},\"problem\":{\"kind\":\"agent-missing\",\"agent\":\"ghost\",\"reason\":\"unknown field 'tools'\"}}"
+    },
+    {
+      "name": "agents-null",
+      "agent": "ghost",
+      "agents": "null",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"}}",
+      "overrides": "{}",
+      "expect": "{\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-b\"},\"level\":\"off\",\"modelFrom\":\"default\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"ghost\"},\"problem\":{\"kind\":\"agent-missing\",\"agent\":\"ghost\"}}"
+    },
+    {
+      "name": "model-missing",
+      "agent": "planner",
+      "agents": "{\"roles\":[{\"name\":\"planner\",\"description\":\"planner does things\",\"prompt\":\"Be helpful.\"}],\"problems\":[]}",
+      "models": "[{\"provider\":\"anthropic\",\"modelId\":\"claude-a\",\"name\":\"Claude A\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"medium\",\"high\"]},{\"provider\":\"openai\",\"modelId\":\"gpt-b\",\"name\":\"GPT B\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\",\"low\",\"medium\"]},{\"provider\":\"local\",\"modelId\":\"llama-c\",\"name\":\"Llama C\",\"contextWindow\":200000,\"thinkingLevels\":[\"off\"]}]",
+      "defaults": "{}",
+      "overrides": "{}",
+      "expect": "{\"level\":\"off\",\"levelFrom\":\"default\",\"send\":{\"agent\":\"planner\"},\"problem\":{\"kind\":\"model-missing\",\"agent\":\"planner\"}}"
+    }
   ]
 }

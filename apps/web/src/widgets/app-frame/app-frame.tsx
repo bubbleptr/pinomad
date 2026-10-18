@@ -146,6 +146,7 @@ export function AppFrame({
             onToggleSidebar={toggleSidebar}
             onOpenNav={() => setNavOpen(true)}
             title={drafting ? draftLabel : displayName(summary)}
+            role={summary?.role}
             parentSummary={parentSummary}
             onBackToParent={openConversation}
             showChanges={conversation !== undefined}
@@ -262,6 +263,7 @@ function FrameHeader({
   onToggleSidebar,
   onOpenNav,
   title,
+  role,
   parentSummary,
   onBackToParent,
   showChanges,
@@ -277,6 +279,8 @@ function FrameHeader({
   onToggleSidebar: () => void;
   onOpenNav: () => void;
   title: string;
+  /** The named agent the shown conversation was created with (ADR-0023). */
+  role?: string;
   parentSummary: ConversationSummary | undefined;
   onBackToParent: (id: ConversationId) => void;
   showChanges: boolean;
@@ -309,7 +313,10 @@ function FrameHeader({
       )}
       <h1 className="min-w-0 flex-1 truncate text-sm font-normal">
         {parentSummary === undefined ? (
-          title
+          <span className="flex items-center gap-1.5">
+            <span className="truncate">{title}</span>
+            {role === undefined ? null : <span className="shrink-0 text-muted">@{role}</span>}
+          </span>
         ) : (
           <span className="flex items-center gap-1">
             <Button
@@ -323,6 +330,7 @@ function FrameHeader({
               ›
             </span>
             <span className="truncate">{title}</span>
+            {role === undefined ? null : <span className="shrink-0 text-muted">@{role}</span>}
           </span>
         )}
       </h1>

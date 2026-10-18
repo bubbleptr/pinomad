@@ -22,6 +22,13 @@ export type ChatPromptInputHandle = {
   focus(): void;
   /** Focus and put the caret after the last character. */
   focusAtEnd(): void;
+  /**
+   * Re-dispatch an `input` event on the editable, but only while it holds
+   * the focus. Async trigger-menu candidates push through this so Astryx
+   * re-runs its search; scoping to this editable keeps a sibling composer's
+   * landed listing from being dispatched into the wrong input.
+   */
+  emitInput(): void;
 };
 
 function editableOf(root: HTMLDivElement | null): HTMLElement | null {
@@ -78,6 +85,15 @@ function PromptComposerInput({
         range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
+      },
+      emitInput: () => {
+        const editable = editableOf(rootRef.current);
+        // Only this composer's editable may be re-activated — with the main
+        // composer and a thread composer mounted together, an @ listing can
+        // land while the user is typing in the other one.
+        if (editable !== null && (document.activeElement === editable || editable.contains(document.activeElement))) {
+          editable.dispatchEvent(new Event("input", { bubbles: true }));
+        }
       },
     };
     return () => {
@@ -152,6 +168,8 @@ type ChatPromptInputOwnProps = {
   inputRef?: RefObject<ChatPromptInputHandle | null>;
   /** Disable the editable; controls inside the slots take their own flags. */
   isDisabled?: boolean;
+  /** Block only submission (a named-agent problem the user must fix elsewhere) — typing and the slots stay live. */
+  submitDisabled?: boolean;
   /** Staged content rendered above the input (attached images). */
   attachments?: ReactNode;
   /** Non-text content is staged, so an empty draft may still submit. */
@@ -202,6 +220,7 @@ export function ChatPromptInput({
   placeholder,
   inputRef,
   isDisabled = false,
+  submitDisabled = false,
   attachments,
   hasAttachments,
   onFiles,
@@ -220,8 +239,9 @@ export function ChatPromptInput({
   const isRunning = status === "streaming" || status === "submitted";
   const isStopShown = isRunning && !value.trim() && hasAttachments !== true && Boolean(onStop);
   // Pace's allowSubmitWhileRunning is always on here: typing mid-run steers
-  // or queues, so a non-empty draft is always submittable.
-  const canSubmit = Boolean(value.trim()) || hasAttachments === true;
+  // or queues, so a non-empty draft is always submittable — unless the caller
+  // blocks it outright (a draft problem the user must resolve first).
+  const canSubmit = !submitDisabled && (Boolean(value.trim()) || hasAttachments === true);
 
   const handleSubmit = () => {
     if (!canSubmit) {
