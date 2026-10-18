@@ -32,8 +32,8 @@
   --sheet: oklch(1 0 0);
   --ink: oklch(0.21 0.015 260);
   --ink-2: oklch(0.46 0.018 255);
-  /* The one accent; text and tint variants derive from it. Placeholder hue. */
-  --accent: oklch(0.62 0.19 35);
+  /* The one accent, a muted steel blue; text and tint variants derive from it. */
+  --accent: oklch(0.56 0.085 245);
   --accent-text: color-mix(in oklch, var(--accent) 80%, black);
   --accent-wash: color-mix(in oklch, var(--accent) 10%, transparent);
   --tape: oklch(0.88 0.02 250 / 0.85);
