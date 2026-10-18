@@ -94,12 +94,23 @@ struct ChangesSheet: View {
     /// task in a checkout.
     private func emptyState(title: String, systemImage: String, description: String) -> some View {
         ScrollView {
-            ContentUnavailableView {
-                Label(title, systemImage: systemImage)
-            } description: {
-                Text(description)
+            VStack(spacing: 8) {
+                if panel.loading || panel.error != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        refreshIndicator
+                        refreshFailure
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                }
+                ContentUnavailableView {
+                    Label(title, systemImage: systemImage)
+                } description: {
+                    Text(description)
+                }
+                .frame(maxWidth: .infinity, minHeight: 420)
             }
-            .frame(maxWidth: .infinity, minHeight: 420)
         }
         .refreshable { await refresh() }
     }
@@ -126,18 +137,9 @@ struct ChangesSheet: View {
         let deletions = files.reduce(UInt64(0)) { $0 + $1.deletions }
 
         return List {
-            if let error = panel.error {
+            if panel.error != nil {
                 Section {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                        Spacer(minLength: 8)
-                        Button("重试") {
-                            Task { await refresh() }
-                        }
-                        .font(.footnote)
-                    }
+                    refreshFailure
                 }
             }
             Section {
@@ -148,13 +150,7 @@ struct ChangesSheet: View {
                 }
             } header: {
                 VStack(alignment: .leading, spacing: 5) {
-                    if panel.loading {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.mini)
-                            Text("刷新中…")
-                        }
-                    }
+                    refreshIndicator
                     if checkout == nil {
                         Text("这是项目目录里未提交的改动，不只是这个对话做的")
                     } else {
@@ -194,6 +190,40 @@ struct ChangesSheet: View {
             // The sheet is going away; `close()` already ended the epoch.
         } catch {
             panel.fail(token, model.describe(error))
+        }
+    }
+
+    /// A failed refresh keeps the last good result; this banner is how that
+    /// state still says why it is stale (the file list, unavailable reason,
+    /// and empty state all render it).
+    @ViewBuilder
+    private var refreshFailure: some View {
+        if let error = panel.error {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                Spacer(minLength: 8)
+                Button("重试") {
+                    Task { await refresh() }
+                }
+                .font(.footnote)
+            }
+        }
+    }
+
+    /// A refresh over an existing result keeps that result on screen; this
+    /// small line is the only loading signal in the empty/unavailable states.
+    @ViewBuilder
+    private var refreshIndicator: some View {
+        if panel.loading {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("刷新中…")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
     }
 }
@@ -341,15 +371,16 @@ struct FileDiffView: View {
         }
     }
 
-    /// The monospaced font's advance is fixed, so counting display
-    /// columns is enough to size the block without laying out every line.
+    /// Measure the rendered text rather than counting scalars: emoji and
+    /// combining sequences can be wider than one monospaced cell, and an
+    /// underestimate would clip the end of the horizontal scroll range.
     private var lineWidth: CGFloat {
         let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
-        let columns = file.lines.reduce(0) { widest, line in
-            max(widest, DiffLineRow.columns(line.text))
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let widest = file.lines.reduce(CGFloat.zero) { width, line in
+            max(width, (line.text as NSString).size(withAttributes: attributes).width)
         }
-        return CGFloat(columns) * advance + 28
+        return widest + 28
     }
 }
 
@@ -359,22 +390,13 @@ private struct DiffLineRow: View {
 
     var body: some View {
         Text(line.text.isEmpty ? " " : line.text)
-            .font(.system(size: 12, design: .monospaced))
+            .font(Font(UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)))
             .foregroundStyle(foreground)
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .padding(.vertical, 1)
             .frame(width: width, alignment: .leading)
             .background(background)
-    }
-
-    /// Tabs render several cells wide and CJK glyphs take two monospaced
-    /// cells; a plain `count` would underestimate both.
-    static func columns(_ text: String) -> Int {
-        text.reduce(0) { total, character in
-            if character == "\t" { return total + 4 }
-            return total + ((character.unicodeScalars.first?.value ?? 0) > 0x2E7F ? 2 : 1)
-        }
     }
 
     private var foreground: Color {
