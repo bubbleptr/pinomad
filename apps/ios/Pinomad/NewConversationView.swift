@@ -1,6 +1,7 @@
 import PinomadChat
 import PinomadCore
 import SwiftUI
+import UIKit
 
 /// The new-conversation draft: a composer whose send creates the
 /// conversation (at the chosen home, checkout and model) and then shows it
@@ -18,6 +19,7 @@ struct NewConversationView: View {
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
     private var pick: ModelPick { model.effectiveDraftPick }
+    private var resolution: AgentDraft? { model.draftResolution }
     private var currentModel: ModelSummary? { summaryOf(models: model.snapshot?.models ?? [], model: pick.model) }
     private var acceptsImages: Bool { currentModel?.images == true }
     private var imagesBlocked: Bool { !acceptsImages && !tray.images.isEmpty }
@@ -28,6 +30,57 @@ struct NewConversationView: View {
     }
 
     private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+    private var selectedAgent: String? { model.draftAgent.agent }
+
+    /// The picker stays up while a pick survives a now-empty snapshot so the
+    /// reader can clear it (the web's rule); an empty roles list alone hides
+    /// it.
+    private var showAgentPicker: Bool {
+        model.hostSupports(.agentConversations) && (!roles.isEmpty || selectedAgent != nil)
+    }
+
+    /// The capsule's label. While the source hint shares the line, the
+    /// level suffix is dropped so the model and the hint both stay legible;
+    /// the sheet still shows the level.
+    private var capsuleLabel: String {
+        guard sourceHint != nil, let currentModel else {
+            return modelLabel(models: model.snapshot?.models ?? [], selected: pick)
+        }
+        return currentModel.name ?? currentModel.modelId
+    }
+
+    /// An inherited side reads "来自 @name"; an overridden side drops it.
+    private var sourceHint: String? {
+        guard let agent = selectedAgent, let resolution else { return nil }
+        let modelInherited = resolution.modelFrom != .override
+        let levelInherited = resolution.levelFrom != .override
+        if modelInherited && levelInherited { return "来自 @\(agent)" }
+        if modelInherited { return "模型来自 @\(agent)" }
+        if levelInherited { return "等级来自 @\(agent)" }
+        return nil
+    }
+
+    /// The capsule's short red label and the card's full reason when the
+    /// named-agent create would be refused.
+    private var problemText: (label: String, reason: String)? {
+        guard let problem = resolution?.problem else { return nil }
+        switch problem {
+        case let .agentMissing(agent, reason):
+            let base = "这台宿主上没有具名 Agent @\(agent)"
+            return ("@\(agent) 不可用", reason.map { base + "：\($0)" } ?? base)
+        case let .modelMissing(agent):
+            return ("@\(agent) 没有可用模型", "@\(agent) 没指定模型，宿主也没有默认模型")
+        case let .modelUnavailable(agent, model, source):
+            let name = "\(model.provider)/\(model.modelId)"
+            let from: String
+            switch source {
+            case .agent: from = "@\(agent) 指定的模型"
+            case .`default`: from = "宿主默认模型"
+            case .override: from = "选中的模型"
+            }
+            return ("\(name) 不可用", "\(name)（\(from)）不在宿主的模型列表里")
+        }
+    }
 
     /// The draft's chosen checkout decides whether a fresh worktree's HEAD
     /// files or the project directory's live files are candidates. A Chat
@@ -41,6 +94,7 @@ struct NewConversationView: View {
 
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
+            && resolution?.problem == nil
             && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty)
     }
 
@@ -104,6 +158,12 @@ struct NewConversationView: View {
             .lineLimit(3...8)
             .focused($focused)
             .disabled(!model.connected || model.creating)
+            if let problemText {
+                Text(problemText.reason)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 PlusMenu(
                     connected: model.connected,
@@ -120,12 +180,17 @@ struct NewConversationView: View {
                 // cleared with the draft — hold the menu like the text field.
                 .disabled(model.creating)
                 ModelCapsule(
-                    label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
-                    enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true)
+                    label: capsuleLabel,
+                    enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true),
+                    sourceHint: sourceHint,
+                    problem: problemText?.label
                 ) {
                     focused = false
                     showModels = true
                 }
+                // Let the capsule take its ideal width; the spacer gives up
+                // the room first so the model and source hint both read.
+                .layoutPriority(1)
                 Spacer(minLength: 0)
                 if model.creating {
                     ProgressView().frame(width: 34, height: 34)
@@ -145,6 +210,12 @@ struct NewConversationView: View {
                 projectMenu
                 if case .project = model.draftHome {
                     checkoutMenu
+                }
+                if showAgentPicker {
+                    AgentMenuChip(roles: roles, selected: selectedAgent,
+                                  enabled: model.connected && !model.creating) {
+                        model.setDraftAgent($0)
+                    }
                 }
             }
         }
@@ -220,6 +291,80 @@ struct NewConversationView: View {
         }
         .tint(.secondary)
         .disabled(!model.connected)
+    }
+}
+
+/// The draft's named agent (ADR-0023): "不指定" or one of the host's roles,
+/// with each role's description as a menu subtitle. SwiftUI's Menu flattens
+/// a view label and drops the description, and reorders a bare button below
+/// the section, so the chip drives a UIMenu directly.
+private struct AgentMenuChip: UIViewRepresentable {
+    let roles: [AgentRole]
+    let selected: String?
+    let enabled: Bool
+    let choose: (String?) -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "person.crop.circle",
+                              withConfiguration: UIImage.SymbolConfiguration(textStyle: .caption1))
+        config.imagePadding = 4
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
+        config.baseForegroundColor = .secondaryLabel
+        config.background.backgroundColor = .tertiarySystemFill
+        config.background.cornerRadius = 13
+        config.titleLineBreakMode = .byTruncatingTail
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.preferredFont(forTextStyle: .caption1)
+            return outgoing
+        }
+        button.configuration = config
+        button.titleLabel?.lineBreakMode = .byTruncatingTail
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        var config = button.configuration ?? .plain()
+        config.title = selected.map { "@\($0)" } ?? "Agent"
+        button.configuration = config
+        button.isEnabled = enabled
+        button.accessibilityLabel = selected.map { "Agent：@\($0)" } ?? "Agent"
+        button.menu = menu()
+        button.invalidateIntrinsicContentSize()
+    }
+
+    /// A UIViewRepresentable otherwise stretches to the proposal when the
+    /// button has no intrinsic width yet; keep it a chip-sized control.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        let fitted = uiView.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                               height: CGFloat.greatestFiniteMagnitude))
+        return CGSize(width: min(fitted.width, 220), height: 28)
+    }
+
+    private func menu() -> UIMenu {
+        let none = UIAction(title: "不指定", state: selected == nil ? .on : .off) { _ in
+            choose(nil)
+        }
+        // UIKit renders inline submenus in reverse declaration order and a
+        // bare action after them; a non-empty title is what makes this sort
+        // as a section instead. The space keeps that header visually blank.
+        let unassigned = UIMenu(title: " ", options: .displayInline, children: [none])
+        guard !roles.isEmpty else { return UIMenu(children: [unassigned]) }
+        let actions = roles.map { role in
+            let action = UIAction(title: "@\(role.name)", state: selected == role.name ? .on : .off) { _ in
+                choose(role.name)
+            }
+            action.subtitle = role.description.isEmpty ? nil : role.description
+            return action
+        }
+        return UIMenu(children: [
+            UIMenu(title: "具名 Agent", options: .displayInline, children: actions),
+            unassigned,
+        ])
     }
 }
 

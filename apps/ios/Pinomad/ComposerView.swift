@@ -357,25 +357,55 @@ struct Thumbnail: View {
 struct ModelCapsule: View {
     let label: String
     let enabled: Bool
+    /// A muted suffix, e.g. which side of a named-agent pick is inherited.
+    let sourceHint: String?
+    /// Why the shown pick can't be sent — replaces the label in red.
+    let problem: String?
     let action: () -> Void
+
+    init(label: String, enabled: Bool, sourceHint: String? = nil,
+         problem: String? = nil, action: @escaping () -> Void) {
+        self.label = label
+        self.enabled = enabled
+        self.sourceHint = sourceHint
+        self.problem = problem
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text(label.isEmpty ? "选择模型" : label)
-                    .lineLimit(1)
+            // A source hint shares the line, so tighten the spacing only
+            // then — the conversation page's capsule is unchanged.
+            HStack(spacing: sourceHint == nil ? 4 : 2) {
+                if let problem {
+                    Text(problem)
+                        .lineLimit(1)
+                        .foregroundStyle(.red)
+                } else {
+                    Text(label.isEmpty ? "选择模型" : label)
+                        .lineLimit(1)
+                        // The label keeps its width; the hint truncates first
+                        // when the capsule runs out of room.
+                        .layoutPriority(1)
+                    if let sourceHint {
+                        Text(sourceHint)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, sourceHint == nil ? 12 : 8)
             .frame(height: 34)
             .background(.fill.tertiary, in: .capsule)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .accessibilityLabel("模型：\(label)")
+        .accessibilityLabel(problem.map { "模型：\($0)" } ?? "模型：\(label)")
     }
 }
 
