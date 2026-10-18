@@ -125,9 +125,15 @@ public final class PinomadSession: @unchecked Sendable {
     /// Test hook — observes the exact order events cross into the core.
     var handleHook: ((FfiEvent) -> Void)?
 
-    init(client: PinomadClient, dependencies: SessionDependencies) {
+    /// The account this pairing is vouched through, written beside the
+    /// stored host — nil for a QR/pasted pairing (which keeps any link the
+    /// same host already had).
+    private let pairingAccount: AccountLink?
+
+    init(client: PinomadClient, dependencies: SessionDependencies, pairingAccount: AccountLink? = nil) {
         self.client = client
         self.dependencies = dependencies
+        self.pairingAccount = pairingAccount
         var sink: AsyncStream<SessionEvent>.Continuation!
         self.events = AsyncStream { sink = $0 }
         self.sink = sink
@@ -141,11 +147,12 @@ public final class PinomadSession: @unchecked Sendable {
     public static func pair(
         link: String,
         deviceName: String,
+        account: AccountLink? = nil,
         dependencies: SessionDependencies = .live
     ) throws -> PinomadSession {
         let client = try PinomadClient.pair(
             link: link, deviceName: deviceName, devicePrivateKey: nil)
-        return PinomadSession(client: client, dependencies: dependencies)
+        return PinomadSession(client: client, dependencies: dependencies, pairingAccount: account)
     }
 
     /// Reconnect to a stored host — the record is re-validated through
@@ -416,7 +423,7 @@ public final class PinomadSession: @unchecked Sendable {
         var record = HostRecord(url: url, hostKey: hostKey, privateKey: privateKey, pairedAt: Date())
         do {
             var stored = try dependencies.hostStore.load()
-            record.account = stored.hosts.first { $0.hostKey == hostKey }?.account
+            record.account = pairingAccount ?? stored.hosts.first { $0.hostKey == hostKey }?.account
             stored.hosts.removeAll { $0.hostKey == hostKey }
             stored.hosts.append(record)
             stored.activeHostKey = hostKey

@@ -38,6 +38,7 @@ struct RootView: View {
         .sheet(item: $model.modal, onDismiss: model.modalDismissed) { modal in
             switch modal {
             case .hosts: HostsView(model: model)
+            case .account: AccountLoginView(model: model)
             case .scanner: ScannerView(model: model)
             case .confirm(let pending): PairConfirmView(model: model, pending: pending)
             }
@@ -93,6 +94,11 @@ private struct FailureView: View {
                         .buttonStyle(.borderedProminent)
                 }
                 if failure == .revoked, let key = model.currentHostKey {
+                    if model.accountHostId(for: key) != nil {
+                        Button("经账号重新配对") { model.repairViaAccount(hostKey: key) }
+                            .buttonStyle(.bordered)
+                            .disabled(model.accountBusy)
+                    }
                     Button("忘记这台宿主", role: .destructive) { model.forget(key) }
                         .buttonStyle(.bordered)
                 }
@@ -109,6 +115,12 @@ private struct FailureView: View {
                 }
             }
             .controlSize(.large)
+            if failure == .revoked, let error = model.accountError {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 

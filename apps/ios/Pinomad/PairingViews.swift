@@ -78,6 +78,32 @@ struct PairingStartView: View {
                     .foregroundStyle(.secondary)
             }
             PairingSources(model: model)
+            Divider()
+            if let session = model.accountSession {
+                Button {
+                    model.present(.hosts)
+                } label: {
+                    Label("账号：\(session.username)", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                Text("在宿主列表里配对你账号下的宿主。")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Button {
+                    model.present(.account)
+                } label: {
+                    Label("用账号登录", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                Text("登录后不用扫码，就能配对你账号下的宿主。")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            }
             Text("也可以直接打开 pinomad://pair 链接。")
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
@@ -157,10 +183,13 @@ struct HostsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var forgetting: HostRecord?
+    @State private var pendingAccountPair: AccountHostRow?
+    @State private var confirmingSignOutEverywhere = false
 
     var body: some View {
         NavigationStack {
             List {
+                accountSection
                 if !model.hosts.hosts.isEmpty {
                     Section("已配对") {
                         ForEach(model.hosts.hosts, id: \.hostKey) { host in
@@ -181,6 +210,14 @@ struct HostsView: View {
             }
             .navigationTitle("宿主")
             .navigationBarTitleDisplayMode(.inline)
+            .refreshable {
+                await model.refreshHostsAndAccount()
+            }
+            .task {
+                if model.accountSession != nil {
+                    await model.accountRefreshHosts()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
@@ -203,11 +240,199 @@ struct HostsView: View {
             } message: { _ in
                 Text("这台设备要用新的配对链接才能再连上它。")
             }
+            .alert(
+                "要和这台宿主配对吗？",
+                isPresented: Binding(
+                    get: { pendingAccountPair != nil },
+                    set: { if !$0 { pendingAccountPair = nil } })
+            ) {
+                Button("取消", role: .cancel) { pendingAccountPair = nil }
+                Button("配对") {
+                    let row = pendingAccountPair
+                    pendingAccountPair = nil
+                    if let row { startAccountPair(row) }
+                }
+            } message: {
+                Text("会断开当前的 \(model.currentHostLabel ?? "宿主")，但不会忘记它。")
+            }
+            .alert("在所有设备上退出？", isPresented: $confirmingSignOutEverywhere) {
+                Button("取消", role: .cancel) {}
+                Button("退出", role: .destructive) {
+                    Task { await model.accountSignOut(everywhere: true) }
+                }
+            } message: {
+                Text("所有设备上的账号会话都会失效；已配对的宿主不受影响，需要重新登录。")
+            }
         }
     }
 
     private func label(_ host: HostRecord) -> String {
         model.hostLabels[host.hostKey] ?? host.url
+    }
+
+    /// The one account and the hosts it vouches for. Signed out, this is a
+    /// single sign-in row; signed in, it is the account host list plus the
+    /// two ways to sign out.
+    @ViewBuilder
+    private var accountSection: some View {
+        Section {
+            if let session = model.accountSession {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.username)
+                    Text(hostOf(session.serverOrigin))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let notice = model.accountNotice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+
+                if model.accountRefreshing && model.accountRows.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在读取账号宿主…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if model.accountRows.isEmpty, model.accountHostsError == nil {
+                    Text("账号下还没有宿主。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.accountRows) { row in
+                        accountRow(row)
+                    }
+                }
+
+                if let error = model.accountHostsError ?? model.accountError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+                if let warning = model.accountSignOutWarning {
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+
+                Button("退出登录", role: .destructive) {
+                    Task { await model.accountSignOut(everywhere: false) }
+                }
+                .disabled(model.accountBusy)
+
+                Button("在所有设备上退出", role: .destructive) {
+                    confirmingSignOutEverywhere = true
+                }
+                .disabled(model.accountBusy)
+            } else {
+                Button {
+                    model.present(.account)
+                } label: {
+                    Label("登录账号", systemImage: "person.crop.circle")
+                }
+
+                if let notice = model.accountNotice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+                if let warning = model.accountSignOutWarning {
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+            }
+        } header: {
+            Text("账号")
+        } footer: {
+            if model.accountSession != nil {
+                Text(AccountCopy.signOutExplanation)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func accountRow(_ row: AccountHostRow) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.name)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(row.online ? Color.green : Color.secondary)
+                        .frame(width: 6, height: 6)
+                    Text(row.online ? "在线" : "离线")
+                    Text("·")
+                    Text(statusLabel(row.status))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if row.status != .paired, let reason = row.pairingReason {
+                    Text(reason)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+            accountAction(row)
+        }
+    }
+
+    @ViewBuilder
+    private func accountAction(_ row: AccountHostRow) -> some View {
+        switch row.action {
+        case .connect(let hostKey):
+            if hostKey == model.currentHostKey && model.connected {
+                Text("已连接")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("连接") {
+                    model.switchHost(hostKey)
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        case .pair, .rePair:
+            if model.accountPairingHostId == row.hostId {
+                ProgressView().controlSize(.small)
+            } else {
+                Button(row.action == .rePair ? "重新配对" : "配对") {
+                    requestAccountPair(row)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!row.pairable || model.accountBusy)
+            }
+        }
+    }
+
+    private func statusLabel(_ status: AccountHostRowStatus) -> String {
+        switch status {
+        case .paired: "已配对"
+        case .unpaired: "未配对"
+        case .keyChanged: "公钥变了"
+        case .rejected: "被宿主拒绝"
+        }
+    }
+
+    private func requestAccountPair(_ row: AccountHostRow) {
+        if model.connected, model.currentHostKey != row.storedHostKey {
+            pendingAccountPair = row
+        } else {
+            startAccountPair(row)
+        }
+    }
+
+    private func startAccountPair(_ row: AccountHostRow) {
+        Task {
+            if await model.pairViaAccount(hostId: row.hostId) {
+                dismiss()
+            }
+        }
     }
 
     /// The switch for the host on screen. The preference is per host; the
