@@ -131,7 +131,7 @@ export async function loadHostKey(dataDir: string): Promise<KeyPair> {
  * mode 0600). Deliberately a separate key from the X25519 `host-key` — no
  * cross-protocol key reuse: this one only signs relay challenges (proving the
  * right to a hostId); end-to-end security still rests on the Noise host key.
- * `wx` + EEXIST re-read keeps `relay-id` beside a live host single-writer safe.
+ * `wx` + EEXIST re-read keeps `pinomad join` beside a live host single-writer safe.
  */
 export async function loadRelayKey(dataDir: string): Promise<{ secretKey: Uint8Array; publicKey: Uint8Array }> {
   const path = join(dataDir, "relay-key");

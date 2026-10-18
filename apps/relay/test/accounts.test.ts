@@ -57,7 +57,6 @@ async function startServer(options?: {
   readonly dataDir?: string;
   readonly bootstrap?: { readonly user?: string; readonly password?: string };
   readonly trustProxy?: boolean;
-  readonly allowedHosts?: readonly string[];
   readonly webRoot?: string;
   readonly now?: () => number;
   readonly limits?: LoginLimits;
@@ -76,7 +75,6 @@ async function startServer(options?: {
   const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
-    allowedHosts: options?.allowedHosts ?? [],
     acceptTimeoutMs: 150,
     registerTimeoutMs: 150,
     webRoot: options?.webRoot,
@@ -490,7 +488,7 @@ describe("desktop origin and legacy mode", () => {
   it("answers a JSON 404 on /api/* when accounts are off, ahead of the SPA fallback", async () => {
     const web = await tempDir();
     await writeFile(join(web, "index.html"), "<html>app</html>");
-    const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, allowedHosts: ["host-id"], webRoot: web });
+    const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, webRoot: web });
     relays.push(relay);
     const response = await api(relay, { path: "/api/me" });
     expect(response.status).toBe(404);
@@ -573,24 +571,27 @@ describe("server CLI account mode", () => {
     });
   }
 
+  it("refuses a first start without the bootstrap env vars", async () => {
+    const home = await tempDir();
+    await expect(runMain(home, {})).rejects.toThrow(/exited 1: .*PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required/);
+  });
+
   it("reopens the default data dir after the bootstrap env vars are gone", async () => {
     const home = await tempDir();
     // First boot: env vars create the account under ~/.pinomad-server.
     const first = await runMain(home, { PINOMAD_SERVER_USER: "admin", PINOMAD_SERVER_PASSWORD: GOOD_PASSWORD });
-    expect(first.log).toContain('"accounts":true');
     first.child.kill("SIGTERM");
     await once(first.child, "exit");
 
-    // Same command, no env vars: account mode must persist — the users already exist.
+    // Same command, no env vars: the users already exist, so it starts.
     const second = await runMain(home, {});
-    expect(second.log).toContain('"accounts":true');
     second.child.kill("SIGTERM");
     await once(second.child, "exit");
   });
 });
 
 describe("host registration with accounts", () => {
-  it("lets a host register when bound in the hosts table, no --allow-host needed", async () => {
+  it("lets a host register when bound in the hosts table", async () => {
     const { relay, accounts } = await startServer();
     const keys = ed25519.keygen();
     const db = new DatabaseSync(accounts.dbPath);

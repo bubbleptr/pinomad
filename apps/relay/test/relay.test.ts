@@ -14,6 +14,7 @@ import {
   signRelayChallenge,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
+import { openAccounts } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 
 const ORIGIN = "https://relay.example.com";
@@ -21,22 +22,31 @@ const hostKeys = ed25519.keygen();
 const hostId = relayHostId(hostKeys.publicKey);
 
 const relays: Relay[] = [];
+const dataDirs: string[] = [];
 const clients = new Set<WebSocket>();
 afterEach(async () => {
   for (const client of clients) client.terminate();
   clients.clear();
   for (const relay of relays.splice(0)) await relay.close();
+  for (const dir of dataDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
-function start(options?: Partial<RelayOptions>): Promise<Relay> {
-  return startRelay({
+/** A relay whose accounts bind only `hostKeys` — every other well-signed key is a stranger. */
+async function start(options?: Partial<RelayOptions>): Promise<Relay> {
+  const dataDir = await mkdtemp(join(tmpdir(), "pinomad-relay-accounts-"));
+  dataDirs.push(dataDir);
+  const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: "correct horse battery" });
+  accounts.joinHost({ token: accounts.createJoinToken(1).token, hostId, noisePublicKey: "A".repeat(43) });
+  const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
-    allowedHosts: [hostId],
     acceptTimeoutMs: 150,
     registerTimeoutMs: 150,
+    accounts,
     ...options,
-  }).then((relay) => (relays.push(relay), relay));
+  });
+  relays.push(relay);
+  return relay;
 }
 
 /** Just connects; the caller decides which events to await and in what order. */
@@ -89,7 +99,7 @@ async function openControl(
 /** openControl plus awaiting `registered` — the happy path. */
 async function registerHost(relay: Relay, keys?: KeyPair): Promise<WebSocket> {
   const socket = await openControl(relay, keys);
-  expect(await nextControl(socket)).toEqual({ t: "registered" });
+  expect(await nextControl(socket)).toEqual({ t: "registered", push: [] });
   return socket;
 }
 
@@ -146,7 +156,7 @@ describe("relay", () => {
     expect(await closeEvent(socket)).toEqual([RELAY_CLOSE.badSignature, ""]);
   });
 
-  it("rejects a well-signed hostId outside the allowlist with 4603", async () => {
+  it("rejects a well-signed hostId not bound to an account with 4603", async () => {
     const relay = await start();
     const socket = await openControl(relay, ed25519.keygen());
     expect(await closeEvent(socket)).toEqual([RELAY_CLOSE.hostNotAllowed, ""]);

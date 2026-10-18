@@ -42,7 +42,7 @@ async function startServer(): Promise<{ relay: Relay; accounts: Accounts; origin
   const accounts = await openAccounts({ dataDir: dir.path, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
-  const relay = await startRelay({ port, publicOrigin: origin, allowedHosts: [], accounts });
+  const relay = await startRelay({ port, publicOrigin: origin, accounts });
   defer(() => relay.close());
   return { relay, accounts, origin };
 }

@@ -95,7 +95,6 @@ async function startServer(
   const relay = await startRelay({
     port,
     publicOrigin: `http://127.0.0.1:${port}`,
-    allowedHosts: [],
     registerTimeoutMs: 300,
     accounts,
     push: sender,
@@ -247,7 +246,6 @@ describe("push end to end", () => {
     const relay = await startRelay({
       port,
       publicOrigin: `http://127.0.0.1:${port}`,
-      allowedHosts: [],
       registerTimeoutMs: 300,
       accounts,
     });

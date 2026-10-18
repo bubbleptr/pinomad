@@ -54,7 +54,6 @@ async function startServer(options?: { readonly pairingTimeoutMs?: number }): Pr
   const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
-    allowedHosts: [],
     registerTimeoutMs: 150,
     ...(options?.pairingTimeoutMs === undefined ? {} : { pairingTimeoutMs: options.pairingTimeoutMs }),
     accounts,

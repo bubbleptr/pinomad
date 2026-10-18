@@ -10,7 +10,7 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { startRelay } from "@pinomad/relay/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import { writeServerConfig } from "../src/server-config.ts";
-import { freePort, tempDir, useCleanups } from "./support.ts";
+import { freePort, openBoundAccounts, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -84,11 +84,13 @@ describe("server.json", () => {
   it("dials the joined server from server.json without a --relay flag", async () => {
     const data = await tempDir();
     defer(data.remove);
-    // The allowlist needs the hostId up front — create the key the host would.
+    // The binding needs the hostId up front — create the key the host would.
     const port = await freePort();
     const origin = `http://127.0.0.1:${port}`;
     const hostId = relayHostId((await loadRelayKey(data.path)).publicKey);
-    const relay = await startRelay({ port, publicOrigin: origin, allowedHosts: [hostId] });
+    const server = await tempDir();
+    defer(server.remove);
+    const relay = await startRelay({ port, publicOrigin: origin, accounts: await openBoundAccounts(server.path, hostId) });
     defer(() => relay.close());
     await writeServerConfig(data.path, { origin });
 

@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach } from "vitest";
 import { openHost, type OpenedHost, type OpenHostOptions } from "../src/host.ts";
+import { openAccounts, type Accounts } from "@pinomad/relay/src/accounts.ts";
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
@@ -192,6 +193,21 @@ export async function connectTo(
   });
   defer(() => client.close());
   return client;
+}
+
+/**
+ * Server accounts in `dataDir` with `hostId` bound to the bootstrap account —
+ * a binding is the only way a host registers (ADR-0022). Idempotent, so a
+ * restarted server reopens the same directory and finds the binding again.
+ */
+export async function openBoundAccounts(dataDir: string, hostId: string): Promise<Accounts> {
+  const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: "correct horse battery" });
+  if (!accounts.hasHost(hostId)) {
+    // Registration never compares the stored Noise key; pairing would.
+    const joined = accounts.joinHost({ token: accounts.createJoinToken(1).token, hostId, noisePublicKey: "A".repeat(43) });
+    if (joined.status !== "joined") throw new Error(`binding ${hostId} failed: ${joined.reason}`);
+  }
+  return accounts;
 }
 
 export async function tempDir(): Promise<{ path: string; remove(): Promise<void> }> {

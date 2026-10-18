@@ -371,7 +371,7 @@ function decodeRegister(value: {
 
 /**
  * The hostId is the base64url of the host's 32-byte Ed25519 public key, so the
- * relay needs no lookup table beyond its allowlist. Ed25519 is deliberately
+ * relay needs no lookup table to verify a register. Ed25519 is deliberately
  * separate from the host's Noise X25519 key — no cross-protocol key reuse.
  */
 export function relayHostId(publicKey: Uint8Array): string {

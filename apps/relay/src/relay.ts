@@ -39,7 +39,6 @@ export interface RelayOptions {
   readonly listenHost?: string;
   /** Public origin clients pair against; trailing slashes are stripped. */
   readonly publicOrigin: string;
-  readonly allowedHosts: readonly string[];
   readonly acceptTimeoutMs?: number;
   readonly registerTimeoutMs?: number;
   /** How long a server-vouched pairing ask waits for the host; default 10 s. */
@@ -143,7 +142,6 @@ interface PendingPairing {
 export async function startRelay(options: RelayOptions): Promise<Relay> {
   const publicOrigin = options.publicOrigin.replace(/\/+$/, "");
   if (publicOrigin === "") throw new Error("publicOrigin is required");
-  const allowedHosts = new Set(options.allowedHosts);
   const acceptTimeoutMs = options.acceptTimeoutMs ?? 10_000;
   const registerTimeoutMs = options.registerTimeoutMs ?? 10_000;
   const pingIntervalMs = options.pingIntervalMs ?? 30_000;
@@ -254,10 +252,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   /**
    * One host's `push` frame (ADR-0025 §4-5): re-checked against the account
-   * binding on every send — the static allowlist alone never authorizes push
-   * — then classified back to the asking control. Nothing about the token or
-   * the notification reaches the log; the counters keep pushes from crowding
-   * the control connections.
+   * binding on every send, then classified back to the asking control.
+   * Nothing about the token or the notification reaches the log; the counters
+   * keep pushes from crowding the control connections.
    */
   function handlePush(socket: WebSocket, hostId: string, frame: PushFrame): void {
     const startedAt = Date.now();
@@ -344,9 +341,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       return;
     }
     answer({ t: "left" });
-    // The binding is gone: unless the static allowlist still admits it, the
-    // host's live control connection loses its authorization right now.
-    if (!allowedHosts.has(frame.hostId)) controls.get(frame.hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+    // The binding is gone, and with it the live control connection's
+    // authorization: close it now rather than at its next register.
+    controls.get(frame.hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
   }
 
   function onControl(socket: WebSocket): void {
@@ -430,9 +427,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         runOp(socket, frame, noisePublicKey);
         return;
       }
-      // Admission = static allowlist (legacy, migration window) or a host row
-      // bound to an account (ADR-0022).
-      if (!allowedHosts.has(frame.hostId) && accounts?.hasHost(frame.hostId) !== true) {
+      // Admission = a host row bound to an account (ADR-0022); a server
+      // without accounts admits nobody.
+      if (accounts?.hasHost(frame.hostId) !== true) {
         socket.close(RELAY_CLOSE.hostNotAllowed);
         return;
       }
@@ -451,12 +448,10 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // A bound host's successful register is also its heartbeat for the
       // account: keep last_seen_at fresh so /api/hosts can report online age.
       accounts?.markHostSeen(hostId);
-      // Push is an account feature (ADR-0025 §4): a bound host always gets the
-      // declaration — an empty list means "push-aware, nothing configured",
-      // which the host must distinguish from a pre-push server. An
-      // allowlist-only host could never send, so declaring to it would lie.
-      const bound = accounts?.hasHost(hostId) === true;
-      socket.send(encodeRelayFrame({ t: "registered", ...(bound ? { push: pushEnvironments } : {}) }));
+      // Every admitted host is bound, so it always gets the push declaration
+      // (ADR-0025 §4) — an empty list means "push-aware, nothing configured",
+      // which the host must distinguish from a pre-push server.
+      socket.send(encodeRelayFrame({ t: "registered", push: pushEnvironments }));
     });
 
     socket.once("close", () => {

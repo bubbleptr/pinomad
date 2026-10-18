@@ -98,7 +98,7 @@ export interface Accounts {
   authenticate(token: string): { readonly userId: number; readonly username: string } | undefined;
   logout(token: string): void;
   revokeAllSessions(userId: number): void;
-  /** True when hostId is bound to an account — an alternative to --allow-host at register time. */
+  /** True when hostId is bound to an account — the only way a host registers. */
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
   createJoinToken(userId: number): { readonly token: string; readonly expiresAt: number };
