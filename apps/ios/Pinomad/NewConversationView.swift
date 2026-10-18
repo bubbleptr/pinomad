@@ -1,7 +1,6 @@
 import PinomadChat
 import PinomadCore
 import SwiftUI
-import UIKit
 
 /// The new-conversation draft: a composer whose send creates the
 /// conversation (at the chosen home, checkout and model) and then shows it
@@ -41,16 +40,6 @@ struct NewConversationView: View {
     /// only "不指定" — otherwise there is no way back to a plain draft.
     private var showAgentPicker: Bool {
         selectedAgent != nil || (agentPickerAvailable && !roles.isEmpty)
-    }
-
-    /// The capsule's label. While the source hint shares the line, the
-    /// level suffix is dropped so the model and the hint both stay legible;
-    /// the sheet still shows the level.
-    private var capsuleLabel: String {
-        guard sourceHint != nil, let currentModel else {
-            return modelLabel(models: model.snapshot?.models ?? [], selected: pick)
-        }
-        return currentModel.name ?? currentModel.modelId
     }
 
     /// An inherited side reads "来自 @name"; an overridden side drops it.
@@ -184,7 +173,7 @@ struct NewConversationView: View {
                 // cleared with the draft — hold the menu like the text field.
                 .disabled(model.creating)
                 ModelCapsule(
-                    label: capsuleLabel,
+                    label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
                     enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true),
                     sourceHint: sourceHint,
                     problem: problemText?.label
@@ -216,11 +205,7 @@ struct NewConversationView: View {
                     checkoutMenu
                 }
                 if showAgentPicker {
-                    AgentMenuChip(roles: agentPickerAvailable ? roles : [],
-                                  selected: selectedAgent,
-                                  enabled: model.connected && !model.creating) {
-                        model.setDraftAgent($0)
-                    }
+                    agentMenu
                 }
             }
         }
@@ -297,79 +282,39 @@ struct NewConversationView: View {
         .tint(.secondary)
         .disabled(!model.connected)
     }
-}
 
-/// The draft's named agent (ADR-0023): "不指定" or one of the host's roles,
-/// with each role's description as a menu subtitle. SwiftUI's Menu flattens
-/// a view label and drops the description, and reorders a bare button below
-/// the section, so the chip drives a UIMenu directly.
-private struct AgentMenuChip: UIViewRepresentable {
-    let roles: [AgentRole]
-    let selected: String?
-    let enabled: Bool
-    let choose: (String?) -> Void
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: "person.crop.circle",
-                              withConfiguration: UIImage.SymbolConfiguration(textStyle: .caption1))
-        config.imagePadding = 4
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
-        config.baseForegroundColor = .secondaryLabel
-        config.background.backgroundColor = .tertiarySystemFill
-        config.background.cornerRadius = 13
-        config.titleLineBreakMode = .byTruncatingTail
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = UIFont.preferredFont(forTextStyle: .caption1)
-            return outgoing
-        }
-        button.configuration = config
-        button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        var config = button.configuration ?? .plain()
-        config.title = selected.map { "@\($0)" } ?? "Agent"
-        button.configuration = config
-        button.isEnabled = enabled
-        button.accessibilityLabel = selected.map { "Agent：@\($0)" } ?? "Agent"
-        button.menu = menu()
-        button.invalidateIntrinsicContentSize()
-    }
-
-    /// A UIViewRepresentable otherwise stretches to the proposal when the
-    /// button has no intrinsic width yet; keep it a chip-sized control.
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        let fitted = uiView.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude,
-                                               height: CGFloat.greatestFiniteMagnitude))
-        return CGSize(width: min(fitted.width, 220), height: 28)
-    }
-
-    private func menu() -> UIMenu {
-        let none = UIAction(title: "不指定", state: selected == nil ? .on : .off) { _ in
-            choose(nil)
-        }
-        // UIKit renders inline submenus in reverse declaration order and a
-        // bare action after them; a non-empty title is what makes this sort
-        // as a section instead. The space keeps that header visually blank.
-        let unassigned = UIMenu(title: " ", options: .displayInline, children: [none])
-        guard !roles.isEmpty else { return UIMenu(children: [unassigned]) }
-        let actions = roles.map { role in
-            let action = UIAction(title: "@\(role.name)", state: selected == role.name ? .on : .off) { _ in
-                choose(role.name)
+    /// The draft's named agent (ADR-0023). A fixed order keeps "不指定"
+    /// above the section however the menu lays itself out around the chip.
+    /// Toggle supplies the checkmark; two Texts make the description a
+    /// subtitle in the menu.
+    private var agentMenu: some View {
+        Menu {
+            Toggle("不指定", isOn: Binding(
+                get: { selectedAgent == nil },
+                set: { isOn in if isOn { model.setDraftAgent(nil) } }
+            ))
+            if agentPickerAvailable && !roles.isEmpty {
+                Section("具名 Agent") {
+                    ForEach(roles, id: \.name) { role in
+                        Toggle(isOn: Binding(
+                            get: { selectedAgent == role.name },
+                            set: { isOn in if isOn { model.setDraftAgent(role.name) } }
+                        )) {
+                            Text("@\(role.name)")
+                            if !role.description.isEmpty {
+                                Text(role.description)
+                            }
+                        }
+                    }
+                }
             }
-            action.subtitle = role.description.isEmpty ? nil : role.description
-            return action
+        } label: {
+            LocationChip(icon: "person.crop.circle",
+                         label: selectedAgent.map { "@\($0)" } ?? "Agent")
         }
-        return UIMenu(children: [
-            UIMenu(title: "具名 Agent", options: .displayInline, children: actions),
-            unassigned,
-        ])
+        .menuOrder(.fixed)
+        .tint(.secondary)
+        .disabled(!model.connected || model.creating)
     }
 }
 

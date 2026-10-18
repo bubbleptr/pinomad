@@ -37,7 +37,7 @@ private func emptyOverrides() -> AgentDraftOverride {
 
         state.select(nil)
         #expect(state.remembered == remembered)
-        #expect(state.pick(models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
+        #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
     }
 
     /// The overrides belonged to the previous agent; picking another (or
@@ -89,7 +89,7 @@ private func emptyOverrides() -> AgentDraftOverride {
         state.setModel(sonnet, models: models, defaults: defaults)
         #expect(state.remembered == ModelPick(model: sonnet, level: .low))
         state.setLevel(.medium, models: models, defaults: defaults)
-        #expect(state.pick(models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
+        #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
     }
 
     /// Another host has other models and agents — nothing carries over.

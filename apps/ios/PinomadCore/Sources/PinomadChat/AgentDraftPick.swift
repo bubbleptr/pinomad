@@ -57,7 +57,7 @@ public struct AgentDraftPick: Equatable, Sendable {
             return
         }
         let levels = summaryOf(models: models, model: model)?.thinkingLevels ?? [.off]
-        let current = pick(models: models, defaults: defaults)
+        let current = pick(agents: nil, models: models, defaults: defaults)
         remembered = ModelPick(model: model,
                                level: clampLevel(levels: levels, want: current.level))
     }
@@ -68,12 +68,12 @@ public struct AgentDraftPick: Equatable, Sendable {
             overrides = AgentDraftOverride(model: overrides.model, level: level)
             return
         }
-        remembered = ModelPick(model: pick(models: models, defaults: defaults).model, level: level)
+        remembered = ModelPick(model: pick(agents: nil, models: models, defaults: defaults).model, level: level)
     }
 
     /// What the draft shows: the named-agent resolution while one is picked,
     /// else the reconciled remembered/default pick.
-    public func pick(agents: AgentRoles? = nil, models: [ModelSummary], defaults: Defaults?) -> ModelPick {
+    public func pick(agents: AgentRoles?, models: [ModelSummary], defaults: Defaults?) -> ModelPick {
         if let resolution = resolution(agents: agents, models: models, defaults: defaults) {
             return ModelPick(model: resolution.model, level: resolution.level)
         }
