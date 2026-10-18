@@ -64,7 +64,7 @@ extension AppModel {
         do {
             _ = try await session.invoke(.createConversation(
                 home: draftHome, text: text, checkout: checkout,
-                model: pick.model, thinkingLevel: pick.level, images: tray.images))
+                model: pick.model, thinkingLevel: pick.level, agent: nil, images: tray.images))
         } catch {
             lastError = "新建对话失败：\(describe(error))"
             return

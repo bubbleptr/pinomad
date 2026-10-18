@@ -56,10 +56,13 @@ function fakeTransport(
   /** Subscribes to a held stream get no snapshot until `release` sends one. */
   hold: (stream: StreamName) => void;
   release: (stream: StreamName, value: unknown) => void;
+  /** Calls to a held method are recorded but never answered. */
+  holdCall: (method: string) => void;
 } {
   const opened: FrameHandlers[] = [];
   const sent: ClientFrame[] = [];
   const held = new Set<StreamName>();
+  const heldCalls = new Set<string>();
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
@@ -85,6 +88,8 @@ function fakeTransport(
             const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) };
             queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
           } else if (frame.type === "call") {
+            // A hung call is recorded but never answers — the client keeps it pending.
+            if (heldCalls.has(frame.method)) return;
             // Fork creates a new conversation; every other call resolves void.
             const value =
               frame.method === "fork"
@@ -115,6 +120,9 @@ function fakeTransport(
     release: (stream, value) => {
       const snapshot: ServerFrame = { type: "snapshot", stream, value };
       queueMicrotask(() => opened.at(-1)?.message(JSON.stringify(snapshot)));
+    },
+    holdCall: (method) => {
+      heldCalls.add(method);
     },
   };
 }
@@ -701,6 +709,75 @@ describe("RemoteDurable minor-version gating", () => {
         custom: ["defaultThinkingLevel"],
       });
       await waitForView(remote, (v) => v.defaults.thinkingLevel === "low" && v.defaults.model === undefined);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("createConversation with an agent on a 5.9 host notices the upgrade message and sends no frame", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 9 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.createConversation({ kind: "chat" }, "hi", { agent: "reviewer" });
+      await waitForView(remote, (view) =>
+        view.notices.some((notice) => notice.level === "error" && notice.message.includes("needs protocol 5.10")),
+      );
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "createConversation")).toBe(false);
+      // Without the field the same call still goes through on a 5.9 host.
+      await remote.controller.createConversation({ kind: "chat" }, "hi");
+      const call = sent.find((frame) => frame.type === "call" && frame.method === "createConversation");
+      expect(call).toBeDefined();
+      expect((call!.args as { agent?: string }).agent).toBeUndefined();
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("createConversation carries the agent field on a 5.10 host", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.createConversation({ kind: "chat" }, "hi", { agent: "reviewer" });
+      const call = sent.find((frame) => frame.type === "call" && frame.method === "createConversation")!;
+      expect((call.args as { agent?: string }).agent).toBe("reviewer");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("listFiles on a 5.9 host rejects locally with the upgrade message", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 9 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(
+        remote.controller.listFiles({ kind: "conversation", conversationId: id(7) }, "src"),
+      ).rejects.toThrow("needs protocol 5.10");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "listFiles")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("listFiles is not queued behind a hanging command", async () => {
+    // The hung archive holds the command queue — listFiles is a read-only
+    // request and must still go out and resolve (issue #138).
+    const { transport, sent, holdCall } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "listFiles" ? { ok: true, value: { files: ["src/a.ts"], truncated: false } } : undefined,
+    );
+    holdCall("archive");
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      const hanging = remote.controller.archive(id(1), true);
+      // A tick so archive's op has run: its call frame is in flight, unanswered.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "archive")).toBe(true);
+      const answer = await remote.controller.listFiles({ kind: "conversation", conversationId: id(7) }, "src");
+      expect(answer).toEqual({ files: ["src/a.ts"], truncated: false });
+      const calls = sent.filter((frame) => frame.type === "call");
+      expect(calls.map((frame) => frame.method)).toEqual(["archive", "listFiles"]);
+      remote.close();
+      // close() fails the pending archive call — the command resolves into a notice.
+      await hanging;
     } finally {
       remote.close();
     }

@@ -5,7 +5,7 @@ import type { HostAuth } from "./auth.ts";
 import type { MessageImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { FolderListing, Home, HostIndex, Project } from "./organization.ts";
+import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { ApnsEnvironment } from "./relay.ts";
 import {
@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 9 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 10 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -99,6 +99,12 @@ export interface CallMethods {
    * user's home. Hosts are POSIX-only, so paths are `/`-separated.
    */
   listFolders: { args: { path?: string }; result: FolderListing };
+  /**
+   * File candidates under a scope's root for `@./path` completion (5.10).
+   * Read-only and unsorted — `files` are `/`-separated paths relative to the
+   * root, `truncated` marks any enumeration or result cap the answer hit.
+   */
+  listFiles: { args: { scope: FileScope; query: string }; result: FileListing };
   /**
    * Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`.
    * `checkout`: project conversations default to a git worktree when the project
@@ -113,6 +119,8 @@ export interface CallMethods {
       /** Overrides the host's defaults for the new agent; the level clamps to the model. */
       model?: ModelRef;
       thinkingLevel?: ThinkingLevel;
+      /** A named agent to create the conversation with (ADR-0023). Needs a 5.10 host — older hosts ignore the field. */
+      agent?: string;
       /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
       images?: readonly MessageImage[];
     };
@@ -207,6 +215,7 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
   updateAgent: 6,
   deleteAgent: 6,
   setPushToken: 7,
+  listFiles: 10,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -215,7 +224,7 @@ export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean
 }
 
 /** Minor version that introduced each call-arg feature (ADR-0018 §2). */
-const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8, apnsPush: 9 } as const;
+const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8, apnsPush: 9, agentConversations: 10 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
 /** Whether a host of the given minor version honors `feature`. */
@@ -335,6 +344,7 @@ const CALL_METHODS = [
   "updateAgent",
   "deleteAgent",
   "setPushToken",
+  "listFiles",
 ] as const satisfies readonly CallMethod[];
 
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
@@ -405,6 +415,21 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
         && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
         && (args.model === undefined || (record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId)))
         && (args.thinkingLevel === undefined || nonempty(args.thinkingLevel))
+        && (args.agent === undefined || nonempty(args.agent))
+      );
+    case "listFiles":
+      // Shape only — unknown conversations/projects and bad checkouts are the
+      // host's `ok:false` business errors, not malformed frames (ADR-0018 §3).
+      return (
+        typeof args.query === "string"
+        && record(args.scope)
+        && ((args.scope.kind === "conversation"
+            && typeof args.scope.conversationId === "number"
+            && Number.isSafeInteger(args.scope.conversationId)
+            && args.scope.conversationId >= 1)
+          || (args.scope.kind === "project"
+            && nonempty(args.scope.path)
+            && (args.scope.checkout === "worktree" || args.scope.checkout === "project")))
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";

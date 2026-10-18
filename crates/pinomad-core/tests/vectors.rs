@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
-use pinomad_core::frames::{classify_server_frame, decode_server_frame, encode_client_frame, ClientFrame, ServerFrame};
+use pinomad_core::frames::{
+    classify_server_frame, decode_server_frame, encode_client_frame, host_supports_call, host_supports_feature,
+    ClientFrame, HostFeature, ServerFrame,
+};
 use pinomad_core::json::Json;
 use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param};
 
@@ -96,6 +99,31 @@ fn client_frames_encode_byte_identical() {
             other => panic!("{name}: unexpected client frame type {other}"),
         };
         assert_eq!(encode_client_frame(&frame), expect, "{name}");
+    }
+}
+
+/// The since-table boundary cases the TS reference generated — the Rust
+/// gates must agree on which minor knows each call and feature.
+#[test]
+fn version_gates_agree_with_the_reference() {
+    let file = load("rust-vectors/frames");
+    for case in field(&file, "versionGates").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let minor = field(case, "minor").as_number().unwrap() as u32;
+        let expect = field(case, "expect").truthy();
+        let supported = if let Some(method) = case.get("call").and_then(Json::as_str) {
+            host_supports_call(minor, &method.to_string_lossy())
+        } else {
+            let feature = match as_text(field(case, "feature")).as_str() {
+                "images" => HostFeature::Images,
+                "acceptAccountDevices" => HostFeature::AcceptAccountDevices,
+                "apnsPush" => HostFeature::ApnsPush,
+                "agentConversations" => HostFeature::AgentConversations,
+                other => panic!("{name}: unknown feature {other}"),
+            };
+            host_supports_feature(minor, feature)
+        };
+        assert_eq!(supported, expect, "{name}");
     }
 }
 

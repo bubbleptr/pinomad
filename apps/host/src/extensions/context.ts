@@ -80,6 +80,9 @@ export function createContext(options: ContextOptions): BuiltinExtension {
             ...forkLine,
           ].join("\n");
         }),
+        // Fixed convention (issue #138): unconditional, named agents or not —
+        // `@./path` is only a path; nothing injects file contents.
+        section("file_references", () => "When the user writes @./path in their message, it is a project file the user references; the path is relative to your current working directory. Its contents are not expanded for you — read the file yourself if the task needs them.", { tag: false }),
         section("project_context", async (input, context) => {
           const cwd = input.agent.cwd;
           if (cwd === undefined) return undefined;

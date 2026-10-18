@@ -2,7 +2,7 @@
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":9},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":10},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -12,7 +12,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":9},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":10},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -135,12 +135,56 @@
       "wire": "{\"type\":\"call\",\"id\":8,\"method\":\"createConversation\",\"args\":{\"home\":{\"kind\":\"project\",\"path\":\"/home/u/app\"},\"text\":\"go\",\"requestId\":\"r\",\"checkout\":\"worktree\",\"model\":{\"provider\":\"p\",\"modelId\":\"m\"},\"thinkingLevel\":\"high\"}}"
     },
     {
+      "name": "call-createConversation-agent",
+      "wire": "{\"type\":\"call\",\"id\":11,\"method\":\"createConversation\",\"args\":{\"home\":{\"kind\":\"chat\"},\"text\":\"go\",\"requestId\":\"r\",\"agent\":\"reviewer\"}}"
+    },
+    {
+      "name": "call-listFiles-conversation",
+      "wire": "{\"type\":\"call\",\"id\":12,\"method\":\"listFiles\",\"args\":{\"scope\":{\"kind\":\"conversation\",\"conversationId\":7},\"query\":\"src/\"}}"
+    },
+    {
+      "name": "call-listFiles-project",
+      "wire": "{\"type\":\"call\",\"id\":13,\"method\":\"listFiles\",\"args\":{\"scope\":{\"kind\":\"project\",\"path\":\"/home/u/app\",\"checkout\":\"worktree\"},\"query\":\"\"}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
     {
       "name": "call-null-arg",
       "wire": "{\"type\":\"call\",\"id\":10,\"method\":\"setPushToken\",\"args\":{\"token\":null}}"
+    }
+  ],
+  "versionGates": [
+    {
+      "name": "listFiles@9",
+      "minor": 9,
+      "call": "listFiles",
+      "expect": false
+    },
+    {
+      "name": "listFiles@10",
+      "minor": 10,
+      "call": "listFiles",
+      "expect": true
+    },
+    {
+      "name": "agentConversations@9",
+      "minor": 9,
+      "feature": "agentConversations",
+      "expect": false
+    },
+    {
+      "name": "agentConversations@10",
+      "minor": 10,
+      "feature": "agentConversations",
+      "expect": true
+    },
+    {
+      "name": "apnsPush@9",
+      "minor": 9,
+      "feature": "apnsPush",
+      "expect": true
     }
   ]
 }

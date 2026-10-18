@@ -47,6 +47,9 @@ pub enum Call {
         checkout: Option<Json>,
         model: Option<Json>,
         thinking_level: Option<String>,
+        /// A named agent to create the conversation with (ADR-0023); needs
+        /// a 5.10 host — gated before send, never silently dropped.
+        agent: Option<String>,
         images: Vec<Json>,
     },
     Archive { id: u64, archived: bool },
@@ -87,6 +90,11 @@ pub enum Call {
     /// the legacy Expo string still parses on the host but is refused,
     /// and the platform layer never sends it (ADR-0025 §7).
     SetPushToken { token: Option<ApnsPushToken> },
+    /// `listFiles` — file candidates for `@./path` completion. A read-only
+    /// request sent outside the command queue: a slow scan must not block
+    /// commands behind it, and a hanging command must not block it. Needs
+    /// a 5.10 host.
+    ListFiles { scope: Json, query: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -174,6 +182,10 @@ enum OpKind {
     /// `abort` — not part of the serialized chain; failure becomes a notice
     /// and the op still reports success (the promise resolves).
     Unqueued,
+    /// `listFiles` — not part of the serialized chain either, but the
+    /// caller owns the result like a Request: a read-only completion query
+    /// resolves with the host's answer or its error.
+    Direct,
 }
 
 /// One in-flight controller operation.
@@ -834,10 +846,11 @@ impl RemoteDurable {
             | Call::DeleteAgent { .. }
             | Call::SetPushToken { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
+            Call::ListFiles { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
-            OpKind::Unqueued => self.begin_op(op, kind, call, false),
+            OpKind::Unqueued | OpKind::Direct => self.begin_op(op, kind, call, false),
             _ => {
                 self.queue.push_back((op, kind, call));
                 self.pump();
@@ -910,9 +923,14 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "renameConversation", args });
             }
-            Call::CreateConversation { home, text, checkout, model, thinking_level, images } => {
+            Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
+                }
+                // A pre-5.10 host would silently ignore `agent` and create an
+                // unassigned conversation — fail instead (ADR-0023 §8).
+                if agent.is_some() && !host_supports_feature(self.host_minor, HostFeature::AgentConversations) {
+                    return Err(too_old("5.10"));
                 }
                 let mut args = JsonObject::new();
                 set(&mut args, "home", home.clone());
@@ -926,6 +944,9 @@ impl RemoteDurable {
                 }
                 if let Some(level) = thinking_level {
                     set(&mut args, "thinkingLevel", Json::from(level.clone()));
+                }
+                if let Some(agent) = agent {
+                    set(&mut args, "agent", Json::from(agent.clone()));
                 }
                 if !images.is_empty() {
                     set(&mut args, "images", Json::array(images.clone()));
@@ -1100,6 +1121,13 @@ impl RemoteDurable {
                     method: "setPushToken",
                     args: obj(&[("token", token_json)]),
                 });
+            }
+            Call::ListFiles { scope, query } => {
+                if !host_supports_call(self.host_minor, "listFiles") {
+                    return Err(too_old("5.10"));
+                }
+                let args = obj(&[("scope", scope.clone()), ("query", Json::from(query.clone()))]);
+                steps.push_back(Step::Call { method: "listFiles", args });
             }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });
@@ -1297,7 +1325,7 @@ impl RemoteDurable {
 
     fn finish_failed(&mut self, op_id: u64, kind: OpKind, error: &str) {
         match kind {
-            OpKind::Request => {
+            OpKind::Request | OpKind::Direct => {
                 self.out.push(Command::OperationFailed { op: op_id, error: error.to_string() });
             }
             OpKind::Command | OpKind::Unqueued => {

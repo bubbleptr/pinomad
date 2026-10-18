@@ -49,6 +49,35 @@ impl ConversationCheckout {
     }
 }
 
+/// `listFiles`'s `scope`: the wire union `{kind:"conversation",
+/// conversationId}` | `{kind:"project", path, checkout}` (5.10).
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum FileScope {
+    /// The conversation's persisted working directory.
+    Conversation { conversation_id: u64 },
+    /// A registered project's directory: its live files, or the committed
+    /// HEAD tree a fresh worktree would hold.
+    Project { path: String, checkout: ConversationCheckout },
+}
+
+impl FileScope {
+    fn to_json(&self) -> Json {
+        let mut object = JsonObject::new();
+        match self {
+            FileScope::Conversation { conversation_id } => {
+                set(&mut object, "kind", Json::from("conversation"));
+                set(&mut object, "conversationId", Json::Number(*conversation_id as f64));
+            }
+            FileScope::Project { path, checkout } => {
+                set(&mut object, "kind", Json::from("project"));
+                set(&mut object, "path", Json::from(path.clone()));
+                set(&mut object, "checkout", Json::from(checkout.as_str()));
+            }
+        }
+        Json::Object(Arc::new(object))
+    }
+}
+
 /// `createConversation`'s `home`: the wire union `{kind:"chat"}` |
 /// `{kind:"project", path}`.
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
@@ -147,6 +176,9 @@ pub enum FfiCall {
         model: Option<ModelRef>,
         /// Clamps to the model's levels on the host.
         thinking_level: Option<ThinkingLevel>,
+        /// A named agent to create the conversation with (ADR-0023); needs
+        /// a 5.10 host — the op fails with an upgrade notice otherwise.
+        agent: Option<String>,
         /// Up to 4 attached images; needs a 5.5 host.
         images: Vec<MessageImage>,
     },
@@ -176,6 +208,11 @@ pub enum FfiCall {
     /// `submit`'s `target`. Request-class; resolves `CallResult::Changes`.
     /// On the wire since 5.0 — no version gate.
     Changes { conversation_id: Option<u64> },
+    /// File candidates under `scope`'s root for `@./path` completion.
+    /// Request-class, but sent outside the command queue — a slow scan
+    /// must not stall submits or switches. Resolves `CallResult::Files`.
+    /// Needs a 5.10 host.
+    ListFiles { scope: FileScope, query: String },
 }
 
 impl FfiCall {
@@ -186,6 +223,7 @@ impl FfiCall {
             FfiCall::AddProject { .. } => Some(ResultKind::Project),
             FfiCall::ListFolders { .. } => Some(ResultKind::FolderListing),
             FfiCall::Changes { .. } => Some(ResultKind::Changes),
+            FfiCall::ListFiles { .. } => Some(ResultKind::Files),
             _ => None,
         }
     }
@@ -221,6 +259,7 @@ impl FfiCall {
                 checkout,
                 model,
                 thinking_level,
+                agent,
                 images,
             } => Call::CreateConversation {
                 home: home.to_json(),
@@ -228,6 +267,7 @@ impl FfiCall {
                 checkout: checkout.map(|c| Json::from(c.as_str())),
                 model: model.map(|m| m.to_json()),
                 thinking_level: thinking_level.map(|l| l.as_str().to_string()),
+                agent,
                 images: images_json(&images),
             },
             FfiCall::Compact { instructions } => Call::Compact { instructions },
@@ -248,6 +288,10 @@ impl FfiCall {
             FfiCall::SetPushToken { token } => Call::SetPushToken { token },
             FfiCall::Changes { conversation_id } => Call::Changes {
                 target: conversation_id,
+            },
+            FfiCall::ListFiles { scope, query } => Call::ListFiles {
+                scope: scope.to_json(),
+                query,
             },
         }
     }

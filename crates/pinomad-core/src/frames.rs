@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 9 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 10 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -78,6 +78,7 @@ fn call_since(method: &str) -> u32 {
         "renameConversation" => 4,
         "createAgent" | "updateAgent" | "deleteAgent" => 6,
         "setPushToken" => 7,
+        "listFiles" => 10,
         _ => 0,
     }
 }
@@ -93,6 +94,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Images => 5,
         HostFeature::AcceptAccountDevices => 8,
         HostFeature::ApnsPush => 9,
+        HostFeature::AgentConversations => 10,
     };
     host_minor >= since
 }
@@ -105,6 +107,9 @@ pub enum HostFeature {
     /// gated like `images` because an older host would call it malformed
     /// and 4400 the connection (ADR-0025 §7).
     ApnsPush,
+    /// `createConversation`'s `agent` field — an older host ignores it and
+    /// silently creates an unassigned conversation (ADR-0023 §8).
+    AgentConversations,
 }
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.

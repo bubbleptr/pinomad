@@ -17,7 +17,9 @@ import {
   type ModelRef,
 } from "@earendil-works/pi-durable";
 import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protocol/organization.ts";
+import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { branchSuffix, checkoutAt, gitBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
 import { messageContent } from "./message-content.ts";
 
@@ -79,6 +81,25 @@ class DuplicateRequest extends Error {
   }
 }
 
+/** The `agent` arg's lookup in the current agents snapshot: name not in `roles` rejects with the name and why. */
+function requireRole(agents: AgentRoles, name: string): AgentRole {
+  const found = agents.roles.find((role) => role.name === name);
+  if (found !== undefined) return found;
+  // A file that failed to load names the reason; an absent one — deleted or
+  // never defined — reads as unknown.
+  const broken = agents.problems.find((problem) => problem.file === `${name}.md`);
+  if (broken !== undefined) throw new Error(`Agent "${name}" failed to load: ${broken.reason}`);
+  const defined = agents.roles.map((role) => role.name).join(", ");
+  throw new Error(defined === "" ? `Unknown agent "${name}"` : `Unknown agent "${name}". Available agents: ${defined}`);
+}
+
+/** A role's `provider/modelId` pin, split into a ModelRef. */
+function roleModelRef(role: AgentRole): ModelRef | undefined {
+  if (role.model === undefined) return undefined;
+  const slash = role.model.indexOf("/");
+  return { provider: role.model.slice(0, slash), modelId: role.model.slice(slash + 1) };
+}
+
 /**
  * Create a top-level conversation and its index entry in one commit, then submit
  * `text`. Retrying a lost reply with the same requestId returns the existing
@@ -99,9 +120,15 @@ export async function createConversation(
     readonly thinkingLevel?: ModelThinkingLevel;
     /** Attached images; validated by the caller (imageProblem). */
     readonly images?: readonly MessageImage[];
+    /** A named agent to create the conversation with (ADR-0023): its prompt is copied in, its model/level are defaults the args override. */
+    readonly agent?: string;
   },
   defaults: ConversationDefaults,
   models: Models,
+  /** The models the host advertises — the list an `agent`-pinned conversation's final model must appear in. */
+  modelSummaries: () => readonly ModelSummary[],
+  /** The current agents snapshot; `input.agent` is resolved against it. */
+  agents: AgentRoles,
   context: Context,
 ): Promise<ConversationId> {
   // Retries can outlive the model list they were made against: the index
@@ -123,16 +150,36 @@ export async function createConversation(
     return prior.id;
   }
 
-  const modelRef = input.model ?? defaults.model;
+  // ADR-0023 §7/§8: the role resolves before any write — a name not in the
+  // current snapshot rejects here, so a retry never re-resolves a deleted one.
+  const role = input.agent === undefined ? undefined : requireRole(agents, input.agent);
+
+  // The args win over the role's pins (ADR-0023 §5: on a top-level
+  // conversation a named agent's model/level are starting values, not pins).
+  const roleModel = role === undefined ? undefined : roleModelRef(role);
+  const modelRef = input.model ?? roleModel ?? defaults.model;
   const model =
     modelRef === undefined ? undefined : models.getModel(modelRef.provider, modelRef.modelId);
   if (input.model !== undefined && model === undefined) {
     throw new Error(`Unknown model: ${input.model.provider}/${input.model.modelId}`);
   }
+  // With a named agent the effective model — whether it came from the args,
+  // the role, or the host default — must be one the host advertises (the same
+  // check `subagent` runs, ADR-0023 §8). Without `agent` nothing changes.
+  if (
+    role !== undefined
+    && modelRef !== undefined
+    && (model === undefined || !modelSummaries().some((m) => m.provider === modelRef.provider && m.modelId === modelRef.modelId))
+  ) {
+    const listed = modelSummaries().map((m) => `${m.provider}/${m.modelId}`).join(", ");
+    throw new Error(
+      `Model ${modelRef.provider}/${modelRef.modelId} is not available${listed === "" ? "" : `. Available models: ${listed}`}`,
+    );
+  }
   const thinkingLevel =
     model === undefined
-      ? input.thinkingLevel ?? defaults.thinkingLevel
-      : clampThinkingLevel(model, input.thinkingLevel ?? defaults.thinkingLevel ?? "off");
+      ? input.thinkingLevel ?? role?.thinkingLevel ?? defaults.thinkingLevel
+      : clampThinkingLevel(model, input.thinkingLevel ?? role?.thinkingLevel ?? defaults.thinkingLevel ?? "off");
   const home = input.home;
   // Best-effort normalization; the registry check inside the commit is authoritative.
   const projectPath = home.kind === "project" ? await normalizePath(home.path).catch(() => home.path) : undefined;
@@ -152,6 +199,9 @@ export async function createConversation(
           ...(projectPath === undefined || repo !== undefined ? {} : { cwd: projectPath }),
           ...(modelRef === undefined ? {} : { model: modelRef }),
           ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+          // The role's prompt is copied in at creation — later edits to the
+          // file do not reach this conversation (ADR-0023 §7).
+          ...(role === undefined || role.prompt === "" ? {} : { instructions: role.prompt }),
         },
         init: async (tx, id) => {
           const doc = await tx.doc(IndexDoc);
@@ -161,7 +211,15 @@ export async function createConversation(
             throw new Error(`Unknown project: ${home.path}`);
           }
           const stored: Home = home.kind === "chat" ? { kind: "chat" } : { kind: "project", path: projectPath! };
-          doc.conversations.push({ id, home: stored, createdAt: Date.now(), requestId: input.requestId });
+          doc.conversations.push({
+            id,
+            home: stored,
+            createdAt: Date.now(),
+            requestId: input.requestId,
+            // The one durable copy of the role name: summaries for this
+            // conversation and its forks read it from here, never the file.
+            ...(role === undefined ? {} : { role: role.name }),
+          });
           if (repo !== undefined && suffix !== undefined) {
             const path = worktreePath(dataDir, id);
             // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.

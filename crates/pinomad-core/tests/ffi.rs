@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use pinomad_core::ffi::{
     CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout, FfiCall,
-    FfiCommand, FfiEvent, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
+    FfiCommand, FfiEvent, FileScope, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
     ReadyOutcome, StoredHost, SubmitMode, ThinkingLevel,
 };
 use pinomad_core::json::{Json, JsonObject};
@@ -79,7 +79,7 @@ impl ScriptedHost {
             held: HashSet::new(),
             call_errors: HashMap::new(),
             call_results: HashMap::new(),
-            minor: 9.0,
+            minor: pinomad_core::frames::PROTOCOL.minor as f64,
             sent: Vec::new(),
             conn: 0,
         }
@@ -379,28 +379,58 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
                 model_id: "m".to_string(),
             }),
             thinking_level: Some(ThinkingLevel::High),
+            agent: None,
             images: vec![],
         },
     );
     h.invoke(3, FfiCall::SetPushToken { token: None });
+    // 5.10 additions: the agent field and the listFiles call.
+    h.invoke(
+        4,
+        FfiCall::CreateConversation {
+            home: NewConversationHome::Chat,
+            text: "go".to_string(),
+            checkout: None,
+            model: None,
+            thinking_level: None,
+            agent: Some("reviewer".to_string()),
+            images: vec![],
+        },
+    );
+    h.invoke(
+        5,
+        FfiCall::ListFiles {
+            scope: FileScope::Project { path: "/home/u/app".to_string(), checkout: ConversationCheckout::Worktree },
+            query: "".to_string(),
+        },
+    );
+    h.invoke(
+        6,
+        FfiCall::ListFiles {
+            scope: FileScope::Conversation { conversation_id: 7 },
+            query: "src/".to_string(),
+        },
+    );
 
     let calls = call_frames(&h);
-    let by_method: HashMap<String, &Json> = calls
-        .iter()
-        .map(|frame| {
-            (
-                frame.get("method").unwrap().as_str().unwrap().to_string_lossy(),
-                frame,
-            )
-        })
-        .collect();
-    for (vector_name, method) in [
-        ("call-submit", "submit"),
-        ("call-createConversation", "createConversation"),
-        ("call-null-arg", "setPushToken"),
-    ] {
+    let by_name: HashMap<String, Vec<&Json>> = calls.iter().fold(HashMap::new(), |mut acc, frame| {
+        acc.entry(frame.get("method").unwrap().as_str().unwrap().to_string_lossy())
+            .or_default()
+            .push(frame);
+        acc
+    });
+    let pairs: Vec<(&str, &Json)> = [
+        ("call-submit", by_name["submit"][0]),
+        ("call-createConversation", by_name["createConversation"][0]),
+        ("call-null-arg", by_name["setPushToken"][0]),
+        ("call-createConversation-agent", by_name["createConversation"][1]),
+        ("call-listFiles-project", by_name["listFiles"][0]),
+        ("call-listFiles-conversation", by_name["listFiles"][1]),
+    ]
+    .into_iter()
+    .collect();
+    for (vector_name, actual) in pairs {
         let expected = wires[vector_name].clone();
-        let actual = by_method[method].clone();
         // The call counter assigns ids — everything else must be identical.
         for field in ["type", "method", "args"] {
             assert_eq!(
@@ -551,6 +581,94 @@ fn changes_result_malformed_fails_the_op() {
             other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
         }
     }
+}
+
+/// `listFiles`: a Request-class call sent outside the command queue —
+/// its success decodes to `CallResult::Files`, a malformed result or a
+/// host error fails the op, and a pre-5.10 host is refused locally.
+#[test]
+fn list_files_resolves_a_typed_result() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "listFiles".to_string(),
+        obj(&[
+            ("files", Json::array(vec![Json::from("src/a.ts"), Json::from("b/c.txt")])),
+            ("truncated", Json::Bool(true)),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::ListFiles {
+            scope: FileScope::Conversation { conversation_id: 7 },
+            query: "src".to_string(),
+        },
+    );
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Files {
+            files: vec!["src/a.ts".to_string(), "b/c.txt".to_string()],
+            truncated: true,
+        }))
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "listFiles").unwrap_or(false)
+    });
+    assert_eq!(
+        call.and_then(|f| f.get("args").cloned()),
+        Some(obj(&[
+            ("scope", obj(&[("kind", Json::from("conversation")), ("conversationId", Json::from(7.0))])),
+            ("query", Json::from("src")),
+        ]))
+    );
+}
+
+#[test]
+fn list_files_result_malformed_or_error_fails_the_op() {
+    for (index, value) in [
+        obj(&[("files", Json::array(vec![]))]),                          // missing truncated
+        obj(&[("files", Json::array(vec![Json::from(1.0)])), ("truncated", Json::Bool(false))]), // bad entry
+        Json::Null,                                                      // not an object
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("listFiles".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(
+            1,
+            FfiCall::ListFiles { scope: FileScope::Conversation { conversation_id: 1 }, query: "".to_string() },
+        );
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed listFiles result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    // A host-side `ok:false` is an OperationFailed too.
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("listFiles".to_string(), "Conversation 9 does not exist".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::ListFiles { scope: FileScope::Conversation { conversation_id: 9 }, query: "".to_string() },
+    );
+    assert_eq!(h.ops.get(&1), Some(&Err("Conversation 9 does not exist".to_string())));
+}
+
+#[test]
+fn list_files_needs_a_5_10_host() {
+    let mut host = ScriptedHost::new();
+    host.minor = 9.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::ListFiles { scope: FileScope::Conversation { conversation_id: 1 }, query: "".to_string() },
+    );
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.10")));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "listFiles").unwrap_or(true)
+    }));
 }
 
 #[test]

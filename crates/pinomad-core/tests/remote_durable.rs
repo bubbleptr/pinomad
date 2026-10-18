@@ -126,6 +126,8 @@ struct ScriptedHost {
     call_errors: HashMap<String, String>,
     /// Calls recorded but never answered — pending calls on the client.
     hang_calls: bool,
+    /// Calls to these methods are recorded but never answered.
+    hung_methods: HashSet<String>,
 }
 
 impl ScriptedHost {
@@ -140,6 +142,7 @@ impl ScriptedHost {
             opened: 0,
             call_errors: HashMap::new(),
             hang_calls: false,
+            hung_methods: HashSet::new(),
         }
     }
 
@@ -172,11 +175,11 @@ impl ScriptedHost {
                 ]).to_json()]
             }
             "call" => {
-                if self.hang_calls {
+                let method = frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default();
+                if self.hang_calls || self.hung_methods.contains(&method) {
                     return vec![];
                 }
                 let id = frame.get("id").cloned().unwrap_or(Json::Null);
-                let method = frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default();
                 let value = if method == "fork" {
                     let conversation = frame
                         .get("args")
@@ -1012,6 +1015,92 @@ fn agent_calls_need_a_5_6_host() {
     assert!(h.host.method("createAgent").is_empty());
     assert_eq!(h.view_get("agents"), Some(Json::Null));
     assert!(!h.host.subscribes().contains(&"agents".to_string()));
+}
+
+#[test]
+fn create_conversation_with_agent_needs_a_5_10_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(9.0))]);
+    let mut h = Harness::new(host);
+    let make = |agent: Option<String>| Call::CreateConversation {
+        home: obj(&[("kind", Json::from("chat"))]),
+        text: "hi".to_string(),
+        checkout: None,
+        model: None,
+        thinking_level: None,
+        agent,
+        images: vec![],
+    };
+    // Command-class: the op still "succeeds"; the reason lands as a notice —
+    // and no frame goes out, since a 5.9 host would silently drop the field.
+    h.invoke(1, make(Some("reviewer".to_string())));
+    assert!(matches!(h.ops.get(&1), Some(Ok(_))));
+    assert!(h.host.method("createConversation").is_empty());
+    assert!(h.notices().iter().any(|n| {
+        n.get("message").and_then(Json::as_str).map(|m| m.to_string_lossy().contains("needs protocol 5.10")).unwrap_or(false)
+    }));
+    // Without the field the same call goes through on the same connection.
+    h.invoke(2, make(None));
+    assert_eq!(h.host.method("createConversation").len(), 1);
+    let args = &h.host.method("createConversation")[0];
+    assert!(args.get("args").and_then(|a| a.get("agent")).is_none());
+}
+
+#[test]
+fn create_conversation_carries_the_agent_on_5_10() {
+    let mut h = setup();
+    h.invoke(1, Call::CreateConversation {
+        home: obj(&[("kind", Json::from("chat"))]),
+        text: "hi".to_string(),
+        checkout: None,
+        model: None,
+        thinking_level: None,
+        agent: Some("reviewer".to_string()),
+        images: vec![],
+    });
+    let call = &h.host.method("createConversation")[0];
+    assert_eq!(
+        call.get("args").and_then(|a| a.get("agent")).cloned(),
+        Some(Json::from("reviewer"))
+    );
+}
+
+#[test]
+fn list_files_needs_a_5_10_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(9.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::ListFiles {
+        scope: obj(&[("kind", Json::from("conversation")), ("conversationId", Json::from(7.0))]),
+        query: "src".to_string(),
+    });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.10")));
+    assert!(h.host.method("listFiles").is_empty());
+}
+
+#[test]
+fn list_files_is_not_queued_behind_a_hanging_command() {
+    let mut h = setup();
+    h.host.hung_methods.insert("archive".to_string());
+    // The hung archive holds the command queue — a queued request must not
+    // run, but listFiles (unqueued) is sent and answered immediately.
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::RenameConversation { id: 1, title: "x".to_string() });
+    h.invoke(3, Call::ListFiles {
+        scope: obj(&[("kind", Json::from("conversation")), ("conversationId", Json::from(7.0))]),
+        query: "src".to_string(),
+    });
+    assert_eq!(h.host.method("archive").len(), 1);
+    assert!(h.host.method("renameConversation").is_empty());
+    assert_eq!(h.host.method("listFiles").len(), 1);
+    assert_eq!(
+        h.host.method("listFiles")[0].get("args").cloned(),
+        Some(obj(&[
+            ("scope", obj(&[("kind", Json::from("conversation")), ("conversationId", Json::from(7.0))])),
+            ("query", Json::from("src")),
+        ]))
+    );
+    assert!(matches!(h.ops.get(&3), Some(Ok(_))));
+    // The queue is still held by the hung archive: the rename never ran.
+    assert!(h.ops.get(&2).is_none());
 }
 
 #[test]
