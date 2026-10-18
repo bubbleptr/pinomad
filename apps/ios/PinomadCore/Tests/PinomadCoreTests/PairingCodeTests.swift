@@ -11,6 +11,9 @@ struct PairingCodeTests {
         #expect(PairingCodeCopy.remainingSeconds(expiresAt: 5_000, now: now) == 4)
         #expect(PairingCodeCopy.remainingSeconds(expiresAt: 1_200, now: now) == 1)
         #expect(PairingCodeCopy.remainingSeconds(expiresAt: 900, now: now) == 0)
+        #expect(PairingCodeCopy.remainingSeconds(expiresAt: 1e30, now: now) == 0)
+        #expect(PairingCodeCopy.remainingSeconds(expiresAt: -1e30, now: now) == 0)
+        #expect(PairingCodeCopy.remainingSeconds(expiresAt: .infinity, now: now) == 0)
     }
 
     @Test func countdownIsMinutesAndSeconds() {

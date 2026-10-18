@@ -7,8 +7,12 @@ import Foundation
 public enum PairingCodeCopy {
     /// Whole seconds left, rounded up so "1" means up to a second remains.
     public static func remainingSeconds(expiresAt: Double, now: Date = Date()) -> Int {
-        let remaining = Int(ceil((expiresAt - now.timeIntervalSince1970 * 1000) / 1000))
-        return max(0, remaining)
+        let remaining = (expiresAt - now.timeIntervalSince1970 * 1000) / 1000
+        // expiresAt is only checked as a number at the FFI boundary. A
+        // non-finite or out-of-range value must not trap the Int conversion;
+        // a malformed offer is treated as expired.
+        guard remaining.isFinite, remaining > 0, remaining < Double(Int.max) else { return 0 }
+        return Int(ceil(remaining))
     }
 
     public static func countdown(_ seconds: Int) -> String {
