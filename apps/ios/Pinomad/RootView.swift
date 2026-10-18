@@ -44,6 +44,16 @@ struct RootView: View {
         }
         // `pinomad://pair#…` — the confirm page decides what to do with it.
         .onOpenURL { url in model.offerPairing(url.absoluteString) }
+        // Forgetting could not clear the host-side registration; the only
+        // remaining path is revoking this device from the host.
+        .alert("推送登记没注销", isPresented: Binding(
+            get: { model.pushForgetWarning != nil },
+            set: { if !$0 { model.pushForgetWarning = nil } }
+        )) {
+            Button("好") { model.pushForgetWarning = nil }
+        } message: {
+            Text(model.pushForgetWarning ?? "")
+        }
     }
 
     private var connectingView: some View {

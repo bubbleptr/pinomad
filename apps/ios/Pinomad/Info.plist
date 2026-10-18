@@ -35,6 +35,8 @@
 	<string>扫描宿主的配对二维码，或拍照后作为图片发给 agent。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>PinomadAPSEnvironment</key>
+	<string>$(PINOMAD_APS_ENVIRONMENT)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIApplicationSceneManifest</key>
