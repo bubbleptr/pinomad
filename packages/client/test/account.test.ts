@@ -89,6 +89,14 @@ describe("probeAccounts", () => {
     await probeAccounts(`${ORIGIN}/`, impl);
     expect(calls[0]!.url).toBe(`${ORIGIN}/api/me`);
   });
+
+  it("does not follow redirects", async () => {
+    const { impl, calls } = fakeFetch({ status: 401 });
+    await probeAccounts(ORIGIN, impl);
+    expect(calls[0]!.init?.redirect).toBe("manual");
+    // A 3xx answer can't prove the account API — same as a proxy 502.
+    expect(await probeAccounts(ORIGIN, fakeFetch({ status: 307 }).impl)).toBe("unreachable");
+  });
 });
 
 describe("isSecureServerOrigin", () => {
@@ -144,6 +152,7 @@ describe("account client", () => {
     // Login itself carries the stored bearer — the server ignores it for /api/login.
     expect(calls[0]!.init?.headers?.authorization).toBe("Bearer tok");
     expect(calls[0]!.init?.credentials).toBeUndefined();
+    expect(calls[0]!.init?.redirect).toBe("manual");
   });
 
   it("cookie mode sends same-origin credentials and no token ever leaves the body", async () => {
@@ -155,6 +164,18 @@ describe("account client", () => {
     expect(result).toEqual({ ok: true, value: { user: { username: "admin" }, expiresAt: 1 } });
     expect(calls[0]!.init?.credentials).toBe("same-origin");
     expect(calls[0]!.init?.headers?.authorization).toBeUndefined();
+    expect(calls[0]!.init?.redirect).toBe("manual");
+  });
+
+  it("never follows redirects — a 3xx answer is an error, an opaque redirect is network", async () => {
+    // undici hands back the real 3xx under `redirect: "manual"`: it maps to
+    // a plain API failure like any other non-2xx.
+    const redirecting = bearer([{ status: 307 }]);
+    expect(await redirecting.me()).toEqual({ ok: false, error: { code: "unknown", status: 307 } });
+    // DOM fetch answers an opaqueredirect (status 0) — the target is
+    // invisible, so it reads as a transport failure, not an API answer.
+    const opaque = bearer([{ status: 0 }]);
+    expect(await opaque.me()).toEqual({ ok: false, error: { code: "network" } });
   });
 
   it("maps server error codes through verbatim", async () => {

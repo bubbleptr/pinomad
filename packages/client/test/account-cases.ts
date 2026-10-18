@@ -95,6 +95,9 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "me-html-200", kind: "me", status: 200, body: "<html>app</html>" },
   { name: "me-401-no-body", kind: "me", status: 401, body: null },
   { name: "me-502-html", kind: "me", status: 502, body: "<html>bad gateway</html>" },
+  // Requests go out `redirect: "manual"` — a 3xx reaches us as an answer
+  // and must read as a plain non-2xx failure, not a success to follow.
+  { name: "me-redirect", kind: "me", status: 307, body: null },
   { name: "logout-204", kind: "logout", status: 204, body: null },
   { name: "logout-200", kind: "logout", status: 200, body: "{}" },
   { name: "revoke-204", kind: "revokeAllSessions", status: 204, body: null },

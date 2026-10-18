@@ -19,6 +19,7 @@ export interface AccountFetchInit {
   readonly headers?: Record<string, string>;
   readonly body?: string;
   readonly credentials?: "omit" | "same-origin" | "include";
+  readonly redirect?: "follow" | "error" | "manual";
   readonly signal?: AbortSignal;
 }
 
@@ -76,7 +77,10 @@ export async function probeAccounts(origin: string, fetchImpl: AccountFetch = fa
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), 5_000);
   try {
-    const response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, { signal: timeout.signal });
+    const response = await fetchImpl(`${origin.replace(/\/+$/, "")}/api/me`, {
+      signal: timeout.signal,
+      redirect: "manual",
+    });
     if (response.status === 401) return "enabled";
     if (response.status === 200) {
       // Read the body inside the timeout's reach: a stalled body (half-dead
@@ -212,8 +216,15 @@ export function createAccountClient(options: {
   const fetchImpl = options.fetch ?? fallbackFetch;
   const origin = normalizeServerOrigin(options.origin);
   const bearer = options.credentials.mode === "bearer" ? options.credentials.token : undefined;
-  const init: AccountFetchInit =
-    options.credentials.mode === "cookie" ? { credentials: "same-origin" } : {};
+  // Never follow redirects: a 307 pointing at http:// would replay the
+  // bearer or the login body in plaintext. "manual" surfaces the 3xx (undici)
+  // or an opaque status-0 answer (DOM); Hermes's XHR fetch ignores unknown
+  // init fields without throwing — redirect refusal there is the native
+  // platform layer's job.
+  const init: AccountFetchInit = {
+    redirect: "manual",
+    ...(options.credentials.mode === "cookie" ? { credentials: "same-origin" as const } : {}),
+  };
 
   const request = async (
     path: string,
@@ -234,6 +245,9 @@ export function createAccountClient(options: {
     } catch {
       return fail("network");
     }
+    // An opaqueredirect (DOM `manual` mode) carries status 0 and no readable
+    // target — a transport failure, not an API answer.
+    if (response.status === 0) return fail("network");
     // 204s carry no body; json() on empty input throws, treated as absent.
     const json = await response.json().catch(() => undefined);
     if (response.status >= 200 && response.status < 300) return ok(json);

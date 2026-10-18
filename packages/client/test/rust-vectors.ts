@@ -541,7 +541,10 @@ async function accountVector(): Promise<VectorFile> {
       const { impl, calls } = captureFetch();
       await invokeOp(bearerClient(c.origin, c.token, impl), c.op);
       const call = calls[0]!;
-      return { name: c.name, origin: c.origin, token: c.token ?? null, op: c.op, expect: wire({ url: call.url, init: call.init }) };
+      // `redirect: "manual"` is transport policy — the core's
+      // AccountHttpRequest can't express it, the platform owns it there.
+      const { redirect: _redirect, ...init } = call.init!;
+      return { name: c.name, origin: c.origin, token: c.token ?? null, op: c.op, expect: wire({ url: call.url, init }) };
     }),
   );
   const responses = await Promise.all(

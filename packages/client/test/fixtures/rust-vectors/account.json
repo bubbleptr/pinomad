@@ -181,6 +181,13 @@
       "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":502}}"
     },
     {
+      "name": "me-redirect",
+      "kind": "me",
+      "status": 307,
+      "body": null,
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unknown\",\"status\":307}}"
+    },
+    {
       "name": "logout-204",
       "kind": "logout",
       "status": 204,
