@@ -325,7 +325,11 @@ export function RemoteWorkbench({
   /** A persistent warning shown above the connection banner. */
   notice?: ReactNode;
 }) {
-  const state = useRemoteDurable(options, connectionKey);
+  // Bumping the attempt counter changes the connection key, which remounts the
+  // connection — the same fresh connect a page reload would give, without
+  // losing the resolved address.
+  const [attempt, setAttempt] = useState(0);
+  const state = useRemoteDurable(options, `${connectionKey} ${attempt}`);
   if (state.status === "connecting") {
     return (
       <Centered>
@@ -344,7 +348,10 @@ export function RemoteWorkbench({
         ) : rejected !== undefined && state.unauthorized ? (
           rejected
         ) : (
-          <Banner status="error" title="Could not connect to the host" description={state.error} />
+          <VStack gap={4} hAlign="center">
+            <Banner status="error" title="Could not connect to the host" description={state.error} />
+            <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
+          </VStack>
         )}
         <HostSwitcherFallback />
       </Centered>
