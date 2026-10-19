@@ -46,7 +46,7 @@ export function ComposerLocationRow({
 }: {
   location?: ReactNode;
   branch?: ReactNode;
-  /** Right-aligned slot; empty for now — no context meter yet. */
+  /** Right-aligned slot; the conversation's context meter lives here. */
   meter?: ReactNode;
 }) {
   return (

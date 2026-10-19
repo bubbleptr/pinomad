@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use pinomad_core::chat::{agent_of, queue_items, status_text, task_rows, usage_rows};
+use pinomad_core::context_usage::context_usage;
 use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls};
 use pinomad_core::json::Json;
 use pinomad_core::presentation::classify;
@@ -190,6 +191,16 @@ expect_text(case), "{name}");
         let view = Json::parse(&as_text(field(case, "view"))).unwrap();
         assert_eq!(
 norm(&Json::Bool(is_busy(&view))),
+expect_text(case), "{name}");
+    }
+    for case in cases(&file, "contextUsage") {
+        let name = as_text(field(case, "name"));
+        let view = Json::parse(&as_text(field(case, "view"))).unwrap();
+        // `contextWindow` serializes null for the reference's undefined.
+        let context_window = field(case, "contextWindow").as_number();
+        let got = opt_json(context_usage(&view, context_window).map(|u| derive_vectors::out::context_usage_json(&u)));
+        assert_eq!(
+norm(&got),
 expect_text(case), "{name}");
     }
 }

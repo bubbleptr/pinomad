@@ -6,12 +6,14 @@ import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
+import { ContextMeter } from "../../entities/conversation/context-meter.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
+import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons";
@@ -152,7 +154,13 @@ export function ConversationComposer({
             />
           ) : null
         }
-        footer={<ComposerLocationRow location={location} branch={branch} />}
+        footer={
+          <ComposerLocationRow
+            location={location}
+            branch={branch}
+            meter={<ContextMeter usage={contextUsage(conversation, model?.contextWindow)} />}
+          />
+        }
       />
     </>
   );
