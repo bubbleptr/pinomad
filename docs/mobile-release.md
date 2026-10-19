@@ -9,12 +9,14 @@ iOS 端在 mbp 本地 `xcodebuild archive` 出包、`-exportArchive` 导出上�
 
 ## 发版流程
 
+从最新的 `origin/main` 检出打包：`git rev-list --count HEAD` 只有在 main 上才单调递增，特性分支上算出来的数可能和以后 main 上的重复。
+
 1. Archive：
 
    ```sh
    xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad -configuration Release \
      -destination 'generic/platform=iOS' -archivePath <dir>/Pinomad.xcarchive \
-     DEVELOPMENT_TEAM=9KZ32XLVQW MARKETING_VERSION=<版本> \
+     DEVELOPMENT_TEAM=9KZ32XLVQW \
      CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD) \
      -allowProvisioningUpdates archive
    ```
