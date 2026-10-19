@@ -1419,14 +1419,59 @@ it("organizes conversations under projects and chats", async () => {
   expect(await projectSection.getByRole("button", { name: "Continue from here.", exact: true }).count()).toBe(0);
   const rootRow = projectSection.getByRole("button", { name: "project work", exact: true });
   await expect.poll(() => rootRow.getAttribute("aria-current")).toBe("page");
-  // The row's trailing meta is the family's freshest update, compact.
-  await expect.poll(async () => await projectSection.locator(".pigui-sidenav-session-meta").textContent()).toBe("now");
 
   // "Open in main" promotes the fork: main shows it, the breadcrumb returns.
   await panel.getByRole("button", { name: "Open in main", exact: true }).click();
   await page.getByRole("button", { name: "Back to project work", exact: true }).click();
   await expect.poll(() => page.getByRole("button", { name: "Back to project work", exact: true }).count()).toBe(0);
   await page.getByText("project answer", { exact: true }).waitFor();
+});
+
+it("leaves a conversation row's title the full width and reveals … on hover and focus", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const page = await openPage(host, 1280, webOrigin);
+  const title = "a conversation title long enough to be truncated by the sidebar";
+  await prompt(page).fill(title);
+  await prompt(page).press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+
+  const chats = page.getByRole("group", { name: "Chats" });
+  const row = chats.locator(".pigui-sidenav-session-row");
+  const rowButton = chats.getByRole("button", { name: title, exact: true });
+  await rowButton.waitFor();
+
+  // No relative-time meta anymore; the spacer reserves one … button, not two.
+  expect(await row.locator(".pigui-sidenav-session-meta").count()).toBe(0);
+  const widths = await rowButton.evaluate((btn, text) => {
+    const label = [...btn.querySelectorAll("span")].find((span) => span.textContent === text);
+    return {
+      label: label?.getBoundingClientRect().width ?? 0,
+      spacer: btn.querySelector(".pigui-sidenav-actions-spacer")?.getBoundingClientRect().width ?? 0,
+    };
+  }, title);
+  expect(widths.spacer).toBeLessThanOrEqual(32);
+  // Was ~115px at the default 260px sidebar with the meta + two-button slot.
+  expect(widths.label).toBeGreaterThan(150);
+
+  const actions = row.getByRole("button", { name: "Conversation actions", exact: true });
+  const hoverActions = row.locator(".pigui-sidenav-hover-actions");
+  const opacity = () => hoverActions.evaluate((el) => getComputedStyle(el).opacity);
+  await expect.poll(opacity).toBe("0");
+
+  // Hover reveals … and it opens the row menu.
+  await rowButton.hover();
+  await expect.poll(opacity).toBe("1");
+  await actions.click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+
+  // Pointer off and focus out hides it again; keyboard focus brings … back.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.locator("h1").hover();
+  await expect.poll(opacity).toBe("0");
+  await rowButton.focus();
+  await expect.poll(opacity).toBe("1");
 });
 
 it("renames a conversation from its sidebar row menu", async () => {
