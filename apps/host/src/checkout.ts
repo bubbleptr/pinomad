@@ -2,7 +2,7 @@
 // next to the conversation that created them; this module is only the git
 // primitives — the worktree directory is materialized lazily by the host's env
 // builder, which is also the recreate path after crashes and manual deletes.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,6 +15,51 @@ const run = promisify(execFile);
 
 const git = (dir: string, args: readonly string[], env?: NodeJS.ProcessEnv) =>
   run("git", ["-C", dir, ...args], env === undefined ? {} : { env: { ...process.env, ...env } });
+
+/**
+ * `git` with stdout streamed into a `maxBytes` cap instead of execFile's
+ * 1 MiB maxBuffer, which would reject a bigger diff before `changesOf` gets
+ * to truncate it. Once buffered output crosses the cap the child is killed
+ * and its pipes dropped — that death is ours, not a git failure, and the
+ * partial output resolves as `truncated`. A non-zero exit before the cap
+ * still rejects, carrying stderr like execFile's error.
+ */
+function gitCapped(
+  dir: string,
+  args: readonly string[],
+  maxBytes: number,
+  env?: NodeJS.ProcessEnv,
+): Promise<{ readonly stdout: string; readonly truncated: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["-C", dir, ...args], env === undefined ? {} : { env: { ...process.env, ...env } });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let killed = false;
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (killed) return;
+      chunks.push(chunk);
+      size += chunk.length;
+      if (size > maxBytes) {
+        killed = true;
+        child.kill();
+        // If SIGTERM is slow, dead pipes finish git off with SIGPIPE.
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < 8192) stderr += chunk.toString("utf8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const stdout = Buffer.concat(chunks).toString("utf8");
+      if (killed) resolve({ stdout, truncated: true });
+      else if (code === 0) resolve({ stdout, truncated: false });
+      else reject(Object.assign(new Error(`Command failed: git ${args.join(" ")}\n${stderr}`), { code, stderr }));
+    });
+  });
+}
 
 /** <dataDir>/worktrees/ — under the data dir so repos stay untouched by pinomad bookkeeping. */
 export const worktreeRoot = (dataDir: string): string => join(dataDir, "worktrees");
@@ -150,12 +195,13 @@ export async function changesOf(dir: string, base: string, maxBytes = 1024 * 102
   try {
     await git(dir, ["read-tree", "HEAD"], env);
     await git(dir, ["add", "-A"], env);
-    const { stdout } = await git(
+    const { stdout, truncated } = await gitCapped(
       dir,
       ["diff", "--cached", "--no-color", "--find-renames", "--src-prefix=a/", "--dst-prefix=b/", base],
+      maxBytes,
       env,
     );
-    if (Buffer.byteLength(stdout) <= maxBytes) return { base, patch: stdout, truncated: false };
+    if (!truncated) return { base, patch: stdout, truncated: false };
     // Cut at a line boundary so the patch stays parseable as far as it goes.
     const cut = stdout.slice(0, maxBytes);
     const patch = cut.slice(0, cut.lastIndexOf("\n") + 1);
