@@ -7,7 +7,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc, AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
-import { chromium, type Locator, type Page } from "@playwright/test";
+import { chromium, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
 import { todo } from "@pinomad/host/src/extensions/todo.ts";
 import type { AgentRoleStore } from "@pinomad/host/src/agent-roles.ts";
@@ -57,6 +57,37 @@ async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   await prompt(page).waitFor();
   return page;
 }
+
+/**
+ * A localStorage-backed stand-in for the Electron preload bridge, so the
+ * paired-host list survives the page reloads that switch hosts.
+ */
+async function stubDesktopBridge(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const KEY = "test.desktopHosts";
+    const read = (): { hostKey: string }[] => JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const write = (hosts: { hostKey: string }[]): void => {
+      localStorage.setItem(KEY, JSON.stringify(hosts));
+    };
+    (window as unknown as { pinomadDesktop: unknown }).pinomadDesktop = {
+      hosts: {
+        list: () => Promise.resolve(read()),
+        save: (host: { hostKey: string }) => {
+          write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
+          return Promise.resolve();
+        },
+        remove: (hostKey: string) => {
+          write(read().filter((each) => each.hostKey !== hostKey));
+          return Promise.resolve();
+        },
+      },
+    };
+  });
+}
+
+/** How many hosts the stubbed desktop bridge currently holds. */
+const storedHostCount = (page: Page): Promise<number> =>
+  page.evaluate(() => (JSON.parse(localStorage.getItem("test.desktopHosts") ?? "[]") as unknown[]).length);
 
 /** The conversation's own pi.user contents, oldest first, read off the harness. */
 async function userContentsOf(host: OpenedHost, id: ConversationId): Promise<unknown[]> {
@@ -2147,28 +2178,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
   defer(() => browser.close());
   const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
   defer(() => context.close());
-  // A localStorage-backed stand-in for the Electron preload bridge, so the
-  // paired-host list survives the page reloads that switch hosts.
-  await context.addInitScript(() => {
-    const KEY = "test.desktopHosts";
-    const read = (): { hostKey: string }[] => JSON.parse(localStorage.getItem(KEY) ?? "[]");
-    const write = (hosts: { hostKey: string }[]): void => {
-      localStorage.setItem(KEY, JSON.stringify(hosts));
-    };
-    (window as unknown as { pinomadDesktop: unknown }).pinomadDesktop = {
-      hosts: {
-        list: () => Promise.resolve(read()),
-        save: (host: { hostKey: string }) => {
-          write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
-          return Promise.resolve();
-        },
-        remove: (hostKey: string) => {
-          write(read().filter((each) => each.hostKey !== hostKey));
-          return Promise.resolve();
-        },
-      },
-    };
-  });
+  await stubDesktopBridge(context);
   const page = await context.newPage();
   // Pairing must mount the client exactly once: saving the host clears the
   // fragment, and re-resolving the address mid-flight would mount a second
@@ -2228,6 +2238,78 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
   expect(sockets.a).toBe(6);
+});
+
+it("forgets the shown host from the switcher only after confirmation", async () => {
+  const webOrigin = await startWeb();
+  const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const hostB = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host B answer"] });
+  const tokenA = await connectTo(defer, hostA);
+  const tokenB = await connectTo(defer, hostB);
+  const { url: pairA } = await tokenA.controller.createPairing();
+  const { url: pairB } = await tokenB.controller.createPairing();
+  const labelA = new URL(hostA.url).host;
+  const labelB = new URL(hostB.url).host;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  await stubDesktopBridge(context);
+  const page = await context.newPage();
+
+  // Pair A by pasting its loopback link, then B through the sidebar switcher —
+  // the workbench now sits on B.
+  await page.goto(webOrigin);
+  await page.getByLabel("Pairing link").fill(pairA);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
+  const pairDialog = page.getByRole("dialog");
+  await pairDialog.getByLabel("Pairing link").fill(pairB);
+  await pairDialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+  expect(await storedHostCount(page)).toBe(2);
+
+  // Cancelling the confirmation touches nothing: still on B, both stored.
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
+  const confirmDialog = page.getByRole("dialog");
+  await confirmDialog.getByText(`Forget ${labelB}?`, { exact: true }).waitFor();
+  await confirmDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  expect(await storedHostCount(page)).toBe(2);
+  await page.getByRole("button", { name: labelB, exact: true }).waitFor();
+
+  // Confirming forgets B: the reload lands on A, the only host left.
+  await page.getByRole("button", { name: labelB, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Forget this host", exact: true })
+    .click();
+  await page.getByRole("button", { name: labelA, exact: true }).waitFor();
+  expect(await storedHostCount(page)).toBe(1);
+  await prompt(page).fill("hello again");
+  await prompt(page).press("Enter");
+  await page.getByText("host A answer", { exact: true }).waitFor();
+
+  // Forgetting under a live #token fragment must not resurrect the fragment's
+  // address: clearing it before the reload is what lets the emptied list land
+  // on the no-link screen (the pairing-link form only exists there).
+  await page.goto(`${webOrigin}/#token=${encodeURIComponent(hostB.token)}&url=${encodeURIComponent(hostB.url)}`);
+  await prompt(page).waitFor();
+  await page.getByRole("button", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Forget this host", exact: true })
+    .click();
+  await page.getByLabel("Pairing link").waitFor();
+  expect(await storedHostCount(page)).toBe(0);
 });
 
 it("warns and retries when saving a pairing fails on the desktop bridge", async () => {

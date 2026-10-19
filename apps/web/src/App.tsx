@@ -26,7 +26,7 @@ import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { deviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
-import { ACTIVE_HOST_KEY, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
+import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
 import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
@@ -270,18 +270,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       <VStack gap={4} hAlign="center">
         <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
         <RepairViaAccount hostKey={address.hostKey} />
-        <Button
-          label="Forget this host"
-          variant="secondary"
-          onClick={() => {
-            // Reload lands on another stored host, or the no-link screen when
-            // none remain; a stale active key falls back to the first host.
-            if (localStorage.getItem(ACTIVE_HOST_KEY) === address.hostKey) {
-              localStorage.removeItem(ACTIVE_HOST_KEY);
-            }
-            void store.remove(address.hostKey).finally(() => window.location.reload());
-          }}
-        />
+        <Button label="Forget this host" variant="secondary" onClick={() => forgetHost(store, address.hostKey)} />
       </VStack>
     );
   const notice =

@@ -18,7 +18,7 @@ import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
-import { PairHostDialog } from "./host-switcher.tsx";
+import { ForgetHostDialog, PairHostDialog } from "./host-switcher.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 
@@ -82,6 +82,7 @@ export function AppFrame({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pairHostOpen, setPairHostOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [forgetHostOpen, setForgetHostOpen] = useState(false);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
@@ -130,6 +131,7 @@ export function AppFrame({
                   onOpenSettings={() => setSettingsOpen(true)}
                   onPairHost={() => setPairHostOpen(true)}
                   onOpenAccount={() => setAccountOpen(true)}
+                  onForgetHost={() => setForgetHostOpen(true)}
                 />
               }
             >
@@ -198,6 +200,7 @@ export function AppFrame({
             onOpenSettings={() => setSettingsOpen(true)}
             onPairHost={() => setPairHostOpen(true)}
             onOpenAccount={() => setAccountOpen(true)}
+            onForgetHost={() => setForgetHostOpen(true)}
             onSelect={() => setNavOpen(false)}
           />
         </MobileNav>
@@ -222,6 +225,7 @@ export function AppFrame({
       {settingsOpen ? <SettingsDialog view={view} remote={remote} onClose={() => setSettingsOpen(false)} /> : null}
       {pairHostOpen ? <PairHostDialog onClose={() => setPairHostOpen(false)} /> : null}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
+      {forgetHostOpen ? <ForgetHostDialog onClose={() => setForgetHostOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
           that lists them starts closed. isTopLayer lifts it above dialogs. */}

@@ -150,3 +150,18 @@ export function switchHost(hostKey: string): void {
   history.replaceState(null, "", window.location.pathname + window.location.search);
   window.location.reload();
 }
+
+/**
+ * Drop a paired host from this device. The selection marker goes first: the
+ * reload lands on another stored host, or the no-link screen when none
+ * remain; a stale marker would just fall back to the first host.
+ */
+export function forgetHost(store: HostStore, hostKey: string): void {
+  if (localStorage.getItem(ACTIVE_HOST_KEY) === hostKey) {
+    localStorage.removeItem(ACTIVE_HOST_KEY);
+  }
+  // A live fragment (#token=…, #pair=…) would win over the stored list after
+  // reload — clear it like switchHost does so the next stored host connects.
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  void store.remove(hostKey).finally(() => window.location.reload());
+}
