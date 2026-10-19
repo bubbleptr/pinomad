@@ -19,7 +19,7 @@ import {
   type JoinToken,
   type PairConnectArgs,
 } from "@pinomad/client/account.ts";
-import { deviceName } from "../../address.ts";
+import { clientDeviceName } from "../../address.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import { useHosts, type StoredHost } from "../host/host-store.ts";
 
@@ -93,8 +93,8 @@ export interface AccountModelDeps {
   /** Where a newly paired host lands — the hook wires the app's `paired`. */
   readonly paired: (host: StoredHost) => Promise<void>;
   readonly fetch?: AccountFetch;
-  /** Device label for registrations; defaults to the UA-derived name. */
-  readonly name?: () => string;
+  /** Device label for registrations; may resolve over the desktop bridge. */
+  readonly name?: () => string | Promise<string>;
   /** pairViaAccount's transport seam — tests substitute a stub. */
   readonly connect?: (args: PairConnectArgs) => Promise<void>;
 }
@@ -293,7 +293,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     pairHost: async (hostId) => {
       if (client === undefined) return fail("unauthenticated");
       const name = deps.name ?? (() => "This device");
-      const result = await pairViaAccount(client, hostId, name(), deps.connect);
+      const result = await pairViaAccount(client, hostId, await name(), deps.connect);
       if (!result.ok) {
         if (isUnauthenticated(result.error)) signedOut();
         return result;
@@ -356,7 +356,7 @@ export function useAccount(): AccountModel {
       bridge: window.pinomadDesktop,
       hosts: store,
       paired,
-      name: () => deviceName(navigator.userAgent),
+      name: clientDeviceName,
     }),
   );
   useSyncExternalStore(model.subscribe, () => model.state);

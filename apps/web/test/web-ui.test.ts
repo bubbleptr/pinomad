@@ -81,6 +81,8 @@ async function stubDesktopBridge(context: BrowserContext): Promise<void> {
           return Promise.resolve();
         },
       },
+      // The real preload answers this from main; the stub stands in for it.
+      deviceName: () => Promise.resolve("Linux Desktop (test-box)"),
     };
   });
 }
@@ -1882,6 +1884,35 @@ it("manages paired devices from the Devices dialog", async () => {
 
   await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
+});
+
+it("registers the desktop bridge's device name and shows the pairing minute", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  await stubDesktopBridge(context);
+  const page = await context.newPage();
+
+  // Pairing over the stubbed bridge registers its name, not the browser UA's.
+  await page.goto(webOrigin);
+  await page.getByLabel("Pairing link").fill(pairingUrl);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+  expect(tokenClient.view.current().devices[0]!.name).toBe("Linux Desktop (test-box)");
+
+  // The Devices row carries the pairing time down to the minute.
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("Linux Desktop (test-box)", { exact: true }).waitFor();
+  await dialog.getByText(/Paired.*\d{1,2}:\d{2}/).waitFor();
 });
 
 it("explains a loopback pairing link instead of drawing an unusable QR", async () => {

@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import { readFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
+import { desktopDeviceName } from "./device-name.ts";
 import { createHostStore, type StoredAccount, type StoredHost } from "./host-store.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
@@ -129,6 +131,20 @@ function installUpdateIpc(updater: AppUpdater): void {
   ipcMain.handle("pinomad:updates:install", handle(() => updater.install()));
 }
 
+/**
+ * The pairing-time device label the renderer asks for. Shares the caller
+ * check but not safeStorage — a hostname isn't a secret, and pairing must
+ * name itself even with a locked keychain.
+ */
+function installDeviceNameIpc(): void {
+  ipcMain.handle("pinomad:device:name", (event: IpcMainInvokeEvent) => {
+    if (!isOurRendererFrame(event)) {
+      return Promise.reject(new Error("the device name is only reachable from the bundled renderer"));
+    }
+    return Promise.resolve(desktopDeviceName(process.platform, hostname()));
+  });
+}
+
 function openPairingLink(fragment: string): void {
   if (mainWindow === null) {
     pendingFragment = fragment;
@@ -207,6 +223,7 @@ if (!app.requestSingleInstanceLock()) {
         }),
     });
     installHostStoreIpc();
+    installDeviceNameIpc();
     protocol.handle(APP_SCHEME, async (request) => {
       const file = rendererFilePath(rendererDirectory, request.url);
       if (file === undefined) return new Response("Not found", { status: 404 });

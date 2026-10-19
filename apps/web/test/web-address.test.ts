@@ -81,6 +81,9 @@ describe("deviceName", () => {
     expect(deviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")).toBe("Mac Chrome");
     expect(deviceName("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")).toBe("Windows Edge");
     expect(deviceName("Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")).toBe("Linux Firefox");
+    // Electron's stock UA still reads as a browser — the desktop app registers
+    // the bridge's name instead, so this stays distinguishable in the list.
+    expect(deviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Pinomad/0.0.0 Chrome/142.0.0.0 Electron/42.5.0 Safari/537.36")).toBe("Mac Chrome");
     expect(deviceName("curl/8.7.1")).toBe("Browser");
   });
 });
