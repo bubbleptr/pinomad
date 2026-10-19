@@ -3,7 +3,7 @@
 // server, and the built web client. Subcommands load lazily so `pinomad pair`
 // doesn't pay for the pi stack; bundled, each lazy import is a sibling chunk.
 import { packagedVersion } from "@pinomad/host/src/distribution.ts";
-import { isParseArgsError } from "@pinomad/host/src/cli/args.ts";
+import { isParseArgsError, reportParseArgsError } from "@pinomad/host/src/cli/args.ts";
 
 type CommandModule = { main(argv: readonly string[]): Promise<void> };
 
@@ -75,9 +75,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     await (await load()).main(rest);
   } catch (error) {
     if (!isParseArgsError(error)) throw error;
-    console.error(`pinomad ${command}: ${error instanceof Error ? error.message : String(error)}`);
-    console.error(`run "pinomad ${command} --help" for usage`);
-    process.exitCode = 2;
+    reportParseArgsError(`pinomad ${command}`, error);
   }
 }
 

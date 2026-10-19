@@ -6,14 +6,16 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** Spawns the packaged entry from source; resolves exit code + split output. */
-function runPinomad(args: readonly string[]): {
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+
+/** Spawns a CLI entry from source; resolves exit code + split output. */
+function runEntry(script: string, args: readonly string[]): {
   exited: Promise<number>;
   stdout: () => string;
   stderr: () => string;
 } {
-  const child = spawn(process.execPath, ["src/pinomad.ts", ...args], {
-    cwd: fileURLToPath(new URL("..", import.meta.url)),
+  const child = spawn(process.execPath, [script, ...args], {
+    cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -22,6 +24,13 @@ function runPinomad(args: readonly string[]): {
   child.stderr.on("data", (chunk) => (stderr += String(chunk)));
   const exited = once(child, "exit").then(([code]) => code ?? 1);
   return { exited, stdout: () => stdout, stderr: () => stderr };
+}
+
+const runPinomad = (args: readonly string[]) => runEntry("apps/cli/src/pinomad.ts", args);
+
+function expectNoStack(stderr: string): void {
+  expect(stderr.split("\n").some((line) => /^\s*at\s/.test(line))).toBe(false);
+  expect(stderr).not.toContain("ERR_PARSE_ARGS");
 }
 
 describe("pinomad <command> --help", () => {
@@ -66,30 +75,25 @@ describe("pinomad <command> --help", () => {
 });
 
 describe("pinomad <command> <bad args>", () => {
-  const noStack = (stderr: string): void => {
-    expect(stderr.split("\n").some((line) => /^\s*at\s/.test(line))).toBe(false);
-    expect(stderr).not.toContain("ERR_PARSE_ARGS");
-  };
-
   it("unknown option: two-line error, exit 2, no stack", async () => {
     const run = runPinomad(["pair", "--bogus"]);
     expect(await run.exited).toBe(2);
     expect(run.stderr()).toContain("pinomad pair: Unknown option '--bogus'");
     expect(run.stderr()).toContain('run "pinomad pair --help" for usage');
-    noStack(run.stderr());
+    expectNoStack(run.stderr());
   });
 
   it("missing option value", async () => {
     const run = runPinomad(["pair", "--url"]);
     expect(await run.exited).toBe(2);
     expect(run.stderr()).toContain("pinomad pair:");
-    noStack(run.stderr());
+    expectNoStack(run.stderr());
   });
 
   it("stray positional", async () => {
     const run = runPinomad(["leave", "extra"]);
     expect(await run.exited).toBe(2);
-    noStack(run.stderr());
+    expectNoStack(run.stderr());
   });
 
   it("errors inside service's own dispatch still exit 2", async () => {
@@ -97,7 +101,17 @@ describe("pinomad <command> <bad args>", () => {
     expect(await run.exited).toBe(2);
     expect(run.stderr()).toContain("pinomad service:");
     expect(run.stderr()).toContain('run "pinomad service --help" for usage');
-    noStack(run.stderr());
+    expectNoStack(run.stderr());
+  });
+});
+
+describe("bun run service (dev entry bypasses the dispatcher)", () => {
+  it("reports bad flags itself: exit 2, `bun run service` spelling, no stack", async () => {
+    const run = runEntry("apps/host/src/cli/service.ts", ["logs", "--bogus"]);
+    expect(await run.exited).toBe(2);
+    expect(run.stderr()).toContain("bun run service: Unknown option '--bogus'");
+    expect(run.stderr()).toContain('run "bun run service --help" for usage');
+    expectNoStack(run.stderr());
   });
 });
 

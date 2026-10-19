@@ -18,7 +18,7 @@ import { installSpec } from "../service/definition.ts";
 import { waitForIdle } from "../service/idle.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { commandHint, hostEntry, packagedVersion } from "../distribution.ts";
-import { isParseArgsError } from "./args.ts";
+import { isParseArgsError, reportParseArgsError } from "./args.ts";
 import { DEFAULT_DATA_DIR, hostAddress } from "./host-address.ts";
 
 const run = promisify(execFile);
@@ -196,4 +196,13 @@ export async function main(argv: readonly string[]): Promise<void> {
   }
 }
 
-if (import.meta.main) await main(process.argv.slice(2));
+if (import.meta.main) {
+  // The `bun run service` dev entry bypasses the pinomad dispatcher; report
+  // argument errors the same way, other exceptions keep their stack.
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    if (!isParseArgsError(error)) throw error;
+    reportParseArgsError(commandHint("service"), error);
+  }
+}
