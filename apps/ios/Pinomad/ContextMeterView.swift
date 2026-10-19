@@ -30,9 +30,13 @@ struct ContextMeterView: View {
             }
             .foregroundStyle(tint)
             .frame(height: 34)
+            // A 44pt touch target without growing the 34pt tool row: the
+            // negative padding gives the extra height back to the layout.
+            .padding(.vertical, 5)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .padding(.vertical, -5)
         // The meter keeps its width; a long model name truncates first.
         .fixedSize()
         .accessibilityLabel(reading.accessibilityLabel)
