@@ -5,6 +5,7 @@
 ## 现在
 
 1. **[M6 对话体验](https://github.com/bubbleptr/pinomad/milestone/4)**：先清掉各端用户会碰到的 bug 和小缺口，再做要改协议的几项（上下文用量、撤回/改写排队消息、斜杠命令）。这是长期打磨阶段，新发现的体验问题也归到这里。
+2. **[M7 iOS 布局](https://github.com/bubbleptr/pinomad/milestone/5)**：和 M6 并行。按移动端习惯重排原生 iOS 的页面结构，导航改成抽屉式，控制信息密度。iOS 的界面问题归到这里，Web/桌面的留在 M6。
 
 ## 以后
 
