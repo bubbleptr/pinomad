@@ -201,10 +201,15 @@ export async function changesOf(dir: string, base: string, maxBytes = 1024 * 102
       maxBytes,
       env,
     );
-    if (!truncated) return { base, patch: stdout, truncated: false };
-    // Cut at a line boundary so the patch stays parseable as far as it goes.
-    const cut = stdout.slice(0, maxBytes);
-    const patch = cut.slice(0, cut.lastIndexOf("\n") + 1);
+    // Raw bytes under the cap don't settle it: decoding can inflate the
+    // output (invalid UTF-8 becomes 3-byte U+FFFD), so measure the decoded
+    // patch too.
+    if (!truncated && Buffer.byteLength(stdout) <= maxBytes) return { base, patch: stdout, truncated: false };
+    // Cut by bytes at a line boundary so the patch stays parseable and
+    // within the cap even with multibyte text — 0x0A can't sit inside a
+    // UTF-8 sequence, so the cut can't split a character.
+    const cut = Buffer.from(stdout, "utf8").subarray(0, maxBytes);
+    const patch = cut.subarray(0, cut.lastIndexOf(0x0a) + 1).toString("utf8");
     return { base, patch, truncated: true };
   } finally {
     await rm(indexFile, { force: true });

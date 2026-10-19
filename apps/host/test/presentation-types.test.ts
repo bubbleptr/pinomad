@@ -442,6 +442,39 @@ describe("tool result details and changes", () => {
     expect(result.patch).toContain("big.txt");
   });
 
+  it("flags a diff whose decoded size exceeds the cap even when raw bytes do not", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    const base = await git(repoDir, ["rev-parse", "HEAD"]);
+    // 500 Latin-1 bytes: ~0.6 KB of raw diff, but each invalid UTF-8 byte
+    // decodes to a 3-byte U+FFFD — ~1.5 KB once decoded, over the 1 KB cap.
+    await writeFile(join(repoDir, "latin.txt"), Buffer.concat([Buffer.alloc(500, 0xe9), Buffer.from("\n")]));
+
+    const result = await changesOf(repoDir, base, 1024);
+    expect(result.truncated).toBe(true);
+    expect(Buffer.byteLength(result.patch)).toBeLessThanOrEqual(1024);
+    expect(result.patch.endsWith("\n")).toBe(true);
+  });
+
+  it("truncates multibyte diffs within the byte cap at a line boundary", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    const base = await git(repoDir, ["rev-parse", "HEAD"]);
+    // ~9 KB of diff over 3-byte characters: a char-counted cut would
+    // return well over the cap.
+    await writeFile(join(repoDir, "cjk.txt"), `${"中".repeat(30)}\n`.repeat(100));
+
+    const result = await changesOf(repoDir, base, 4096);
+    expect(result.truncated).toBe(true);
+    expect(Buffer.byteLength(result.patch)).toBeLessThanOrEqual(4096);
+    expect(result.patch.endsWith("\n")).toBe(true);
+    expect(result.patch).toContain("cjk.txt");
+  });
+
   it("still fails when git exits non-zero before the cap", async () => {
     const dir = await tempDir();
     defer(dir.remove);
