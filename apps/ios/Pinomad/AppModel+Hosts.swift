@@ -76,13 +76,14 @@ extension AppModel {
     /// Also the manual reconnect for a closed session, which never
     /// retries on its own.
     func retryConnection() {
-        if let link = pairingLink {
-            pair(link: link, account: pairingAccount)
-        } else if let host = sessionHost {
+        switch pairing.retry {
+        case .link(let link, let account):
+            pair(link: link, account: account)
+        case .host(let host):
             // After a pairing's handshake this is the identity it stored —
             // the link's code is spent, so pairing again would be refused.
             connect(host)
-        } else {
+        case .active:
             connectActive()
         }
     }

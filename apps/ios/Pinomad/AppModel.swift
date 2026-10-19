@@ -45,19 +45,22 @@ final class AppModel {
     /// Every paired host and which one opens on launch, as last read from
     /// the keychain.
     private(set) var hosts = StoredHosts()
+    /// The host or pairing identity the connection is for. One value so a
+    /// completed handshake consumes the one-time link before Retry reads it.
+    private(set) var pairing = PairingAttempt()
     /// The host the session is this device on — a stored host, or the one
     /// a pairing just made (even if the keychain failed to keep it); nil
     /// until a pairing's handshake completes.
-    private(set) var sessionHost: HostRecord?
+    var sessionHost: HostRecord? { pairing.host }
     var currentHostKey: String? { sessionHost?.hostKey }
     /// The link the session is pairing with, until its handshake spends the
     /// one-time code (then retrying must reconnect, not pair again).
-    private(set) var pairingLink: String?
+    var pairingLink: String? { pairing.link }
     /// The account link a server-vouched pairing must carry into the saved
     /// host — kept beside the link so Retry doesn't lose it.
-    private(set) var pairingAccount: AccountLink?
+    var pairingAccount: AccountLink? { pairing.account }
     /// Where that link goes — names the host while pairing.
-    private(set) var pairingTarget: PairingTarget?
+    var pairingTarget: PairingTarget? { pairing.target }
     /// The host the device was on before the latest pairing, so a pairing
     /// that fails after its handshake (which already made the new host the
     /// launch one) still offers the way back. Cleared once a session is up.
@@ -107,7 +110,10 @@ final class AppModel {
     private var noticeFeed = NoticeFeed()
 
     private(set) var session: PinomadSession?
-    private var watchTask: Task<Void, Never>?
+    /// The consumer of the current session's update stream. It keeps
+    /// draining after a timeout closes the session, so a just-queued
+    /// paired update lands before the failure page.
+    private var connectAttempt: ConnectAttempt?
     /// Bumped when the session is replaced or stopped — a late update from
     /// the old session must not land on the new one.
     private var sessionGeneration: UInt64 = 0
@@ -230,10 +236,9 @@ final class AppModel {
                 link: link, deviceName: UIDevice.current.name, account: account)
             adopt(session, sameHost: false)
             hostBeforePairing = hostBeforePairing ?? previous
-            sessionHost = nil
-            pairingLink = link
-            pairingAccount = account
-            pairingTarget = PinomadCore.pairingTarget(link: link)
+            pairing.pair(
+                link: link, account: account,
+                target: PinomadCore.pairingTarget(link: link))
             return true
         } catch {
             // Links reach here through `offerPairing`, which already parsed
@@ -249,10 +254,7 @@ final class AppModel {
         do {
             let session = try PinomadSession.connect(host: host)
             adopt(session, sameHost: host.hostKey == currentHostKey)
-            sessionHost = host
-            pairingLink = nil
-            pairingAccount = nil
-            pairingTarget = nil
+            pairing.connect(host)
         } catch {
             fail(.unreachable(describe(error)))
         }
@@ -318,10 +320,7 @@ final class AppModel {
 
     private func closeSession() {
         stopSession()
-        sessionHost = nil
-        pairingLink = nil
-        pairingAccount = nil
-        pairingTarget = nil
+        pairing.clear()
     }
 
     /// Drop the live session but leave the host/pairing identity in place —
@@ -331,8 +330,8 @@ final class AppModel {
         sessionGeneration &+= 1
         connectWatchdog?.cancel()
         connectWatchdog = nil
-        watchTask?.cancel()
-        watchTask = nil
+        connectAttempt?.stop()
+        connectAttempt = nil
         session?.close()
         session = nil
         snapshot = nil
@@ -350,18 +349,24 @@ final class AppModel {
             Task { @MainActor in
                 guard let self,
                       self.sessionGeneration == generation,
-                      self.phase == .connecting
+                      self.phase == .connecting,
+                      let attempt = self.connectAttempt
                 else { return }
-                self.connectTimedOut()
+                self.connectWatchdog?.cancel()
+                self.connectWatchdog = nil
+                // Close, then keep draining until the session's update
+                // stream ends; the failure page waits for that finish.
+                attempt.timeout(address: self.connectAddress)
             }
         }
         connectWatchdog = watchdog
         watchdog.begin(paused: isInBackground)
     }
 
-    private func connectTimedOut() {
+    /// The session finished draining after a timeout with no ready. The
+    /// paired update (if any) has already been applied by now.
+    private func finishTimedOut(address: String?) {
         guard phase == .connecting else { return }
-        let address = connectAddress
         stopSession()
         fail(.timedOut(address: address))
     }
@@ -373,6 +378,8 @@ final class AppModel {
     private func adopt(_ session: PinomadSession, sameHost: Bool) {
         sessionGeneration &+= 1
         let generation = sessionGeneration
+        connectAttempt?.stop()
+        connectAttempt = nil
         self.session?.close()
         self.session = session
         snapshot = nil
@@ -397,13 +404,22 @@ final class AppModel {
             draftAgent.reset()
         }
         phase = .connecting
-        watchTask?.cancel()
-        watchTask = Task { [weak self] in
-            for await update in session.updates {
+        let attempt = ConnectAttempt(
+            updates: session.updates,
+            close: { session.close() },
+            apply: { [weak self] update in
                 guard let self, self.sessionGeneration == generation else { return }
                 self.apply(update)
-            }
-        }
+            },
+            onTimeout: { [weak self] address in
+                guard let self,
+                      self.sessionGeneration == generation,
+                      self.phase == .connecting
+                else { return }
+                self.finishTimedOut(address: address)
+            })
+        connectAttempt = attempt
+        attempt.start()
         armConnectWatchdog()
     }
 
@@ -438,9 +454,7 @@ final class AppModel {
             // The handshake spent the link's code and (normally) made this
             // the launch host — the session is this host's device now,
             // whatever the first view turns out to say.
-            sessionHost = host
-            pairingLink = nil
-            pairingAccount = nil
+            pairing.paired(host)
             accountRejectedHostKeys.remove(host.hostKey)
             reloadHosts()
             accountRefreshAfterPairing()

@@ -166,6 +166,24 @@ struct SessionOrderingTests {
         session.close()
     }
 
+    /// A timeout closes the session but keeps consuming its updates: an
+    /// update already queued before shutdown must arrive before the stream
+    /// ends, or a just-finished pairing would be lost.
+    @Test func closingDeliversUpdatesAlreadyQueuedBeforeEndingTheStream() async throws {
+        let (session, _, _, _) = try makeSession()
+        let reader = UpdateReader(session)
+
+        session.enqueue(.commands([.ready(outcome: .connected)]))
+        session.close()
+
+        guard case .ready(let outcome) = await reader.next() else {
+            Issue.record("the queued ready was dropped when the session closed")
+            return
+        }
+        #expect(outcome == .connected)
+        #expect(await reader.next() == nil)
+    }
+
     @Test func cancelledTimerNeverFires() async throws {
         let (session, _, clock, _) = try makeSession()
         let (seen, hook) = recorder()
