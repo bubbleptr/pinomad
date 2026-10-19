@@ -7,6 +7,9 @@ import PinomadCore
 public struct ContextMeterReading: Equatable, Sendable {
     /// A nearly full window warns before the conversation compacts itself.
     public static let warningPercent = 80
+    /// Counts beyond this are not a plausible context size. Bounding them
+    /// here keeps every Int conversion below in range.
+    private static let maxTokens = 1e12
 
     public let percent: Int?
     /// A fraction for the ring, capped at a full turn.
@@ -22,9 +25,13 @@ public struct ContextMeterReading: Equatable, Sendable {
     }
 
     init(used: Double?, window: Double?) {
-        // A non-positive or non-finite window has no scale; the core filters
-        // these out, and guarding here keeps a bad conversion from trapping.
-        guard let used, let window, window > 0, used.isFinite, window.isFinite else {
+        // A non-positive or non-finite window has no scale, and a count
+        // outside the plausible range would trap the Int conversions below.
+        // The core filters some of these, but a provider can still report
+        // an absurd number; fall back to "unknown" instead of crashing.
+        guard let used, let window,
+              used.isFinite, used >= 0, used < Self.maxTokens,
+              window.isFinite, window >= 1, window < Self.maxTokens else {
             percent = nil
             fill = 0
             warning = false
@@ -38,7 +45,7 @@ public struct ContextMeterReading: Equatable, Sendable {
         self.percent = percent
         // The text stays honest when a smaller model makes used exceed the
         // window; only the ring saturates.
-        fill = min(1, max(0, share))
+        fill = min(1, share)
         warning = percent >= Self.warningPercent
         text = "\(percent)%"
         detail = "\(Self.formatTokens(used)) / \(Self.formatTokens(window))"
@@ -49,6 +56,9 @@ public struct ContextMeterReading: Equatable, Sendable {
     /// Matches the web's `formatTokens`: whole thousands below a million,
     /// one decimal at or above it, trailing ".0" dropped.
     public static func formatTokens(_ tokens: Double) -> String {
+        // The initializer already bounds its inputs, but this is public and
+        // must not trap when handed an unvalidated count.
+        guard tokens.isFinite, tokens >= 0, tokens < Self.maxTokens else { return "—" }
         if tokens >= 1_000_000 {
             let tenths = (tokens / 100_000).rounded(.toNearestOrAwayFromZero)
             return tenths.truncatingRemainder(dividingBy: 10) == 0

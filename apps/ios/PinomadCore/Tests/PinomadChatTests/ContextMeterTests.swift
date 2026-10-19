@@ -38,6 +38,21 @@ import Testing
         #expect(ContextMeterReading.formatTokens(42) == "42")
     }
 
+    /// A provider can report counts beyond any real window. Converting
+    /// them for the percent or the figures must fall back, not trap.
+    @Test func absurdCountsFallBackInsteadOfTrapping() {
+        let huge = ContextMeterReading(used: 1e308, window: 200_000)
+        #expect(huge.percent == nil)
+        #expect(huge.text == "—")
+        #expect(huge.detail == "还没有用量数据")
+
+        // A sub-token window divides up instead of down; it is no scale.
+        let tinyWindow = ContextMeterReading(used: 1, window: 1e-300)
+        #expect(tinyWindow.percent == nil)
+
+        #expect(ContextMeterReading.formatTokens(1e308) == "—")
+    }
+
     @Test func noUsageLeavesTheGaugeEmpty() {
         let reading = ContextMeterReading(nil)
         #expect(reading.percent == nil)
