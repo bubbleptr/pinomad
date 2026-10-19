@@ -63,6 +63,9 @@ pub struct ConversationSnapshot {
     pub checkout: Option<WorktreeCheckout>,
     /// `isBusy` — a run is in flight.
     pub busy: bool,
+    /// `contextUsage` — the composer's context meter; `None` until a
+    /// qualifying reply lands after the last compaction/reset.
+    pub context_usage: Option<ContextUsage>,
 }
 
 fn connection_of(view: &Json) -> ConnectionState {
@@ -228,6 +231,14 @@ fn conversation_of(view: &Json) -> Option<ConversationSnapshot> {
             },
         })
         .collect();
+    // The shown model's window scales the meter; an unlisted model leaves it
+    // scaleless like the reference's `summaryOf` miss.
+    let context_window = view
+        .get("models")
+        .and_then(Json::as_array)
+        .and_then(|models| crate::model::summary_of(models, agent.model.clone()))
+        .and_then(|summary| summary.context_window);
+    let context_usage = crate::context_usage::context_usage(conversation, context_window);
     Some(ConversationSnapshot {
         id,
         chat,
@@ -243,6 +254,7 @@ fn conversation_of(view: &Json) -> Option<ConversationSnapshot> {
         home: view.get("home").map(Home::from_json),
         checkout: view.get("checkout").map(WorktreeCheckout::from_json),
         busy,
+        context_usage,
     })
 }
 

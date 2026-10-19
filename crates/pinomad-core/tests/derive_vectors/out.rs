@@ -225,6 +225,11 @@ pub fn usage_rows_json(rows: &[UsageRow]) -> Json {
     )
 }
 
+/// `{used, window}` in the reference's key order.
+pub fn context_usage_json(usage: &pinomad_core::context_usage::ContextUsage) -> Json {
+    obj(&[("used", Some(num(usage.used))), ("window", Some(num(usage.window)))])
+}
+
 pub fn task_rows_json(rows: &[TaskRow]) -> Json {
     Json::array(
         rows.iter()

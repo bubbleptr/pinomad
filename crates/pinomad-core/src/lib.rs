@@ -7,6 +7,7 @@
 pub mod account;
 pub mod b64;
 pub mod chat;
+pub mod context_usage;
 pub mod cot_view;
 pub mod delta;
 pub mod family;

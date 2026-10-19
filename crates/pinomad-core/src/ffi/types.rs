@@ -12,6 +12,7 @@ use crate::u16str::U16String;
 use std::sync::Arc;
 
 pub use crate::chat::{QueueItem, QueueMode, TaskRow, UsageRow};
+pub use crate::context_usage::ContextUsage;
 pub use crate::cot_view::{
     ChatEntry, CotAnswer, CotPhase, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents,
 };
