@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
-import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { connectRemoteDurable, ProtocolMismatchError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { installSpec } from "../service/definition.ts";
 import { waitForIdle } from "../service/idle.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
@@ -27,7 +27,7 @@ const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** A token connection with a deadline; a late winner is closed so it can't hold the event loop open. */
-function connect(url: string, token: string, timeoutMs = 3000): Promise<RemoteDurable> {
+function connectToHost(url: string, token: string, timeoutMs = 3000): Promise<RemoteDurable> {
   const connecting = connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
   const timedOut = Symbol("timedOut");
   return Promise.race([
@@ -72,7 +72,7 @@ async function status(argv: readonly string[]): Promise<void> {
   }
   try {
     const { url, token } = await hostAddress(argv);
-    const remote = await connect(url, token);
+    const remote = await connectToHost(url, token);
     if (remote.view.current().tasks === undefined) await remote.controller.toggleTasks();
     const tasks = remote.view.current().tasks;
     const count = tasks === undefined ? 0 : Object.keys(tasks.tasks).length;
@@ -89,18 +89,27 @@ async function status(argv: readonly string[]): Promise<void> {
  * Shared with `upgrade`, which calls it after pull/install/build.
  * `manager` and `restart` are injectable: join/leave pass the manager they
  * resolved and can replace the restart with a definition rewrite + install.
+ * `connect` and the poll timings are injectable for tests.
  */
 export async function restartService({
   force,
   argv,
   manager = serviceManager(),
   restart,
+  connect = connectToHost,
+  pollTimeoutMs = 30_000,
+  pollDelayMs = 500,
 }: {
   force: boolean;
   argv: readonly string[];
   manager?: ServiceManager;
   /** The restart action; defaults to `manager.restart()`. */
   restart?: () => Promise<void>;
+  /** The reachability probe; defaults to a token connection to the host. */
+  connect?: (url: string, token: string, timeoutMs?: number) => Promise<RemoteDurable>;
+  /** Post-restart poll window and spacing; tests shrink both. */
+  pollTimeoutMs?: number;
+  pollDelayMs?: number;
 }): Promise<number> {
   if (!(await manager.state()).installed) {
     console.log(`service not installed (${commandHint("service")} install)`);
@@ -131,7 +140,7 @@ export async function restartService({
     console.log("restart requested (host address unknown; not polling)");
     return 0;
   }
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + pollTimeoutMs;
   // The directory lock a crashed host left can take ~12s to be retried away.
   for (;;) {
     try {
@@ -140,11 +149,19 @@ export async function restartService({
       console.log(`host restarted, reachable at ${address.url}`);
       return 0;
     } catch (error) {
+      // A newer protocol major means the restart landed: the host answers,
+      // this build is just too old to speak to it (cross-major upgrades,
+      // issue #164). An older major is the old host or a stranger — keep polling.
+      if (error instanceof ProtocolMismatchError && error.direction === "client-older") {
+        const newer = error.hostVersion ?? `protocol major ${error.hostMajor}`;
+        console.log(`host restarted (${newer}, newer than this upgrader), reachable at ${address.url}`);
+        return 0;
+      }
       if (Date.now() > deadline) {
-        console.error(`host did not answer within 30s after restart: ${message(error)}`);
+        console.error(`host did not answer within ${pollTimeoutMs / 1000}s after restart: ${message(error)}`);
         return 1;
       }
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
     }
   }
 }
