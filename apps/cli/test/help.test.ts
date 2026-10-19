@@ -103,6 +103,16 @@ describe("pinomad <command> <bad args>", () => {
     expect(run.stderr()).toContain('run "pinomad service --help" for usage');
     expectNoStack(run.stderr());
   });
+
+  // Issue #164: upgrade used to run npm/git first and only fail at restart.
+  it("upgrade rejects a bad flag before doing any work", async () => {
+    const run = runPinomad(["upgrade", "--bogus"]);
+    expect(await run.exited).toBe(2);
+    expect(run.stdout()).toBe("");
+    expect(run.stderr()).toContain("pinomad upgrade: Unknown option '--bogus'");
+    expect(run.stderr()).toContain('run "pinomad upgrade --help" for usage');
+    expectNoStack(run.stderr());
+  });
 });
 
 describe("bun run service (dev entry bypasses the dispatcher)", () => {
