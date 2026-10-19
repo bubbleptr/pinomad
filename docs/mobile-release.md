@@ -50,7 +50,17 @@ PiNomad 的 secure channel 是 Noise IK 协议，用的都是标准算法：X255
 
 ## ATS 与 `ws://` 主机名
 
+两套 iOS 实现的网络栈不同，ATS 的结论也不同。
+
+### Expo 版（`apps/mobile`）
+
 生成的 `Info.plist` 是 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`，没有域名级例外。React Native 0.86 的 WebSocket 是 SocketRocket（基于 `NSStream`），ATS 管的是 `NSURLSession` 这一层，所以 `ws://` 连接不受 ATS 约束；App 里也没有别的远程请求（`fetch`、远程图片）。Release 包用 `ws://` 连局域网 IP 实测过；真机上用主机名连接也验证过（2026-10-12），和按上面代码路径的推断一致。以后如果引入走 `NSURLSession` 的明文请求，才需要动 ATS。
+
+### 原生版（`apps/ios`）
+
+原生版用 `URLSessionWebSocketTask` 连宿主，受 ATS 约束，所以 `Info.plist` 保留 `NSAllowsArbitraryLoads=true`（2026-10-19 决定）。收窄到 `NSAllowsLocalNetworking` 只放行 IP、短名和 `.local`，会挡掉用户自己的域名，比如 `ws://nas.home.arpa`、动态 DNS，以及 `http://` 的 `publicUrl`。和宿主的连接有 Noise IK 端到端加密，账号请求在代码里由 `isSecureServerOrigin` 强制 https，ATS 在这一层没有额外的安全收益。
+
+代价是上架 App Store 时要在审核说明里交代这项豁免：明文 WebSocket 只用于连用户自建的宿主，内容由 Noise 端到端加密；账号请求走 https。
 
 ## 已知限制
 

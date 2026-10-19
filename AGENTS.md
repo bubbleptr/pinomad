@@ -58,6 +58,7 @@ xcrun devicectl device install app --device 00008150-001608822678401C \
 
 # devicectl 会把 -xxx 应用参数当成自己的短选项簇解析（-autoPair → -a -u -t …），
 # 所以启动参数走 DEVICECTL_CHILD_ 环境变量（App 也读 PINOMAD_* env）：
+# 这些启动参数、PINOMAD_* 环境变量、PerfLog 和 AUTOSCROLL 只在 Debug 构建里编入，Release 包会忽略。
 DEVICECTL_CHILD_PINOMAD_PAIRING_LINK='<配对链接>' DEVICECTL_CHILD_PINOMAD_AUTOPAIR=1 \
   xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
 # 手机锁屏时 launch 会被拒绝（FBSOpenApplicationErrorDomain 7）——等解锁。

@@ -7,8 +7,8 @@ import QuartzCore
 /// emit (`bytes` / `snapshot` / `publish`, plus `ui-publish` from the
 /// app) into a ring buffer persisted at `Documents/perf.ndjson` — pull it
 /// with `devicectl device copy from --domain-type appDataContainer`.
-/// Enabled only when `PINOMAD_PERFLOG` is in the environment; a no-op
-/// otherwise.
+/// Enabled only in Debug builds, and there only when `PINOMAD_PERFLOG` is in
+/// the environment; Release instruments nothing and stays a no-op.
 public final class PerfLog: @unchecked Sendable {
     public static let shared = PerfLog()
 
@@ -27,7 +27,12 @@ public final class PerfLog: @unchecked Sendable {
     private static let fileName = "perf.ndjson"
 
     init() {
+        #if DEBUG
         enabled = ProcessInfo.processInfo.environment["PINOMAD_PERFLOG"] != nil
+        #else
+        // The env var is a dev seam: Release must not accept it at all.
+        enabled = false
+        #endif
     }
 
     public func mark(_ name: String, version: UInt64? = nil) {
