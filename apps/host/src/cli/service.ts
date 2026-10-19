@@ -18,6 +18,7 @@ import { installSpec } from "../service/definition.ts";
 import { waitForIdle } from "../service/idle.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { commandHint, hostEntry, packagedVersion } from "../distribution.ts";
+import { isParseArgsError, reportParseArgsError } from "./args.ts";
 import { DEFAULT_DATA_DIR, hostAddress } from "./host-address.ts";
 
 const run = promisify(execFile);
@@ -78,6 +79,7 @@ async function status(argv: readonly string[]): Promise<void> {
     console.log(`host: reachable at ${url}, ${count} live task${count === 1 ? "" : "s"}`);
     remote.close();
   } catch (error) {
+    if (isParseArgsError(error)) throw error;
     console.log(`host: unreachable (${message(error)})`);
   }
 }
@@ -104,7 +106,12 @@ export async function restartService({
     console.log(`service not installed (${commandHint("service")} install)`);
     return 1;
   }
-  const address = await hostAddress(argv).catch(() => undefined);
+  const address = await hostAddress(argv).catch((error: unknown) => {
+    // A bad flag is user error, not "host address unknown" — let the
+    // dispatcher report it instead of restarting past it.
+    if (isParseArgsError(error)) throw error;
+    return undefined;
+  });
   if (!force && address !== undefined) {
     try {
       const remote = await connect(address.url, address.token);
@@ -182,9 +189,20 @@ export async function main(argv: readonly string[]): Promise<void> {
         process.exitCode = 1;
     }
   } catch (error) {
+    // Argument errors belong to the `pinomad` dispatcher (exit 2 + hint).
+    if (isParseArgsError(error)) throw error;
     console.error(message(error));
     process.exitCode = 1;
   }
 }
 
-if (import.meta.main) await main(process.argv.slice(2));
+if (import.meta.main) {
+  // The `bun run service` dev entry bypasses the pinomad dispatcher; report
+  // argument errors the same way, other exceptions keep their stack.
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    if (!isParseArgsError(error)) throw error;
+    reportParseArgsError(commandHint("service"), error);
+  }
+}

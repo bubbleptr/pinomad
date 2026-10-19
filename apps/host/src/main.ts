@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 // The headless host: owns the Harness, its SQLite store, and the lock; every UI
 // is a gateway client. Run on Node, not Bun (node:sqlite, pi-durable's engines).
-//
-//   pinomad host [--data-dir DIR] [--port 7420] [--project DIR]...
-//   pinomad host --remote-port 7422 [--public-url URL]      # remote access, LAN (ADR-0008)
-//   pinomad host --relay https://relay.example.com          # remote access via relay (ADR-0015)
-//   pinomad host --faux "scripted answer" [--faux-tps 40]   # no real model, for tests
+// Usage rows live in the pinomad.ts table — `pinomad host --help`.
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
