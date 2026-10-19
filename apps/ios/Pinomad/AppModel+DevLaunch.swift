@@ -56,6 +56,13 @@ extension AppModel {
             startSubagentDemo()
             return true
         }
+        if let context = env["PINOMAD_DEMO_CONTEXT"] {
+            // The composer's context meter at a scripted usage, for
+            // screenshots on a simulator that cannot reach a host.
+            phase = .connected
+            startContextDemo(context)
+            return true
+        }
         if !injected.isEmpty {
             // No auto-pair: pre-fill the pairing field after the normal
             // launch, exactly as a pasted link would.
@@ -195,6 +202,64 @@ extension AppModel {
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: nil, organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+            agents: nil, conversation: conversation
+        ))
+        replyStreams.sync(chat: chat)
+    }
+
+    /// `PINOMAD_DEMO_CONTEXT=<used>/<window>` (anything else means nil)
+    /// settles one conversation so the composer's context meter can be
+    /// photographed without a host. The long model name also exercises the
+    /// "capsule truncates first" layout next to the meter.
+    private func startContextDemo(_ spec: String) {
+        navPath = [.conversation(1)]
+        let parts = spec.split(separator: "/")
+        let usage: ContextUsage?
+        if parts.count == 2, let used = Double(parts[0]), let window = Double(parts[1]) {
+            usage = ContextUsage(used: used, window: window)
+        } else {
+            usage = nil
+        }
+        let ref = ModelRef(provider: "anthropic", modelId: "claude-sonnet-4-5-20250929")
+        let model = ModelSummary(
+            provider: ref.provider, modelId: ref.modelId,
+            name: "Claude Sonnet 4.5 Extended Thinking Preview",
+            contextWindow: usage?.window ?? 200_000,
+            thinkingLevels: [.off, .medium, .high], images: true
+        )
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let parent = ConversationSummary(
+            id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+            title: "上下文用量演示", status: nil, updatedAt: now,
+            label: nil, role: nil, activity: nil
+        )
+        let cot = CotView(
+            phase: .settled, failed: false, anchorMs: now - 4_000, elapsedMs: 4_000,
+            steps: [],
+            answer: CotAnswer(
+                text: "上下文用量已经算在核心里，composer 只负责把它画出来。",
+                streaming: false
+            )
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "这个对话用了多少上下文？", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
+        ]
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: [],
+            agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
+            questions: [], home: nil, checkout: nil, busy: false, contextUsage: usage
+        )
+        drafts[1] = "帮我看看这个改动"
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: nil,
+            organized: Organized(
+                chats: [ConversationNode(summary: parent, children: [])],
+                projects: [], archived: []
+            ),
+            notices: [], models: [model],
+            defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
         replyStreams.sync(chat: chat)
