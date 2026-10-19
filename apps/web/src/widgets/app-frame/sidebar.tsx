@@ -103,6 +103,7 @@ export function SidebarFooter({
   onOpenSettings,
   onPairHost,
   onOpenAccount,
+  onForgetHost,
   onSelect,
 }: {
   view: DurableView;
@@ -110,6 +111,7 @@ export function SidebarFooter({
   onOpenSettings: () => void;
   onPairHost: () => void;
   onOpenAccount: () => void;
+  onForgetHost: () => void;
   onSelect?: () => void;
 }) {
   const update = useAppUpdate();
@@ -133,6 +135,10 @@ export function SidebarFooter({
         onOpenAccount={() => {
           onSelect?.();
           onOpenAccount();
+        }}
+        onForgetHost={() => {
+          onSelect?.();
+          onForgetHost();
         }}
       />
       <SideNavItem

@@ -51,6 +51,7 @@ describe("SidebarFooter restart button", () => {
       onOpenSettings={() => {}}
       onPairHost={() => {}}
       onOpenAccount={() => {}}
+      onForgetHost={() => {}}
     />
   );
 
