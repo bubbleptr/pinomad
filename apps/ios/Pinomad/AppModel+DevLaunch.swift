@@ -189,7 +189,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], home: nil, checkout: nil, busy: false
+            questions: [], home: nil, checkout: nil, busy: false, contextUsage: nil
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -214,7 +214,7 @@ extension AppModel {
         let conv = ConversationSnapshot(
             id: 1, chat: chat, statusText: streaming ? "正在输出…" : "",
             queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], home: nil, checkout: nil, busy: streaming
+            questions: [], home: nil, checkout: nil, busy: streaming, contextUsage: nil
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,
