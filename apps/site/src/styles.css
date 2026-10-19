@@ -140,7 +140,7 @@ code {
   position: absolute;
   left: var(--gutter);
   top: -4rem;
-  z-index: 10;
+  z-index: 30;
   padding: 0.5rem 0.9rem;
   border-radius: 0.6rem;
   background: var(--fg);
@@ -179,12 +179,119 @@ code {
 }
 
 /* —— Header —— */
+.site-header {
+  --pill-blur: 16px;
+  --pill-tint: 62%;
+  --pill-saturate: 160%;
+  --pill-offset: 8px;
+  --pill-enter: 450ms;
+  --pill-exit: 315ms;
+  --pill-ease: cubic-bezier(0.33, 1, 0.68, 1);
+}
+
 .site-header .wrap {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   min-height: 4rem;
+}
+
+/* main.js turns stickiness on; without it the header stays at the top of the
+   page as a plain bar instead of a see-through one over the copy. */
+.site-header[data-sticky] {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+html:has(.site-header[data-sticky]) section[id] {
+  scroll-margin-top: 5rem;
+}
+
+/* Once the page moves, a frosted pill grows in behind the bar's own content,
+   reaching ~14px past it, so nothing in the bar changes place. Fade and shape
+   share one duration and curve; a taller start or a faster fade read as a jump. */
+.site-header[data-sticky] .wrap {
+  position: relative;
+  z-index: 0;
+}
+
+.site-header[data-sticky] .wrap::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: var(--pill-offset) max(6px, calc(var(--gutter) - 14px));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--surface) var(--pill-tint), transparent);
+  -webkit-backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
+  backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 10px 30px rgb(0 0 0 / 0.35);
+  opacity: 0;
+  scale: 1.02 1;
+  pointer-events: none;
+  transition:
+    opacity var(--pill-exit) var(--pill-ease),
+    scale var(--pill-exit) var(--pill-ease);
+}
+
+.site-header.is-floating .wrap::before {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity var(--pill-enter) var(--pill-ease),
+    scale var(--pill-enter) var(--pill-ease);
+}
+
+/* Section links, with the one you're reading underlined (main.js). */
+.nav-sections {
+  display: none;
+  align-items: center;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  font-size: 0.875rem;
+}
+
+.nav-sections a {
+  position: relative;
+  padding-block: 0.5rem;
+  color: var(--fg-3);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.nav-sections a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--fg);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.nav-sections a:hover,
+.nav-sections a[aria-current] {
+  color: var(--fg);
+}
+
+.nav-sections a[aria-current]::after {
+  opacity: 1;
+}
+
+/* Wide enough for the section links: they carry Quick start, so the header-nav
+   copy steps aside. */
+@media (min-width: 62rem) {
+  .nav-sections {
+    display: flex;
+  }
+
+  .header-nav .nav-quick {
+    display: none;
+  }
 }
 
 .brand {
