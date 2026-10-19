@@ -35,6 +35,13 @@ export default defineConfig({
       {
         test: {
           ...shared,
+          name: "cli",
+          include: ["apps/cli/test/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...shared,
           name: "host",
           include: ["apps/host/test/**/*.test.ts"],
         },

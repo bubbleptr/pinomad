@@ -3,6 +3,7 @@
 // server, and the built web client. Subcommands load lazily so `pinomad pair`
 // doesn't pay for the pi stack; bundled, each lazy import is a sibling chunk.
 import { packagedVersion } from "@pinomad/host/src/distribution.ts";
+import { isParseArgsError } from "@pinomad/host/src/cli/args.ts";
 
 type CommandModule = { main(argv: readonly string[]): Promise<void> };
 
@@ -24,7 +25,10 @@ const USAGE = `pinomad — PiNomad host, server, and utilities
 
 usage: pinomad <command> [args…]
 
-  host [host args…]                    run the host in the foreground
+  host [--data-dir DIR] [--port 7420] [--project DIR]…   run the host in the foreground
+  host --remote-port PORT [--public-url URL]   remote access, LAN (ADR-0008)
+  host --relay URL   remote access via relay (ADR-0015)
+  host --faux "answer" [--faux-tps 40]   no real model, for tests
   server --public-origin O [--data-dir D] [--trust-proxy]   run the server
   server passwd [--data-dir D] [--user U]   change the account password (stdin)
   relay …                              old name of server
@@ -36,6 +40,12 @@ usage: pinomad <command> [args…]
   leave [--data-dir D]                 leave the server account
   --version, -v                        print the version
 `;
+
+/** The subcommand's slice of the one usage table (`server` keeps both rows). */
+function usageFor(command: string): string {
+  const rows = USAGE.split("\n").filter((line) => line.startsWith(`  ${command} `));
+  return `usage: pinomad ${command} [args…]\n${rows.join("\n")}`;
+}
 
 export async function main(argv: readonly string[]): Promise<void> {
   const [command, ...rest] = argv;
@@ -54,7 +64,21 @@ export async function main(argv: readonly string[]): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  await (await load()).main(rest);
+  // No subcommand parser declares a help flag; intercept it here so e.g.
+  // `upgrade --help` prints usage instead of starting work, and `host --help`
+  // works even though host args pass straight through.
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log(usageFor(command));
+    return;
+  }
+  try {
+    await (await load()).main(rest);
+  } catch (error) {
+    if (!isParseArgsError(error)) throw error;
+    console.error(`pinomad ${command}: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`run "pinomad ${command} --help" for usage`);
+    process.exitCode = 2;
+  }
 }
 
 if (import.meta.main) await main(process.argv.slice(2));
