@@ -33,7 +33,9 @@ export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
     usage === undefined ? "No usage data yet" : `${formatTokens(usage.used)} / ${formatTokens(usage.window)}`;
   const fill = usage === undefined ? 0 : Math.min(1, usage.used / usage.window);
   return (
-    <Tooltip content={tooltip} placement="above">
+    // `alignment="end"` keeps the tooltip inside the viewport: the meter
+    // sits at the composer's right edge, where a centered one clips.
+    <Tooltip content={tooltip} placement="above" alignment="end">
       <span
         className={`inline-flex h-7 items-center gap-1.5 px-1 text-xs ${warning ? "text-warning" : "text-muted"}`}
         {...(percent === undefined
@@ -49,7 +51,9 @@ export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
         data-testid="context-meter"
       >
         <svg aria-hidden="true" className="size-4 -rotate-90" viewBox="0 0 16 16">
-          <circle className="stroke-separator" cx="8" cy="8" fill="none" r="6" strokeWidth="2" />
+          {/* Track at quarter opacity of the same ink: a visible ring reads
+              "gauge" where a faint one plus a round-cap arc reads "spinner". */}
+          <circle className="stroke-current opacity-25" cx="8" cy="8" fill="none" r="6" strokeWidth="2" />
           <circle
             className="stroke-current"
             cx="8"
@@ -58,7 +62,6 @@ export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
             r="6"
             strokeDasharray={CIRCUMFERENCE}
             strokeDashoffset={CIRCUMFERENCE * (1 - fill)}
-            strokeLinecap="round"
             strokeWidth="2"
           />
         </svg>
