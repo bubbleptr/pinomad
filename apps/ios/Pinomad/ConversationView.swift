@@ -14,9 +14,21 @@ struct ConversationView: View {
     let conversationId: UInt64
 
     @State private var showingChanges = false
+    /// The shown conversation's last snapshot. Pushing a subagent switches
+    /// the session to the child, so `conversation` goes nil while this page
+    /// is covered; keeping the last snapshot leaves the transcript — and
+    /// its scroll position — mounted under the pushed page.
+    @State private var lastConversation: ConversationSnapshot?
 
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
+    }
+
+    /// What the transcript renders: the live conversation, or the snapshot
+    /// it had before a child page took the session. Returning switches back
+    /// through `openConversation` and updates it in place.
+    private var shownConversation: ConversationSnapshot? {
+        conversation ?? (lastConversation?.id == conversationId ? lastConversation : nil)
     }
 
     /// The shown conversation's node in the organized tree — its children
@@ -37,8 +49,9 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
+        let shown = shownConversation
         Group {
-            if let conversation {
+            if let conversation = shown {
                 if autoScroll {
                     // Debug-only: a scripted scroll drives the transcript
                     // so PerfLog can measure hitches while scrolling —
@@ -75,7 +88,7 @@ struct ConversationView: View {
         })
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
         .safeAreaInset(edge: .bottom) {
-            if let conversation {
+            if let conversation = shown {
                 ConversationComposer(model: model, conversation: conversation)
             }
         }
@@ -97,6 +110,9 @@ struct ConversationView: View {
             ChangesSheet(model: model, conversationId: conversationId)
         }
         .task { model.openConversation(conversationId) }
+        .onChange(of: shown, initial: true) { _, live in
+            if let live { lastConversation = live }
+        }
     }
 
     /// Scripted scrolling for perf runs, driven by `PINOMAD_AUTOSCROLL` in
@@ -148,6 +164,7 @@ struct ConversationView: View {
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
+                   openSubagent: { model.navPath.append(.conversation($0)) },
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
@@ -198,6 +215,9 @@ private struct RunRow: View, Equatable {
     /// Supplies the subagent cards' call-given labels and roles; only the
     /// fields the cards show, so summary churn doesn't invalidate the row.
     let subagentSummaries: [UInt64: SubagentCardSummary]
+    /// Pushes a card's child conversation; not part of equality, it only
+    /// captures the model.
+    let openSubagent: (UInt64) -> Void
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -213,7 +233,7 @@ private struct RunRow: View, Equatable {
         VStack(alignment: .leading, spacing: 8) {
             AgentTraceView(ChatAdapter.trace(cot: split.trace, interrupted: interrupted))
             ForEach(split.cards) { card in
-                SubagentCardView(card: card)
+                SubagentCardView(card: card, onOpen: openSubagent)
             }
             if cot.answer != nil {
                 ReplyBody(answer: cot.answer!, stream: stream)

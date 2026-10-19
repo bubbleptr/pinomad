@@ -107,6 +107,25 @@ struct SubagentCardsTests {
         #expect(before != summaries(of: renamed))
     }
 
+    /// The card's target is the child conversation the call recorded —
+    /// what a tap pushes.
+    @Test func cardCarriesTheChildConversationId() {
+        let card = ChatAdapter.card(tool: subagentTool(conversationId: 42), summary: nil, key: "s1/call-1")
+        #expect(card.conversationId == 42)
+    }
+
+    /// Before the call has recorded a child there is nowhere to go; the
+    /// view uses this to drop the chevron and the tap target.
+    @Test func cardWithoutAChildConversationHasNoTarget() {
+        let tool = ToolItem(
+            state: .inputAvailable, argsText: #"{"task":"review"}"#, children: [],
+            diffStat: nil, durationMs: nil, images: [], output: nil,
+            toolCallId: "call-1", toolName: "subagent", pinomad: nil
+        )
+        let card = ChatAdapter.card(tool: tool, summary: nil, key: "s1/call-1")
+        #expect(card.conversationId == nil)
+    }
+
     @Test func runWithoutSubagentsIsLeftAlone() {
         let cot = CotView(
             phase: .settled, failed: false, anchorMs: nil, elapsedMs: nil,
