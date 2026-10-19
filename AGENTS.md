@@ -6,13 +6,13 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 React Native 的 Hermes 上都能运行，ADR-0017）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 落地页，纯静态 Vite 多页，部署见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`apps/mobile`（Expo 移动端，heroui-native + Uniwind，ADR-0017）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 Node 上都能运行，ADR-0024）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 落地页，纯静态 Vite 多页，部署见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
 
-移动端正按 ADR-0024 重写成原生（iOS SwiftUI，客户端协议核心用 Rust），`apps/mobile` 在维护期：只修严重问题，不加功能，原生版替换后删除；M5 等计划里的移动端部分都做在原生版上。
+iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-0024），不在 Bun workspaces 里，开发验证见下。
 
 改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并重新生成对照向量：在仓库根目录跑，协议层的（生成器在 `packages/protocol/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors`，推导层的（生成器在 `packages/client/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project client rust-vectors`；在子目录里跑会报 "No test files found"。新鲜度测试会拦下漂移。
 
-界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/mobile`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，移动端的 typecheck 和测试也要通过。
+界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/ios`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，iOS 侧由上面的 `crates/pinomad-core` 同步规则和 rust-core workflow 的 ios job 兜住。
 
 ## 验证
 
@@ -87,8 +87,6 @@ xcrun devicectl device copy from --device 00008150-001608822678401C \
 桌面端：`bun run desktop` 开发，`bun run desktop:package` 打不签名的包，`bun run desktop:e2e` 在 macOS 上跑 Electron 端到端（不进 `bun run test`，改了 `apps/desktop` 或配对流程要手动跑）。shell 里设了 `ELECTRON_RUN_AS_NODE=1` 时 Electron 会当成 Node 跑、App 起不来，这几条脚本已经清掉它。
 
 App 图标源文件是 `apps/desktop/build/icon.icon`（戴帽子的幽灵，全平台同一套视觉；身体轮廓层故意用 PNG，SVG 描边会被深色纯色覆盖填满）。Web 的 `apps/web/public/favicon.svg`（随系统深浅色切换）和 `apple-touch-icon.png`（不透明、无圆角）由同一图形导出，改图标时一起更新。图标用 Xcode 自带的 Icon Composer（`/Applications/Xcode.app/Contents/Applications/Icon Composer.app`）编辑，`/Applications` 下单独装的 1.5 版太旧；命令行预览用同目录的 `Contents/Executables/ictool`。Icon Composer 27 里图层和组的数组都是第一个在最上层。打包要 Xcode 26+ 的 actool。
-
-移动端：`cd apps/mobile && bunx expo run:ios -d "iPhone 17 Pro"` 构建开发包并在模拟器上跑（`ios/`、`android/` 由 CNG 生成，不入库）。改了移动端依赖版本后用 `bunx expo start --clear`，Metro 的旧转换缓存会让 App 启动时栈溢出。Expo 相关依赖锁精确版本，不用发布不到 7 天的；`package.json` 的 `expo.install.exclude` 让 `expo install --check` 跳过故意没升到最新补丁的包，升级时一并更新。heroui-native 只用 OSS 包。发版（EAS + TestFlight）见 `docs/mobile-release.md`；`--configuration Release` 跑 Release 包，检查不依赖 Metro 的情况。
 
 打包 npm 包用 `bun run package -- --version <v>`（产物在 `apps/cli/out/`，不入库）；装包冒烟 `bun apps/cli/smoke.ts <tgz>` 要连真 registry，不进 `bun run test`。
 

@@ -4,7 +4,7 @@
 
 ## 现在
 
-1. **[iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1)**：推送接入 → 替换验收、TestFlight 替换 Expo 版 → 用满一周后删除 `apps/mobile`。账号和它并行，不挡替换。推送也补上 M5"知道它跑完了或在等你"的最后一块。
+1. **[iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1)**：推送接入 → 替换验收、TestFlight 替换 Expo 版 → 删除 `apps/mobile`。账号和它并行，不挡替换。推送也补上 M5"知道它跑完了或在等你"的最后一块。
 2. **[M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3)**：各客户端切到 `app.pinomad.si` 后摘掉旧域名。
 
 ## 以后

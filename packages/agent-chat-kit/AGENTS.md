@@ -1,6 +1,6 @@
 # AgentChatKit — Agent 说明
 
-给 agent 对话用的 SwiftUI 组件库，支持 iOS 26+ 和 macOS 26+。最先服务的是 PiNomad 的原生 iOS 评估（还没决定取代它的 Expo 版），以后可能开源。最重要的两个组件是流式 Markdown 和 agent trace（思考、工具调用、中途输出、最终回答）。
+给 agent 对话用的 SwiftUI 组件库，支持 iOS 26+ 和 macOS 26+。最先服务的是 PiNomad 的原生 iOS 版（评估后已取代 Expo 版），以后可能开源。最重要的两个组件是流式 Markdown 和 agent trace（思考、工具调用、中途输出、最终回答）。
 
 ## 布局
 

@@ -2,7 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-10-16
-- 取代 ADR-0017 §3（"移动端用 Expo……也不用 Swift 原生"）。ADR-0017 §4（`packages/protocol` 必须能在 Hermes 上运行）在 Expo 维护期内继续有效，删除 `apps/mobile` 后失效。
+- 取代 ADR-0017 §3（"移动端用 Expo……也不用 Swift 原生"）。ADR-0017 §4（`packages/protocol` 必须能在 Hermes 上运行）在 Expo 维护期内继续有效，删除 `apps/mobile` 后失效（已于 2026-10-19 失效）。
 
 ## 背景
 

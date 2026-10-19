@@ -1,6 +1,6 @@
 # ADR-0017：客户端形态——桌面端 Electron（仅 macOS），移动端 Expo
 
-- 状态：Accepted；第 3 条（移动端用 Expo）由 ADR-0024 取代，第 4 条（Hermes）在删除 `apps/mobile` 后失效
+- 状态：Accepted；第 3 条（移动端用 Expo）由 ADR-0024 取代，第 4 条（Hermes）已于 2026-10-19 随 `apps/mobile` 删除失效
 - 日期：2026-10-10
 
 ## 背景
