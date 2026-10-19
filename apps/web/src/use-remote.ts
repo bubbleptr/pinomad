@@ -49,9 +49,13 @@ export function useRemoteDurable(
   useEffect(() => {
     let opened: RemoteDurable | undefined;
     let cancelled = false;
+    // A new key is a new attempt: reset whatever the previous one settled on.
+    setState({ status: "connecting" });
     // Wrap the transport so every in-flight connection can be closed on
     // timeout or cleanup; `connectRemoteDurable` only exposes `close` once
-    // ready has resolved.
+    // ready has resolved. A connection leaves the set when the peer closes
+    // it (the wrapped `closed` below) or when our close runs, so the set
+    // holds only live connections — reconnects do not accumulate.
     const inner = "transport" in options ? options.transport : webSocketTransport(options.url, options.token);
     const connections = new Set<FrameConnection>();
     const abort = (): void => {
@@ -61,13 +65,24 @@ export function useRemoteDurable(
     const transport: FrameTransport = {
       label: inner.label,
       open(handlers) {
-        const connection = inner.open(handlers);
-        connections.add(connection);
+        // `closed` may fire before `open` returns for transports that fail
+        // synchronously; the guard keeps the delete valid either way.
+        let connection: FrameConnection | undefined;
+        connection = inner.open({
+          message: handlers.message,
+          closed: (code, reason) => {
+            if (connection !== undefined) connections.delete(connection);
+            handlers.closed(code, reason);
+          },
+        });
+        const live = connection;
+        connections.add(live);
         return {
-          send: (data) => connection.send(data),
+          send: (data) => live.send(data),
           close: () => {
-            connections.delete(connection);
-            connection.close();
+            // Already out of the set means the peer closed it first — or we
+            // already did — so there is nothing left to close.
+            if (connections.delete(live)) live.close();
           },
         };
       },
