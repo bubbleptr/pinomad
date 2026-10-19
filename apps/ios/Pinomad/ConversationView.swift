@@ -143,7 +143,8 @@ struct ConversationView: View {
         case let .user(_, text, images):
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
-            RunRow(cot: cot, interrupted: interrupted, failure: failure, stream: model.streamFor(id),
+            RunRow(cot: cot, organized: model.snapshot?.organized,
+                   interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
         case .compaction:
@@ -190,6 +191,8 @@ private struct UserRow: View, Equatable {
 /// and the failure line a dead run leaves behind.
 private struct RunRow: View, Equatable {
     let cot: CotView
+    /// Supplies the subagent cards' call-given labels and roles.
+    let organized: Organized?
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -199,8 +202,14 @@ private struct RunRow: View, Equatable {
     let retryKey: String?
 
     var body: some View {
+        // Split only when this row's body runs — `.equatable()` skips it
+        // for unchanged runs, and the core call has a no-subagent fast path.
+        let split = ChatAdapter.splitRun(cot, organized: organized)
         VStack(alignment: .leading, spacing: 8) {
-            AgentTraceView(ChatAdapter.trace(cot: cot, interrupted: interrupted))
+            AgentTraceView(ChatAdapter.trace(cot: split.trace, interrupted: interrupted))
+            ForEach(split.cards) { card in
+                SubagentCardView(card: card)
+            }
             if cot.answer != nil {
                 ReplyBody(answer: cot.answer!, stream: stream)
             }
@@ -218,7 +227,8 @@ private struct RunRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.cot == rhs.cot && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
+        lhs.cot == rhs.cot && lhs.organized == rhs.organized
+            && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
     }
 }
