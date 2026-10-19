@@ -29,6 +29,9 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
 
     /// The core's card key (step/call), stable across snapshots.
     public let key: String
+    /// The child conversation a tap opens; nil until the call has recorded
+    /// one, so a card that cannot navigate stays plain.
+    public let conversationId: UInt64?
     public let title: String
     public let status: Status
     /// `@name` when the delegating call named an agent (ADR-0023 §4);
@@ -49,6 +52,7 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
 
     public init(
         key: String,
+        conversationId: UInt64?,
         title: String,
         status: Status,
         role: String?,
@@ -57,6 +61,7 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
         output: String?
     ) {
         self.key = key
+        self.conversationId = conversationId
         self.title = title
         self.status = status
         self.role = role
@@ -96,7 +101,8 @@ extension ChatAdapter {
         guard hasSubagentCalls(cot) else { return (cot, []) }
         let split = splitSubagentCalls(view: cot)
         let cards = split.subagents.map { lifted in
-            card(tool: lifted.tool, summary: conversationID(of: lifted.tool).flatMap { summaries[$0] }, key: lifted.key)
+            let child = conversationID(of: lifted.tool)
+            return card(tool: lifted.tool, summary: child.flatMap { summaries[$0] }, key: lifted.key)
         }
         return (split.view, cards)
     }
@@ -123,6 +129,7 @@ extension ChatAdapter {
         }
         return SubagentCard(
             key: key,
+            conversationId: conversationID(of: tool),
             // A summary with neither label nor task falls back to the core's
             // English "Subagent"; the interface is Chinese.
             title: title == "Subagent" ? "子代理" : title,

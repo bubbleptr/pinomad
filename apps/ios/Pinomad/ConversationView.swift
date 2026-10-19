@@ -14,6 +14,13 @@ struct ConversationView: View {
     let conversationId: UInt64
 
     @State private var showingChanges = false
+    /// Whether the transcript is following its end. Captured when a card
+    /// pushes a child so returning at the end keeps following the stream.
+    @State private var transcriptAtBottom = true
+    /// The run whose card pushed the child; returning reveals it once.
+    @State private var subagentReturnItem: String?
+    /// Whether the reader was at the end when the card pushed the child.
+    @State private var subagentReturnAtBottom = true
 
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
@@ -61,7 +68,11 @@ struct ConversationView: View {
                         }
                     }
                 } else {
-                    Transcript(pin: model.transcriptPin) {
+                    Transcript(
+                        pin: model.transcriptPin,
+                        restoreItemID: subagentReturnAtBottom ? nil : subagentReturnItem,
+                        onBottomChange: { transcriptAtBottom = $0 }
+                    ) {
                         entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
                     }
                 }
@@ -75,7 +86,16 @@ struct ConversationView: View {
         })
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
         .safeAreaInset(edge: .bottom) {
-            if let conversation {
+            if isSubagent {
+                // A subagent belongs to its delegating task; the reader only
+                // observes it. No composer, so nothing here can submit,
+                // stop, compact, or change its model.
+                Text("子代理的对话只能查看")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            } else if let conversation {
                 ConversationComposer(model: model, conversation: conversation)
             }
         }
@@ -114,6 +134,15 @@ struct ConversationView: View {
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
 
+    /// Record where to return before the session switches to the child. The
+    /// tapped card's run is a stable anchor; a reader at the end keeps
+    /// following the parent's stream instead.
+    private func openSubagent(_ child: UInt64, from run: String) {
+        subagentReturnItem = run
+        subagentReturnAtBottom = transcriptAtBottom
+        model.navPath.append(.conversation(child))
+    }
+
     private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
         if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
         return false
@@ -148,6 +177,7 @@ struct ConversationView: View {
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
+                   openSubagent: { openSubagent($0, from: id) },
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
@@ -198,6 +228,9 @@ private struct RunRow: View, Equatable {
     /// Supplies the subagent cards' call-given labels and roles; only the
     /// fields the cards show, so summary churn doesn't invalidate the row.
     let subagentSummaries: [UInt64: SubagentCardSummary]
+    /// Pushes a card's child conversation; not part of equality, it only
+    /// captures the model.
+    let openSubagent: (UInt64) -> Void
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -213,7 +246,7 @@ private struct RunRow: View, Equatable {
         VStack(alignment: .leading, spacing: 8) {
             AgentTraceView(ChatAdapter.trace(cot: split.trace, interrupted: interrupted))
             ForEach(split.cards) { card in
-                SubagentCardView(card: card)
+                SubagentCardView(card: card, onOpen: openSubagent)
             }
             if cot.answer != nil {
                 ReplyBody(answer: cot.answer!, stream: stream)
