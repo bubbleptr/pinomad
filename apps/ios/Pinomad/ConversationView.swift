@@ -14,21 +14,16 @@ struct ConversationView: View {
     let conversationId: UInt64
 
     @State private var showingChanges = false
-    /// The shown conversation's last snapshot. Pushing a subagent switches
-    /// the session to the child, so `conversation` goes nil while this page
-    /// is covered; keeping the last snapshot leaves the transcript — and
-    /// its scroll position — mounted under the pushed page.
-    @State private var lastConversation: ConversationSnapshot?
+    /// Whether the transcript is following its end. Captured when a card
+    /// pushes a child so returning at the end keeps following the stream.
+    @State private var transcriptAtBottom = true
+    /// The run whose card pushed the child; returning reveals it once.
+    @State private var subagentReturnItem: String?
+    /// Whether the reader was at the end when the card pushed the child.
+    @State private var subagentReturnAtBottom = true
 
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
-    }
-
-    /// What the transcript renders: the live conversation, or the snapshot
-    /// it had before a child page took the session. Returning switches back
-    /// through `openConversation` and updates it in place.
-    private var shownConversation: ConversationSnapshot? {
-        conversation ?? (lastConversation?.id == conversationId ? lastConversation : nil)
     }
 
     /// The shown conversation's node in the organized tree — its children
@@ -49,9 +44,8 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
-        let shown = shownConversation
         Group {
-            if let conversation = shown {
+            if let conversation {
                 if autoScroll {
                     // Debug-only: a scripted scroll drives the transcript
                     // so PerfLog can measure hitches while scrolling —
@@ -74,7 +68,11 @@ struct ConversationView: View {
                         }
                     }
                 } else {
-                    Transcript(pin: model.transcriptPin) {
+                    Transcript(
+                        pin: model.transcriptPin,
+                        restoreItemID: subagentReturnAtBottom ? nil : subagentReturnItem,
+                        onBottomChange: { transcriptAtBottom = $0 }
+                    ) {
                         entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
                     }
                 }
@@ -88,7 +86,16 @@ struct ConversationView: View {
         })
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
         .safeAreaInset(edge: .bottom) {
-            if let conversation = shown {
+            if isSubagent {
+                // A subagent belongs to its delegating task; the reader only
+                // observes it. No composer, so nothing here can submit,
+                // stop, compact, or change its model.
+                Text("子代理的对话只能查看")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            } else if let conversation {
                 ConversationComposer(model: model, conversation: conversation)
             }
         }
@@ -110,9 +117,6 @@ struct ConversationView: View {
             ChangesSheet(model: model, conversationId: conversationId)
         }
         .task { model.openConversation(conversationId) }
-        .onChange(of: shown, initial: true) { _, live in
-            if let live { lastConversation = live }
-        }
     }
 
     /// Scripted scrolling for perf runs, driven by `PINOMAD_AUTOSCROLL` in
@@ -128,6 +132,15 @@ struct ConversationView: View {
     private var connected: Bool {
         guard let snapshot = model.snapshot else { return false }
         return snapshot.connection == .connected && !snapshot.unauthorized
+    }
+
+    /// Record where to return before the session switches to the child. The
+    /// tapped card's run is a stable anchor; a reader at the end keeps
+    /// following the parent's stream instead.
+    private func openSubagent(_ child: UInt64, from run: String) {
+        subagentReturnItem = run
+        subagentReturnAtBottom = transcriptAtBottom
+        model.navPath.append(.conversation(child))
     }
 
     private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
@@ -164,7 +177,7 @@ struct ConversationView: View {
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
-                   openSubagent: { model.navPath.append(.conversation($0)) },
+                   openSubagent: { openSubagent($0, from: id) },
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
