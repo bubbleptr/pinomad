@@ -23,6 +23,14 @@ import PinomadCore
         #expect(ConnectFailure(outcome: .error(message: "boom"), pairing: true) == .unreachable("boom"))
     }
 
+    /// The first-connect deadline names the address that never answered.
+    @Test func timeoutNamesTheAddress() {
+        #expect(ConnectFailure.timedOut(address: "10.255.255.1:7422") == .unreachable(
+            "15 秒内没有连上 10.255.255.1:7422，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。"))
+        #expect(ConnectFailure.timedOut(address: nil) == .unreachable(
+            "15 秒内没有连上宿主，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。"))
+    }
+
     /// A hello's major comes off the wire: a missing or junk one decodes to
     /// NaN and a huge one won't fit an Int — the page must still render.
     @Test func versionTextSurvivesJunkMajors() {
