@@ -1867,7 +1867,7 @@ it("registers the desktop bridge's device name and shows the pairing minute", as
   await page.getByRole("button", { name: "Devices", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByText("Linux Desktop (test-box)", { exact: true }).waitFor();
-  await dialog.getByText(/Paired.*·.*\d{1,2}:\d{2}/).waitFor();
+  await dialog.getByText(/Paired.*\d{1,2}:\d{2}/).waitFor();
 });
 
 it("explains a loopback pairing link instead of drawing an unusable QR", async () => {

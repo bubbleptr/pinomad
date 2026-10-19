@@ -4,12 +4,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "@playwright/test";
 import { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 import { connectTo, startFauxHost } from "../../host/test/support.ts";
+import { desktopDeviceName } from "../electron/device-name.ts";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const run = promisify(execFile);
@@ -71,10 +72,13 @@ try {
   await page.screenshot({ path: "/tmp/pinomad-desktop-connected.png" });
 
   // The pairing registered the bridge's machine-aware label ("Linux Desktop
-  // (omarchy)" here, "Mac Desktop (…)" on macOS), not a browser UA name.
+  // (omarchy)" here, "Mac Desktop (…)" on macOS), not a browser UA name. The
+  // host trims and clips names at 64 chars (devices.ts), so compare against
+  // the same truncation rather than the composed string.
+  const expectedName = desktopDeviceName(process.platform, hostname()).trim().slice(0, 64) || "Unknown device";
   const registeredName = tokenClient.view.current().devices.at(-1)?.name ?? "";
-  if (!registeredName.endsWith(")") || !registeredName.includes("Desktop")) {
-    throw new Error(`unexpected device name: ${registeredName}`);
+  if (registeredName !== expectedName) {
+    throw new Error(`unexpected device name: ${registeredName} (expected ${expectedName})`);
   }
 
   // Native-chrome check: capture the real window — traffic lights included —
