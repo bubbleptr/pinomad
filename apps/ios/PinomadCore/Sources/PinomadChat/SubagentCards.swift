@@ -2,6 +2,21 @@ import AgentChatCore
 import Foundation
 import PinomadCore
 
+/// The fields a subagent card reads from its child summary. Kept apart
+/// from `ConversationSummary` so row equality ignores the fields that churn
+/// on every snapshot (updatedAt, status, activity).
+public struct SubagentCardSummary: Sendable, Equatable {
+    /// The name the card shows — the call's label, or the child's task.
+    public let title: String
+    /// The named agent it ran as (ADR-0023), without the leading `@`.
+    public let role: String?
+
+    public init(title: String, role: String?) {
+        self.title = title
+        self.role = role
+    }
+}
+
 /// A subagent call lifted out of a run's trace, plus what its child
 /// conversation says about it. The role comes from the child summary
 /// (SubagentDoc.role projected by the host), not from the tool detail.
@@ -52,15 +67,34 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
 }
 
 extension ChatAdapter {
+    /// The card facts for one conversation's direct children. A subagent
+    /// sits under the conversation that delegated it — a fork's own
+    /// subagents under the fork — so the shown node's children are the
+    /// whole set for its runs; no cross-branch walk is needed.
+    public static func subagentSummaries(in node: ConversationNode?) -> [UInt64: SubagentCardSummary] {
+        guard let node else { return [:] }
+        var summaries: [UInt64: SubagentCardSummary] = [:]
+        for child in node.children where child.summary.kind == .subagent {
+            guard let id = child.summary.id else { continue }
+            summaries[id] = SubagentCardSummary(
+                title: displayName(summary: child.summary),
+                role: child.summary.role
+            )
+        }
+        return summaries
+    }
+
     /// One run split into the trace it still shows and the subagent cards
     /// lifted out of it. The cards are the web's anchors: the child
     /// summary supplies the call-given label and the role.
-    public static func splitRun(_ cot: CotView, organized: Organized?) -> (trace: CotView, cards: [SubagentCard]) {
+    public static func splitRun(
+        _ cot: CotView,
+        summaries: [UInt64: SubagentCardSummary]
+    ) -> (trace: CotView, cards: [SubagentCard]) {
         // The FFI call copies the whole run (answer, tool output, images).
         // Most runs have no subagent; skip the crossing for them.
         guard hasSubagentCalls(cot) else { return (cot, []) }
         let split = splitSubagentCalls(view: cot)
-        let summaries = summariesByID(organized)
         let cards = split.subagents.map { lifted in
             card(tool: lifted.tool, summary: conversationID(of: lifted.tool).flatMap { summaries[$0] }, key: lifted.key)
         }
@@ -70,7 +104,7 @@ extension ChatAdapter {
     /// One card from a subagent call and its child summary. Without a
     /// summary (the child hasn't reached the organized tree yet) the card
     /// still names the call by its task, just without a role.
-    public static func card(tool: ToolItem, summary: ConversationSummary?, key: String) -> SubagentCard {
+    public static func card(tool: ToolItem, summary: SubagentCardSummary?, key: String) -> SubagentCard {
         var model: String?
         var elapsed: String?
         var recorded: String?
@@ -81,7 +115,7 @@ extension ChatAdapter {
         }
         let title: String
         if let summary {
-            title = displayName(summary: summary)
+            title = summary.title
         } else {
             title = toolTargetFromArgs(argsText: tool.argsText)
                 ?? toolDisplayName(name: tool.toolName)
@@ -112,22 +146,6 @@ extension ChatAdapter {
               case let .subagent(conversationId, _, _, _, _) = detail
         else { return nil }
         return conversationId
-    }
-
-    /// The organized tree flattened to id → summary. Looking up through the
-    /// core would copy the whole tree across FFI once per card; this walk
-    /// stays on the Swift side and is cheap.
-    private static func summariesByID(_ organized: Organized?) -> [UInt64: ConversationSummary] {
-        guard let organized else { return [:] }
-        var summaries: [UInt64: ConversationSummary] = [:]
-        func walk(_ node: ConversationNode) {
-            if let id = node.summary.id { summaries[id] = node.summary }
-            node.children.forEach(walk)
-        }
-        organized.chats.forEach(walk)
-        organized.projects.forEach { $0.conversations.forEach(walk) }
-        organized.archived.forEach { walk($0.node) }
-        return summaries
     }
 
     private static func status(of state: ToolPartState) -> SubagentCard.Status {

@@ -19,23 +19,24 @@ struct ConversationView: View {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
     }
 
-    private var title: String {
-        guard let organized = model.snapshot?.organized,
-              let node = findConversation(organized: organized, id: conversationId)
-        else { return "对话" }
-        return displayName(summary: node.summary)
-    }
-
-    /// The named agent the conversation was created with (forks inherit
-    /// the projection); nil for an ordinary conversation.
-    private var role: String? {
-        guard let organized = model.snapshot?.organized,
-              let node = findConversation(organized: organized, id: conversationId)
+    /// The shown conversation's node in the organized tree — its children
+    /// are the subagents its runs can show as cards.
+    private var node: ConversationNode? {
+        guard let organized = model.snapshot?.organized
         else { return nil }
-        return node.summary.role
+        return findConversation(organized: organized, id: conversationId)
     }
 
     var body: some View {
+        // Read the node once per version: the title, role, retry rule and
+        // card facts all derive from it.
+        let node = self.node
+        let title = node.map { displayName(summary: $0.summary) } ?? "对话"
+        let role = node?.summary.role
+        let isSubagent = node?.summary.kind == .subagent
+        // Card facts only, so a summary's churn (updatedAt/status/activity)
+        // doesn't invalidate the transcript's rows.
+        let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
         Group {
             if let conversation {
                 if autoScroll {
@@ -45,7 +46,7 @@ struct ConversationView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 24) {
-                                entries(conversation)
+                                entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
                                 Color.clear.frame(height: 1).id("bottom")
                             }
                             .padding(.horizontal, 16)
@@ -60,7 +61,9 @@ struct ConversationView: View {
                         }
                     }
                 } else {
-                    Transcript(pin: model.transcriptPin) { entries(conversation) }
+                    Transcript(pin: model.transcriptPin) {
+                        entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
+                    }
                 }
             } else {
                 ProgressView("正在载入对话…")
@@ -111,39 +114,40 @@ struct ConversationView: View {
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
 
-    /// A subagent's run belongs to the delegating task; resending its
-    /// prompt would talk past it.
-    private var isSubagent: Bool {
-        guard let organized = model.snapshot?.organized,
-              let node = findConversation(organized: organized, id: conversationId)
-        else { return false }
-        return node.summary.kind == .subagent
-    }
-
     private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
         if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
         return false
     }
 
     @ViewBuilder
-    private func entries(_ conversation: ConversationSnapshot) -> some View {
-        // retryOf only answers when the newest entry is a failed run — check
-        // that here first: the call copies the whole history across the FFI,
-        // which every streaming snapshot would otherwise pay for.
+    private func entries(
+        _ conversation: ConversationSnapshot,
+        subagentSummaries: [UInt64: SubagentCardSummary],
+        isSubagent: Bool
+    ) -> some View {
+        // A subagent's run belongs to the delegating task; retryOf only
+        // answers when the newest entry is a failed run — check that here
+        // first: the call copies the whole history across the FFI, which
+        // every streaming snapshot would otherwise pay for.
         let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
             ? retryOf(entries: conversation.chat) : nil
         ForEach(conversation.chat, id: \.entryId) { entry in
-            row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil)
+            row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
+                subagentSummaries: subagentSummaries)
         }
     }
 
     @ViewBuilder
-    private func row(_ entry: ChatEntry, retry: RetryRequest?) -> some View {
+    private func row(
+        _ entry: ChatEntry,
+        retry: RetryRequest?,
+        subagentSummaries: [UInt64: SubagentCardSummary]
+    ) -> some View {
         switch entry {
         case let .user(_, text, images):
             UserRow(text: text, images: images).equatable()
         case let .run(id, cot, _, interrupted, failure):
-            RunRow(cot: cot, organized: model.snapshot?.organized,
+            RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
@@ -191,8 +195,9 @@ private struct UserRow: View, Equatable {
 /// and the failure line a dead run leaves behind.
 private struct RunRow: View, Equatable {
     let cot: CotView
-    /// Supplies the subagent cards' call-given labels and roles.
-    let organized: Organized?
+    /// Supplies the subagent cards' call-given labels and roles; only the
+    /// fields the cards show, so summary churn doesn't invalidate the row.
+    let subagentSummaries: [UInt64: SubagentCardSummary]
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -204,7 +209,7 @@ private struct RunRow: View, Equatable {
     var body: some View {
         // Split only when this row's body runs — `.equatable()` skips it
         // for unchanged runs, and the core call has a no-subagent fast path.
-        let split = ChatAdapter.splitRun(cot, organized: organized)
+        let split = ChatAdapter.splitRun(cot, summaries: subagentSummaries)
         VStack(alignment: .leading, spacing: 8) {
             AgentTraceView(ChatAdapter.trace(cot: split.trace, interrupted: interrupted))
             ForEach(split.cards) { card in
@@ -227,7 +232,7 @@ private struct RunRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.cot == rhs.cot && lhs.organized == rhs.organized
+        lhs.cot == rhs.cot && lhs.subagentSummaries == rhs.subagentSummaries
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
     }
