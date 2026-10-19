@@ -1,5 +1,5 @@
 // Message images travel inside submit/createConversation args as base64
-// content. This module must run on Hermes (mobile): no Buffer, no Node APIs —
+// content. This module runs on every client — no Buffer, no Node-only APIs —
 // sizes are computed from the base64 length, never decoded.
 
 export const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;

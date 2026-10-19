@@ -10,9 +10,8 @@ PiNomad 由宿主、服务端和几种客户端组成，用到 TypeScript、Rust
 | 服务端 | `apps/server` | TypeScript（Node） | 账号；外网连不上家里时转发加密数据（看不到内容）；持有推送密钥，代宿主给 Apple 发通知 |
 | Web / 桌面端 | `apps/web`、`apps/desktop` | TypeScript + React | 直接用 `packages/protocol`（协议）和 `packages/client`（界面数据的推导） |
 | 移动端核心 | `crates/pinomad-core` | Rust | 手机端的"大脑"：加密、协议、同步数据、整理界面要显示的内容；iOS 和安卓共用一份 |
-| iOS App | `apps/ios`（还没建） | Swift | 只管界面（SwiftUI + AgentChatKit）和替 Rust 收发网络数据 |
+| iOS App | `apps/ios` | Swift | 只管界面（SwiftUI + AgentChatKit）和替 Rust 收发网络数据 |
 | 安卓 App | `apps/android`（以后） | Kotlin | 和 iOS 一样，只是换成 Compose |
-| 旧移动端 | `apps/mobile` | TypeScript（Expo） | 维护期，原生版替换后删除 |
 
 ## 怎么配合
 
@@ -64,4 +63,4 @@ Web 和桌面端的流程一样，只是中间三格都是同一个 TypeScript �
 
 ## 性能：中间层会不会拖慢
 
-Swift 调一次 Rust 只要几微秒，聊天每秒也就几十次小更新，桥本身不是瓶颈；加密和数据处理放在 Rust 里，比 Expo 版里的 JavaScript 快。真正要防的是每次过桥带的东西太多，例如 agent 每吐一个词就把几百轮带图片的完整对话复制一遍。ADR-0024 §5 规定了更新带版本号、条目有稳定 ID、来得太密的更新合并；每次传整份还是只传变化，在 iOS 骨架那一步用真机长对话实测后决定。画 Markdown、代码高亮、文字淡入都在 AgentChatKit 里，是纯 Swift。
+Swift 调一次 Rust 只要几微秒，聊天每秒也就几十次小更新，桥本身不是瓶颈；加密和数据处理放在 Rust 里，比原来 Expo 版里的 JavaScript 快。真正要防的是每次过桥带的东西太多，例如 agent 每吐一个词就把几百轮带图片的完整对话复制一遍。ADR-0024 §5 规定了更新带版本号、条目有稳定 ID、来得太密的更新合并；每次传整份还是只传变化，在 iOS 骨架那一步用真机长对话实测后决定。画 Markdown、代码高亮、文字淡入都在 AgentChatKit 里，是纯 Swift。

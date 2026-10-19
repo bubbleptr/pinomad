@@ -4,10 +4,6 @@ test-results/
 .tmp/
 apps/cli/out/
 apps/desktop/out/
-apps/mobile/ios/
-apps/mobile/android/
-apps/mobile/.expo/
-apps/mobile/uniwind-types.d.ts
 apps/ios/PinomadCore/Vendor/
 apps/ios/PinomadCore/Sources/PinomadCore/Generated/
 apps/ios/**/build/

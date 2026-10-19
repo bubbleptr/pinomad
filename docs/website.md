@@ -35,7 +35,7 @@ cd apps/site && bun run build && bun run preview
 3. 项目的 Custom domains 里加 `pinomad.si`（经 API 加时 DNS 不会自动建，要自己加一条代理的 CNAME：`pinomad.si` → `pinomad.pages.dev`）。`www` 不用加进 Pages，只要一条代理的 CNAME 指向根域名，由下一步的规则跳转。
 4. Rules → Redirect Rules 加一条：主机名等于 `www.pinomad.si` 时 301 到 `https://pinomad.si${path}`，保留查询串。
 
-`--filter` 只装落地页需要的依赖（约 56 个包），不会拉 Electron、Expo 这些整个 workspace 的包。PR 会自动得到预览地址。先建好 Pages 项目再合并改动，合进 `main` 时生产环境才会跟着发布。
+`--filter` 只装落地页需要的依赖（约 56 个包），不会拉 Electron 这种 workspace 里的重包。PR 会自动得到预览地址。先建好 Pages 项目再合并改动，合进 `main` 时生产环境才会跟着发布。
 
 ## app.pinomad.si
 

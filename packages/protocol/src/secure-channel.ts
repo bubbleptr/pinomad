@@ -47,7 +47,7 @@ export function decodeHostHello(bytes: Uint8Array): HostHello {
 
 const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/** base64url without Buffer/atob — works in every runtime including Hermes. */
+/** base64url without Buffer/atob — works in every runtime we target. */
 export function toBase64Url(bytes: Uint8Array): string {
   let out = "";
   for (let index = 0; index < bytes.length; index += 3) {

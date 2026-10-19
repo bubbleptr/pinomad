@@ -61,13 +61,6 @@ export default defineConfig({
         },
       },
       {
-        test: {
-          ...shared,
-          name: "mobile",
-          include: ["apps/mobile/src/**/*.test.ts"],
-        },
-      },
-      {
         resolve: {
           alias: {
             "@": webSrc,

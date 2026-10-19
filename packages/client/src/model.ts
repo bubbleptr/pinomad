@@ -1,6 +1,6 @@
 // Model + thinking-level derivations shared by every client (moved here from
 // apps/web so the mobile app gets identical selector text, filtering and
-// draft reconciliation). Plain data only — no DOM, no React, Hermes-safe.
+// draft reconciliation). Plain data only — no DOM, no React.
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { ConversationDefaults, DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";

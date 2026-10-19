@@ -1,7 +1,7 @@
 // Unified-patch parsing shared by every client (moved here from
 // apps/web/src/presentation/diff.tsx so the native core's Rust port gets an
 // identical reference — the derivation is compared field-for-field by the
-// rust-vectors fixtures). Plain data only — no DOM, no React, Hermes-safe.
+// rust-vectors fixtures). Plain data only — no DOM, no React.
 
 export interface ParsedFile {
   readonly path: string;
