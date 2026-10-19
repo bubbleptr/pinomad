@@ -197,6 +197,50 @@ function setupDurable(root) {
 const durable = document.querySelector("[data-durable]");
 if (durable) setupDurable(durable);
 
+// —— Header: sticks once JS is here, floats a frosted pill once the page moves,
+// and underlines the section being read. ——
+function setupHeader(header) {
+  const links = [...header.querySelectorAll(".nav-sections a")];
+  const sections = links.map((a) => document.getElementById(a.hash.slice(1)));
+  let frame = 0;
+
+  function update() {
+    frame = 0;
+    // Float past 24px, settle only under 8px, so a nudge or rubber-band near
+    // the top can't flip it back and forth.
+    if (scrollY > 24) header.classList.add("is-floating");
+    else if (scrollY < 8) header.classList.remove("is-floating");
+
+    // The current section is the last one whose top has passed a third of the
+    // way down; at the very bottom, the last section.
+    let current = -1;
+    sections.forEach((section, i) => {
+      if (section.getBoundingClientRect().top <= innerHeight / 3) current = i;
+    });
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) {
+      current = sections.length - 1;
+    }
+    links.forEach((a, i) => {
+      if (i === current) a.setAttribute("aria-current", "location");
+      else a.removeAttribute("aria-current");
+    });
+  }
+
+  function schedule() {
+    if (!frame) frame = requestAnimationFrame(update);
+  }
+
+  // Settle the state before the pill exists, so a reload mid-page shows it
+  // already in place instead of animating it in.
+  update();
+  header.setAttribute("data-sticky", "");
+  addEventListener("scroll", schedule, { passive: true });
+  addEventListener("resize", schedule);
+}
+
+const header = document.querySelector(".site-header");
+if (header) setupHeader(header);
+
 // Blocks that start below the first screen fade up once as they scroll in.
 // Anything on screen at load is left alone, so the first paint never animates.
 function setupReveal() {
