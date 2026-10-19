@@ -188,10 +188,10 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 | `PINOMAD_SERVER_APNS_TEAM_ID` | Apple Developer 账号的 Team ID（开发者门户的 Membership 页面） |
 | `PINOMAD_SERVER_APNS_TOPIC` | App 的 bundle id，比如 `build.kieran.pinomad` |
 | `PINOMAD_SERVER_APNS_PRODUCTION_KEY_ID` / `PINOMAD_SERVER_APNS_PRODUCTION_KEY` | production 环境的 Key ID 和 `.p8` 内容（在 Apple Developer 的 Keys 里建 APNs key 下载，只给看一次） |
-| `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY_ID` / `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY` | development（sandbox）环境，同上；配 TestFlight/开发包分开的两个 key 也行 |
+| `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY_ID` / `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY` | development（sandbox）环境，同上。建 key 时选 "Sandbox & Production" 就只用一把，两组变量填同样的 Key ID 和 `.p8` |
 
 - 每个环境要 `*_KEY_ID` 和 `*_KEY` 都配上才会向宿主声明；只配一半会在日志里写一条 `apns:` 警告并跳过这个环境。启动日志的 `{"event":"ready",…,"push":["production",…]}` 是实际生效的环境。
-- `_KEY` 是 PEM 文本本身，不是文件路径。多行内容粘进平台的环境变量 UI 时换行可能被存成字面 `\n`，服务端两种都认。
+- `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。Zeabur 的变量只存单行，直接粘多行内容（包括 Edit Raw Content）会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
 - 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
 - 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"），不带对话内容。
 - Zeabur 上把变量加进服务的 Variables 即可。**注意**：`zeabur` CLI 的 `variable set` 会把该服务全部变量连值打印到 stdout——密钥会落进终端历史和 CI 日志，跑这条命令时把输出丢掉（`zeabur variable set KEY=VALUE >/dev/null`），别贴给任何人或工具。
