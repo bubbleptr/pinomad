@@ -1,6 +1,6 @@
 // One short "what is this tool working on" string for a tool call's
 // arguments — the card's subtitle. Shared by the host (summary `activity`)
-// and the web client (tool rows, subagent cards). Hermes-safe: pure TS.
+// and the web client (tool rows, subagent cards). Browser- and Node-safe: pure TS.
 
 const TARGET_KEYS = [
   "path",

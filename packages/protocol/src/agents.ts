@@ -1,7 +1,7 @@
 // Named agents (ADR-0023): one `<name>.md` per agent in the host's data dir.
 // The host's loader, its calls and client-side editors share this validation;
 // the file layer adds loader concerns (unknown fields, unparsable frontmatter)
-// on top. Hermes-safe: no Buffer, no Node APIs.
+// on top. Browser- and Node-safe: no Buffer, no Node-only APIs.
 import { THINKING_LEVELS, isThinkingLevel } from "./settings.ts";
 import type { ThinkingLevel } from "./view.ts";
 

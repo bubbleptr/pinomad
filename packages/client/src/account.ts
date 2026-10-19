@@ -1,7 +1,7 @@
 // The server-accounts API (ADR-0022; docs/remote-access.md "服务端账号") as a
 // client sees it: login/session ops, the account's host list, join tokens,
-// and server-vouched pairing asks. Shared by web, desktop, and mobile, so it
-// takes fetch as an injected minimal surface — DOM, undici, and Hermes all
+// and server-vouched pairing asks. Shared by web and desktop, so it
+// takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
@@ -12,7 +12,7 @@ import type { StoredHost } from "./stored-host.ts";
 
 /**
  * The slice of fetch the account client needs. DOM `fetch` and undici's are
- * both assignable here; on Hermes the app supplies the same shape.
+ * both assignable here; other runtimes can supply the same shape.
  */
 export interface AccountFetchInit {
   readonly method?: string;
@@ -71,8 +71,8 @@ export type AccountsProbe = "enabled" | "disabled" | "unreachable";
  * else — a proxy 502, a WAF 403 — is "unreachable": we can't tell.
  */
 export async function probeAccounts(origin: string, fetchImpl: AccountFetch = fallbackFetch): Promise<AccountsProbe> {
-  // AbortSignal.timeout isn't on Hermes; a controller plus setTimeout is.
-  // The timer stays armed through the body read — a stalled body after the
+  // An explicit controller plus setTimeout, not AbortSignal.timeout: the
+  // timer stays armed through the body read — a stalled body after the
   // headers (a half-dead proxy) must still count as unreachable.
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), 5_000);
@@ -218,9 +218,8 @@ export function createAccountClient(options: {
   const bearer = options.credentials.mode === "bearer" ? options.credentials.token : undefined;
   // Never follow redirects: a 307 pointing at http:// would replay the
   // bearer or the login body in plaintext. "manual" surfaces the 3xx (undici)
-  // or an opaque status-0 answer (DOM); Hermes's XHR fetch ignores unknown
-  // init fields without throwing — redirect refusal there is the native
-  // platform layer's job.
+  // or an opaque status-0 answer (DOM); an implementation that silently
+  // ignores unknown init fields must refuse redirects in its own layer.
   const init: AccountFetchInit = {
     redirect: "manual",
     ...(options.credentials.mode === "cookie" ? { credentials: "same-origin" as const } : {}),
