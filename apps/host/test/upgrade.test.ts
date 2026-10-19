@@ -15,4 +15,18 @@ describe("upgrade", () => {
     expect(serviceInstalled).not.toHaveBeenCalled();
     expect(restart).not.toHaveBeenCalled();
   });
+
+  it("exits explicitly with the restart's exit code", async () => {
+    const restart = vi.fn(async () => 5);
+    const exit = vi.fn();
+    await main([], {
+      run: async () => ({ stdout: "" }),
+      step: async () => 0,
+      serviceInstalled: async () => true,
+      restart,
+      exit,
+    });
+    expect(restart).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledWith(5);
+  });
 });

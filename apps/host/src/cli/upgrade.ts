@@ -38,6 +38,8 @@ export interface UpgradeDeps {
   readonly serviceInstalled?: () => Promise<boolean>;
   /** The post-install restart; defaults to `restartService`. */
   readonly restart?: (options: { force: boolean; argv: readonly string[] }) => Promise<number>;
+  /** The exit after a restart ran; defaults to `process.exit`, injected by tests. */
+  readonly exit?: (code: number) => void;
 }
 
 export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Promise<void> {
@@ -92,7 +94,12 @@ export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Pro
     process.exitCode = 0;
     return;
   }
-  process.exitCode = await restart({ force: values.force, argv: argv.filter((arg) => arg !== "--force") });
+  // The restart path exits explicitly: a probe that timed out can leave a
+  // pending connection (an endpoint that accepts the socket but never hellos)
+  // which would keep the event loop alive past a natural exit.
+  (deps.exit ?? process.exit)(
+    await restart({ force: values.force, argv: argv.filter((arg) => arg !== "--force") }),
+  );
 }
 
 if (import.meta.main) {
