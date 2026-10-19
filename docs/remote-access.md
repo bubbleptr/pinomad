@@ -38,6 +38,8 @@ Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面
 - DNS 规则让 `tailscale.com`、`tailscale.io` 不走 FakeIP；
 - tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。
 
+宿主机器上开着 sing-box tun（`auto_route`）时，`route_exclude_address` 还要加上局域网网段（如 `192.168.0.0/16`）。否则宿主回给局域网设备的包会被路由进 tun，手机用局域网 IP 连远程端口时一直转圈。可以在宿主上用 `ip route get <手机 IP>` 检查，应该走物理网卡，而不是 `tun0`。
+
 ## 经自部署中继访问
 
 宿主在家里局域网、手机在外面时，把中继跑在一台有公网地址的 VPS 上：宿主和手机都只往外连中继，中继按宿主身份把两端的连接接起来，只转发密文、不存东西；Web 客户端也由中继用 HTTPS 提供，手机扫二维码直接打开。
