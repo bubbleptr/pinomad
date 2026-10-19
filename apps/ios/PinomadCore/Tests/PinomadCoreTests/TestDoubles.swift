@@ -145,14 +145,19 @@ final class TestClock: SessionClock, @unchecked Sendable {
     }
 
     private let scheduled = OSAllocatedUnfairLock(initialState: [Handle]())
+    private let scheduledDelays = OSAllocatedUnfairLock(initialState: [Duration]())
     var all: [Handle] { scheduled.withLock { $0 } }
     var latest: Handle? { all.last }
+    /// Every requested delay, in schedule order — lets a test assert the
+    /// injected window rather than sleeping through it.
+    var delays: [Duration] { scheduledDelays.withLock { $0 } }
 
     func schedule(
         delay: Duration,
         fire: @escaping @Sendable () -> Void
     ) -> any SessionTimerHandle {
         let handle = Handle(fire: fire)
+        scheduledDelays.withLock { $0.append(delay) }
         scheduled.withLock { $0.append(handle) }
         return handle
     }

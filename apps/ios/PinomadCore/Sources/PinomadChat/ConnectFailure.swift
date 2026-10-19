@@ -14,6 +14,14 @@ public enum ConnectFailure: Equatable, Sendable {
     /// Couldn't reach the host (or set up the session) at all.
     case unreachable(String)
 
+    /// The first-connect deadline ran out. `address` is the host:port the
+    /// connecting screen named; nil only when the target is already gone.
+    public static func timedOut(address: String?) -> Self {
+        let target = address.map { " \($0)" } ?? "宿主"
+        return .unreachable(
+            "15 秒内没有连上\(target)，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。")
+    }
+
     /// How the first connect ended; `pairing` is whether it used a link.
     public init?(outcome: ReadyOutcome, pairing: Bool) {
         switch outcome {

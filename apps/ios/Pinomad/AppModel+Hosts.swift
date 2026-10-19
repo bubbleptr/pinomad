@@ -32,6 +32,13 @@ extension AppModel {
         return pairingTarget.map { hostOf($0.url) }
     }
 
+    /// The address that did not answer — the timeout message needs the
+    /// host:port rather than the reader's label for it.
+    var connectAddress: String? {
+        if let host = sessionHost { return hostOf(host.url) }
+        return pairingTarget.map { hostOf($0.url) }
+    }
+
     /// Show the confirm page for `text` (an invalid link gets the page's
     /// invalid state). Returns whether it was a usable link, for fields
     /// that would rather say so inline.

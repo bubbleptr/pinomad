@@ -108,6 +108,12 @@ final class AppModel {
 
     private(set) var session: PinomadSession?
     private var watchTask: Task<Void, Never>?
+    /// Bumped when the session is replaced or stopped — a late update from
+    /// the old session must not land on the new one.
+    private var sessionGeneration: UInt64 = 0
+    /// The first-connect deadline for the current attempt, nil once it is
+    /// ready or has failed.
+    private var connectWatchdog: ConnectWatchdog?
     let store = KeychainHostStore()
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
@@ -184,13 +190,17 @@ final class AppModel {
     }
 
     func didEnterForeground() {
+        connectWatchdog?.resume()
         session?.notifyForeground()
         Task { [weak self] in
             await self?.push.refreshAuthorization()
             self?.syncPushToken()
         }
     }
-    func didEnterBackground() { session?.notifyBackground() }
+    func didEnterBackground() {
+        connectWatchdog?.pause()
+        session?.notifyBackground()
+    }
 
     /// Show and talk to a conversation — command-class, so a refused
     /// switch surfaces as a snapshot notice, not a thrown error.
@@ -273,6 +283,8 @@ final class AppModel {
     }
 
     func fail(_ failure: ConnectFailure) {
+        connectWatchdog?.cancel()
+        connectWatchdog = nil
         phase = .failed(failure)
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
@@ -299,17 +311,53 @@ final class AppModel {
     }
 
     private func closeSession() {
+        stopSession()
+        sessionHost = nil
+        pairingLink = nil
+        pairingAccount = nil
+        pairingTarget = nil
+    }
+
+    /// Drop the live session but leave the host/pairing identity in place —
+    /// the timeout failure page still needs the target for Retry, Cancel
+    /// and "back to the previous host".
+    private func stopSession() {
+        sessionGeneration &+= 1
+        connectWatchdog?.cancel()
+        connectWatchdog = nil
         watchTask?.cancel()
         watchTask = nil
         session?.close()
         session = nil
         snapshot = nil
-        sessionHost = nil
-        pairingLink = nil
-        pairingAccount = nil
-        pairingTarget = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
+    }
+
+    /// A fresh 15-second window for this attempt. The callback carries the
+    /// session generation so a timer that already woke up cannot stop a
+    /// session that replaced it.
+    private func armConnectWatchdog() {
+        connectWatchdog?.cancel()
+        let generation = sessionGeneration
+        let watchdog = ConnectWatchdog { [weak self] in
+            Task { @MainActor in
+                guard let self,
+                      self.sessionGeneration == generation,
+                      self.phase == .connecting
+                else { return }
+                self.connectTimedOut()
+            }
+        }
+        connectWatchdog = watchdog
+        watchdog.begin()
+    }
+
+    private func connectTimedOut() {
+        guard phase == .connecting else { return }
+        let address = connectAddress
+        stopSession()
+        fail(.timedOut(address: address))
     }
 
     /// Take over `session`. `sameHost` is a rebuilt session for the host
@@ -317,6 +365,8 @@ final class AppModel {
     /// place stay. Anything else is another host, whose conversations
     /// those drafts and pages don't belong to.
     private func adopt(_ session: PinomadSession, sameHost: Bool) {
+        sessionGeneration &+= 1
+        let generation = sessionGeneration
         self.session?.close()
         self.session = session
         snapshot = nil
@@ -344,14 +394,20 @@ final class AppModel {
         watchTask?.cancel()
         watchTask = Task { [weak self] in
             for await update in session.updates {
-                self?.apply(update)
+                guard let self, self.sessionGeneration == generation else { return }
+                self.apply(update)
             }
         }
+        armConnectWatchdog()
     }
 
     private func apply(_ update: SessionUpdate) {
         switch update {
         case .ready(let outcome):
+            // The first ready ends the first-connect window whatever it
+            // says — a success, or a failure page of its own.
+            connectWatchdog?.cancel()
+            connectWatchdog = nil
             // A revoked device can be refused before the first snapshot; the
             // account list still needs the marker.
             if outcome == .unauthorized, let host = revokedHost {

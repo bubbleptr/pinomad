@@ -106,7 +106,8 @@ private struct FailureView: View {
                 if pairing {
                     Button("取消") { model.cancelPairing() }
                         .buttonStyle(.bordered)
-                } else if let previous = model.previousHostKey {
+                }
+                if let previous = model.previousHostKey {
                     Button("回到 \(model.hostLabels[previous] ?? "之前的宿主")") { model.switchHost(previous) }
                         .buttonStyle(.bordered)
                 }
