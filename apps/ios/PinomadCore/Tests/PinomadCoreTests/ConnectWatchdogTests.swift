@@ -60,6 +60,23 @@ import Testing
         #expect(timeouts.value == 1)
     }
 
+    @Test func startedInBackgroundWaitsForForeground() {
+        let clock = TestClock()
+        let timeouts = Timeouts()
+        let watchdog = ConnectWatchdog(clock: clock, timeout: .seconds(2)) { timeouts.bump() }
+
+        // A session can start from an account-pairing response that lands
+        // while the app is already in the background.
+        watchdog.begin(paused: true)
+        #expect(!watchdog.isRunning)
+        #expect(clock.delays.isEmpty)
+
+        watchdog.resume()
+        #expect(clock.delays == [.seconds(2)])
+        clock.latest?.trigger()
+        #expect(timeouts.value == 1)
+    }
+
     @Test func backgroundPausesAndForegroundRestartsTheFullWindow() {
         let clock = TestClock()
         let timeouts = Timeouts()

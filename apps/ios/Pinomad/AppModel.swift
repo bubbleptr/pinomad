@@ -114,6 +114,10 @@ final class AppModel {
     /// The first-connect deadline for the current attempt, nil once it is
     /// ready or has failed.
     private var connectWatchdog: ConnectWatchdog?
+    /// Scene state for a session that starts while the app is backgrounded
+    /// (an account pairing response can land then). Its first-connect
+    /// window starts paused and gets a full 15 seconds on foreground.
+    private var isInBackground = UIApplication.shared.applicationState == .background
     let store = KeychainHostStore()
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
@@ -190,6 +194,7 @@ final class AppModel {
     }
 
     func didEnterForeground() {
+        isInBackground = false
         connectWatchdog?.resume()
         session?.notifyForeground()
         Task { [weak self] in
@@ -198,6 +203,7 @@ final class AppModel {
         }
     }
     func didEnterBackground() {
+        isInBackground = true
         connectWatchdog?.pause()
         session?.notifyBackground()
     }
@@ -350,7 +356,7 @@ final class AppModel {
             }
         }
         connectWatchdog = watchdog
-        watchdog.begin()
+        watchdog.begin(paused: isInBackground)
     }
 
     private func connectTimedOut() {

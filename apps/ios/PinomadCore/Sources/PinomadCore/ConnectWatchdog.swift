@@ -37,18 +37,20 @@ public final class ConnectWatchdog: @unchecked Sendable {
         state.withLock { $0.active && !$0.paused && $0.handle != nil }
     }
 
-    /// Start a new attempt: a full window, invalidating any older one.
-    public func begin() {
+    /// Start a new attempt: a full window, invalidating any older one. A
+    /// session can start while the app is already backgrounded, so begin
+    /// paused in that case and let the foreground resume start the window.
+    public func begin(paused: Bool = false) {
         let (token, old) = state.withLock { state -> (UInt64, (any SessionTimerHandle)?) in
             state.generation &+= 1
             state.active = true
-            state.paused = false
+            state.paused = paused
             let old = state.handle
             state.handle = nil
             return (state.generation, old)
         }
         old?.cancel()
-        arm(token)
+        if !paused { arm(token) }
     }
 
     /// Ready, or any terminal failure: no timeout may fire from here.
