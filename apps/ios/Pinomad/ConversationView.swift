@@ -96,8 +96,14 @@ struct ConversationView: View {
         .task { model.openConversation(conversationId) }
     }
 
+    /// Scripted scrolling for perf runs, driven by `PINOMAD_AUTOSCROLL` in
+    /// Debug builds only; Release always renders the real transcript.
     private var autoScroll: Bool {
-        ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
+        #else
+        return false
+        #endif
     }
 
     private var connected: Bool {
