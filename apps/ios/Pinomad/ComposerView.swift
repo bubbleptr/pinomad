@@ -141,6 +141,7 @@ struct ConversationComposer: View {
                     showModels = true
                 }
                 Spacer(minLength: 0)
+                ContextMeterView(usage: conversation.contextUsage)
                 sendSlot
             }
             .frame(minHeight: 34)
