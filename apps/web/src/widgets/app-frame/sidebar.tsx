@@ -9,9 +9,8 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { familyStatus, familyUpdatedAt, relativeTime, type FamilyStatus } from "@pinomad/client/family.ts";
+import { familyStatus, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { useNow } from "../../shared/use-now.ts";
 import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
@@ -255,19 +254,16 @@ function ConversationRow({
   shown,
   disabled,
   remote,
-  now,
   onSelect,
 }: {
   node: ConversationNode;
   shown: ConversationId | undefined;
   disabled: boolean;
   remote: RemoteDurable;
-  now: number;
   onSelect?: () => void;
 }) {
   const { summary } = node;
   const status = familyStatus(node);
-  const updatedAt = familyUpdatedAt(node);
   const [renaming, setRenaming] = useState(false);
   // Selected while the root or any of its descendants is shown.
   const selected = shown !== undefined && flattenNodes([node]).some((each) => each.summary.id === shown);
@@ -277,20 +273,9 @@ function ConversationRow({
       label={summary.title ?? "New conversation"}
       isSelected={selected}
       isDisabled={disabled}
-      // The meta sits before the actions spacer; on hover the row's actions
-      // fade it out (the CSS already swaps the two slots).
-      endContent={
-        <>
-          {updatedAt === undefined ? null : (
-            // Decorative inside the button, like the dot: the accessible name
-            // stays exactly the title (tests match rows by name verbatim).
-            <span aria-hidden="true" className="pigui-sidenav-session-meta ms-2 text-xs text-muted">
-              {relativeTime(updatedAt, now)}
-            </span>
-          )}
-          <span aria-hidden="true" className="pigui-sidenav-actions-spacer" />
-        </>
-      }
+      // A <button> row cannot contain the interactive … overlay; the spacer
+      // only reserves its single-button width so the title truncates first.
+      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single" />}
       onClick={() => {
         void remote.controller.switchConversation(summary.id);
         onSelect?.();
@@ -369,7 +354,6 @@ export function SidebarContent({
   onSelect?: () => void;
 }) {
   const disabled = view.connection !== "connected";
-  const now = useNow(60_000);
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const [expandedProjects, setExpandedProjects] = useState(readExpandedProjects);
@@ -446,7 +430,6 @@ export function SidebarContent({
                   shown={shownId}
                   disabled={disabled}
                   remote={remote}
-                  now={now}
                   onSelect={onSelect}
                 />
               ))
@@ -507,7 +490,6 @@ export function SidebarContent({
                             shown={shownId}
                             disabled={disabled}
                             remote={remote}
-                            now={now}
                             onSelect={onSelect}
                           />
                         ))

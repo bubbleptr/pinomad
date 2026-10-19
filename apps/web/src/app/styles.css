@@ -381,6 +381,11 @@ body {
   width: calc(2 * var(--size-element-sm) + var(--spacing-0-5));
 }
 
+/* Conversation rows overlay a lone … menu — one button slot, not two. */
+.pigui-sidenav-actions-spacer--single {
+  width: var(--size-element-sm);
+}
+
 /* Astryx nested SideNavItem children use padding-inline-start: var(--spacing-6)
    at StyleX ID-level specificity. Conversation rows already lead with a glyph
    slot the same size as the project folder, so that extra indent pushes titles
@@ -488,19 +493,6 @@ body {
 @media (hover: none) {
   .pigui-sidenav-section-toggle__chevron {
     opacity: 1;
-  }
-}
-
-/* Conversation rows keep the meta slot in the trailing position and swap it
-   for the actions menu on hover so the two never overlap. */
-.pigui-sidenav-session-meta {
-  transition: opacity 120ms ease-out;
-}
-
-@media (hover: hover) {
-  .pigui-sidenav-session-row:hover .pigui-sidenav-session-meta,
-  .pigui-sidenav-session-row:focus-within .pigui-sidenav-session-meta {
-    opacity: 0;
   }
 }
 
