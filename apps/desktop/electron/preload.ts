@@ -1,6 +1,7 @@
-// Sandboxed preload: ipcRenderer.invoke reaches only the pinomad:hosts:* and
-// pinomad:updates:* handlers in main (the paired-host list behind safeStorage
-// and the app updater), and the document marker tells the renderer which
+// Sandboxed preload: ipcRenderer.invoke reaches only the pinomad:hosts:*,
+// pinomad:account:*, pinomad:updates:* and pinomad:device:name handlers in
+// main (the paired-host list behind safeStorage, the app updater, and the
+// pairing-time device label), and the document marker tells the renderer which
 // platform owns the window — the renderer has no Node `process`. Copied from
 // Pace's pattern.
 import { contextBridge, ipcRenderer } from "electron";
@@ -18,6 +19,7 @@ const bridge: DesktopBridge = {
     save: (account) => ipcRenderer.invoke("pinomad:account:save", account),
     clear: () => ipcRenderer.invoke("pinomad:account:clear"),
   },
+  deviceName: () => ipcRenderer.invoke("pinomad:device:name"),
   updates: {
     status: () => ipcRenderer.invoke("pinomad:updates:status"),
     check: () => ipcRenderer.invoke("pinomad:updates:check"),

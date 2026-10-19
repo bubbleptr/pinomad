@@ -104,6 +104,9 @@ const SOURCE_LABEL: Record<NonNullable<DeviceEntry["source"]>, string> = {
   local: "on this machine",
 };
 
+/** Date plus hour/minute — devices paired the same day must stay distinguishable. */
+const PAIRED_AT = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" });
+
 function DeviceRow({
   device,
   isSelf,
@@ -119,7 +122,7 @@ function DeviceRow({
   return (
     <ListItem
       label={device.name}
-      description={`Paired${source} · ${new Date(device.pairedAt).toLocaleDateString()}`}
+      description={`Paired${source} · ${PAIRED_AT.format(device.pairedAt)}`}
       endContent={
         <HStack gap={2} vAlign="center">
           {isSelf ? <Token label="This device" size="sm" /> : null}

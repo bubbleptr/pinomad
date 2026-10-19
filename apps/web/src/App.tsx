@@ -25,7 +25,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { deviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
+import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
 import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
@@ -222,30 +222,43 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
     }
     return address.kind === "device" ? keyPairFromPrivate(fromBase64Url(address.privateKey)) : generateKeyPair();
   }, [address, stored]);
-  const options = useMemo<RemoteDurableOptions>(
-    () => ({
+  // The pairing label can come from the desktop bridge — an async hop — so it
+  // resolves before the transport exists; the PairConfirm gate means it is
+  // almost always settled by the time this runs.
+  const [pairName, setPairName] = useState<string>();
+  useEffect(() => {
+    if (address.kind !== "pair") return;
+    let live = true;
+    void clientDeviceName().then((name) => {
+      if (live) setPairName(name);
+    });
+    return () => {
+      live = false;
+    };
+  }, [address]);
+  const options = useMemo<RemoteDurableOptions | undefined>(() => {
+    const base = { url: address.url, hostKey: fromBase64Url(address.hostKey), device };
+    if (address.kind !== "pair") return { transport: secureWebSocketTransport(base) };
+    // A pair address holds off opening the socket until the label resolves —
+    // the name travels inside the first handshake.
+    if (pairName === undefined) return undefined;
+    return {
       transport: secureWebSocketTransport({
-        url: address.url,
-        hostKey: fromBase64Url(address.hostKey),
-        device,
-        ...(address.kind === "pair"
-          ? {
-              pairing: { secret: address.secret, name: deviceName(navigator.userAgent) },
-              onPaired: () => {
-                const host = { url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) };
-                void paired(host).catch((error: unknown) => {
-                  console.error("Could not save the paired host", error);
-                  setUnsaved(host);
-                });
-                // The fragment held a one-time secret; it must not linger in history.
-                history.replaceState(null, "", window.location.pathname + window.location.search);
-              },
-            }
-          : {}),
+        ...base,
+        pairing: { secret: address.secret, name: pairName },
+        onPaired: () => {
+          const host = { url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) };
+          void paired(host).catch((error: unknown) => {
+            console.error("Could not save the paired host", error);
+            setUnsaved(host);
+          });
+          // The fragment held a one-time secret; it must not linger in history.
+          history.replaceState(null, "", window.location.pathname + window.location.search);
+        },
       }),
-    }),
-    [address, device, paired],
-  );
+    };
+  }, [address, device, paired, pairName]);
+  if (options === undefined) return <Centered>{null}</Centered>;
   const rejected =
     address.kind === "pair" ? (
       // A pairing offer is single-use; a rejected one is the offer's problem,

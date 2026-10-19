@@ -1,5 +1,6 @@
 import { parsePairParam } from "@pinomad/protocol/pairing-link.ts";
 import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
+import type {} from "./entities/host/desktop-bridge.ts"; // brings in the window.pinomadDesktop global
 
 export { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 export type { StoredHost };
@@ -91,4 +92,20 @@ export function deviceName(userAgent: string): string {
           : undefined;
   const name = [os, browser].filter((part) => part !== undefined).join(" ");
   return name === "" ? "Browser" : name;
+}
+
+/**
+ * The label this client registers on a host's device list. The desktop app's
+ * bridge supplies a machine-aware name ("Mac Desktop (kieran-mbp)"); without
+ * one — a browser tab, or a bridge that can't answer — the UA-derived name
+ * stands, which is why the Electron UA stays untouched.
+ */
+export async function clientDeviceName(): Promise<string> {
+  try {
+    const named = await window.pinomadDesktop?.deviceName?.();
+    if (typeof named === "string" && named !== "") return named;
+  } catch {
+    // A bridge that can't answer leaves the UA-derived name in place.
+  }
+  return deviceName(navigator.userAgent);
 }

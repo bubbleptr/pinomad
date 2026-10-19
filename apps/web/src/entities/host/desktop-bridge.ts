@@ -24,6 +24,12 @@ export interface DesktopBridge {
     clear(): Promise<void>;
   };
   /**
+   * The label pairing registers on the host's device list ("Mac Desktop
+   * (kieran-mbp)"). Optional like `updates`: the browser has no bridge, and a
+   * missing one just falls back to the UA-derived name.
+   */
+  readonly deviceName?: () => Promise<string>;
+  /**
    * Electron-updater control, owned by main. Optional only because the
    * browser has no bridge at all — inside the desktop app it always exists.
    */

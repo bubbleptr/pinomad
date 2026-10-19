@@ -70,6 +70,13 @@ try {
   await page.getByText("hello from the desktop").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: "/tmp/pinomad-desktop-connected.png" });
 
+  // The pairing registered the bridge's machine-aware label ("Linux Desktop
+  // (omarchy)" here, "Mac Desktop (…)" on macOS), not a browser UA name.
+  const registeredName = tokenClient.view.current().devices.at(-1)?.name ?? "";
+  if (!registeredName.endsWith(")") || !registeredName.includes("Desktop")) {
+    throw new Error(`unexpected device name: ${registeredName}`);
+  }
+
   // Native-chrome check: capture the real window — traffic lights included —
   // with the sidebar open and collapsed. Needs Screen Recording permission;
   // report and move on when it's denied.
