@@ -57,6 +57,9 @@ pub struct ConversationSnapshot {
     pub agent: AgentState,
     /// `pendingQuestions` — unresolved `pinomad.question` requests.
     pub questions: Vec<PendingQuestion>,
+    /// The `pinomad.todo` document's items; `None` while the conversation
+    /// has no todo list.
+    pub todo: Option<Vec<TodoItem>>,
     /// `homeOf` — inherited from the index ancestor.
     pub home: Option<Home>,
     /// `checkoutOf` — the conversation's (or ancestor's) worktree.
@@ -231,6 +234,13 @@ fn conversation_of(view: &Json) -> Option<ConversationSnapshot> {
             },
         })
         .collect();
+    let todo = docs.iter().find_map(|doc| {
+        let value = doc.get("value").cloned().unwrap_or(Json::Null);
+        match crate::presentation::classify(doc.get("presentation"), &value) {
+            crate::presentation::ClassifiedDoc::Todo(todo) => Some(todo.items),
+            _ => None,
+        }
+    });
     // The shown model's window scales the meter; an unlisted model leaves it
     // scaleless like the reference's `summaryOf` miss.
     let context_window = view
@@ -251,6 +261,7 @@ fn conversation_of(view: &Json) -> Option<ConversationSnapshot> {
             cwd: agent.cwd,
         },
         questions,
+        todo,
         home: view.get("home").map(Home::from_json),
         checkout: view.get("checkout").map(WorktreeCheckout::from_json),
         busy,

@@ -46,6 +46,13 @@ export type CotView = {
   anchorMs?: number;
   /** Time from the Run's first model call to the first answer token. */
   elapsedMs?: number;
+  /**
+   * When this Run last changed the todo list: the result time of its last
+   * successful `todo_write` (the doc commits on execution, not when the call
+   * is issued). Absent when the Run never wrote it. Lives here rather than on
+   * the run entry because native clients match that variant positionally.
+   */
+  todoWrittenAtMs?: number;
   /** Steps in Turn order; the last one may still be live. */
   steps: CotStep[];
   /** The answer bubble's text — final, or presumed final while answering. */
@@ -313,6 +320,20 @@ function toolItem(
   };
 }
 
+/**
+ * Whether a codemode script's nested calls include a successful `todo_write`.
+ * The nested call has no time of its own; the script's result bounds it. The
+ * script failing afterwards does not undo the write, so only the nested
+ * status counts.
+ */
+function wroteTodo(details: unknown): boolean {
+  const calls = (details as { calls?: unknown } | undefined)?.calls;
+  return (
+    Array.isArray(calls) &&
+    calls.some((nested) => (nested as { name?: unknown }).name === "todo_write" && (nested as { status?: unknown }).status === "ok")
+  );
+}
+
 /** Consecutive Tool Calls in one Message are one step (ADR-0030 §3). */
 type MessageSlot = { kind: "thinking"; block: Block } | { kind: "tools"; blocks: CallBlock[] } | { kind: "text"; block: Block };
 
@@ -425,6 +446,18 @@ function deriveRun(
     });
   }
 
+  let todoWrittenAtMs: number | undefined;
+  for (const message of messages) {
+    for (const block of message.msg.content) {
+      if (!isCallBlock(block)) continue;
+      const written = message.results.get(block.id);
+      if (written === undefined || typeof written.timestamp !== "number") continue;
+      if (block.name === "todo_write" ? written.isError !== true : block.name === "codemode" && wroteTodo(written.details)) {
+        todoWrittenAtMs = written.timestamp;
+      }
+    }
+  }
+
   const interrupted = lastCommitted?.msg.stopReason === "aborted";
   const failed = settled && lastCommitted?.msg.stopReason === "error";
   const anchorMs = messages[0]?.msg.timestamp;
@@ -442,6 +475,7 @@ function deriveRun(
       ...(failed === true ? { outcome: "failed" as const } : {}),
       ...(anchorMs === undefined ? {} : { anchorMs }),
       ...(elapsedMs === undefined ? {} : { elapsedMs }),
+      ...(todoWrittenAtMs === undefined ? {} : { todoWrittenAtMs }),
       steps,
       ...(answering ? { answer: { text: answerText, streaming: latest?.partial === true } } : {}),
     },

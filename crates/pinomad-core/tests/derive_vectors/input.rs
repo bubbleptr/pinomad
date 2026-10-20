@@ -113,6 +113,7 @@ pub fn cot(json: &Json) -> CotView {
             .is_some_and(|s| s.to_string_lossy() == "failed"),
         anchor_ms: num(json.get("anchorMs")),
         elapsed_ms: num(json.get("elapsedMs")),
+        todo_written_at_ms: num(json.get("todoWrittenAtMs")),
         steps: json
             .get("steps")
             .and_then(Json::as_array)

@@ -185,7 +185,7 @@ extension AppModel {
         ]
         let cot = CotView(
             phase: .settled, failed: false,
-            anchorMs: now - 90_000, elapsedMs: 90_000,
+            anchorMs: now - 90_000, elapsedMs: 90_000, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: tools, live: false, activeToolCallId: nil)],
             answer: CotAnswer(text: "两个子代理都完成了：登录中间件没有发现问题，发布说明已按分类整理。", streaming: false)
         )
@@ -196,7 +196,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], home: nil, checkout: nil, busy: false, contextUsage: nil
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -234,7 +234,7 @@ extension AppModel {
             label: nil, role: nil, activity: nil
         )
         let cot = CotView(
-            phase: .settled, failed: false, anchorMs: now - 4_000, elapsedMs: 4_000,
+            phase: .settled, failed: false, anchorMs: now - 4_000, elapsedMs: 4_000, todoWrittenAtMs: nil,
             steps: [],
             answer: CotAnswer(
                 text: "上下文用量已经算在核心里，composer 只负责把它画出来。",
@@ -248,7 +248,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
-            questions: [], home: nil, checkout: nil, busy: false, contextUsage: usage
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage
         )
         drafts[1] = "帮我看看这个改动"
         publishDevSnapshot(ClientSnapshot(
@@ -269,7 +269,7 @@ extension AppModel {
         version += 1
         let cot = CotView(
             phase: streaming ? .answering : .settled, failed: false,
-            anchorMs: nil, elapsedMs: nil, steps: [],
+            anchorMs: nil, elapsedMs: nil, todoWrittenAtMs: nil, steps: [],
             answer: CotAnswer(text: answer, streaming: streaming)
         )
         let chat: [ChatEntry] = [
@@ -279,7 +279,7 @@ extension AppModel {
         let conv = ConversationSnapshot(
             id: 1, chat: chat, statusText: streaming ? "正在输出…" : "",
             queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], home: nil, checkout: nil, busy: streaming, contextUsage: nil
+            questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,

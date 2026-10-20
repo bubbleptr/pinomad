@@ -119,6 +119,7 @@ pub fn cot_json(cot: &CotView) -> Json {
         ("outcome", cot.failed.then(|| s("failed"))),
         ("anchorMs", cot.anchor_ms.map(num)),
         ("elapsedMs", cot.elapsed_ms.map(num)),
+        ("todoWrittenAtMs", cot.todo_written_at_ms.map(num)),
         ("steps", Some(Json::array(cot.steps.iter().map(step_json).collect()))),
         (
             "answer",
