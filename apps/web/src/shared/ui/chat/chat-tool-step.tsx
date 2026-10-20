@@ -142,6 +142,56 @@ export function summarizeTools(tools: ChatToolItem[]) {
     .join(", ");
 }
 
+/**
+ * What a set of calls changed and how many failed — the meta a summary line
+ * carries after its verbs. Top-level calls only: a parent that caught its
+ * child's failure still succeeded.
+ */
+export function summarizeOutcome(tools: ChatToolItem[]) {
+  const failed = tools.filter((tool) => tool.state === "output-error").length;
+  const diffStat = tools.reduce<{ additions: number; deletions: number } | undefined>(
+    (sum, tool) =>
+      tool.diffStat
+        ? {
+            additions: (sum?.additions ?? 0) + tool.diffStat.additions,
+            deletions: (sum?.deletions ?? 0) + tool.diffStat.deletions,
+          }
+        : sum,
+    undefined,
+  );
+
+  return { failed, diffStat };
+}
+
+/**
+ * The "+12 -3" and "1 failed" spans, shared by step rows and trace rows. The
+ * leading spaces keep a row's accessible name worded; the flex row drops them
+ * from layout and spaces the spans with its gap.
+ */
+export function ChatOutcomeMeta({ failed, diffStat }: ReturnType<typeof summarizeOutcome>) {
+  return (
+    <>
+      {diffStat ? (
+        <>
+          {" "}
+          <span className="chat-step__meta" data-slot="chat-tool-diff-stat">
+            <span className="text-success">+{diffStat.additions}</span>{" "}
+            <span className="text-danger">-{diffStat.deletions}</span>
+          </span>
+        </>
+      ) : null}
+      {failed > 0 ? (
+        <>
+          {" "}
+          <span className="chat-step__meta chat-step__meta--error">
+            {failed === 1 ? "1 failed" : `${failed} failed`}
+          </span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 type ChatToolStepOwnProps = {
   dwellMs?: number;
   step: ChatToolStepItem;
@@ -168,25 +218,13 @@ export function ChatToolStep({
   ...rest
 }: ChatToolStepProps) {
   const { tools } = step;
-  const failed = tools.filter((tool) => tool.state === "output-error").length;
+  const { failed, diffStat } = summarizeOutcome(tools);
   const descendants = tools.flatMap(descendantsOf);
   const nestedCount = descendants.length;
   // Failed descendants get their own meta: a parent that caught its child's
   // failure still succeeded, so `failed` stays a top-level count.
   const nestedFailed = descendants.filter((tool) => tool.state === "output-error").length;
   const totalMs = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0);
-  // Line stats page in with the settled summary only; mid-burst a finished
-  // call already has its result but the row is still paging call names.
-  const diffStat = tools.reduce<{ additions: number; deletions: number } | undefined>(
-    (sum, tool) =>
-      tool.diffStat
-        ? {
-            additions: (sum?.additions ?? 0) + tool.diffStat.additions,
-            deletions: (sum?.deletions ?? 0) + tool.diffStat.deletions,
-          }
-        : sum,
-    undefined,
-  );
   const active =
     tools.find((tool) => tool.toolCallId === step.activeToolCallId) ?? tools[tools.length - 1];
   // While a Nested Tool Execution runs, the label names the deepest one still
@@ -248,17 +286,10 @@ export function ChatToolStep({
                   {nestedFailed === 1 ? "1 nested failed" : `${nestedFailed} nested failed`}
                 </span>
               ) : null}
-              {diffStat ? (
-                <span className="chat-step__meta" data-slot="chat-tool-diff-stat">
-                  <span className="text-success">+{diffStat.additions}</span>{" "}
-                  <span className="text-danger">-{diffStat.deletions}</span>
-                </span>
-              ) : null}
-              {failed > 0 ? (
-                <span className="chat-step__meta chat-step__meta--error">
-                  {failed === 1 ? "1 failed" : `${failed} failed`}
-                </span>
-              ) : null}
+              {/* Line stats page in with the settled summary only; mid-burst a
+                  finished call already has its result but the row is still
+                  paging call names. */}
+              <ChatOutcomeMeta failed={failed} diffStat={diffStat} />
               {totalMs > 0 ? (
                 <span className="chat-step__meta">{formatToolDuration(totalMs)}</span>
               ) : null}

@@ -602,6 +602,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
           >
             <ConversationTranscript
               conversation={conversation}
+              docs={view.docs}
               toolPresentations={view.toolPresentations}
               connected={view.connection === "connected"}
               canFork={canFork}

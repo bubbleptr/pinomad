@@ -12,6 +12,7 @@ import {
   BubbleChatIcon,
   Cancel01Icon,
   ChatAddIcon,
+  CheckmarkCircle02Icon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
@@ -41,6 +42,7 @@ import {
   MoreHorizontalIcon,
   PaintBoardIcon,
   PencilEdit01Icon,
+  Progress02Icon,
   PuzzleIcon,
   RefreshIcon,
   RobotIcon,
@@ -88,6 +90,7 @@ export const ChatBubble = iconComponent(BubbleChatIcon);
 export const ChevronDown = iconComponent(ChevronDownIcon);
 export const ChevronRight = iconComponent(ChevronRightIcon);
 export const Check = iconComponent(Tick02Icon);
+export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
 export const Circle = iconComponent(CircleIcon);
 export const Command = iconComponent(CommandIcon);
 export const Computer = iconComponent(ComputerIcon);
@@ -109,6 +112,8 @@ export const Globe = iconComponent(Globe02Icon);
 export const ImageIcon = iconComponent(HugeImageIcon);
 export const Info = iconComponent(InformationCircleIcon);
 export const Key = iconComponent(KeyIcon);
+// A quarter-filled circle: started, not finished (todo items).
+export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
 export const ListTree = iconComponent(ListTreeIcon);
