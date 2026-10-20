@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 import PinomadChat
 import PinomadCore
+
+private let hostNameLogger = Logger(subsystem: "build.kieran.pinomad", category: "hosts")
 
 /// The token clear did not come back in time — the host may have kept the
 /// registration, so forgetting proceeds with the revocation warning.
@@ -30,6 +33,28 @@ extension AppModel {
     var currentHostLabel: String? {
         if let host = sessionHost { return hostLabels[host.hostKey] ?? hostOf(host.url) }
         return pairingTarget.map { hostOf($0.url) }
+    }
+
+    /// Cache the machine name the connection announced on its settings
+    /// stream. Keyed by the connection's host, never by the selected one; a
+    /// nil/empty announcement (older host, stream not landed) keeps the
+    /// cached name. The store's serialized update re-reads the keychain so a
+    /// pairing or account write racing this one is not clobbered.
+    func cacheHostName(_ announced: String?, for hostKey: String) {
+        guard let announced, !announced.isEmpty,
+              let entry = hosts.hosts.first(where: { $0.hostKey == hostKey }),
+              entry.name != announced
+        else { return }
+        do {
+            try store.update { stored in
+                if let renamed = stored.settingName(announced, for: hostKey) {
+                    stored = renamed
+                }
+            }
+            reloadHosts()
+        } catch {
+            hostNameLogger.error("could not cache host name: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// The address that did not answer — the timeout message needs the

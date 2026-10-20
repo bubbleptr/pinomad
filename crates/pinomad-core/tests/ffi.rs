@@ -821,6 +821,36 @@ fn snapshot_agents_decodes_roles_and_problems() {
 }
 
 #[test]
+fn snapshot_host_name_comes_from_the_settings_stream() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "settings".to_string(),
+        obj(&[("hostName", Json::from("Kieran's MacBook"))]),
+    );
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().host_name.as_deref(),
+        Some("Kieran's MacBook")
+    );
+}
+
+#[test]
+fn snapshot_host_name_is_none_without_the_field() {
+    // A pre-5.12 host's settings have no name; a stream that never arrives
+    // is no name either.
+    let h = Harness::boot(ScriptedHost::new(), "req-1");
+    assert_eq!(h.client.snapshot().unwrap().host_name, None);
+}
+
+#[test]
+fn snapshot_host_name_ignores_a_non_string_value() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert("settings".to_string(), obj(&[("hostName", Json::from(12.0))]));
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(h.client.snapshot().unwrap().host_name, None);
+}
+
+#[test]
 fn connect_rejects_bad_key_material() {
     let result = PinomadClient::connect(StoredHost {
         url: "wss://host.example/".to_string(),

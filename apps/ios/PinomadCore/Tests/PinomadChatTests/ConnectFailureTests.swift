@@ -57,7 +57,7 @@ private func snapshot(
 ) -> ClientSnapshot {
     ClientSnapshot(
         version: 1, connection: connection, unauthorized: unauthorized,
-        protocolMismatch: mismatch, host: nil,
+        protocolMismatch: mismatch, host: nil, hostName: nil,
         organized: Organized(chats: [], projects: [], archived: []),
         notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
         agents: nil, conversation: nil)
