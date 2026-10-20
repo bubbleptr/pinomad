@@ -1,5 +1,6 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import { parseStoredHost } from "@pinomad/client/stored-host.ts";
+import type { HostSettings } from "@pinomad/protocol/settings.ts";
 import { DEVICE_KEY, storedDevice, type StoredHost } from "../../address.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
@@ -20,6 +21,12 @@ export interface HostStore {
   list(): Promise<StoredHost[]>;
   save(host: StoredHost): Promise<void>;
   remove(hostKey: string): Promise<void>;
+  /**
+   * Cache the machine name the host announced (5.12): updates only `name`,
+   * leaves every other field, and writes nothing when the entry is gone —
+   * a name arriving after a forget must not resurrect the pairing.
+   */
+  setName(hostKey: string, name: string): Promise<void>;
 }
 
 const readHosts = (): StoredHost[] => {
@@ -78,6 +85,12 @@ const browserStore: HostStore = {
     if (legacy !== undefined && legacy.hostKey === hostKey) localStorage.removeItem(DEVICE_KEY);
     return Promise.resolve();
   },
+  setName: (hostKey, name) => {
+    const hosts = migrated();
+    if (!hosts.some((each) => each.hostKey === hostKey)) return Promise.resolve();
+    writeHosts(hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
+    return Promise.resolve();
+  },
 };
 
 function desktopStore(bridge: DesktopBridge): HostStore {
@@ -110,6 +123,7 @@ function desktopStore(bridge: DesktopBridge): HostStore {
     },
     save: (host) => bridge.hosts.save(host),
     remove: (hostKey) => bridge.hosts.remove(hostKey),
+    setName: (hostKey, name) => bridge.hosts.setName(hostKey, name),
   };
 }
 
@@ -125,6 +139,8 @@ export type HostsState = {
   readonly activeHostKey: string | null;
   /** Persist a new pairing, mark it active, and update the in-memory list. */
   readonly paired: (host: StoredHost) => Promise<void>;
+  /** Persist an announced host name and update the in-memory list; unlike `paired` it does not select the host. */
+  readonly setName: (hostKey: string, name: string) => Promise<void>;
 };
 
 const defaultState: HostsState = {
@@ -132,12 +148,32 @@ const defaultState: HostsState = {
   hosts: [],
   activeHostKey: null,
   paired: (host) => browserStore.save(host),
+  setName: (hostKey, name) => browserStore.setName(hostKey, name),
 };
 
 // Deep components — the sidebar footer, the connection-failure screens — read
 // this instead of threading the host list through every layer.
 export const HostsContext = createContext<HostsState>(defaultState);
 export const useHosts = (): HostsState => useContext(HostsContext);
+
+/**
+ * Cache the machine name a 5.12 host announces on its settings stream onto
+ * this connection's stored entry — keyed by the connection's hostKey, never
+ * by the selected host. A missing `hostName` (older host, pre-snapshot view)
+ * is a skip, not a clear: a cached name survives it.
+ */
+export function useHostNameSync(hostKey: string | undefined, settings: HostSettings | null): void {
+  const { hosts, setName } = useHosts();
+  const announced = settings?.hostName;
+  useEffect(() => {
+    if (hostKey === undefined || announced === undefined) return;
+    const entry = hosts.find((each) => each.hostKey === hostKey);
+    if (entry === undefined || entry.name === announced) return;
+    void setName(hostKey, announced).catch((error: unknown) =>
+      console.error("Could not store the host name", error),
+    );
+  }, [hostKey, announced, hosts, setName]);
+}
 
 /**
  * Connect to a stored host: one connection at a time, so the choice is stored

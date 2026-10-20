@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { hostLabels, parseStoredHost } from "../src/stored-host.ts";
-import { HOST_CASES, HOST_KEY_A, HOST_KEY_B, HOST_LABEL_CASES, KEY_A, KEY_B } from "./misc-cases.ts";
+import { HOST_CASES, HOST_KEY_A, HOST_KEY_B, HOST_KEY_C, HOST_LABEL_CASES, KEY_A, KEY_B } from "./misc-cases.ts";
 
 const key = () => toBase64Url(generateKeyPair().privateKey);
 const valid = () => ({
@@ -23,9 +23,17 @@ describe("parseStoredHost", () => {
     });
   });
 
-  it("strips extra fields", () => {
+  it("strips unknown extra fields", () => {
     const host = valid();
-    expect(parseStoredHost({ ...host, name: "host-a", nested: { x: 1 } })).toEqual(host);
+    expect(parseStoredHost({ ...host, unknownField: "x", nested: { x: 1 } })).toEqual(host);
+  });
+
+  it("keeps the stored name; a wrong shape or an empty one costs only the field", () => {
+    const host = valid();
+    expect(parseStoredHost({ ...host, name: "Workstation" })).toEqual({ ...host, name: "Workstation" });
+    expect(parseStoredHost({ ...host, name: 42 })).toEqual(host);
+    expect(parseStoredHost({ ...host, name: "" })).toEqual(host);
+    expect(parseStoredHost({ ...host, name: { nested: true } })).toEqual(host);
   });
 
   it("round-trips the account link and tolerates its absence", () => {
@@ -82,5 +90,35 @@ describe("hostLabels", () => {
     // HOST_KEY_A with relayA, so the Map keeps the last write.
     const labels3 = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "mixed")!.hosts);
     expect(labels3.get(HOST_KEY_A)).toBe("10.0.0.2:7422");
+  });
+
+  it("labels a stored host by its name when it has one (5.12)", () => {
+    const labels = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "named")!.hosts);
+    expect(labels.get(HOST_KEY_A)).toBe("Desk");
+    expect(labels.get(HOST_KEY_B)).toBe("10.0.0.3:7422");
+
+    // The name wins over a relay URL too.
+    const relayLabels = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "named-relay")!.hosts);
+    expect(relayLabels.get(HOST_KEY_A)).toBe("Desk");
+  });
+
+  it("disambiguates same-named hosts, lengthening the key prefix until unique", () => {
+    const labels = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "same-name")!.hosts);
+    expect(labels.get(HOST_KEY_A)).toBe(`Desk · ${HOST_KEY_A.slice(0, 6)}`);
+    expect(labels.get(HOST_KEY_B)).toBe(`Desk · ${HOST_KEY_B.slice(0, 6)}`);
+
+    // A host literally named like another's disambiguated label: the
+    // disambiguation lengthens until no two labels collide.
+    const shadowed = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "name-shadows-disambiguation")!.hosts);
+    expect(shadowed.get(HOST_KEY_A)).toBe(`Desk · ${HOST_KEY_A.slice(0, 7)}`);
+    expect(shadowed.get(HOST_KEY_B)).toBe(`Desk · ${HOST_KEY_B.slice(0, 6)}`);
+    expect(shadowed.get(HOST_KEY_C)).toBe(`Desk · ${HOST_KEY_A.slice(0, 6)}`);
+    expect(new Set(shadowed.values()).size).toBe(3);
+  });
+
+  it("disambiguates a name that equals another host's URL label", () => {
+    const labels = hostLabels(HOST_LABEL_CASES.find((c) => c.name === "name-and-url-collide")!.hosts);
+    expect(labels.get(HOST_KEY_A)).toBe(`10.0.0.3:7422 · ${HOST_KEY_A.slice(0, 6)}`);
+    expect(labels.get(HOST_KEY_B)).toBe(`10.0.0.3:7422 · ${HOST_KEY_B.slice(0, 6)}`);
   });
 });

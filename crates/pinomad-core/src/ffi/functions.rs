@@ -294,8 +294,8 @@ pub fn forks_at(organized: Organized, conversation_id: u64, entry_id: String) ->
     crate::family::forks_at(&organized.to_core(), conversation_id, &entry_id)
 }
 
-/// Sidebar/menu label per host — the URL's host, disambiguated by the
-/// hostKey prefix when two hosts share one.
+/// Sidebar/menu label per host — the stored machine name when one is
+/// cached, else the URL's host, disambiguated by the hostKey prefix.
 #[uniffi::export]
 pub fn host_labels(hosts: Vec<StoredHost>) -> Vec<HostLabel> {
     let cores: Vec<crate::stored_host::StoredHost> = hosts
@@ -304,8 +304,9 @@ pub fn host_labels(hosts: Vec<StoredHost>) -> Vec<HostLabel> {
             url: host.url.clone(),
             host_key: host.host_key.clone(),
             private_key: host.private_key.clone(),
-            // `hostLabels` reads only url + hostKey; the account linkage is
-            // irrelevant here.
+            name: host.name.clone(),
+            // `hostLabels` reads only the label fields; the account linkage
+            // is irrelevant here.
             account: None,
         })
         .collect();

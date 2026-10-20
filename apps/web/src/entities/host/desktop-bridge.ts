@@ -12,6 +12,8 @@ export interface DesktopBridge {
     list(): Promise<StoredHost[]>;
     save(host: StoredHost): Promise<void>;
     remove(hostKey: string): Promise<void>;
+    /** Cache the machine name the host announced (5.12); writes nothing when the entry is gone. */
+    setName(hostKey: string, name: string): Promise<void>;
   };
   /**
    * The bearer credential for the server-accounts API, kept in main's

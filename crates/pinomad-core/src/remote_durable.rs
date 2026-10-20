@@ -1076,6 +1076,12 @@ impl RemoteDurable {
                 {
                     return Err(too_old("5.8"));
                 }
+                // Same for hostName on a pre-5.12 host — even the `null` reset.
+                if patch.get("hostName").is_some()
+                    && !host_supports_feature(self.host_minor, HostFeature::HostName)
+                {
+                    return Err(too_old("5.12"));
+                }
                 let args = obj(&[("patch", patch.clone())]);
                 steps.push_back(Step::Call { method: "updateSettings", args });
             }

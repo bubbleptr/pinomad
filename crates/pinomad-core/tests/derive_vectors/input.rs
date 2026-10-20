@@ -153,6 +153,7 @@ pub fn stored_host(json: &Json) -> StoredHost {
         url: text(json.get("url")).unwrap_or_default(),
         host_key: text(json.get("hostKey")).unwrap_or_default(),
         private_key: text(json.get("privateKey")).unwrap_or_default(),
+        name: text(json.get("name")),
         account: None,
     }
 }

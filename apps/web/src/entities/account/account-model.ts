@@ -298,13 +298,20 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         if (isUnauthenticated(result.error)) signedOut();
         return result;
       }
-      rejected.delete(result.value.hostKey);
+      // The account row already knows the machine's name — the stored entry
+      // carries it so labels need not wait for the settings stream (5.12).
+      const announced = state.status === "signed-in"
+        ? state.hosts.find((match) => match.host.hostId === hostId)?.host.name
+        : undefined;
+      const enriched: StoredHost =
+        announced === undefined || announced === "" ? result.value : { ...result.value, name: announced };
+      rejected.delete(enriched.hostKey);
       try {
-        await deps.paired(result.value);
+        await deps.paired(enriched);
       } catch {
         // The invite is spent and the device registered — a failed save must
         // not orphan the key. Keep the record for retryUnsavedHost.
-        if (state.status === "signed-in") setState({ ...state, unsavedHost: result.value });
+        if (state.status === "signed-in") setState({ ...state, unsavedHost: enriched });
         return { ok: false, error: { code: "pairing_not_saved" } };
       }
       // A re-pair after a key change stored a fresh record under the new key;
@@ -316,13 +323,13 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           entry.account !== undefined &&
           normalizeServerOrigin(entry.account.serverOrigin) === client.origin &&
           entry.account.hostId === hostId &&
-          entry.hostKey !== result.value.hostKey
+          entry.hostKey !== enriched.hostKey
         ) {
           void deps.hosts.remove(entry.hostKey).catch(() => undefined);
         }
       }
       if (state.status === "signed-in" && client !== undefined) await refresh(client, state.user);
-      return result;
+      return { ok: true, value: enriched };
     },
 
     retryUnsavedHost: async () => {

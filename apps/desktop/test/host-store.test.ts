@@ -161,6 +161,32 @@ describe("createHostStore", () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it("setName rewrites only the name inside the serialized queue", async () => {
+    const { store } = await tempStore();
+    const a = {
+      ...host(),
+      account: { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) },
+    };
+    await store.save(a);
+    await store.setName(a.hostKey, "Desk");
+    expect(await store.list()).toEqual([{ ...a, name: "Desk" }]);
+    await store.setName(a.hostKey, "Bench");
+    expect(await store.list()).toEqual([{ ...a, name: "Bench" }]);
+  });
+
+  it("setName writes nothing for an entry that is not there", async () => {
+    const { store, dir } = await tempStore();
+    const a = host();
+    await store.save(a);
+    await store.remove(a.hostKey);
+    // A name arriving after the entry was removed must not resurrect it —
+    // and must not rewrite the file at all.
+    await store.setName(a.hostKey, "Desk");
+    expect(await store.list()).toEqual([]);
+    const raw = JSON.parse(cipher.decrypt(await readFile(join(dir, "hosts.bin"))));
+    expect(raw.hosts).toEqual([]);
+  });
+
   it("round-trips the account credential encrypted, independent of the hosts", async () => {
     const { store, dir } = await tempStore();
     expect(await store.account()).toBeUndefined();

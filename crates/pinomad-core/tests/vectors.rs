@@ -119,6 +119,7 @@ fn version_gates_agree_with_the_reference() {
                 "acceptAccountDevices" => HostFeature::AcceptAccountDevices,
                 "apnsPush" => HostFeature::ApnsPush,
                 "agentConversations" => HostFeature::AgentConversations,
+                "hostName" => HostFeature::HostName,
                 other => panic!("{name}: unknown feature {other}"),
             };
             host_supports_feature(minor, feature)

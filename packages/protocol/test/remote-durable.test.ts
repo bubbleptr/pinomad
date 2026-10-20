@@ -18,6 +18,7 @@ const SNAPSHOTS: Record<string, unknown> = {
     defaultThinkingLevel: "high",
     steeringMode: "all",
     followUpMode: "all",
+    hostName: "Testbox",
     custom: ["defaultModel", "defaultThinkingLevel", "steeringMode", "followUpMode"],
   },
   agents: { roles: [], problems: [] },
@@ -686,6 +687,36 @@ describe("RemoteDurable minor-version gating", () => {
       await remote.controller.updateSettings({ acceptAccountDevices: false });
       const call = sent.find((frame) => frame.type === "call" && frame.method === "updateSettings")!;
       expect(call.args).toEqual({ patch: { acceptAccountDevices: false } });
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("sends hostName on a 5.12 host, notices and skips the call on 5.11", async () => {
+    // A pre-5.12 host would call the unknown patch key malformed and close
+    // 4400 — refuse locally instead, even for the `null` reset (ADR-0018 §2).
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 11 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.updateSettings({ hostName: "Desk" });
+      await waitForView(remoteOld, (view) =>
+        view.notices.some((notice) => notice.level === "error" && notice.message.includes("needs protocol 5.12")),
+      );
+      await remoteOld.controller.updateSettings({ hostName: null });
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "updateSettings")).toHaveLength(0);
+      // Keys the host knows still go through on the same connection.
+      await remoteOld.controller.updateSettings({ steeringMode: "all" });
+      expect(old.sent.some((frame) => frame.type === "call" && frame.method === "updateSettings")).toBe(true);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.updateSettings({ hostName: "Desk" });
+      const call = sent.find((frame) => frame.type === "call" && frame.method === "updateSettings")!;
+      expect(call.args).toEqual({ patch: { hostName: "Desk" } });
     } finally {
       remote.close();
     }

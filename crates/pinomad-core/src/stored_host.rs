@@ -89,6 +89,9 @@ pub struct StoredHost {
     pub url: String,
     pub host_key: String,
     pub private_key: String,
+    /// The machine's display name, cached from the host's settings (5.12).
+    /// A wrong shape or an empty one is no name — the URL host labels it then.
+    pub name: Option<String>,
     /// Present only when the stored link validated — a malformed one costs
     /// the association, not the pairing.
     pub account: Option<StoredHostAccount>,
@@ -110,10 +113,18 @@ pub fn parse_stored_host(value: &Json) -> Option<StoredHost> {
             raw: a.clone(),
         }
     });
+    // `typeof host.name === "string" && host.name !== ""` — a malformed name
+    // costs the field, not the pairing.
+    let name = value
+        .get("name")
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy())
+        .filter(|n| !n.is_empty());
     Some(StoredHost {
         url: lossy(value.get("url")),
         host_key: lossy(value.get("hostKey")),
         private_key: lossy(value.get("privateKey")),
+        name,
         account,
     })
 }
@@ -138,30 +149,78 @@ pub struct HostLabel {
     pub label: String,
 }
 
-/// `hostLabels`: sidebar/menu label per host — the URL's host, disambiguated
-/// by the hostKey prefix when two hosts share one (e.g. two hosts behind the
-/// same relay). Host-key order is input order, like the Map.
+/// `hostLabels`: sidebar/menu label per host (5.12) — the stored machine
+/// name when the host announced one, else the URL's host. Labels must end up
+/// unique: a base shared by several hosts gains its hostKey prefix — six
+/// UTF-16 units first, lengthened while a collision remains (a stored name
+/// can shadow another host's disambiguated label). Host-key order is input
+/// order, like the Map.
 pub fn host_labels(hosts: &[StoredHost]) -> Vec<HostLabel> {
-    let bases: Vec<String> = hosts.iter().map(|host| url_host(&host.url)).collect();
+    let bases: Vec<String> = hosts
+        .iter()
+        .map(|host| host.name.clone().unwrap_or_else(|| url_host(&host.url)))
+        .collect();
+    // The hostKey prefix length per entry — 0 keeps the plain base.
+    let mut suffix = vec![0usize; hosts.len()];
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for base in &bases {
         *counts.entry(base.as_str()).or_default() += 1;
     }
-    hosts
-        .iter()
-        .zip(&bases)
-        .map(|(host, base)| {
-            let label = if counts[base.as_str()] > 1 {
-                // `hostKey.slice(0, 6)` — UTF-16 units like the reference.
-                let prefix: Vec<u16> = host.host_key.encode_utf16().take(6).collect();
-                format!("{base} · {}", String::from_utf16_lossy(&prefix))
-            } else {
-                base.clone()
-            };
-            HostLabel {
-                host_key: host.host_key.clone(),
-                label,
+    for (i, base) in bases.iter().enumerate() {
+        if counts[base.as_str()] > 1 {
+            suffix[i] = 6;
+        }
+    }
+    let label = |suffix: &[usize], i: usize| -> String {
+        if suffix[i] == 0 {
+            bases[i].clone()
+        } else {
+            // `hostKey.slice(0, suffix)` — UTF-16 units like the reference.
+            let prefix: Vec<u16> = hosts[i].host_key.encode_utf16().take(suffix[i]).collect();
+            format!("{} · {}", bases[i], String::from_utf16_lossy(&prefix))
+        }
+    };
+    // Lengthen colliding suffixes until no two labels match. Only a suffixed
+    // label can grow — a plain base is the host's literal label. Distinct
+    // hostKeys diverge inside 43 units, so this converges; the `grew` guard
+    // bounds the pathological case (two entries sharing base and key).
+    loop {
+        let mut seen: HashMap<String, usize> = HashMap::new();
+        let mut collided: Vec<usize> = Vec::new();
+        for i in 0..hosts.len() {
+            let text = label(&suffix, i);
+            match seen.get(&text) {
+                None => {
+                    seen.insert(text, i);
+                }
+                Some(&other) => {
+                    collided.push(other);
+                    collided.push(i);
+                }
             }
+        }
+        if collided.is_empty() {
+            break;
+        }
+        // A three-way collision pushes an index twice — dedup so each host
+        // grows once per round, matching the reference's Set.
+        collided.sort_unstable();
+        collided.dedup();
+        let mut grew = false;
+        for i in collided {
+            if suffix[i] > 0 && suffix[i] < hosts[i].host_key.encode_utf16().count() {
+                suffix[i] += 1;
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    (0..hosts.len())
+        .map(|i| HostLabel {
+            host_key: hosts[i].host_key.clone(),
+            label: label(&suffix, i),
         })
         .collect()
 }

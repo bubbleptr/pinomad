@@ -12,6 +12,8 @@ export interface HostSettings {
   readonly followUpMode: QueueMode;
   /** Whether the joined server may vouch for new devices (ADR-0022 §6); PiNomad-only, defaults on. */
   readonly acceptAccountDevices: boolean;
+  /** The machine's display name (5.12): the settings override, else the cleaned hostname. Absent on older hosts. */
+  readonly hostName?: string;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */
   readonly custom: readonly HostSettingKey[];
 }
@@ -25,6 +27,7 @@ const HOST_SETTING_KEY_SET = {
   steeringMode: true,
   followUpMode: true,
   acceptAccountDevices: true,
+  hostName: true,
 } satisfies Record<HostSettingKey, true>;
 export const HOST_SETTING_KEYS = Object.keys(HOST_SETTING_KEY_SET) as readonly HostSettingKey[];
 
@@ -45,3 +48,37 @@ export const isThinkingLevel = (value: unknown): value is ThinkingLevel =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(THINKING_LEVEL_KEYS, value);
 
 export const isQueueMode = (value: unknown): value is QueueMode => value === "all" || value === "one-at-a-time";
+
+/** The fallback display name when a host name cleans to nothing. */
+export const HOST_NAME_FALLBACK = "pinomad";
+/** Host names are capped at this many UTF-16 units. */
+export const HOST_NAME_MAX_UNITS = 64;
+
+// C0/C1 controls and DEL: a display name carries no terminals, so cleaning
+// drops every character that could move a cursor or paint nothing.
+const isHostNameControl = (code: number): boolean => code < 0x20 || (code >= 0x7f && code <= 0x9f);
+
+/**
+ * The shared cleaning half of host naming (5.12): strips a trailing `.local`,
+ * trims, drops control characters, caps the length — the same pipeline the
+ * server applies (issue #212). One pass can leave another `.local` suffix or
+ * new trailing space behind ("a.local.local", ".local "), so the pipeline runs
+ * to a fixed point — a stored name is already canonical and a second clean is
+ * a no-op. An empty result means the input carries nothing displayable:
+ * `normalizeHostName` falls back there, callers validating user input treat it
+ * as "no name at all".
+ */
+export function cleanHostName(name: string): string {
+  let cleaned = name;
+  for (;;) {
+    const local = cleaned.endsWith(".local") ? cleaned.slice(0, -".local".length) : cleaned;
+    const next = [...local.trim()].filter((c) => !isHostNameControl(c.codePointAt(0)!)).join("").slice(0, HOST_NAME_MAX_UNITS);
+    if (next === cleaned) return next;
+    cleaned = next;
+  }
+}
+
+export function normalizeHostName(name: string): string {
+  const cleaned = cleanHostName(name);
+  return cleaned === "" ? HOST_NAME_FALLBACK : cleaned;
+}

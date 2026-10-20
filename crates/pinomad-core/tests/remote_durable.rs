@@ -971,6 +971,31 @@ fn accept_account_devices_needs_a_5_8_host() {
 }
 
 #[test]
+fn host_name_needs_a_5_12_host() {
+    // A pre-5.12 host would 4400 the unknown patch key — refuse locally, the
+    // `null` reset included (ADR-0018 §2).
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(11.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::UpdateSettings { patch: obj(&[("hostName", Json::from("Desk"))]) });
+    assert!(h.notices().iter().any(|n| {
+        n.get("message").and_then(Json::as_str).map(|m| m.to_string_lossy().contains("needs protocol 5.12")).unwrap_or(false)
+    }));
+    assert!(h.host.method("updateSettings").is_empty());
+    h.invoke(2, Call::UpdateSettings { patch: obj(&[("hostName", Json::Null)]) });
+    assert!(h.host.method("updateSettings").is_empty());
+    // Keys the host knows still go through on the same connection.
+    h.invoke(3, Call::UpdateSettings { patch: obj(&[("steeringMode", Json::from("all"))]) });
+    assert_eq!(h.host.method("updateSettings").len(), 1);
+
+    let mut h = setup();
+    h.invoke(1, Call::UpdateSettings { patch: obj(&[("hostName", Json::from("Desk"))]) });
+    assert_eq!(
+        h.host.method("updateSettings")[0].get("args").cloned(),
+        Some(obj(&[("patch", obj(&[("hostName", Json::from("Desk"))]))]))
+    );
+}
+
+#[test]
 fn settings_stream_derives_defaults() {
     let host = ScriptedHost::new(
         vec![obj(&[("model", obj(&[("provider", Json::from("hp")), ("modelId", Json::from("h-1"))]))])],

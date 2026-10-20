@@ -30,6 +30,12 @@ export interface HostStore {
   /** Upsert by hostKey: re-pairing the same host refreshes url/privateKey in place. */
   save(host: StoredHost): Promise<void>;
   remove(hostKey: string): Promise<void>;
+  /**
+   * Cache the machine name the host announced (5.12): reads the entry inside
+   * the same serialized queue, changes only `name`, and writes nothing when
+   * the entry is gone — a name arriving after a forget must not resurrect it.
+   */
+  setName(hostKey: string, name: string): Promise<void>;
   account(): Promise<StoredAccount | undefined>;
   saveAccount(account: StoredAccount): Promise<void>;
   clearAccount(): Promise<void>;
@@ -116,6 +122,14 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
       enqueue(async () => {
         const blob = await readBlob();
         blob.hosts = blob.hosts.filter((each) => each.hostKey !== hostKey);
+        await writeBlob(blob);
+      }),
+    setName: (hostKey, name) =>
+      enqueue(async () => {
+        const blob = await readBlob();
+        const index = blob.hosts.findIndex((each) => each.hostKey === hostKey);
+        if (index === -1) return;
+        blob.hosts[index] = { ...blob.hosts[index]!, name };
         await writeBlob(blob);
       }),
     account: () => enqueue(async () => (await readBlob()).account),

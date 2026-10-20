@@ -123,8 +123,23 @@
       "expect": "{\"url\":\"wss://relay.example.com/c/host\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
     },
     {
+      "name": "named",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"Workstation\"}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"Workstation\"}"
+    },
+    {
+      "name": "name-nonstring",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":42}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "name-empty",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"\"}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
       "name": "extra-fields",
-      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"host-a\",\"nested\":{\"x\":1}}",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"unknownField\":\"x\",\"nested\":{\"x\":1}}",
       "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
     },
     {
@@ -243,6 +258,36 @@
       "name": "bad-url-fallback",
       "hosts": "[{\"url\":\"not a url\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\"}]",
       "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"not a url\"}"
+    },
+    {
+      "name": "named",
+      "hosts": "[{\"url\":\"ws://10.0.0.2:7422\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.3:7422\",\"hostKey\":\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk\",\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\":\"10.0.0.3:7422\"}"
+    },
+    {
+      "name": "named-relay",
+      "hosts": "[{\"url\":\"wss://relay.example.com/c/host-a\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"Desk\"},{\"url\":\"wss://relay.example.com/c/host-b\",\"hostKey\":\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk\",\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\":\"relay.example.com\"}"
+    },
+    {
+      "name": "same-name",
+      "hosts": "[{\"url\":\"ws://10.0.0.2:7422\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.3:7422\",\"hostKey\":\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"Desk\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk · Xf7dO2\",\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\":\"Desk · rAGyIJ\"}"
+    },
+    {
+      "name": "name-shadows-disambiguation",
+      "hosts": "[{\"url\":\"ws://10.0.0.2:7422\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.3:7422\",\"hostKey\":\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.4:7422\",\"hostKey\":\"UKYUCbHd0DJemxa3AOcZ6XcsBwALG9d4bpB8ZT0gSV0\",\"privateKey\":\"BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY\",\"name\":\"Desk · Xf7dO2\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk · Xf7dO2v\",\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\":\"Desk · rAGyIJ\",\"UKYUCbHd0DJemxa3AOcZ6XcsBwALG9d4bpB8ZT0gSV0\":\"Desk · Xf7dO2\"}"
+    },
+    {
+      "name": "name-and-url-collide",
+      "hosts": "[{\"url\":\"ws://10.0.0.2:7422\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"10.0.0.3:7422\"},{\"url\":\"ws://10.0.0.3:7422\",\"hostKey\":\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"10.0.0.3:7422 · Xf7dO2\",\"rAGyIJ6GNU-4UyN7XeD0-rE8f8v0M6YcAZNpYX_s8Qs\":\"10.0.0.3:7422 · rAGyIJ\"}"
+    },
+    {
+      "name": "same-name-shared-prefix",
+      "hosts": "[{\"url\":\"ws://10.0.0.2:7422\",\"hostKey\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.3:7422\",\"hostKey\":\"Xf7dO2bUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"name\":\"Desk\"},{\"url\":\"ws://10.0.0.4:7422\",\"hostKey\":\"Xf7dO2cUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"privateKey\":\"BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY\",\"name\":\"Desk\"}]",
+      "expect": "{\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk · Xf7dO2v\",\"Xf7dO2bUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk · Xf7dO2b\",\"Xf7dO2cUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\":\"Desk · Xf7dO2c\"}"
     }
   ],
   "classifyProviderFailure": [

@@ -251,6 +251,8 @@ describe("account model", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    // The account row's name seeds the stored entry (5.12).
+    expect(result.value.name).toBe("omarchy");
     expect(setup.calls[3]!.init?.method).toBe("POST");
     expect(setup.calls[3]!.url).toBe(`${ORIGIN}/api/hosts/h1/pairing`);
     expect(setup.paired).toEqual([result.value]);

@@ -27,7 +27,7 @@ import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
-import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHosts, type HostsState } from "./entities/host/host-store.ts";
+import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
 import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
@@ -91,7 +91,7 @@ export function App() {
   const state = useMemo<HostsState>(
     () =>
       loaded === undefined
-        ? { store, hosts: [], activeHostKey: null, paired: () => Promise.resolve() }
+        ? { store, hosts: [], activeHostKey: null, paired: () => Promise.resolve(), setName: () => Promise.resolve() }
         : {
             store,
             hosts: loaded.hosts,
@@ -106,6 +106,19 @@ export function App() {
                       ...prev,
                       hosts: [...prev.hosts.filter((each) => each.hostKey !== host.hostKey), host],
                       activeHostKey: host.hostKey,
+                    },
+              );
+            },
+            // A settings-stream rename lands here: the in-memory list moves
+            // the same way the store did — order and selection untouched.
+            setName: async (hostKey, name) => {
+              await store.setName(hostKey, name);
+              setLoaded((prev) =>
+                prev === undefined
+                  ? prev
+                  : {
+                      ...prev,
+                      hosts: prev.hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)),
                     },
               );
             },
@@ -316,6 +329,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       rejected={rejected}
       device={device}
       notice={notice}
+      hostKey={address.hostKey}
     />
   );
 }
@@ -328,6 +342,7 @@ export function RemoteWorkbench({
   rejected,
   device,
   notice,
+  hostKey,
 }: {
   options: RemoteDurableOptions;
   connectionKey: string;
@@ -338,6 +353,8 @@ export function RemoteWorkbench({
   device?: KeyPair;
   /** A persistent warning shown above the connection banner. */
   notice?: ReactNode;
+  /** The stored pairing this connection authenticates as — absent for token clients (5.12 name caching). */
+  hostKey?: string;
 }) {
   // Bumping the attempt counter changes the connection key, which remounts the
   // connection — the same fresh connect a page reload would give, without
@@ -371,7 +388,7 @@ export function RemoteWorkbench({
       </Centered>
     );
   }
-  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} notice={notice} />;
+  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} notice={notice} hostKey={hostKey} />;
 }
 
 /**
@@ -451,8 +468,11 @@ function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
   }
 }
 
-function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode }) {
+function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode; hostKey?: string }) {
   const view = useDurableView(remote);
+  // The 5.12 name the connected host announced rides back into the stored
+  // entry — bound to this connection's hostKey, not the selected host.
+  useHostNameSync(hostKey, view.settings);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
   const [drafting, setDrafting] = useState(true);

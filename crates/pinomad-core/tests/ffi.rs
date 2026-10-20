@@ -451,6 +451,7 @@ fn validate_stored_host_accepts_good_and_drops_bad_account() {
         url: "wss://host.example/".to_string(),
         host_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
         private_key: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_string(),
+        name: None,
         account: Some(StoredHostAccount {
             server_origin: "https://relay.example".to_string(),
             // Not base64url of 32 bytes → the link drops, the host stays.
@@ -825,6 +826,7 @@ fn connect_rejects_bad_key_material() {
         url: "wss://host.example/".to_string(),
         host_key: "not base64url!!".to_string(),
         private_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        name: None,
         account: None,
     });
     assert!(matches!(result, Err(ClientError::KeyMaterial { .. })));
@@ -970,6 +972,7 @@ fn account_pairing_link_and_host_matching() {
         url: "wss://relay.example.com/c/x".to_string(),
         host_key: secret.to_string(),
         private_key: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC".to_string(),
+        name: None,
         account: Some(StoredHostAccount {
             server_origin: "https://relay.example.com/".to_string(),
             host_id: key.to_string(),

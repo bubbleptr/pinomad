@@ -324,6 +324,7 @@ pub fn stored_host_json(host: Option<&StoredHost>) -> Json {
         ("url", Some(s(&host.url))),
         ("hostKey", Some(s(&host.host_key))),
         ("privateKey", Some(s(&host.private_key))),
+        ("name", host.name.as_ref().map(|n| s(n))),
         ("account", host.account.as_ref().map(|a| a.to_json())),
     ])
 }

@@ -1,10 +1,12 @@
 // jsdom project: the browser store wraps localStorage; the desktop store wraps
 // a stand-in for the preload bridge.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render } from "@testing-library/react";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import type { HostSettings } from "@pinomad/protocol/settings.ts";
 import { DEVICE_KEY } from "../../address.ts";
-import { HOSTS_KEY, hostStore, type StoredHost } from "./host-store.ts";
+import { HOSTS_KEY, HostsContext, hostStore, useHostNameSync, type HostsState, type StoredHost } from "./host-store.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
 const host = (url = "ws://127.0.0.1:7420/secure"): StoredHost => ({
@@ -30,6 +32,11 @@ const fakeBridge = ({ failSaves = false }: { failSaves?: boolean } = {}): Deskto
       remove: (hostKey) => {
         const index = saved.findIndex((each) => each.hostKey === hostKey);
         if (index !== -1) saved.splice(index, 1);
+        return Promise.resolve();
+      },
+      setName: (hostKey, name) => {
+        const index = saved.findIndex((each) => each.hostKey === hostKey);
+        if (index !== -1) saved[index] = { ...saved[index]!, name };
         return Promise.resolve();
       },
     },
@@ -81,6 +88,32 @@ describe("browser host store", () => {
     await store.list();
     await store.remove(legacy.hostKey);
     expect(await hostStore().list()).toEqual([]);
+  });
+
+  it("setName renames the entry in place and touches nothing else", async () => {
+    const store = hostStore();
+    const a = host();
+    const b = host("ws://10.0.0.9:7420/secure");
+    await store.save(a);
+    await store.save(b);
+
+    await store.setName(a.hostKey, "Desk");
+    expect(await store.list()).toEqual([{ ...a, name: "Desk" }, b]);
+    // Order and the other entry are untouched; renaming again overwrites.
+    await store.setName(b.hostKey, "Bench");
+    expect(await store.list()).toEqual([{ ...a, name: "Desk" }, { ...b, name: "Bench" }]);
+  });
+
+  it("setName writes nothing for an entry that is not there", async () => {
+    const store = hostStore();
+    const a = host();
+    await store.save(a);
+    await store.remove(a.hostKey);
+    // A name arriving after the entry was removed must not resurrect it.
+    await store.setName(a.hostKey, "Desk");
+    expect(await store.list()).toEqual([]);
+    await store.setName("never-paired", "Desk");
+    expect(await store.list()).toEqual([]);
   });
 
   it("ignores malformed localStorage content", async () => {
@@ -169,5 +202,81 @@ describe("desktop host store", () => {
     await store.list();
     await store.remove(legacy.hostKey);
     expect(await hostStore().list()).toEqual([]);
+  });
+
+  it("setName goes through the bridge without touching other fields", async () => {
+    const bridge = fakeBridge();
+    window.pinomadDesktop = bridge;
+    const a = host();
+    bridge.saved.push(a);
+
+    const store = hostStore();
+    await store.setName(a.hostKey, "Desk");
+    expect(bridge.saved).toEqual([{ ...a, name: "Desk" }]);
+    expect(await store.list()).toEqual([{ ...a, name: "Desk" }]);
+  });
+});
+
+describe("useHostNameSync", () => {
+  const settingsWith = (hostName: string | null | undefined): HostSettings | null =>
+    hostName === null ? null : ({ hostName } as HostSettings);
+
+  function Probe({ hostKey, settings }: { hostKey?: string; settings: HostSettings | null }) {
+    useHostNameSync(hostKey, settings);
+    return null;
+  }
+
+  const renderSync = (state: HostsState, hostKey: string | undefined, settings: HostSettings | null) =>
+    render(
+      <HostsContext.Provider value={state}>
+        <Probe hostKey={hostKey} settings={settings} />
+      </HostsContext.Provider>,
+    );
+
+  const fakeState = (hosts: readonly StoredHost[]) => {
+    const setName = vi.fn((_hostKey: string, _name: string) => Promise.resolve());
+    const state: HostsState = {
+      store: hostStore(),
+      hosts,
+      activeHostKey: null,
+      paired: () => Promise.resolve(),
+      setName,
+    };
+    return { state, setName };
+  };
+
+  it("writes the announced host name onto the paired entry once", async () => {
+    const entry = host();
+    const { state, setName } = fakeState([entry]);
+    const { rerender } = renderSync(state, entry.hostKey, settingsWith("Desk"));
+    await vi.waitFor(() => expect(setName).toHaveBeenCalledWith(entry.hostKey, "Desk"));
+    // A re-render of the same announced name does not write again.
+    rerender(
+      <HostsContext.Provider value={state}>
+        <Probe hostKey={entry.hostKey} settings={settingsWith("Desk")} />
+      </HostsContext.Provider>,
+    );
+    await act(async () => {});
+    expect(setName).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the cache when the settings stream has no hostName or is absent", async () => {
+    const entry = host();
+    const { state, setName } = fakeState([entry]);
+    renderSync(state, entry.hostKey, settingsWith(undefined));
+    await act(async () => {});
+    renderSync(state, entry.hostKey, settingsWith(null));
+    await act(async () => {});
+    expect(setName).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the entry is absent or the name already matches", async () => {
+    const entry = { ...host(), name: "Desk" };
+    const { state, setName } = fakeState([entry]);
+    renderSync(state, entry.hostKey, settingsWith("Desk"));
+    // The announced key names a different host than the stored one.
+    renderSync(state, "other-key", settingsWith("Bench"));
+    await act(async () => {});
+    expect(setName).not.toHaveBeenCalled();
   });
 });

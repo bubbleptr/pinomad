@@ -11,12 +11,14 @@ import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { SideNav, SideNavItem } from "@astryxdesign/core/SideNav";
 import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import type { StoredLogin } from "@pinomad/protocol/auth.ts";
+import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { QueueMode } from "@pinomad/protocol/settings.ts";
+import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
@@ -240,7 +242,7 @@ function sectionBody(
         body: <ArchivedSection view={view} remote={remote} connected={connected} />,
       };
     case "about":
-      return { title: "About", body: <AboutSection view={view} /> };
+      return { title: "About", body: <AboutSection view={view} remote={remote} connected={connected} /> };
   }
 }
 
@@ -383,10 +385,13 @@ function McpSection({ view }: { view: DurableView }) {
   );
 }
 
-function AboutSection({ view }: { view: DurableView }) {
+function AboutSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
   const host = view.host;
+  const settings = view.settings;
+  const canRename = settings !== null && hostSupportsFeature(host?.protocol.minor ?? 0, "hostName");
   return (
     <VStack gap={3}>
+      {canRename ? <HostNameField settings={settings} remote={remote} connected={connected} /> : null}
       <List density="compact">
         <ListItem label="Host version" description={host?.version ?? "Source checkout"} />
         <ListItem
@@ -405,6 +410,50 @@ function AboutSection({ view }: { view: DurableView }) {
         />
       </List>
       <Text as="p" type="supporting">Edit the settings file by hand only while the host is stopped.</Text>
+    </VStack>
+  );
+}
+
+/**
+ * The machine's display name (5.12): what paired devices label this host by.
+ * The effective value comes from the settings stream, so a rename by another
+ * device resyncs the draft; `null` resets it to the hostname.
+ */
+function HostNameField({ settings, remote, connected }: { settings: HostSettings; remote: RemoteDurable; connected: boolean }) {
+  const current = settings.hostName ?? "";
+  const [draft, setDraft] = useState(current);
+  useEffect(() => setDraft(current), [current]);
+  const cleaned = cleanHostName(draft);
+  const canSave = connected && cleaned !== "" && cleaned !== current;
+  const save = (): void => void remote.controller.updateSettings({ hostName: cleaned });
+  return (
+    <VStack gap={1}>
+      <TextInput
+        label="Host name"
+        value={draft}
+        onChange={setDraft}
+        onEnter={canSave ? save : undefined}
+        isDisabled={!connected}
+        description="How paired devices name this machine. Without a custom name the hostname is used."
+        status={
+          draft !== "" && cleaned === ""
+            ? { type: "error", message: "The name needs at least one displayable character" }
+            : undefined
+        }
+        width="100%"
+      />
+      <HStack gap={2} hAlign="end">
+        {settings.custom.includes("hostName") ? (
+          <Button
+            label="Use machine name"
+            variant="ghost"
+            size="sm"
+            isDisabled={!connected}
+            onClick={() => void remote.controller.updateSettings({ hostName: null })}
+          />
+        ) : null}
+        <Button label="Save" variant="secondary" size="sm" isDisabled={!canSave} onClick={save} />
+      </HStack>
     </VStack>
   );
 }

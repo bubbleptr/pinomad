@@ -80,6 +80,12 @@ async function stubDesktopBridge(context: BrowserContext): Promise<void> {
           write(read().filter((each) => each.hostKey !== hostKey));
           return Promise.resolve();
         },
+        setName: (hostKey: string, name: string) => {
+          const hosts = read() as { hostKey: string; name?: string }[];
+          const index = hosts.findIndex((each) => each.hostKey === hostKey);
+          if (index !== -1) write(hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
+          return Promise.resolve();
+        },
       },
       // The real preload answers this from main; the stub stands in for it.
       deviceName: () => Promise.resolve("Linux Desktop (test-box)"),
@@ -2328,15 +2334,22 @@ it("opens a switched conversation at its latest answer instead of the old scroll
 
 it("switches between paired hosts on the desktop bridge", async () => {
   const webOrigin = await startWeb();
-  const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
-  const hostB = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host B answer"] });
+  // Each host carries a settings.json name — the switcher labels stored
+  // entries by machine name once the settings stream lands (5.12).
+  const dirA = await tempDir();
+  defer(dirA.remove);
+  const dirB = await tempDir();
+  defer(dirB.remove);
+  await writeFile(join(dirA.path, "settings.json"), JSON.stringify({ hostName: "Host A" }));
+  await writeFile(join(dirB.path, "settings.json"), JSON.stringify({ hostName: "Host B" }));
+  const hostA = await startFauxHost(defer, { dataDir: dirA.path, browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const hostB = await startFauxHost(defer, { dataDir: dirB.path, browserOrigins: [webOrigin], answers: ["host B answer"] });
   const tokenA = await connectTo(defer, hostA);
   const tokenB = await connectTo(defer, hostB);
   const { url: pairA } = await tokenA.controller.createPairing();
   const { url: pairB } = await tokenB.controller.createPairing();
-  // The stored url is the loopback /secure target; its host:port is the label.
-  const labelA = new URL(hostA.url).host;
-  const labelB = new URL(hostB.url).host;
+  const labelA = "Host A";
+  const labelB = "Host B";
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2406,14 +2419,21 @@ it("switches between paired hosts on the desktop bridge", async () => {
 
 it("forgets the shown host from the switcher only after confirmation", async () => {
   const webOrigin = await startWeb();
-  const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
-  const hostB = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host B answer"] });
+  // Named like the switch test above: labels are the announced machine names.
+  const dirA = await tempDir();
+  defer(dirA.remove);
+  const dirB = await tempDir();
+  defer(dirB.remove);
+  await writeFile(join(dirA.path, "settings.json"), JSON.stringify({ hostName: "Host A" }));
+  await writeFile(join(dirB.path, "settings.json"), JSON.stringify({ hostName: "Host B" }));
+  const hostA = await startFauxHost(defer, { dataDir: dirA.path, browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const hostB = await startFauxHost(defer, { dataDir: dirB.path, browserOrigins: [webOrigin], answers: ["host B answer"] });
   const tokenA = await connectTo(defer, hostA);
   const tokenB = await connectTo(defer, hostB);
   const { url: pairA } = await tokenA.controller.createPairing();
   const { url: pairB } = await tokenB.controller.createPairing();
-  const labelA = new URL(hostA.url).host;
-  const labelB = new URL(hostB.url).host;
+  const labelA = "Host A";
+  const labelB = "Host B";
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2506,6 +2526,10 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
           write(read().filter((each) => each.hostKey !== hostKey));
           return Promise.resolve();
         },
+        setName: (hostKey: string, name: string) => {
+          write(read().map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
+          return Promise.resolve();
+        },
       },
     };
     (window as unknown as { testAllowSaves: () => void }).testAllowSaves = () => {
@@ -2577,6 +2601,10 @@ const fakeUpdatesBridge = `{
       },
       remove: (hostKey) => {
         write(read().filter((each) => each.hostKey !== hostKey));
+        return Promise.resolve();
+      },
+      setName: (hostKey, name) => {
+        write(read().map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
         return Promise.resolve();
       },
     },
