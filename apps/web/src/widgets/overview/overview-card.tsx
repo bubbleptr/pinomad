@@ -6,6 +6,7 @@
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView } from "@pinomad/protocol/view.ts";
@@ -21,7 +22,7 @@ const ACTIVE_ROWS = 3;
 
 type ChangeStat =
   | { readonly kind: "loading" }
-  | { readonly kind: "unavailable" }
+  | { readonly kind: "unavailable"; readonly branch?: string }
   | { readonly kind: "failed" }
   | {
       readonly kind: "ready";
@@ -29,25 +30,34 @@ type ChangeStat =
       readonly additions: number;
       readonly deletions: number;
       readonly truncated: boolean;
+      readonly branch?: string;
     };
 
 /**
- * The checkout's +N −M against its base. Fetched when the card mounts, when
- * the conversation changes, whenever a run settles, and when the connection
- * comes back — the moments the number can move or a failed ask can succeed —
+ * The checkout's +N −M against its base — and, on a 5.11 host, the
+ * checkout's live branch (`branch` is undefined for detached HEAD and
+ * non-git directories). Fetched when the card mounts, when the conversation
+ * changes, whenever a run settles, and when the connection comes back — the
+ * moments the number or the branch can move or a failed ask can succeed —
  * never while a run streams edits. A stale answer from a previous
  * conversation is dropped.
  */
-function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, busy: boolean, connected: boolean): ChangeStat {
+function useChangeStat(
+  remote: RemoteDurable,
+  conversationId: ConversationId,
+  busy: boolean,
+  connected: boolean,
+  enabled: boolean,
+): ChangeStat {
   const [stat, setStat] = useState<ChangeStat>({ kind: "loading" });
   const latest = useRef(0);
   useEffect(() => {
-    if (busy || !connected) return;
+    if (!enabled || busy || !connected) return;
     const request = ++latest.current;
     remote.controller.changes().then(
       (result) => {
         if (request !== latest.current) return;
-        if (!result.available) return setStat({ kind: "unavailable" });
+        if (!result.available) return setStat({ kind: "unavailable", branch: result.branch });
         const files = parsePatch(result.patch);
         setStat({
           kind: "ready",
@@ -55,6 +65,7 @@ function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, bu
           additions: files.reduce((sum, file) => sum + file.additions, 0),
           deletions: files.reduce((sum, file) => sum + file.deletions, 0),
           truncated: result.truncated,
+          branch: result.branch,
         });
       },
       // A failed ask is not "no repository": keep the row so the dialog stays reachable.
@@ -62,7 +73,7 @@ function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, bu
         if (request === latest.current) setStat({ kind: "failed" });
       },
     );
-  }, [remote, conversationId, busy, connected]);
+  }, [remote, conversationId, busy, connected, enabled]);
   useEffect(() => setStat({ kind: "loading" }), [conversationId]);
   return stat;
 }
@@ -127,8 +138,18 @@ function WorkspaceSection({
   onOpenChanges: () => void;
 }) {
   const cwd = agentOf(conversation).cwd;
-  const branch = view.checkout?.branch;
   const isChat = view.home?.kind === "chat";
+  const stat = useChangeStat(remote, conversation.conversation.id, busy, view.connection === "connected", !isChat);
+  // A 5.11 host reports HEAD's branch with changes() — live, so a worktree
+  // that went detached shows nothing instead of the recorded name. Older
+  // hosts only know the checkout record's branch.
+  const minor = view.host?.protocol.minor;
+  const branch =
+    minor !== undefined && hostSupportsFeature(minor, "liveBranch")
+      ? stat.kind === "ready" || stat.kind === "unavailable"
+        ? stat.branch
+        : undefined
+      : view.checkout?.branch;
   return (
     <Section title="Workspace">
       {cwd === undefined ? null : (
@@ -139,33 +160,12 @@ function WorkspaceSection({
         </Row>
       )}
       {branch === undefined ? null : <Row icon={<GitBranch className="size-4" />}>{branch}</Row>}
-      {isChat ? null : (
-        <ChangesRow
-          remote={remote}
-          conversationId={conversation.conversation.id}
-          busy={busy}
-          connected={view.connection === "connected"}
-          onOpen={onOpenChanges}
-        />
-      )}
+      {isChat ? null : <ChangesRow stat={stat} onOpen={onOpenChanges} />}
     </Section>
   );
 }
 
-function ChangesRow({
-  remote,
-  conversationId,
-  busy,
-  connected,
-  onOpen,
-}: {
-  remote: RemoteDurable;
-  conversationId: ConversationId;
-  busy: boolean;
-  connected: boolean;
-  onOpen: () => void;
-}) {
-  const stat = useChangeStat(remote, conversationId, busy, connected);
+function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) {
   if (stat.kind === "unavailable") return null;
   const end =
     stat.kind === "loading" ? (

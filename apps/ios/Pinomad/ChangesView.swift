@@ -70,13 +70,13 @@ struct ChangesSheet: View {
     @ViewBuilder
     private func loaded(_ changes: ConversationChanges) -> some View {
         switch changes {
-        case .unavailable(let reason):
+        case .unavailable(let reason, _):
             emptyState(
                 title: "没有可显示的改动",
                 systemImage: "doc.text.magnifyingglass",
                 description: reason
             )
-        case .available(let base, let files, let truncated):
+        case .available(let base, let files, let truncated, _):
             if files.isEmpty {
                 emptyState(
                     title: "还没有改动",

@@ -108,6 +108,20 @@ export async function gitBase(projectPath: string): Promise<RepoBase | undefined
   return { repo, subdir: relative(repo, projectPath), base };
 }
 
+/**
+ * The branch `dir`'s HEAD points at, or undefined for detached HEAD, a
+ * missing directory, or a non-repository. `symbolic-ref` needs no commits:
+ * an unborn branch still answers, which is why a `changes` result can carry
+ * `branch` while reporting `available:false` (5.11). `--quiet` keeps the
+ * detached case silent; `--short` avoids `branch --show-current` (git 2.22).
+ */
+export async function branchOf(dir: string): Promise<string | undefined> {
+  return git(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(
+    ({ stdout }) => stdout.trim() || undefined,
+    () => undefined,
+  );
+}
+
 /** Git mutations on one repo serialize here: worktree add/remove take .git lock files. */
 const repoLocks = new Map<string, Promise<void>>();
 

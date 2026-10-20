@@ -3,7 +3,7 @@ import Testing
 import PinomadCore
 
 private func changes(_ base: String = "0123456789abcdef", _ files: [PatchFile] = []) -> ConversationChanges {
-    .available(base: base, files: files, truncated: false)
+    .available(base: base, files: files, truncated: false, branch: nil)
 }
 
 private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {

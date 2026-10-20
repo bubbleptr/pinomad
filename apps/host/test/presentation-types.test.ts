@@ -409,6 +409,46 @@ describe("tool result details and changes", () => {
     expect(chat).toMatchObject({ available: false, reason: "Chat conversations have no repository" });
   });
 
+  it("reports the checkout's current branch, even when no diff is available (5.11)", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    await git(repoDir, ["checkout", "-b", "topic"]);
+    // An unborn branch: `git init` without commits still names a branch.
+    const unbornDir = join(dir.path, "unborn");
+    await mkdir(unbornDir, { recursive: true });
+    await run("git", ["-C", unbornDir, "init", "-b", "main"]);
+    const host = await startFauxHost(defer, { projects: [repoDir, unbornDir], answers: ["one", "two", "three"] });
+    const client = await connectTo(defer, host);
+
+    await client.controller.createConversation({ kind: "project", path: repoDir }, "direct", { checkout: "project" });
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+    const onBranch = await client.controller.changes();
+    expect(onBranch).toMatchObject({ available: true, branch: "topic" });
+
+    // Detached HEAD omits the field entirely rather than sending "" or a sha.
+    await git(repoDir, ["checkout", "--detach", "HEAD"]);
+    const detached = await client.controller.changes();
+    expect(detached.available).toBe(true);
+    expect(detached).not.toHaveProperty("branch");
+
+    // No commits yet: gitBase() fails so the diff is unavailable, but the
+    // unborn branch still rides along.
+    await client.controller.createConversation({ kind: "project", path: unbornDir }, "unborn", { checkout: "project" });
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+    const unborn = await client.controller.changes();
+    expect(unborn).toMatchObject({ available: false, reason: "Not in a git repository", branch: "main" });
+
+    // A worktree checkout answers with its own live branch.
+    await startConversation(client, { kind: "project", path: repoDir }, "worktree");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!));
+    const worktree = await client.controller.changes();
+    const recorded = client.view.current().checkout?.branch;
+    expect(recorded).toMatch(/^pinomad\//);
+    expect(worktree).toMatchObject({ available: true, branch: recorded });
+  });
+
   it("truncates a large diff and flags it", async () => {
     const dir = await tempDir();
     defer(dir.remove);

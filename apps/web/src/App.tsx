@@ -9,6 +9,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -691,7 +692,7 @@ function ForkDialog({
   );
 }
 
-type ChangesResult = { available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean };
+type ChangesResult = CallMethods["changes"]["result"];
 
 /** The conversation's file changes (ADR-0010/0011-B2): a worktree diff vs base, or a project dir's uncommitted diff. */
 function ChangesDialog({ view, remote, busy, onClose }: { view: DurableView; remote: RemoteDurable; busy: boolean; onClose: () => void }) {

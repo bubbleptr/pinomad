@@ -53,7 +53,7 @@ import {
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import { changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
+import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
@@ -1560,11 +1560,13 @@ class GatewayClient {
     const record = checkoutAt(index?.checkouts, cwd);
     if (record !== undefined) {
       if (!(await worktreeExists(record.path))) return { available: false as const, reason: "No changes yet" };
-      return { available: true as const, ...(await changesOf(record.path, record.base)) };
+      const [changes, branch] = await Promise.all([changesOf(record.path, record.base), branchOf(record.path)]);
+      return { available: true as const, ...changes, branch };
     }
-    const base = await gitBase(cwd);
-    if (base === undefined) return { available: false as const, reason: "Not in a git repository" };
-    return { available: true as const, ...(await changesOf(base.repo, base.base)) };
+    // The branch reads alongside the repository probe so it costs no extra wait.
+    const [base, branch] = await Promise.all([gitBase(cwd), branchOf(cwd)]);
+    if (base === undefined) return { available: false as const, reason: "Not in a git repository", branch };
+    return { available: true as const, ...(await changesOf(base.repo, base.base)), branch };
   }
 
   async #agent(id: ConversationId): Promise<Readonly<AgentState>> {
