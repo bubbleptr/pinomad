@@ -1,9 +1,8 @@
 name: Rust core
 
-# PR gate for the Rust client core (ADR-0024 §12): typecheck, cargo test plus
-# the JS suite — `bun run test` covers both since it now shells out to cargo test.
-# The macOS job (xcframework, Swift tests, simulator build) lands with the
-# iOS work.
+# PR gate for the Rust client core (ADR-0024 §12): typecheck, then `bun run test`,
+# which runs the JS suite and cargo test (with and without `ffi`). The ios job
+# builds the xcframework, runs the Swift tests, and builds the app.
 on:
   pull_request:
     paths:
@@ -22,6 +21,12 @@ on:
 
 permissions:
   contents: read
+
+# A new push to the same PR cancels the run still in flight, so stale macOS
+# jobs don't hold the account's macOS concurrency slots.
+concurrency:
+  group: rust-core-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   linux:
@@ -43,7 +48,6 @@ jobs:
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
       - run: bun run typecheck
-      - run: cargo test
       - run: bun run test
 
   # ADR-0024 §12: the xcframework and UniFFI bindings only build on macOS.
