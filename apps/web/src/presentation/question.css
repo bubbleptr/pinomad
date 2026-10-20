@@ -1,0 +1,127 @@
+/* The pending question card (question.tsx). Astryx tokens only; unlayered on
+   purpose, like chat.css, so these rules win over layered framework CSS.
+   Rules reaching into RadioList/CheckboxList markup (`.astryx-list`,
+   `.astryx-item`, the description span) follow @astryxdesign/core 0.3.0;
+   question.test.tsx checks those selectors still match. */
+
+/* The composer's 24px corners; 16px padding keeps the option rows' 8px
+   corners roughly concentric (24 − 16 = 8). */
+.question-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border-primary, var(--color-background-muted));
+  border-radius: 24px;
+  background-color: var(--color-background-surface);
+}
+
+/* Pages bleed to the card edge, so a swipe slides content out under the
+   border. Pages keep their own height; the pager's comes from script. */
+.question-card__pager {
+  display: flex;
+  align-items: flex-start;
+  margin-inline: -16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.question-card__pager::-webkit-scrollbar {
+  display: none;
+}
+/* Clipped, so a far jump's nudge on the page content never widens the scroll area. */
+.question-card__page {
+  flex: 0 0 100%;
+  min-width: 0;
+  padding-inline: 16px;
+  overflow: clip;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* The options belong to each other more than to the question: the question
+   sits further from the first option than options sit from one another.
+   `pretty` keeps a lone word (or a lone CJK character) off the last line. */
+.question-card__question {
+  margin-bottom: 8px;
+  text-wrap: pretty;
+}
+
+/* Descriptions stay visible but tighter: Astryx sets 12px description text
+   on a 20px line with 8px between rows. */
+.question-card__options [role="radiogroup"],
+.question-card__options [role="group"] {
+  gap: 4px;
+}
+.question-card__options .astryx-item > span:nth-child(2) > :nth-child(2) {
+  line-height: 16px;
+  text-wrap: pretty;
+}
+/* Checkbox rows carry 8px side padding (radio rows none): pull the list out so
+   its boxes line up with the question and with the radios on other pages. */
+.question-card__options .astryx-list {
+  margin-inline: -8px;
+}
+/* Other's field opens under its row, aligned with the option labels. */
+.question-card__other {
+  padding-left: 28px;
+}
+
+.question-card__footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+}
+/* Back is a ghost button whose 12px padding has no fill: pull it out so the
+   word lines up with the question. */
+.question-card__back {
+  margin-left: -12px;
+}
+.question-card__action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.question-card__segments {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.question-card__segment {
+  position: relative;
+  width: 24px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-text-primary) 12%, transparent);
+  cursor: pointer;
+  transition: background-color 200ms ease-out;
+}
+.question-card__segment[data-current] {
+  background: color-mix(in oklch, var(--color-text-primary) 35%, transparent);
+}
+.question-card__segment[data-answered] {
+  background: var(--color-text-primary);
+}
+/* A 4px bar is no target: grow the hit area to 32px tall without touching neighbours. */
+.question-card__segment::before {
+  content: "";
+  position: absolute;
+  inset: -14px -2px;
+}
+.question-card__segment:focus-visible {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-card__segment {
+    transition: none;
+  }
+}
