@@ -444,6 +444,7 @@
         },
         "defaultThinkingLevel": "null",
         "followUpMode": "string",
+        "hostName": "string",
         "steeringMode": "string"
       },
       "ops": []

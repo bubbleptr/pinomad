@@ -96,6 +96,8 @@ function framesVector(): VectorFile {
     { name: "agentConversations@9", minor: 9, feature: "agentConversations", expect: false },
     { name: "agentConversations@10", minor: 10, feature: "agentConversations", expect: true },
     { name: "apnsPush@9", minor: 9, feature: "apnsPush", expect: true },
+    { name: "hostName@11", minor: 11, feature: "hostName", expect: false },
+    { name: "hostName@12", minor: 12, feature: "hostName", expect: true },
   ].map((gate) => ({
     ...gate,
     expect:

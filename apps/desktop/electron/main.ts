@@ -108,6 +108,7 @@ function installHostStoreIpc(): void {
   ipcMain.handle("pinomad:hosts:list", handle(() => hosts.list()));
   ipcMain.handle("pinomad:hosts:save", handle((host: StoredHost) => hosts.save(host)));
   ipcMain.handle("pinomad:hosts:remove", handle((hostKey: string) => hosts.remove(hostKey)));
+  ipcMain.handle("pinomad:hosts:setName", handle((args: { hostKey: string; name: string }) => hosts.setName(args.hostKey, args.name)));
   // The account session rides the same encrypted store and caller check.
   ipcMain.handle("pinomad:account:get", handle(() => hosts.account()));
   ipcMain.handle("pinomad:account:save", handle((account: StoredAccount) => hosts.saveAccount(account)));

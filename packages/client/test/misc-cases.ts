@@ -9,8 +9,10 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 // the test uses can't be committed as ground truth).
 export const KEY_A = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(1)).privateKey);
 export const KEY_B = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(2)).privateKey);
+export const KEY_C = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(6)).privateKey);
 export const HOST_KEY_A = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(3)).publicKey);
 export const HOST_KEY_B = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(4)).publicKey);
+export const HOST_KEY_C = toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(5)).publicKey);
 
 const request = (id: string, resolution?: object) => ({
   id,
@@ -70,7 +72,10 @@ const valid = () => ({ url: "ws://192.168.1.5:7422/secure", hostKey: KEY_A, priv
 export const HOST_CASES: { name: string; value: unknown }[] = [
   { name: "valid", value: valid() },
   { name: "wss", value: { ...valid(), url: "wss://relay.example.com/c/host" } },
-  { name: "extra-fields", value: { ...valid(), name: "host-a", nested: { x: 1 } } },
+  { name: "named", value: { ...valid(), name: "Workstation" } },
+  { name: "name-nonstring", value: { ...valid(), name: 42 } },
+  { name: "name-empty", value: { ...valid(), name: "" } },
+  { name: "extra-fields", value: { ...valid(), unknownField: "x", nested: { x: 1 } } },
   { name: "account", value: { ...valid(), account: { serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A } } },
   { name: "account-missing-hostid", value: { ...valid(), account: { serverOrigin: "https://x" } } },
   { name: "account-short-key", value: { ...valid(), account: { serverOrigin: "https://x", hostId: "short" } } },
@@ -102,6 +107,21 @@ export const HOST_LABEL_CASES: { name: string; hosts: StoredHost[] }[] = [
   { name: "shared-relay", hosts: [relayA, relayB] },
   { name: "mixed", hosts: [relayA, relayB, storedA] },
   { name: "bad-url-fallback", hosts: [{ url: "not a url", hostKey: HOST_KEY_A, privateKey: KEY_A }] },
+  // The stored name beats the URL host (5.12): it is the machine's name.
+  { name: "named", hosts: [{ ...storedA, name: "Desk" }, storedB] },
+  { name: "named-relay", hosts: [{ ...relayA, name: "Desk" }, relayB] },
+  { name: "same-name", hosts: [{ ...storedA, name: "Desk" }, { ...storedB, name: "Desk" }] },
+  // A name may be stored under a different URL — collision rules apply to the
+  // final label, so "Desk · <key>" colliding with a real name lengthens.
+  {
+    name: "name-shadows-disambiguation",
+    hosts: [
+      { ...storedA, name: "Desk" },
+      { ...storedB, name: "Desk" },
+      { url: "ws://10.0.0.4:7422", hostKey: HOST_KEY_C, privateKey: KEY_C, name: `Desk · ${HOST_KEY_A.slice(0, 6)}` },
+    ],
+  },
+  { name: "name-and-url-collide", hosts: [{ ...storedA, name: "10.0.0.3:7422" }, storedB] },
 ];
 
 export const FAILURE_CASES: { name: string; error: unknown }[] = [

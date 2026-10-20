@@ -1,10 +1,10 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
-import type { HostSettings } from "@pinomad/protocol/settings.ts";
+import { normalizeHostName, type HostSettings } from "@pinomad/protocol/settings.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { constantValue, Published } from "../src/host-value.ts";
 import { openHostSettings, type SettingsFallback } from "../src/host-settings.ts";
@@ -42,6 +42,7 @@ describe("openHostSettings", () => {
       steeringMode: "one-at-a-time",
       followUpMode: "all",
       acceptAccountDevices: true,
+      hostName: normalizeHostName(hostname()),
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
@@ -152,6 +153,45 @@ describe("openHostSettings", () => {
     expect(seen).toEqual([false, true]);
   });
 
+  it("names the host after its machine name until a device overrides it (5.12)", async () => {
+    const path = await settingsPath();
+    const settings = await openHostSettings({ path, fallback, models });
+    expect(settings.value.hostName).toBe(normalizeHostName(hostname()));
+    expect(settings.value.custom).toEqual([]);
+
+    await settings.update({ hostName: "Desk" });
+    expect(settings.value.hostName).toBe("Desk");
+    expect(settings.value.custom).toEqual(["hostName"]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ hostName: "Desk" });
+
+    // The override is explicit even when it lands on the machine name.
+    await settings.update({ hostName: normalizeHostName(hostname()) });
+    expect(settings.value.custom).toEqual(["hostName"]);
+
+    await settings.update({ hostName: null });
+    expect(settings.value.hostName).toBe(normalizeHostName(hostname()));
+    expect(settings.value.custom).toEqual([]);
+  });
+
+  it("normalizes a file-set or patched hostName, and refuses a name with nothing to show", async () => {
+    const path = await settingsPath();
+    // A hand-edited value is tolerated: the effective name cleans it.
+    await writeFile(path, JSON.stringify({ hostName: "dirty.local" }));
+    const settings = await openHostSettings({ path, fallback, models });
+    expect(settings.value.hostName).toBe("dirty");
+    expect(settings.value.custom).toEqual(["hostName"]);
+
+    // update writes the cleaned name: the file then holds what is displayed.
+    await settings.update({ hostName: "desk.local" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ hostName: "desk" });
+    expect(settings.value.hostName).toBe("desk");
+
+    await expect(settings.update({ hostName: "  " })).rejects.toThrow("Invalid host name");
+    await expect(settings.update({ hostName: "" })).rejects.toThrow("Invalid host name");
+    await expect(settings.update({ hostName: "" })).rejects.toThrow("Invalid host name");
+    expect(settings.value.hostName).toBe("desk");
+  });
+
   it("serializes concurrent updates so every one lands", async () => {
     const path = await settingsPath();
     const settings = await openHostSettings({ path, fallback, models });
@@ -197,6 +237,24 @@ describe("settings over the gateway", () => {
     const agent = await host.harness.snapshot(AgentDoc, id, context);
     expect(agent?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
     expect(agent?.thinkingLevel).toBe("high");
+  });
+
+  it("announces the host name on the settings stream and keeps a refused update harmless", async () => {
+    const host = await startFauxHost(defer, { answers: [] });
+    const a = await connectTo(defer, host);
+    const b = await connectTo(defer, host);
+    await waitForView(a.view, (view) => view.settings?.hostName === normalizeHostName(hostname()));
+
+    await a.controller.updateSettings({ hostName: "Desk" });
+    await waitForView(b.view, (view) => view.settings?.hostName === "Desk");
+    expect(b.view.current().settings?.custom).toEqual(["hostName"]);
+
+    // A name that cleans to nothing is refused — refused is ok:false, so the
+    // connection must survive (a malformed patch would 4400 it).
+    await a.controller.updateSettings({ hostName: "  " });
+    await waitForView(a.view, (view) => view.notices.some((n) => n.message.includes("Invalid host name")));
+    expect(a.view.current().connection).toBe("connected");
+    expect(b.view.current().settings?.hostName).toBe("Desk");
   });
 
   it("keeps settings across a host restart on the same dataDir", async () => {

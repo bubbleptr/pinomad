@@ -685,6 +685,12 @@ class RemoteClient {
               "The host is too old for this (needs protocol 5.8); run `pinomad upgrade` on the host",
             );
           }
+          // Same for hostName on a pre-5.12 host — even the `null` reset.
+          if (patch.hostName !== undefined && !hostSupportsFeature(this.#hostMinor, "hostName")) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.12); run `pinomad upgrade` on the host",
+            );
+          }
           return this.#call("updateSettings", { patch });
         }),
       createAgent: (role) =>

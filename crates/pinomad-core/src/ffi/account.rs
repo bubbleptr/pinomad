@@ -31,6 +31,7 @@ fn to_core(host: &StoredHost) -> crate::stored_host::StoredHost {
         url: host.url.clone(),
         host_key: host.host_key.clone(),
         private_key: host.private_key.clone(),
+        name: host.name.clone(),
         account: host
             .account
             .as_ref()
@@ -43,6 +44,7 @@ fn from_core(host: &crate::stored_host::StoredHost) -> StoredHost {
         url: host.url.clone(),
         host_key: host.host_key.clone(),
         private_key: host.private_key.clone(),
+        name: host.name.clone(),
         account: host.account.as_ref().map(|link| StoredHostAccount {
             server_origin: link.server_origin.clone(),
             host_id: link.host_id.clone(),

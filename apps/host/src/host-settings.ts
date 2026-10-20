@@ -3,12 +3,15 @@
 // built-ins. The effective value rides the `settings` stream and `updateSettings`
 // writes through here — the host is the only writer (§4), so there is no watch.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname } from "node:path";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import {
+  cleanHostName,
   HOST_SETTING_KEYS,
   isQueueMode,
   isThinkingLevel,
+  normalizeHostName,
   type HostSettingKey,
   type HostSettings,
   type HostSettingsPatch,
@@ -68,6 +71,9 @@ const fileValueError = (
       return isQueueMode(value) ? undefined : "malformed";
     case "acceptAccountDevices":
       return typeof value === "boolean" ? undefined : "malformed";
+    // Any string survives — cleaning happens on read, like the server (5.12).
+    case "hostName":
+      return typeof value === "string" ? undefined : "malformed";
   }
 };
 
@@ -80,6 +86,7 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
   && a.acceptAccountDevices === b.acceptAccountDevices
   && a.defaultThinkingLevel === b.defaultThinkingLevel
   && sameModel(a.defaultModel, b.defaultModel)
+  && a.hostName === b.hostName
   && sameList(a.custom, b.custom, (x, y) => x === y);
 
 const parse = (path: string, text: string): Record<string, unknown> => {
@@ -139,6 +146,9 @@ export async function openHostSettings(options: {
       followUpMode: (fileValues.followUpMode as QueueMode | undefined) ?? fallback.followUpMode(),
       // No pi-side counterpart exists: the fallback chain ends at the built-in default.
       acceptAccountDevices: (fileValues.acceptAccountDevices as boolean | undefined) ?? true,
+      // The override or the machine name — both pass through the same cleaning
+      // so `.local` suffixes, stray controls and oversize names never display.
+      hostName: normalizeHostName((fileValues.hostName as string | undefined) ?? hostname()),
       custom,
     };
   };
@@ -159,6 +169,12 @@ export async function openHostSettings(options: {
     ) {
       throw new Error(`Unknown model: ${model.provider}/${model.modelId}`);
     }
+    // A name that cleans to nothing has nothing to show — `null` is the way
+    // to clear an override; everything else stores its cleaned form.
+    const name = patch.hostName;
+    if (name !== undefined && name !== null && cleanHostName(name) === "") {
+      throw new Error(`Invalid host name: ${JSON.stringify(name)}`);
+    }
     // Mutate a copy: `file` only moves once the write is durably on disk, so a
     // failed write cannot make memory and disk diverge.
     const next = { ...file };
@@ -166,7 +182,7 @@ export async function openHostSettings(options: {
       const value = patch[key];
       if (value === undefined) continue;
       if (value === null) delete next[key];
-      else next[key] = value;
+      else next[key] = key === "hostName" ? cleanHostName(value as string) : value;
     }
     // Unknown keys ride along untouched — a newer PiNomad may have written them.
     const tmp = `${options.path}.tmp`;

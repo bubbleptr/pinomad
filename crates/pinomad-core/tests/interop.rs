@@ -585,6 +585,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         url,
         host_key,
         private_key,
+        name: None,
         account: None,
     })
     .expect("the emitted record validates");

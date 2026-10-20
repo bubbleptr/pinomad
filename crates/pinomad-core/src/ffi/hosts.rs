@@ -31,6 +31,10 @@ pub struct StoredHost {
     pub host_key: String,
     /// base64url of this device's 32-byte Noise private key.
     pub private_key: String,
+    /// The machine's display name, cached from the host's settings (5.12);
+    /// `None` keeps the existing constructor shape compiling.
+    #[uniffi(default = None)]
+    pub name: Option<String>,
     /// Account binding; a malformed stored link drops it, not the pairing.
     pub account: Option<StoredHostAccount>,
 }
@@ -88,6 +92,8 @@ pub fn validate_stored_host(host: StoredHost) -> Result<StoredHost, StoredHostEr
         return Err(StoredHostError::InvalidPrivateKey);
     }
     Ok(StoredHost {
+        // Like the reference parse: an empty name is no name.
+        name: host.name.filter(|name| !name.is_empty()),
         account: host.account.filter(is_link),
         ..host
     })

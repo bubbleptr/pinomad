@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 11 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 12 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -235,6 +235,8 @@ const FEATURE_SINCE = {
   apnsPush: 9,
   agentConversations: 10,
   liveBranch: 11,
+  /** `settings`/`updateSettings` carry the host's machine display name (12). */
+  hostName: 12,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -364,6 +366,8 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   steeringMode: (value) => value === null || isQueueMode(value),
   followUpMode: (value) => value === null || isQueueMode(value),
   acceptAccountDevices: (value) => value === null || typeof value === "boolean",
+  // Shape only — the host re-checks content anyway (cleanHostName).
+  hostName: (value) => value === null || typeof value === "string",
 };
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
