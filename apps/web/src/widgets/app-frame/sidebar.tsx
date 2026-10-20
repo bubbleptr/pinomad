@@ -9,9 +9,9 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { familyStatus, type FamilyStatus } from "@pinomad/client/family.ts";
+import { familyStatus, taskGroupsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { Archive, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
+import { Archive, Bot, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -264,6 +264,8 @@ function ConversationRow({
 }) {
   const { summary } = node;
   const status = familyStatus(node);
+  // The family's subagents, forks' included — the same set the Tasks tab lists.
+  const subagents = taskGroupsOf(node).reduce((total, group) => total + group.tasks.length, 0);
   const [renaming, setRenaming] = useState(false);
   // Selected while the root or any of its descendants is shown.
   const selected = shown !== undefined && flattenNodes([node]).some((each) => each.summary.id === shown);
@@ -274,8 +276,19 @@ function ConversationRow({
       isSelected={selected}
       isDisabled={disabled}
       // A <button> row cannot contain the interactive … overlay; the spacer
-      // only reserves its single-button width so the title truncates first.
-      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single" />}
+      // reserves its single-button width so the title truncates first, and
+      // shows the subagent count until the … takes the slot. Decorative: the
+      // row's accessible name stays exactly the title.
+      endContent={
+        <span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single">
+          {subagents === 0 ? null : (
+            <span className="pigui-sidenav-subagent-count">
+              <Bot className="size-3" />
+              {subagents}
+            </span>
+          )}
+        </span>
+      }
       onClick={() => {
         void remote.controller.switchConversation(summary.id);
         onSelect?.();

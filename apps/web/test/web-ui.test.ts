@@ -1102,6 +1102,19 @@ it("rolls a subagent's failure up to the family's root row", async () => {
   await expect.poll(() =>
     row.getByRole("button", { name: "delegate", exact: true }).count(),
   ).toBe(1);
+
+  // The trailing slot counts the family's subagents (#219) and yields to the
+  // … menu on hover, so the two never overlap.
+  const subagents = row.locator(".pigui-sidenav-subagent-count");
+  await expect.poll(() => subagents.textContent()).toBe("1");
+  expect(await subagents.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await row.getByRole("button", { name: "delegate", exact: true }).hover();
+  await expect.poll(() => subagents.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");
+  // Still hidden while the menu is open, wherever the pointer goes — today the
+  // menu renders inside the row, but a portaled one must not bring it back.
+  await row.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).hover();
+  await expect.poll(() => subagents.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");
 });
 
 it("opens a subagent's conversation from its card in the panel's Tasks detail", async () => {
