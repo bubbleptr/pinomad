@@ -1573,6 +1573,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   const repoName = repo.path.split("/").at(-1)!;
   await run("git", ["-C", repo.path, "init", "-b", "main"]);
   await writeFile(join(repo.path, "tracked.txt"), "a\nb\nc\n");
+  await writeFile(join(repo.path, "logo.bin"), Buffer.from([0, 1, 2, 3]));
   await run("git", ["-C", repo.path, "add", "-A"]);
   await run("git", ["-C", repo.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
   // Two lines changed, one added: the card sums the patch to +2 −1.
@@ -1614,6 +1615,13 @@ it("summarizes changes and subagents in the overview card and links to their det
   await changes.click();
   await page.getByRole("dialog").getByText("tracked.txt", { exact: false }).first().waitFor();
   await page.keyboard.press("Escape");
+
+  // A binary-only change has no text lines but is still a change.
+  await run("git", ["-C", repo.path, "checkout", "--", "tracked.txt"]);
+  await writeFile(join(repo.path, "logo.bin"), Buffer.from([0, 9, 9, 3]));
+  await toggle.click();
+  await toggle.click();
+  await overview.getByRole("button", { name: /Changes/ }).getByText("1 file", { exact: true }).waitFor();
 
   // The open state survives a reload (which lands on a draft, where the card
   // has nothing to show); Escape inside the card closes it.

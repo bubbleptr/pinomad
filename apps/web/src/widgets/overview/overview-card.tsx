@@ -22,19 +22,27 @@ const ACTIVE_ROWS = 3;
 type ChangeStat =
   | { readonly kind: "loading" }
   | { readonly kind: "unavailable" }
-  | { readonly kind: "ready"; readonly additions: number; readonly deletions: number; readonly truncated: boolean };
+  | { readonly kind: "failed" }
+  | {
+      readonly kind: "ready";
+      readonly files: number;
+      readonly additions: number;
+      readonly deletions: number;
+      readonly truncated: boolean;
+    };
 
 /**
  * The checkout's +N −M against its base. Fetched when the card mounts, when
- * the conversation changes, and whenever a run settles — the moments the
- * number can move — never while a run streams edits. A stale answer from a
- * previous conversation is dropped.
+ * the conversation changes, whenever a run settles, and when the connection
+ * comes back — the moments the number can move or a failed ask can succeed —
+ * never while a run streams edits. A stale answer from a previous
+ * conversation is dropped.
  */
-function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, busy: boolean): ChangeStat {
+function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, busy: boolean, connected: boolean): ChangeStat {
   const [stat, setStat] = useState<ChangeStat>({ kind: "loading" });
   const latest = useRef(0);
   useEffect(() => {
-    if (busy) return;
+    if (busy || !connected) return;
     const request = ++latest.current;
     remote.controller.changes().then(
       (result) => {
@@ -43,16 +51,18 @@ function useChangeStat(remote: RemoteDurable, conversationId: ConversationId, bu
         const files = parsePatch(result.patch);
         setStat({
           kind: "ready",
+          files: files.length,
           additions: files.reduce((sum, file) => sum + file.additions, 0),
           deletions: files.reduce((sum, file) => sum + file.deletions, 0),
           truncated: result.truncated,
         });
       },
+      // A failed ask is not "no repository": keep the row so the dialog stays reachable.
       () => {
-        if (request === latest.current) setStat({ kind: "unavailable" });
+        if (request === latest.current) setStat({ kind: "failed" });
       },
     );
-  }, [remote, conversationId, busy]);
+  }, [remote, conversationId, busy, connected]);
   useEffect(() => setStat({ kind: "loading" }), [conversationId]);
   return stat;
 }
@@ -129,7 +139,15 @@ function WorkspaceSection({
         </Row>
       )}
       {branch === undefined ? null : <Row icon={<GitBranch className="size-4" />}>{branch}</Row>}
-      {isChat ? null : <ChangesRow remote={remote} conversationId={conversation.conversation.id} busy={busy} onOpen={onOpenChanges} />}
+      {isChat ? null : (
+        <ChangesRow
+          remote={remote}
+          conversationId={conversation.conversation.id}
+          busy={busy}
+          connected={view.connection === "connected"}
+          onOpen={onOpenChanges}
+        />
+      )}
     </Section>
   );
 }
@@ -138,20 +156,29 @@ function ChangesRow({
   remote,
   conversationId,
   busy,
+  connected,
   onOpen,
 }: {
   remote: RemoteDurable;
   conversationId: ConversationId;
   busy: boolean;
+  connected: boolean;
   onOpen: () => void;
 }) {
-  const stat = useChangeStat(remote, conversationId, busy);
+  const stat = useChangeStat(remote, conversationId, busy, connected);
   if (stat.kind === "unavailable") return null;
   const end =
     stat.kind === "loading" ? (
       <span className="text-muted">…</span>
-    ) : stat.additions === 0 && stat.deletions === 0 ? (
+    ) : stat.kind === "failed" ? (
+      <span className="text-muted">—</span>
+    ) : stat.files === 0 ? (
       <span className="text-muted">None</span>
+    ) : stat.additions === 0 && stat.deletions === 0 ? (
+      // Binary edits, renames and mode changes touch files without text lines.
+      <span className="text-muted">
+        {stat.files} file{stat.files === 1 ? "" : "s"}
+      </span>
     ) : (
       // A truncated patch undercounts: "+" marks the numbers as a floor.
       <span aria-label={`${count(stat.additions)} added, ${count(stat.deletions)} removed${stat.truncated ? " at least" : ""}`}>
