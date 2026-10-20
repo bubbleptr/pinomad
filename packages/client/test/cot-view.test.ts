@@ -21,6 +21,10 @@ describe("deriveChat todo stamp", () => {
     expect(runs(derive("todo-pending-write"))[0]!.cot.todoWrittenAtMs).toBe(100);
   });
 
+  it("counts a codemode script's nested write at the script's result time", () => {
+    expect(runs(derive("todo-in-codemode"))[0]!.cot.todoWrittenAtMs).toBe(300);
+  });
+
   it("ignores a failed write and runs that never wrote", () => {
     expect(runs(derive("todo-failed-write"))[0]!.cot.todoWrittenAtMs).toBeUndefined();
     expect(runs(derive("settled-run"))[0]!.cot.todoWrittenAtMs).toBeUndefined();

@@ -427,6 +427,21 @@ fn slots_of(content: &[Json]) -> Vec<MessageSlot<'_>> {
     slots
 }
 
+/// `wroteTodo` — whether a codemode script's nested calls include a
+/// successful `todo_write`. The nested call has no time of its own; the
+/// script's result bounds it, and the script failing afterwards does not undo
+/// the write.
+fn wrote_todo(details: Option<&Json>) -> bool {
+    details
+        .and_then(|d| d.get("calls"))
+        .and_then(Json::as_array)
+        .is_some_and(|calls| {
+            calls
+                .iter()
+                .any(|nested| str_eq(nested.get("name"), "todo_write") && str_eq(nested.get("status"), "ok"))
+        })
+}
+
 fn derive_run(
     id: String,
     draft: &RunDraft,
@@ -602,16 +617,21 @@ fn derive_run(
     for message in &messages {
         let content = message.msg.get("content").and_then(Json::as_array);
         for block in content.into_iter().flat_map(|c| c.iter()) {
-            if !is_call_block(block) || !str_eq(block.get("name"), "todo_write") {
+            if !is_call_block(block) {
                 continue;
             }
             let Some(written) = message.results.get(&JsKey::of(block.get("id"))) else {
                 continue;
             };
-            if matches!(written.get("isError"), Some(Json::Bool(true))) {
+            let Some(ts) = written.get("timestamp").and_then(Json::as_number) else {
                 continue;
-            }
-            if let Some(ts) = written.get("timestamp").and_then(Json::as_number) {
+            };
+            let wrote = if str_eq(block.get("name"), "todo_write") {
+                !matches!(written.get("isError"), Some(Json::Bool(true)))
+            } else {
+                str_eq(block.get("name"), "codemode") && wrote_todo(written.get("details"))
+            };
+            if wrote {
                 todo_written_at_ms = Some(ts);
             }
         }

@@ -218,11 +218,18 @@
       "expect": "[{\"kind\":\"user\",\"id\":\"89\",\"text\":\"go\",\"images\":[]},{\"kind\":\"run\",\"id\":\"run-90\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":50,\"todoWrittenAtMs\":100,\"steps\":[{\"kind\":\"tools\",\"id\":\"90-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"92-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"t2\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\"}],\"live\":true,\"activeToolCallId\":\"t2\"}]},\"interrupted\":false}]"
     },
     {
-      "name": "todo-failed-write",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":93,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":94,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"t1\",\"name\":\"todo_write\",\"arguments\":{\"items\":\"bad\"}}],\"stopReason\":\"toolUse\",\"timestamp\":50}]},{\"id\":95,\"conversationId\":0,\"kind\":\"pi.tool-result\",\"model\":[{\"role\":\"toolResult\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"content\":[{\"type\":\"text\",\"text\":\"Validation failed\"}],\"isError\":true,\"timestamp\":100}]},{\"id\":96,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":150}]}],\"docs\":{\"pi.live\":{}}}",
+      "name": "todo-in-codemode",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":93,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":94,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"t1\",\"name\":\"todo_write\",\"arguments\":{\"items\":[]}}],\"stopReason\":\"toolUse\",\"timestamp\":50}]},{\"id\":95,\"conversationId\":0,\"kind\":\"pi.tool-result\",\"model\":[{\"role\":\"toolResult\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"content\":[{\"type\":\"text\",\"text\":\"Todo list updated: 0 item(s).\"}],\"isError\":false,\"timestamp\":100}]},{\"id\":96,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"c1\",\"name\":\"codemode\",\"arguments\":{\"code\":\"await tools.todo_write({ items: [] }); throw new Error()\"}}],\"stopReason\":\"toolUse\",\"timestamp\":250}]},{\"id\":97,\"conversationId\":0,\"kind\":\"pi.tool-result\",\"model\":[{\"role\":\"toolResult\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"content\":[{\"type\":\"text\",\"text\":\"Error\"}],\"isError\":true,\"timestamp\":300,\"details\":{\"calls\":[{\"name\":\"bash\",\"args\":\"{}\",\"status\":\"ok\"},{\"name\":\"todo_write\",\"args\":\"{\\\"items\\\":[]}\",\"status\":\"ok\"}]}}]},{\"id\":98,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"c2\",\"name\":\"codemode\",\"arguments\":{\"code\":\"await tools.todo_write({ items: 1 })\"}}],\"stopReason\":\"toolUse\",\"timestamp\":450}]},{\"id\":99,\"conversationId\":0,\"kind\":\"pi.tool-result\",\"model\":[{\"role\":\"toolResult\",\"toolCallId\":\"c2\",\"toolName\":\"codemode\",\"content\":[{\"type\":\"text\",\"text\":\"Error\"}],\"isError\":true,\"timestamp\":500,\"details\":{\"calls\":[{\"name\":\"todo_write\",\"args\":\"{\\\"items\\\":1}\",\"status\":\"error\",\"error\":\"Validation failed\"}]}}]},{\"id\":100,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":550}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "[{\"kind\":\"user\",\"id\":\"93\",\"text\":\"go\",\"images\":[]},{\"kind\":\"run\",\"id\":\"run-94\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":100,\"steps\":[{\"kind\":\"tools\",\"id\":\"94-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":\\\"bad\\\"}\",\"output\":\"Validation failed\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"96\"}]"
+      "expect": "[{\"kind\":\"user\",\"id\":\"93\",\"text\":\"go\",\"images\":[]},{\"kind\":\"run\",\"id\":\"run-94\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":500,\"todoWrittenAtMs\":300,\"steps\":[{\"kind\":\"tools\",\"id\":\"94-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"96-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"argsText\":\"await tools.todo_write({ items: [] }); throw new Error()\",\"output\":\"Error\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"98-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c2\",\"toolName\":\"codemode\",\"argsText\":\"await tools.todo_write({ items: 1 })\",\"output\":\"Error\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"100\"}]"
+    },
+    {
+      "name": "todo-failed-write",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":101,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":102,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"t1\",\"name\":\"todo_write\",\"arguments\":{\"items\":\"bad\"}}],\"stopReason\":\"toolUse\",\"timestamp\":50}]},{\"id\":103,\"conversationId\":0,\"kind\":\"pi.tool-result\",\"model\":[{\"role\":\"toolResult\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"content\":[{\"type\":\"text\",\"text\":\"Validation failed\"}],\"isError\":true,\"timestamp\":100}]},{\"id\":104,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":150}]}],\"docs\":{\"pi.live\":{}}}",
+      "busy": false,
+      "presentations": "{}",
+      "expect": "[{\"kind\":\"user\",\"id\":\"101\",\"text\":\"go\",\"images\":[]},{\"kind\":\"run\",\"id\":\"run-102\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":100,\"steps\":[{\"kind\":\"tools\",\"id\":\"102-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":\\\"bad\\\"}\",\"output\":\"Validation failed\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"104\"}]"
     },
     {
       "name": "recorded",
@@ -235,73 +242,73 @@
   "retryOf": [
     {
       "name": "retry-simple",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":97,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":98,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":105,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":106,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-98\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-106\"}"
     },
     {
       "name": "retry-images",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":99,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":100,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":107,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":108,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-100\"}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-108\"}"
     },
     {
       "name": "retry-image-only",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":101,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":102,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":109,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":110,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-102\"}"
+      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-110\"}"
     },
     {
       "name": "retry-empty-prompt",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":103,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":104,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":111,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":112,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-not-newest",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":105,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":106,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":107,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":108,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":113,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":114,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":115,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":116,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-succeeded",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":109,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":110,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":117,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":118,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":111,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":112,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":113,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":119,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":120,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":121,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-113\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-121\"}"
     },
     {
       "name": "retry-reset",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":114,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":115,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":116,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":122,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":123,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":124,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-steer",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":117,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":118,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":119,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":120,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":125,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":126,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":127,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":128,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"steer\",\"images\":[],\"requestId\":\"retry:run-120\"}"
+      "expect": "{\"text\":\"steer\",\"images\":[],\"requestId\":\"retry:run-128\"}"
     },
     {
       "name": "retry-second-failure",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":121,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":122,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":123,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":124,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":129,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":130,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":131,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":132,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-124\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-132\"}"
     }
   ],
   "splitSubagentCalls": [
@@ -312,18 +319,18 @@
     },
     {
       "name": "split-settles-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"126-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"126-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"126-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"134-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"134-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"134-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-hands-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"129-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"129-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"129-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"137-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"137-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"137-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-dup-callid",
-      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"132-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"134-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
-      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"132-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"134-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
+      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"140-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"142-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
+      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"140-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"142-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
     }
   ]
 }

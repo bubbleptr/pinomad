@@ -356,6 +356,29 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: true,
   },
   {
+    name: "todo-in-codemode",
+    // A script's nested write counts at the outer result's time, even when the
+    // script failed afterwards; a nested write that failed does not count.
+    view: view([
+      user("go"),
+      assistant([call("t1", "todo_write", { items: [] })], "toolUse", 50),
+      result("t1", "todo_write", "Todo list updated: 0 item(s).", false, undefined, 100),
+      assistant([call("c1", "codemode", { code: "await tools.todo_write({ items: [] }); throw new Error()" })], "toolUse", 250),
+      result("c1", "codemode", "Error", true, {
+        calls: [
+          { name: "bash", args: "{}", status: "ok" },
+          { name: "todo_write", args: "{\"items\":[]}", status: "ok" },
+        ],
+      }, 300),
+      assistant([call("c2", "codemode", { code: "await tools.todo_write({ items: 1 })" })], "toolUse", 450),
+      result("c2", "codemode", "Error", true, {
+        calls: [{ name: "todo_write", args: "{\"items\":1}", status: "error", error: "Validation failed" }],
+      }, 500),
+      assistant([text("done")], "stop", 550),
+    ]),
+    busy: false,
+  },
+  {
     name: "todo-failed-write",
     view: view([
       user("go"),

@@ -320,6 +320,20 @@ function toolItem(
   };
 }
 
+/**
+ * Whether a codemode script's nested calls include a successful `todo_write`.
+ * The nested call has no time of its own; the script's result bounds it. The
+ * script failing afterwards does not undo the write, so only the nested
+ * status counts.
+ */
+function wroteTodo(details: unknown): boolean {
+  const calls = (details as { calls?: unknown } | undefined)?.calls;
+  return (
+    Array.isArray(calls) &&
+    calls.some((nested) => (nested as { name?: unknown }).name === "todo_write" && (nested as { status?: unknown }).status === "ok")
+  );
+}
+
 /** Consecutive Tool Calls in one Message are one step (ADR-0030 §3). */
 type MessageSlot = { kind: "thinking"; block: Block } | { kind: "tools"; blocks: CallBlock[] } | { kind: "text"; block: Block };
 
@@ -435,9 +449,10 @@ function deriveRun(
   let todoWrittenAtMs: number | undefined;
   for (const message of messages) {
     for (const block of message.msg.content) {
-      if (!isCallBlock(block) || block.name !== "todo_write") continue;
+      if (!isCallBlock(block)) continue;
       const written = message.results.get(block.id);
-      if (written !== undefined && written.isError !== true && typeof written.timestamp === "number") {
+      if (written === undefined || typeof written.timestamp !== "number") continue;
+      if (block.name === "todo_write" ? written.isError !== true : block.name === "codemode" && wroteTodo(written.details)) {
         todoWrittenAtMs = written.timestamp;
       }
     }
