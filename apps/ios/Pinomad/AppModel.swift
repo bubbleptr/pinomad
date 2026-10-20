@@ -233,7 +233,9 @@ final class AppModel {
         do {
             let previous = currentHostKey ?? hosts.active?.hostKey
             let session = try PinomadSession.pair(
-                link: link, deviceName: UIDevice.current.name, account: account)
+                link: link,
+                deviceName: DeviceModelName.currentDisplayName(fallback: UIDevice.current.model),
+                account: account)
             adopt(session, sameHost: false)
             hostBeforePairing = hostBeforePairing ?? previous
             pairing.pair(
