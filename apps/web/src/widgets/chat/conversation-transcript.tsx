@@ -4,11 +4,12 @@
 import { ChatMessageList, ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { useMemo } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
-import type { PresentationType } from "@pinomad/protocol/presentation.ts";
+import { classify, type PresentationType, type TodoState } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
-import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, ExtensionDocView } from "@pinomad/protocol/view.ts";
+import { lastTodoWriteMs } from "@/entities/todo/todo-card";
 import { ChatEntryView } from "./chat-entries.tsx";
 
 export function ConversationTranscript({
@@ -23,6 +24,7 @@ export function ConversationTranscript({
   ownOnly,
   forkSource,
   onRetry,
+  docs,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -49,6 +51,8 @@ export function ConversationTranscript({
    * the host. Absent on read-only transcripts (subagent conversations).
    */
   onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
+  /** The conversation's extension documents; its todo list rides under the newest run. */
+  docs?: readonly ExtensionDocView[];
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(
@@ -60,6 +64,17 @@ export function ConversationTranscript({
   );
   const items = useMemo(() => deriveChat(view, toolPresentations, busy), [view, toolPresentations, busy]);
   const retry = useMemo(() => retryOf(items), [items]);
+  const todoState = useMemo(() => todoOf(docs), [docs]);
+  const todoUpdatedAtMs = useMemo(() => lastTodoWriteMs(items), [items]);
+  const todo = useMemo(
+    () =>
+      todoState === undefined
+        ? undefined
+        : { state: todoState, ...(todoUpdatedAtMs === undefined ? {} : { updatedAtMs: todoUpdatedAtMs }) },
+    [todoState, todoUpdatedAtMs],
+  );
+  // One card at a time: only the newest run gets the list (ADR-0026 §4).
+  const latestRun = items.findLastIndex((item) => item.kind === "run");
   if (items.length === 0 && !ownOnly) return null;
   return (
     <ChatMessageList isStreaming={busy} gap={0}>
@@ -77,6 +92,7 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
+            {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={
               onRetry !== undefined && connected && retry !== undefined && index === items.length - 1
                 ? () => onRetry(retry)
@@ -87,4 +103,13 @@ export function ConversationTranscript({
       </div>
     </ChatMessageList>
   );
+}
+
+function todoOf(docs: readonly ExtensionDocView[] | undefined): TodoState | undefined {
+  for (const doc of docs ?? []) {
+    if (doc.value === null) continue;
+    const classified = classify(doc.presentation, doc.value);
+    if (classified.type === "pinomad.todo") return classified.value;
+  }
+  return undefined;
 }

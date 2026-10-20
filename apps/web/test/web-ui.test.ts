@@ -779,6 +779,10 @@ it("renders todo and a pending question card on every page and shares one answer
     await page.getByRole("button", { name: "Side panel", exact: true }).click();
     const panel = page.getByLabel("Live state");
     await panel.getByText("Investigate the report", { exact: true }).waitFor();
+    // The same list rides under the run in the transcript, once (ADR-0026 §4).
+    const todoCard = page.locator('[data-slot="todo-card"]');
+    await todoCard.getByText("Investigate the report", { exact: true }).waitFor();
+    expect(await todoCard.count()).toBe(1);
     // The pending question renders above the composer in the main column.
     const card = page.getByTestId("pending-questions");
     await card.getByText("Deploy v2.3 now?", { exact: true }).waitFor();
@@ -842,7 +846,9 @@ it("shows interruption without a text bubble and never offers a fork for streami
   const page = await openPage(host, 390, webOrigin);
   await prompt(page).fill("Investigate the release.");
   await prompt(page).press("Enter");
-  await page.getByText("Thinking…", { exact: true }).waitFor();
+  // The folded row names the live thinking and carries the clock; the step
+  // itself waits behind it.
+  await page.getByRole("button", { name: /^Thinking… · \d/ }).waitFor();
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
   await followFirst(observer);
@@ -1170,9 +1176,12 @@ it("renders a real edit's diff inside the tool row instead of the raw args", asy
   await prompt(page).press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
 
-  // Expand the run's folded steps: each round is its own single-call step,
-  // and a single-call step expands straight to the detail.
-  await page.getByRole("button", { name: /Worked for/ }).click();
+  // The model never narrated, so the whole run is one grey row (ADR-0026).
+  // Expanded, each round is its own single-call step, and a single-call step
+  // expands straight to the detail.
+  const trace = page.locator('[data-slot="chat-trace-trigger"]');
+  await expect.poll(() => trace.count()).toBe(1);
+  await trace.click();
   await page.getByRole("button", { name: /Edited notes.txt/ }).click();
 
   const editDetail = page.locator('[data-slot="chat-tool-step-detail"]').last();
@@ -1214,7 +1223,7 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
   await prompt(page).press("Enter");
   await page.getByText("edit complete", { exact: true }).waitFor();
 
-  await page.getByRole("button", { name: /Worked for/ }).click();
+  await page.locator('[data-slot="chat-trace-trigger"]').click();
   await page.getByRole("button", { name: /Read 1 file/ }).click();
   // The grouped rows overhang their clip box for the hover fill; focusing one
   // must not scroll that box sideways and shear off the steps' left edge.

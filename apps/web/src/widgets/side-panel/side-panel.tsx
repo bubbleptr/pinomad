@@ -291,6 +291,7 @@ function SideTranscript({
   return (
     <ConversationTranscript
       conversation={side.conversation}
+      docs={side.docs}
       toolPresentations={view.toolPresentations}
       connected={view.connection === "connected"}
       // Fork depth is one: a fork's transcript never offers Fork.

@@ -1,23 +1,31 @@
 // ChatEntry rendering, after Pace's widgets/live-chat/live-chat-message.tsx:
-// a user bubble, then one Assistant message per run — its Chain of Thought,
-// the answer, and the settled actions row (Copy + Fork, no thumbs).
+// a user bubble, then one Assistant message per run — its folded process and
+// Interim Output, the answer, the settled actions row (Copy + Fork, no
+// thumbs), and on the newest run the todo card (ADR-0026).
 import { ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import type { TodoState } from "@pinomad/protocol/presentation.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { splitSubagentCalls, type ChatEntry, type CotView } from "@pinomad/client/cot-view.ts";
 import { useMemo } from "react";
-import { ChatChainOfThought as ChainOfThought } from "@/shared/ui/chat/chat-chain-of-thought";
+import { segmentRun } from "@/entities/run-trace/segment-run";
+import { TodoCard } from "@/entities/todo/todo-card";
+import {
+  ChatChainOfThought as ChainOfThought,
+  ChatTraceRow,
+  formatElapsed,
+} from "@/shared/ui/chat/chat-chain-of-thought";
 import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown";
 import { ChatMessage, ChatMessageActions } from "@/shared/ui/chat/chat-message";
 import { ChatRunFailure } from "@/shared/ui/chat/chat-run-failure";
 import { MessageImages } from "../../entities/image/message-images.tsx";
-import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
-import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
-import { ChatToolStep } from "@/shared/ui/chat/chat-tool-step";
 import { GitBranch } from "@/shared/ui/icons";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
+
+/** The conversation's todo list and when any run last wrote it (`lastTodoWriteMs`). */
+type RunTodo = { state: TodoState; updatedAtMs?: number };
 
 export function ChatEntryView({
   entry,
@@ -28,6 +36,7 @@ export function ChatEntryView({
   forksAt,
   summaryOf,
   onRetry,
+  todo,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -42,6 +51,8 @@ export function ChatEntryView({
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   /** Only set on the newest entry when it is a failed run. */
   onRetry?: () => Promise<void>;
+  /** The conversation's todo list — handed to the newest run only, so one card shows. */
+  todo?: RunTodo;
 }) {
   switch (entry.kind) {
     case "user":
@@ -79,6 +90,7 @@ export function ChatEntryView({
           forksAt={forksAt}
           summaryOf={summaryOf}
           onRetry={onRetry}
+          todo={todo}
         />
       );
     case "compaction":
@@ -97,6 +109,7 @@ function RunEntry({
   forksAt,
   summaryOf,
   onRetry,
+  todo,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
@@ -106,6 +119,7 @@ function RunEntry({
   forksAt?: (entryId: string) => ConversationId[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   onRetry?: () => Promise<void>;
+  todo?: RunTodo;
 }) {
   // Subagent calls anchor cards under the run instead of rows in the CoT.
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
@@ -173,56 +187,74 @@ function RunEntry({
             ) : null}
           </ChatMessageActions>
         )}
+        {/* Last in the run, below the answer: the card never sits between steps. */}
+        <TodoCard
+          todo={todo?.state}
+          writtenThisRun={cot.todoWrittenAtMs !== undefined}
+          {...(todo?.updatedAtMs === undefined ? {} : { updatedAtMs: todo.updatedAtMs })}
+        />
       </ChatMessage.Body>
     </ChatMessage.Assistant>
   );
 }
 
 /**
- * One Active Run's Chain of Thought, as Pace's AssistantRunTrajectory: the
- * phase, clock anchor and steps all come from deriveChat; this only lays them
- * out (ADR-0030 §1).
+ * One run's process, cut at Interim Output (ADR-0026 §2): what the model said
+ * to the user reads as prose, and the calls and thinking between two such
+ * passages fold into one grey row. The phase, clock anchor and steps all come
+ * from deriveChat; this only lays them out.
  */
 function AssistantRunTrajectory({ view }: { view: CotView }) {
+  const segments = useMemo(() => segmentRun(view.steps), [view.steps]);
+
   if (view.phase === "hidden") {
     return null;
   }
 
   const ticking = view.phase === "thinking" || view.phase === "acting";
 
-  // Nothing measured and nothing to disclose: a bare "Worked" header would be
-  // chrome with nothing behind it.
-  if (!ticking && !view.steps.length && view.elapsedMs === undefined) {
+  if (!ticking && segments.length === 0) {
     return null;
   }
 
+  // The last row carries the run's time: the clock while it runs (the row
+  // walks the anchor itself at 100ms rather than the page re-deriving the
+  // whole view that often), held at the first answer token while the answer
+  // streams, and the derived duration once settled (ADR-0030 §6). With no
+  // row to carry it, the answer alone stands for the run.
+  const elapsed = view.phase === "settled" ? formatElapsed(view.elapsedMs) : undefined;
+  const tail = elapsed === undefined ? undefined : view.outcome === "failed" ? `Failed after ${elapsed}` : elapsed;
+  const clock = ticking || view.phase === "answering" ? { startedAtMs: view.anchorMs, running: ticking } : undefined;
+  // Between rounds no step is live, but the run is.
+  const waiting = view.phase === "thinking" ? "Thinking…" : "Working…";
+  // A live run always ends in a row; before its first step (or after prose)
+  // that is a bare one. Its key is the next segment's, so the step that lands
+  // takes the row over instead of adding a second.
+  const bareRow = ticking && segments.at(-1)?.kind !== "trace";
+  const carrier = bareRow ? segments.length : segments.findLastIndex((segment) => segment.kind === "trace");
+  const carried = {
+    ...(ticking ? { live: true, waiting } : {}),
+    ...(tail === undefined ? {} : { tail }),
+    ...(clock === undefined ? {} : { clock }),
+  };
+
   return (
-    <ChainOfThought
-      // While the clock runs the component owns it: it walks the Run's anchor
-      // at 100ms rather than the page re-deriving the whole view that often.
-      // Every other phase hands over the frozen number (ADR-0030 §6).
-      {...(ticking ? { startedAtMs: view.anchorMs } : { elapsedMs: view.elapsedMs })}
-      hasSteps={view.steps.length > 0}
-      phase={view.phase}
-      outcome={view.outcome}
-    >
-      <ChainOfThought.Steps>
-        {view.steps.map((step) => (
-          <ChainOfThought.Step key={step.id}>
-            {step.kind === "thinking" ? (
-              <ChatThoughtStep step={step} />
-            ) : step.kind === "tools" ? (
-              <ChatToolStep step={step} />
-            ) : (
-              // Interim Output is what the model said to the user, so it reads
-              // a shade darker than the steps around it (ADR-0030 §7).
-              <div className="chain-of-thought__interim" data-slot="chat-interim-output">
-                <ChatThoughtMarkdown text={step.text} />
-              </div>
-            )}
-          </ChainOfThought.Step>
-        ))}
-      </ChainOfThought.Steps>
+    <ChainOfThought phase={view.phase}>
+      {segments.map((segment, index) =>
+        segment.kind === "interim" ? (
+          <ChatMessage.Content key={segment.key} data-slot="chat-interim-output">
+            <ChatMarkdown>{segment.text}</ChatMarkdown>
+          </ChatMessage.Content>
+        ) : (
+          <ChatTraceRow
+            key={segment.key}
+            steps={segment.steps}
+            counted={segment.counted}
+            {...(index === carrier ? carried : {})}
+          />
+        ),
+      )}
+      {bareRow ? <ChatTraceRow key={`segment-${carrier}`} steps={[]} counted={[]} {...carried} /> : null}
     </ChainOfThought>
   );
 }
