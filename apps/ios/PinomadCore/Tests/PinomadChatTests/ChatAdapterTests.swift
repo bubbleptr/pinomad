@@ -30,6 +30,7 @@ private func tool(
 private func cot(
     phase: CotPhase = .settled,
     failed: Bool = false,
+    todoWrittenAtMs: Double? = nil,
     steps: [CotStep] = [],
     answer: CotAnswer? = nil
 ) -> CotView {
@@ -37,7 +38,8 @@ private func cot(
         phase: phase,
         failed: failed,
         anchorMs: nil,
-        elapsedMs: nil, todoWrittenAtMs: nil,
+        elapsedMs: nil,
+        todoWrittenAtMs: todoWrittenAtMs,
         steps: steps,
         answer: answer
     )
@@ -217,6 +219,29 @@ struct FallbackTests {
         item.images = [MessageImage(data: "aGk=", mimeType: "image/png")]
         let call = ChatAdapter.call(item, fallbackId: "x")
         #expect(call.images == [ToolImage(data: "aGk=", mimeType: "image/png")])
+    }
+}
+
+@Suite("ChatAdapter todo")
+struct TodoTests {
+    @Test func theRunsLastTodoWriteBecomesItsDate() {
+        let trace = ChatAdapter.trace(cot: cot(todoWrittenAtMs: 1_760_000_123_456), interrupted: false)
+        #expect(trace.todoWrittenAt == Date(timeIntervalSince1970: 1_760_000_123.456))
+        #expect(ChatAdapter.trace(cot: cot(), interrupted: false).todoWrittenAt == nil)
+    }
+
+    @Test func theConversationsTodoKeepsItsItemsInOrder() {
+        let list = ChatAdapter.todo([
+            TodoItem(text: "Reproduce", status: .completed),
+            TodoItem(text: "Fix", status: .inProgress),
+            TodoItem(text: "Ship", status: .pending),
+        ])
+        #expect(list == TodoList(items: [
+            .init(text: "Reproduce", status: .completed),
+            .init(text: "Fix", status: .inProgress),
+            .init(text: "Ship", status: .pending),
+        ]))
+        #expect(ChatAdapter.todo(nil) == nil)
     }
 }
 

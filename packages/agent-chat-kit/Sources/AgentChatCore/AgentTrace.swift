@@ -25,19 +25,23 @@ public struct AgentTrace: Sendable, Equatable {
     public var startedAt: Date?
     /// When the run stopped working (the answer's first token, or its end).
     public var endedAt: Date?
+    /// When the run last wrote the todo list, if it did.
+    public var todoWrittenAt: Date?
 
     public init(
         phase: Phase,
         outcome: Outcome = .completed,
         steps: [TraceStep],
         startedAt: Date? = nil,
-        endedAt: Date? = nil
+        endedAt: Date? = nil,
+        todoWrittenAt: Date? = nil
     ) {
         self.phase = phase
         self.outcome = outcome
         self.steps = steps
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.todoWrittenAt = todoWrittenAt
     }
 }
 

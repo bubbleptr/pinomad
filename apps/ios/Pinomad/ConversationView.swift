@@ -21,6 +21,10 @@ struct ConversationView: View {
     @State private var subagentReturnItem: String?
     /// Whether the reader was at the end when the card pushed the child.
     @State private var subagentReturnAtBottom = true
+    /// The run whose steps the trace sheet shows. Presented here rather
+    /// than from the row: a lazy row can be recycled while the sheet is up,
+    /// and the sheet reads the run from each new snapshot to stay live.
+    @State private var tracedRun: TracedRun?
 
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
@@ -116,6 +120,11 @@ struct ConversationView: View {
         .sheet(isPresented: $showingChanges) {
             ChangesSheet(model: model, conversationId: conversationId)
         }
+        .sheet(item: $tracedRun) { run in
+            if let conversation {
+                traceSheet(run.id, in: conversation, subagentSummaries: subagentSummaries)
+            }
+        }
         .task { model.openConversation(conversationId) }
     }
 
@@ -143,6 +152,34 @@ struct ConversationView: View {
         model.navPath.append(.conversation(child))
     }
 
+    /// The newest run: the todo line hangs under it and nowhere else. Not
+    /// simply the last entry — a queued message can follow it.
+    private static func latestRunId(_ chat: [ChatEntry]) -> String? {
+        chat.last { if case .run = $0 { true } else { false } }?.entryId
+    }
+
+    @ViewBuilder
+    private func traceSheet(
+        _ runId: String,
+        in conversation: ConversationSnapshot,
+        subagentSummaries: [UInt64: SubagentCardSummary]
+    ) -> some View {
+        if let entry = conversation.chat.first(where: { $0.entryId == runId }),
+           case let .run(_, cot, _, interrupted, _) = entry {
+            // The same trace the capsule summarizes: subagent calls stay
+            // on their cards in the transcript.
+            let trace = ChatAdapter.trace(
+                cot: ChatAdapter.splitRun(cot, summaries: subagentSummaries).trace,
+                interrupted: interrupted
+            )
+            AgentTraceSheet(trace, todo: TodoLine(
+                list: ChatAdapter.todo(conversation.todo),
+                writtenAt: trace.todoWrittenAt,
+                isLatestRun: runId == Self.latestRunId(conversation.chat)
+            ))
+        }
+    }
+
     private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
         if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
         return false
@@ -160,9 +197,13 @@ struct ConversationView: View {
         // every streaming snapshot would otherwise pay for.
         let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
             ? retryOf(entries: conversation.chat) : nil
+        let latestRun = Self.latestRunId(conversation.chat)
+        let todo = ChatAdapter.todo(conversation.todo)
         ForEach(conversation.chat, id: \.entryId) { entry in
+            let isLatestRun = entry.entryId == latestRun
             row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
-                subagentSummaries: subagentSummaries)
+                subagentSummaries: subagentSummaries,
+                isLatestRun: isLatestRun, todo: isLatestRun ? todo : nil)
         }
     }
 
@@ -170,7 +211,9 @@ struct ConversationView: View {
     private func row(
         _ entry: ChatEntry,
         retry: RetryRequest?,
-        subagentSummaries: [UInt64: SubagentCardSummary]
+        subagentSummaries: [UInt64: SubagentCardSummary],
+        isLatestRun: Bool,
+        todo: TodoList?
     ) -> some View {
         switch entry {
         case let .user(_, text, images):
@@ -178,6 +221,8 @@ struct ConversationView: View {
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
+                   openTrace: { tracedRun = TracedRun(id: id) },
+                   isLatest: isLatestRun, todo: todo,
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
@@ -187,6 +232,11 @@ struct ConversationView: View {
             MarkerRow("对话已重置")
         }
     }
+}
+
+/// The run a trace sheet is open for, by entry id.
+private struct TracedRun: Identifiable {
+    let id: String
 }
 
 private extension View {
@@ -221,8 +271,9 @@ private struct UserRow: View, Equatable {
     }
 }
 
-/// One run: the trace header/steps, the answer as it streams or settled,
-/// and the failure line a dead run leaves behind.
+/// One run: its trace capsule (and the todo line on the newest run), the
+/// subagent cards, the answer as it streams or settled, and the failure
+/// line a dead run leaves behind.
 private struct RunRow: View, Equatable {
     let cot: CotView
     /// Supplies the subagent cards' call-given labels and roles; only the
@@ -231,6 +282,13 @@ private struct RunRow: View, Equatable {
     /// Pushes a card's child conversation; not part of equality, it only
     /// captures the model.
     let openSubagent: (UInt64) -> Void
+    /// Opens the trace sheet; like `openSubagent`, not part of equality.
+    let openTrace: () -> Void
+    let isLatest: Bool
+    /// The conversation's todo list, handed to the newest run only — no
+    /// other run shows it, and leaving it off them keeps a todo change from
+    /// re-rendering every row.
+    let todo: TodoList?
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -243,8 +301,12 @@ private struct RunRow: View, Equatable {
         // Split only when this row's body runs — `.equatable()` skips it
         // for unchanged runs, and the core call has a no-subagent fast path.
         let split = ChatAdapter.splitRun(cot, summaries: subagentSummaries)
+        let trace = ChatAdapter.trace(cot: split.trace, interrupted: interrupted)
         VStack(alignment: .leading, spacing: 8) {
-            AgentTraceView(ChatAdapter.trace(cot: split.trace, interrupted: interrupted))
+            AgentTraceView(trace, onOpen: openTrace)
+            if let line = TodoLine(list: todo, writtenAt: trace.todoWrittenAt, isLatestRun: isLatest) {
+                TodoLineView(line, onOpen: openTrace)
+            }
             ForEach(split.cards) { card in
                 SubagentCardView(card: card, onOpen: openSubagent)
             }
@@ -266,6 +328,7 @@ private struct RunRow: View, Equatable {
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.cot == rhs.cot && lhs.subagentSummaries == rhs.subagentSummaries
+            && lhs.isLatest == rhs.isLatest && lhs.todo == rhs.todo
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
     }
