@@ -87,12 +87,14 @@ extension AppModel {
 
     /// Answer every question of a pending request at once. The card goes
     /// away when the snapshot marks the request resolved; the draft is kept
-    /// until then so a refused answer (toasted) can be resent.
-    func answer(_ question: PendingQuestion, conversation id: UInt64) {
+    /// until then so a refused answer (toasted) can be resent. Returns once
+    /// the host took or refused it, so the card can hold Submit meanwhile.
+    func answer(_ question: PendingQuestion, conversation id: UInt64) async {
         let draft = questionDrafts[question.request.id]
             ?? QuestionDraft(questionCount: question.request.questions.count)
-        run(.answer(kind: question.kind, requestId: question.request.id,
-                    answers: draft.answers(), target: id))
+        guard let session else { return }
+        _ = try? await session.invoke(.answer(kind: question.kind, requestId: question.request.id,
+                                              answers: draft.answers(), target: id))
     }
 
     /// Resend a failed run's prompt. The request id is derived from the run,

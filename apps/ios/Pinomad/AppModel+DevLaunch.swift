@@ -64,6 +64,14 @@ extension AppModel {
             startTraceDemo(interims: mode != "quiet")
             return true
         }
+        if let mode = env["PINOMAD_DEMO_QUESTIONS"] {
+            // The agent's question card without a host: four questions, or
+            // `single` for a one-question request; `offline` shows the four
+            // with the connection down (Submit disabled).
+            phase = .connected
+            startQuestionDemo(mode)
+            return true
+        }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The composer's context meter at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.
@@ -209,6 +217,85 @@ extension AppModel {
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: nil, organized: organized,
+            notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+            agents: nil, conversation: conversation
+        ))
+        replyStreams.sync(chat: chat)
+    }
+
+    /// A settled run that ends in a pending question request. With no host
+    /// behind it, Submit only shows its sending state.
+    private func startQuestionDemo(_ mode: String) {
+        navPath = [.conversation(1)]
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let summary = ConversationSummary(
+            id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+            title: "上传接口鉴权", status: nil, updatedAt: now,
+            label: nil, role: nil, activity: nil
+        )
+        let auth = QuestionItem(
+            question: "上传接口要先加鉴权才能发布。新接口用哪种方式？手机端的钥匙串里已经存着 refresh token。",
+            header: "鉴权方式",
+            options: [
+                QuestionOption(label: "Bearer token（推荐）", description: "从现有的刷新流程换短期 access token，新接口没有 CSRF 面。"),
+                QuestionOption(label: "复用会话 cookie", description: "和 Web 端同一套中间件，但手机端要管 cookie 和 CSRF。"),
+                QuestionOption(label: "签名上传地址", description: "宿主给每个上传地址签十分钟，接口本身不鉴权。"),
+            ],
+            multiSelect: nil
+        )
+        let backfill = QuestionItem(
+            question: "现有数据没有 owner 字段，迁移时怎么回填？",
+            header: "迁移方案",
+            options: [
+                QuestionOption(label: "从审计日志回填", description: "三月之后创建的数据准确；更早的回退到工作区所有者。"),
+                QuestionOption(label: "统一归给工作区所有者", description: nil),
+            ],
+            multiSelect: nil
+        )
+        let tests = QuestionItem(
+            question: "新接口要哪些层的测试覆盖？可以多选。",
+            header: "测试覆盖",
+            options: [
+                QuestionOption(label: "处理函数单元测试", description: nil),
+                QuestionOption(label: "协议契约快照", description: "在 packages/protocol/test/fixtures 下重录。"),
+                QuestionOption(label: "Playwright 端到端", description: "最慢，需要起真实宿主。"),
+            ],
+            multiSelect: true
+        )
+        let rollout = QuestionItem(
+            question: "要不要放在开关后面发布？",
+            header: "发布顺序",
+            options: [
+                QuestionOption(label: "加开关，默认关闭", description: nil),
+                QuestionOption(label: "直接发布", description: nil),
+            ],
+            multiSelect: nil
+        )
+        let request = mode == "single"
+            ? QuestionRequest(id: "demo-single", questions: [rollout], askedAt: now, resolution: nil)
+            : QuestionRequest(id: "demo-questions", questions: [auth, backfill, tests, rollout], askedAt: now, resolution: nil)
+        let cot = CotView(
+            phase: .settled, failed: false, anchorMs: now - 6_000, elapsedMs: 6_000, todoWrittenAtMs: nil,
+            steps: [],
+            answer: CotAnswer(text: "动手之前有几件事需要你拍板，问题在下面。", streaming: false)
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "上传接口要加鉴权，你看着办，拿不准的问我。", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
+        ]
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: [],
+            agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
+            questions: [PendingQuestion(kind: "ask_user_question", request: request)],
+            todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil
+        )
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: mode == "offline" ? .reconnecting : .connected, unauthorized: false,
+            protocolMismatch: nil, host: nil,
+            organized: Organized(
+                chats: [ConversationNode(summary: summary, children: [])],
+                projects: [], archived: []
+            ),
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
