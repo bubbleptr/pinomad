@@ -14,7 +14,7 @@ import {
   signRelayChallenge,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
-import { openAccounts } from "../src/accounts.ts";
+import { openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 
 const ORIGIN = "https://relay.example.com";
@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 /** A relay whose accounts bind only `hostKeys` — every other well-signed key is a stranger. */
-async function start(options?: Partial<RelayOptions>): Promise<Relay> {
+async function startWithAccounts(options?: Partial<RelayOptions>): Promise<{ relay: Relay; accounts: Accounts }> {
   const dataDir = await mkdtemp(join(tmpdir(), "pinomad-relay-accounts-"));
   dataDirs.push(dataDir);
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: "correct horse battery" });
@@ -46,8 +46,10 @@ async function start(options?: Partial<RelayOptions>): Promise<Relay> {
     ...options,
   });
   relays.push(relay);
-  return relay;
+  return { relay, accounts };
 }
+
+const start = async (options?: Partial<RelayOptions>): Promise<Relay> => (await startWithAccounts(options)).relay;
 
 /** Just connects; the caller decides which events to await and in what order. */
 function connect(relay: Relay, path: string, options?: ClientOptions): WebSocket {
@@ -74,7 +76,7 @@ type KeyPair = ReturnType<typeof ed25519.keygen>;
 async function openControl(
   relay: Relay,
   keys: KeyPair = hostKeys,
-  options?: { origin?: string; signature?: string },
+  options?: { origin?: string; signature?: string; register?: Partial<RegisterFrame> },
 ): Promise<WebSocket> {
   const socket = connect(relay, "/host");
   const challengeP = once(socket, "message");
@@ -91,15 +93,16 @@ async function openControl(
         hostId: relayHostId(keys.publicKey),
         nonce: challenge.nonce,
       }),
+    ...options?.register,
   };
   socket.send(encodeRelayFrame(register));
   return socket;
 }
 
 /** openControl plus awaiting `registered` — the happy path. */
-async function registerHost(relay: Relay, keys?: KeyPair): Promise<WebSocket> {
-  const socket = await openControl(relay, keys);
-  expect(await nextControl(socket)).toEqual({ t: "registered", push: [] });
+async function registerHost(relay: Relay, keys?: KeyPair, register?: Partial<RegisterFrame>): Promise<WebSocket> {
+  const socket = await openControl(relay, keys, { register });
+  expect(await nextControl(socket)).toEqual({ t: "registered", push: [], features: ["name"] });
   return socket;
 }
 
@@ -330,6 +333,55 @@ describe("relay", () => {
     await flushedP;
     await allP;
     expect(index).toBe(CHUNKS);
+  });
+});
+
+describe("host display names (issue #212)", () => {
+  const rowName = (accounts: Accounts): string | undefined => accounts.hostFor(1, hostId)?.name;
+
+  it("stores the register's cleaned name on the bound row", async () => {
+    const { relay, accounts } = await startWithAccounts();
+    const socket = await registerHost(relay, undefined, { name: "  omarchy.local " });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    expect(rowName(accounts)).toBe("omarchy");
+  });
+
+  it("leaves the stored name alone when the register omits it", async () => {
+    const { relay, accounts } = await startWithAccounts();
+    await registerHost(relay);
+    expect(rowName(accounts)).toBe("Unknown host");
+  });
+
+  it("applies a name frame only from the host's current control connection", async () => {
+    const { relay, accounts } = await startWithAccounts();
+    const stale = await registerHost(relay);
+    // pause() keeps the client from reading the 4609 its replacement sends:
+    // its ws stays OPEN, and the server-side socket lingers in the close
+    // handshake still emitting frames — a late frame's only way in.
+    stale.pause();
+    const live = await registerHost(relay);
+    stale.send(encodeRelayFrame({ t: "name", name: "late-arrival" }));
+    stale.resume(); // the buffered 4609 completes the close handshake
+    expect(await closeEvent(stale)).toEqual([RELAY_CLOSE.replaced, ""]);
+    // The late frame was parsed before the socket ended — and ignored.
+    expect(rowName(accounts)).toBe("Unknown host");
+
+    // The current control's name frame applies, cleaned like the register's.
+    live.send(encodeRelayFrame({ t: "name", name: "  renamed.local " }));
+    live.close(); // its close follows the frame on the same stream
+    await closeEvent(live);
+    expect(rowName(accounts)).toBe("renamed");
+  });
+
+  it("closes a control that sends a name frame before registering", async () => {
+    const relay = await start();
+    const socket = connect(relay, "/host");
+    const challengeP = once(socket, "message");
+    await once(socket, "open");
+    await challengeP;
+    socket.send(encodeRelayFrame({ t: "name", name: "early" }));
+    const [code] = await closeEvent(socket);
+    expect(code).toBe(1008);
   });
 });
 

@@ -10,6 +10,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
@@ -123,6 +124,12 @@ export interface Accounts {
   hostFor(userId: number, hostId: string): HostRow | undefined;
   /** Bumps last_seen_at on each successful register; a no-op for unbound hostIds. */
   markHostSeen(hostId: string): void;
+  /**
+   * Writes the bound host's current display name, cleaned by the same
+   * `normalizeHostName` the host applies (issue #212); a no-op for unbound
+   * hostIds. Register reports it and the `name` frame keeps it current.
+   */
+  renameHost(hostId: string, name: string): void;
   close(): Promise<void>;
 }
 
@@ -438,7 +445,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           db.exec("ROLLBACK");
           return { status: "refused", reason: failure };
         }
-        const hostName = name === undefined || name.trim() === "" ? "Unknown host" : name.trim().slice(0, 64);
+        // A join that reports no name at all stays "Unknown host"; a
+        // reported one goes through the shared cleaning like every write.
+        const hostName = name === undefined ? "Unknown host" : normalizeHostName(name);
         // Re-joining an already-bound hostId rebinds it (a new account gets it);
         // the upsert is what makes a lost join response safe to retry.
         db.prepare(
@@ -488,6 +497,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
     markHostSeen(hostId) {
       db.prepare("UPDATE hosts SET last_seen_at = ? WHERE host_id = ?").run(now(), hostId);
+    },
+
+    renameHost(hostId, name) {
+      db.prepare("UPDATE hosts SET name = ? WHERE host_id = ?").run(normalizeHostName(name), hostId);
     },
 
     async close() {

@@ -171,8 +171,8 @@ async function controlFor(relay: Relay, keys: KeyPair, overrides?: Parameters<ty
   socket.send(encodeRelayFrame(registerFrame(keys, nonce, overrides)));
   const reply = await answered(socket);
   // Bound hosts get the push declaration — an empty list when no APNs
-  // environment is configured (ADR-0025 §4).
-  expect(reply).toEqual({ frame: { t: "registered", push: [] } });
+  // environment is configured (ADR-0025 §4) — and the server's features.
+  expect(reply).toEqual({ frame: { t: "registered", push: [], features: ["name"] } });
   return socket;
 }
 
@@ -238,7 +238,7 @@ describe("join op connection", () => {
     // The hostId now registers as a normal control connection.
     const { socket, nonce } = await dialHost(relay);
     socket.send(encodeRelayFrame(registerFrame(keys, nonce)));
-    expect(await answered(socket)).toEqual({ frame: { t: "registered", push: [] } });
+    expect(await answered(socket)).toEqual({ frame: { t: "registered", push: [], features: ["name"] } });
   });
 
   it("spends a token once: a second join with it is refused", async () => {
@@ -399,7 +399,7 @@ describe("old and new interop", () => {
     db.close();
     // Old hosts send {t, hostId, signature} and nothing else. A bound one
     // still gets the push declaration ([] = push-aware, nothing configured).
-    expect(await register(bound.relay, keys)).toEqual({ frame: { t: "registered", push: [] } });
+    expect(await register(bound.relay, keys)).toEqual({ frame: { t: "registered", push: [], features: ["name"] } });
   });
 
   it("a new-style register still verifies under the old server's rules", async () => {

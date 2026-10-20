@@ -190,6 +190,35 @@ describe("relay frame codecs", () => {
     }
   });
 
+  it("round-trips the name frame and registered's features declaration", () => {
+    expect(decodeHostToRelay(encodeRelayFrame({ t: "name", name: "omarchy" }))).toEqual({ t: "name", name: "omarchy" });
+    expect(decodeRelayToHost(encodeRelayFrame({ t: "registered", features: ["name", "future-feature"] }))).toEqual({
+      t: "registered",
+      features: ["name", "future-feature"],
+    });
+    // A peer that doesn't know `features` — the old-host shape — still
+    // decodes the frame: unknown fields were always ignored.
+    expect(decodeRelayToHost(JSON.stringify({ t: "registered", unknownField: [1, 2] }))).toEqual({ t: "registered" });
+  });
+
+  it("rejects malformed name frames and malformed features declarations", () => {
+    for (const frame of [
+      { t: "name" },
+      { t: "name", name: "" },
+      { t: "name", name: 3 },
+      { t: "name", name: "x".repeat(65) },
+    ]) {
+      expect(() => decodeHostToRelay(JSON.stringify(frame)), JSON.stringify(frame)).toThrow();
+    }
+    for (const registered of [
+      { t: "registered", features: "name" },
+      { t: "registered", features: [1] },
+      { t: "registered", features: Array.from({ length: 17 }, () => "x") },
+    ]) {
+      expect(() => decodeRelayToHost(JSON.stringify(registered)), JSON.stringify(registered)).toThrow();
+    }
+  });
+
   it("reads registered's push declaration, tolerating unknown environments", () => {
     expect(decodeRelayToHost(encodeRelayFrame({ t: "registered" }))).toEqual({ t: "registered" });
     expect(

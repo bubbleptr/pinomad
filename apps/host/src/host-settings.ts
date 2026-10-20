@@ -1,7 +1,9 @@
 // PiNomad-owned host settings (ADR-0021 §1-3): <dataDir>/settings.json holds only
 // the keys a device set; every other key falls back to pi's settings, then the
 // built-ins. The effective value rides the `settings` stream and `updateSettings`
-// writes through here — the host is the only writer (§4), so there is no watch.
+// writes through here — still no watch, but `pinomad join --name` writes the file
+// too (issue #212), so each update re-reads it and merges over the latest
+// contents instead of the open-time snapshot.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
@@ -108,13 +110,15 @@ export async function openHostSettings(options: {
   readonly models: HostValue<readonly ModelSummary[]>;
 }): Promise<HostSettingsStore> {
   // A missing file means nothing is customized; it is created on the first update.
-  let file: Record<string, unknown> = await readFile(options.path, "utf8").then(
-    (text) => parse(options.path, text),
-    (error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-      throw new Error(`Cannot read settings file ${options.path}: ${error instanceof Error ? error.message : String(error)}`);
-    },
-  );
+  const read = (): Promise<Record<string, unknown>> =>
+    readFile(options.path, "utf8").then(
+      (text) => parse(options.path, text),
+      (error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+        throw new Error(`Cannot read settings file ${options.path}: ${error instanceof Error ? error.message : String(error)}`);
+      },
+    );
+  let file: Record<string, unknown> = await read();
 
   // Malformed file values warn once each — stale hand edits are worth naming;
   // a model that is merely unavailable right now is runtime state, quietly
@@ -175,9 +179,11 @@ export async function openHostSettings(options: {
     if (name !== undefined && name !== null && cleanHostName(name) === "") {
       throw new Error(`Invalid host name: ${JSON.stringify(name)}`);
     }
-    // Mutate a copy: `file` only moves once the write is durably on disk, so a
-    // failed write cannot make memory and disk diverge.
-    const next = { ...file };
+    // Mutate a copy of the file's latest contents — `pinomad join --name`
+    // writes here too, so a stale base would drop keys written since open.
+    // `file` only moves once the write is durably on disk, so a failed write
+    // cannot make memory and disk diverge.
+    const next = { ...(await read()) };
     for (const key of HOST_SETTING_KEYS) {
       const value = patch[key];
       if (value === undefined) continue;

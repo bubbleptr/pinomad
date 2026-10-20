@@ -320,6 +320,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       signingKey: secure.relay.signingKey,
       noisePublicKey: secure.hostKey.publicKey,
       accept: (socket) => secureHandshake(socket, secure, admission, register),
+      // The name the control connection reports and keeps in sync (issue
+      // #212): the settings stream's effective hostName. The shared type
+      // marks it optional — absent only when describing pre-5.12 hosts —
+      // so the link treats undefined as "don't report".
+      hostName: {
+        get value() {
+          return options.settings.value.hostName;
+        },
+        subscribe: (listener) => options.settings.subscribe((settings) => listener(settings.hostName)),
+      },
       // ADR-0022 §4: the server vouches for a device by asking for an offer
       // over this control connection. These are early answers only — the real
       // admission check runs again inside admitDevice's commit, so refusal

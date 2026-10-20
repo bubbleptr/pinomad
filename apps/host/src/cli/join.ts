@@ -7,11 +7,15 @@
 // the one-command bring-up this command exists for.
 import { mkdir } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
+import { cleanHostName, normalizeHostName } from "@pinomad/protocol/settings.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { loadHostKey, loadRelayKey } from "../devices.ts";
 import { commandHint, hostEntry } from "../distribution.ts";
+import { openHostSettings } from "../host-settings.ts";
+import { constantValue } from "../host-value.ts";
 import { writeServerConfig } from "../server-config.ts";
 import { argValue, installSpec, withoutRelayArgs, type ServiceSpec } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
@@ -44,6 +48,11 @@ export async function joinServer(
   const dataDir = resolve(args.dataDir);
   // TLS-only before anything else: the token must never ride plaintext ws.
   assertSecureServerOrigin(origin);
+  // --name becomes the settings.json hostName (issue #212): a name that
+  // cleans to nothing has nothing to show — fail before spending the token.
+  if (args.name !== undefined && cleanHostName(args.name) === "") {
+    throw new Error(`Invalid host name: ${JSON.stringify(args.name)}`);
+  }
   await mkdir(dataDir, { recursive: true });
   // Both identities exist before the server is asked: the join signature binds
   // the Noise key, and a fresh install needs them either way.
@@ -70,13 +79,28 @@ export async function joinServer(
     throw new Error(`${origin} does not run server accounts — the server is too old or was started without a data dir`);
   }
 
+  // Opened before the operation so the reported name is the effective one —
+  // --name, else the settings.json override, else the machine name — and a
+  // malformed file fails before the token is spent.
+  const settings = await openHostSettings({
+    path: join(dataDir, "settings.json"),
+    fallback: {
+      defaultModel: () => null,
+      defaultThinkingLevel: () => null,
+      steeringMode: () => "one-at-a-time",
+      followUpMode: () => "one-at-a-time",
+    },
+    models: constantValue<readonly ModelSummary[]>([]),
+  });
+  const current = settings.value;
+  const storedName = current.custom.includes("hostName") ? current.hostName : undefined;
   const reply = await runServerOperation({
     origin,
     signingKey,
     noisePublicKey: hostKey.publicKey,
     op: "join",
     joinToken: args.token,
-    name: args.name ?? deps?.hostname ?? hostname(),
+    name: normalizeHostName(args.name ?? storedName ?? deps?.hostname ?? hostname()),
   });
   if (reply.t === "refused") {
     throw new Error(
@@ -95,6 +119,10 @@ export async function joinServer(
   let service: JoinOutcome["service"];
   try {
     await writeServerConfig(dataDir, { origin });
+    // --name is a settings override now (issue #212): persist it after the
+    // binding landed, before the restart below makes it effective. A host
+    // running in the foreground keeps its old name until restarted.
+    if (args.name !== undefined) await settings.update({ hostName: args.name });
     const freshSpec = installSpec(["--data-dir", dataDir], {
       execPath: process.execPath,
       env: process.env,

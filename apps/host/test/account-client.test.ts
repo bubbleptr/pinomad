@@ -4,6 +4,7 @@
 // account, then reconnect on the stored record without asking for another
 // invite. Also pinned: a host that 4401s a stored device never gets a fresh
 // invite minted behind the user's back.
+import { hostname } from "node:os";
 import { describe, expect, it } from "vitest";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
+import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
 import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import {
@@ -144,7 +146,9 @@ describe("account client against a real server", () => {
     // The joined host is listed and pairable.
     const hosts = unwrap(await client.listHosts());
     expect(hosts).toHaveLength(1);
-    expect(hosts[0]).toMatchObject({ hostId, name: "test-host", online: true, pairing: "available" });
+    // The join-time "test-host" was overwritten at register — the host
+    // reports its effective name (issue #212), the machine name here.
+    expect(hosts[0]).toMatchObject({ hostId, name: normalizeHostName(hostname()), online: true, pairing: "available" });
 
     // matchAccountHosts before pairing: unpaired.
     const store: StoredHost[] = [];

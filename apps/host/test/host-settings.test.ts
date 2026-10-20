@@ -192,6 +192,39 @@ describe("openHostSettings", () => {
     expect(settings.value.hostName).toBe("desk");
   });
 
+  it("keeps a join-written key when the running host updates other settings (issue #212)", async () => {
+    const path = await settingsPath();
+    // A running host and the join CLI share the file, each holding its own
+    // open-time snapshot. The host's next update must merge over the CLI's
+    // write, not rewrite from the stale base.
+    const running = await openHostSettings({ path, fallback, models });
+    const joinCli = await openHostSettings({ path, fallback, models });
+    await joinCli.update({ hostName: "joined-name" });
+
+    await running.update({ followUpMode: "one-at-a-time" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      hostName: "joined-name",
+      followUpMode: "one-at-a-time",
+    });
+    // The re-read republishes too: the join-written name is now effective.
+    expect(running.value.hostName).toBe("joined-name");
+  });
+
+  it("keeps a client write that landed after the join CLI opened the file", async () => {
+    const path = await settingsPath();
+    const joinCli = await openHostSettings({ path, fallback, models });
+    const running = await openHostSettings({ path, fallback, models });
+    await running.update({ followUpMode: "one-at-a-time" });
+
+    // The CLI's snapshot predates the client write — its update must not
+    // drop the key it never saw.
+    await joinCli.update({ hostName: "joined-name" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      followUpMode: "one-at-a-time",
+      hostName: "joined-name",
+    });
+  });
+
   it("serializes concurrent updates so every one lands", async () => {
     const path = await settingsPath();
     const settings = await openHostSettings({ path, fallback, models });
