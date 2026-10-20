@@ -118,7 +118,14 @@ private struct QuestionCard: View {
         } action: { _, now in
             position = now
         }
-        .onScrollPhaseChange { _, phase in scrolling = phase.isScrolling }
+        .onScrollPhaseChange { _, phase in
+            scrolling = phase.isScrolling
+            // A finger dragging the pager overrides a pick's pending move at
+            // once, before the page index changes. `go`'s own slide is
+            // `.animating`, and a tap never gets past `.tracking`, so neither
+            // cancels it.
+            if phase == .interacting { cancelAdvance() }
+        }
         .onChange(of: page) { _, _ in
             // A swipe overrides a pick's pending move, and leaves the field it was typing in.
             cancelAdvance()
