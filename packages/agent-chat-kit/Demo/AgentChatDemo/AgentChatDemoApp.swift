@@ -19,18 +19,20 @@ struct AgentChatDemoApp: App {
 
 struct DemoConversation: View {
     @State private var replay = Replay()
+    /// Which run's steps the sheet shows: the settled history or the replay.
+    @State private var openRun: DemoRun?
 
     var body: some View {
         Transcript {
             UserMessageView("Why does the upload test fail now and then?")
-            AgentTraceView(Replay.history.trace)
+            AgentTraceView(Replay.history.trace) { openRun = .history }
             VStack(alignment: .leading, spacing: 4) {
                 MarkdownView(markdown: Replay.history.answer)
                 ReplyActions(markdown: Replay.history.answer)
             }
 
             UserMessageView("Fix it, and keep the change small.")
-            AgentTraceView(replay.trace)
+            AgentTraceView(replay.trace) { openRun = .replay }
             VStack(alignment: .leading, spacing: 4) {
                 StreamingMarkdownView(replay.answer)
                 if replay.answer.stream.isFinished {
@@ -43,8 +45,18 @@ struct DemoConversation: View {
                 replay = Replay()
             }
         }
+        .sheet(item: $openRun) { run in
+            AgentTraceSheet(run == .history ? Replay.history.trace : replay.trace)
+        }
         .task(id: ObjectIdentifier(replay)) {
             await replay.play()
         }
     }
+}
+
+enum DemoRun: Identifiable {
+    case history
+    case replay
+
+    var id: Self { self }
 }

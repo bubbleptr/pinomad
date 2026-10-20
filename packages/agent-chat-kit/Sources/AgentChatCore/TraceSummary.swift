@@ -1,10 +1,11 @@
 import Foundation
 
-/// The one line a trace shows when folded, or above its steps.
+/// How a trace's work reads in one line: the capsule's settled label and
+/// the clock and counts that follow any label.
 public struct TraceSummary: Sendable, Equatable {
-    public enum Headline: Sendable, Equatable {
+    public enum Headline: Sendable, Hashable {
         case thinking
-        /// Making tool calls; the steps below name what is running.
+        /// Making tool calls.
         case working
         /// Done, without calling a tool.
         case thought
