@@ -474,6 +474,9 @@ final class AppModel {
                 markAccountRejected(host)
             }
             self.snapshot = snapshot
+            if let hostKey = sessionHost?.hostKey {
+                cacheHostName(snapshot.hostName, for: hostKey)
+            }
             // A failure page explains itself; the core's notice for the
             // same thing (e.g. the 4401) would only repeat it in English.
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }

@@ -25,6 +25,10 @@ pub struct ClientSnapshot {
     pub protocol_mismatch: Option<ProtocolMismatch>,
     /// What the host announced in its hello.
     pub host: Option<HostInfo>,
+    /// The machine name the host announced on its settings stream (5.12).
+    /// `None` until the stream lands, on older hosts, and when the field is
+    /// missing or not a string — the platform keeps its cached name then.
+    pub host_name: Option<String>,
     /// Chats and projects with their conversations, grouped for navigation.
     pub organized: Organized,
     /// Command failures land here with a stable, increasing id — the
@@ -193,6 +197,13 @@ fn mismatch_of(view: &Json) -> Option<ProtocolMismatch> {
     })
 }
 
+fn host_name_of(view: &Json) -> Option<String> {
+    view.get("settings")
+        .and_then(|settings| settings.get("hostName"))
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy())
+}
+
 fn host_of(view: &Json) -> Option<HostInfo> {
     let host = view.get("host")?;
     let protocol = host.get("protocol")?;
@@ -281,6 +292,7 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         unauthorized: matches!(view.get("unauthorized"), Some(Json::Bool(true))),
         protocol_mismatch: mismatch_of(&view),
         host: host_of(&view),
+        host_name: host_name_of(&view),
         organized,
         notices: notices_of(&view),
         models: models_of(&view),

@@ -20,6 +20,10 @@ public struct HostRecord: Codable, Sendable, Equatable {
     public var url: String
     public var hostKey: String
     public var privateKey: String
+    /// The machine name cached from the host's settings stream (5.12).
+    /// `nil` for records written before names existed or before the stream
+    /// lands; the label falls back to the address then.
+    public var name: String?
     public var account: AccountLink?
     public var pairedAt: Date
 
@@ -27,12 +31,14 @@ public struct HostRecord: Codable, Sendable, Equatable {
         url: String,
         hostKey: String,
         privateKey: String,
+        name: String? = nil,
         account: AccountLink? = nil,
         pairedAt: Date = Date()
     ) {
         self.url = url
         self.hostKey = hostKey
         self.privateKey = privateKey
+        self.name = name
         self.account = account
         self.pairedAt = pairedAt
     }
@@ -44,6 +50,7 @@ public struct HostRecord: Codable, Sendable, Equatable {
             url: url,
             hostKey: hostKey,
             privateKey: privateKey,
+            name: name,
             account: account.map { StoredHostAccount(serverOrigin: $0.serverOrigin, hostId: $0.hostId) }
         )
     }
@@ -79,6 +86,21 @@ public struct StoredHosts: Codable, Sendable, Equatable {
         guard hosts.contains(where: { $0.hostKey == hostKey }) else { return self }
         var next = self
         next.activeHostKey = hostKey
+        return next
+    }
+
+    /// Apply the name a 5.12 host announced for `hostKey`. Display
+    /// metadata only: order and the launch choice stay put, and an entry
+    /// forgotten since the announcement is not brought back. `nil` means
+    /// nothing to write — no announcement (older host, stream not landed),
+    /// an empty one, no such entry, or the cached name is already current.
+    public func settingName(_ announced: String?, for hostKey: String) -> StoredHosts? {
+        guard let announced, !announced.isEmpty,
+              let index = hosts.firstIndex(where: { $0.hostKey == hostKey }),
+              hosts[index].name != announced
+        else { return nil }
+        var next = self
+        next.hosts[index].name = announced
         return next
     }
 }
