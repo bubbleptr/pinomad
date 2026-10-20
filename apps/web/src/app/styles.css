@@ -387,8 +387,8 @@ body {
 }
 
 /* The conversation row's subagent count sits in that slot and yields to the
-   … menu: hidden while the row is hovered or focused (pointer devices), and
-   always on touch, where the menu never hides. */
+   … menu: hidden while the row is hovered or focused or its menu is open
+   (pointer devices), and always on touch, where the menu never hides. */
 .pigui-sidenav-subagent-count {
   display: flex;
   height: 100%;
@@ -403,7 +403,8 @@ body {
 
 @media (hover: hover) {
   .pigui-sidenav-session-row:hover .pigui-sidenav-subagent-count,
-  .pigui-sidenav-session-row:focus-within .pigui-sidenav-subagent-count {
+  .pigui-sidenav-session-row:focus-within .pigui-sidenav-subagent-count,
+  .pigui-sidenav-session-row:has([aria-expanded="true"]) .pigui-sidenav-subagent-count {
     opacity: 0;
   }
 }
