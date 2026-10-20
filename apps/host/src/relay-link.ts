@@ -19,6 +19,7 @@ import {
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import type { HostValue } from "./host-value.ts";
 
 export type RelayLinkState =
   | { readonly status: "connecting" }
@@ -89,6 +90,13 @@ export function startRelayLink(options: {
    */
   accountOffer?(): Promise<AccountOfferResult>;
   /**
+   * The host's current display name (issue #212): every register carries it,
+   * and renames ride a `name` frame on connections whose `registered`
+   * declared the "name" feature. Undefined means "don't report" — the
+   * register then omits the field like a pre-5.12 host.
+   */
+  hostName?: HostValue<string | undefined>;
+  /**
    * Fires only when the state actually changes: a different `status`, or a
    * `rejected` with a different `reason` (the same rejection on retry doesn't
    * fire again). The initial `connecting` state doesn't fire.
@@ -115,6 +123,13 @@ export function startRelayLink(options: {
   // moment the socket dies or a new one starts connecting — the capability is
   // per-connection, so a stale declaration must never survive a reconnect.
   let pushEnvironments: readonly ApnsEnvironment[] | undefined;
+  // Per-connection name reporting (issue #212): `reportedName` is what this
+  // control last carried — its register's name first, then each `name`
+  // frame — and `nameDeclared` is its `registered` declaration. Both die with
+  // the connection like `pushEnvironments`: a stale declaration must never
+  // survive a reconnect.
+  let reportedName: string | undefined;
+  let nameDeclared = false;
   // Push requests bound to the control that sent them (ADR-0025 §4): a close
   // settles every one as retry, and a result that arrives late finds no entry.
   const pushes = new Map<string, { readonly socket: WebSocket; readonly settle: (verdict: PushVerdict) => void }>();
@@ -163,6 +178,8 @@ export function startRelayLink(options: {
     const socket = new WebSocket(`${wsBase}/host`, { handshakeTimeout: pingIntervalMs });
     control = socket;
     pushEnvironments = undefined;
+    nameDeclared = false;
+    reportedName = undefined;
     watch(socket);
     // Attached synchronously on purpose: the relay sends `challenge` the
     // instant the upgrade completes — waiting for `open` loses it.
@@ -196,6 +213,7 @@ export function startRelayLink(options: {
         // rest; an account server prefers v2, which also binds the Noise key.
         const noisePublicKey = toBase64Url(options.noisePublicKey);
         const challenge = { relayOrigin: origin, hostId, nonce: frame.nonce };
+        reportedName = options.hostName?.value;
         socket.send(
           encodeRelayFrame({
             t: "register",
@@ -207,18 +225,28 @@ export function startRelayLink(options: {
             // would crash an old host's decoder, so the server only sends
             // them to controls that declared "pairing".
             ...(options.accountOffer === undefined ? {} : { features: ["pairing"] }),
+            ...(reportedName === undefined ? {} : { name: reportedName }),
           }),
         );
         break;
       }
-      case "registered":
+      case "registered": {
         delay = minDelay;
         pushEnvironments = frame.push;
+        nameDeclared = frame.features?.includes("name") === true;
+        // A rename inside the register → registered window left reportedName
+        // stale: top it up now that the capability is known (issue #212).
+        const current = options.hostName?.value;
+        if (nameDeclared && current !== undefined && current !== reportedName) {
+          reportedName = current;
+          socket.send(encodeRelayFrame({ t: "name", name: current }));
+        }
         // The declaration rides the state so the one `registered` log line
         // per connection says what this instance can push — "pre-push
         // server" and "no keys configured" are different stories.
         setState({ status: "registered", ...(frame.push === undefined ? {} : { push: frame.push }) });
         break;
+      }
       case "push-result": {
         const request = pushes.get(frame.requestId);
         // Results count only on the control that asked — a reply over a
@@ -282,6 +310,8 @@ export function startRelayLink(options: {
   function onControlClosed(socket: WebSocket, code: number): void {
     control = undefined;
     pushEnvironments = undefined;
+    nameDeclared = false;
+    reportedName = undefined;
     // Everything in flight settles as retry: the request dies with its
     // connection, and any push-result that still arrives is ignored (ADR-0025 §4).
     for (const [requestId, request] of pushes) {
@@ -303,6 +333,17 @@ export function startRelayLink(options: {
     reconnect(delay);
     delay = Math.min(maxDelay, delay * 2);
   }
+
+  // Renames ride the live control only: an undeclared connection (a server
+  // that predates "name") never sees the frame — its next register simply
+  // carries the newer name instead.
+  const detachName = options.hostName?.subscribe((name) => {
+    if (name === undefined || name === reportedName) return;
+    const socket = control;
+    if (socket === undefined || socket.readyState !== WebSocket.OPEN || !nameDeclared) return;
+    reportedName = name;
+    socket.send(encodeRelayFrame({ t: "name", name }));
+  });
 
   connectControl();
 
@@ -346,6 +387,7 @@ export function startRelayLink(options: {
       stopped = true;
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       clearInterval(pingTimer);
+      detachName?.();
       // Terminating fires each socket's close, which disposes its GatewayClient.
       for (const socket of watched) socket.terminate();
       return Promise.resolve();

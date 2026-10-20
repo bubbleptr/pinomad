@@ -1,7 +1,7 @@
 // Host side of server accounts (ADR-0022 §3): join/leave CLI against a real
 // in-process server, with an injected service manager — tests never install a
 // real service.
-import { stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -136,6 +136,61 @@ describe("joinServer", () => {
     expect(fake.installs).toHaveLength(1);
     expect(fake.installs[0]!.hostArgs).toEqual(["--port", "7420"]);
     expect(fake.restarts()).toBe(0); // install() restarts; no second restart
+  });
+
+  it("writes --name into settings.json, keeps the other keys, and reports the cleaned name", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    // An existing override plus a key this build doesn't know — both survive.
+    await writeFile(
+      join(data.path, "settings.json"),
+      JSON.stringify({ followUpMode: "all", futureSetting: 42 }),
+    );
+    const fake = fakeManager();
+
+    const outcome = await joinServer(
+      { origin: started.origin, token: await joinToken(started), dataDir: data.path, name: "  Omarchy.local " },
+      { manager: fake.manager },
+    );
+
+    expect(JSON.parse(await readFile(join(data.path, "settings.json"), "utf8"))).toEqual({
+      followUpMode: "all",
+      futureSetting: 42,
+      hostName: "Omarchy",
+    });
+    expect(hostsRow(started.accounts, outcome.hostId)!.name).toBe("Omarchy");
+  });
+
+  it("reports the settings.json hostName when --name is absent", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    await writeFile(join(data.path, "settings.json"), JSON.stringify({ hostName: "stored-name" }));
+    const outcome = await joinServer(
+      { origin: started.origin, token: await joinToken(started), dataDir: data.path },
+      { manager: fakeManager().manager },
+    );
+    expect(hostsRow(started.accounts, outcome.hostId)!.name).toBe("stored-name");
+  });
+
+  it("rejects a --name that cleans to nothing before spending the token", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager();
+    await expect(
+      joinServer(
+        { origin: started.origin, token: await joinToken(started), dataDir: data.path, name: " .local " },
+        { manager: fake.manager },
+      ),
+    ).rejects.toThrow(/invalid host name/i);
+    // The token is unspent, no binding landed, and nothing was written.
+    const db = new DatabaseSync(started.accounts.dbPath);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM hosts").get() as { n: number }).n).toBe(0);
+    db.close();
+    expect(fake.installs).toHaveLength(0);
+    await expect(stat(join(data.path, "settings.json"))).rejects.toThrow();
   });
 
   it("installs a fresh service (no --relay) when none exists", async () => {

@@ -167,7 +167,7 @@ describe("push declaration and authorization", () => {
   it("declares the environments on registered — bound hosts always see the field", async () => {
     const { relay, accounts } = await startServer({ push: fakeApnsSender().sender });
     const bound = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
-    expect(await nextFrame(bound)).toEqual({ t: "registered", push: ["production"] });
+    expect(await nextFrame(bound)).toEqual({ t: "registered", push: ["production"], features: ["name"] });
     // A socket that ignores the new field — the old-host behavior — stays up.
     bound.send(encodeRelayFrame({ t: "pairing-refused", requestId: "x", reason: "no" }));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -178,7 +178,7 @@ describe("push declaration and authorization", () => {
     // distinguishable from a pre-push server's missing field.
     const plain = await startServer();
     const control = await controlFor(plain.relay, bindHost(plain.accounts), { noisePublicKey: NOISE_KEY });
-    expect(await nextFrame(control)).toEqual({ t: "registered", push: [] });
+    expect(await nextFrame(control)).toEqual({ t: "registered", push: [], features: ["name"] });
   });
 
   it("forwards a bound host's push and returns the classified verdict", async () => {

@@ -374,6 +374,13 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
           handlePush(socket, hostId, answer);
           return;
         }
+        if (answer.t === "name") {
+          // Only the host's current control renames it — a frame parsed on a
+          // socket mid-replacement (its close handshake still in flight)
+          // must not win over the newer connection's identity.
+          if (controls.get(hostId)?.socket === socket) accounts?.renameHost(hostId, answer.name);
+          return;
+        }
         if (answer.t === "pairing" || answer.t === "pairing-refused") {
           const request = pairingRequests.get(answer.requestId);
           if (request === undefined || request.control !== socket) return;
@@ -448,10 +455,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // A bound host's successful register is also its heartbeat for the
       // account: keep last_seen_at fresh so /api/hosts can report online age.
       accounts?.markHostSeen(hostId);
+      // The register's name is the host's current one (issue #212); absent
+      // means the host predates it and the row keeps what join wrote.
+      if (frame.name !== undefined) accounts?.renameHost(hostId, frame.name);
       // Every admitted host is bound, so it always gets the push declaration
       // (ADR-0025 §4) — an empty list means "push-aware, nothing configured",
-      // which the host must distinguish from a pre-push server.
-      socket.send(encodeRelayFrame({ t: "registered", push: pushEnvironments }));
+      // which the host must distinguish from a pre-push server. `features`
+      // declares the post-admission frames this build accepts: hosts send
+      // `name` only to a connection that lists it.
+      socket.send(encodeRelayFrame({ t: "registered", push: pushEnvironments, features: ["name"] }));
     });
 
     socket.once("close", () => {

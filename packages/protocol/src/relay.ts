@@ -6,6 +6,7 @@
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { fromBase64Url, toBase64Url } from "./secure-channel.ts";
+import { HOST_NAME_MAX_UNITS } from "./settings.ts";
 
 // 46xx so relay close codes never collide with the host's own
 // (UNAUTHORIZED_CLOSE_CODE = 4401 in frames.ts).
@@ -28,8 +29,10 @@ export type RelayToHost =
    * `push` lists the APNs environments the server can deliver to (ADR-0025 §3).
    * Absent on servers that predate the frame or have nothing configured —
    * the host treats it as "push unknown", not "push empty".
+   * `features` lists the frames this connection accepts beyond the original
+   * set (issue #212: "name"); absent on servers that predate declarations.
    */
-  | { readonly t: "registered"; readonly push?: readonly ApnsEnvironment[] }
+  | { readonly t: "registered"; readonly push?: readonly ApnsEnvironment[]; readonly features?: readonly string[] }
   | { readonly t: "incoming"; readonly connId: string }
   /**
    * The server asks the host to mint a one-time pairing offer for a device it
@@ -46,14 +49,21 @@ export type RelayToHost =
 
 /**
  * Host → relay: `register` is the first and only pre-admission frame; after
- * `registered`, the control connection may answer pairing requests and ask
- * the server to send pushes (ADR-0025 §3 — only for environments the
- * `registered` frame declared, since the server's old decoders close on
+ * `registered`, the control connection may answer pairing requests, ask the
+ * server to send pushes (ADR-0025 §3 — only for environments the
+ * `registered` frame declared), and report name changes (issue #212 — only
+ * when that frame declared the "name" feature, since old decoders close on
  * unknown frames).
  * `signature` stays mandatory — a pre-accounts server verifies only it and
  * ignores everything else (roadmap M3: new host + old server must still work).
  */
-export type HostToRelay = RegisterFrame | PairingAnswerFrame | PushFrame;
+export type HostToRelay = RegisterFrame | PairingAnswerFrame | PushFrame | NameFrame;
+
+/** The host's current display name, sent on connections that declared "name" (issue #212). */
+export interface NameFrame {
+  readonly t: "name";
+  readonly name: string;
+}
 
 /** The notification one `push` frame asks the server to deliver (ADR-0025 §8). */
 export interface PushNotification {
@@ -189,8 +199,15 @@ export function decodeRelayToHost(text: string): RelayToHost {
   }
 }
 
-function decodeRegistered(value: { push?: unknown }): RelayToHost {
-  if (value.push === undefined) return { t: "registered" };
+// Feature declarations on either direction share one shape: a short list of
+// short capability strings (register's `features`, registered's `features`).
+const isFeatureList = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) && value.length <= 16 && value.every((entry) => isString(entry) && entry.length <= 64);
+
+function decodeRegistered(value: { push?: unknown; features?: unknown }): RelayToHost {
+  if (value.features !== undefined && !isFeatureList(value.features)) throw new Error("malformed registered");
+  const declared = value.features === undefined ? {} : { features: value.features };
+  if (value.push === undefined) return { t: "registered", ...declared };
   if (!Array.isArray(value.push) || value.push.length > 8 || !value.push.every(isString)) {
     throw new Error("malformed registered");
   }
@@ -199,7 +216,7 @@ function decodeRegistered(value: { push?: unknown }): RelayToHost {
   const push = value.push.filter(
     (entry): entry is ApnsEnvironment => entry === "production" || entry === "development",
   );
-  return { t: "registered", push };
+  return { t: "registered", push, ...declared };
 }
 
 function decodePushResult(value: {
@@ -287,6 +304,11 @@ export function decodeHostToRelay(text: string): HostToRelay {
         throw new Error("malformed pairing-refused");
       }
       return { t: "pairing-refused", requestId: value.requestId, reason: value.reason };
+    case "name":
+      // A name that fits the display cap is the only legitimate one — the
+      // server normalizes again anyway, so bigger means a broken peer.
+      if (!isBoundedString(value.name, HOST_NAME_MAX_UNITS)) throw new Error("malformed name");
+      return { t: "name", name: value.name };
     default:
       throw new Error("unknown host frame");
     }
@@ -348,14 +370,7 @@ function decodeRegister(value: {
   if (value.noisePublicKey !== undefined && !isString(value.noisePublicKey)) throw new Error("malformed register");
   if (value.joinToken !== undefined && !isString(value.joinToken)) throw new Error("malformed register");
   if (value.name !== undefined && !isString(value.name)) throw new Error("malformed register");
-  if (
-    value.features !== undefined &&
-    (!Array.isArray(value.features) ||
-      value.features.length > 16 ||
-      !value.features.every((feature) => isString(feature) && feature.length <= 64))
-  ) {
-    throw new Error("malformed register");
-  }
+  if (value.features !== undefined && !isFeatureList(value.features)) throw new Error("malformed register");
   return {
     t: "register",
     hostId: value.hostId,

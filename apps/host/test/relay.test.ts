@@ -12,7 +12,8 @@ import { transcript } from "@pinomad/protocol/transcript.ts";
 import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { startRelayLink, type AccountOfferResult, type RelayLinkState } from "../src/relay-link.ts";
+import { Published, type HostValue } from "../src/host-value.ts";
+import { startRelayLink, type AccountOfferResult, type RelayLink, type RelayLinkState } from "../src/relay-link.ts";
 import { connectTo, freePort, openBoundAccounts, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -104,19 +105,30 @@ const QUICK_RECONNECT = { min: 50, max: 200 };
  * challenge, captures the register, then lets the test drive frames. Used to
  * exercise the relay link's pairing answers and push requests without a whole
  * accounts server. `push` declares APNs environments on `registered`
- * (ADR-0025 §3) — omit it to stand in for a pre-push server.
+ * (ADR-0025 §3) and `features` its feature strings — omit either to stand in
+ * for a server that predates the declaration. `holdRegistered` stops the
+ * auto-answer so a test can open the register → registered window itself.
  */
-async function fakeServer(options?: { push?: readonly string[] }): Promise<{
+async function fakeServer(options?: {
+  push?: readonly string[];
+  features?: readonly string[];
+  holdRegistered?: boolean;
+}): Promise<{
   port: number;
   origin: string;
-  /** Resolves with the host's register frame once it arrives. */
+  /** Resolves with the host's first register frame once it arrives. */
   register: Promise<Record<string, unknown>>;
+  /** Every register received, reconnects included. */
+  registers(): readonly Record<string, unknown>[];
   send(frame: object): void;
   nextMessage(): Promise<Record<string, unknown>>;
-  /** Frames seen so far after the register. */
+  /** Queued frames not yet taken by nextMessage. */
   messages(): readonly Record<string, unknown>[];
+  /** Every non-register frame received, consumed or not. */
+  frames(): readonly Record<string, unknown>[];
   /** Change what the next `registered` declares — a redeployed older instance. */
   setPush(push: readonly string[] | undefined): void;
+  setFeatures(features: readonly string[] | undefined): void;
   closeControl(): void;
 }> {
   const { WebSocketServer } = await import("ws");
@@ -127,7 +139,10 @@ async function fakeServer(options?: { push?: readonly string[] }): Promise<{
   });
   const port = (wss.address() as AddressInfo).port;
   let socket: import("ws").WebSocket | undefined;
-  let declared = options?.push;
+  let push = options?.push;
+  let features = options?.features;
+  const registers: Record<string, unknown>[] = [];
+  const frames: Record<string, unknown>[] = [];
   const messages: Record<string, unknown>[] = [];
   const waiters: ((frame: Record<string, unknown>) => void)[] = [];
   const seen = new Promise<Record<string, unknown>>((resolve) => {
@@ -136,10 +151,20 @@ async function fakeServer(options?: { push?: readonly string[] }): Promise<{
       ws.on("message", (data) => {
         const frame = JSON.parse((data as Buffer).toString()) as Record<string, unknown>;
         if (frame.t === "register") {
+          registers.push(frame);
           resolve(frame);
-          ws.send(JSON.stringify({ t: "registered", ...(declared === undefined ? {} : { push: declared }) }));
+          if (options?.holdRegistered !== true) {
+            ws.send(
+              JSON.stringify({
+                t: "registered",
+                ...(push === undefined ? {} : { push }),
+                ...(features === undefined ? {} : { features }),
+              }),
+            );
+          }
           return;
         }
+        frames.push(frame);
         const waiter = waiters.shift();
         if (waiter !== undefined) waiter(frame);
         else messages.push(frame);
@@ -151,6 +176,7 @@ async function fakeServer(options?: { push?: readonly string[] }): Promise<{
     port,
     origin: `http://127.0.0.1:${port}`,
     register: seen,
+    registers: () => registers,
     send(frame) {
       socket?.send(JSON.stringify(frame));
     },
@@ -160,8 +186,12 @@ async function fakeServer(options?: { push?: readonly string[] }): Promise<{
       return new Promise((resolve) => waiters.push(resolve));
     },
     messages: () => messages,
-    setPush(push) {
-      declared = push;
+    frames: () => frames,
+    setPush(next) {
+      push = next;
+    },
+    setFeatures(next) {
+      features = next;
     },
     closeControl() {
       socket?.close();
@@ -311,6 +341,83 @@ describe("relay link push", () => {
     // reconnect, so this is a transient condition, unlike "never declared".
     await until(() => link.state().status === "connecting");
     expect((await link.sendPush(request)).result).toBe("retry");
+  });
+});
+
+describe("relay link host name (issue #212)", () => {
+  const nameSource = (initial: string): Published<string | undefined> =>
+    new Published<string | undefined>(initial, (a, b) => a === b);
+
+  const startLink = (
+    server: Awaited<ReturnType<typeof fakeServer>>,
+    name?: HostValue<string | undefined>,
+  ): RelayLink => {
+    const link = startRelayLink({
+      origin: server.origin,
+      signingKey: ed25519.keygen(),
+      noisePublicKey: generateKeyPair().publicKey,
+      accept: () => {},
+      ...(name === undefined ? {} : { hostName: name }),
+      reconnectDelayMs: QUICK_RECONNECT,
+    });
+    defer(() => link.close());
+    return link;
+  };
+  const registered = (link: RelayLink) => until(() => link.state().status === "registered");
+
+  it("reports the effective name on register — and none without a source", async () => {
+    const named = await fakeServer();
+    const link = startLink(named, nameSource("omarchy"));
+    expect((await named.register).name).toBe("omarchy");
+    await registered(link);
+
+    const plain = await fakeServer();
+    startLink(plain);
+    expect((await plain.register).name).toBeUndefined();
+  });
+
+  it("sends a name frame on rename only when the connection declared it", async () => {
+    const server = await fakeServer({ features: ["name"] });
+    const name = nameSource("one");
+    const link = startLink(server, name);
+    await registered(link);
+    const sent = server.nextMessage();
+    name.set("two");
+    expect(await sent).toEqual({ t: "name", name: "two" });
+  });
+
+  it("tops up a rename that raced the register → registered window", async () => {
+    const server = await fakeServer({ holdRegistered: true });
+    const name = nameSource("one");
+    startLink(server, name);
+    await server.register; // carried "one"; registered is still held
+    name.set("two"); // renamed inside the window — nothing can be sent yet
+    server.send({ t: "registered", features: ["name"] });
+    expect(await server.nextMessage()).toEqual({ t: "name", name: "two" });
+  });
+
+  it("stays silent on undeclared connections and drops the capability on reconnect", async () => {
+    const server = await fakeServer({ features: ["name"] });
+    const name = nameSource("one");
+    const link = startLink(server, name);
+    await registered(link);
+    name.set("two");
+    expect(await server.nextMessage()).toEqual({ t: "name", name: "two" });
+
+    // A redeployed older server: the next registered declares nothing, so the
+    // capability must not carry over from the previous connection.
+    server.setFeatures(undefined);
+    server.closeControl();
+    await until(() => server.registers().length === 2);
+    await registered(link);
+    // The register re-reported the current name; a rename now goes nowhere.
+    expect(server.registers()[1]!.name).toBe("two");
+    name.set("three");
+    // The pairing probe proves every earlier frame already arrived — no name.
+    const probe = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "probe" });
+    expect(await probe).toEqual({ t: "pairing-refused", requestId: "probe", reason: "unavailable" });
+    expect(server.frames().filter((frame) => frame.t === "name")).toEqual([{ t: "name", name: "two" }]);
   });
 });
 

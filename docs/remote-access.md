@@ -148,6 +148,8 @@ pinomad join https://relay.example.com <token> [--name 显示名]
 
 `join` 依次做：建好宿主的 Ed25519 登记密钥和 Noise 密钥（已有就复用）；经一条一次性操作连接向服务端登记（这条连接不会顶替正在跑的控制连接）；把服务端地址写进 `<数据目录>/server.json`；然后安装宿主服务——已安装就重写服务定义、去掉旧的 `--relay` 参数——并按 ADR-0009 等空闲重启。输出会打印宿主指纹（hostId）和加入的账号名。令牌响应丢了就重新生成一个再跑一遍，重复 join 同一台宿主是幂等的。
 
+`--name` 把显示名写进 `<数据目录>/settings.json` 的 `hostName`（清洗后为空会报错退出）：join 上报给服务端的名字就是它，不带 `--name` 时用 settings.json 里已有的名字，都没有则是机器名。之后也可以在客户端的 Settings 里改（宿主经控制连接把新名字同步给服务端）。前台运行的宿主（`bun run host`）不会在运行中重读 settings.json，要重启才生效；服务方式安装的宿主由 join 的重启自动带上。
+
 ```sh
 pinomad leave [--data-dir DIR]
 ```

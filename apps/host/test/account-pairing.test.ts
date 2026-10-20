@@ -5,6 +5,7 @@
 // registration's source as "account".
 import { once } from "node:events";
 import { request as httpRequest } from "node:http";
+import { hostname } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,7 @@ import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
+import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
 import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
@@ -154,7 +156,9 @@ describe("server-vouched pairing end to end", () => {
       noisePublicKey: string;
     }[];
     expect(hosts).toHaveLength(1);
-    expect(hosts[0]).toMatchObject({ hostId, name: "test-host", online: true, pairing: "available" });
+    // The join-time "test-host" was overwritten at register — the host
+    // reports its effective name (issue #212), the machine name here.
+    expect(hosts[0]).toMatchObject({ hostId, name: normalizeHostName(hostname()), online: true, pairing: "available" });
     expect(hosts[0]!.noisePublicKey).toBe(toBase64Url((await loadHostKey(dataDir)).publicKey));
 
     const ask = await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(session) });
