@@ -386,6 +386,34 @@ body {
   width: var(--size-element-sm);
 }
 
+/* The conversation row's subagent count sits in that slot and yields to the
+   … menu: hidden while the row is hovered or focused (pointer devices), and
+   always on touch, where the menu never hides. */
+.pigui-sidenav-subagent-count {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  transition: opacity 120ms ease-out;
+}
+
+@media (hover: hover) {
+  .pigui-sidenav-session-row:hover .pigui-sidenav-subagent-count,
+  .pigui-sidenav-session-row:focus-within .pigui-sidenav-subagent-count {
+    opacity: 0;
+  }
+}
+
+@media (hover: none) {
+  .pigui-sidenav-subagent-count {
+    display: none;
+  }
+}
+
 /* Astryx nested SideNavItem children use padding-inline-start: var(--spacing-6)
    at StyleX ID-level specificity. Conversation rows already lead with a glyph
    slot the same size as the project folder, so that extra indent pushes titles
