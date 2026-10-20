@@ -427,6 +427,13 @@ describe("tool result details and changes", () => {
     const onBranch = await client.controller.changes();
     expect(onBranch).toMatchObject({ available: true, branch: "topic" });
 
+    // A tag shadowing the branch name must not disambiguate the answer into
+    // `heads/topic` — the branch name is what's wanted, not a unique ref.
+    await git(repoDir, ["tag", "topic"]);
+    const shadowed = await client.controller.changes();
+    expect(shadowed).toMatchObject({ available: true, branch: "topic" });
+    await git(repoDir, ["tag", "-d", "topic"]);
+
     // Detached HEAD omits the field entirely rather than sending "" or a sha.
     await git(repoDir, ["checkout", "--detach", "HEAD"]);
     const detached = await client.controller.changes();

@@ -110,16 +110,22 @@ export async function gitBase(projectPath: string): Promise<RepoBase | undefined
 
 /**
  * The branch `dir`'s HEAD points at, or undefined for detached HEAD, a
- * missing directory, or a non-repository. `symbolic-ref` needs no commits:
- * an unborn branch still answers, which is why a `changes` result can carry
- * `branch` while reporting `available:false` (5.11). `--quiet` keeps the
- * detached case silent; `--short` avoids `branch --show-current` (git 2.22).
+ * missing directory, a non-repository, or a HEAD that isn't a local
+ * branch. `symbolic-ref` needs no commits: an unborn branch still
+ * answers, which is why a `changes` result can carry `branch` while
+ * reporting `available:false` (5.11). The full ref is read and the fixed
+ * `refs/heads/` prefix cut — `--short` would disambiguate a branch
+ * shadowed by a same-named tag into `heads/<name>` instead of the branch
+ * name.
  */
 export async function branchOf(dir: string): Promise<string | undefined> {
-  return git(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(
-    ({ stdout }) => stdout.trim() || undefined,
+  const ref = await git(dir, ["symbolic-ref", "--quiet", "HEAD"]).then(
+    ({ stdout }) => stdout.trim(),
     () => undefined,
   );
+  const prefix = "refs/heads/";
+  if (ref === undefined || !ref.startsWith(prefix)) return undefined;
+  return ref.slice(prefix.length) || undefined;
 }
 
 /** Git mutations on one repo serialize here: worktree add/remove take .git lock files. */
