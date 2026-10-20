@@ -16,7 +16,7 @@ function run(cot: Partial<CotView> & { steps: CotStep[] }, overrides: Partial<Ru
   return { kind: "run", id: "run-1", interrupted: false, cot: { phase: "settled", ...cot }, ...overrides };
 }
 
-function renderRun(entry: RunEntry, todo?: TodoState) {
+function renderRun(entry: RunEntry, todo?: { state: TodoState; updatedAtMs?: number }) {
   return render(
     <ChatEntryView entry={entry} connected openInPanel={() => {}} onFork={() => {}} canFork={false} todo={todo} />,
   );
@@ -66,21 +66,23 @@ describe("a run in the transcript", () => {
     expect(screen.getByText("Run failed")).toBeInTheDocument();
   });
 
-  it("keeps the rows shut while the run is live and ends with the status line", async () => {
+  // ADR-0026: no status line of its own — the last row names the work in
+  // flight and carries the run's clock, the same place the settled duration
+  // goes.
+  it("keeps the rows shut while the run is live and puts the clock on the last one", async () => {
     const user = userEvent.setup();
     const live: CotStep[] = [
       narrated[1]!,
       { kind: "interim", id: "live-text-0", text: "Running the suite now." },
       { kind: "tools", id: "live-tools-1", tools: [bash("c3", "bun test", "input-available")], live: true, activeToolCallId: "c3" },
     ];
-    const { container, rerender } = renderRun(run({ phase: "acting", anchorMs: Date.now(), steps: live }));
+    const { container, rerender } = renderRun(run({ phase: "acting", anchorMs: Date.now() - 5_000, steps: live }));
 
     const rows = [...container.querySelectorAll('[data-slot="chat-trace-trigger"]')];
-    expect(rows.map((row) => [row.textContent, row.getAttribute("aria-expanded")])).toEqual([
-      ["Ran 2 commands", "false"],
-      ["Running bash…", "false"],
-    ]);
-    expect(container.querySelector(".chain-of-thought")?.lastElementChild).toHaveAttribute("data-slot", "chat-status-line");
+    expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+    expect(rows[0]).toHaveTextContent(/^Ran 2 commands$/);
+    expect(rows[1]).toHaveTextContent(/^Running bash… · 5\.\ds$/);
+    expect(container.querySelector('[role="status"]')).toBeNull();
 
     // Opened and shut again mid-run; settling must not unfold it.
     await user.click(rows[1]!);
@@ -88,17 +90,54 @@ describe("a run in the transcript", () => {
     const settled = run({ elapsedMs: 9_000, steps: [narrated[1]!, live[1]!, { ...narrated[3]!, id: "c-tools-1" }] });
     rerender(<ChatEntryView entry={settled} connected openInPanel={() => {}} onFork={() => {}} canFork={false} />);
     expect(screen.getByRole("button", { name: "Ran bun test · 9s" })).toHaveAttribute("aria-expanded", "false");
-    expect(container.querySelector('[data-slot="chat-status-line"]')).toBeNull();
+  });
+
+  it("starts as one thinking line with its clock before any step lands", () => {
+    const { container } = renderRun(run({ phase: "thinking", anchorMs: Date.now() - 1_000, steps: [] }));
+
+    const rows = container.querySelectorAll('[data-slot="chat-trace"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(/^Thinking… · 1\.\ds$/);
+  });
+
+  // Prose is never the live end of a run: a bare row follows it and takes
+  // the clock, so the rows above stay settled and one clock shows.
+  it("ends a live run that last spoke with its own line, not a second clock", () => {
+    const { container } = renderRun(
+      run({ phase: "thinking", anchorMs: Date.now() - 1_000, steps: [narrated[1]!, { kind: "interim", id: "a-text-2", text: "Checking." }] }),
+    );
+
+    const rows = [...container.querySelectorAll('[data-slot="chat-trace"] > :first-child')];
+    expect(rows.map((row) => row.textContent?.replace(/\d+\.\ds/, "Ns"))).toEqual(["Ran 2 commands", "Thinking… · Ns"]);
+    expect(container.querySelectorAll('[data-slot="chat-trace-clock"]')).toHaveLength(1);
+  });
+
+  it("reads a failed todo_write like any other failure", () => {
+    const failed: ToolItem = { toolName: "todo_write", toolCallId: "t1", state: "output-error" };
+    renderRun(run({ elapsedMs: 2_000, steps: [{ kind: "tools", id: "a-tools-0", tools: [failed], live: false }] }));
+
+    expect(screen.getByRole("button", { name: "Used todo_write 1 failed · 2s" })).toBeInTheDocument();
   });
 
   it("puts the todo card after everything else in the run", () => {
     const { container } = renderRun(
       run({ elapsedMs: 9_000, todoWrittenAtMs: Date.now(), steps: narrated, answer: { text: "All fixed.", streaming: false } }),
-      plan,
+      { state: plan, updatedAtMs: Date.now() },
     );
 
     const body = container.querySelector(".chat-message__body")!;
     expect(body.lastElementChild).toHaveAttribute("data-slot", "todo-card");
     expect(screen.getByText("Updated just now")).toBeInTheDocument();
+  });
+
+  // A run that left the list alone still shows when it last changed: that
+  // is when it is most likely to be out of date.
+  it("dates the card from an earlier run's write", () => {
+    renderRun(run({ elapsedMs: 9_000, steps: narrated, answer: { text: "Next.", streaming: false } }), {
+      state: plan,
+      updatedAtMs: Date.now() - 6 * 60_000,
+    });
+
+    expect(screen.getByText("Updated 6m ago")).toBeInTheDocument();
   });
 });

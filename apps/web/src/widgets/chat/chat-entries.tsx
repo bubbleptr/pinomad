@@ -24,6 +24,9 @@ import { GitBranch } from "@/shared/ui/icons";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 
+/** The conversation's todo list and when any run last wrote it (`lastTodoWriteMs`). */
+type RunTodo = { state: TodoState; updatedAtMs?: number };
+
 export function ChatEntryView({
   entry,
   connected,
@@ -49,7 +52,7 @@ export function ChatEntryView({
   /** Only set on the newest entry when it is a failed run. */
   onRetry?: () => Promise<void>;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
-  todo?: TodoState;
+  todo?: RunTodo;
 }) {
   switch (entry.kind) {
     case "user":
@@ -116,7 +119,7 @@ function RunEntry({
   forksAt?: (entryId: string) => ConversationId[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   onRetry?: () => Promise<void>;
-  todo?: TodoState;
+  todo?: RunTodo;
 }) {
   // Subagent calls anchor cards under the run instead of rows in the CoT.
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
@@ -185,7 +188,11 @@ function RunEntry({
           </ChatMessageActions>
         )}
         {/* Last in the run, below the answer: the card never sits between steps. */}
-        <TodoCard todo={todo} {...(cot.todoWrittenAtMs === undefined ? {} : { writtenAtMs: cot.todoWrittenAtMs })} />
+        <TodoCard
+          todo={todo?.state}
+          writtenThisRun={cot.todoWrittenAtMs !== undefined}
+          {...(todo?.updatedAtMs === undefined ? {} : { updatedAtMs: todo.updatedAtMs })}
+        />
       </ChatMessage.Body>
     </ChatMessage.Assistant>
   );
@@ -210,20 +217,29 @@ function AssistantRunTrajectory({ view }: { view: CotView }) {
     return null;
   }
 
-  // A settled run's duration rides on its last trace row; with no row to
-  // carry it, the answer alone stands for the run.
+  // The last row carries the run's time: the clock while it runs (the row
+  // walks the anchor itself at 100ms rather than the page re-deriving the
+  // whole view that often), held at the first answer token while the answer
+  // streams, and the derived duration once settled (ADR-0030 §6). With no
+  // row to carry it, the answer alone stands for the run.
   const elapsed = view.phase === "settled" ? formatElapsed(view.elapsedMs) : undefined;
   const tail = elapsed === undefined ? undefined : view.outcome === "failed" ? `Failed after ${elapsed}` : elapsed;
-  const lastTrace = segments.findLastIndex((segment) => segment.kind === "trace");
+  const clock = ticking || view.phase === "answering" ? { startedAtMs: view.anchorMs, running: ticking } : undefined;
+  // Between rounds no step is live, but the run is.
+  const waiting = view.phase === "thinking" ? "Thinking…" : "Working…";
+  // A live run always ends in a row; before its first step (or after prose)
+  // that is a bare one. Its key is the next segment's, so the step that lands
+  // takes the row over instead of adding a second.
+  const bareRow = ticking && segments.at(-1)?.kind !== "trace";
+  const carrier = bareRow ? segments.length : segments.findLastIndex((segment) => segment.kind === "trace");
+  const carried = {
+    ...(ticking ? { live: true, waiting } : {}),
+    ...(tail === undefined ? {} : { tail }),
+    ...(clock === undefined ? {} : { clock }),
+  };
 
   return (
-    <ChainOfThought
-      // While the clock runs the component owns it: it walks the Run's anchor
-      // at 100ms rather than the page re-deriving the whole view that often.
-      // Settled, the frozen number rides on the last row instead (ADR-0030 §6).
-      {...(ticking ? { startedAtMs: view.anchorMs } : {})}
-      phase={view.phase}
-    >
+    <ChainOfThought phase={view.phase}>
       {segments.map((segment, index) =>
         segment.kind === "interim" ? (
           <ChatMessage.Content key={segment.key} data-slot="chat-interim-output">
@@ -234,11 +250,11 @@ function AssistantRunTrajectory({ view }: { view: CotView }) {
             key={segment.key}
             steps={segment.steps}
             counted={segment.counted}
-            live={segment.live}
-            {...(index === lastTrace && tail !== undefined ? { tail } : {})}
+            {...(index === carrier ? carried : {})}
           />
         ),
       )}
+      {bareRow ? <ChatTraceRow key={`segment-${carrier}`} steps={[]} counted={[]} {...carried} /> : null}
     </ChainOfThought>
   );
 }

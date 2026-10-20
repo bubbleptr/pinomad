@@ -846,8 +846,9 @@ it("shows interruption without a text bubble and never offers a fork for streami
   const page = await openPage(host, 390, webOrigin);
   await prompt(page).fill("Investigate the release.");
   await prompt(page).press("Enter");
-  // The folded row names the live thinking; the step itself waits behind it.
-  await page.getByRole("button", { name: "Thinking…", exact: true }).waitFor();
+  // The folded row names the live thinking and carries the clock; the step
+  // itself waits behind it.
+  await page.getByRole("button", { name: /^Thinking… · \d/ }).waitFor();
   expect(await page.getByRole("button", { name: "Fork", exact: true }).count()).toBe(0);
 
   await followFirst(observer);

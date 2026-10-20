@@ -1,6 +1,5 @@
 import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
-import { ChatStatusLine } from "@/shared/ui/chat/chat-status-line";
 import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
 import { ChatOutcomeMeta, ChatToolStep, summarizeOutcome, summarizeTools } from "@/shared/ui/chat/chat-tool-step";
@@ -40,39 +39,26 @@ export function formatElapsed(ms: number | undefined) {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
-/**
- * The Run's clock, walked here at 100ms so the page does not re-derive its
- * whole view that often. With no anchor there is no number: a clock started at
- * mount would report how long the page has been open (ADR-0030 §6).
- */
-function useTickingElapsed(startedAtMs: number | undefined, enabled: boolean) {
-  const [now, setNow] = useState(() => Date.now());
+/** The running clock: tenths while it moves, so it visibly ticks. */
+export function formatLiveElapsed(ms: number) {
+  const total = Math.max(0, ms) / 1000;
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    const id = window.setInterval(() => setNow(Date.now()), 100);
-    return () => window.clearInterval(id);
-  }, [enabled]);
-
-  if (startedAtMs === undefined) {
-    return undefined;
+  if (total < 60) {
+    return `${total.toFixed(1)}s`;
   }
-  return Math.max(0, now - startedAtMs);
+
+  return `${Math.floor(total / 60)}m ${(total % 60).toFixed(1)}s`;
 }
 
 /**
  * One run's body in the transcript (ADR-0026): its trace rows and Interim
- * Output in Turn order, with the status line last while the run is in
- * flight. Nothing here unfolds by itself — each trace row is the user's to
- * open, live or settled.
+ * Output in Turn order. Nothing here unfolds by itself — each trace row is
+ * the user's to open, live or settled — and nothing is added while the run
+ * is live: the last row carries what is happening and the clock.
  */
 type ChatChainOfThoughtOwnProps = {
   children?: ReactNode;
-  elapsedMs?: number;
   phase: CotPhase;
-  startedAtMs?: number;
 };
 
 export type ChatChainOfThoughtProps = Omit<
@@ -81,17 +67,7 @@ export type ChatChainOfThoughtProps = Omit<
 > &
   ChatChainOfThoughtOwnProps;
 
-export function ChatChainOfThought({
-  children,
-  className = "",
-  elapsedMs,
-  phase,
-  startedAtMs,
-  ...rest
-}: ChatChainOfThoughtProps) {
-  const live = phase === "thinking" || phase === "acting";
-  const tickingMs = useTickingElapsed(startedAtMs, live && elapsedMs === undefined);
-
+export function ChatChainOfThought({ children, className = "", phase, ...rest }: ChatChainOfThoughtProps) {
   if (phase === "hidden") {
     return null;
   }
@@ -104,10 +80,56 @@ export function ChatChainOfThought({
       {...rest}
     >
       {children}
-      {live ? (
-        <ChatStatusLine elapsedMs={elapsedMs ?? tickingMs} phase={phase} />
-      ) : null}
     </div>
+  );
+}
+
+type RunClock = {
+  /** The Run's anchor; absent during a retry gap, and then there is no number. */
+  startedAtMs?: number;
+  /** Ticking until the answer's first token; then it holds that moment. */
+  running: boolean;
+};
+
+/**
+ * The Run's clock, walked here at 100ms so the page does not re-derive its
+ * whole view that often. With no anchor there is no number: a clock started at
+ * mount would report how long the page has been open (ADR-0030 §6). It stops
+ * where the answer starts; a page that never saw it running (opened
+ * mid-answer) does not know that moment and shows nothing.
+ */
+function TraceClock({ startedAtMs, running }: RunClock) {
+  const [now, setNow] = useState(() => Date.now());
+  const [sawRunning, setSawRunning] = useState(running);
+
+  if (running && !sawRunning) {
+    setSawRunning(true);
+  }
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 100);
+    return () => {
+      window.clearInterval(id);
+      // Freeze on the moment the run stopped ticking, not the last tick.
+      setNow(Date.now());
+    };
+  }, [running]);
+
+  if (startedAtMs === undefined || !sawRunning) {
+    return null;
+  }
+
+  return (
+    <>
+      {" "}
+      <span className="chat-step__meta" data-slot="chat-trace-clock">
+        · {formatLiveElapsed(now - startedAtMs)}
+      </span>
+    </>
   );
 }
 
@@ -118,10 +140,17 @@ type ChatTraceRowOwnProps = {
   steps: TraceStep[];
   /** The calls the summary counts — the caller leaves out what it reports elsewhere. */
   counted: ChatToolItem[];
-  /** A step in the segment is still streaming or executing. */
+  /** The run is in flight and this row is its last: it names the work in progress. */
   live?: boolean;
-  /** Appended after a middle dot: the run's duration on its last row. */
+  /**
+   * What the run is doing when no step in the row is: a model call between
+   * rounds ("Thinking…"), or the whole row before the first step lands.
+   */
+  waiting?: string;
+  /** Appended after a middle dot: the settled run's duration on its last row. */
   tail?: string;
+  /** The live run's clock on its last row, in the place the settled duration takes. */
+  clock?: RunClock;
 };
 
 export type ChatTraceRowProps = Omit<ComponentProps<"div">, keyof ChatTraceRowOwnProps | "children"> &
@@ -147,11 +176,11 @@ function currentAction(steps: TraceStep[]) {
  * into one grey line: the burst's verbs summed over the whole segment, with
  * its diff stat and failures (ADR-0026 §2). Closed until the user opens it.
  */
-export function ChatTraceRow({ className = "", counted, live = false, steps, tail, ...rest }: ChatTraceRowProps) {
+export function ChatTraceRow({ className = "", clock, counted, live = false, steps, tail, waiting, ...rest }: ChatTraceRowProps) {
   // Past tense only for what has finished; whatever is still in flight is
   // named after it, the way a live step row names its running call.
   const finished = counted.filter((tool) => tool.state === "output-available" || tool.state === "output-error");
-  const current = live ? currentAction(steps) : undefined;
+  const current = live ? (currentAction(steps) ?? waiting) : undefined;
   const thought = steps.some((step) => step.kind === "thinking" && !step.live);
   const label =
     finished.length > 0
@@ -160,35 +189,51 @@ export function ChatTraceRow({ className = "", counted, live = false, steps, tai
         ? undefined
         : thought
           ? "Thought"
-          : // Only uncounted calls (todo_write): the todo card says what changed.
+          : // Only a todo_write that landed: the todo card says what changed.
             "Updated the todo list";
+
+  const line = (
+    <>
+      {label === undefined ? null : <span className="chat-trace__label">{label}</span>}
+      <ChatOutcomeMeta {...summarizeOutcome(finished)} />
+      {current === undefined ? null : (
+        <>
+          {label === undefined ? null : (
+            <>
+              {" "}
+              <span className="chat-step__meta">·</span>{" "}
+            </>
+          )}
+          <TextShimmer className="chat-trace__label" data-slot="chat-trace-current">
+            {current}
+          </TextShimmer>
+        </>
+      )}
+      {tail === undefined ? null : (
+        <>
+          {" "}
+          <span className="chat-step__meta" data-slot="chat-trace-tail">
+            · {tail}
+          </span>
+        </>
+      )}
+      {clock === undefined ? null : <TraceClock {...clock} />}
+    </>
+  );
+
+  // Before the first step there is nothing to open: the row is a plain line.
+  if (steps.length === 0) {
+    return (
+      <div className={`chat-trace ${className}`.trim()} data-slot="chat-trace" {...rest}>
+        <p className="chain-of-thought__label">{line}</p>
+      </div>
+    );
+  }
 
   return (
     <Collapsible.Root className={`chat-trace ${className}`.trim()} data-slot="chat-trace" {...rest}>
       <Collapsible.Trigger className="chain-of-thought__trigger" data-slot="chat-trace-trigger">
-        {label === undefined ? null : <span className="chat-trace__label">{label}</span>}
-        <ChatOutcomeMeta {...summarizeOutcome(finished)} />
-        {current === undefined ? null : (
-          <>
-            {label === undefined ? null : (
-              <>
-                {" "}
-                <span className="chat-step__meta">·</span>{" "}
-              </>
-            )}
-            <TextShimmer className="chat-trace__label" data-slot="chat-trace-current">
-              {current}
-            </TextShimmer>
-          </>
-        )}
-        {tail === undefined ? null : (
-          <>
-            {" "}
-            <span className="chat-step__meta" data-slot="chat-trace-tail">
-              · {tail}
-            </span>
-          </>
-        )}
+        {line}
         <ChevronRight aria-hidden="true" className="chat-step__chevron" />
       </Collapsible.Trigger>
       <Collapsible.Panel

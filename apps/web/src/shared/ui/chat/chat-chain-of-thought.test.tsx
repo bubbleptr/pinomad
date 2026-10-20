@@ -7,6 +7,7 @@ import {
   ChatChainOfThought,
   ChatTraceRow,
   formatElapsed,
+  formatLiveElapsed,
 } from "@/shared/ui/chat/chat-chain-of-thought";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
 import type { CotPhase, CotStep } from "@pinomad/client/cot-view.ts";
@@ -50,18 +51,24 @@ describe("formatElapsed", () => {
   });
 });
 
+describe("formatLiveElapsed", () => {
+  it("keeps sub-minute times to one decimal", () => {
+    expect(formatLiveElapsed(2500)).toBe("2.5s");
+  });
+
+  it("splits minutes after 60 seconds", () => {
+    expect(formatLiveElapsed(61_200)).toBe("1m 1.2s");
+  });
+});
+
 describe("ChatChainOfThought phase", () => {
-  function renderPhase(phase: CotPhase, props: Record<string, unknown> = {}) {
+  function renderPhase(phase: CotPhase) {
     return render(
-      <ChatChainOfThought phase={phase} {...props}>
+      <ChatChainOfThought phase={phase}>
         <ChatTraceRow steps={[thought("t1", "Reasoning body text")]} counted={[]} />
       </ChatChainOfThought>,
     );
   }
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   it("renders nothing before the run's first model call", () => {
     const { container } = renderPhase("hidden");
@@ -69,41 +76,67 @@ describe("ChatChainOfThought phase", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("ends with a status line while thinking", () => {
-    const { container } = renderPhase("thinking", { elapsedMs: 26_400 });
-
-    expect(container.querySelector('[data-slot="chat-status-line"]')).toBeInTheDocument();
-    expect(screen.getByText("26.4s")).toBeInTheDocument();
-  });
-
-  it("takes the status line down once the answer starts", () => {
-    const { container } = renderPhase("answering", { elapsedMs: 26_400 });
-
-    expect(container.querySelector('[data-slot="chat-status-line"]')).not.toBeInTheDocument();
-  });
-
-  // ADR-0026 §1: no "Worked for" header any more — the trace rows are the
-  // whole fold, and the duration rides on the last of them.
-  it("adds no header of its own when the run settles", () => {
-    renderPhase("settled", { elapsedMs: 16_400 });
+  // ADR-0026: the rows are the whole run — no "Worked for" header once it
+  // settles, and no status line of its own while it is live (the last row
+  // carries the action and the clock).
+  it.each(["thinking", "acting", "settled"] as const)("adds nothing of its own while %s", (phase) => {
+    const { container } = renderPhase(phase);
 
     expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(container.querySelector('[role="status"]')).not.toBeInTheDocument();
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument();
   });
+});
 
-  it("ticks the live clock from the run's anchor", () => {
+describe("ChatTraceRow clock", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function bash(state: ChatToolItem["state"]) {
+    return toolsStep("a", [tool({ toolName: "bash", toolCallId: "c1", state })], state === "input-available");
+  }
+
+  it("ticks the run's clock at the end of the row from its anchor", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-04T04:00:00.000Z"));
 
-    renderPhase("thinking", { startedAtMs: Date.now() - 2000 });
+    render(<ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ startedAtMs: Date.now() - 2000, running: true }} />);
 
-    expect(screen.getByText("2.0s")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running bash… · 2.0s" })).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1200);
     });
 
-    expect(screen.getByText("3.2s")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running bash… · 3.2s" })).toBeInTheDocument();
+  });
+
+  // The answer's first token ends the wait: the clock stops there while the
+  // answer keeps streaming below.
+  it("stops when the answer starts", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T04:00:00.000Z"));
+    const startedAtMs = Date.now() - 2000;
+    const { rerender } = render(<ChatTraceRow steps={[bash("output-available")]} counted={[]} clock={{ startedAtMs, running: true }} />);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    rerender(<ChatTraceRow steps={[bash("output-available")]} counted={[]} clock={{ startedAtMs, running: false }} />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByRole("button", { name: /· 3\.0s$/ })).toBeInTheDocument();
+  });
+
+  // Opened mid-answer, the page never saw the first token arrive; counting
+  // from the anchor to now would include the answer's own streaming.
+  it("claims no number when it first sees the run already answering", () => {
+    render(<ChatTraceRow steps={[bash("output-available")]} counted={[]} clock={{ startedAtMs: Date.now() - 2000, running: false }} />);
+
+    expect(screen.getByRole("button")).not.toHaveTextContent(/\d\.\ds/);
   });
 
   // Replay fixtures and retry gaps carry no anchor; a clock started at mount
@@ -112,14 +145,29 @@ describe("ChatChainOfThought phase", () => {
   it("shows no clock at all when the anchor is missing", () => {
     vi.useFakeTimers();
 
-    const { container } = renderPhase("thinking");
+    render(<ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ running: true }} />);
 
     act(() => {
       vi.advanceTimersByTime(5000);
     });
 
-    expect(container.querySelector('[data-slot="chat-status-line"]')).toBeInTheDocument();
-    expect(container.querySelector(".chat-status-line__clock")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running bash…" })).toBeInTheDocument();
+  });
+
+  it("stands alone, with nothing to open, before the run has a step", () => {
+    render(<ChatTraceRow steps={[]} counted={[]} live waiting="Thinking…" clock={{ startedAtMs: Date.now() - 1000, running: true }} />);
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText(/^· 1\.\ds$/)).toBeInTheDocument();
+    expect(screen.getByText("Thinking…")).toBeInTheDocument();
+  });
+
+  // Between two model calls no step is live, but the run is: the last row
+  // says what it is waiting on.
+  it("names what the run is waiting on when no step in the row is live", () => {
+    render(<ChatTraceRow steps={[bash("output-available")]} counted={[tool({ toolName: "bash" })]} live waiting="Thinking…" />);
+
+    expect(screen.getByRole("button", { name: "Ran 1 command · Thinking…" })).toBeInTheDocument();
   });
 });
 

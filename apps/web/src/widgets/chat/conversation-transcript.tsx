@@ -9,6 +9,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ConversationSummary, ExtensionDocView } from "@pinomad/protocol/view.ts";
+import { lastTodoWriteMs } from "@/entities/todo/todo-card";
 import { ChatEntryView } from "./chat-entries.tsx";
 
 export function ConversationTranscript({
@@ -63,7 +64,15 @@ export function ConversationTranscript({
   );
   const items = useMemo(() => deriveChat(view, toolPresentations, busy), [view, toolPresentations, busy]);
   const retry = useMemo(() => retryOf(items), [items]);
-  const todo = useMemo(() => todoOf(docs), [docs]);
+  const todoState = useMemo(() => todoOf(docs), [docs]);
+  const todoUpdatedAtMs = useMemo(() => lastTodoWriteMs(items), [items]);
+  const todo = useMemo(
+    () =>
+      todoState === undefined
+        ? undefined
+        : { state: todoState, ...(todoUpdatedAtMs === undefined ? {} : { updatedAtMs: todoUpdatedAtMs }) },
+    [todoState, todoUpdatedAtMs],
+  );
   // One card at a time: only the newest run gets the list (ADR-0026 §4).
   const latestRun = items.findLastIndex((item) => item.kind === "run");
   if (items.length === 0 && !ownOnly) return null;

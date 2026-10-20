@@ -3,6 +3,7 @@
 // unfinished. The side panel's Documents view keeps the full read-only copy.
 import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useState } from "react";
+import type { ChatEntry } from "@pinomad/client/cot-view.ts";
 import type { TodoItem, TodoState } from "@pinomad/protocol/presentation.ts";
 import { CheckCircle, ChevronRight, Circle, InProgress } from "@/shared/ui/icons";
 import { useNow } from "@/shared/use-now";
@@ -30,14 +31,31 @@ function StatusIcon({ status }: { status: TodoItem["status"] }) {
   return status === "completed" ? <CheckCircle {...props} /> : status === "in_progress" ? <InProgress {...props} /> : <Circle {...props} />;
 }
 
+/**
+ * When the list last changed: the latest `todoWrittenAtMs` across every run,
+ * not the newest run's — the run the card sits under often never touched the
+ * list, and that is when its age matters most.
+ */
+export function lastTodoWriteMs(entries: readonly ChatEntry[]): number | undefined {
+  let latest: number | undefined;
+  for (const entry of entries) {
+    const writtenAtMs = entry.kind === "run" ? entry.cot.todoWrittenAtMs : undefined;
+    if (writtenAtMs !== undefined && (latest === undefined || writtenAtMs > latest)) latest = writtenAtMs;
+  }
+  return latest;
+}
+
 export function TodoCard({
   todo,
-  writtenAtMs,
+  writtenThisRun,
+  updatedAtMs,
 }: {
   /** The conversation's `pinomad.todo` document, when it has a valid one. */
   todo: TodoState | undefined;
-  /** When the newest run last wrote the list; absent when it never did. */
-  writtenAtMs?: number;
+  /** The run the card sits under wrote the list. */
+  writtenThisRun: boolean;
+  /** When any run last wrote the list (`lastTodoWriteMs`); absent when none did. */
+  updatedAtMs?: number;
 }) {
   const items = todo?.items ?? [];
   const total = items.length;
@@ -47,7 +65,7 @@ export function TodoCard({
   // explicit choice is never overridden.
   const [userOpen, setUserOpen] = useState<boolean>();
 
-  if (total === 0 || (writtenAtMs === undefined && allDone)) {
+  if (total === 0 || (!writtenThisRun && allDone)) {
     return null;
   }
 
@@ -71,7 +89,7 @@ export function TodoCard({
             ) : null}
             <ChevronRight aria-hidden="true" className="chat-step__chevron" />
           </Collapsible.Trigger>
-          {writtenAtMs === undefined ? null : <UpdatedAgo atMs={writtenAtMs} />}
+          {updatedAtMs === undefined ? null : <UpdatedAgo atMs={updatedAtMs} />}
         </div>
         <Collapsible.Panel className="todo-card__panel">
           <ol className="todo-card__items">
