@@ -103,7 +103,7 @@ const askUserQuestion = defineTool({
   // Nested in a script the question would block with no user visible prompt (ADR-0013 §2).
   callers: ["model"],
   description:
-    "Ask the user 1–4 multiple-choice questions when their decision is needed to proceed (ambiguous requirements, choosing between approaches, scope). Blocks until answered. The user can always type a custom answer, so never add an 'Other' option. Keep headers short.",
+    "Ask the user 1–4 multiple-choice questions when their decision is needed to proceed (ambiguous requirements, choosing between approaches, scope). Blocks until answered. The user can always type a custom answer, so never add an 'Other' option. Keep everything short: headers a word or two, option labels a few words. Usually leave option descriptions out; add one only when the label alone is ambiguous, as one line of at most ~60 characters.",
   parameters: Type.Object({
     questions: Type.Array(QuestionItemSchema, { minItems: 1, maxItems: 4 }),
   }),
