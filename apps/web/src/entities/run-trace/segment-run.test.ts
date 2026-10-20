@@ -104,6 +104,13 @@ describe("segmentRun", () => {
     expect(segment?.kind === "trace" && segment.steps.flatMap((step) => (step.kind === "tools" ? step.tools : [])).map((tool) => tool.toolCallId)).toEqual(["t1", "c1", "t2"]);
   });
 
+  // Only a write that landed reaches the card. A failed one changed nothing
+  // there, so the row is the only place it shows up and it must count.
+  it("counts a todo_write that failed", () => {
+    const [segment] = segmentRun([tools("a-tools-0", [call("todo_write", "t1", "output-error"), call("todo_write", "t2")])]);
+    expect(segment).toMatchObject({ kind: "trace", counted: [{ toolCallId: "t1", state: "output-error" }] });
+  });
+
   // Keys are segment ordinals: the live partial's step ids change when it
   // commits ("live-tools-1" → "<entry>-tools-1"), and the row must not
   // remount and drop its open state when they do.

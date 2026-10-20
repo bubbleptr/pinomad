@@ -14,14 +14,20 @@ export type RunSegment =
       key: string;
       /** Thinking and tool steps in Turn order, as the expanded row lists them. */
       steps: TraceStep[];
-      /** The calls the row's summary counts: every call except `todo_write`. */
+      /** The calls the row's summary counts: every call except a `todo_write` that landed. */
       counted: ToolItem[];
       /** A step in it is still streaming or executing. */
       live: boolean;
     };
 
-/** The todo card reports these; the trace row does not count them again. */
-const UNCOUNTED_TOOL = "todo_write";
+/**
+ * A todo write that landed is on the todo card, so the row does not count it
+ * again. One that failed (or has not finished) changed nothing there: the
+ * row is the only place it shows, so it counts like any other call.
+ */
+function reportedByTodoCard(tool: ToolItem) {
+  return tool.toolName === "todo_write" && tool.state === "output-available";
+}
 
 export function segmentRun(steps: readonly CotStep[]): RunSegment[] {
   const segments: RunSegment[] = [];
@@ -40,7 +46,7 @@ export function segmentRun(steps: readonly CotStep[]): RunSegment[] {
     trace.steps.push(step);
     trace.live ||= step.live;
     if (step.kind === "tools") {
-      trace.counted.push(...step.tools.filter((tool) => tool.toolName !== UNCOUNTED_TOOL));
+      trace.counted.push(...step.tools.filter((tool) => !reportedByTodoCard(tool)));
     }
   }
 
