@@ -6,14 +6,14 @@ import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import { Button } from "@astryxdesign/core/Button";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
-import { taskRows } from "@pinomad/client/chat.ts";
+import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
-import { displayName } from "@pinomad/client/family.ts";
-import { FileDiff } from "../../shared/ui/icons.tsx";
+import { displayName, rootOf } from "@pinomad/client/family.ts";
+import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
+import { ListBullet } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { DevicesDialog } from "./devices-dialog.tsx";
@@ -21,11 +21,18 @@ import { SettingsDialog } from "./settings-dialog.tsx";
 import { ForgetHostDialog, PairHostDialog } from "./host-switcher.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
+import { OverviewCard } from "../overview/overview-card.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
+const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 
 const readSidebarOpen = (): boolean =>
   typeof window === "undefined" || window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
+const readOverviewOpen = (): boolean =>
+  typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
+
+const anyAtWork = (nodes: readonly ConversationNode[]): boolean =>
+  nodes.some((node) => node.summary.status === "running" || node.summary.status === "needs-answer" || anyAtWork(node.children));
 
 /**
  * The app frame: Astryx AppShell (wash sidebar vs elevated main) + in-flow
@@ -77,6 +84,7 @@ export function AppFrame({
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
+  const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -91,8 +99,21 @@ export function AppFrame({
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
   };
+  const changeOverview = (open: boolean): void => {
+    window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
+    setOverviewOpen(open);
+  };
   const openConversation = (id: ConversationId): void => void remote.controller.switchConversation(id);
-  const liveActivity = view.tasks !== undefined && taskRows(view.tasks).length > 0;
+  // A fork or subagent of the shown family still at work: the closed panel's
+  // button carries a dot so the activity is not out of sight entirely.
+  const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
+  const liveActivity = root !== undefined && anyAtWork(root.children);
+  const openTasks = (id?: ConversationId): void => {
+    if (id !== undefined) return openInPanel(id, "tasks");
+    void remote.controller.showSide(undefined);
+    onPanelTab("tasks");
+    onPanelOpen(true);
+  };
 
   const sidebar = (
     <SidebarContent
@@ -151,8 +172,9 @@ export function AppFrame({
             role={summary?.role}
             parentSummary={parentSummary}
             onBackToParent={openConversation}
-            showChanges={conversation !== undefined}
-            onOpenChanges={onOpenChanges}
+            showOverview={conversation !== undefined}
+            overviewOpen={overviewOpen}
+            onOverviewChange={changeOverview}
             panelOpen={panelOpen}
             onPanelChange={onPanelOpen}
             liveActivity={liveActivity}
@@ -161,7 +183,20 @@ export function AppFrame({
           <div className="flex min-h-0 min-w-0 flex-1">
             {/* ChatLayout's scroll area needs a flex column parent so its
                 flex-1/min-h-0 clips instead of stretching to content. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {children}
+              {overviewOpen && conversation !== undefined ? (
+                <OverviewCard
+                  view={view}
+                  remote={remote}
+                  conversation={conversation}
+                  busy={isBusy(conversation)}
+                  onOpenChanges={onOpenChanges}
+                  onOpenTasks={openTasks}
+                  onClose={() => changeOverview(false)}
+                />
+              ) : null}
+            </div>
             {!narrow ? (
               <SidePanel
                 view={view}
@@ -270,8 +305,9 @@ function FrameHeader({
   role,
   parentSummary,
   onBackToParent,
-  showChanges,
-  onOpenChanges,
+  showOverview,
+  overviewOpen,
+  onOverviewChange,
   panelOpen,
   onPanelChange,
   liveActivity,
@@ -287,8 +323,9 @@ function FrameHeader({
   role?: string;
   parentSummary: ConversationSummary | undefined;
   onBackToParent: (id: ConversationId) => void;
-  showChanges: boolean;
-  onOpenChanges: () => void;
+  showOverview: boolean;
+  overviewOpen: boolean;
+  onOverviewChange: (open: boolean) => void;
   panelOpen: boolean;
   onPanelChange: (open: boolean) => void;
   liveActivity: boolean;
@@ -338,13 +375,15 @@ function FrameHeader({
           </span>
         )}
       </h1>
-      {showChanges ? (
+      {showOverview ? (
         <IconButton
-          icon={<FileDiff className="size-4" />}
-          label="Changes"
+          aria-pressed={overviewOpen}
+          icon={<ListBullet className="size-4" />}
+          label="Overview"
           size="sm"
+          tooltip={overviewOpen ? "Hide overview" : "Show overview"}
           variant="ghost"
-          onClick={onOpenChanges}
+          onClick={() => onOverviewChange(!overviewOpen)}
         />
       ) : null}
       <span className="relative">

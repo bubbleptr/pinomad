@@ -36,6 +36,7 @@ import {
   InformationCircleIcon,
   KeyIcon,
   LayoutAlignLeftIcon,
+  LeftToRightListBulletIcon,
   LinkSquare02Icon,
   ListTreeIcon,
   Loading03Icon,
@@ -116,6 +117,7 @@ export const Key = iconComponent(KeyIcon);
 export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
+export const ListBullet = iconComponent(LeftToRightListBulletIcon);
 export const ListTree = iconComponent(ListTreeIcon);
 export const LoaderCircle = iconComponent(Loading03Icon);
 export const MoreHorizontal = iconComponent(MoreHorizontalIcon);

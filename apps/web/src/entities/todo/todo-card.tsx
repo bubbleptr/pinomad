@@ -1,6 +1,6 @@
 // The todo list under the newest run (ADR-0026 §4): always that run's last
 // element, shown while the run wrote the list or something on it is still
-// unfinished. The side panel's Documents view keeps the full read-only copy.
+// unfinished.
 import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useState } from "react";
 import type { ChatEntry } from "@pinomad/client/cot-view.ts";

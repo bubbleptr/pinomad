@@ -1,8 +1,8 @@
 // The right-side panel (ADR-0019's thread/task model): Threads lists the
 // shown conversation's family forks and Tasks its subagents — both open
 // inside the panel via `view.side` instead of replacing the main column.
-// Live is what the Dock held. Forks are talkable (composer, targeted
-// submit/abort/answer); subagents are read-only.
+// Forks are talkable (composer, targeted submit/abort/answer); subagents are
+// read-only. The conversation's at-a-glance state lives in the Overview card.
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -29,9 +29,8 @@ import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
-import { LiveState } from "./live-state.tsx";
 
-export type PanelTab = "threads" | "tasks" | "live";
+export type PanelTab = "threads" | "tasks";
 
 const STATUS_VARIANT = { "needs-answer": "warning", failed: "error", running: "success" } as const;
 const STATUS_LABEL = { "needs-answer": "Waiting for your answer", failed: "Failed", running: "Running" } as const;
@@ -104,7 +103,6 @@ function PanelContent({
             )
           }
         />
-        <Tab value="live" label="Live" />
       </TabList>
       {tab === "threads" ? (
         side !== undefined && sideSummary?.kind === "fork" ? (
@@ -140,7 +138,7 @@ function PanelContent({
             )}
           </Scrollable>
         )
-      ) : tab === "tasks" ? (
+      ) : (
         side !== undefined && sideSummary?.kind === "subagent" ? (
           <TaskDetail
             view={view}
@@ -183,23 +181,13 @@ function PanelContent({
             )}
           </Scrollable>
         )
-      ) : (
-        <Scrollable label="Live state">
-          <div className="p-3">
-            <LiveState view={view} remote={remote} conversation={conversation} />
-          </div>
-        </Scrollable>
       )}
     </VStack>
   );
 }
 
-function Scrollable({ children, label }: { children: ReactNode; label?: string }) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto" {...(label === undefined ? {} : { "aria-label": label })}>
-      {children}
-    </div>
-  );
+function Scrollable({ children }: { children: ReactNode }) {
+  return <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
 }
 
 /** A thread/task row: status dot, display name, relative time. */
