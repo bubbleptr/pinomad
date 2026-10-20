@@ -20,7 +20,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0002](0002-pi-durable-as-runtime.md) | 以 Pi Durable 的 Harness 为内核，Durable 存储是唯一事实来源 |
 | [0005](0005-structured-presentation-types.md) | 插件状态通过带运行时 schema 的展示类型呈现，不符合时兜底渲染 |
-| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Montserrat、Hugeicons），搬界面不搬数据模型 |
+| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Montserrat、Hugeicons），搬界面不搬数据模型（思维链组件由 0026 修订） |
+| [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 
 ## 宿主能力与工作组织
 
@@ -72,4 +73,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0017 §3 移动端用 Expo、§4 `packages/protocol` 要能在 Hermes 上运行 | 由 0024 取代：移动端原生，客户端协议核心用 Rust；§4 已于 2026-10-19 随 `apps/mobile` 删除失效 |
 | 0008 §9 推送经 Expo（路线图 M5） | 由 0024、0025 修订：直连 APNs，密钥只放在服务端，宿主经控制连接请服务端发 |
 | 0024 §10：替换验收清单"放在 roadmap" | 计划改在 GitHub Issues 后，清单在 #133（iOS 原生替换 milestone） |
+| 0014 §2：复制来的组件尽量原样保留，便于对照 Pace 同步 | 由 0026 修订：思维链组件改成运行过程收成一行，和 Pace 分叉 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |

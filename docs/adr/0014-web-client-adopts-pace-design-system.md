@@ -1,6 +1,6 @@
 # ADR-0014：Web 客户端采用 Pace 的设计系统和对话界面
 
-- 状态：Accepted
+- 状态：Accepted；§2 里思维链组件和 Pace 保持同形的部分由 ADR-0026 修订
 - 日期：2026-10-08
 - 来源：Pace（`bubbleptr/PiGUI` @ 15b9084）
 
