@@ -306,6 +306,7 @@ export function OverviewCard({
   view,
   remote,
   conversation,
+  narrow,
   busy,
   onOpenChanges,
   onOpenTasks,
@@ -314,6 +315,8 @@ export function OverviewCard({
   view: DurableView;
   remote: RemoteDurable;
   conversation: NonNullable<DurableView["conversation"]>;
+  /** Wide layouts keep the card slim so the chat column can clear it; a phone has no room to clear, so it may cover. */
+  narrow: boolean;
   busy: boolean;
   onOpenChanges: () => void;
   /** Opens the side panel's Tasks tab, on a subagent's detail when one is given. */
@@ -323,7 +326,7 @@ export function OverviewCard({
   return (
     <aside
       aria-label="Overview"
-      className="absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-y-auto rounded-xl border border-border bg-[var(--color-background-popover)] shadow-[var(--shadow-med)]"
+      className={`absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col overflow-y-auto rounded-xl border border-border bg-[var(--color-background-popover)] shadow-[var(--shadow-med)]`}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();

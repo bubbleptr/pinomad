@@ -183,13 +183,20 @@ export function AppFrame({
           <div className="flex min-h-0 min-w-0 flex-1">
             {/* ChatLayout's scroll area needs a flex column parent so its
                 flex-1/min-h-0 clips instead of stretching to content. */}
-            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-              {children}
+            <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
+              <div
+                className={`flex min-h-0 min-w-0 flex-1 flex-col motion-safe:transition-[padding] motion-safe:duration-200 motion-safe:ease-out${
+                  overviewOpen && conversation !== undefined && !narrow ? " pigui-overview-clearance" : ""
+                }`}
+              >
+                {children}
+              </div>
               {overviewOpen && conversation !== undefined ? (
                 <OverviewCard
                   view={view}
                   remote={remote}
                   conversation={conversation}
+                  narrow={narrow}
                   busy={isBusy(conversation)}
                   onOpenChanges={onOpenChanges}
                   onOpenTasks={openTasks}
