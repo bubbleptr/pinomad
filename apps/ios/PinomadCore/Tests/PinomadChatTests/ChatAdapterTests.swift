@@ -243,6 +243,20 @@ struct TodoTests {
         ]))
         #expect(ChatAdapter.todo(nil) == nil)
     }
+
+    /// One entry per run, oldest first, skipping the entries that are not
+    /// runs — `TodoLine` reads the last one as the newest run.
+    @Test func todoWritesListEveryRunInOrder() {
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "plan it", images: []),
+            .run(id: "run-1", cot: cot(todoWrittenAtMs: 2_000), forkEntryId: nil, interrupted: false, failure: nil),
+            .compaction(id: "c1"),
+            .user(id: "u2", text: "go on", images: []),
+            .run(id: "run-2", cot: cot(), forkEntryId: nil, interrupted: false, failure: nil),
+            .user(id: "u3", text: "queued", images: []),
+        ]
+        #expect(ChatAdapter.todoWrites(in: chat) == [Date(timeIntervalSince1970: 2), nil])
+    }
 }
 
 private func answeredRun(_ id: String, text: String, streaming: Bool = false) -> ChatEntry {

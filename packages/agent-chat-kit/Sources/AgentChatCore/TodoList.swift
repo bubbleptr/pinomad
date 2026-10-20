@@ -40,21 +40,23 @@ public struct TodoList: Sendable, Equatable {
     }
 }
 
-/// The todo list as a line under a run's capsule. It follows the newest run
-/// only, and only while it means something there: the run wrote the list,
-/// or the list still has work left. A finished list the next run never
-/// touched has nothing left to say.
+/// The todo list as a line at the end of the newest run. It shows only
+/// while it means something there: that run wrote the list, or the list
+/// still has work left. A finished list the newest run never touched has
+/// nothing left to say.
 public struct TodoLine: Sendable, Equatable {
     public var list: TodoList
-    /// When the run last wrote the list; the list may be stale, and this is
-    /// how stale.
+    /// When any run last wrote the list. The list may be stale, and this is
+    /// how stale — most of all when the newest run left it alone.
     public var writtenAt: Date?
 
-    public init?(list: TodoList?, writtenAt: Date?, isLatestRun: Bool) {
-        guard isLatestRun, let list, !list.items.isEmpty,
-              writtenAt != nil || !list.isFinished
+    /// `runWrites` holds each run's last write of the list, oldest run
+    /// first; the line belongs to the last of them.
+    public init?(list: TodoList?, runWrites: [Date?]) {
+        guard let list, !list.items.isEmpty, let newest = runWrites.last,
+              newest != nil || !list.isFinished
         else { return nil }
         self.list = list
-        self.writtenAt = writtenAt
+        writtenAt = runWrites.compactMap { $0 }.max()
     }
 }

@@ -122,7 +122,12 @@ struct ConversationView: View {
         }
         .sheet(item: $tracedRun) { run in
             if let conversation {
-                traceSheet(run.id, in: conversation, subagentSummaries: subagentSummaries)
+                // The transcript's image action does not reach into a sheet,
+                // and the root's viewer cannot present over one: the sheet
+                // brings its own.
+                ImageViewerHost {
+                    traceSheet(run.id, in: conversation, subagentSummaries: subagentSummaries)
+                }
             }
         }
         .task { model.openConversation(conversationId) }
@@ -152,10 +157,17 @@ struct ConversationView: View {
         model.navPath.append(.conversation(child))
     }
 
-    /// The newest run: the todo line hangs under it and nowhere else. Not
-    /// simply the last entry — a queued message can follow it.
+    /// The newest run: the todo line ends it and no other. Not simply the
+    /// last entry — a queued message can follow it.
     private static func latestRunId(_ chat: [ChatEntry]) -> String? {
         chat.last { if case .run = $0 { true } else { false } }?.entryId
+    }
+
+    private static func todoLine(_ conversation: ConversationSnapshot) -> TodoLine? {
+        TodoLine(
+            list: ChatAdapter.todo(conversation.todo),
+            runWrites: ChatAdapter.todoWrites(in: conversation.chat)
+        )
     }
 
     @ViewBuilder
@@ -172,11 +184,10 @@ struct ConversationView: View {
                 cot: ChatAdapter.splitRun(cot, summaries: subagentSummaries).trace,
                 interrupted: interrupted
             )
-            AgentTraceSheet(trace, todo: TodoLine(
-                list: ChatAdapter.todo(conversation.todo),
-                writtenAt: trace.todoWrittenAt,
-                isLatestRun: runId == Self.latestRunId(conversation.chat)
-            ))
+            AgentTraceSheet(
+                trace,
+                todo: runId == Self.latestRunId(conversation.chat) ? Self.todoLine(conversation) : nil
+            )
         }
     }
 
@@ -198,12 +209,11 @@ struct ConversationView: View {
         let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
             ? retryOf(entries: conversation.chat) : nil
         let latestRun = Self.latestRunId(conversation.chat)
-        let todo = ChatAdapter.todo(conversation.todo)
+        let todo = Self.todoLine(conversation)
         ForEach(conversation.chat, id: \.entryId) { entry in
-            let isLatestRun = entry.entryId == latestRun
             row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
                 subagentSummaries: subagentSummaries,
-                isLatestRun: isLatestRun, todo: isLatestRun ? todo : nil)
+                todo: entry.entryId == latestRun ? todo : nil)
         }
     }
 
@@ -212,8 +222,7 @@ struct ConversationView: View {
         _ entry: ChatEntry,
         retry: RetryRequest?,
         subagentSummaries: [UInt64: SubagentCardSummary],
-        isLatestRun: Bool,
-        todo: TodoList?
+        todo: TodoLine?
     ) -> some View {
         switch entry {
         case let .user(_, text, images):
@@ -222,7 +231,7 @@ struct ConversationView: View {
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
                    openTrace: { tracedRun = TracedRun(id: id) },
-                   isLatest: isLatestRun, todo: todo,
+                   todo: todo,
                    interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
@@ -231,6 +240,24 @@ struct ConversationView: View {
         case .reset:
             MarkerRow("对话已重置")
         }
+    }
+}
+
+/// Content shown in a sheet whose images open full screen from the sheet
+/// itself: a presentation over the sheet must come from inside it.
+private struct ImageViewerHost<Content: View>: View {
+    @ViewBuilder var content: Content
+    @State private var viewing: ViewedImage?
+
+    var body: some View {
+        content
+            .environment(\.inlineImageAction, InlineImageAction { image in
+                viewing = ViewedImage(image: MessageImage(data: image.data, mimeType: image.mimeType))
+            })
+            .fullScreenCover(item: $viewing) { viewed in
+                ImageViewer(image: viewed.image) { viewing = nil }
+                    .presentationBackground(.clear)
+            }
     }
 }
 
@@ -271,9 +298,9 @@ private struct UserRow: View, Equatable {
     }
 }
 
-/// One run: its trace capsule (and the todo line on the newest run), the
-/// subagent cards, the answer as it streams or settled, and the failure
-/// line a dead run leaves behind.
+/// One run: its trace capsule, the subagent cards, the answer as it
+/// streams or settled, the failure line a dead run leaves behind, and on
+/// the newest run the todo line last of all.
 private struct RunRow: View, Equatable {
     let cot: CotView
     /// Supplies the subagent cards' call-given labels and roles; only the
@@ -284,11 +311,10 @@ private struct RunRow: View, Equatable {
     let openSubagent: (UInt64) -> Void
     /// Opens the trace sheet; like `openSubagent`, not part of equality.
     let openTrace: () -> Void
-    let isLatest: Bool
-    /// The conversation's todo list, handed to the newest run only — no
+    /// The conversation's todo line, handed to the newest run only — no
     /// other run shows it, and leaving it off them keeps a todo change from
     /// re-rendering every row.
-    let todo: TodoList?
+    let todo: TodoLine?
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
@@ -304,9 +330,6 @@ private struct RunRow: View, Equatable {
         let trace = ChatAdapter.trace(cot: split.trace, interrupted: interrupted)
         VStack(alignment: .leading, spacing: 8) {
             AgentTraceView(trace, onOpen: openTrace)
-            if let line = TodoLine(list: todo, writtenAt: trace.todoWrittenAt, isLatestRun: isLatest) {
-                TodoLineView(line, onOpen: openTrace)
-            }
             ForEach(split.cards) { card in
                 SubagentCardView(card: card, onOpen: openSubagent)
             }
@@ -323,12 +346,16 @@ private struct RunRow: View, Equatable {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
+            // The run's last element (ADR-0026 §4), under the answer.
+            if let todo {
+                TodoLineView(todo, onOpen: openTrace)
+            }
         }
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.cot == rhs.cot && lhs.subagentSummaries == rhs.subagentSummaries
-            && lhs.isLatest == rhs.isLatest && lhs.todo == rhs.todo
+            && lhs.todo == rhs.todo
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
     }

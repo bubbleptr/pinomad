@@ -1,10 +1,10 @@
 import AgentChatCore
 import SwiftUI
 
-/// The todo list folded to the line under a run's capsule: how far along it
-/// is, the item being worked on, and when the run last wrote it — the agent
-/// may have planned at the start and never updated it since. `onOpen` is
-/// for presenting the same sheet the capsule opens.
+/// The todo list folded to one line at the end of the newest run: how far
+/// along it is, the item being worked on, and when any run last wrote it —
+/// the agent may have planned at the start and never updated it since.
+/// `onOpen` is for presenting the same sheet the capsule opens.
 public struct TodoLineView: View {
     let line: TodoLine
     let onOpen: () -> Void

@@ -230,7 +230,7 @@ struct ToastStack: View {
 }
 
 /// `fullScreenCover(item:)` wants an identity; an image's bytes are one.
-private struct ViewedImage: Identifiable {
+struct ViewedImage: Identifiable {
     let image: MessageImage
     var id: String { image.data }
 }

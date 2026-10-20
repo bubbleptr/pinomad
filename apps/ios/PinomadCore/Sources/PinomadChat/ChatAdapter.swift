@@ -36,9 +36,18 @@ public enum ChatAdapter {
         )
     }
 
+    /// Each run's last todo write (`CotView.todoWrittenAtMs`), oldest run
+    /// first — what `TodoLine` needs to decide whether the newest run
+    /// shows the list and how stale it is.
+    public static func todoWrites(in chat: [ChatEntry]) -> [Date?] {
+        chat.compactMap { entry -> Date?? in
+            guard case let .run(_, cot, _, _, _) = entry else { return nil }
+            return .some(cot.todoWrittenAtMs.map { Date(timeIntervalSince1970: $0 / 1000) })
+        }
+    }
+
     /// The conversation's todo document (`ConversationSnapshot.todo`); nil
-    /// while it has none. Which run shows it is the view's call
-    /// (`TodoLine`), from each run's `todoWrittenAt`.
+    /// while it has none. Which run shows it is `TodoLine`'s call.
     public static func todo(_ items: [TodoItem]?) -> TodoList? {
         items.map { items in
             TodoList(items: items.map { item in

@@ -275,7 +275,7 @@ extension AppModel {
 
     /// Grows a live run by one step every two seconds (commands, a thinking
     /// step streaming in, and with `interims` a line to the user now and
-    /// then) under a todo list half done.
+    /// then) under a todo list half done, last written by the run before.
     private func startTraceDemo(interims: Bool) {
         navPath = [.conversation(1)]
         let start = Date.now.timeIntervalSince1970 * 1000
@@ -291,6 +291,8 @@ extension AppModel {
             TodoItem(text: "跑完整测试并确认稳定", status: .inProgress),
             TodoItem(text: "补一条回归测试", status: .pending),
         ]
+        // A four-bar chart, small enough to inline.
+        let chart = "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAIAAABd+SbeAAAAs0lEQVR42u3QMQ3AIBAAQORUEzMiXgRymFGCA5ZK6IaCtqHpJafg0hHjIXOeLEm0aNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq06E2jc7TPES1atGjRokWLFi1atGjRokWLFi1atGjRokWLFi1a9H3RNSqLaNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq0aNH/i+5ReIFo0aIRLVq0AtGiES1atAXRohEtWrQF0aIRvakLvqujxlgAdtAAAAAASUVORK5CYII="
         let earlier = CotView(
             phase: .settled, failed: false,
             anchorMs: start - 900_000, elapsedMs: 372_000, todoWrittenAtMs: start - 600_000,
@@ -300,7 +302,14 @@ extension AppModel {
                     diffStat: nil, durationMs: 800, images: [], output: "ok",
                     toolCallId: "e1-\(index)", toolName: "bash", pinomad: nil
                 )
-            }, live: false, activeToolCallId: nil)],
+            }, live: false, activeToolCallId: nil),
+            // A result carrying an image, to open it full screen from the
+            // trace sheet.
+            .tools(id: "e2", tools: [ToolItem(
+                state: .outputAvailable, argsText: "coverage/flaky-runs.png", children: [],
+                diffStat: nil, durationMs: 300, images: [MessageImage(data: chart, mimeType: "image/png")],
+                output: "Read image coverage/flaky-runs.png", toolCallId: "e2-0", toolName: "read", pinomad: nil
+            )], live: false, activeToolCallId: nil)],
             answer: CotAnswer(text: "原因是重试时临时文件名冲突，我列了一个计划，接下来按计划修。", streaming: false)
         )
         Task { [weak self] in
@@ -338,7 +347,7 @@ extension AppModel {
                 }
                 let live = CotView(
                     phase: .acting, failed: false, anchorMs: start, elapsedMs: nil,
-                    todoWrittenAtMs: start - 360_000, steps: steps, answer: nil
+                    todoWrittenAtMs: nil, steps: steps, answer: nil
                 )
                 let chat: [ChatEntry] = [
                     .user(id: "u1", text: "上传测试偶尔会失败，帮我查一下。", images: []),
