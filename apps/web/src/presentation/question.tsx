@@ -91,12 +91,17 @@ export function QuestionCard({
   const action: Action = last || allAnswered ? "submit" : answered(pager.index) ? "next" : "skip";
   const shown = heldAction ?? action;
 
-  // Any move the person makes overrides a pick's pending one.
-  const moveTo = (next: number): void => {
+  // Any move the person makes — a button, a segment, a key, a swipe —
+  // overrides a pick's pending one.
+  const cancelPending = (): void => {
     window.clearTimeout(timer.current);
     setHeldAction(null);
+  };
+  const moveTo = (next: number): void => {
+    cancelPending();
     pager.go(next);
   };
+  const swipeFrom = useRef<number | null>(null);
   const advance = (): void => moveTo(pager.index + 1);
   const submit = (): void => {
     if (sendingNow.current || !connected) return;
@@ -116,12 +121,12 @@ export function QuestionCard({
   const pointerPick =
     (index: number) =>
     (value: string, cleared: boolean): void => {
-      window.clearTimeout(timer.current);
       // A take-back, or a pick that doesn't move on, ends any earlier pick's pending move.
       if (cleared || request.questions[index]?.multiSelect === true || value === OTHER || index + 1 >= count) {
-        setHeldAction(null);
+        cancelPending();
         return;
       }
+      window.clearTimeout(timer.current);
       setHeldAction((held) => held ?? action);
       timer.current = window.setTimeout(
         () => {
@@ -134,7 +139,22 @@ export function QuestionCard({
 
   return (
     <section className="question-card" aria-label="The agent asks" onKeyDown={pagingKeys(pager.index, moveTo)}>
-      <div ref={pager.ref} className="question-card__pager" onScroll={pager.onScroll}>
+      <div
+        ref={pager.ref}
+        className="question-card__pager"
+        onScroll={pager.onScroll}
+        // Only sideways gestures count: scrolling the page past the card is not a swipe.
+        onWheel={(event) => {
+          if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) cancelPending();
+        }}
+        onTouchStart={(event) => {
+          swipeFrom.current = event.touches[0]?.clientX ?? null;
+        }}
+        onTouchMove={(event) => {
+          const x = event.touches[0]?.clientX;
+          if (swipeFrom.current !== null && x !== undefined && Math.abs(x - swipeFrom.current) > 8) cancelPending();
+        }}
+      >
         {request.questions.map((question, index) => (
           <div
             key={index}
@@ -182,7 +202,7 @@ export function QuestionCard({
         ) : (
           <span />
         )}
-        <div className="question-card__action">
+        <div className="question-card__action" data-ghost={shown === "skip" || undefined}>
           {shown === "submit" ? (
             <Button label="Submit" variant="primary" isDisabled={!connected || sending} onClick={submit} />
           ) : shown === "next" ? (

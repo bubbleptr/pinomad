@@ -77,14 +77,18 @@
   gap: 12px;
   min-height: 32px;
 }
-/* Back is a ghost button whose 12px padding has no fill: pull it out so the
-   word lines up with the question. */
+/* Back and Skip are ghost buttons whose 12px padding has no fill: pull them
+   out so their words sit on the content edges, as far from the card's sides
+   as the question. Next and Submit keep their place; their fill is the edge. */
 .question-card__back {
   margin-left: -12px;
 }
 .question-card__action {
   display: flex;
   justify-content: flex-end;
+}
+.question-card__action[data-ghost] {
+  margin-right: -12px;
 }
 
 .question-card__segments {

@@ -121,9 +121,11 @@ export function useQuestionPager(count: number): QuestionPager {
       );
       window.setTimeout(() => {
         jumping.current = false;
+        // The page may have changed during the jump (Other's field opening) while fit stood aside.
+        fit(true);
       }, JUMP_MS);
     },
-    [count, pageHeight, easeHeightTo],
+    [count, pageHeight, easeHeightTo, fit],
   );
 
   useLayoutEffect(() => fit(), [fit]);

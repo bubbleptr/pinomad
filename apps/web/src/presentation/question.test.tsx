@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuestionRequest } from "@pinomad/protocol/presentation.ts";
@@ -116,6 +116,31 @@ describe("QuestionCard", () => {
     advance();
 
     expect(current()).toMatch(/^Rollout/);
+  });
+
+  it("drops a pick's pending move when the person swipes the pager", async () => {
+    const { user, container } = setup();
+    const pager = container.querySelector(".question-card__pager")!;
+
+    await user.click(screen.getByRole("radio", { name: "Bearer tokens" }));
+    fireEvent.touchStart(pager, { touches: [{ clientX: 200, clientY: 100 }] });
+    fireEvent.touchMove(pager, { touches: [{ clientX: 160, clientY: 102 }] });
+    advance();
+    expect(current()).toMatch(/^Auth/);
+
+    await user.click(screen.getByRole("radio", { name: "Session cookies" }));
+    fireEvent.wheel(pager, { deltaX: 30, deltaY: 2 });
+    advance();
+    expect(current()).toMatch(/^Auth/);
+  });
+
+  it("still moves on when the page scrolls vertically over the card", async () => {
+    const { user, container } = setup();
+    await user.click(screen.getByRole("radio", { name: "Bearer tokens" }));
+    fireEvent.wheel(container.querySelector(".question-card__pager")!, { deltaX: 0, deltaY: 40 });
+    advance();
+
+    expect(current()).toMatch(/^Tests/);
   });
 
   it("makes Other exclusive on a single-choice question and sends its text only while it is picked", async () => {
