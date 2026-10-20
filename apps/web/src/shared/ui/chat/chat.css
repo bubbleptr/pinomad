@@ -314,6 +314,12 @@
      while every descendant remembers to; containing the inline size stops the
      leak at the block, whatever a future row does. */
   contain: inline-size;
+  /* ADR-0026: trace rows, Interim Output and the status line in Turn order.
+     Two rows are never adjacent (a segment ends only at prose), so the gap
+     separates a grey row from the prose around it. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
   font-size: var(--font-size-base);
   /* Icon slot sized to the text, not to 1em: a Hugeicons glyph fills ~12/14
      of its box, so 13px puts its ink (~11px) just over the body face's cap
@@ -351,14 +357,34 @@
   color: var(--color-text-primary);
 }
 
-/* Label shares the trigger's face but is inert: no hover, no pointer. */
-.chain-of-thought__label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-base);
+/* —— Trace row (ADR-0026 §2) —— */
+
+/* One grey line per segment. The trigger hugs its text so the hover target
+   is the words, not the column; a long verb list truncates instead of
+   pushing the chevron and the duration off the row. */
+.chat-trace {
+  min-width: 0;
+}
+
+.chat-trace > .chain-of-thought__trigger {
+  max-width: 100%;
+  min-width: 0;
+  gap: var(--spacing-1-5);
+  text-align: start;
+}
+
+.chat-trace__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The shimmer clips text to its gradient; without the padding, descenders go. */
+  padding-block: 0.15em;
+}
+
+.chat-trace > .chain-of-thought__trigger .chat-step__meta {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chat-pixel-loader {
@@ -408,14 +434,7 @@
   gap: var(--spacing-2);
 }
 
-/* Interim Output is what the model said to the user mid-run, so it reads a
-   shade darker than the step rows it sits between (ADR-0030 §7). */
-.chain-of-thought__interim {
-  color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-}
-
-/* The whole list folds into the header at run(end); Base UI measures it. */
+/* A trace row's steps unfold under it; Base UI measures the height. */
 .chain-of-thought__content {
   margin-block-start: var(--spacing-2);
   height: var(--collapsible-panel-height);
@@ -427,11 +446,6 @@
   transition:
     height var(--cot-flip-duration) var(--ease-standard),
     opacity var(--cot-flip-duration) var(--ease-standard);
-}
-
-/* Flat while the run is in flight — no header, so no offset under one. */
-.chain-of-thought:not([data-phase="settled"]) .chain-of-thought__content {
-  margin-block-start: 0;
 }
 
 .chain-of-thought__content[data-starting-style],
@@ -706,12 +720,13 @@
 
 /* —— Status line —— */
 
-/* Always the last line while the run is live, and the only heartbeat. */
+/* Always the last line while the run is live, and the only heartbeat. The
+   block's gap spaces it from the row or prose above. */
 .chat-status-line {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
-  margin: var(--spacing-2) 0 0;
+  margin: 0;
   min-height: 1.5em;
   color: var(--color-text-secondary);
   font-size: var(--font-size-base);
@@ -738,6 +753,132 @@
   .chain-of-thought__content,
   .chat-step__chevron {
     animation: none;
+    transition: none;
+  }
+}
+
+/* —— Todo card (ADR-0026 §4) —— */
+
+/* The newest run's last element. A bordered card, not a grey row: it is the
+   plan the user checks against, not process to skim past. */
+.todo-card {
+  --chat-icon-size: 13px;
+  --chat-icon-stroke: 2;
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-element);
+  background: var(--surface);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+.todo-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.todo-card__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1-5);
+  min-width: 0;
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--foreground);
+  font-size: inherit;
+  line-height: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.todo-card__title {
+  flex-shrink: 0;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-card__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.todo-card__updated {
+  flex-shrink: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.todo-card__done {
+  flex-shrink: 0;
+  width: var(--chat-icon-size);
+  height: var(--chat-icon-size);
+  color: var(--success);
+}
+
+.todo-card__panel {
+  height: var(--collapsible-panel-height);
+  overflow-y: clip;
+  transition: height var(--duration-fast) var(--ease-standard);
+}
+
+.todo-card__panel[data-starting-style],
+.todo-card__panel[data-ending-style] {
+  height: 0;
+}
+
+.todo-card__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: var(--spacing-1-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todo-card__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Centred on the first line, not the whole wrapped item. */
+.todo-card__status {
+  flex-shrink: 0;
+  width: var(--chat-icon-size);
+  height: 1.5em;
+  color: var(--color-icon-secondary);
+}
+
+.todo-card__status *,
+.todo-card__done * {
+  stroke-width: var(--chat-icon-stroke);
+}
+
+.todo-card__item[data-status="in_progress"] {
+  font-weight: var(--font-weight-medium);
+}
+
+.todo-card__item[data-status="in_progress"] .todo-card__status {
+  color: var(--foreground);
+}
+
+.todo-card__item[data-status="completed"] {
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-card__panel {
     transition: none;
   }
 }
