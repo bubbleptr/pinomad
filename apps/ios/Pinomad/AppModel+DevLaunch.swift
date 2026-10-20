@@ -56,6 +56,14 @@ extension AppModel {
             startSubagentDemo()
             return true
         }
+        if let mode = env["PINOMAD_DEMO_TRACE"] {
+            // A run that keeps working: the capsule's live label, the todo
+            // line and the trace sheet following new steps. `quiet` never
+            // says anything mid-run, so the label is the current action.
+            phase = .connected
+            startTraceDemo(interims: mode != "quiet")
+            return true
+        }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The composer's context meter at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.
@@ -263,6 +271,106 @@ extension AppModel {
             agents: nil, conversation: conversation
         ))
         replyStreams.sync(chat: chat)
+    }
+
+    /// Grows a live run by one step every two seconds (commands, a thinking
+    /// step streaming in, and with `interims` a line to the user now and
+    /// then) under a todo list half done, last written by the run before.
+    private func startTraceDemo(interims: Bool) {
+        navPath = [.conversation(1)]
+        let start = Date.now.timeIntervalSince1970 * 1000
+        let commands = ["bun run typecheck", "rg -n uploadQueue src", "bun test upload", "bun run lint"]
+        let lines = [
+            "先跑一遍类型检查，确认改动没有带坏别的地方。",
+            "**找到了**：上传队列在重试时复用了同一个临时文件名。",
+            "改成按尝试次数命名，再跑一次上传测试。",
+        ]
+        let todo = [
+            TodoItem(text: "复现偶发失败", status: .completed),
+            TodoItem(text: "给临时文件加上尝试序号", status: .completed),
+            TodoItem(text: "跑完整测试并确认稳定", status: .inProgress),
+            TodoItem(text: "补一条回归测试", status: .pending),
+        ]
+        // A four-bar chart, small enough to inline.
+        let chart = "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAIAAABd+SbeAAAAs0lEQVR42u3QMQ3AIBAAQORUEzMiXgRymFGCA5ZK6IaCtqHpJafg0hHjIXOeLEm0aNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq06E2jc7TPES1atGjRokWLFi1atGjRokWLFi1atGjRokWLFi1a9H3RNSqLaNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq0aNH/i+5ReIFo0aIRLVq0AtGiES1atAXRohEtWrQF0aIRvakLvqujxlgAdtAAAAAASUVORK5CYII="
+        let earlier = CotView(
+            phase: .settled, failed: false,
+            anchorMs: start - 900_000, elapsedMs: 372_000, todoWrittenAtMs: start - 600_000,
+            steps: [.tools(id: "e1", tools: (0..<3).map { index in
+                ToolItem(
+                    state: .outputAvailable, argsText: "rg -n flaky src/upload\(index).ts", children: [],
+                    diffStat: nil, durationMs: 800, images: [], output: "ok",
+                    toolCallId: "e1-\(index)", toolName: "bash", pinomad: nil
+                )
+            }, live: false, activeToolCallId: nil),
+            // A result carrying an image, to open it full screen from the
+            // trace sheet.
+            .tools(id: "e2", tools: [ToolItem(
+                state: .outputAvailable, argsText: "coverage/flaky-runs.png", children: [],
+                diffStat: nil, durationMs: 300, images: [MessageImage(data: chart, mimeType: "image/png")],
+                output: "Read image coverage/flaky-runs.png", toolCallId: "e2-0", toolName: "read", pinomad: nil
+            )], live: false, activeToolCallId: nil)],
+            answer: CotAnswer(text: "原因是重试时临时文件名冲突，我列了一个计划，接下来按计划修。", streaming: false)
+        )
+        Task { [weak self] in
+            var steps: [CotStep] = []
+            for tick in 0..<150 {
+                guard let self, !Task.isCancelled else { return }
+                // Settle what the last tick left live.
+                steps = steps.map { step in
+                    switch step {
+                    case let .thinking(id, text, _):
+                        return .thinking(id: id, text: text, live: false)
+                    case let .tools(id, tools, _, _):
+                        return .tools(id: id, tools: tools.map { tool in
+                            var done = tool
+                            done.state = .outputAvailable
+                            done.output = "ok"
+                            done.durationMs = 1_200
+                            return done
+                        }, live: false, activeToolCallId: nil)
+                    case .interim:
+                        return step
+                    }
+                }
+                if interims, tick % 4 == 1 {
+                    steps.append(.interim(id: "i\(tick)", text: lines[(tick / 4) % lines.count]))
+                } else if tick % 4 == 3 {
+                    steps.append(.thinking(id: "t\(tick)", text: "看一下输出里有没有新的失败，再决定下一步要不要缩小范围。", live: true))
+                } else {
+                    let command = commands[tick % commands.count]
+                    steps.append(.tools(id: "s\(tick)", tools: [ToolItem(
+                        state: .inputAvailable, argsText: command, children: [], diffStat: nil,
+                        durationMs: nil, images: [], output: nil, toolCallId: "c\(tick)",
+                        toolName: "bash", pinomad: nil
+                    )], live: true, activeToolCallId: "c\(tick)"))
+                }
+                let live = CotView(
+                    phase: .acting, failed: false, anchorMs: start, elapsedMs: nil,
+                    todoWrittenAtMs: nil, steps: steps, answer: nil
+                )
+                let chat: [ChatEntry] = [
+                    .user(id: "u1", text: "上传测试偶尔会失败，帮我查一下。", images: []),
+                    .run(id: "run-1", cot: earlier, forkEntryId: nil, interrupted: false, failure: nil),
+                    .user(id: "u2", text: "按计划修掉，改动尽量小。", images: []),
+                    .run(id: "run-2", cot: live, forkEntryId: nil, interrupted: false, failure: nil),
+                ]
+                let conversation = ConversationSnapshot(
+                    id: 1, chat: chat, statusText: "", queueItems: [],
+                    agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
+                    questions: [], todo: todo, home: nil, checkout: nil, busy: true, contextUsage: nil
+                )
+                self.publishDevSnapshot(ClientSnapshot(
+                    version: UInt64(tick + 1), connection: .connected, unauthorized: false,
+                    protocolMismatch: nil, host: nil,
+                    organized: Organized(chats: [], projects: [], archived: []),
+                    notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+                    agents: nil, conversation: conversation
+                ))
+                self.replyStreams.sync(chat: chat)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     private func demoPublish(answer: String, streaming: Bool, version: inout UInt64) {

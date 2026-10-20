@@ -30,6 +30,7 @@ private func tool(
 private func cot(
     phase: CotPhase = .settled,
     failed: Bool = false,
+    todoWrittenAtMs: Double? = nil,
     steps: [CotStep] = [],
     answer: CotAnswer? = nil
 ) -> CotView {
@@ -37,7 +38,8 @@ private func cot(
         phase: phase,
         failed: failed,
         anchorMs: nil,
-        elapsedMs: nil, todoWrittenAtMs: nil,
+        elapsedMs: nil,
+        todoWrittenAtMs: todoWrittenAtMs,
         steps: steps,
         answer: answer
     )
@@ -217,6 +219,43 @@ struct FallbackTests {
         item.images = [MessageImage(data: "aGk=", mimeType: "image/png")]
         let call = ChatAdapter.call(item, fallbackId: "x")
         #expect(call.images == [ToolImage(data: "aGk=", mimeType: "image/png")])
+    }
+}
+
+@Suite("ChatAdapter todo")
+struct TodoTests {
+    @Test func theRunsLastTodoWriteBecomesItsDate() {
+        let trace = ChatAdapter.trace(cot: cot(todoWrittenAtMs: 1_760_000_123_456), interrupted: false)
+        #expect(trace.todoWrittenAt == Date(timeIntervalSince1970: 1_760_000_123.456))
+        #expect(ChatAdapter.trace(cot: cot(), interrupted: false).todoWrittenAt == nil)
+    }
+
+    @Test func theConversationsTodoKeepsItsItemsInOrder() {
+        let list = ChatAdapter.todo([
+            TodoItem(text: "Reproduce", status: .completed),
+            TodoItem(text: "Fix", status: .inProgress),
+            TodoItem(text: "Ship", status: .pending),
+        ])
+        #expect(list == TodoList(items: [
+            .init(text: "Reproduce", status: .completed),
+            .init(text: "Fix", status: .inProgress),
+            .init(text: "Ship", status: .pending),
+        ]))
+        #expect(ChatAdapter.todo(nil) == nil)
+    }
+
+    /// One entry per run, oldest first, skipping the entries that are not
+    /// runs — `TodoLine` reads the last one as the newest run.
+    @Test func todoWritesListEveryRunInOrder() {
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "plan it", images: []),
+            .run(id: "run-1", cot: cot(todoWrittenAtMs: 2_000), forkEntryId: nil, interrupted: false, failure: nil),
+            .compaction(id: "c1"),
+            .user(id: "u2", text: "go on", images: []),
+            .run(id: "run-2", cot: cot(), forkEntryId: nil, interrupted: false, failure: nil),
+            .user(id: "u3", text: "queued", images: []),
+        ]
+        #expect(ChatAdapter.todoWrites(in: chat) == [Date(timeIntervalSince1970: 2), nil])
     }
 }
 

@@ -31,8 +31,29 @@ public enum ChatAdapter {
             outcome: outcome(failed: cot.failed, interrupted: interrupted),
             steps: cot.steps.map(step),
             startedAt: cot.anchorMs.map { Date(timeIntervalSince1970: $0 / 1000) },
-            endedAt: end(of: cot)
+            endedAt: end(of: cot),
+            todoWrittenAt: cot.todoWrittenAtMs.map { Date(timeIntervalSince1970: $0 / 1000) }
         )
+    }
+
+    /// Each run's last todo write (`CotView.todoWrittenAtMs`), oldest run
+    /// first — what `TodoLine` needs to decide whether the newest run
+    /// shows the list and how stale it is.
+    public static func todoWrites(in chat: [ChatEntry]) -> [Date?] {
+        chat.compactMap { entry -> Date?? in
+            guard case let .run(_, cot, _, _, _) = entry else { return nil }
+            return .some(cot.todoWrittenAtMs.map { Date(timeIntervalSince1970: $0 / 1000) })
+        }
+    }
+
+    /// The conversation's todo document (`ConversationSnapshot.todo`); nil
+    /// while it has none. Which run shows it is `TodoLine`'s call.
+    public static func todo(_ items: [TodoItem]?) -> TodoList? {
+        items.map { items in
+            TodoList(items: items.map { item in
+                TodoList.Item(text: item.text, status: status(of: item.status))
+            })
+        }
     }
 
     /// One step's calls, in message order — the kit folds a batch itself.
@@ -89,6 +110,14 @@ public enum ChatAdapter {
         case .acting: .acting
         case .answering: .answering
         case .settled: .settled
+        }
+    }
+
+    private static func status(of status: TodoStatus) -> TodoList.Status {
+        switch status {
+        case .pending: .pending
+        case .inProgress: .inProgress
+        case .completed: .completed
         }
     }
 

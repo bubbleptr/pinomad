@@ -1,77 +1,171 @@
 import AgentChatCore
 import SwiftUI
 
-/// What the agent did on the way to its answer: open while it works, folded
-/// to one line once the answer starts.
+/// A run's work as one capsule in the conversation, whatever its length.
+/// While the agent works it names what the agent last said, or what it is
+/// doing, and how long it has been at it; done, it says how the run went.
+/// The steps never unfold in place — `onOpen` is for presenting them in an
+/// `AgentTraceSheet`.
 public struct AgentTraceView: View {
     let trace: AgentTrace
-    @State private var disclosure: TraceDisclosure
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let onOpen: () -> Void
 
-    public init(_ trace: AgentTrace) {
+    public init(_ trace: AgentTrace, onOpen: @escaping () -> Void) {
         self.trace = trace
-        _disclosure = State(initialValue: TraceDisclosure(phase: trace.phase))
+        self.onOpen = onOpen
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(motion) { disclosure.toggle() }
-            } label: {
-                TraceHeader(trace: trace, isExpanded: disclosure.isExpanded)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(disclosure.isExpanded ? String(localized: "Hides the steps", bundle: .module) : String(localized: "Shows the steps", bundle: .module))
-
-            if disclosure.isExpanded, !trace.steps.isEmpty {
-                TraceSteps(steps: trace.steps)
-                    .transition(.opacity.combined(with: .offset(y: -4)))
+        let isWorking = trace.isWorking
+        Button(action: onOpen) {
+            // Ticks once a second only while the agent works.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let capsule = trace.capsule(at: isWorking ? context.date : .now)
+                HStack(spacing: 6) {
+                    InlinePager(page: capsule.label) { label in
+                        Text(text(for: label))
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .shimmering(label.isLive)
+                    }
+                    // The clock and counts stay outside the pager: they
+                    // change every second, the label only with the work.
+                    if let detail = TraceText.detail(capsule.summary, isWorking: isWorking) {
+                        Text(detail)
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .fixedSize()
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(capsule.label == .finished(.failed) ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.fill.tertiary, in: .capsule)
+                .contentShape(.capsule)
             }
         }
-        .onChange(of: trace.phase) { _, phase in
-            withAnimation(motion) { disclosure.update(phase: phase) }
-        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Shows the steps", bundle: .module))
     }
 
-    private var motion: Animation? {
-        reduceMotion ? nil : .snappy(duration: 0.25)
+    private func text(for label: TraceCapsule.Label) -> String {
+        switch label {
+        case .interim(let line): line
+        case .running(let running): TraceText.running(running)
+        case .thinking: String(localized: "Thinking", bundle: .module)
+        case .finished(let headline): TraceText.headline(headline)
+        }
     }
 }
 
-private struct TraceHeader: View {
-    let trace: AgentTrace
-    let isExpanded: Bool
+extension AgentTrace {
+    /// Still growing: the clocks tick and the labels name live work.
+    var isWorking: Bool {
+        outcome == .completed && (phase == .thinking || phase == .acting)
+    }
+}
 
-    private var isWorking: Bool { trace.phase == .thinking || trace.phase == .acting }
+private extension TraceCapsule.Label {
+    var isLive: Bool {
+        if case .finished = self { false } else { true }
+    }
+}
+
+/// A run's steps in the order they happened — what the agent said between
+/// them included — under the todo list when the run carries one. Meant as
+/// sheet content: it brings its own detents. While the run is live it
+/// follows the newest step, until the reader scrolls up; scrolling back to
+/// the end follows again.
+public struct AgentTraceSheet: View {
+    let trace: AgentTrace
+    let todo: TodoLine?
+
+    @State private var position: ScrollPosition
+    /// Whether new steps scroll into view: the reader is at the end.
+    @State private var following: Bool
+
+    public init(_ trace: AgentTrace, todo: TodoLine? = nil) {
+        self.trace = trace
+        self.todo = todo
+        // A live run opens on its newest step; a finished one from the
+        // start, where the todo list and the first step are.
+        _position = State(initialValue: ScrollPosition(edge: trace.isWorking ? .bottom : .top))
+        _following = State(initialValue: trace.isWorking)
+    }
+
+    public var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                TraceSheetHeader(trace: trace)
+                if let todo {
+                    TodoListView(line: todo)
+                }
+                TraceSteps(steps: trace.steps)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollPosition($position)
+        // Growth keeps the end in view while the reader is there; a reader
+        // who scrolled up owns the position until they come back. Only the
+        // reader's scrolling decides which — content growing away from the
+        // viewport is not the reader leaving the end — and a drag always
+        // wins over growth, which would otherwise yank it back down.
+        .onScrollPhaseChange { _, phase, context in
+            if phase == .interacting {
+                following = false
+            } else if phase == .idle {
+                let geometry = context.geometry
+                following = geometry.visibleRect.maxY >= geometry.contentSize.height - 4
+            }
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
+            if following { position.scrollTo(edge: .bottom) }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        // At the medium detent a drag scrolls the steps rather than growing
+        // the sheet, so scrolling up is how the reader stops following.
+        .presentationContentInteraction(.scrolls)
+    }
+}
+
+private struct TraceSheetHeader: View {
+    let trace: AgentTrace
 
     var body: some View {
-        // Ticks once a second only while the agent works.
+        let isWorking = trace.isWorking
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let summary = trace.summary(at: isWorking ? context.date : .now)
             HStack(spacing: 6) {
-                Text(headline(summary))
-                    .font(.subheadline.weight(.medium))
+                Text(TraceText.headline(summary.headline))
+                    .font(.headline)
+                    .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
                     .shimmering(isWorking)
-                if let detail = detail(summary) {
+                if let detail = TraceText.detail(summary, isWorking: isWorking) {
                     Text(detail)
                         .font(.subheadline)
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
-            .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-            .contentShape(.rect)
         }
     }
+}
 
-    private func headline(_ summary: TraceSummary) -> String {
-        switch summary.headline {
+/// The words a trace's summary and running call read as, shared by the
+/// capsule and the sheet.
+enum TraceText {
+    static func headline(_ headline: TraceSummary.Headline) -> String {
+        switch headline {
         case .thinking: String(localized: "Thinking", bundle: .module)
-        // The steps below already name what is running; the header does not.
         case .working: String(localized: "Working", bundle: .module)
         case .thought: String(localized: "Thought", bundle: .module)
         case .worked: String(localized: "Worked", bundle: .module)
@@ -80,7 +174,8 @@ private struct TraceHeader: View {
         }
     }
 
-    private func detail(_ summary: TraceSummary) -> String? {
+    /// The clock, and once done the number of tools.
+    static func detail(_ summary: TraceSummary, isWorking: Bool) -> String? {
         var parts: [String] = []
         if let elapsed = summary.elapsed {
             parts.append(elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
@@ -89,6 +184,13 @@ private struct TraceHeader: View {
             parts.append(String(localized: "\(summary.toolCount) tools", bundle: .module))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    static func running(_ running: ToolSummary.Running) -> String {
+        if let nested = running.nestedName {
+            return String(localized: "Running \(running.name) › \(nested)", bundle: .module)
+        }
+        return String(localized: "Running \(running.name)", bundle: .module)
     }
 }
 
@@ -102,16 +204,12 @@ private struct TraceSteps: View {
                 case let .thinking(_, text, isLive, duration):
                     ThinkingStep(text: text, isLive: isLive, duration: duration)
                 case let .interim(_, text):
+                    // Addressed to the user: it reads as the answer does.
                     MarkdownView(markdown: text)
-                        .font(.callout)
                 case let .tools(_, calls):
                     ToolBatchRow(calls: calls)
                 }
             }
-        }
-        .padding(.leading, 12)
-        .overlay(alignment: .leading) {
-            Capsule().fill(.quaternary).frame(width: 2)
         }
     }
 }
@@ -132,7 +230,10 @@ private struct ThinkingStep: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
+        // A stack, not a Group: a Group with no child yet (live, before
+        // the first sync) passes its modifiers to nothing, so `onAppear`
+        // never fires and the stream is never made.
+        VStack(alignment: .leading, spacing: 0) {
             if isLive {
                 if let stream { LiveThinking(stream: stream) }
             } else {
@@ -342,7 +443,7 @@ private struct ToolBatchRow: View {
     private func label(for page: Page) -> some View {
         switch page {
         case .running(let running):
-            Text(runningText(running))
+            Text(TraceText.running(running))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .shimmering(true)
@@ -377,13 +478,6 @@ private struct ToolBatchRow: View {
         }
         .font(.caption)
         .monospacedDigit()
-    }
-
-    private func runningText(_ running: ToolSummary.Running) -> String {
-        if let nested = running.nestedName {
-            return String(localized: "Running \(running.name) › \(nested)", bundle: .module)
-        }
-        return String(localized: "Running \(running.name)", bundle: .module)
     }
 
     private var settledText: String {

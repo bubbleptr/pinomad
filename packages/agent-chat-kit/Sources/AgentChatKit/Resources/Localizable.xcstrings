@@ -213,22 +213,22 @@
         }
       }
     },
-    "Hides the steps": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "收起步骤"
-          }
-        }
-      }
-    },
     "Hides the thinking": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "收起思考过程"
+          }
+        }
+      }
+    },
+    "In progress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
           }
         }
       }
@@ -547,6 +547,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "思考了片刻"
+          }
+        }
+      }
+    },
+    "Todo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办"
+          }
+        }
+      }
+    },
+    "Todo %lld/%lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Updated %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@更新"
           }
         }
       }
