@@ -681,3 +681,20 @@ body {
   opacity: 0.5;
   cursor: default;
 }
+
+/* The overview card (widgets/overview) floats in the chat column's top-right.
+   On wide layouts the column makes room for it instead of being covered: the
+   padding is just enough that the centered 44rem transcript ends left of the
+   card (right gutter = (W + p - 44rem) / 2 >= card + both gaps), zero when
+   the gutter already fits it, and capped so the chat keeps at least 32rem. */
+.pigui-app-layout {
+  --pigui-overview-width: 15rem;
+}
+
+.pigui-overview-clearance {
+  padding-inline-end: max(
+    0px,
+    min(calc(2 * (var(--pigui-overview-width) + 1.5rem) + 44rem - 100cqw), calc(100cqw - 32rem))
+  );
+}
+

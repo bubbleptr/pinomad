@@ -472,7 +472,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice }: { remote: Remote
   const narrow = useMediaQuery("(max-width: 1023px)");
   // The side panel: open state and tab live here so chat entries can open it.
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<PanelTab>("live");
+  const [panelTab, setPanelTab] = useState<PanelTab>("threads");
   const openInPanel = useCallback(
     (id: ConversationId, tab: "threads" | "tasks") => {
       setPanelTab(tab);

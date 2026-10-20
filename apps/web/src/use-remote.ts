@@ -106,9 +106,6 @@ export function useRemoteDurable(
           return;
         }
         opened = remote;
-        // The live-state panel starts with the task graph open. Here and not in a
-        // component effect, which StrictMode runs twice and would toggle it shut again.
-        void remote.controller.toggleTasks();
         setState({ status: "ready", remote });
       },
       (error: unknown) => {

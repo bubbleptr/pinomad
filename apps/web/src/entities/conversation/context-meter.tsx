@@ -11,6 +11,9 @@ const formatTokens = (tokens: number): string =>
       ? `${Math.round(tokens / 1000)}k`
       : `${Math.round(tokens)}`;
 
+/** Spend to the cent; a fraction of a cent still reads as spent. */
+const formatCost = (cost: number): string => (cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`);
+
 // r=6 inside a 16px viewBox: the ring stands as tall as the row's size-4 icons.
 const CIRCUMFERENCE = 2 * Math.PI * 6;
 
@@ -19,9 +22,10 @@ const CIRCUMFERENCE = 2 * Math.PI * 6;
  * window plus the percent in figures. `used` may exceed `window` after a
  * swap to a smaller model — the text reports the honest number while the
  * ring saturates at full. Without a qualifying reply the meter reads "—":
- * the last usage predates a compaction/reset and would lie.
+ * the last usage predates a compaction/reset and would lie. The tooltip
+ * also carries the conversation's spend so far, when it has any.
  */
-export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
+export function ContextMeter({ usage, cost }: { usage: ContextUsage | undefined; cost?: number }) {
   const percent = usage === undefined ? undefined : Math.round((usage.used / usage.window) * 100);
   const warning = percent !== undefined && percent >= WARNING_PERCENT;
   const text = percent === undefined ? "—" : `${percent}%`;
@@ -29,8 +33,12 @@ export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
     usage === undefined
       ? "Context usage unknown"
       : `Context ${percent}% used, ${formatTokens(usage.used)} of ${formatTokens(usage.window)} tokens`;
-  const tooltip =
-    usage === undefined ? "No usage data yet" : `${formatTokens(usage.used)} / ${formatTokens(usage.window)}`;
+  const tooltip = [
+    usage === undefined ? "No usage data yet" : `${formatTokens(usage.used)} / ${formatTokens(usage.window)}`,
+    cost === undefined || cost <= 0 ? undefined : formatCost(cost),
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
   const fill = usage === undefined ? 0 : Math.min(1, usage.used / usage.window);
   return (
     // `alignment="end"` keeps the tooltip inside the viewport: the meter

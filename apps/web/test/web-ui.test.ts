@@ -290,7 +290,7 @@ it("logs a stored login out from the Providers section", async () => {
   await dialog.getByText("No stored logins. Log in with the Pi CLI on the host.").waitFor();
 });
 
-it("keeps the chat usable on a phone with navigation and live state still reachable", async () => {
+it("keeps the chat usable on a phone with navigation and the side panel still reachable", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 390, webOrigin);
@@ -312,8 +312,7 @@ it("keeps the chat usable on a phone with navigation and live state still reacha
   await page.getByRole("button", { name: "hello", exact: true }).click();
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
   await page.getByRole("button", { name: "Side panel", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Live", exact: true }).click();
-  await page.getByRole("dialog").getByText("No live tasks").waitFor();
+  await page.getByRole("dialog").getByText("No threads yet").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
@@ -776,10 +775,7 @@ it("renders todo and a pending question card on every page and shares one answer
   await b.getByRole("button", { name: "plan and deploy", exact: true }).click();
 
   for (const page of [a, b]) {
-    await page.getByRole("button", { name: "Side panel", exact: true }).click();
-    const panel = page.getByLabel("Live state");
-    await panel.getByText("Investigate the report", { exact: true }).waitFor();
-    // The same list rides under the run in the transcript, once (ADR-0026 §4).
+    // The list rides under the run in the transcript, once (ADR-0026 §4).
     const todoCard = page.locator('[data-slot="todo-card"]');
     await todoCard.getByText("Investigate the report", { exact: true }).waitFor();
     expect(await todoCard.count()).toBe(1);
@@ -792,7 +788,7 @@ it("renders todo and a pending question card on every page and shares one answer
   await a.getByTestId("pending-questions").getByRole("radio", { name: "Yes", exact: true }).click();
   await a.getByTestId("pending-questions").getByRole("button", { name: "Submit", exact: true }).click();
   // Both pages converge on the stored answer; the turn continues.
-  await b.getByLabel("Live state").getByText("Yes", { exact: true }).waitFor();
+  await expect.poll(() => b.getByTestId("pending-questions").count()).toBe(0);
   await a.getByText("all answered", { exact: true }).waitFor();
 });
 
@@ -809,8 +805,9 @@ it("renders a document that fails its presentation schema as key-value fallback"
 
   const page = await openPage(host, 1280, webOrigin);
   await page.getByRole("button", { name: "has a bad doc", exact: true }).click();
-  await page.getByRole("button", { name: "Side panel", exact: true }).click();
-  const panel = page.getByLabel("Live state");
+  // Malformed or unknown documents are inspectable in the Overview card.
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Overview" });
   await panel.getByText("todo.list", { exact: true }).waitFor();
   await panel.getByText("items", { exact: true }).waitFor();
   await panel.getByText('"not-an-array"', { exact: true }).waitFor();
@@ -1532,21 +1529,21 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
   const panelToggle = page.getByRole("button", { name: "Side panel", exact: true });
   expect(await panelToggle.getAttribute("aria-pressed")).toBe("false");
   await panelToggle.click();
-  const panel = page.getByLabel("Live state");
-  await panel.getByText("No live tasks", { exact: true }).waitFor();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("No threads yet", { exact: true }).waitFor();
   expect(await page.getByRole("button", { name: "Side panel", exact: true }).getAttribute("aria-pressed")).toBe("true");
 
   // Switching conversations keeps the panel open.
   await page.getByRole("button", { name: "second chat", exact: true }).click();
   await page.getByText("second answer", { exact: true }).waitFor();
-  await panel.getByText("No live tasks", { exact: true }).waitFor();
+  await panel.getByText("No threads yet", { exact: true }).waitFor();
 
   // And closes again.
   await page.getByRole("button", { name: "Side panel", exact: true }).click();
   await expect.poll(() => page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
 });
 
-it("puts the conversation title in the header and the path inside the dock", async () => {
+it("puts the conversation title in the header and the path inside the overview", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
   const page = await openPage(host, 1280, webOrigin);
@@ -1560,11 +1557,80 @@ it("puts the conversation title in the header and the path inside the dock", asy
   await expect.poll(() => page.locator("h1").textContent()).toBe("title me");
   expect(await page.getByText("/chats/", { exact: false }).count()).toBe(0);
 
-  // The path moved into the panel's Workspace section, on the Live tab.
-  await page.getByRole("button", { name: "Side panel", exact: true }).click();
-  const panel = page.getByLabel("Live state");
-  await panel.getByText("Workspace", { exact: true }).waitFor();
-  await panel.getByText("/chats/", { exact: false }).waitFor();
+  // The path sits in the Overview card's Workspace section; a Chat
+  // conversation has no repository, so no Changes row.
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  const overview = page.getByRole("complementary", { name: "Overview" });
+  await overview.getByText("Workspace", { exact: true }).waitFor();
+  await overview.getByText("/chats/", { exact: false }).waitFor();
+  expect(await overview.getByRole("button", { name: /Changes/ }).count()).toBe(0);
+});
+
+it("summarizes changes and subagents in the overview card and links to their detail", async () => {
+  const webOrigin = await startWeb();
+  const repo = await tempDir();
+  defer(repo.remove);
+  const repoName = repo.path.split("/").at(-1)!;
+  await run("git", ["-C", repo.path, "init", "-b", "main"]);
+  await writeFile(join(repo.path, "tracked.txt"), "a\nb\nc\n");
+  await writeFile(join(repo.path, "logo.bin"), Buffer.from([0, 1, 2, 3]));
+  await run("git", ["-C", repo.path, "add", "-A"]);
+  await run("git", ["-C", repo.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
+  // Two lines changed, one added: the card sums the patch to +2 −1.
+  await writeFile(join(repo.path, "tracked.txt"), "a\nB\nc\nd\n");
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    projects: [repo.path],
+    extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+      createSubagent({ models, modelSummaries, exclude: [] }),
+    ],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      "child answer",
+      "parent final",
+    ],
+  });
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: repoName, exact: true }).click();
+  await page.getByRole("combobox", { name: "Where to work", exact: true }).click();
+  await page.getByRole("option", { name: "Project folder", exact: true }).click();
+  await prompt(page).fill("delegate");
+  await prompt(page).press("Enter");
+  await page.getByText("parent final", { exact: true }).waitFor();
+
+  const toggle = page.getByRole("button", { name: "Overview", exact: true });
+  expect(await toggle.getAttribute("aria-pressed")).toBe("false");
+  await toggle.click();
+  const overview = page.getByRole("complementary", { name: "Overview" });
+  const changes = overview.getByRole("button", { name: /Changes/ });
+  await changes.getByLabel("2 added, 1 removed", { exact: true }).waitFor();
+  await overview.getByRole("button", { name: "1 done", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  // The Tasks tab's list, grouped by owner.
+  await panel.getByText("This conversation", { exact: true }).waitFor();
+  await panel.getByText("count the lines", { exact: true }).waitFor();
+
+  await changes.click();
+  await page.getByRole("dialog").getByText("tracked.txt", { exact: false }).first().waitFor();
+  await page.keyboard.press("Escape");
+
+  // A binary-only change has no text lines but is still a change.
+  await run("git", ["-C", repo.path, "checkout", "--", "tracked.txt"]);
+  await writeFile(join(repo.path, "logo.bin"), Buffer.from([0, 9, 9, 3]));
+  await toggle.click();
+  await toggle.click();
+  await overview.getByRole("button", { name: /Changes/ }).getByText("1 file", { exact: true }).waitFor();
+
+  // The open state survives a reload (which lands on a draft, where the card
+  // has nothing to show); Escape inside the card closes it.
+  await page.reload();
+  await page.getByRole("button", { name: "delegate", exact: true }).click();
+  await overview.waitFor();
+  await overview.getByRole("button", { name: /Changes/ }).focus();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => overview.count()).toBe(0);
 });
 
 it("collapses the sidebar into the header toggle and restores it", async () => {

@@ -12,7 +12,7 @@ import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
-import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
+import { agentOf, queueItems, statusText, usageRows } from "@pinomad/client/chat.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
@@ -158,7 +158,12 @@ export function ConversationComposer({
           <ComposerLocationRow
             location={location}
             branch={branch}
-            meter={<ContextMeter usage={contextUsage(conversation, model?.contextWindow)} />}
+            meter={
+              <ContextMeter
+                usage={contextUsage(conversation, model?.contextWindow)}
+                cost={usageRows(conversation).reduce((sum, row) => sum + row.cost, 0)}
+              />
+            }
           />
         }
       />
