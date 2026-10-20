@@ -61,14 +61,21 @@ const isHostNameControl = (code: number): boolean => code < 0x20 || (code >= 0x7
 /**
  * The shared cleaning half of host naming (5.12): strips a trailing `.local`,
  * trims, drops control characters, caps the length — the same pipeline the
- * server applies (issue #212). An empty result means the input carries
- * nothing displayable: `normalizeHostName` falls back there, callers
- * validating user input treat it as "no name at all".
+ * server applies (issue #212). One pass can leave another `.local` suffix or
+ * new trailing space behind ("a.local.local", ".local "), so the pipeline runs
+ * to a fixed point — a stored name is already canonical and a second clean is
+ * a no-op. An empty result means the input carries nothing displayable:
+ * `normalizeHostName` falls back there, callers validating user input treat it
+ * as "no name at all".
  */
 export function cleanHostName(name: string): string {
-  const local = name.endsWith(".local") ? name.slice(0, -".local".length) : name;
-  const cleaned = [...local.trim()].filter((c) => !isHostNameControl(c.codePointAt(0)!)).join("");
-  return cleaned.slice(0, HOST_NAME_MAX_UNITS);
+  let cleaned = name;
+  for (;;) {
+    const local = cleaned.endsWith(".local") ? cleaned.slice(0, -".local".length) : cleaned;
+    const next = [...local.trim()].filter((c) => !isHostNameControl(c.codePointAt(0)!)).join("").slice(0, HOST_NAME_MAX_UNITS);
+    if (next === cleaned) return next;
+    cleaned = next;
+  }
 }
 
 export function normalizeHostName(name: string): string {

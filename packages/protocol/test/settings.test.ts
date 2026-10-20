@@ -45,8 +45,17 @@ describe("cleanHostName", () => {
     expect(cleanHostName("  ")).toBe("");
     expect(cleanHostName("\0")).toBe("");
     expect(cleanHostName(".local")).toBe("");
-    expect(cleanHostName("Desk.local ")).toBe("Desk.local");
     expect(cleanHostName("Desk.local")).toBe("Desk");
+  });
+
+  it("reaches a fixed point — one pass can leave another suffix or space", () => {
+    // ".local " keeps its suffix past the single-pass strip order; a stored
+    // name must be canonical so the announced value is what was written.
+    expect(cleanHostName(".local ")).toBe("");
+    expect(cleanHostName("Desk.local ")).toBe("Desk");
+    expect(cleanHostName("a.local.local")).toBe("a");
+    expect(cleanHostName(cleanHostName(".local "))).toBe("");
+    expect(cleanHostName(cleanHostName("a.local.local"))).toBe("a");
   });
 });
 

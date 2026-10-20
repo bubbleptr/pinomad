@@ -250,11 +250,17 @@ describe("settings over the gateway", () => {
     expect(b.view.current().settings?.custom).toEqual(["hostName"]);
 
     // A name that cleans to nothing is refused — refused is ok:false, so the
-    // connection must survive (a malformed patch would 4400 it).
+    // connection must survive (a malformed patch would 4400 it). ".local " is
+    // the double-clean case: pass one leaves ".local", the fixed point is "".
     await a.controller.updateSettings({ hostName: "  " });
+    await a.controller.updateSettings({ hostName: ".local " });
     await waitForView(a.view, (view) => view.notices.some((n) => n.message.includes("Invalid host name")));
     expect(a.view.current().connection).toBe("connected");
     expect(b.view.current().settings?.hostName).toBe("Desk");
+    // A double-suffix name stores its canonical form, not a first-pass value
+    // the settings stream would then publish as something else.
+    await a.controller.updateSettings({ hostName: "Bench.local.local" });
+    await waitForView(b.view, (view) => view.settings?.hostName === "Bench");
   });
 
   it("keeps settings across a host restart on the same dataDir", async () => {

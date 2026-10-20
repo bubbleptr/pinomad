@@ -122,6 +122,17 @@ export const HOST_LABEL_CASES: { name: string; hosts: StoredHost[] }[] = [
     ],
   },
   { name: "name-and-url-collide", hosts: [{ ...storedA, name: "10.0.0.3:7422" }, storedB] },
+  // Three same-named hosts whose keys share a six-unit prefix: each suffix
+  // grows one unit per round — a doubled grow (the old un-deduped Rust loop)
+  // ends at eight while the reference ends at seven.
+  {
+    name: "same-name-shared-prefix",
+    hosts: [
+      { ...storedA, name: "Desk" },
+      { url: "ws://10.0.0.3:7422", hostKey: `${HOST_KEY_A.slice(0, 6)}b${HOST_KEY_A.slice(7)}`, privateKey: KEY_B, name: "Desk" },
+      { url: "ws://10.0.0.4:7422", hostKey: `${HOST_KEY_A.slice(0, 6)}c${HOST_KEY_A.slice(7)}`, privateKey: KEY_C, name: "Desk" },
+    ],
+  },
 ];
 
 export const FAILURE_CASES: { name: string; error: unknown }[] = [

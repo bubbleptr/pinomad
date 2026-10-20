@@ -202,6 +202,10 @@ pub fn host_labels(hosts: &[StoredHost]) -> Vec<HostLabel> {
         if collided.is_empty() {
             break;
         }
+        // A three-way collision pushes an index twice — dedup so each host
+        // grows once per round, matching the reference's Set.
+        collided.sort_unstable();
+        collided.dedup();
         let mut grew = false;
         for i in collided {
             if suffix[i] > 0 && suffix[i] < hosts[i].host_key.encode_utf16().count() {
