@@ -73,6 +73,10 @@ pub struct CotView {
     pub anchor_ms: Option<f64>,
     /// Time from the run's first model call to the first answer token.
     pub elapsed_ms: Option<f64>,
+    /// When this run last changed the todo list: the result time of its last
+    /// successful `todo_write` (the doc commits on execution). On the view, not
+    /// the `Run` variant, because Swift matches that variant positionally.
+    pub todo_written_at_ms: Option<f64>,
     /// Steps in turn order; the last one may still be live.
     pub steps: Vec<CotStep>,
     /// The answer bubble's text — final, or presumed final while answering.
@@ -594,6 +598,25 @@ fn derive_run(
         }
     }
 
+    let mut todo_written_at_ms: Option<f64> = None;
+    for message in &messages {
+        let content = message.msg.get("content").and_then(Json::as_array);
+        for block in content.into_iter().flat_map(|c| c.iter()) {
+            if !is_call_block(block) || !str_eq(block.get("name"), "todo_write") {
+                continue;
+            }
+            let Some(written) = message.results.get(&JsKey::of(block.get("id"))) else {
+                continue;
+            };
+            if matches!(written.get("isError"), Some(Json::Bool(true))) {
+                continue;
+            }
+            if let Some(ts) = written.get("timestamp").and_then(Json::as_number) {
+                todo_written_at_ms = Some(ts);
+            }
+        }
+    }
+
     let interrupted = last_committed.is_some_and(|a| str_eq(a.msg.get("stopReason"), "aborted"));
     let failed = settled && last_committed.is_some_and(|a| str_eq(a.msg.get("stopReason"), "error"));
     let anchor_ms = messages
@@ -620,6 +643,7 @@ fn derive_run(
             failed,
             anchor_ms,
             elapsed_ms,
+            todo_written_at_ms,
             steps,
             answer: if answering {
                 Some(CotAnswer {

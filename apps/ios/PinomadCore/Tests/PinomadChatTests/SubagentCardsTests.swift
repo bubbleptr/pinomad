@@ -128,7 +128,7 @@ struct SubagentCardsTests {
 
     @Test func runWithoutSubagentsIsLeftAlone() {
         let cot = CotView(
-            phase: .settled, failed: false, anchorMs: nil, elapsedMs: nil,
+            phase: .settled, failed: false, anchorMs: nil, elapsedMs: nil, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: [ToolItem(
                 state: .outputAvailable, argsText: "README.md", children: [],
                 diffStat: nil, durationMs: nil, images: [], output: "read",
@@ -144,7 +144,7 @@ struct SubagentCardsTests {
     @Test func splitRunLiftsTheCallAndReadsTheChildRole() {
         let child = summary(id: 42, kind: .subagent, parent: 1, label: "Audit auth", role: "reviewer")
         let cot = CotView(
-            phase: .settled, failed: false, anchorMs: nil, elapsedMs: nil,
+            phase: .settled, failed: false, anchorMs: nil, elapsedMs: nil, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: [subagentTool()], live: false, activeToolCallId: nil)],
             answer: nil
         )

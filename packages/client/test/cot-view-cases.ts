@@ -325,6 +325,46 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     ]),
     busy: false,
   },
+  {
+    name: "todo-rewritten",
+    // The doc changes when the call executes, so the stamp is the result's,
+    // not the issuing message's; the last write wins.
+    view: view([
+      user("go"),
+      assistant([call("t1", "todo_write", { items: [] })], "toolUse", 50),
+      result("t1", "todo_write", "Todo list updated: 0 item(s).", false, undefined, 100),
+      assistant([call("c1", "bash", { command: "ls" })], "toolUse", 150),
+      result("c1", "bash", "ok", false, undefined, 200),
+      assistant([call("t2", "todo_write", { items: [] })], "toolUse", 250),
+      result("t2", "todo_write", "Todo list updated: 0 item(s).", false, undefined, 300),
+      assistant([text("done")], "stop", 350),
+    ]),
+    busy: false,
+  },
+  {
+    name: "todo-pending-write",
+    // A write still executing has not changed the doc yet.
+    view: view(
+      [
+        user("go"),
+        assistant([call("t1", "todo_write", { items: [] })], "toolUse", 50),
+        result("t1", "todo_write", "Todo list updated: 0 item(s).", false, undefined, 100),
+        assistant([call("t2", "todo_write", { items: [] })], "toolUse", 250),
+      ],
+      { run: {}, tools: [{ callId: "t2", name: "todo_write", status: "running" }] },
+    ),
+    busy: true,
+  },
+  {
+    name: "todo-failed-write",
+    view: view([
+      user("go"),
+      assistant([call("t1", "todo_write", { items: "bad" })], "toolUse", 50),
+      result("t1", "todo_write", "Validation failed", true, undefined, 100),
+      assistant([text("done")], "stop", 150),
+    ]),
+    busy: false,
+  },
 ];
 
 /** Cases also exercised through `retryOf` — by name into DERIVE_CHAT_CASES. */

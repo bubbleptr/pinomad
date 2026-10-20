@@ -12,6 +12,21 @@ const derive = (name: string) => {
   return deriveChat(c.view, c.presentations ?? {}, c.busy);
 };
 
+describe("deriveChat todo stamp", () => {
+  it("stamps the run with its last todo_write's result time", () => {
+    expect(runs(derive("todo-rewritten"))[0]!.cot.todoWrittenAtMs).toBe(300);
+  });
+
+  it("ignores a write that has not executed yet", () => {
+    expect(runs(derive("todo-pending-write"))[0]!.cot.todoWrittenAtMs).toBe(100);
+  });
+
+  it("ignores a failed write and runs that never wrote", () => {
+    expect(runs(derive("todo-failed-write"))[0]!.cot.todoWrittenAtMs).toBeUndefined();
+    expect(runs(derive("settled-run"))[0]!.cot.todoWrittenAtMs).toBeUndefined();
+  });
+});
+
 describe("deriveChat", () => {
   it("groups consecutive calls, thinking, interim text and answer into a run", () => {
     const entries = derive("settled-run");

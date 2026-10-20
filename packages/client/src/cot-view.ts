@@ -46,6 +46,13 @@ export type CotView = {
   anchorMs?: number;
   /** Time from the Run's first model call to the first answer token. */
   elapsedMs?: number;
+  /**
+   * When this Run last changed the todo list: the result time of its last
+   * successful `todo_write` (the doc commits on execution, not when the call
+   * is issued). Absent when the Run never wrote it. Lives here rather than on
+   * the run entry because native clients match that variant positionally.
+   */
+  todoWrittenAtMs?: number;
   /** Steps in Turn order; the last one may still be live. */
   steps: CotStep[];
   /** The answer bubble's text — final, or presumed final while answering. */
@@ -425,6 +432,17 @@ function deriveRun(
     });
   }
 
+  let todoWrittenAtMs: number | undefined;
+  for (const message of messages) {
+    for (const block of message.msg.content) {
+      if (!isCallBlock(block) || block.name !== "todo_write") continue;
+      const written = message.results.get(block.id);
+      if (written !== undefined && written.isError !== true && typeof written.timestamp === "number") {
+        todoWrittenAtMs = written.timestamp;
+      }
+    }
+  }
+
   const interrupted = lastCommitted?.msg.stopReason === "aborted";
   const failed = settled && lastCommitted?.msg.stopReason === "error";
   const anchorMs = messages[0]?.msg.timestamp;
@@ -442,6 +460,7 @@ function deriveRun(
       ...(failed === true ? { outcome: "failed" as const } : {}),
       ...(anchorMs === undefined ? {} : { anchorMs }),
       ...(elapsedMs === undefined ? {} : { elapsedMs }),
+      ...(todoWrittenAtMs === undefined ? {} : { todoWrittenAtMs }),
       steps,
       ...(answering ? { answer: { text: answerText, streaming: latest?.partial === true } } : {}),
     },

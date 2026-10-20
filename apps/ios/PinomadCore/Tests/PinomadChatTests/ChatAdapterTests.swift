@@ -37,7 +37,7 @@ private func cot(
         phase: phase,
         failed: failed,
         anchorMs: nil,
-        elapsedMs: nil,
+        elapsedMs: nil, todoWrittenAtMs: nil,
         steps: steps,
         answer: answer
     )
