@@ -7,7 +7,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
-import type { ProtocolVersion, PushToken } from "./frames.ts";
+import type { CallMethods, ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -216,7 +216,7 @@ export interface DurableController {
   /** Answer a pending `pinomad.question` request on `target` (the main shown conversation by default); failures surface as notices. */
   answer(kind: string, requestId: string, answers: QuestionAnswer[], target?: ConversationId): Promise<void>;
   /** The shown conversation's file changes; unavailable for Chat and non-git checkouts. */
-  changes(): Promise<{ available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean }>;
+  changes(): Promise<CallMethods["changes"]["result"]>;
   /**
    * File candidates under `scope`'s root matching `query`, for `@./path`
    * completion. A read-only request that never queues behind commands — a slow

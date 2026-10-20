@@ -187,15 +187,16 @@ pub(crate) fn files_of(value: Option<&Json>) -> Result<(Vec<String>, bool), Stri
 }
 
 /// The `changes` call's payload, mirroring the wire union
-/// `{available:false, reason}` | `{available:true, base, patch, truncated}`
-/// — the `patch` string is parsed into `files` at the facade.
+/// `{available:false, reason, branch?}` | `{available:true, base, patch, truncated, branch?}`
+/// — the `patch` string is parsed into `files` at the facade. `branch`
+/// (5.11) is the checkout's live branch, absent for detached HEAD.
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum ConversationChanges {
     /// Chat checkouts and non-git directories have no diff — `reason` is
-    /// the host's.
-    Unavailable { reason: String },
+    /// the host's; an unborn branch still reports `branch` here.
+    Unavailable { reason: String, branch: Option<String> },
     /// `truncated` marks a host-side 1 MiB cut at a line boundary.
-    Available { base: String, files: Vec<PatchFile>, truncated: bool },
+    Available { base: String, files: Vec<PatchFile>, truncated: bool, branch: Option<String> },
 }
 
 /// `changes`'s typed result — strict decode: a malformed shape is a
@@ -212,6 +213,16 @@ pub(crate) fn changes_of(value: Option<&Json>) -> Result<ConversationChanges, St
             .map(|s| s.to_string_lossy())
             .ok_or_else(|| format!("malformed changes result: {name}"))
     };
+    // 5.11: optional, but a string when the host sends one.
+    let branch = match value.get("branch") {
+        None => None,
+        Some(branch) => Some(
+            branch
+                .as_str()
+                .map(|s| s.to_string_lossy())
+                .ok_or_else(|| "malformed changes result: branch".to_string())?,
+        ),
+    };
     match value.get("available") {
         Some(Json::Bool(true)) => Ok(ConversationChanges::Available {
             base: string("base")?,
@@ -220,9 +231,11 @@ pub(crate) fn changes_of(value: Option<&Json>) -> Result<ConversationChanges, St
                 Some(Json::Bool(truncated)) => *truncated,
                 _ => return Err("malformed changes result: truncated".to_string()),
             },
+            branch,
         }),
         Some(Json::Bool(false)) => Ok(ConversationChanges::Unavailable {
             reason: string("reason")?,
+            branch,
         }),
         _ => Err("malformed changes result: available".to_string()),
     }

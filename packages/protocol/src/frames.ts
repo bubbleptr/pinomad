@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 10 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 11 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -159,10 +159,15 @@ export interface CallMethods {
   /**
    * The shown conversation's file changes as a unified patch: a worktree diff
    * vs its base commit, or a project directory's uncommitted diff vs HEAD.
+   * `branch` (5.11) is the checkout directory's current branch — omitted for
+   * detached HEAD, non-git directories, and Chat conversations; both result
+   * shapes carry it since an unborn branch still names one without a diff.
    */
   changes: {
     args: { conversationId: ConversationId };
-    result: { available: false; reason: string } | { available: true; base: string; patch: string; truncated: boolean };
+    result:
+      | { available: false; reason: string; branch?: string }
+      | { available: true; base: string; patch: string; truncated: boolean; branch?: string };
   };
   /** A one-time pairing offer; `url` carries the host public key and the secret. */
   createPairing: { args: Record<string, never>; result: { url: string; expiresAt: number } };
@@ -224,7 +229,13 @@ export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean
 }
 
 /** Minor version that introduced each call-arg feature (ADR-0018 §2). */
-const FEATURE_SINCE = { images: 5, acceptAccountDevices: 8, apnsPush: 9, agentConversations: 10 } as const;
+const FEATURE_SINCE = {
+  images: 5,
+  acceptAccountDevices: 8,
+  apnsPush: 9,
+  agentConversations: 10,
+  liveBranch: 11,
+} as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
 /** Whether a host of the given minor version honors `feature`. */

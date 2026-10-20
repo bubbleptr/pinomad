@@ -518,6 +518,7 @@ fn changes_result_decodes_available_into_parsed_files() {
             ("base", Json::from("c0ffee")),
             ("patch", Json::from(CHANGES_PATCH)),
             ("truncated", Json::Bool(true)),
+            ("branch", Json::from("main")),
         ]),
     );
     let mut h = Harness::boot(host, "req-1");
@@ -525,11 +526,18 @@ fn changes_result_decodes_available_into_parsed_files() {
     let Some(Ok(CallResult::Changes { changes })) = h.ops.get(&1) else {
         panic!("op 1 resolved: {:?}", h.ops.get(&1))
     };
-    let ConversationChanges::Available { base, files, truncated } = changes else {
+    let ConversationChanges::Available {
+        base,
+        files,
+        truncated,
+        branch,
+    } = changes
+    else {
         panic!("available result: {changes:?}")
     };
     assert_eq!(base, "c0ffee");
     assert_eq!(*truncated, true);
+    assert_eq!(branch.as_deref(), Some("main"));
     assert_eq!(files.len(), 1);
     let file = &files[0];
     assert_eq!(file.path, "t.txt");
@@ -556,6 +564,34 @@ fn changes_result_decodes_unavailable() {
         Some(&Ok(CallResult::Changes {
             changes: ConversationChanges::Unavailable {
                 reason: "Not in a git repository".to_string(),
+                branch: None,
+            },
+        }))
+    );
+}
+
+/// 5.11: HEAD's branch rides the `unavailable` shape too (an unborn branch
+/// has no diff), and fields added later decode along untouched.
+#[test]
+fn changes_result_carries_the_branch() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "changes".to_string(),
+        obj(&[
+            ("available", Json::Bool(false)),
+            ("reason", Json::from("Not in a git repository")),
+            ("branch", Json::from("main")),
+            ("future", Json::from("anything")),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::Changes { conversation_id: Some(7) });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Changes {
+            changes: ConversationChanges::Unavailable {
+                reason: "Not in a git repository".to_string(),
+                branch: Some("main".to_string()),
             },
         }))
     );
@@ -568,6 +604,12 @@ fn changes_result_malformed_fails_the_op() {
         obj(&[("available", Json::Number(1.0))]),             // wrong type
         obj(&[("available", Json::Bool(true))]),              // missing patch/base
         Json::Null,                                           // not an object
+        obj(&[
+            // `branch` is optional but must be a string when present.
+            ("available", Json::Bool(false)),
+            ("reason", Json::from("nope")),
+            ("branch", Json::Number(1.0)),
+        ]),
     ]
     .into_iter()
     .enumerate()
