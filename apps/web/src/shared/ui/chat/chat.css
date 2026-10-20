@@ -339,6 +339,13 @@
   width: 100%;
 }
 
+/* A run with no trace rows yet (just started, or a plain answer) still
+   holds the todo card, which should span the column, not hug its text. */
+.chat-message__body:has(> .todo-card) {
+  align-self: stretch;
+  width: 100%;
+}
+
 .chain-of-thought__trigger {
   display: inline-flex;
   align-items: center;
