@@ -10,7 +10,8 @@ use std::sync::Arc;
 use pinomad_core::ffi::{
     CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout, FfiCall,
     FfiCommand, FfiEvent, FileScope, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
-    ReadyOutcome, SkillEntry, SkillScope, SkillSource, StoredHost, SubmitMode, ThinkingLevel,
+    ReadyOutcome, SkillEntry, SkillScope, SkillSource, SteerOutcome, StoredHost, SubmitMode, ThinkingLevel,
+    WithdrawOutcome,
 };
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -411,6 +412,8 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             query: "src/".to_string(),
         },
     );
+    h.invoke(7, FfiCall::WithdrawQueued { submission_id: 3, target: Some(2) });
+    h.invoke(8, FfiCall::SteerQueued { submission_id: 3, target: Some(2) });
 
     let calls = call_frames(&h);
     let by_name: HashMap<String, Vec<&Json>> = calls.iter().fold(HashMap::new(), |mut acc, frame| {
@@ -426,6 +429,8 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
         ("call-createConversation-agent", by_name["createConversation"][1]),
         ("call-listFiles-project", by_name["listFiles"][0]),
         ("call-listFiles-conversation", by_name["listFiles"][1]),
+        ("call-withdrawQueued", by_name["withdrawQueued"][0]),
+        ("call-steerQueued", by_name["steerQueued"][0]),
     ]
     .into_iter()
     .collect();
@@ -444,6 +449,65 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
     }
 }
 
+#[test]
+fn queued_call_results_are_typed_and_queued_input_reads_on_demand() {
+    let mut h = Harness::new();
+    h.host.call_results.insert("withdrawQueued".to_string(), obj(&[("outcome", Json::from("sent"))]));
+    h.host.call_results.insert("steerQueued".to_string(), obj(&[("outcome", Json::from("steered"))]));
+    h.invoke(1, FfiCall::WithdrawQueued { submission_id: 3, target: Some(2) });
+    h.invoke(2, FfiCall::SteerQueued { submission_id: 3, target: Some(2) });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::WithdrawQueued { outcome: WithdrawOutcome::Sent }))
+    );
+    assert_eq!(
+        h.ops.get(&2),
+        Some(&Ok(CallResult::SteerQueued { outcome: SteerOutcome::Steered }))
+    );
+
+    h.host.call_results.insert("steerQueued".to_string(), obj(&[("outcome", Json::from("nope"))]));
+    h.invoke(3, FfiCall::SteerQueued { submission_id: 3, target: Some(2) });
+    assert!(matches!(h.ops.get(&3), Some(Err(error)) if error.contains("malformed steerQueued")));
+
+    let inbox = obj(&[
+        ("id", Json::Number(7.0)),
+        ("mode", Json::from("followUp")),
+        ("content", Json::array(vec![
+            obj(&[("type", Json::from("text")), ("text", Json::from("hello"))]),
+            obj(&[
+                ("type", Json::from("image")),
+                ("data", Json::from("aGk=")),
+                ("mimeType", Json::from("image/png")),
+            ]),
+        ])),
+    ]);
+    let write = obj(&[
+        ("id", Json::Number(2.0)),
+        ("mode", Json::from("write")),
+        ("entry", obj(&[("kind", Json::from("pi.note"))])),
+    ]);
+    let conversation = obj(&[
+        ("conversation", obj(&[("id", Json::Number(1.0))])),
+        ("entries", Json::array(vec![])),
+        (
+            "docs",
+            obj(&[("pi.inbox", obj(&[("items", Json::array(vec![inbox, write]))]))]),
+        ),
+    ]);
+    h.host.snapshots.insert("conversation:1".to_string(), conversation);
+    h.invoke(4, FfiCall::SwitchConversation { id: 1 });
+    let input = h.client.queued_input(7).expect("queued input");
+    assert_eq!(input.text, "hello");
+    assert_eq!(
+        input.images,
+        vec![MessageImage {
+            data: "aGk=".to_string(),
+            mime_type: "image/png".to_string(),
+        }]
+    );
+    assert!(h.client.queued_input(2).is_none());
+    assert!(h.client.queued_input(99).is_none());
+}
 #[test]
 fn validate_stored_host_accepts_good_and_drops_bad_account() {
     use pinomad_core::ffi::{validate_stored_host, StoredHostAccount, StoredHostError};

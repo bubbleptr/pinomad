@@ -11,7 +11,7 @@ use crate::remote_durable::ReadyOutcome as CoreReadyOutcome;
 use crate::u16str::U16String;
 use std::sync::Arc;
 
-pub use crate::chat::{QueueItem, QueueMode, TaskRow, UsageRow};
+pub use crate::chat::{QueueItem, QueueMode, QueuedInput, TaskRow, UsageRow};
 pub use crate::context_usage::ContextUsage;
 pub use crate::cot_view::{
     ChatEntry, CotAnswer, CotPhase, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents,
@@ -144,6 +144,52 @@ pub enum CallResult {
     /// `createPairing` — the one-time offer another device scans; `url`
     /// carries the host key and secret, `expires_at` is epoch ms.
     Pairing { url: String, expires_at: f64 },
+    /// `withdrawQueued` — `sent` means the input already reached the transcript.
+    WithdrawQueued { outcome: WithdrawOutcome },
+    /// `steerQueued` — `unavailable` means it settled before the promotion.
+    SteerQueued { outcome: SteerOutcome },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum WithdrawOutcome {
+    Withdrawn,
+    Sent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SteerOutcome {
+    Steered,
+    Sent,
+    Unavailable,
+}
+
+/// Strict like the other typed results: a malformed outcome fails the op
+/// instead of guessing what the host meant.
+pub(crate) fn withdraw_outcome_of(value: Option<&Json>) -> Result<WithdrawOutcome, String> {
+    let outcome = value
+        .filter(|v| v.is_object())
+        .and_then(|v| v.get("outcome"))
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy());
+    match outcome.as_deref() {
+        Some("withdrawn") => Ok(WithdrawOutcome::Withdrawn),
+        Some("sent") => Ok(WithdrawOutcome::Sent),
+        _ => Err("malformed withdrawQueued result: outcome".to_string()),
+    }
+}
+
+pub(crate) fn steer_outcome_of(value: Option<&Json>) -> Result<SteerOutcome, String> {
+    let outcome = value
+        .filter(|v| v.is_object())
+        .and_then(|v| v.get("outcome"))
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy());
+    match outcome.as_deref() {
+        Some("steered") => Ok(SteerOutcome::Steered),
+        Some("sent") => Ok(SteerOutcome::Sent),
+        Some("unavailable") => Ok(SteerOutcome::Unavailable),
+        _ => Err("malformed steerQueued result: outcome".to_string()),
+    }
 }
 
 /// `createPairing`'s typed result — strict like `changes_of`: the offer is

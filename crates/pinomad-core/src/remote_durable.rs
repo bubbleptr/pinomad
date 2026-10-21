@@ -60,6 +60,13 @@ pub enum Call {
         request_id: Option<String>,
         images: Vec<Json>,
     },
+    /// Take a queued input back out of the inbox (5.14). `sent` means it
+    /// already reached the transcript. Request-class: the caller owns the
+    /// outcome and the error.
+    WithdrawQueued { submission_id: u64, target: Option<u64> },
+    /// Promote a queued follow-up to steer in place (5.14); it is placed at
+    /// the next boundary that takes steers, in queue order. Request-class.
+    SteerQueued { submission_id: u64, target: Option<u64> },
     Compact { instructions: Option<String> },
     /// Not queued behind the command chain — it resolves once the
     /// conversation is idle, same as the reference.
@@ -847,7 +854,9 @@ impl RemoteDurable {
             | Call::CreateAgent { .. }
             | Call::UpdateAgent { .. }
             | Call::DeleteAgent { .. }
-            | Call::SetPushToken { .. } => OpKind::Request,
+            | Call::SetPushToken { .. }
+            | Call::WithdrawQueued { .. }
+            | Call::SteerQueued { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
             Call::ListFiles { .. } | Call::ListSkills { .. } => OpKind::Direct,
             _ => OpKind::Command,
@@ -980,6 +989,28 @@ impl RemoteDurable {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
                 steps.push_back(Step::Call { method: "submit", args: Json::Object(Arc::new(args)) });
+            }
+            Call::WithdrawQueued { submission_id, target } => {
+                if !host_supports_call(self.host_minor, "withdrawQueued") {
+                    return Err(too_old("5.14"));
+                }
+                let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
+                let args = obj(&[
+                    ("conversationId", Json::Number(conversation as f64)),
+                    ("submissionId", Json::Number(*submission_id as f64)),
+                ]);
+                steps.push_back(Step::Call { method: "withdrawQueued", args });
+            }
+            Call::SteerQueued { submission_id, target } => {
+                if !host_supports_call(self.host_minor, "steerQueued") {
+                    return Err(too_old("5.14"));
+                }
+                let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
+                let args = obj(&[
+                    ("conversationId", Json::Number(conversation as f64)),
+                    ("submissionId", Json::Number(*submission_id as f64)),
+                ]);
+                steps.push_back(Step::Call { method: "steerQueued", args });
             }
             Call::Compact { instructions } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;

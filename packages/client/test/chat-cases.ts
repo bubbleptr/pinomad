@@ -64,6 +64,73 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
   { name: "empty", input: chatView() },
 ];
 
+export interface QueuedInputCase {
+  readonly view: ConversationView;
+  readonly id: number;
+}
+
+export const QUEUED_INPUT_CASES: NamedCase<QueuedInputCase>[] = [
+  {
+    name: "steer",
+    input: {
+      view: chatView([], {}, [{ id: 1, mode: "steer", content: "focus" }]),
+      id: 1,
+    },
+  },
+  {
+    name: "followUp",
+    input: {
+      view: chatView([], {}, [{ id: 1, mode: "followUp", content: [text("then this")] }]),
+      id: 1,
+    },
+  },
+  {
+    name: "images",
+    input: {
+      view: chatView([], {}, [
+        {
+          id: 4,
+          mode: "followUp",
+          content: [
+            text("look"),
+            { type: "image", data: "aGk=", mimeType: "image/png" },
+            { type: "image", data: "aGk=", mimeType: "image/png" },
+          ],
+        },
+      ]),
+      id: 4,
+    },
+  },
+  {
+    name: "write",
+    input: {
+      view: chatView([], {}, [{ id: 2, mode: "write", entry: { kind: "pi.note" } }]),
+      id: 2,
+    },
+  },
+  {
+    name: "future-mode",
+    input: {
+      view: chatView([], {}, [{ id: 5, mode: "later", content: "not a steer yet" }]),
+      id: 5,
+    },
+  },
+  {
+    name: "missing",
+    input: {
+      view: chatView([], {}, [{ id: 1, mode: "steer", content: "focus" }]),
+      id: 99,
+    },
+  },
+  {
+    name: "no-inbox",
+    input: {
+      view: { conversation: { id: 0 }, entries: [], docs: {} } as unknown as ConversationView,
+      id: 1,
+    },
+  },
+];
+
 export const USAGE_CASES: NamedCase<ConversationView>[] = [
   {
     name: "model-and-tool",

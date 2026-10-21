@@ -332,6 +332,54 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("returns the host's queued outcomes and targets the shown conversation by default", async () => {
+    const answers: Record<string, string> = { withdrawQueued: "withdrawn", steerQueued: "steered" };
+    const { transport, sent } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "withdrawQueued" || frame.method === "steerQueued"
+        ? { ok: true, value: { outcome: answers[frame.method] } }
+        : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      expect(await remote.controller.withdrawQueued(3)).toBe("withdrawn");
+      expect(await remote.controller.steerQueued(4, id(2))).toBe("steered");
+      const calls = sent.flatMap((frame) => (frame.type === "call" ? [frame] : []));
+      expect(calls.map((frame) => [frame.method, frame.args])).toEqual([
+        ["withdrawQueued", { conversationId: 1, submissionId: 3 }],
+        ["steerQueued", { conversationId: 2, submissionId: 4 }],
+      ]);
+      expect(remote.view.current().notices).toEqual([]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects withdrawQueued with the host's error instead of a notice", async () => {
+    const { transport } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "withdrawQueued" ? { ok: false, error: "Submission 9 does not exist" } : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.withdrawQueued(9, id(1))).rejects.toThrow("Submission 9 does not exist");
+      expect(remote.view.current().notices).toEqual([]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects both queued calls on a 5.13 host without sending a frame", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 13 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.withdrawQueued(3, id(1))).rejects.toThrow("needs protocol 5.14");
+      await expect(remote.controller.steerQueued(3, id(1))).rejects.toThrow("pinomad upgrade");
+      expect(sent.some((frame) => frame.type === "call")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("sends the caller's requestId on submit, generating a fresh one otherwise", async () => {
     const { transport, sent } = fakeTransport([{}]);
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });

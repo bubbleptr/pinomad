@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use pinomad_core::chat::{agent_of, queue_items, status_text, task_rows, usage_rows};
+use pinomad_core::chat::{agent_of, queue_items, queued_input, status_text, task_rows, usage_rows};
 use pinomad_core::context_usage::context_usage;
 use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls};
 use pinomad_core::json::Json;
@@ -170,6 +170,15 @@ expect_text(case), "{name}");
         let view = Json::parse(&as_text(field(case, "view"))).unwrap();
         assert_eq!(
 norm(&derive_vectors::out::queue_items_json(&queue_items(&view))),
+expect_text(case), "{name}");
+    }
+    for case in cases(&file, "queuedInput") {
+        let name = as_text(field(case, "name"));
+        let view = Json::parse(&as_text(field(case, "view"))).unwrap();
+        let id = field(case, "id").as_number().expect("id") as u64;
+        let got = opt_json(queued_input(&view, id).map(|input| derive_vectors::out::queued_input_json(&input)));
+        assert_eq!(
+norm(&got),
 expect_text(case), "{name}");
     }
     for case in cases(&file, "usageRows") {

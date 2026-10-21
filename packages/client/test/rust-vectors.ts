@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deriveChat, retryOf, splitSubagentCalls } from "../src/cot-view.ts";
-import { agentOf, queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
+import { agentOf, queueItems, queuedInput, statusText, taskRows, usageRows } from "../src/chat.ts";
 import { contextUsage } from "../src/context-usage.ts";
 import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
 import { folderCrumbs, parentFolder } from "../src/folder-path.ts";
@@ -68,7 +68,15 @@ import {
   type AccountOpDesc,
 } from "./account-cases.ts";
 import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES } from "./cot-view-cases.ts";
-import { AGENT_CASES, IS_BUSY_CASES, QUEUE_CASES, STATUS_CASES, TASK_GRAPH_CASES, USAGE_CASES } from "./chat-cases.ts";
+import {
+  AGENT_CASES,
+  IS_BUSY_CASES,
+  QUEUED_INPUT_CASES,
+  QUEUE_CASES,
+  STATUS_CASES,
+  TASK_GRAPH_CASES,
+  USAGE_CASES,
+} from "./chat-cases.ts";
 import { CONTEXT_USAGE_CASES } from "./context-usage-cases.ts";
 import {
   CHECKOUT_OF_CASES,
@@ -201,6 +209,12 @@ function chatMetaVector(): VectorFile {
     agentOf: AGENT_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(agentOf(c.input))) })),
     statusText: STATUS_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(statusText(c.input))) })),
     queueItems: QUEUE_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(queueItems(c.input))) })),
+    queuedInput: QUEUED_INPUT_CASES.map((c) => ({
+      name: c.name,
+      view: wire(c.input.view),
+      id: c.input.id,
+      expect: expect(wire(queuedInput(c.input.view, c.input.id) ?? null)),
+    })),
     usageRows: USAGE_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(usageRows(c.input))) })),
     taskRows: TASK_GRAPH_CASES.map((c) => ({ name: c.name, graph: wire(c.input), expect: expect(wire(taskRows(c.input))) })),
     isBusy: IS_BUSY_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(isBusy(c.input))) })),
