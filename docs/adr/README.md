@@ -20,7 +20,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0002](0002-pi-durable-as-runtime.md) | 以 Pi Durable 的 Harness 为内核，Durable 存储是唯一事实来源 |
 | [0005](0005-structured-presentation-types.md) | 插件状态通过带运行时 schema 的展示类型呈现，不符合时兜底渲染 |
-| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Montserrat、Hugeicons），搬界面不搬数据模型（思维链组件由 0026 修订） |
+| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订） |
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 
 ## 宿主能力与工作组织
