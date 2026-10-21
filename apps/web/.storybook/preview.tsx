@@ -34,7 +34,11 @@ const preview: Preview = {
       </Theme>
     ),
   ],
-  parameters: { layout: "fullscreen" },
+  parameters: {
+    layout: "fullscreen",
+    // FSD layers, bottom up.
+    options: { storySort: { order: ["Shared", "Entities", "Presentation", "Widgets"] } },
+  },
 };
 
 export default preview;
