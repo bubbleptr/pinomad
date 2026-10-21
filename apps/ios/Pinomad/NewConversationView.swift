@@ -13,7 +13,8 @@ struct NewConversationView: View {
     @State private var showPhotos = false
     @State private var showCamera = false
     @State private var mentions = MentionCoordinator()
-    @FocusState private var focused: Bool
+    @State private var selection = NSRange()
+    @State private var focused = false
 
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
@@ -85,6 +86,12 @@ struct NewConversationView: View {
         return .project(path: path, checkout: model.draftCheckout)
     }
 
+    /// The draft's skill scope follows its home and checkout: a project
+    /// checkout, or the Chat draft's user-only listing.
+    private var skillScope: SkillScope? { model.draftSkillScope() }
+
+    private var skillEntries: [SkillEntry]? { model.skills(for: skillScope) }
+
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
             && resolution?.problem == nil
@@ -98,7 +105,9 @@ struct NewConversationView: View {
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
             Spacer()
-            if mentions.menu.isShowing {
+            if mentions.skillMenu.isShowing {
+                SkillMenuView(menu: mentions.skillMenu, choose: chooseSkill)
+            } else if mentions.menu.isShowing {
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
             }
             card
@@ -109,11 +118,16 @@ struct NewConversationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { focused = true }
         .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
-        .onChange(of: mentions.selection) { _, _ in refreshMentions() }
+        .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
         .onChange(of: model.draftHome) { _, _ in refreshMentions() }
         .onChange(of: model.draftCheckout) { _, _ in refreshMentions() }
         .onChange(of: model.hostSupports("listFiles")) { _, _ in refreshMentions() }
+        .onChange(of: skillEntries) { _, _ in refreshMentions() }
+        .onChange(of: model.connected) { _, connected in
+            if connected { model.requestSkills(for: skillScope, force: true) }
+            refreshMentions()
+        }
         .onChange(of: model.phase) { _, _ in mentions.close() }
         .onChange(of: focused) { _, isFocused in
             if isFocused { refreshMentions() } else { mentions.close() }
@@ -144,13 +158,16 @@ struct NewConversationView: View {
                     view: { model.viewing = $0 }
                 )
             }
-            TextField(
-                "想让 Pi 做什么…", text: draft,
-                selection: $mentions.selection, axis: .vertical
+            SkillComposerText(
+                text: draft,
+                selection: $selection,
+                focused: $focused,
+                placeholder: "想让 Pi 做什么…",
+                names: skillEntries?.map(\.name),
+                enabled: model.connected && !model.creating,
+                minLines: 3,
+                maxLines: 8
             )
-            .lineLimit(3...8)
-            .focused($focused)
-            .disabled(!model.connected || model.creating)
             if let problemText {
                 Text(problemText.reason)
                     .font(.caption)
@@ -216,11 +233,20 @@ struct NewConversationView: View {
     }
 
     private func refreshMentions() {
-        guard focused else {
+        guard focused, selection.length == 0 else {
             mentions.close()
             return
         }
-        mentions.refresh(text: draft.wrappedValue, roles: roles, scope: mentionScope) { scope, query in
+        // A draft's scope changes with its home/checkout, so ask for the
+        // new scope here; the cache keeps old scopes isolated.
+        model.requestSkills(for: skillScope)
+        mentions.refresh(
+            text: draft.wrappedValue,
+            caret: selection.location,
+            roles: roles,
+            fileScope: mentionScope,
+            skills: skillEntries
+        ) { scope, query in
             try await model.listFiles(scope: scope, query: query)
         }
     }
@@ -228,8 +254,14 @@ struct NewConversationView: View {
     private func chooseMention(_ choice: MentionChoice) {
         guard let insertion = mentions.insert(choice, into: draft.wrappedValue) else { return }
         draft.wrappedValue = insertion.text
-        mentions.selection = TextSelection(
-            insertionPoint: String.Index(utf16Offset: insertion.cursor, in: insertion.text))
+        selection = NSRange(location: insertion.cursor, length: 0)
+        focused = true
+    }
+
+    private func chooseSkill(_ skill: SkillEntry) {
+        guard let insertion = mentions.insert(skill, into: draft.wrappedValue) else { return }
+        draft.wrappedValue = insertion.text
+        selection = NSRange(location: insertion.cursor, length: 0)
         focused = true
     }
 

@@ -89,9 +89,15 @@ public struct Transcript<Content: View>: View {
 
 /// What the user sent, set apart from the agent's side of the conversation.
 public struct UserMessageView: View {
-    let text: String
+    let text: AttributedString
 
     public init(_ text: String) {
+        self.text = AttributedString(text)
+    }
+
+    /// Rich text variant for callers that paint spans (e.g. PiNomad's
+    /// $name skill mentions); the bubble styling stays the same.
+    public init(_ text: AttributedString) {
         self.text = text
     }
 
