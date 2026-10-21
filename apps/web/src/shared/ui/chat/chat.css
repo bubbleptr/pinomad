@@ -953,10 +953,10 @@
    don't sit on the same visual band. */
 .prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
   gap: var(--spacing-3);
-  /* Override Astryx's hover/focus elevation without changing the geometry;
-     the inset ring is the composer's hairline edge in both themes (a black
-     shadow alone vanishes on the dark pane). */
-  box-shadow: var(--shadow-low), inset 0 0 0 1px var(--color-border);
+  /* Override Astryx's hover/focus elevation without changing the geometry:
+     the composer is edged by a hairline ring alone, in both themes. A drop
+     shadow under the ring thickens and darkens the edge. */
+  box-shadow: inset 0 0 0 1px var(--color-border);
 }
 
 /* Preserve a focus indicator when the OS suppresses shadows. */
