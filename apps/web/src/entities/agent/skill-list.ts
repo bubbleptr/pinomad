@@ -1,6 +1,6 @@
 // The skill listing behind the `$` menu and the bubble/composer highlights
 // (issue #143): one cache per host connection, keyed by scope. Concurrent
-// callers ride one `listSkills` call, the answer is reused for a few minutes,
+// callers ride one `listSkills` call, the answer is reused for a few seconds,
 // and a failed call is never cached — the next request retries. Plain state,
 // no React: the hooks wire `subscribe` into `useSyncExternalStore`.
 import type { SkillListing, SkillScope } from "@pinomad/protocol/organization.ts";
@@ -8,8 +8,8 @@ import type { SkillListing, SkillScope } from "@pinomad/protocol/organization.ts
 /** One listed skill — the name a `$` mention types, the one-line description the menu shows, and which entry supplied it. */
 export type ListedSkill = SkillListing["skills"][number];
 
-/** How long a scope's listing is trusted before the next request refetches it. */
-export const SKILL_LIST_TTL_MS = 180_000;
+/** How long a scope's listing is trusted before the next request refetches it — seconds, so a newly added skill appears on the next focus. */
+export const SKILL_LIST_TTL_MS = 5_000;
 
 // Eviction bound — a long session can collect one entry per opened scope.
 const MAX_ENTRIES = 64;

@@ -118,26 +118,17 @@
   text-decoration: none;
 }
 
-/* `$name` skill mentions (issue #143): the composer's painting is the
-   `pinomad-skill-mention` HighlightRegistry entry — Custom Highlight pseudo
-   accepts color, background and decoration only — while sent bubbles wrap the
-   same text in .chat-skill-mention marks. Both read the accent tokens so the
-   mention follows the theme; the rest underline keeps the mention legible
-   where the muted wash is barely off the surface. */
+/* `$name` skill mentions (issue #143): accent-coloured text, no fill or
+   border — spec's "emphasis text, no background or border". The composer
+   paints through the `pinomad-skill-mention` HighlightRegistry entry; sent
+   bubbles wrap the same text in .chat-skill-mention marks. */
 ::highlight(pinomad-skill-mention) {
-  color: var(--color-text-accent);
-  background-color: var(--color-accent-muted);
-  text-decoration: underline;
-  text-decoration-color: var(--color-accent);
+  color: var(--color-text-blue);
 }
 
 mark.chat-skill-mention {
-  color: var(--color-text-accent);
-  background: var(--color-accent-muted);
-  text-decoration: underline;
-  text-decoration-color: var(--color-accent);
-  border-radius: var(--radius-inner);
-  padding-inline: var(--spacing-0-5);
+  color: var(--color-text-blue);
+  background: transparent;
 }
 
 .chat-markdown .chat-file-link:hover,

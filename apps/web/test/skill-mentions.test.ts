@@ -113,4 +113,9 @@ it("offers $name skills grouped by source, highlights them, and marks the sent b
   // The unknown name stays plain text in the bubble.
   await expect.poll(async () => mark.count()).toBe(1);
   await shot(page, "04-bubble-mark");
+
+  // Dark theme reads the same tokens — one extra shot for the PR.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await mark.waitFor();
+  await shot(page, "05-bubble-dark");
 });

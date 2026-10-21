@@ -119,7 +119,7 @@ describe("SkillMentionCache", () => {
   });
 });
 
-const SKILL_TTL_MS_FOR_TEST = 180_000;
+const SKILL_TTL_MS_FOR_TEST = 5_000;
 
 describe("skillItems", () => {
   const skills = listing([
