@@ -6,65 +6,50 @@
 @import "../shared/ui/chat/chat.css";
 @import "../presentation/question.css";
 
-/* Montserrat is the body/heading family, overriding the Astryx neutral
-   theme's default stack via --font-family-body/heading below. Fontsource
-   registers the file as "Montserrat Variable", so the face is declared here
-   under the plain name the token stack asks for; Vite emits the woff2 into
-   the web bundle's assets. */
-@font-face {
-  font-family: Montserrat;
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-normal.woff2")
-    format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-
-@font-face {
-  font-family: Montserrat;
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2")
-    format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 @source "../**/*.{ts,tsx}";
 
 /* —— Font override ——
+   System UI faces on every platform, Latin and CJK paired from the same
+   vendor (SF Pro + PingFang, Segoe UI + Microsoft YaHei, Roboto + Noto Sans
+   CJK) so both scripts in one line carry the same stroke at the same weight.
+   A web Latin face (Montserrat before) left CJK to fall back to PingFang,
+   whose Regular is visibly heavier.
+
    theme-neutral declares --font-family-* on :scope inside
    @scope ([data-astryx-theme="neutral"]); at equal specificity a scoped
    declaration beats an unscoped one on scope proximity, so the doubled
    attribute selector lifts this rule above :scope (0,2,0 > 0,1,0) and the
    override wins before proximity is even consulted. */
 [data-astryx-theme][data-astryx-theme] {
-  --font-family-body: Montserrat, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-family-heading: Montserrat, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-family-body: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
+    "Noto Sans CJK SC", Helvetica, Arial, sans-serif;
+  --font-family-heading: var(--font-family-body);
 }
 
 /* —— Dark surface ladder ——
    theme-neutral's dark leg puts the main pane at #262626 over a #1b1b1b
    frame and gives the composer (card) and menus (popover) the frame color,
-   so the sidebar and composer become the deepest, highest-contrast areas and
-   the conversation reads as a grey veil. Dark mode keeps light mode's
-   layering instead: frame darkest, main pane just above it, inset fills
-   (muted) and raised surfaces lighter in that order, popovers on top. Same
-   specificity lift as the font override. Light legs are theme-neutral's
-   values verbatim. */
+   so the conversation reads as a grey veil. Dark mode mirrors light mode
+   instead: the main pane is the extreme of the theme (white in light,
+   near-black in dark), the frame around it (sidebar) steps toward mid-grey,
+   and inset fills (muted), raised surfaces (card) and popovers step further
+   from the main pane in that order. Same specificity lift as the font
+   override. Light legs are theme-neutral's values verbatim.
+
+   Dark greys are pure neutrals (C 0), and the composer sits about 0.1 L
+   above the pane so it separates by fill. Dark text and icons stop at
+   L 0.94: full white on a near-black ground blooms. Dark borders are solid,
+   not theme-neutral's 10% white, which glows. */
 [data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f1f1f1, oklch(0.19 0 0));
-  --color-background-surface: light-dark(#ffffff, oklch(0.218 0 0));
-  --color-background-muted: light-dark(#f1f1f1, oklch(0.248 0 0));
-  --color-background-card: light-dark(#ffffff, oklch(0.26 0 0));
-  --color-background-popover: light-dark(#ffffff, oklch(0.285 0 0));
+  --color-background-body: light-dark(#f1f1f1, oklch(0.255 0 0));
+  --color-background-surface: light-dark(#ffffff, oklch(0.19 0 0));
+  --color-background-muted: light-dark(#f1f1f1, oklch(0.245 0 0));
+  --color-background-card: light-dark(#ffffff, oklch(0.285 0 0));
+  --color-background-popover: light-dark(#ffffff, oklch(0.32 0 0));
+  --color-border: light-dark(#00000014, oklch(0.33 0 0));
+  --color-text-primary: light-dark(#171717, oklch(0.94 0 0));
+  --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
 }
 
 /* —— Semantic token bridge ——
@@ -90,6 +75,10 @@
   --success: var(--color-success);
   --warning: var(--color-warning);
   --radius: var(--radius-element);
+  /* Reading size for message text and the composer that writes it. One step
+     above the 14px chrome (sidebar, trace rows, menus) so the conversation
+     reads as body copy rather than UI labels. */
+  --text-transcript-size: 0.9375rem;
   /* Squircle compensation: a continuous-curvature corner reads tighter than
     a round corner at the same radius, so the scalable tokens run at 1.5x
     the theme-neutral values (inner 6, element 10, container 12, page/chat
@@ -157,16 +146,6 @@
 :root {
   --pigui-icon-motion-duration: 800ms;
 
-  /* Pi mark colors: the only place color is allowed outside this bridge is
-     where "Pi is present" — the empty-state title shimmer and the composer's
-     brand accent border. Values are pi.dev's press-kit hex, kept verbatim for
-     dark mode; the light-mode leg reuses the same hue but lowers OKLCH
-     lightness via CSS relative-color syntax so each color still reads against
-     a white surface (yellow needed the deepest cut — #F1BE58 is too close to
-     white at full lightness). */
-  --pi-coral: light-dark(oklch(from #f09082 calc(l - 0.2) c h), #f09082);
-  --pi-blue: light-dark(oklch(from #4d9abf calc(l - 0.14) c h), #4d9abf);
-  --pi-yellow: light-dark(oklch(from #f1be58 calc(l - 0.3) c h), #f1be58);
   --pigui-data-blue: #1677e8;
   --pigui-data-orange: #ff6a2a;
   --pigui-data-orange-strong: #f04c0c;
@@ -209,13 +188,16 @@ body,
 }
 
 html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
+/* Astryx's reset sets antialiased/grayscale on body. On macOS that turns off
+   CoreText's stem darkening and thins every glyph, most visibly light text on
+   the dark theme, so the platform default comes back here. */
 body {
   margin: 0;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* Low-frequency action buttons (send, steer/withdraw, refresh).
@@ -669,6 +651,27 @@ body {
 }
 [data-pinomad-platform="darwin"] .pinomad-drag :is(button, a, input, select, textarea, [role="button"]) {
   -webkit-app-region: no-drag;
+}
+
+/* macOS desktop only (preload sets data-pinomad-vibrancy): the window is
+   transparent with under-window vibrancy, so clear every layer down to the
+   app shell and give the sidebar panel one translucent wash of the frame
+   color. The main pane keeps its opaque surface so the two columns stay
+   distinct; full-screen pages (Centered) paint their own opaque background.
+   Ported from Pace; Astryx's sidebar panel is the layout panel that holds
+   the side nav. */
+html[data-pinomad-vibrancy],
+html[data-pinomad-vibrancy] body,
+html[data-pinomad-vibrancy] #root {
+  background-color: transparent;
+}
+
+html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#):not(#\#) {
+  background-color: transparent;
+}
+
+html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
+  background-color: color-mix(in srgb, var(--color-background-body) var(--pigui-sidebar-wash-alpha), transparent);
 }
 
 /* The "N forks" chip under a message that was forked — replaces the Fork

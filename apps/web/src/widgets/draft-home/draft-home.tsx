@@ -16,8 +16,8 @@ import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts"
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
-import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
 import { ChatAdd, FileDiff, FolderClosed, ListTree, Plus, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
 // Pace's four draft suggestions; representative first-touch prompts.
 const SUGGESTED_PROMPTS = [
@@ -120,8 +120,9 @@ export function DraftHome({
       data-testid="draft-home"
     >
       <div className="mx-auto my-auto flex w-full max-w-[44rem] flex-col items-center justify-center gap-6">
+        <PinomadMark className="size-14 text-foreground" />
         <h2 className="text-center text-3xl font-normal tracking-tight text-foreground max-lg:text-2xl">
-          Build something useful with <TextShimmer tone="brand">PiNomad</TextShimmer>
+          Build something useful with PiNomad
         </h2>
         <div className="flex w-full flex-wrap justify-center gap-2">
           <Selector
@@ -152,8 +153,6 @@ export function DraftHome({
         <div className="flex w-full flex-col gap-3">
           <ImageFileInput inputRef={fileInput} onFiles={add} />
           <ChatPromptInput
-            accent="brand"
-            accentFocusRing
             value={value}
             inputRef={inputRef}
             onValueChange={setValue}

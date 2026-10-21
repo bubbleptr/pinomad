@@ -62,7 +62,7 @@ import {
 
 type PaceIconProps = Omit<HugeiconsIconProps, "icon" | "altIcon">;
 
-const paceIconStrokeWidth = 1.5;
+const paceIconStrokeWidth = 1.75;
 
 function iconComponent(icon: IconSvgElement) {
   return function PaceIcon(props: PaceIconProps) {

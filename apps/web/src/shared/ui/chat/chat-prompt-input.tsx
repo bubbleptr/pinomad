@@ -2,7 +2,7 @@
 // commit 15b9084): tokens and leading-token rehydrate are dropped. Kept: the
 // caller-owned submit contract (the composer must not force-clear a failed
 // draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning behavior
-// (always on — we steer), brand accent, status, startActions/footer/endActions
+// (always on — we steer), status, startActions/footer/endActions
 // slots, the attachments drawer, and trigger menus (callers pass Astryx
 // ChatComposerTrigger[]; an open menu consumes Enter/Arrows/Escape before our
 // submit path, so Enter selects rather than sends).
@@ -190,18 +190,6 @@ type ChatPromptInputOwnProps = {
    */
   footer?: ReactNode;
   error?: string | null;
-  /**
-   * Opt-in Pi-mark border (Pace docs/design/brand.md): a 1px coral/yellow/blue
-   * gradient ring that appears on focus and animates while `status` is
-   * submitted/streaming.
-   */
-  accent?: "brand";
-  /**
-   * Show the static ring on focus as well. Reserved for the draft home,
-   * where the composer is the page; inside a conversation the ring only
-   * marks a run in flight, so focus leaves it transparent.
-   */
-  accentFocusRing?: boolean;
   onSubmit?: () => void;
   onStop?: () => void;
   onValueChange?: (value: string) => void;
@@ -229,8 +217,6 @@ export function ChatPromptInput({
   endActions,
   footer,
   error,
-  accent,
-  accentFocusRing = false,
   onSubmit,
   onStop,
   onValueChange,
@@ -266,8 +252,6 @@ export function ChatPromptInput({
   return (
     <div
       className={`prompt-input ${className}`.trim()}
-      data-accent={accent}
-      data-accent-focus={accent && accentFocusRing ? "" : undefined}
       data-slot="prompt-input"
       data-status={status}
       onDragOver={handleDragOver}
