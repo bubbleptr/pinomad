@@ -502,10 +502,12 @@ final class AppModel {
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
-            if connectedNow && !lastSnapshotConnected {
-                syncPushToken()
-                // A withdraw whose reply was lost is retried once the
-                // connection is back; the row may already be gone.
+            if connectedNow && !lastSnapshotConnected { syncPushToken() }
+            if connectedNow {
+                // Retry on every connected view, not just the disconnect
+                // edge: ViewChanged coalescing can hide the offline snapshot.
+                // The state machine refuses a duplicate while one is in
+                // flight, so this is cheap and idempotent.
                 retryQueuedEditIfNeeded()
             }
             lastSnapshotConnected = connectedNow

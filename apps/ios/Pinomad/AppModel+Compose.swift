@@ -243,25 +243,47 @@ extension AppModel {
                 queuePending.remove(copy.id)
                 showToast("已发出，无法撤回")
             }
-        } catch {
+        } catch let error as SessionError {
             guard queuedEdit.copy == copy else { return }
-            // A reply from a replaced session says nothing about the input:
-            // ask again on the live one instead of treating it as a refusal.
-            if self.session !== session {
-                if let live = self.session, live.liveConnected {
-                    await resolveQueuedEdit(copy, session: live)
-                } else {
-                    queuedEdit.failed(connected: false)
+            switch error {
+            case .connectionLost:
+                // The request's connection epoch ended: the host may have
+                // withdrawn it, so keep the copy and re-confirm by id.
+                await awaitReconnectOrRetry(copy)
+            case .operationFailed:
+                // A refusal from a replaced session does not describe this
+                // input; ask the live one again when it is reachable.
+                guard self.session === session else {
+                    await awaitReconnectOrRetry(copy)
+                    return
                 }
-                return
+                // The epoch did not move, so the host refused while the
+                // connection stayed up: nothing was withdrawn.
+                queuedEdit.failed(connected: true)
+                queuePending.remove(copy.id)
+                showToast(describe(error), level: "error")
+            case .sessionClosed:
+                await awaitReconnectOrRetry(copy)
             }
-            // Read the core's live connection, not the last published
-            // snapshot: a lost socket can reject the request before the
-            // snapshot that says so lands. The error text never decides.
-            let failure = queuedEdit.failed(connected: session.liveConnected)
-            guard failure == .rejected else { return }
-            queuePending.remove(copy.id)
-            showToast(describe(error), level: "error")
+        } catch {
+            // Not a session refusal: keep the copy for the reconnect retry
+            // rather than guessing that the input was not withdrawn.
+            guard queuedEdit.copy == copy else { return }
+            await awaitReconnectOrRetry(copy)
+        }
+    }
+
+    /// Resolve a copy whose old session can no longer answer. The core's
+    /// live connection, not the published snapshot, gates the immediate
+    /// retry — the snapshot can be stale in either direction. When it is not
+    /// live, the copy waits for a connected view; every such view checks for
+    /// a pending retry, so a coalesced disconnect edge cannot strand it.
+    private func awaitReconnectOrRetry(_ copy: QueuedEdit.Copy) async {
+        guard queuedEdit.copy == copy else { return }
+        if let live = self.session, live.isConnectedNow {
+            await resolveQueuedEdit(copy, session: live)
+        } else {
+            queuedEdit.failed(connected: false)
         }
     }
 

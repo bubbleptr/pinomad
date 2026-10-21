@@ -163,6 +163,7 @@ extension AppModel {
     func describe(_ error: Error) -> String {
         switch error {
         case SessionError.operationFailed(let message): message
+        case SessionError.connectionLost: "连接已断开"
         case SessionError.sessionClosed: "连接已关闭"
         default: error.localizedDescription
         }
