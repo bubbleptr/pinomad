@@ -60,15 +60,38 @@ jobs:
       # Reads rust-toolchain.toml for the pinned channel and the iOS targets.
       - uses: dtolnay/rust-toolchain@stable
       - run: apps/ios/scripts/build-core.sh
+      # CoreSimulator sometimes hasn't registered the iOS runtime yet when
+      # xcodebuild asks, and a name= destination then matches nothing. Wait
+      # for an available iPhone, boot it, and pass it by id.
+      - name: Pick an iOS simulator
+        id: sim
+        run: |
+          for attempt in $(seq 1 24); do
+            udid=$(xcrun simctl list devices available -j | jq -r '
+              [.devices | to_entries[] | select(.key | contains("SimRuntime.iOS"))
+                | .value[] | select(.name | startswith("iPhone"))]
+              | (map(select(.name == "iPhone 17")) + .) | .[0].udid // empty')
+            [ -n "$udid" ] && break
+            sleep 5
+          done
+          if [ -z "$udid" ]; then
+            echo "::error::No available iPhone simulator after 2 minutes"
+            xcrun simctl list runtimes
+            xcrun simctl list devices
+            exit 1
+          fi
+          xcrun simctl list devices | grep "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: PinomadCore Swift tests on an iOS simulator
         working-directory: apps/ios/PinomadCore
         run: |
           xcodebuild -scheme PinomadCore-Package \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' \
             test
       - name: Build the app for an iOS simulator
         run: |
           xcodebuild -project apps/ios/Pinomad.xcodeproj \
             -scheme Pinomad \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' \
             build
