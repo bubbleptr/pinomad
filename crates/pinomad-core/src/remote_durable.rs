@@ -95,6 +95,9 @@ pub enum Call {
     /// commands behind it, and a hanging command must not block it. Needs
     /// a 5.10 host.
     ListFiles { scope: Json, query: String },
+    /// `listSkills` — the `$`-mentionable skills for a scope (issue #143).
+    /// Same read-only, unqueued shape as `listFiles`. Needs a 5.13 host.
+    ListSkills { scope: Json },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -846,7 +849,7 @@ impl RemoteDurable {
             | Call::DeleteAgent { .. }
             | Call::SetPushToken { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. } => OpKind::Direct,
+            Call::ListFiles { .. } | Call::ListSkills { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1134,6 +1137,12 @@ impl RemoteDurable {
                 }
                 let args = obj(&[("scope", scope.clone()), ("query", Json::from(query.clone()))]);
                 steps.push_back(Step::Call { method: "listFiles", args });
+            }
+            Call::ListSkills { scope } => {
+                if !host_supports_call(self.host_minor, "listSkills") {
+                    return Err(too_old("5.13"));
+                }
+                steps.push_back(Step::Call { method: "listSkills", args: obj(&[("scope", scope.clone())]) });
             }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });

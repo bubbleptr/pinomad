@@ -73,6 +73,32 @@ describe("parseClientFrame", () => {
     expect(hostSupportsCall(10, "listFiles")).toBe(true);
   });
 
+  it("accepts listSkills scopes; rejects malformed ones", () => {
+    const call = (args: unknown): unknown => ({ type: "call", id: 1, method: "listSkills", args });
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 } }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "worktree" } }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "project" } }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "chat" } }))).toBe("frame");
+    // Unknown extension fields ride along (ADR-0018 §2).
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "project", extra: 1 } }))).toBe("frame");
+    expect(kinds(call({ scope: { kind: "chat", extra: 1 } }))).toBe("frame");
+
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: "7" } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "conversation", conversationId: 0 } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "conversation" } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "/x" } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "", checkout: "project" } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "project", path: "/x", checkout: "both" } }))).toBe("malformed");
+    expect(kinds(call({ scope: { kind: "nope" } }))).toBe("malformed");
+    expect(kinds(call({ scope: "chat" }))).toBe("malformed");
+    expect(kinds(call({}))).toBe("malformed");
+  });
+
+  it("introduces listSkills at minor 13", () => {
+    expect(hostSupportsCall(12, "listSkills")).toBe(false);
+    expect(hostSupportsCall(13, "listSkills")).toBe(true);
+  });
+
   it("accepts setThinkingLevel; the removed cycleThinking is an unknown call", () => {
     expect(
       kinds({

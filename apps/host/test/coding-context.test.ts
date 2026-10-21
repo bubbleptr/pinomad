@@ -104,6 +104,9 @@ describe("coding tools and context extension", () => {
     expect(prompt).toContain("Project deploy steps");
     expect(prompt).not.toContain("Global deploy steps");
     expect(prompt).toContain("<name>review</name>");
+    // The fixed `$`-mention rules render with the skills section (issue #143).
+    expect(prompt).toContain("`$name` outside code blocks, inline code, and quoted text");
+    expect(prompt.indexOf("<available_skills>")).toBeLessThan(prompt.indexOf("`$name` outside code blocks"));
   });
 
   it("re-renders project context on every request", async () => {
@@ -162,5 +165,7 @@ describe("coding tools and context extension", () => {
     expect(prompt).toContain(`Working directory: ${cwdOf(client)}`);
     expect(prompt).not.toContain("<project_context>");
     expect(prompt).not.toContain("available_skills");
+    // The `$` rules are unconditional — a skill-less conversation still gets them.
+    expect(prompt).toContain("`$name` outside code blocks, inline code, and quoted text");
   });
 });

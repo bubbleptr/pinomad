@@ -57,6 +57,7 @@ import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./chec
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
+import { createSkillLister, enumerateSkills, listSkills, type SkillLister } from "./skills.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem } from "@pinomad/protocol/images.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
@@ -134,6 +135,8 @@ export interface GatewayOptions {
   readonly browserOrigins?: readonly string[];
   /** Chat checkouts live under `<dataDir>/chats`. */
   readonly dataDir: string;
+  /** The user-skills entry (`<agentsHome>/skills`) — the same dir the context extension's prompts read (ADR-0006). */
+  readonly agentsHome: string;
   /** Host settings store (ADR-0021): backs the `settings` stream, `hello.defaults`, `updateSettings`, and new-conversation defaults. */
   readonly settings: HostSettingsStore;
   /** Named-agent store (ADR-0023): backs the `agents` stream and the create/update/delete calls. */
@@ -192,6 +195,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // One lister for the gateway: all clients' `listFiles` share its cache and
   // its concurrency bound (issue #138 §成本控制).
   const fileLister = createCandidateLister(enumerateRoot);
+  // Same for `listSkills` — concurrent clients' scope queries ride one scan
+  // (issue #143). The skills dirs it reads are the prompt's own.
+  const skillLister = createSkillLister((root, mode) => enumerateSkills(root, mode, options.agentsHome));
   const detachAutoTitle =
     options.autoTitle === false
       ? undefined
@@ -231,7 +237,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     if (joined?.source === "account") {
       broadcast("info", `New device "${joined.name}" joined through your account`);
     }
-    const client = new GatewayClient(connection, options, conversations, fileLister, {
+    const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, {
       devicePublicKey,
       closed: (self) => {
         clients.delete(self);
@@ -1041,15 +1047,18 @@ class GatewayClient {
   readonly #options: GatewayOptions;
   /** The gateway-wide file enumerator — shared so concurrent clients' queries ride one scan per root. */
   readonly #files: FileLister;
+  /** The gateway-wide skills lister — concurrent clients' scope queries ride one scan. */
+  readonly #skills: SkillLister;
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
-  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, hooks: ClientHooks) {
+  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, skills: SkillLister, hooks: ClientHooks) {
     this.#connection = connection;
     this.#options = options;
     this.#files = files;
+    this.#skills = skills;
     this.#hostValues = {
       conversations,
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
@@ -1367,6 +1376,10 @@ class GatewayClient {
       case "listFiles": {
         const input = args as CallMethods["listFiles"]["args"];
         return listFiles(this.#options.harness, this.#options.dataDir, this.#files, input.scope, input.query, context);
+      }
+      case "listSkills": {
+        const input = args as CallMethods["listSkills"]["args"];
+        return listSkills(this.#options.harness, this.#skills, input.scope, context);
       }
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);

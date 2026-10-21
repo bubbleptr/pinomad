@@ -1,0 +1,172 @@
+{
+  "skillMentionRanges": [
+    {
+      "name": "whole-text",
+      "text": "$review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":0,\"end\":7}]"
+    },
+    {
+      "name": "at-end",
+      "text": "please run $review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":11,\"end\":18}]"
+    },
+    {
+      "name": "mid-sentence",
+      "text": "run $review now",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":4,\"end\":11}]"
+    },
+    {
+      "name": "hyphenated-name",
+      "text": "$code-review please",
+      "names": "[\"code-review\"]",
+      "expect": "[{\"start\":0,\"end\":12}]"
+    },
+    {
+      "name": "leading-hyphen",
+      "text": "$-x",
+      "names": "[\"-x\"]",
+      "expect": "[{\"start\":0,\"end\":3}]"
+    },
+    {
+      "name": "double-dollar",
+      "text": "$$review",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "after-crlf",
+      "text": "one\r\n$review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":5,\"end\":12}]"
+    },
+    {
+      "name": "after-nbsp",
+      "text": "a $review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":2,\"end\":9}]"
+    },
+    {
+      "name": "after-ideographic-space",
+      "text": "　$review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":1,\"end\":8}]"
+    },
+    {
+      "name": "cjk-before",
+      "text": "。$review",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "cjk-after",
+      "text": "$review。",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":0,\"end\":7}]"
+    },
+    {
+      "name": "cjk-around",
+      "text": "用 $review 吧",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":2,\"end\":9}]"
+    },
+    {
+      "name": "emoji-prefix-offset",
+      "text": "😀 $review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":3,\"end\":10}]"
+    },
+    {
+      "name": "letter-follower",
+      "text": "$reviewing",
+      "names": "[\"review\",\"reviewing\"]",
+      "expect": "[{\"start\":0,\"end\":10}]"
+    },
+    {
+      "name": "digit-follower",
+      "text": "$review2",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "underscore-follower",
+      "text": "$review_",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "dollar-follower",
+      "text": "$review$x",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "longest-run-misses",
+      "text": "$review-extra",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "longest-run-hits",
+      "text": "$review-extra",
+      "names": "[\"review\",\"review-extra\"]",
+      "expect": "[{\"start\":0,\"end\":13}]"
+    },
+    {
+      "name": "case-sensitive",
+      "text": "$Review $REVIEW $review",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":16,\"end\":23}]"
+    },
+    {
+      "name": "hyphen-candidate",
+      "text": "$-review",
+      "names": "[\"review\",\"-review\"]",
+      "expect": "[{\"start\":0,\"end\":8}]"
+    },
+    {
+      "name": "empty-candidate",
+      "text": "$ and $. and $,",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "repeated",
+      "text": "$review then $deploy and $review again",
+      "names": "[\"review\",\"deploy\"]",
+      "expect": "[{\"start\":0,\"end\":7},{\"start\":13,\"end\":20},{\"start\":25,\"end\":32}]"
+    },
+    {
+      "name": "digit-name",
+      "text": "run $9lives",
+      "names": "[\"9lives\"]",
+      "expect": "[{\"start\":4,\"end\":11}]"
+    },
+    {
+      "name": "empty-names",
+      "text": "$review $deploy",
+      "names": "[]",
+      "expect": "[]"
+    },
+    {
+      "name": "unknown-name",
+      "text": "costs $100",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "trailing-dollar",
+      "text": "almost $",
+      "names": "[\"review\"]",
+      "expect": "[]"
+    },
+    {
+      "name": "emoji-follower",
+      "text": "$review 😀",
+      "names": "[\"review\"]",
+      "expect": "[{\"start\":0,\"end\":7}]"
+    }
+  ]
+}

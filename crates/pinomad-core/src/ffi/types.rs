@@ -138,6 +138,9 @@ pub enum CallResult {
     /// `listFiles` — `/`-separated paths relative to the scope's root;
     /// `truncated` marks any enumeration or result cap the answer hit.
     Files { files: Vec<String>, truncated: bool },
+    /// `listSkills` — the `$`-mentionable skills in the scope, project entry
+    /// first.
+    Skills { skills: Vec<SkillEntry> },
     /// `createPairing` — the one-time offer another device scans; `url`
     /// carries the host key and secret, `expires_at` is epoch ms.
     Pairing { url: String, expires_at: f64 },
@@ -184,6 +187,56 @@ pub(crate) fn files_of(value: Option<&Json>) -> Result<(Vec<String>, bool), Stri
         _ => return Err("malformed listFiles result: truncated".to_string()),
     };
     Ok((files, truncated))
+}
+
+/// A `listSkills` entry — the name a `$` mention types and the description
+/// the menu shows (issue #143). Skill bodies stay on the host.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SkillEntry {
+    pub name: String,
+    pub description: String,
+    /// Which entry directory supplied it — the scope root's `.agents/skills`
+    /// or the user home's `skills/`.
+    pub source: SkillSource,
+}
+
+/// The `listSkills` `source` field: project wins a same-name collision.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SkillSource {
+    Project,
+    User,
+}
+
+/// `listSkills`'s typed result — strict like `files_of`: a malformed shape
+/// is a host-contract violation and fails the op.
+pub(crate) fn skills_of(value: Option<&Json>) -> Result<Vec<SkillEntry>, String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed listSkills result".to_string())?;
+    value
+        .get("skills")
+        .and_then(Json::as_array)
+        .ok_or_else(|| "malformed listSkills result: skills".to_string())?
+        .iter()
+        .map(|entry| {
+            let name = entry
+                .get("name")
+                .and_then(Json::as_str)
+                .map(|s| s.to_string_lossy())
+                .ok_or_else(|| "malformed listSkills result: skills".to_string())?;
+            let description = entry
+                .get("description")
+                .and_then(Json::as_str)
+                .map(|s| s.to_string_lossy())
+                .ok_or_else(|| "malformed listSkills result: skills".to_string())?;
+            let source = match entry.get("source").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() {
+                Some("project") => SkillSource::Project,
+                Some("user") => SkillSource::User,
+                _ => return Err("malformed listSkills result: skills".to_string()),
+            };
+            Ok(SkillEntry { name, description, source })
+        })
+        .collect()
 }
 
 /// The `changes` call's payload, mirroring the wire union

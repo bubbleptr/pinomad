@@ -88,7 +88,7 @@ pub fn contains(haystack: &[u16], needle: &[u16]) -> bool {
 
 /// Decode the scalar at `index`: one unit, or two for a surrogate pair.
 /// Returns the char and the unit width; a lone surrogate decodes to None.
-fn decode_scalar(units: &[u16], index: usize) -> (Option<char>, usize) {
+pub(crate) fn decode_scalar(units: &[u16], index: usize) -> (Option<char>, usize) {
     let unit = units[index];
     if (0xd800..=0xdbff).contains(&unit) && index + 1 < units.len() && (0xdc00..=0xdfff).contains(&units[index + 1]) {
         let high = (unit as u32) - 0xd800;

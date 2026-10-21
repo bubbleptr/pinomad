@@ -6,6 +6,7 @@
 use crate::ffi::hosts::{PairingTarget, StoredHost};
 use crate::ffi::types::*;
 use crate::json::Json;
+use crate::skill_mentions::MentionRange;
 
 #[uniffi::export]
 pub fn relative_time(at: f64, now: f64) -> String {
@@ -322,6 +323,19 @@ pub fn question_answers(
     others: Vec<String>,
 ) -> Vec<QuestionAnswer> {
     crate::questions::question_answers(question_count as usize, &selections, &others)
+}
+
+/// The `$name` mention ranges in `text`, as UTF-16 half-open offsets
+/// (issue #143) — the native text view paints these spans. `names` is the
+/// scope's skill list (`listSkills`), matched exactly and case-sensitively.
+#[uniffi::export]
+pub fn skill_mention_ranges(text: String, names: Vec<String>) -> Vec<MentionRange> {
+    let text = crate::u16str::U16String::from_str(&text);
+    let names = names
+        .iter()
+        .map(|name| crate::u16str::U16String::from_str(name))
+        .collect();
+    crate::skill_mentions::skill_mention_ranges(&text, &names)
 }
 
 /// Whether a host speaking protocol minor `host_minor` knows `method` (the

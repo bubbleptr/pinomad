@@ -26,6 +26,7 @@ pub mod questions;
 pub mod relay;
 pub mod remote_durable;
 pub mod secure_channel;
+pub mod skill_mentions;
 pub mod stored_host;
 pub mod text;
 pub mod tool_diff_stat;

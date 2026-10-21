@@ -10,7 +10,7 @@ use std::sync::Arc;
 use pinomad_core::ffi::{
     CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout, FfiCall,
     FfiCommand, FfiEvent, FileScope, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
-    ReadyOutcome, StoredHost, SubmitMode, ThinkingLevel,
+    ReadyOutcome, SkillEntry, SkillScope, SkillSource, StoredHost, SubmitMode, ThinkingLevel,
 };
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -697,6 +697,101 @@ fn list_files_result_malformed_or_error_fails_the_op() {
         FfiCall::ListFiles { scope: FileScope::Conversation { conversation_id: 9 }, query: "".to_string() },
     );
     assert_eq!(h.ops.get(&1), Some(&Err("Conversation 9 does not exist".to_string())));
+}
+
+/// `listSkills` (issue #143): same unqueued Request-class shape as
+/// `listFiles` — the success value decodes to `CallResult::Skills`, malformed
+/// results and host errors fail the op, a pre-5.13 host is refused locally.
+#[test]
+fn list_skills_resolves_a_typed_result() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "listSkills".to_string(),
+        obj(&[(
+            "skills",
+            Json::array(vec![
+                obj(&[
+                    ("name", Json::from("review")),
+                    ("description", Json::from("Reviews code")),
+                    ("source", Json::from("project")),
+                ]),
+                obj(&[
+                    ("name", Json::from("deploy")),
+                    ("description", Json::from("Deploys")),
+                    ("source", Json::from("user")),
+                ]),
+            ]),
+        )]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::ListSkills {
+            scope: SkillScope::Project {
+                path: "/p".to_string(),
+                checkout: ConversationCheckout::Worktree,
+            },
+        },
+    );
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Skills {
+            skills: vec![
+                SkillEntry { name: "review".to_string(), description: "Reviews code".to_string(), source: SkillSource::Project },
+                SkillEntry { name: "deploy".to_string(), description: "Deploys".to_string(), source: SkillSource::User },
+            ],
+        }))
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "listSkills").unwrap_or(false)
+    });
+    assert_eq!(
+        call.and_then(|f| f.get("args").cloned()),
+        Some(obj(&[(
+            "scope",
+            obj(&[("kind", Json::from("project")), ("path", Json::from("/p")), ("checkout", Json::from("worktree"))]),
+        )]))
+    );
+}
+
+#[test]
+fn list_skills_result_malformed_or_error_fails_the_op() {
+    for (index, value) in [
+        obj(&[]),                                                                // missing skills
+        obj(&[("skills", Json::array(vec![Json::from("review")]))]),             // entry not an object
+        obj(&[("skills", Json::array(vec![obj(&[("name", Json::from("x")), ("description", Json::from("y")), ("source", Json::from("other"))])]))]), // unknown source
+        Json::Null,                                                              // not an object
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("listSkills".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::ListSkills { scope: SkillScope::Chat });
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed listSkills result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    // A host-side `ok:false` is an OperationFailed too.
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("listSkills".to_string(), "Conversation 9 does not exist".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::ListSkills { scope: SkillScope::Conversation { conversation_id: 9 } });
+    assert_eq!(h.ops.get(&1), Some(&Err("Conversation 9 does not exist".to_string())));
+}
+
+#[test]
+fn list_skills_needs_a_5_13_host() {
+    let mut host = ScriptedHost::new();
+    host.minor = 12.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::ListSkills { scope: SkillScope::Chat });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.13")));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "listSkills").unwrap_or(true)
+    }));
 }
 
 #[test]
