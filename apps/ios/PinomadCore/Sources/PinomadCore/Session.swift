@@ -47,8 +47,13 @@ public enum SessionUpdate: Sendable {
 }
 
 public enum SessionError: Error, Equatable {
-    /// `OperationFailed` — request-class calls only.
+    /// `OperationFailed` — request-class calls only. The connection that
+    /// carried the request was still up, so this is the host's refusal.
     case operationFailed(String)
+    /// The connection that carried a request closed while it was in flight.
+    /// The host may or may not have applied it; the caller must re-confirm
+    /// an idempotent request by id instead of treating this as a refusal.
+    case connectionLost
     /// The op never completed because the session ended first.
     case sessionClosed
 }
@@ -114,6 +119,11 @@ public final class PinomadSession: @unchecked Sendable {
     private var conns: [UInt64: ConnState] = [:]
     private var timers: [UInt64: any SessionTimerHandle] = [:]
     private var pendingOps: [UInt64: CheckedContinuation<CallResult, any Error>] = [:]
+    /// The connection epoch each pending request started on. A failure after
+    /// the epoch moved cannot be told apart from a lost reply, even when a
+    /// reconnect has already made the live state connected again.
+    private var pendingOpGeneration: [UInt64: UInt64] = [:]
+    private var connectionGeneration: UInt64 = 0
     /// Ops cancelled before their `invoke` even reached the queue — the
     /// cancel arrives first, so the invoke must reject on sight.
     private var cancelledOps: Set<UInt64> = []
@@ -169,7 +179,9 @@ public final class PinomadSession: @unchecked Sendable {
     // ── public inputs: all just yields into the one queue ──
 
     /// Run a controller call; resolves with its `CallResult` (or
-    /// `SessionError.operationFailed` for request-class rejections).
+    /// `SessionError.operationFailed` for request-class rejections, and
+    /// `SessionError.connectionLost` when the connection carrying it closed
+    /// before the answer arrived.
     public func invoke(_ call: FfiCall) async throws -> CallResult {
         let op = nextOp.withLock { value -> UInt64 in
             defer { value += 1 }
@@ -186,6 +198,42 @@ public final class PinomadSession: @unchecked Sendable {
         } onCancel: {
             sink.yield(.abandonOp(op: op))
         }
+    }
+
+    /// The shown conversation's queued input content, for Edit. A read of
+    /// the core's current view under the client lock, like `snapshot()`, so
+    /// it does not go through the event queue.
+    public func queuedInput(submissionId: UInt64) -> QueuedInput? {
+        client.queuedInput(submissionId: submissionId)
+    }
+
+    /// The core's connection state right now. This is only a gate for
+    /// retrying an idempotent request — never evidence that an in-flight
+    /// request was refused; its connection epoch decides that. A fresh
+    /// snapshot is used because the published one may lag a reconnect.
+    public var isConnectedNow: Bool {
+        guard let snapshot = client.snapshot() else { return false }
+        return snapshot.connection == .connected && !snapshot.unauthorized
+    }
+
+    /// Request-class: the outcome and a host refusal both come back here,
+    /// never as a notice. `target` is explicit so a conversation switch while
+    /// the call is in flight cannot redirect it.
+    public func withdrawQueued(submissionId: UInt64, target: UInt64) async throws -> WithdrawOutcome {
+        let result = try await invoke(.withdrawQueued(submissionId: submissionId, target: target))
+        guard case .withdrawQueued(let outcome) = result else {
+            throw SessionError.operationFailed("宿主的回复不是撤回结果")
+        }
+        return outcome
+    }
+
+    /// Request-class, like `withdrawQueued`.
+    public func steerQueued(submissionId: UInt64, target: UInt64) async throws -> SteerOutcome {
+        let result = try await invoke(.steerQueued(submissionId: submissionId, target: target))
+        guard case .steerQueued(let outcome) = result else {
+            throw SessionError.operationFailed("宿主的回复不是引导结果")
+        }
+        return outcome
     }
 
     public func notifyForeground() { sink.yield(.foreground) }
@@ -220,6 +268,16 @@ public final class PinomadSession: @unchecked Sendable {
     /// The newest published snapshot version — tests only.
     var lastPublishedVersion: UInt64 { publishedVersion }
 
+    /// What a request-class failure means, given the connection epoch the
+    /// request started on and the current one. An untracked request keeps
+    /// the old operation-failed behaviour; a moved epoch means the host may
+    /// have applied the call before the reply was lost, so the caller must
+    /// re-confirm by id instead of treating the error as a refusal.
+    static func requestFailure(startedOn: UInt64?, current: UInt64, message: String) -> SessionError {
+        guard let startedOn else { return .operationFailed(message) }
+        return startedOn == current ? .operationFailed(message) : .connectionLost
+    }
+
     // ── the loop ──
 
     private func run() async {
@@ -253,6 +311,10 @@ public final class PinomadSession: @unchecked Sendable {
             PerfLog.shared.mark("bytes")
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
+            // Bump before feeding: any request failed by this close must
+            // know its connection epoch ended, even if a reconnect follows
+            // before its caller resumes.
+            if conns[conn] != nil { connectionGeneration &+= 1 }
             feed(.socketClosed(conn: conn, code: code, reason: reason))
             // A remote close is terminal for this generation but the
             // core does not echo CloseSocket back — clean up here or the
@@ -266,6 +328,7 @@ public final class PinomadSession: @unchecked Sendable {
                 // it emits CloseSocket and treats this as an abnormal close.
                 state.pending.removeAll()
                 conns[conn] = state
+                connectionGeneration &+= 1
                 feed(.sendFailed(conn: conn))
             } else {
                 if !state.pending.isEmpty { state.pending.removeFirst() }
@@ -282,9 +345,11 @@ public final class PinomadSession: @unchecked Sendable {
                 reply.resume(throwing: CancellationError())
             } else {
                 pendingOps[op] = reply
+                pendingOpGeneration[op] = connectionGeneration
                 feed(.invoke(op: op, call: call))
             }
         case .abandonOp(let op):
+            pendingOpGeneration.removeValue(forKey: op)
             if let reply = pendingOps.removeValue(forKey: op) {
                 reply.resume(throwing: CancellationError())
             } else {
@@ -324,6 +389,7 @@ public final class PinomadSession: @unchecked Sendable {
                 reply.resume(throwing: SessionError.sessionClosed)
             }
             pendingOps.removeAll()
+            pendingOpGeneration.removeAll()
             cancelledOps.removeAll()
             shutdown = true
         }
@@ -368,10 +434,13 @@ public final class PinomadSession: @unchecked Sendable {
             case .paired(let url, let hostKey, let privateKey):
                 persistPairing(url: url, hostKey: hostKey, privateKey: privateKey)
             case .operationSucceeded(let op, let value):
+                pendingOpGeneration.removeValue(forKey: op)
                 pendingOps.removeValue(forKey: op)?.resume(returning: value)
             case .operationFailed(let op, let error):
-                pendingOps.removeValue(forKey: op)?.resume(
-                    throwing: SessionError.operationFailed(error))
+                let started = pendingOpGeneration.removeValue(forKey: op)
+                let failure = Self.requestFailure(
+                    startedOn: started, current: connectionGeneration, message: error)
+                pendingOps.removeValue(forKey: op)?.resume(throwing: failure)
             }
         }
     }

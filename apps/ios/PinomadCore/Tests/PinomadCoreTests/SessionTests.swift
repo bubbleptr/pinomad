@@ -281,4 +281,29 @@ struct SessionOrderingTests {
         }
         session.close()
     }
+
+}
+
+/// The epoch rule behind request failures. It is split out because the
+/// session tests cannot complete a real Noise handshake: a request still in
+/// flight when its socket dies cannot be told apart from one the host
+/// applied before the reply was lost, while a failure on the same epoch is
+/// the host's refusal.
+@Suite struct SessionFailureTests {
+    @Test func aFailureAfterTheConnectionEpochMovedIsLost() {
+        #expect(PinomadSession.requestFailure(
+            startedOn: 3, current: 4, message: "Disconnected from host") == .connectionLost)
+    }
+
+    @Test func aFailureOnTheSameEpochStaysTheHostRefusal() {
+        #expect(PinomadSession.requestFailure(
+            startedOn: 3, current: 3, message: "host said no")
+            == .operationFailed("host said no"))
+    }
+
+    @Test func anUntrackedRequestKeepsTheOldOperationFailure() {
+        #expect(PinomadSession.requestFailure(
+            startedOn: nil, current: 3, message: "host said no")
+            == .operationFailed("host said no"))
+    }
 }
