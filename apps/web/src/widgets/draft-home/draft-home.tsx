@@ -5,7 +5,7 @@ import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.
 import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { CheckoutStrategyPicker, ComposerLocationRow, ComposerStaticChip, type CheckoutMode } from "../../entities/checkout/composer-location-row.tsx";
+import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checkout/checkout-strategy-picker.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { AgentSelector } from "../../entities/agent/agent-selector.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
@@ -50,21 +50,24 @@ function problemText(problem: AgentDraftProblem): { label: string; title: string
 }
 
 /**
- * The draft screen: Pace's SessionDraftComposer layout — hero, project
- * picker, prompt input with the model · thinking capsule and the location
- * row, and suggestion pills.
+ * The draft screen: Pace's SessionDraftComposer layout — hero, prompt input
+ * with the model · thinking capsule and, under it, where the conversation
+ * will run (project, then worktree or project folder) — and suggestion pills.
  */
 export function DraftHome({
   view,
   remote,
   draft,
   onDraft,
+  onCreated,
   connected,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   draft: Home;
   onDraft: (home: Home) => void;
+  /** The draft became a conversation, now shown; a failed create does not call it. */
+  onCreated: () => void;
   connected: boolean;
 }) {
   const [value, setValue] = useState("");
@@ -107,13 +110,6 @@ export function DraftHome({
       ? "Add images…"
       : `Add images… (${model?.name ?? pick.model?.modelId ?? "This model"} can't see images)`;
 
-  const location =
-    draft.kind === "project" ? (
-      <CheckoutStrategyPicker value={checkoutMode} onChange={setCheckoutMode} isDisabled={!connected} />
-    ) : (
-      <ComposerStaticChip chrome="selector" icon={ChatAdd} label="Chat" testId="composer-location-label" />
-    );
-
   return (
     <section
       className="flex h-full min-h-0 flex-col items-center overflow-y-auto px-6 py-8"
@@ -124,32 +120,6 @@ export function DraftHome({
         <h2 className="text-center text-3xl font-normal tracking-tight text-foreground max-lg:text-2xl">
           Build something useful with PiNomad
         </h2>
-        <div className="flex w-full flex-wrap justify-center gap-2">
-          <Selector
-            isLabelHidden
-            label="Project"
-            placeholder="No project"
-            placement="below"
-            variant="ghost"
-            size="sm"
-            isDisabled={!connected}
-            value={draft.kind === "chat" ? "chat" : draft.path}
-            startIcon={
-              draft.kind === "chat"
-                ? <ChatAdd aria-hidden="true" className="size-4 shrink-0" />
-                : <FolderClosed aria-hidden="true" className="size-4 shrink-0" />
-            }
-            options={[
-              { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0" /> },
-              ...view.organized.projects.map((entry) => ({
-                value: entry.project.path,
-                label: entry.project.name,
-                icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0" />,
-              })),
-            ]}
-            onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
-          />
-        </div>
         <div className="flex w-full flex-col gap-3">
           <ImageFileInput inputRef={fileInput} onFiles={add} />
           <ChatPromptInput
@@ -175,6 +145,8 @@ export function DraftHome({
               const text = value.trim();
               if ((text === "" && images.length === 0) || pending || submittingRef.current || problem !== undefined) return;
               requestNotificationPermission();
+              // The shown conversation changes only when the create landed.
+              const shown = remote.view.current().conversation?.conversation.id;
               submittingRef.current = true;
               setSubmitting(true);
               void remote.controller
@@ -186,6 +158,10 @@ export function DraftHome({
                     ? { ...(pick.model === undefined ? {} : { model: pick.model }), thinkingLevel: pick.level }
                     : resolution.send),
                   ...(images.length === 0 ? {} : { images }),
+                })
+                .then(() => {
+                  const now = remote.view.current().conversation?.conversation.id;
+                  if (now !== undefined && now !== shown) onCreated();
                 })
                 .finally(() => {
                   submittingRef.current = false;
@@ -232,7 +208,37 @@ export function DraftHome({
                 />
               </>
             }
-            footer={<ComposerLocationRow location={location} />}
+            footer={
+              <span className="flex w-full min-w-0 items-center gap-2">
+                <Selector
+                  isLabelHidden
+                  label="Project"
+                  placeholder="No project"
+                  placement="below"
+                  variant="ghost"
+                  size="sm"
+                  isDisabled={!connected}
+                  value={draft.kind === "chat" ? "chat" : draft.path}
+                  startIcon={
+                    draft.kind === "chat"
+                      ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted" />
+                      : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted" />
+                  }
+                  options={[
+                    { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted" /> },
+                    ...view.organized.projects.map((entry) => ({
+                      value: entry.project.path,
+                      label: entry.project.name,
+                      icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted" />,
+                    })),
+                  ]}
+                  onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
+                />
+                {draft.kind === "project" ? (
+                  <CheckoutStrategyPicker value={checkoutMode} onChange={setCheckoutMode} isDisabled={!connected} />
+                ) : null}
+              </span>
+            }
           />
         </div>
         <ChatPromptSuggestion className="w-full max-w-[35rem]">

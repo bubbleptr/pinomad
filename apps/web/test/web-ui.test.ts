@@ -1589,15 +1589,19 @@ it("puts the conversation title in the header and the path inside the overview",
 
   // The header carries the conversation's title — not its path.
   await expect.poll(() => page.locator("h1").textContent()).toBe("title me");
-  expect(await page.getByText("/chats/", { exact: false }).count()).toBe(0);
 
-  // The path sits in the Overview card's Workspace section; a Chat
-  // conversation has no repository, so no Changes row.
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  // A conversation started from the draft opens the Overview card. The path
+  // sits in its Workspace section; a Chat conversation has no repository, so
+  // no Changes row and no checkout label.
   const overview = page.getByRole("complementary", { name: "Overview" });
   await overview.getByText("Workspace", { exact: true }).waitFor();
   await overview.getByText("/chats/", { exact: false }).waitFor();
+  expect(await page.getByText("/chats/", { exact: false }).count()).toBe(1);
   expect(await overview.getByRole("button", { name: /Changes/ }).count()).toBe(0);
+  expect(await overview.getByText("Project folder", { exact: true }).count()).toBe(0);
+  // Context usage lives in the card, not under the composer.
+  await overview.getByRole("meter", { name: /^Context \d+% used/ }).waitFor();
+  expect(await page.getByTestId("context-meter").count()).toBe(1);
 });
 
 it("summarizes changes and subagents in the overview card and links to their detail", async () => {
@@ -1634,10 +1638,11 @@ it("summarizes changes and subagents in the overview card and links to their det
   await prompt(page).press("Enter");
   await page.getByText("parent final", { exact: true }).waitFor();
 
+  // Starting the conversation opened the card.
   const toggle = page.getByRole("button", { name: "Overview", exact: true });
-  expect(await toggle.getAttribute("aria-pressed")).toBe("false");
-  await toggle.click();
+  expect(await toggle.getAttribute("aria-pressed")).toBe("true");
   const overview = page.getByRole("complementary", { name: "Overview" });
+  await overview.getByText("Project folder", { exact: true }).waitFor();
   const changes = overview.getByRole("button", { name: /Changes/ });
   await changes.getByLabel("2 added, 1 removed", { exact: true }).waitFor();
   await overview.getByRole("button", { name: "1 done", exact: true }).click();
@@ -1795,7 +1800,7 @@ it("shows a queued follow-up above the composer until the run takes it", async (
   await page.getByText("followed", { exact: true }).waitFor();
 });
 
-it("shows the location row and honors the draft checkout picker", async () => {
+it("shows where a conversation runs in the overview and honors the draft checkout picker", async () => {
   const webOrigin = await startWeb();
   const repoDir = await tempDir();
   defer(repoDir.remove);
@@ -1816,11 +1821,13 @@ it("shows the location row and honors the draft checkout picker", async () => {
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // A chat conversation carries the static "Chat" chip.
+  // A chat conversation has no checkout to name.
   await prompt(page).fill("chat hi");
   await prompt(page).press("Enter");
   await page.getByText("chat done", { exact: true }).waitFor();
-  await page.getByText("Chat", { exact: true }).waitFor();
+  const overview = page.getByRole("complementary", { name: "Overview" });
+  await overview.getByText("Workspace", { exact: true }).waitFor();
+  expect(await overview.getByText(/^(Git worktree|Project folder)$/).count()).toBe(0);
 
   // A repo project defaults to a worktree: "Git worktree" + its pinomad branch.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
@@ -1830,8 +1837,8 @@ it("shows the location row and honors the draft checkout picker", async () => {
   await prompt(page).fill("tree hi");
   await prompt(page).press("Enter");
   await page.getByText("tree done", { exact: true }).waitFor();
-  await page.getByText("Git worktree", { exact: true }).waitFor();
-  await page.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
+  await overview.getByText("Git worktree", { exact: true }).waitFor();
+  await overview.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
 
   // A plain project with "Project folder" works directly in its directory.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
@@ -1842,7 +1849,7 @@ it("shows the location row and honors the draft checkout picker", async () => {
   await prompt(page).fill("direct hi");
   await prompt(page).press("Enter");
   await page.getByText("direct done", { exact: true }).waitFor();
-  await page.getByText("Project folder", { exact: true }).waitFor();
+  await overview.getByText("Project folder", { exact: true }).waitFor();
   await expect.poll(async () => {
     const id = observer.view.current().organized.projects.find((p) => p.project.name === plainName)
       ?.conversations.find((node) => node.summary.title === "direct hi")?.summary.id;

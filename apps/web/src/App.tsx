@@ -46,6 +46,10 @@ const page: CSSProperties = {
 };
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
+const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
+const readOverviewOpen = (): boolean =>
+  typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
+
 export function App() {
   const [store] = useState(hostStore);
   // The host list resolves once: switching hosts reloads the page, so nothing
@@ -464,6 +468,14 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
   const busy = conversation !== undefined && isBusy(conversation);
   // Below this the chat column would be squeezed; the panel opens as a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
+  // The overview card's open state survives reloads; starting a conversation
+  // opens it so the header button is learned — except on a phone, where the
+  // card would cover the exchange that just began.
+  const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
+  const changeOverview = (open: boolean): void => {
+    window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
+    setOverviewOpen(open);
+  };
   // The side panel: open state and tab live here so chat entries can open it.
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("threads");
@@ -564,6 +576,8 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
         }
         onDraft={startDraft}
         onOpenChanges={() => setChangesOpen(true)}
+        overviewOpen={overviewOpen}
+        onOverviewChange={changeOverview}
         panelOpen={panelOpen}
         panelTab={panelTab}
         onPanelOpen={setPanelOpen}
@@ -577,6 +591,9 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
             remote={remote}
             draft={draft}
             onDraft={startDraft}
+            onCreated={() => {
+              if (!narrow) changeOverview(true);
+            }}
             connected={view.connection === "connected"}
           />
         ) : (
