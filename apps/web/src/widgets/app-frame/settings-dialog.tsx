@@ -9,7 +9,7 @@ import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesig
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { SideNav, SideNavItem } from "@astryxdesign/core/SideNav";
+import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
@@ -17,68 +17,103 @@ import { useEffect, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import type { StoredLogin } from "@pinomad/protocol/auth.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
+import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
+import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { useHosts } from "../../entities/host/host-store.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArrowLeft, Bot, ChatBubble, ChevronRight, Info, Key, MoreHorizontal, Puzzle, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, Key, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
+import { DevicesSection } from "./devices-section.tsx";
+import { HostsSection } from "./hosts.tsx";
+import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
-  { id: "providers", title: "Providers", icon: Key },
-  { id: "models", title: "Models", icon: Sparkles },
-  { id: "agents", title: "Agents", icon: Bot },
-  { id: "mcp", title: "MCP", icon: Puzzle },
-  { id: "chats", title: "Chats", icon: ChatBubble },
-  { id: "archived", title: "Archived", icon: Archive },
-  { id: "about", title: "About", icon: Info },
+  { id: "hosts", title: "Hosts", icon: Computer, group: "device" },
+  { id: "updates", title: "Updates", icon: RefreshCw, group: "device" },
+  { id: "providers", title: "Providers", icon: Key, group: "host" },
+  { id: "models", title: "Models", icon: Sparkles, group: "host" },
+  { id: "agents", title: "Agents", icon: Bot, group: "host" },
+  { id: "mcp", title: "MCP", icon: Puzzle, group: "host" },
+  { id: "chats", title: "Chats", icon: ChatBubble, group: "host" },
+  { id: "devices", title: "Devices", icon: Devices, group: "host" },
+  { id: "archived", title: "Archived", icon: Archive, group: "host" },
+  { id: "about", title: "About", icon: Info, group: "host" },
 ] as const;
 
-type SectionId = (typeof SECTIONS)[number]["id"];
+type Section = (typeof SECTIONS)[number];
+type SectionId = Section["id"];
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
 
-const sectionIcon = (Icon: (typeof SECTIONS)[number]["icon"]): ReactNode => (
+const sectionIcon = (Icon: Section["icon"]): ReactNode => (
   <Icon aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
 );
 
 /**
- * The host's settings and stored logins (ADR-0021): a left section nav on wide
- * screens, an iOS-style drill-in under 640px. Everything shown comes from the
- * `settings` / `auth` / `mcp` streams — the open section is the only local
- * state, so a change another device makes appears here the moment the host
- * pushes it.
+ * Settings in two groups. "This device" belongs to the client — the paired
+ * hosts and, on the desktop, its updates — and works while disconnected.
+ * The host group is the connected host's settings and stored logins
+ * (ADR-0021): everything shown comes from the `settings` / `auth` / `mcp` /
+ * devices streams, so a change another device makes appears here the moment
+ * the host pushes it. A left section nav on wide screens, an iOS-style
+ * drill-in under 640px; the open section is the only local state.
  */
 export function SettingsDialog({
   view,
   remote,
+  device,
+  hostKey,
   onClose,
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** This client's device key, for marking "This device" under Devices. */
+  device?: KeyPair;
+  /** The stored host this connection is to — absent for token clients. */
+  hostKey?: string;
   onClose: () => void;
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
   const connected = view.connection === "connected";
-  const active = section ?? "providers";
+  const { hosts } = useHosts();
+  const hasUpdater = window.pinomadDesktop?.updates !== undefined;
+  // Disconnected, the host group has nothing live to show; land on the
+  // device's own hosts instead.
+  const active = section ?? (connected ? "providers" : "hosts");
+  // The cached name of the host this connection reaches — a token client
+  // reaches none of the stored ones, whichever pairing is selected.
+  const stored = hosts.find((host) => host.hostKey === hostKey);
+  const hostName =
+    view.settings?.hostName ?? (stored === undefined ? undefined : hostLabels(hosts).get(stored.hostKey)) ?? "This host";
+  const groups = [
+    { title: "This device", sections: SECTIONS.filter((entry) => entry.group === "device" && (entry.id !== "updates" || hasUpdater)) },
+    { title: hostName, sections: SECTIONS.filter((entry) => entry.group === "host") },
+  ];
 
   const sectionNav = (
     <LayoutPanel padding={2} width="calc(var(--spacing-10) * 7)" hasDivider>
       <SideNav aria-label="Settings sections" style={{ width: "100%" }}>
-        <VStack gap={1}>
-          {SECTIONS.map((entry) => (
-            <SideNavItem
-              key={entry.id}
-              label={entry.title}
-              icon={sectionIcon(entry.icon)}
-              isSelected={entry.id === active}
-              onClick={() => setSection(entry.id)}
-            />
+        <VStack gap={3}>
+          {groups.map((group) => (
+            <SideNavSection key={group.title} title={group.title}>
+              {group.sections.map((entry) => (
+                <SideNavItem
+                  key={entry.id}
+                  label={entry.title}
+                  icon={sectionIcon(entry.icon)}
+                  isSelected={entry.id === active}
+                  onClick={() => setSection(entry.id)}
+                />
+              ))}
+            </SideNavSection>
           ))}
         </VStack>
       </SideNav>
@@ -86,19 +121,28 @@ export function SettingsDialog({
   );
 
   const sectionList = (
-    <List density="compact">
-      {SECTIONS.map((entry) => (
-        <ListItem
-          key={entry.id}
-          label={entry.title}
-          startContent={sectionIcon(entry.icon)}
-          endContent={
-            <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
-          }
-          onClick={() => setSection(entry.id)}
-        />
+    <VStack gap={4}>
+      {groups.map((group) => (
+        <VStack key={group.title} gap={1}>
+          <Text type="supporting" weight="semibold">
+            {group.title}
+          </Text>
+          <List density="compact" aria-label={group.title}>
+            {group.sections.map((entry) => (
+              <ListItem
+                key={entry.id}
+                label={entry.title}
+                startContent={sectionIcon(entry.icon)}
+                endContent={
+                  <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
+                }
+                onClick={() => setSection(entry.id)}
+              />
+            ))}
+          </List>
+        </VStack>
       ))}
-    </List>
+    </VStack>
   );
 
   return (
@@ -141,7 +185,7 @@ export function SettingsDialog({
             {compact && section === undefined ? (
               sectionList
             ) : (
-              <SectionPage view={view} remote={remote} connected={connected} section={active} showTitle={!compact} />
+              <SectionPage view={view} remote={remote} device={device} hostKey={hostKey} connected={connected} section={active} showTitle={!compact} />
             )}
           </LayoutContent>
         }
@@ -153,17 +197,21 @@ export function SettingsDialog({
 function SectionPage({
   view,
   remote,
+  device,
+  hostKey,
   connected,
   section,
   showTitle,
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  device?: KeyPair;
+  hostKey?: string;
   connected: boolean;
   section: SectionId;
   showTitle: boolean;
 }) {
-  const { title, supporting, body } = sectionBody(view, remote, connected, section);
+  const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, section);
   const headingId = `settings-${section}-heading`;
   return (
     <VStack
@@ -183,10 +231,26 @@ function SectionPage({
 function sectionBody(
   view: DurableView,
   remote: RemoteDurable,
+  device: KeyPair | undefined,
+  hostKey: string | undefined,
   connected: boolean,
   section: SectionId,
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
   switch (section) {
+    case "hosts":
+      return {
+        title: "Hosts",
+        supporting: <Text as="p" type="supporting">The hosts this device has paired with. It connects to one at a time.</Text>,
+        body: <HostsSection connection={view.connection} connectedHostKey={hostKey} />,
+      };
+    case "updates":
+      return { title: "Updates", body: <UpdatesSection /> };
+    case "devices":
+      return {
+        title: "Devices",
+        supporting: <Text as="p" type="supporting">Paired devices can reach this host over the secure channel.</Text>,
+        body: <DevicesSection view={view} remote={remote} self={device} />,
+      };
     case "providers":
       return {
         title: "Providers",

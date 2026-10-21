@@ -15,10 +15,8 @@ import { displayName, rootOf } from "@pinomad/client/family.ts";
 import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
 import { ListBullet } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { ConnectionDot, SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
-import { DevicesDialog } from "./devices-dialog.tsx";
+import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
-import { ForgetHostDialog, PairHostDialog } from "./host-switcher.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 import { OverviewCard } from "../overview/overview-card.tsx";
@@ -43,6 +41,7 @@ export function AppFrame({
   view,
   remote,
   device,
+  hostKey,
   narrow,
   drafting,
   draftingChat,
@@ -64,6 +63,8 @@ export function AppFrame({
   view: DurableView;
   remote: RemoteDurable;
   device?: KeyPair;
+  /** The stored pairing this connection authenticates as — absent for token clients. */
+  hostKey?: string;
   narrow: boolean;
   drafting: boolean;
   draftingChat: boolean;
@@ -86,11 +87,8 @@ export function AppFrame({
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
   const [navOpen, setNavOpen] = useState(false);
-  const [devicesOpen, setDevicesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pairHostOpen, setPairHostOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [forgetHostOpen, setForgetHostOpen] = useState(false);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
@@ -140,7 +138,6 @@ export function AppFrame({
               resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
               header={
                 <SidebarHeaderBand
-                  connection={view.connection}
                   onCollapse={toggleSidebar}
                   safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
                 />
@@ -148,11 +145,9 @@ export function AppFrame({
               footer={
                 <SidebarFooter
                   view={view}
-                  onOpenDevices={() => setDevicesOpen(true)}
+                  hostKey={hostKey}
                   onOpenSettings={() => setSettingsOpen(true)}
-                  onPairHost={() => setPairHostOpen(true)}
                   onOpenAccount={() => setAccountOpen(true)}
-                  onForgetHost={() => setForgetHostOpen(true)}
                 />
               }
             >
@@ -228,21 +223,14 @@ export function AppFrame({
           className="pigui-app-layout text-foreground"
           isOpen={navOpen}
           onOpenChange={setNavOpen}
-          header={
-            <span className="flex items-center gap-2">
-              <span className="text-sm font-semibold">PiNomad</span>
-              <ConnectionDot connection={view.connection} />
-            </span>
-          }
+          header={<span className="text-sm font-semibold">PiNomad</span>}
         >
           {sidebar}
           <SidebarFooter
             view={view}
-            onOpenDevices={() => setDevicesOpen(true)}
+            hostKey={hostKey}
             onOpenSettings={() => setSettingsOpen(true)}
-            onPairHost={() => setPairHostOpen(true)}
             onOpenAccount={() => setAccountOpen(true)}
-            onForgetHost={() => setForgetHostOpen(true)}
             onSelect={() => setNavOpen(false)}
           />
         </MobileNav>
@@ -261,13 +249,10 @@ export function AppFrame({
           onOpenInMain={openInMain}
         />
       ) : null}
-      {devicesOpen ? (
-        <DevicesDialog view={view} remote={remote} self={device} onClose={() => setDevicesOpen(false)} />
+      {settingsOpen ? (
+        <SettingsDialog view={view} remote={remote} device={device} hostKey={hostKey} onClose={() => setSettingsOpen(false)} />
       ) : null}
-      {settingsOpen ? <SettingsDialog view={view} remote={remote} onClose={() => setSettingsOpen(false)} /> : null}
-      {pairHostOpen ? <PairHostDialog onClose={() => setPairHostOpen(false)} /> : null}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
-      {forgetHostOpen ? <ForgetHostDialog onClose={() => setForgetHostOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
           that lists them starts closed. isTopLayer lifts it above dialogs. */}

@@ -1,10 +1,11 @@
-// jsdom: the desktop-only update UI — the sidebar Restart button and the
+// jsdom: the desktop-only update UI — the Settings indicator, the Updates section, and the
 // client-older mismatch screen — driven by a stand-in preload bridge.
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VersionMismatch } from "../../App.tsx";
 import { SidebarFooter } from "../../widgets/app-frame/sidebar.tsx";
+import { UpdatesSection } from "../../widgets/app-frame/updates-section.tsx";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import type { UpdateStatus } from "./update-protocol.ts";
 
@@ -43,41 +44,48 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-describe("SidebarFooter restart button", () => {
+describe("SidebarFooter update indicator", () => {
   const footer = (
-    <SidebarFooter
-      view={{ connection: "connected" } as never}
-      onOpenDevices={() => {}}
-      onOpenSettings={() => {}}
-      onPairHost={() => {}}
-      onOpenAccount={() => {}}
-      onForgetHost={() => {}}
-    />
+    <SidebarFooter view={{ connection: "connected", settings: null } as never} onOpenSettings={() => {}} onOpenAccount={() => {}} />
   );
 
-  it("shows Restart to update only once an update is downloaded", async () => {
+  it("marks Settings only once an update is downloaded", async () => {
     const updates = fakeUpdates({ state: "idle", currentVersion: "0.1.0" });
     installBridge(updates);
     render(footer);
     await waitFor(() => expect(updates.status).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Update ready" })).not.toBeInTheDocument();
     expect(screen.queryByText("Restart to update")).not.toBeInTheDocument();
 
     updates.set({ state: "ready", currentVersion: "0.1.0", availableVersion: "0.2.0" });
-    expect(await screen.findByText("Restart to update")).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Update ready" })).toBeInTheDocument();
   });
 
-  it("calls install when clicked", async () => {
+  it("shows no indicator in the browser", () => {
+    render(footer);
+    expect(screen.queryByRole("img", { name: "Update ready" })).not.toBeInTheDocument();
+  });
+});
+
+describe("UpdatesSection", () => {
+  it("restarts into the downloaded update", async () => {
     const updates = fakeUpdates({ state: "ready", currentVersion: "0.1.0", availableVersion: "0.2.0" });
     installBridge(updates);
-    render(footer);
+    render(<UpdatesSection />);
+    expect(await screen.findByText("PiNomad 0.1.0")).toBeInTheDocument();
     const user = userEvent.setup();
-    await user.click(await screen.findByText("Restart to update"));
+    await user.click(await screen.findByRole("button", { name: "Restart to update" }));
     expect(updates.install).toHaveBeenCalledTimes(1);
   });
 
-  it("renders nothing in the browser", () => {
-    render(footer);
-    expect(screen.queryByText("Restart to update")).not.toBeInTheDocument();
+  it("checks for updates on request", async () => {
+    const updates = fakeUpdates({ state: "idle", currentVersion: "0.1.0" });
+    installBridge(updates);
+    render(<UpdatesSection />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+    expect(updates.check).toHaveBeenCalledTimes(1);
   });
 });
 

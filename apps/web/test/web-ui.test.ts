@@ -58,6 +58,19 @@ async function openPage(host: OpenedHost, width: number, webOrigin: string) {
   return page;
 }
 
+/** Opens Settings from the sidebar's user bar and picks a section in its nav (wide screens). */
+async function openSettings(page: Page, section: string): Promise<Locator> {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("button", { name: section, exact: true }).click();
+  return dialog;
+}
+
+/** The host menu in the user bar: each paired host's name with its status. */
+async function openHostsMenu(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+}
+
 /**
  * A localStorage-backed stand-in for the Electron preload bridge, so the
  * paired-host list survives the page reloads that switch hosts.
@@ -186,16 +199,18 @@ async function pickFolder(page: Page, target: string): Promise<void> {
   }
 }
 
-it("opens the Devices dialog from the phone drawer", async () => {
+it("opens Settings → Devices from the phone drawer", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 390, webOrigin);
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  await page.getByRole("button", { name: "Devices", exact: true }).click();
-  // The drawer closed; only the Devices dialog remains.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  // The drawer closed; only the Settings dialog remains.
   await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
-  await page.getByRole("dialog").getByRole("button", { name: "Pair a device", exact: true }).waitFor();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("Devices", { exact: true }).click();
+  await dialog.getByRole("button", { name: "Pair a device", exact: true }).waitFor();
 });
 
 it("drills into a Settings section from the phone drawer and back out", async () => {
@@ -1948,14 +1963,13 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   await page.getByText("No host link", { exact: true }).waitFor();
 });
 
-it("manages paired devices from the Devices dialog", async () => {
+it("manages paired devices from Settings → Devices", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
   const tokenClient = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("button", { name: "Devices", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = await openSettings(page, "Devices");
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
   await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
   await page.getByRole("img", { name: "Pairing QR code" }).waitFor();
@@ -2003,8 +2017,7 @@ it("registers the desktop bridge's device name and shows the pairing minute", as
   expect(tokenClient.view.current().devices[0]!.name).toBe("Linux Desktop (test-box)");
 
   // The Devices row carries the pairing time down to the minute.
-  await page.getByRole("button", { name: "Devices", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = await openSettings(page, "Devices");
   await dialog.getByText("Linux Desktop (test-box)", { exact: true }).waitFor();
   await dialog.getByText(/Paired.*\d{1,2}:\d{2}/).waitFor();
 });
@@ -2012,12 +2025,11 @@ it("registers the desktop bridge's device name and shows the pairing minute", as
 it("explains a loopback pairing link instead of drawing an unusable QR", async () => {
   const webOrigin = await startWeb();
   // No remote access: the offer points at 127.0.0.1, which a phone's camera
-  // could never reach — the dialog must say so instead of showing a QR.
+  // could never reach — Settings → Devices must say so instead of showing a QR.
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByRole("button", { name: "Devices", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = await openSettings(page, "Devices");
   await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
   await dialog.getByText("only works on this machine", { exact: false }).waitFor();
   expect(await dialog.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
@@ -2242,17 +2254,22 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   await message.waitFor();
   const button = page.getByRole("button", { name: "Use saved pairing", exact: true });
 
-  // A real scroll gesture must bring the recovery button into view.
+  // Real scroll gestures must bring the recovery button into view. The hosts
+  // list below it makes the page taller still, so step instead of jumping to
+  // the bottom.
   await page.mouse.move(140, 110);
-  await page.mouse.wheel(0, 2000);
-  await page.waitForFunction(() => {
-    const scroller = Array.from(document.querySelectorAll("#root div")).find((d) => d.scrollTop > 0);
-    return scroller !== undefined;
-  });
-  const box = await button.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.y).toBeGreaterThanOrEqual(0);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(220);
+  const inView = async (): Promise<boolean> => {
+    const box = await button.boundingBox();
+    return box !== null && box.y >= 0 && box.y + box.height <= 220;
+  };
+  for (let step = 0; step < 20 && !(await inView()); step++) {
+    await page.mouse.wheel(0, 60);
+    await page.waitForTimeout(50);
+  }
+  expect(await inView()).toBe(true);
+  expect(
+    await page.evaluate(() => Array.from(document.querySelectorAll("#root div")).some((d) => d.scrollTop > 0)),
+  ).toBe(true);
 
   // Scrolling back up returns the message to the viewport.
   await page.mouse.wheel(0, -2000);
@@ -2382,11 +2399,9 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await page.getByText("host A answer", { exact: true }).waitFor();
   expect(sockets.a).toBe(2);
 
-  // Pair host B through the sidebar switcher — a second pairing never warns
-  // about replacing in multi-host mode.
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  // Pair host B from Settings → Hosts — a second pairing never warns about
+  // replacing in multi-host mode.
+  const dialog = await openSettings(page, "Hosts");
   await dialog.getByLabel("Pairing link").fill(pairB);
   await dialog.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByText("Pair with this host?").waitFor();
@@ -2399,25 +2414,25 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await waitForView(tokenB.view, (view) => view.devices.length === 1);
   expect(sockets.b).toBe(2);
 
-  // The switcher lists both hosts; selecting A reconnects to it (the "hello A"
-  // conversation only exists on A).
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  // The host menu lists both hosts with their status; selecting A reconnects
+  // to it (the "hello A" conversation only exists on A).
+  await openHostsMenu(page);
+  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
+  await page.getByRole("menuitem", { name: `${labelA} (not connected)`, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
   expect(sockets.a).toBe(4);
 
-  // A dead host lands on a failure screen that still offers the switcher.
+  // A dead host lands on a failure screen that still lists the hosts.
   await hostB.close();
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelB, exact: true }).click();
+  await openHostsMenu(page);
+  await page.getByRole("menuitem", { name: `${labelB} (not connected)`, exact: true }).click();
   await page.getByText("Could not connect to the host", { exact: true }).waitFor();
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
   expect(sockets.a).toBe(6);
 });
 
-it("forgets the shown host from the switcher only after confirmation", async () => {
+it("forgets a host from Settings → Hosts only after confirmation", async () => {
   const webOrigin = await startWeb();
   // Named like the switch test above: labels are the announced machine names.
   const dirA = await tempDir();
@@ -2442,16 +2457,14 @@ it("forgets the shown host from the switcher only after confirmation", async () 
   await stubDesktopBridge(context);
   const page = await context.newPage();
 
-  // Pair A by pasting its loopback link, then B through the sidebar switcher —
-  // the workbench now sits on B.
+  // Pair A by pasting its loopback link, then B from Settings → Hosts — the
+  // workbench now sits on B.
   await page.goto(webOrigin);
   await page.getByLabel("Pairing link").fill(pairA);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await prompt(page).waitFor();
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
-  const pairDialog = page.getByRole("dialog");
+  const pairDialog = await openSettings(page, "Hosts");
   await pairDialog.getByLabel("Pairing link").fill(pairB);
   await pairDialog.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
@@ -2459,23 +2472,20 @@ it("forgets the shown host from the switcher only after confirmation", async () 
   expect(await storedHostCount(page)).toBe(2);
 
   // Cancelling the confirmation touches nothing: still on B, both stored.
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
-  const confirmDialog = page.getByRole("dialog");
-  await confirmDialog.getByText(`Forget ${labelB}?`, { exact: true }).waitFor();
-  await confirmDialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  const settings = await openSettings(page, "Hosts");
+  await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
+  const confirm = settings.getByRole("group", { name: `Forget ${labelB}?`, exact: true });
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
-  await page.getByRole("button", { name: labelB, exact: true }).waitFor();
+  await settings.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).waitFor();
 
   // Confirming forgets B: the reload lands on A, the only host left.
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Forget this host", exact: true })
-    .click();
-  await page.getByRole("button", { name: labelA, exact: true }).waitFor();
+  await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
+  await settings.getByRole("button", { name: "Forget this host", exact: true }).click();
+  await openHostsMenu(page);
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
+  await page.keyboard.press("Escape");
   expect(await storedHostCount(page)).toBe(1);
   await prompt(page).fill("hello again");
   await prompt(page).press("Enter");
@@ -2486,12 +2496,9 @@ it("forgets the shown host from the switcher only after confirmation", async () 
   // on the no-link screen (the pairing-link form only exists there).
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(hostB.token)}&url=${encodeURIComponent(hostB.url)}`);
   await prompt(page).waitFor();
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Forget this host…", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Forget this host", exact: true })
-    .click();
+  const lastSettings = await openSettings(page, "Hosts");
+  await lastSettings.getByRole("button", { name: `Forget ${labelA}…`, exact: true }).click();
+  await lastSettings.getByRole("button", { name: "Forget this host", exact: true }).click();
   await page.getByLabel("Pairing link").waitFor();
   expect(await storedHostCount(page)).toBe(0);
 });
@@ -2626,7 +2633,7 @@ const fakeUpdatesBridge = `{
   };
 }`;
 
-it("offers Restart to update in the sidebar when the desktop bridge has one downloaded", async () => {
+it("marks Settings when the desktop bridge has an update downloaded and restarts from Settings → Updates", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
 
@@ -2639,8 +2646,8 @@ it("offers Restart to update in the sidebar when the desktop bridge has one down
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
   await prompt(page).waitFor();
 
-  // Nothing until the download completes.
-  expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
+  // Nothing until the download completes; the sidebar never carries the button itself.
+  expect(await page.getByRole("img", { name: "Update ready" }).count()).toBe(0);
   await page.evaluate(
     () => (window as unknown as { __setUpdateStatus: (s: unknown) => void }).__setUpdateStatus({
       state: "ready",
@@ -2648,10 +2655,12 @@ it("offers Restart to update in the sidebar when the desktop bridge has one down
       availableVersion: "0.2.0",
     }),
   );
-  const restart = page.getByText("Restart to update", { exact: true });
-  await restart.waitFor();
+  await page.getByRole("img", { name: "Update ready" }).waitFor();
+  expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
   await page.screenshot({ path: "/tmp/pinomad-update-ready-sidebar.png" });
-  await restart.click();
+  const settings = await openSettings(page, "Updates");
+  await settings.getByText("PiNomad 0.1.0", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "Restart to update", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls)).toContain(
     "install",
   );

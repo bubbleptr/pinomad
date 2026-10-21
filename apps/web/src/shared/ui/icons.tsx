@@ -35,6 +35,7 @@ import {
   ImageIcon as HugeImageIcon,
   InformationCircleIcon,
   KeyIcon,
+  LaptopPhoneSyncIcon,
   LayoutAlignLeftIcon,
   LeftToRightListBulletIcon,
   LinkSquare02Icon,
@@ -113,6 +114,7 @@ export const Globe = iconComponent(Globe02Icon);
 export const ImageIcon = iconComponent(HugeImageIcon);
 export const Info = iconComponent(InformationCircleIcon);
 export const Key = iconComponent(KeyIcon);
+export const Devices = iconComponent(LaptopPhoneSyncIcon);
 // A quarter-filled circle: started, not finished (todo items).
 export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
