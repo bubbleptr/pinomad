@@ -3,7 +3,7 @@
 // pasted loopback link, and saves screenshots to /tmp.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,9 +21,19 @@ const done = async (code: number): Promise<never> => {
   process.exit(code);
 };
 
+// Both faux hosts run on this machine, so they would announce the same
+// hostname (5.12) and the switcher would suffix their labels with hostKey
+// prefixes; distinct names keep the labels predictable.
+const namedDataDir = async (hostName: string): Promise<string> => {
+  const dir = await mkdtemp(join(tmpdir(), "pinomad-desktop-e2e-host-"));
+  defer(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(join(dir, "settings.json"), JSON.stringify({ hostName }));
+  return dir;
+};
+
 try {
   // No remote listener: the desktop pairs over the loopback /secure path.
-  const host = await startFauxHost(defer, { answers: ["hello from the desktop"] });
+  const host = await startFauxHost(defer, { dataDir: await namedDataDir("Host A"), answers: ["hello from the desktop"] });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
 
@@ -111,11 +121,11 @@ try {
 
   // Multi-host: a second faux host pairs through the sidebar switcher, which
   // then swaps between the two — one connection at a time.
-  const hostB = await startFauxHost(defer, { answers: ["hello from host B"] });
+  const hostB = await startFauxHost(defer, { dataDir: await namedDataDir("Host B"), answers: ["hello from host B"] });
   const tokenB = await connectTo(defer, hostB);
   const { url: pairB } = await tokenB.controller.createPairing();
-  const labelA = new URL(host.url).host;
-  const labelB = new URL(hostB.url).host;
+  const labelA = "Host A";
+  const labelB = "Host B";
 
   await page.getByRole("button", { name: labelA, exact: true }).click();
   await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
