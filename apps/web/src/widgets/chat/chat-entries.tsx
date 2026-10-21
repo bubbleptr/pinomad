@@ -21,6 +21,7 @@ import { ChatMessage, ChatMessageActions } from "@/shared/ui/chat/chat-message";
 import { ChatRunFailure } from "@/shared/ui/chat/chat-run-failure";
 import { MessageImages } from "../../entities/image/message-images.tsx";
 import { GitBranch } from "@/shared/ui/icons";
+import { SkillMentionText } from "../../entities/agent/skill-mentions.tsx";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 
@@ -37,6 +38,7 @@ export function ChatEntryView({
   summaryOf,
   onRetry,
   todo,
+  skillNames,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -53,6 +55,8 @@ export function ChatEntryView({
   onRetry?: () => Promise<void>;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
+  /** `$`-mentionable skill names for this conversation — user text paints matches (issue #143). */
+  skillNames?: readonly string[];
 }) {
   switch (entry.kind) {
     case "user":
@@ -63,7 +67,9 @@ export function ChatEntryView({
             {entry.text === "" ? null : (
               <>
                 <ChatMessage.Bubble>
-                  <ChatMessage.Content>{entry.text}</ChatMessage.Content>
+                  <ChatMessage.Content>
+                    <SkillMentionText text={entry.text} names={skillNames} />
+                  </ChatMessage.Content>
                 </ChatMessage.Bubble>
                 <ChatMessageActions className="shrink-0">
                   <ChatMessageActions.Copy

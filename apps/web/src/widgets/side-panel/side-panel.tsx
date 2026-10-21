@@ -26,6 +26,7 @@ import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useSkillHighlight, useSkillMentions, useSkillNames } from "../../entities/agent/skill-mentions.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
@@ -275,11 +276,20 @@ function SideTranscript({
   /** Forks are talkable and pass one through; read-only details do not. */
   onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
 }) {
+  // The bubbles highlight `$name` against the side conversation's own scope —
+  // a fork shares its family's cwd, a subagent its own (issue #143). The hook
+  // runs unconditionally, ahead of the conversation-less early return.
+  const skillNames = useSkillNames(
+    remote,
+    { kind: "conversation", conversationId: side.id },
+    view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
+  );
   if (side.conversation === undefined) return null;
   return (
     <ConversationTranscript
       conversation={side.conversation}
       docs={side.docs}
+      skillNames={skillNames}
       toolPresentations={view.toolPresentations}
       connected={view.connection === "connected"}
       // Fork depth is one: a fork's transcript never offers Fork.
@@ -319,6 +329,30 @@ function ThreadDetail({
   const busy = conversation !== undefined && isBusy(conversation);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  const atMentions = useAtMentions(
+    view.agents,
+    inputRef,
+    // A fork shares its family's home: a Chat family has no project files.
+    view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+      ? {
+          // The fork lists its own checkout — forks and subagents keep
+          // separate cwds, never the parent's.
+          key: `conversation:${side.id}`,
+          list: (query) =>
+            remote.controller.listFiles({ kind: "conversation", conversationId: side.id }, query),
+        }
+      : undefined,
+  );
+  // `$` mentions (issue #143): the fork's own conversation scope — it shares
+  // its family's cwd, so project and user skills both apply.
+  const skills = useSkillMentions(
+    remote,
+    { kind: "conversation", conversationId: side.id },
+    inputRef,
+    view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
+  );
+  useSkillHighlight(inputRef, draft, skills.names);
+  const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const submit = (): void => {
     const text = draft.trim();
     if (text === "") return;
@@ -367,20 +401,8 @@ function ThreadDetail({
           onSubmit={submit}
           onStop={() => void remote.controller.abort(side.id)}
           onValueChange={setDraft}
-          triggers={useAtMentions(
-            view.agents,
-            inputRef,
-            // A fork shares its family's home: a Chat family has no project files.
-            view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
-              ? {
-                  // The fork lists its own checkout — forks and subagents keep
-                  // separate cwds, never the parent's.
-                  key: `conversation:${side.id}`,
-                  list: (query) =>
-                    remote.controller.listFiles({ kind: "conversation", conversationId: side.id }, query),
-                }
-              : undefined,
-          )}
+          onFocus={skills.request}
+          triggers={triggers.length === 0 ? undefined : triggers}
         />
       </div>
     </div>
