@@ -56,6 +56,9 @@ export async function main(argv: readonly string[]): Promise<void> {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+  // One agentsHome for prompts and `listSkills` — the user-skills entry must
+  // be the same dir both ways (ADR-0006, issue #143).
+  const agentsHome = join(homedir(), ".agents");
   // Extensions are built per options source: `subagent` validates `model` against
   // the same Models and advertised summaries the gateway serves.
   const extensionsFor =
@@ -65,7 +68,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       readonly agentRoles: AgentRoleStore;
     }): readonly BuiltinExtension[] => [
       createContext({
-        agentsHome: join(homedir(), ".agents"),
+        agentsHome,
         checkout: (input, context) => checkoutInfo(host.harness(), input, context),
       }),
       createCoding(options),
@@ -81,9 +84,10 @@ export async function main(argv: readonly string[]): Promise<void> {
     ];
   const common = {
     dataDir,
+    agentsHome,
     projects: values.project ?? [],
     port: Number(values.port),
-    mcpConfig: join(homedir(), ".agents", "mcp.json"),
+    mcpConfig: join(agentsHome, "mcp.json"),
     browserOrigins: values["browser-origin"] ?? ["http://127.0.0.1:5199"],
     // Both gateway ports serve the built client; in service mode the loopback
     // port is the only web server around (ADR-0009 §7).

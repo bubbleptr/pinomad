@@ -9,6 +9,7 @@ import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checko
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { AgentSelector } from "../../entities/agent/agent-selector.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -92,6 +93,33 @@ export function DraftHome({
     minor !== undefined
     && hostSupportsFeature(minor, "agentConversations")
     && (agentRoles.length > 0 || agent !== undefined);
+  const atMentions = useAtMentions(
+    view.agents,
+    inputRef,
+    draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
+      ? {
+          key: `project:${draft.path}:${checkoutMode}`,
+          list: (query) =>
+            remote.controller.listFiles(
+              { kind: "project", path: draft.path, checkout: checkoutMode === "local" ? "project" : "worktree" },
+              query,
+            ),
+        }
+      : undefined,
+  );
+  // `$` skill mentions (issue #143): a project draft scopes to the project
+  // (worktree mode lists only the skills a fresh checkout would carry); a
+  // Chat draft lists the user's skills.
+  const skills = useSkillMentions(
+    remote,
+    draft.kind === "project"
+      ? { kind: "project", path: draft.path, checkout: checkoutMode === "local" ? "project" : "worktree" }
+      : { kind: "chat" },
+    inputRef,
+    connected && minor !== undefined && hostSupportsCall(minor, "listSkills"),
+  );
+  useSkillHighlight(inputRef, value, skills.names);
+  const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const problem = resolution?.problem;
   // An inherited side reads "from @name" — the side the user overrode drops it.
   const sourceHint =
@@ -126,20 +154,8 @@ export function DraftHome({
             value={value}
             inputRef={inputRef}
             onValueChange={setValue}
-            triggers={useAtMentions(
-              view.agents,
-              inputRef,
-              draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
-                ? {
-                    key: `project:${draft.path}:${checkoutMode}`,
-                    list: (query) =>
-                      remote.controller.listFiles(
-                        { kind: "project", path: draft.path, checkout: checkoutMode === "local" ? "project" : "worktree" },
-                        query,
-                      ),
-                  }
-                : undefined,
-            )}
+            onFocus={skills.request}
+            triggers={triggers.length === 0 ? undefined : triggers}
             status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
               const text = value.trim();

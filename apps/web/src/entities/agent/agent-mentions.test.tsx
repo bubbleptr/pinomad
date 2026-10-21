@@ -179,7 +179,7 @@ describe("useAtMentions", () => {
   it("re-emits input through the composer's handle when a listing lands", async () => {
     const emitInput = vi.fn();
     const handle: RefObject<ChatPromptInputHandle | null> = {
-      current: { focus: vi.fn(), focusAtEnd: vi.fn(), emitInput },
+      current: { focus: vi.fn(), focusAtEnd: vi.fn(), emitInput, editable: () => null },
     };
     const { result } = renderHook(() =>
       useAtMentions(roles([]), handle, {

@@ -85,6 +85,19 @@ function framesVector(): VectorFile {
       name: "call-listFiles-project",
       wire: wire({ type: "call", id: 13, method: "listFiles", args: { scope: { kind: "project", path: "/home/u/app", checkout: "worktree" }, query: "" } }),
     },
+    // 5.13: listSkills — one wire case per scope kind (issue #143).
+    {
+      name: "call-listSkills-conversation",
+      wire: wire({ type: "call", id: 14, method: "listSkills", args: { scope: { kind: "conversation", conversationId: 7 } } }),
+    },
+    {
+      name: "call-listSkills-project",
+      wire: wire({ type: "call", id: 15, method: "listSkills", args: { scope: { kind: "project", path: "/home/u/app", checkout: "worktree" } } }),
+    },
+    {
+      name: "call-listSkills-chat",
+      wire: wire({ type: "call", id: 16, method: "listSkills", args: { scope: { kind: "chat" } } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];
@@ -98,6 +111,8 @@ function framesVector(): VectorFile {
     { name: "apnsPush@9", minor: 9, feature: "apnsPush", expect: true },
     { name: "hostName@11", minor: 11, feature: "hostName", expect: false },
     { name: "hostName@12", minor: 12, feature: "hostName", expect: true },
+    { name: "listSkills@12", minor: 12, call: "listSkills", expect: false },
+    { name: "listSkills@13", minor: 13, call: "listSkills", expect: true },
   ].map((gate) => ({
     ...gate,
     expect:

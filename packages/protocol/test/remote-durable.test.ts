@@ -814,6 +814,46 @@ describe("RemoteDurable minor-version gating", () => {
     }
   });
 
+  it("listSkills on a 5.12 host rejects locally with the upgrade message", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 12 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(
+        remote.controller.listSkills({ kind: "conversation", conversationId: id(7) }),
+      ).rejects.toThrow("needs protocol 5.13");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "listSkills")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("listSkills is not queued behind a hanging command", async () => {
+    // Same read-only, unqueued shape as listFiles (issue #143): a hung command
+    // holds the queue — listSkills is still sent and resolves immediately.
+    const { transport, sent, holdCall } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "listSkills"
+        ? { ok: true, value: { skills: [{ name: "review", description: "Reviews code", source: "user" }] } }
+        : undefined,
+    );
+    holdCall("archive");
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      const hanging = remote.controller.archive(id(1), true);
+      // A tick so archive's op has run: its call frame is in flight, unanswered.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "archive")).toBe(true);
+      const answer = await remote.controller.listSkills({ kind: "conversation", conversationId: id(7) });
+      expect(answer).toEqual({ skills: [{ name: "review", description: "Reviews code", source: "user" }] });
+      const calls = sent.filter((frame) => frame.type === "call");
+      expect(calls.map((frame) => frame.method)).toEqual(["archive", "listSkills"]);
+      remote.close();
+      // close() fails the pending archive call — the command resolves into a notice.
+      await hanging;
+    } finally {
+      remote.close();
+    }
+  });
+
   it("refuses the agent calls on a 5.5 host: upgrade message, no frame, agents stays null", async () => {
     const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 5 } });
     const remote = await connectRemoteDurable({ transport });

@@ -39,6 +39,29 @@ export interface FileListing {
   readonly truncated: boolean;
 }
 
+/**
+ * What `listSkills` lists (5.13): the skills a prompt in this scope would
+ * carry — a conversation's persisted working directory, a registered
+ * project (`worktree` keeps only the skills committed at HEAD, matching a
+ * fresh checkout — ADR-0010), or a Chat draft's user skills alone. A
+ * separate scope from `FileScope`: file checkouts enumerate the committed
+ * tree, and Chat drafts list skills at all.
+ */
+export type SkillScope =
+  | { readonly kind: "conversation"; readonly conversationId: ConversationId }
+  | { readonly kind: "project"; readonly path: string; readonly checkout: "worktree" | "project" }
+  | { readonly kind: "chat" };
+
+/** One `listSkills` answer: the `$`-mentionable skills in scope order, project first. */
+export interface SkillListing {
+  readonly skills: readonly {
+    readonly name: string;
+    readonly description: string;
+    /** Which entry supplied it — `<root>/.agents/skills` or the user home's `skills/`. */
+    readonly source: "project" | "user";
+  }[];
+}
+
 /** One top-level conversation in the index; forks and subagents nest under it instead. */
 export type IndexEntry = {
   readonly id: ConversationId;

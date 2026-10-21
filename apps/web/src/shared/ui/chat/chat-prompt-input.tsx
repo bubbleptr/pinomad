@@ -29,6 +29,11 @@ export type ChatPromptInputHandle = {
    * landed listing from being dispatched into the wrong input.
    */
   emitInput(): void;
+  /**
+   * The contentEditable element — for non-destructive overlays like the
+   * `$name` mention highlights (issue #143, CSS Custom Highlight API).
+   */
+  editable(): HTMLElement | null;
 };
 
 function editableOf(root: HTMLDivElement | null): HTMLElement | null {
@@ -95,6 +100,7 @@ function PromptComposerInput({
           editable.dispatchEvent(new Event("input", { bubbles: true }));
         }
       },
+      editable: () => editableOf(rootRef.current),
     };
     return () => {
       inputRef.current = null;

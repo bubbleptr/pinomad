@@ -9,7 +9,7 @@ import type { HostAuth } from "./auth.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { CallMethods, ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { FileListing, FileScope, FolderListing, Home, Organized, Project, WorktreeCheckout } from "./organization.ts";
+import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 import type { MessageImage } from "./images.ts";
@@ -223,6 +223,12 @@ export interface DurableController {
    * scan must not block sending or switching. Needs a 5.10 host.
    */
   listFiles(scope: FileScope, query: string): Promise<FileListing>;
+  /**
+   * The skills a `$`-mention menu may offer in `scope` — the same list the
+   * scope's system prompt carries, minus prompt-only names. A read-only
+   * request that never queues behind commands. Needs a 5.13 host.
+   */
+  listSkills(scope: SkillScope): Promise<SkillListing>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */

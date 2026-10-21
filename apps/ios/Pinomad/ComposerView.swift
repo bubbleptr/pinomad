@@ -16,7 +16,8 @@ struct ConversationComposer: View {
     @State private var showPhotos = false
     @State private var showCamera = false
     @State private var mentions = MentionCoordinator()
-    @FocusState private var focused: Bool
+    @State private var selection = NSRange()
+    @State private var focused = false
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
 
@@ -52,6 +53,14 @@ struct ConversationComposer: View {
         return .conversation(conversationId: conversation.id)
     }
 
+    /// A shown conversation — Chat included — lists the skills under its
+    /// persisted cwd. Nil offline or before 5.13.
+    private var skillScope: SkillScope? {
+        model.conversationSkillScope(conversation.id)
+    }
+
+    private var skillEntries: [SkillEntry]? { model.skills(for: skillScope) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !conversation.questions.isEmpty {
@@ -64,7 +73,9 @@ struct ConversationComposer: View {
             if !conversation.queueItems.isEmpty {
                 QueueList(items: conversation.queueItems)
             }
-            if mentions.menu.isShowing {
+            if mentions.skillMenu.isShowing {
+                SkillMenuView(menu: mentions.skillMenu, choose: chooseSkill)
+            } else if mentions.menu.isShowing {
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
             }
             card
@@ -72,9 +83,14 @@ struct ConversationComposer: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
-        .onChange(of: mentions.selection) { _, _ in refreshMentions() }
+        .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
         .onChange(of: model.hostSupports("listFiles")) { _, _ in refreshMentions() }
+        .onChange(of: skillEntries) { _, _ in refreshMentions() }
+        .onChange(of: model.connected) { _, connected in
+            if connected { model.requestSkills(for: skillScope, force: true) }
+            refreshMentions()
+        }
         .onChange(of: model.phase) { _, _ in mentions.close() }
         .onDisappear { mentions.close() }
         .sheet(isPresented: $showModels) {
@@ -102,13 +118,16 @@ struct ConversationComposer: View {
                     view: { model.viewing = $0 }
                 )
             }
-            TextField(
-                conversation.busy ? "追加指令…" : "问点什么…",
-                text: draft, selection: $mentions.selection, axis: .vertical
+            SkillComposerText(
+                text: draft,
+                selection: $selection,
+                focused: $focused,
+                placeholder: conversation.busy ? "追加指令…" : "问点什么…",
+                names: skillEntries?.map(\.name),
+                enabled: connected,
+                minLines: 1,
+                maxLines: 6
             )
-            .lineLimit(1...6)
-            .focused($focused)
-            .disabled(!connected)
             .onChange(of: focused) { _, isFocused in
                 guard isFocused else {
                     mentions.close()
@@ -153,11 +172,19 @@ struct ConversationComposer: View {
     }
 
     private func refreshMentions() {
-        guard focused else {
+        guard focused, selection.length == 0 else {
             mentions.close()
             return
         }
-        mentions.refresh(text: draft.wrappedValue, roles: roles, scope: mentionScope) { scope, query in
+        // Cheap when fresh; a stale entry refetches as the menu opens.
+        model.requestSkills(for: skillScope)
+        mentions.refresh(
+            text: draft.wrappedValue,
+            caret: selection.location,
+            roles: roles,
+            fileScope: mentionScope,
+            skills: skillEntries
+        ) { scope, query in
             try await model.listFiles(scope: scope, query: query)
         }
     }
@@ -165,8 +192,14 @@ struct ConversationComposer: View {
     private func chooseMention(_ choice: MentionChoice) {
         guard let insertion = mentions.insert(choice, into: draft.wrappedValue) else { return }
         draft.wrappedValue = insertion.text
-        mentions.selection = TextSelection(
-            insertionPoint: String.Index(utf16Offset: insertion.cursor, in: insertion.text))
+        selection = NSRange(location: insertion.cursor, length: 0)
+        focused = true
+    }
+
+    private func chooseSkill(_ skill: SkillEntry) {
+        guard let insertion = mentions.insert(skill, into: draft.wrappedValue) else { return }
+        draft.wrappedValue = insertion.text
+        selection = NSRange(location: insertion.cursor, length: 0)
         focused = true
     }
 

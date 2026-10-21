@@ -116,7 +116,10 @@ final class AppModel {
     private var connectAttempt: ConnectAttempt?
     /// Bumped when the session is replaced or stopped — a late update from
     /// the old session must not land on the new one.
-    private var sessionGeneration: UInt64 = 0
+    var sessionGeneration: UInt64 = 0
+    /// The `$` skill listings for this host session, one entry per scope
+    /// (issue #143). Reset when the host changes.
+    var skillCache = SkillListCache()
     /// The first-connect deadline for the current attempt, nil once it is
     /// ready or has failed.
     private var connectWatchdog: ConnectWatchdog?
@@ -397,6 +400,7 @@ final class AppModel {
         } else {
             navPath = []
             reopenAfterReady = nil
+            skillCache.reset()
             drafts = [:]
             questionDrafts = [:]
             trays = [:]

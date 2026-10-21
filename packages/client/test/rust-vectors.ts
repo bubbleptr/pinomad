@@ -41,6 +41,7 @@ import {
   thinkingLevelLabels,
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
+import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
 import { pendingQuestions, questionAnswers } from "../src/questions.ts";
 import { hostLabels, parseStoredHost, type StoredHost } from "../src/stored-host.ts";
@@ -99,6 +100,7 @@ import {
   PARENT_FOLDER_CASES,
 } from "./misc-cases.ts";
 import { PATCH_CASES } from "./patch-cases.ts";
+import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
 import {
   CLASSIFY_CASES,
   DIFF_STAT_CASES,
@@ -486,6 +488,17 @@ function patchVector(): VectorFile {
   });
 }
 
+function skillMentionsVector(): VectorFile {
+  return write("skill-mentions", {
+    skillMentionRanges: SKILL_MENTION_CASES.map((c) => ({
+      name: c.name,
+      text: c.text,
+      names: wire(c.names),
+      expect: expect(wire(skillMentionRanges(c.text, [...c.names]))),
+    })),
+  });
+}
+
 // ─── Account client (request building + response parsing are split — the
 // Rust core does both, the platform owns the socket) ─────────────────────────
 
@@ -620,6 +633,7 @@ export async function buildVectors(): Promise<VectorFile[]> {
     modelsVector(),
     miscVector(),
     patchVector(),
+    skillMentionsVector(),
     await accountVector(),
   ];
 }

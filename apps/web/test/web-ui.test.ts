@@ -848,6 +848,7 @@ it("shows interruption without a text bubble and never offers a fork for streami
   const model = faux.getModel();
   const host = await openHost({
     dataDir: directory.path,
+    agentsHome: join(directory.path, "agents-home"),
     models,
     modelSummaries: () => [],
     settingsFallback: {
@@ -2928,19 +2929,22 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // With no agent files the editable stays a plain textbox — no empty popup.
-  const plain = page.getByRole("textbox", { name: "Prompt" });
+  // With no agent files the editable never offers an `@` popup — the `$`
+  // trigger (5.13) already makes it a combobox, so locate it by name.
+  const plain = prompt(page);
   await plain.click();
   await plain.pressSequentially("@");
   await expect.poll(() => page.getByRole("listbox").count()).toBe(0);
   await plain.pressSequentially("x");
 
-  // Hand-written files stream in; the editable becomes a combobox.
+  // Hand-written files stream in; the named-agent capsule appears once the
+  // roles snapshot lands — the reliable readiness signal now that the `$`
+  // trigger makes the editable a combobox from the start.
   await mkdir(join(dir.path, "agents"), { recursive: true });
   await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
+  await page.getByRole("button", { name: "Named agent" }).waitFor();
   const editable = page.getByRole("combobox", { name: "Prompt" });
-  await editable.waitFor();
   await editable.click();
 
   // Clear the typed "@x", then query the menu.

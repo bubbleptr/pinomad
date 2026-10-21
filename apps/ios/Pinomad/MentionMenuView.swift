@@ -2,29 +2,42 @@ import PinomadChat
 import PinomadCore
 import SwiftUI
 
-/// Owns the composer's @ menu across body updates: the caret selection,
-/// the pure menu state, and the debounced file query. One per composer so
+/// Owns the composer's @ and $ menus across body updates: the caret, the
+/// pure menu states, and the debounced file query. One per composer so
 /// switching pages or hosts drops whatever was in flight.
 @MainActor @Observable
 final class MentionCoordinator {
     var menu = MentionMenu()
-    var selection: TextSelection?
+    var skillMenu = SkillMenu()
     private var task: Task<Void, Never>?
 
-    /// Recompute from the draft and caret; a new query replaces the old
-    /// debounce, and the pure menu drops answers for anything older.
+    /// Recompute both triggers from the draft and caret. A $ token wins the
+    /// caret (the tokens can't overlap); otherwise the @ menu refreshes and
+    /// a new file query replaces the old debounce.
     func refresh(
         text: String,
+        caret: Int?,
         roles: [AgentRole],
-        scope: FileScope?,
+        fileScope: FileScope?,
+        skills: [SkillEntry]?,
         load: @escaping @MainActor (FileScope, String) async throws -> (files: [String], truncated: Bool)
     ) {
-        guard let cursor = selection?.caret(in: text) else {
+        guard let caret else {
             close()
             return
         }
+        var skillMenu = self.skillMenu
+        skillMenu.refresh(text: text, cursor: caret, skills: skills)
+        self.skillMenu = skillMenu
+        if skillMenu.token != nil {
+            task?.cancel()
+            task = nil
+            menu.dismiss()
+            return
+        }
+        skillMenu.dismiss()
         guard let request = menu.refresh(
-            text: text, cursor: cursor, roles: roles, scope: scope)
+            text: text, cursor: caret, roles: roles, scope: fileScope)
         else { return }
         task?.cancel()
         task = Task { [weak self] in
@@ -46,6 +59,7 @@ final class MentionCoordinator {
         task?.cancel()
         task = nil
         menu.dismiss()
+        skillMenu.dismiss()
     }
 
     /// Replace the token with plain text and hand back the new draft plus
@@ -56,15 +70,13 @@ final class MentionCoordinator {
         close()
         return insertion
     }
-}
 
-extension TextSelection {
-    /// The caret's UTF-16 offset in text; nil for a range selection, a
-    /// non-collapsed insertion, or an index the field already replaced.
-    func caret(in text: String) -> Int? {
-        guard isInsertion, case .selection(let range) = indices, range.isEmpty else { return nil }
-        guard range.lowerBound <= text.endIndex else { return nil }
-        return range.lowerBound.utf16Offset(in: text)
+    /// A picked skill is plain text too, so copy/paste and the host's
+    /// prompt see exactly what was typed.
+    func insert(_ skill: SkillEntry, into text: String) -> MentionInsertion? {
+        guard let insertion = skillMenu.insertion(for: skill, in: text) else { return nil }
+        close()
+        return insertion
     }
 }
 
@@ -224,7 +236,7 @@ private struct FileMentionRow: View {
 }
 
 /// The pressed state the plain buttons otherwise lose inside the glass.
-private struct MentionRowStyle: ButtonStyle {
+struct MentionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? Color.primary.opacity(0.07) : Color.clear)

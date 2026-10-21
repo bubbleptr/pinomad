@@ -1129,6 +1129,43 @@ fn list_files_is_not_queued_behind_a_hanging_command() {
 }
 
 #[test]
+fn list_skills_needs_a_5_13_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(12.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::ListSkills {
+        scope: obj(&[("kind", Json::from("chat"))]),
+    });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.13")));
+    assert!(h.host.method("listSkills").is_empty());
+}
+
+#[test]
+fn list_skills_is_not_queued_behind_a_hanging_command() {
+    // Same read-only, unqueued shape as listFiles (issue #143): the hung
+    // archive holds the command queue — listSkills is still sent and resolves.
+    let mut h = setup();
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::RenameConversation { id: 1, title: "x".to_string() });
+    h.invoke(3, Call::ListSkills {
+        scope: obj(&[("kind", Json::from("project")), ("path", Json::from("/p")), ("checkout", Json::from("worktree"))]),
+    });
+    assert_eq!(h.host.method("archive").len(), 1);
+    assert!(h.host.method("renameConversation").is_empty());
+    assert_eq!(h.host.method("listSkills").len(), 1);
+    assert_eq!(
+        h.host.method("listSkills")[0].get("args").cloned(),
+        Some(obj(&[(
+            "scope",
+            obj(&[("kind", Json::from("project")), ("path", Json::from("/p")), ("checkout", Json::from("worktree"))]),
+        )]))
+    );
+    assert!(matches!(h.ops.get(&3), Some(Ok(_))));
+    // The queue is still held by the hung archive: the rename never ran.
+    assert!(h.ops.get(&2).is_none());
+}
+
+#[test]
 fn a_5_6_host_subscribes_to_agents() {
     let mut h = setup();
     assert!(h.host.subscribes().contains(&"agents".to_string()));

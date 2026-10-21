@@ -5,7 +5,7 @@ import type { HostAuth } from "./auth.ts";
 import type { MessageImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
-import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project } from "./organization.ts";
+import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { ApnsEnvironment } from "./relay.ts";
 import {
@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 12 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 13 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -105,6 +105,13 @@ export interface CallMethods {
    * root, `truncated` marks any enumeration or result cap the answer hit.
    */
   listFiles: { args: { scope: FileScope; query: string }; result: FileListing };
+  /**
+   * The `$`-mentionable skills in a scope (5.13): the same Skills the scope's
+   * system prompt would list, minus the names the composer can't type (ADR-0006
+   * loads names that fail upstream validation — they stay prompt-only).
+   * Read-only, sent outside the command queue like `listFiles`.
+   */
+  listSkills: { args: { scope: SkillScope }; result: SkillListing };
   /**
    * Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`.
    * `checkout`: project conversations default to a git worktree when the project
@@ -221,6 +228,7 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
   deleteAgent: 6,
   setPushToken: 7,
   listFiles: 10,
+  listSkills: 13,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -358,6 +366,7 @@ const CALL_METHODS = [
   "deleteAgent",
   "setPushToken",
   "listFiles",
+  "listSkills",
 ] as const satisfies readonly CallMethod[];
 
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
@@ -445,6 +454,20 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
           || (args.scope.kind === "project"
             && nonempty(args.scope.path)
             && (args.scope.checkout === "worktree" || args.scope.checkout === "project")))
+      );
+    case "listSkills":
+      // Same rule as listFiles: the discriminant's shape is protocol, scope
+      // resolution failures are `ok:false` business errors.
+      return (
+        record(args.scope)
+        && ((args.scope.kind === "conversation"
+            && typeof args.scope.conversationId === "number"
+            && Number.isSafeInteger(args.scope.conversationId)
+            && args.scope.conversationId >= 1)
+          || (args.scope.kind === "project"
+            && nonempty(args.scope.path)
+            && (args.scope.checkout === "worktree" || args.scope.checkout === "project"))
+          || args.scope.kind === "chat")
       );
     case "archive":
       return conversationId() && typeof args.archived === "boolean";
