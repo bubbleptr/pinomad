@@ -1,8 +1,10 @@
 // The conversation overview (#215): a card floating over the chat column's
-// top-right corner, toggled from the header. It summarizes the shown
-// conversation — where it works, what it changed, which subagents are busy,
-// which tool sources are up — and links out for the detail: the Changes
-// dialog, the side panel's Tasks tab. It replaces the side panel's Live tab.
+// top-right corner, toggled from the header and opened when a conversation
+// starts. It summarizes the shown conversation — where it works, what it
+// changed, how full its context is and what it spent, which subagents are
+// busy, which tool sources are up — and links out for the detail: the
+// Changes dialog, the side panel's Tasks tab. It replaces the side panel's
+// Live tab.
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -10,12 +12,15 @@ import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView } from "@pinomad/protocol/view.ts";
-import { agentOf } from "@pinomad/client/chat.ts";
+import { agentOf, usageRows } from "@pinomad/client/chat.ts";
+import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { displayName, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { parsePatch } from "@pinomad/client/patch.ts";
+import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
+import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
 import { DocumentView } from "../../presentation/documents.tsx";
-import { FileDiff, FolderClosed, GitBranch } from "../../shared/ui/icons.tsx";
+import { Computer, FileDiff, FolderClosed, FolderLibrary, GitBranch } from "../../shared/ui/icons.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
@@ -89,7 +94,11 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
   );
 }
 
-/** One line: icon, text that truncates, optional trailing content. A button when it leads somewhere. */
+/**
+ * One line: icon, text that truncates, optional trailing content. A button
+ * when it leads somewhere. A `null` icon keeps the slot (the text lines up
+ * with its iconed siblings); an absent one drops it.
+ */
 function Row({
   icon,
   children,
@@ -97,7 +106,7 @@ function Row({
   title,
   onClick,
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   children: ReactNode;
   end?: ReactNode;
   title?: string;
@@ -105,9 +114,11 @@ function Row({
 }) {
   const content = (
     <>
-      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center text-muted">
-        {icon}
-      </span>
+      {icon === undefined ? null : (
+        <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center text-muted">
+          {icon}
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate text-start">{children}</span>
       {end === undefined ? null : <span className="shrink-0 tabular-nums">{end}</span>}
     </>
@@ -152,6 +163,11 @@ function WorkspaceSection({
       : view.checkout?.branch;
   return (
     <Section title="Workspace">
+      {isChat ? null : view.checkout !== undefined ? (
+        <Row icon={<FolderLibrary className="size-4" />}>Git worktree</Row>
+      ) : (
+        <Row icon={<Computer className="size-4" />}>Project folder</Row>
+      )}
       {cwd === undefined ? null : (
         <Row icon={<FolderClosed className="size-4" />} title={cwd}>
           {/* A path's tail says where it is: an rtl box clips from the left,
@@ -190,6 +206,18 @@ function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) 
     <Row icon={<FileDiff className="size-4" />} end={end} onClick={onOpen}>
       Changes
     </Row>
+  );
+}
+
+/** How full the context window is, against the shown model, and what the conversation has spent. */
+function UsageSection({ view, conversation }: { view: DurableView; conversation: NonNullable<DurableView["conversation"]> }) {
+  const model = summaryOf(view.models, agentOf(conversation).model);
+  const spent = usageRows(conversation).reduce((sum, row) => sum + row.cost, 0);
+  return (
+    <Section title="Usage">
+      <Row end={<ContextMeter usage={contextUsage(conversation, model?.contextWindow)} />}>Context</Row>
+      {spent > 0 ? <Row end={<span className="text-muted">{formatCost(spent)}</span>}>Spent</Row> : null}
+    </Section>
   );
 }
 
@@ -334,6 +362,7 @@ export function OverviewCard({
       }}
     >
       <WorkspaceSection view={view} remote={remote} conversation={conversation} busy={busy} onOpenChanges={onOpenChanges} />
+      <UsageSection view={view} conversation={conversation} />
       <SubagentsSection view={view} conversation={conversation} onOpenTasks={onOpenTasks} />
       <SourcesSection view={view} />
       <DocumentsSection view={view} remote={remote} />

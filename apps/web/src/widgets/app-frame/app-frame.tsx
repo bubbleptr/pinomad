@@ -24,12 +24,9 @@ import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
 import { OverviewCard } from "../overview/overview-card.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
-const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 
 const readSidebarOpen = (): boolean =>
   typeof window === "undefined" || window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
-const readOverviewOpen = (): boolean =>
-  typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
 
 const anyAtWork = (nodes: readonly ConversationNode[]): boolean =>
   nodes.some((node) => node.summary.status === "running" || node.summary.status === "needs-answer" || anyAtWork(node.children));
@@ -53,6 +50,8 @@ export function AppFrame({
   banner,
   onDraft,
   onOpenChanges,
+  overviewOpen,
+  onOverviewChange,
   panelOpen,
   panelTab,
   onPanelOpen,
@@ -74,6 +73,9 @@ export function AppFrame({
   banner?: ReactNode;
   onDraft: (home: Home) => void;
   onOpenChanges: () => void;
+  /** The overview card's open state lives in Workbench — starting a conversation opens it. */
+  overviewOpen: boolean;
+  onOverviewChange: (open: boolean) => void;
   /** The side panel's open state and tab live in Workbench — chat entries reach them too. */
   panelOpen: boolean;
   panelTab: PanelTab;
@@ -84,7 +86,6 @@ export function AppFrame({
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
-  const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
   const [navOpen, setNavOpen] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -98,10 +99,6 @@ export function AppFrame({
   const toggleSidebar = (): void => {
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
-  };
-  const changeOverview = (open: boolean): void => {
-    window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
-    setOverviewOpen(open);
   };
   const openConversation = (id: ConversationId): void => void remote.controller.switchConversation(id);
   // A fork or subagent of the shown family still at work: the closed panel's
@@ -174,7 +171,7 @@ export function AppFrame({
             onBackToParent={openConversation}
             showOverview={conversation !== undefined}
             overviewOpen={overviewOpen}
-            onOverviewChange={changeOverview}
+            onOverviewChange={onOverviewChange}
             panelOpen={panelOpen}
             onPanelChange={onPanelOpen}
             liveActivity={liveActivity}
@@ -200,7 +197,7 @@ export function AppFrame({
                   busy={isBusy(conversation)}
                   onOpenChanges={onOpenChanges}
                   onOpenTasks={openTasks}
-                  onClose={() => changeOverview(false)}
+                  onClose={() => onOverviewChange(false)}
                 />
               ) : null}
             </div>

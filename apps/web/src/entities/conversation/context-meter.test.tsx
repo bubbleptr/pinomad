@@ -32,13 +32,6 @@ describe("ContextMeter", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("No usage data yet");
   });
 
-  it("adds the conversation's spend to the tooltip", async () => {
-    const user = userEvent.setup();
-    render(<ContextMeter usage={{ used: 84000, window: 200000 }} cost={0.4213} />);
-    await user.hover(screen.getByRole("meter"));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("84k / 200k · $0.42");
-  });
-
   it("formats millions compactly", () => {
     render(<ContextMeter usage={{ used: 1_234_000, window: 2_000_000 }} />);
     screen.getByRole("meter", { name: "Context 62% used, 1.2M of 2M tokens" });

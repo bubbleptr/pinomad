@@ -183,11 +183,7 @@ type ChatPromptInputOwnProps = {
   triggers?: readonly ChatComposerTrigger[];
   startActions?: ReactNode;
   endActions?: ReactNode;
-  /**
-   * One row of chrome under the composer — where the conversation runs and
-   * its branch. It keeps its height whatever it holds, so a draft and a live
-   * composer are the same size (Pace docs/design/chat.md).
-   */
+  /** One row of chrome under the composer — on a draft, where the conversation will run. */
   footer?: ReactNode;
   error?: string | null;
   onSubmit?: () => void;

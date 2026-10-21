@@ -5,25 +5,22 @@ import { useRef, useState } from "react";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { ComposerLocationRow, ComposerStaticChip } from "../../entities/checkout/composer-location-row.tsx";
-import { ContextMeter } from "../../entities/conversation/context-meter.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
-import { agentOf, queueItems, statusText, usageRows } from "@pinomad/client/chat.ts";
-import { contextUsage } from "@pinomad/client/context-usage.ts";
+import { agentOf, queueItems, statusText } from "@pinomad/client/chat.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
-import { ChatAdd, Computer, FolderLibrary, GitBranch, Plus } from "../../shared/ui/icons";
+import { Plus } from "../../shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
 
 /**
  * The live conversation's composer, Pace-composed: status line, queued
  * messages, then the prompt input with the + menu and the model · thinking
- * capsule on the left, Follow-up next to send while busy, and the location
- * row in the footer.
+ * capsule on the left and Follow-up next to send while busy. Where it runs
+ * and how full its context is live in the overview card, not under it.
  */
 export function ConversationComposer({
   view,
@@ -43,8 +40,6 @@ export function ConversationComposer({
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
   const queue = queueItems(conversation);
-  const checkout = view.checkout;
-  const isProject = view.home?.kind === "project";
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
@@ -56,20 +51,6 @@ export function ConversationComposer({
     accepts || disconnected
       ? "Add images…"
       : `Add images… (${model?.name ?? agent.model?.modelId ?? "This model"} can't see images)`;
-
-  const location = isProject ? (
-    checkout !== undefined ? (
-      <ComposerStaticChip chrome="selector" icon={FolderLibrary} label="Git worktree" testId="composer-location-label" />
-    ) : (
-      <ComposerStaticChip chrome="selector" icon={Computer} label="Project folder" testId="composer-location-label" />
-    )
-  ) : (
-    <ComposerStaticChip chrome="selector" icon={ChatAdd} label="Chat" testId="composer-location-label" />
-  );
-  const branch =
-    checkout === undefined ? null : (
-      <ComposerStaticChip chrome="button" icon={GitBranch} label={checkout.branch} testId="composer-branch-label" />
-    );
 
   const submit = (whenBusy: "steer" | "followUp"): void => {
     const text = value.trim();
@@ -153,18 +134,6 @@ export function ConversationComposer({
               onClick={() => submit("followUp")}
             />
           ) : null
-        }
-        footer={
-          <ComposerLocationRow
-            location={location}
-            branch={branch}
-            meter={
-              <ContextMeter
-                usage={contextUsage(conversation, model?.contextWindow)}
-                cost={usageRows(conversation).reduce((sum, row) => sum + row.cost, 0)}
-              />
-            }
-          />
         }
       />
     </>
