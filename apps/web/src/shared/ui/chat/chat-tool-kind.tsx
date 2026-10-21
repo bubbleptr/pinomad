@@ -1,14 +1,14 @@
 import type { ComponentProps } from "react";
 import type { ToolKind } from "@pinomad/client/tool-item.ts";
-import { FileIcon, Globe, Pencil, Search, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { AiEditing, CommandLine, FileSearch, Globe, Hammer, SearchVisual } from "@/shared/ui/icons";
 
 const KIND_ICONS = {
-  shell: SquareTerminal,
-  search: Search,
+  shell: CommandLine,
+  search: SearchVisual,
   web: Globe,
-  file: FileIcon,
-  edit: Pencil,
-  tool: Wrench,
+  file: FileSearch,
+  edit: AiEditing,
+  tool: Hammer,
 } as const;
 
 export type ChatToolKindIconProps = Omit<ComponentProps<"span">, "children"> & {

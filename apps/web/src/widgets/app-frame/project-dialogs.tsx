@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { folderCrumbs, parentFolder } from "@pinomad/client/folder-path.ts";
-import { ArrowUp, ChevronRight, FolderClosed } from "../../shared/ui/icons.tsx";
+import { ArrowBigUpDash, ChevronRight, FolderClosed } from "../../shared/ui/icons.tsx";
 
 const message = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
 
@@ -106,7 +106,7 @@ export function AddProjectDialog({
           <LayoutContent>
             <HStack gap={1} vAlign="center">
               <IconButton
-                icon={<ArrowUp aria-hidden="true" />}
+                icon={<ArrowBigUpDash aria-hidden="true" />}
                 label="Parent folder"
                 tooltip="Parent folder"
                 size="sm"

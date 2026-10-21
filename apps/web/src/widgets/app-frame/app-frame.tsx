@@ -13,7 +13,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { displayName, rootOf } from "@pinomad/client/family.ts";
 import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
-import { ListBullet } from "../../shared/ui/icons.tsx";
+import { AppleReminder, AppleReminderShaded } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
@@ -367,7 +367,8 @@ function FrameHeader({
       {showOverview ? (
         <IconButton
           aria-pressed={overviewOpen}
-          icon={<ListBullet className="size-4" />}
+          // The shaded frame says the card is open, beside aria-pressed.
+          icon={overviewOpen ? <AppleReminderShaded className="size-4" /> : <AppleReminder className="size-4" />}
           label="Overview"
           size="sm"
           tooltip={overviewOpen ? "Hide overview" : "Show overview"}

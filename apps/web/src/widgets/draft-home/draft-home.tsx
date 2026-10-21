@@ -16,14 +16,14 @@ import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts"
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
-import { ChatAdd, FileDiff, FolderClosed, ListTree, Plus, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { ChatAdd, CommandLine, FileDiff, FolderClosed, ListTree, Plus, Wrench } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
 // Pace's four draft suggestions; representative first-touch prompts.
 const SUGGESTED_PROMPTS = [
   { Icon: ListTree, label: "Explain this repo's architecture" },
   { Icon: Wrench, label: "Fix the failing test" },
-  { Icon: SquareTerminal, label: "Add a CLI flag with docs" },
+  { Icon: CommandLine, label: "Add a CLI flag with docs" },
   { Icon: FileDiff, label: "Review my uncommitted changes" },
 ] as const;
 

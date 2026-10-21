@@ -13,7 +13,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, taskGroupsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { Archive, Bot, ChevronRight, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, User } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, Bot, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -174,7 +174,7 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
     );
   }
   if (status === "signed-out") {
-    return <Button label="Sign in" icon={<User aria-hidden="true" />} variant="ghost" size="sm" onClick={onOpenAccount} />;
+    return <Button label="Sign in" icon={<UserCircle aria-hidden="true" />} variant="ghost" size="sm" onClick={onOpenAccount} />;
   }
   return <span className="block truncate px-2 text-sm text-muted">{deviceName}</span>;
 }
@@ -345,7 +345,7 @@ function ConversationRow({
             },
             {
               label: "Archive",
-              icon: <Archive aria-hidden="true" size={16} />,
+              icon: <ArchiveArrowDown aria-hidden="true" size={16} />,
               onClick: () => void remote.controller.archive(summary.id, true),
             },
           ]}
@@ -476,7 +476,7 @@ export function SidebarContent({
           pinnedActions
           actions={
             <IconButton
-              icon={<Plus aria-hidden="true" />}
+              icon={<FolderAdd aria-hidden="true" />}
               label="Add project"
               tooltip="Add project"
               size="sm"
@@ -490,7 +490,7 @@ export function SidebarContent({
           {projects.expanded ? (
             view.organized.projects.length === 0 ? (
               <SideNavItem
-                icon={<FolderClosed aria-hidden="true" />}
+                icon={<FolderAdd aria-hidden="true" />}
                 label="Add project"
                 isDisabled={disabled}
                 onClick={() => setAddOpen(true)}

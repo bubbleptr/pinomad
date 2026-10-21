@@ -28,7 +28,7 @@ import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, Key, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, Key, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostsSection } from "./hosts.tsx";
@@ -409,6 +409,7 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
             endContent={
               <Button
                 label={`Restore ${title}`}
+                icon={<ArchiveRestore aria-hidden="true" />}
                 variant="secondary"
                 size="sm"
                 isDisabled={!connected}

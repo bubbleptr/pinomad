@@ -20,7 +20,7 @@ import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown
 import { ChatMessage, ChatMessageActions } from "@/shared/ui/chat/chat-message";
 import { ChatRunFailure } from "@/shared/ui/chat/chat-run-failure";
 import { MessageImages } from "../../entities/image/message-images.tsx";
-import { GitBranch } from "@/shared/ui/icons";
+import { GitFork } from "@/shared/ui/icons";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 
@@ -172,7 +172,7 @@ function RunEntry({
                 disabled={!connected}
                 onClick={() => openInPanel(forks[0]!, "threads")}
               >
-                <GitBranch aria-hidden="true" />
+                <GitFork aria-hidden="true" />
                 {forks.length} {forks.length === 1 ? "fork" : "forks"}
               </button>
             ) : canFork ? (
@@ -182,7 +182,7 @@ function RunEntry({
                 disabled={!connected}
                 onPress={() => onFork(entry.forkEntryId!)}
               >
-                <GitBranch aria-hidden="true" className="size-4" />
+                <GitFork aria-hidden="true" className="size-4" />
               </ChatMessage.Action>
             ) : null}
           </ChatMessageActions>
