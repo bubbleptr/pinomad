@@ -297,11 +297,9 @@ private extension View {
     }
 }
 
-/// What the user sent: the bubble, then any attached images. The bubble
-/// mirrors AgentChatKit's UserMessageView, which takes plain text; the app
-/// needs an attributed copy to paint the conversation's known skill names
-/// blue (issue #143), and the plain-text bubble is unchanged when nothing
-/// matches.
+/// What the user sent: the bubble, then any attached images. The kit's
+/// UserMessageView carries the attributed text so known skill names paint
+/// blue (issue #143); the bubble styling stays in one place.
 private struct UserRow: View, Equatable {
     let text: String
     let images: [MessageImage]
@@ -309,15 +307,7 @@ private struct UserRow: View, Equatable {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            if !text.isEmpty {
-                Text(attributedText)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.fill.tertiary, in: .rect(cornerRadius: 18))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.leading, 48)
-                    .textSelection(.enabled)
-            }
+            if !text.isEmpty { UserMessageView(attributedText) }
             ForEach(images, id: \.data) { image in
                 InlineImage(ToolImage(data: image.data, mimeType: image.mimeType), maxWidth: 240, maxHeight: 200)
                     .frame(maxWidth: .infinity, alignment: .trailing)
