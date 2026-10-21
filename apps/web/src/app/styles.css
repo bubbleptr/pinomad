@@ -67,6 +67,10 @@
   --success: var(--color-success);
   --warning: var(--color-warning);
   --radius: var(--radius-element);
+  /* Reading size for message text and the composer that writes it. One step
+     above the 14px chrome (sidebar, trace rows, menus) so the conversation
+     reads as body copy rather than UI labels. */
+  --text-transcript-size: 0.9375rem;
   /* Squircle compensation: a continuous-curvature corner reads tighter than
     a round corner at the same radius, so the scalable tokens run at 1.5x
     the theme-neutral values (inner 6, element 10, container 12, page/chat

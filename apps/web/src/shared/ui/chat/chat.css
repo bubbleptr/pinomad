@@ -126,14 +126,14 @@
 }
 
 .chat-markdown .astryx-markdown-heading[data-level="4"] {
-  font-size: var(--font-size-base);
+  font-size: var(--text-transcript-size);
   font-weight: var(--font-weight-semibold);
   line-height: inherit;
 }
 
 .chat-markdown .astryx-markdown-heading[data-level="5"],
 .chat-markdown .astryx-markdown-heading[data-level="6"] {
-  font-size: var(--font-size-base);
+  font-size: var(--text-transcript-size);
   font-weight: var(--font-weight-medium);
   line-height: inherit;
 }
@@ -237,12 +237,13 @@
   gap: var(--spacing-2);
 }
 
-/* Astryx ChatMessage roots at 16px while its bubble, markdown and the
-   composer all sit at --font-size-base (14px). Pin the content so plain-text
-   assistant messages (control labels) do not render a size above the rest. */
+/* Astryx ChatMessage roots at 16px while its bubble and markdown sit at
+   --text-body-size (14px). Point both at the transcript reading size the
+   composer also uses; markdown reads --text-body-size through StyleX. */
 .chat-message__content {
+  --text-body-size: var(--text-transcript-size);
   min-width: 0;
-  font-size: var(--font-size-base);
+  font-size: var(--text-transcript-size);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -969,12 +970,11 @@
 
 /* ChatComposerInput renders its own typography on the editable and the
    placeholder: --text-body-size at 22px leading with --spacing-1 padding.
-   Pin both to the chat 14px system (docs/design/chat.md) and the wider
-   inline padding the textarea used. !important matches Astryx StyleX's
-   :not(#\#) specificity. */
+   Pin both to the transcript reading size and the wider inline padding the
+   textarea used. !important matches Astryx StyleX's :not(#\#) specificity. */
 .prompt-input__input > [aria-multiline="true"],
 .prompt-input__input > [aria-hidden="true"] {
-  font-size: var(--font-size-base) !important;
+  font-size: var(--text-transcript-size) !important;
   line-height: 1.5 !important;
   padding: var(--spacing-1) var(--spacing-1-5) !important;
 }
