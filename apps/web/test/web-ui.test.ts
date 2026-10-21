@@ -848,6 +848,7 @@ it("shows interruption without a text bubble and never offers a fork for streami
   const model = faux.getModel();
   const host = await openHost({
     dataDir: directory.path,
+    agentsHome: join(directory.path, "agents-home"),
     models,
     modelSummaries: () => [],
     settingsFallback: {

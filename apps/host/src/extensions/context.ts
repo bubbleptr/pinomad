@@ -1,8 +1,9 @@
 import { dirname, join, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { defineExtension, section, type ConversationId, type DocumentReader } from "@earendil-works/pi-durable";
-import { formatSkillsForPrompt, loadProjectContextFiles, loadSkills } from "@earendil-works/pi-coding-agent";
+import { formatSkillsForPrompt, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import type { BuiltinExtension } from "../builtin-extension.ts";
+import { scopedSkills } from "../skills.ts";
 
 const PREAMBLE =
   "You are PiNomad, a coding agent running on the user's own machine. You work in the project directory below with the read, write, edit, and bash tools: read files before changing them, prefer edit over rewriting whole files, and run commands to check your work. Keep answers short and concrete. When it is unclear what the user wants, ask instead of guessing.";
@@ -39,6 +40,13 @@ export interface ContextOptions {
     context: Context,
   ) => Promise<ContextResolution | undefined>;
 }
+
+// The fixed `$`-mention rules (issue #143): always rendered, next to the
+// skills they reference — the model resolves `$name` against the prompt's
+// skills list, reads the file itself, and never gets a name expanded or a
+// match invented from elsewhere.
+const SKILL_MENTION_RULES =
+  "In a user message, `$name` outside code blocks, inline code, and quoted text refers to one of the skills listed above — the user is explicitly asking you to use that skill: read its file with the read tool before doing anything else. A `$name` inside code or quotations is not a request, and neither is one the user is only discussing or telling you not to use. Resolve names only against the skills listed above; do not go looking for same-named files elsewhere. If reading a skill's file fails, tell the user instead of guessing what the skill would have said.";
 
 // ADR-0019: a fork shares its parent's working directory; isolation is the
 // agent's choice, made explicit here because nothing else enforces it.
@@ -116,15 +124,11 @@ export function createContext(options: ContextOptions): BuiltinExtension {
           (input) => {
             const cwd = input.agent.cwd;
             if (cwd === undefined) return undefined;
-            // Project skills first: on a name collision the earlier path wins.
-            const { skills } = loadSkills({
-              cwd,
-              agentDir: agentsHome,
-              includeDefaults: false,
-              skillPaths: [join(cwd, ".agents", "skills"), join(agentsHome, "skills")],
-            });
+            // The same loader listSkills uses (issue #143): project entry
+            // first — on a name collision the project's skill wins.
+            const skills = scopedSkills(cwd, agentsHome).map((scoped) => scoped.skill);
             const text = formatSkillsForPrompt(skills, "read");
-            return text === "" ? undefined : text;
+            return [text, SKILL_MENTION_RULES].filter((part) => part !== "").join("\n");
           },
           { tag: false },
         ),

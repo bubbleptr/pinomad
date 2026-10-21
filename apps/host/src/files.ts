@@ -160,7 +160,7 @@ function gitLines(
 }
 
 /** Whether `root` sits inside a git working tree (worktree checkouts count; bare dirs do not). */
-async function inWorkTree(root: string): Promise<boolean> {
+export async function inWorkTree(root: string): Promise<boolean> {
   return await new Promise((resolvePromise) => {
     const child = spawn("git", ["-C", root, "rev-parse", "--is-inside-work-tree"], { stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
@@ -171,7 +171,7 @@ async function inWorkTree(root: string): Promise<boolean> {
 }
 
 /** Whether the repo `root` sits in has a committed HEAD — a fresh worktree needs one (ADR-0010). */
-async function hasHead(root: string): Promise<boolean> {
+export async function hasHead(root: string): Promise<boolean> {
   return await new Promise((resolvePromise) => {
     const child = spawn("git", ["-C", root, "rev-parse", "--verify", "-q", "HEAD"], { stdio: ["ignore", "ignore", "ignore"] });
     child.on("error", () => resolvePromise(false));

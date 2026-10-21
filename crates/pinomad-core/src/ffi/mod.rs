@@ -30,6 +30,7 @@ pub(crate) enum ResultKind {
     Changes,
     Files,
     Pairing,
+    Skills,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -118,6 +119,13 @@ impl PinomadClient {
                             Ok((files, truncated)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Files { files, truncated },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::Skills) => match skills_of(value.as_ref()) {
+                            Ok(skills) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::Skills { skills },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

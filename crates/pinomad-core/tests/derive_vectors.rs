@@ -648,6 +648,37 @@ expect_text(case), "{name}");
     );
 }
 
+/// `$name` mention ranges (issue #143) — the UTF-16 half-open offsets the
+/// reference computed.
+#[test]
+fn skill_mentions_replay() {
+    let file = load("skill-mentions");
+    for case in cases(&file, "skillMentionRanges") {
+        let name = as_text(field(case, "name"));
+        let text = field(case, "text").as_str().expect("text").clone();
+        let names: std::collections::HashSet<U16String> = Json::parse(&as_text(field(case, "names")))
+            .unwrap()
+            .as_array()
+            .expect("names")
+            .iter()
+            .filter_map(|n| n.as_str().cloned())
+            .collect();
+        let ranges = pinomad_core::skill_mentions::skill_mention_ranges(&text, &names);
+        let got = Json::array(
+            ranges
+                .iter()
+                .map(|range| {
+                    let mut object = pinomad_core::json::JsonObject::new();
+                    object.set(U16String::from_str("start"), Json::Number(range.start as f64));
+                    object.set(U16String::from_str("end"), Json::Number(range.end as f64));
+                    Json::Object(std::sync::Arc::new(object))
+                })
+                .collect(),
+        );
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
 #[test]
 fn parse_patch_replays() {
     let file = load("patch");

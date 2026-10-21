@@ -52,6 +52,7 @@ export async function startFauxHost(
     autoTitle,
     openStorage,
     push,
+    agentsHome,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -77,6 +78,8 @@ export async function startFauxHost(
         }) => readonly BuiltinExtension[]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
+    /** The agent config home (`<agentsHome>/skills` is the user-skills entry); defaults to `<dataDir>/agents-home` so tests never read the real `~/.agents`. */
+    agentsHome?: string;
     /** Built web client served on the gateway ports. */
     webRoot?: string;
     /** The 0.0.0.0 secure-channel listener; off by default. */
@@ -125,6 +128,8 @@ export async function startFauxHost(
     }));
   const host = await openHost({
     dataDir: dir.path,
+    // Inside the test dataDir by default — a test never lists the machine's real `~/.agents/skills`.
+    agentsHome: agentsHome ?? join(dir.path, "agents-home"),
     models,
     modelSummaries,
     settingsFallback: {

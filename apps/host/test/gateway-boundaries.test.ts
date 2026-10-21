@@ -43,6 +43,8 @@ async function socketTo(url: string, token: string, origin?: string) {
 
 async function fixture(options: Partial<GatewayOptions> = {}) {
   const host = await startFauxHost(defer);
+  const agents = await tempDir();
+  defer(agents.remove);
   const gateway = await startGateway({
     harness: host.harness,
     token: host.token,
@@ -50,6 +52,7 @@ async function fixture(options: Partial<GatewayOptions> = {}) {
     modelSummaries: () => [],
     session: { id: "boundary-test", directory: "" },
     dataDir: "",
+    agentsHome: agents.path,
     settings: {
       value: {
         defaultModel: null,

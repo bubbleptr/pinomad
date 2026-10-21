@@ -104,6 +104,41 @@ impl NewConversationHome {
     }
 }
 
+/// `listSkills`'s `scope`: the wire union `{kind:"conversation",
+/// conversationId}` | `{kind:"project", path, checkout}` | `{kind:"chat"}`
+/// (5.13). Like `FileScope`, plus the Chat draft's user-only listing.
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum SkillScope {
+    /// The conversation's persisted working directory.
+    Conversation { conversation_id: u64 },
+    /// A registered project's directory: its live entry, or the committed
+    /// HEAD tree a fresh worktree would hold.
+    Project { path: String, checkout: ConversationCheckout },
+    /// A Chat draft: the user skills alone.
+    Chat,
+}
+
+impl SkillScope {
+    fn to_json(&self) -> Json {
+        let mut object = JsonObject::new();
+        match self {
+            SkillScope::Conversation { conversation_id } => {
+                set(&mut object, "kind", Json::from("conversation"));
+                set(&mut object, "conversationId", Json::Number(*conversation_id as f64));
+            }
+            SkillScope::Project { path, checkout } => {
+                set(&mut object, "kind", Json::from("project"));
+                set(&mut object, "path", Json::from(path.clone()));
+                set(&mut object, "checkout", Json::from(checkout.as_str()));
+            }
+            SkillScope::Chat => {
+                set(&mut object, "kind", Json::from("chat"));
+            }
+        }
+        Json::Object(Arc::new(object))
+    }
+}
+
 fn images_json(images: &[MessageImage]) -> Vec<Json> {
     images
         .iter()
@@ -217,6 +252,11 @@ pub enum FfiCall {
     /// must not stall submits or switches. Resolves `CallResult::Files`.
     /// Needs a 5.10 host.
     ListFiles { scope: FileScope, query: String },
+    /// The `$`-mentionable skills for `scope` (issue #143) — name,
+    /// description, and whether the project or the user entry supplied it.
+    /// Request-class, sent outside the command queue like `listFiles`.
+    /// Resolves `CallResult::Skills`. Needs a 5.13 host.
+    ListSkills { scope: SkillScope },
 }
 
 impl FfiCall {
@@ -229,6 +269,7 @@ impl FfiCall {
             FfiCall::Changes { .. } => Some(ResultKind::Changes),
             FfiCall::CreatePairing => Some(ResultKind::Pairing),
             FfiCall::ListFiles { .. } => Some(ResultKind::Files),
+            FfiCall::ListSkills { .. } => Some(ResultKind::Skills),
             _ => None,
         }
     }
@@ -298,6 +339,9 @@ impl FfiCall {
             FfiCall::ListFiles { scope, query } => Call::ListFiles {
                 scope: scope.to_json(),
                 query,
+            },
+            FfiCall::ListSkills { scope } => Call::ListSkills {
+                scope: scope.to_json(),
             },
         }
     }

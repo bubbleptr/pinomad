@@ -28,6 +28,8 @@ const context = BACKGROUND_CONTEXT;
 export interface OpenHostOptions {
   /** Holds `session.sqlite`, the token, the lock, and Chat checkouts; one host process at a time. */
   readonly dataDir: string;
+  /** The agent config home (ADR-0006): `<agentsHome>/skills` is the user-skills entry — the context extension and `listSkills` read the same dir. */
+  readonly agentsHome: string;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
   /**
@@ -256,6 +258,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       modelSummaries: options.modelSummaries,
       session: { id: basename(options.dataDir), directory: options.dataDir },
       dataDir: options.dataDir,
+      agentsHome: options.agentsHome,
       settings: hostSettings,
       token,
       port: options.port,
