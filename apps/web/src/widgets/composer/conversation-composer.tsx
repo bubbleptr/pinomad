@@ -40,6 +40,11 @@ export function ConversationComposer({
   const [value, setValue] = useState("");
   const [focusAfterEdit, setFocusAfterEdit] = useState(0);
   const [awaitingEdit, setAwaitingEdit] = useState(false);
+  // The render-time value can lag the controller: #lost rejects in-flight calls
+  // before React hears about the disconnect. Refresh from the live source in
+  // the catch rather than trusting this ref's last render.
+  const connectionRef = useRef(view.connection);
+  connectionRef.current = view.connection;
   const toast = useToast();
   const agent = agentOf(conversation);
   const status = statusText(conversation);
@@ -162,9 +167,18 @@ export function ConversationComposer({
         toast({ body: "Already sent — can't withdraw" });
       }
     } catch (error) {
-      // The row may already be gone; keep the copy for the reconnect retry.
       showError(error);
-      setAwaitingEdit(true);
+      connectionRef.current = remote.view.current().connection;
+      if (connectionRef.current === "connected") {
+        // The host rejected the call while the connection stayed up, so the
+        // message was not withdrawn. Drop the copy and unlock; the row, if it
+        // is still queued, can be edited again.
+        editCopy.current = null;
+        setAwaitingEdit(false);
+      } else {
+        // The row may already be gone; keep the copy for the reconnect retry.
+        setAwaitingEdit(true);
+      }
     } finally {
       endAction(copy.id);
     }

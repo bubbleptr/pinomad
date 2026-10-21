@@ -1947,6 +1947,65 @@ it("retries a lost edit withdrawal after reconnect and restores the composer", a
   await waitForView(observer.view, (view) => !isBusy(view.conversation!));
 });
 
+it("unlocks the composer when the host rejects an edit withdrawal", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const page = await openPage(host, 1280, webOrigin, async (page) => {
+    await page.routeWebSocket(
+      (url) => url.origin === new URL(host.url).origin,
+      (ws) => {
+        const server = ws.connectToServer();
+        ws.onMessage((message) => {
+          try {
+            const frame = JSON.parse(String(message)) as {
+              type?: string;
+              method?: string;
+              args?: { submissionId?: number };
+            };
+            if (frame.type === "call" && frame.method === "withdrawQueued" && frame.args !== undefined) {
+              // A real host rejection that leaves the row queued: the id does
+              // not exist, so no withdrawal commits.
+              frame.args.submissionId = 999_999;
+              server.send(JSON.stringify(frame));
+              return;
+            }
+          } catch {
+            // Not JSON; forward it unchanged.
+          }
+          server.send(message);
+        });
+      },
+    );
+  });
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await composer.fill("keep me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "keep me" });
+  await row.waitFor();
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+
+  // The host's ok:false surfaces as a toast; the row is still queued because
+  // the withdrawal never committed, so Edit unlocks for another try.
+  await page.locator("[data-toast-id]").getByText(/999999|does not exist/i).waitFor();
+  await row.waitFor();
+  await expect.poll(() => row.getByRole("button", { name: "Edit queued message", exact: true }).isDisabled()).toBe(false);
+  await composer.fill("after rejection");
+  await expect.poll(() => composer.textContent()).toBe("after rejection");
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Add images/, exact: false }).waitFor();
+  await page.keyboard.press("Escape");
+  gate.resolve();
+});
+
 it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle queue", async () => {
   const webOrigin = await startWeb();
   const gate = deferred();
