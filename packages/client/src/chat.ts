@@ -12,10 +12,13 @@ import type {
   TaskId,
   UsageState,
 } from "@earendil-works/pi-durable";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 
 type Block = {
   readonly type: string;
   readonly text?: string;
+  readonly data?: string;
+  readonly mimeType?: string;
 };
 type Message = { readonly role: string; readonly content: string | readonly Block[] };
 
@@ -27,6 +30,16 @@ function textOf(content: Message["content"]): string {
 function imageCountOf(content: Message["content"]): number {
   if (typeof content === "string" || !Array.isArray(content)) return 0;
   return content.filter((block) => block.type === "image").length;
+}
+
+function imagesOf(content: Message["content"]): MessageImage[] {
+  if (typeof content === "string" || !Array.isArray(content)) return [];
+  // The host admits images through imageProblem; the cast is that contract.
+  return content.flatMap((block) =>
+    block.type === "image" && block.data !== undefined && block.mimeType !== undefined
+      ? [{ data: block.data, mimeType: block.mimeType as MessageImage["mimeType"] }]
+      : [],
+  );
 }
 
 const liveOf = (view: ConversationView): LiveState => (view.docs["pi.live"] ?? {}) as LiveState;
@@ -63,6 +76,20 @@ export function queueItems(view: ConversationView): QueueItem[] {
     text: item.mode === "write" ? `<${String(item.entry.kind)}>` : textOf(item.content as Message["content"]),
     imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Message["content"]),
   }));
+}
+
+/** A queued input's original content, for an Edit affordance that withdraws then refills the composer. */
+export interface QueuedInput {
+  readonly text: string;
+  readonly images: MessageImage[];
+}
+
+/** The content of a queued steer/follow-up, or undefined for a write or an unknown id. */
+export function queuedInput(view: ConversationView, id: number): QueuedInput | undefined {
+  const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
+  const item = inbox.items.find((candidate) => (candidate.id as unknown as number) === id);
+  if (item === undefined || (item.mode !== "steer" && item.mode !== "followUp")) return undefined;
+  return { text: textOf(item.content as Message["content"]), images: imagesOf(item.content as Message["content"]) };
 }
 
 export interface TaskRow {

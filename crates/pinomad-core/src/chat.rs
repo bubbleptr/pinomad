@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use crate::json::{js_strict_eq, same_value_zero, JsKey, Json};
 use crate::text;
+use crate::tool_item::MessageImage;
 use crate::u16str::U16String;
 
 /// `pi.agent` — the conversation's agent doc (model, thinking level, cwd).
@@ -90,6 +91,23 @@ fn image_count_of(content: Option<&Json>) -> u64 {
         Some(Json::Array(items)) => items.iter().filter(|b| str_eq(b.get("type"), "image")).count() as u64,
         _ => 0,
     }
+}
+
+/// The image blocks of a queued input, mirroring cot-view's imagesOf.
+fn images_of(content: Option<&Json>) -> Vec<MessageImage> {
+    let Some(Json::Array(items)) = content else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter(|block| {
+            str_eq(block.get("type"), "image") && block.get("data").is_some() && block.get("mimeType").is_some()
+        })
+        .map(|block| MessageImage {
+            data: block.get("data").map(|v| U16String::js_string(v).to_string_lossy()).unwrap_or_default(),
+            mime_type: block.get("mimeType").map(|v| U16String::js_string(v).to_string_lossy()).unwrap_or_default(),
+        })
+        .collect()
 }
 
 fn lit(text: &str) -> Vec<u16> {
@@ -201,6 +219,29 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct QueuedInput {
+    pub text: String,
+    pub images: Vec<MessageImage>,
+}
+
+/// The content of a queued steer/follow-up, or None for a write or an
+/// unknown id. Images are read on demand, never carried in every QueueItem
+/// snapshot.
+pub fn queued_input(view: &Json, id: u64) -> Option<QueuedInput> {
+    let inbox = not_null(view.get("docs").and_then(|docs| docs.get("pi.inbox")));
+    let items = inbox.and_then(|i| i.get("items")).and_then(Json::as_array)?;
+    let item = items.iter().find(|item| crate::json::num_key(item.get("id")) == Some(id))?;
+    if !str_eq(item.get("mode"), "steer") && !str_eq(item.get("mode"), "followUp") {
+        return None;
+    }
+    Some(QueuedInput {
+        text: text_of(item.get("content")),
+        images: images_of(item.get("content")),
+    })
 }
 
 #[derive(Clone, Debug, PartialEq)]

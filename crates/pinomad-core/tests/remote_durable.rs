@@ -124,6 +124,7 @@ struct ScriptedHost {
     conn: u32,
     opened: u32,
     call_errors: HashMap<String, String>,
+    call_results: HashMap<String, Json>,
     /// Calls recorded but never answered — pending calls on the client.
     hang_calls: bool,
     /// Calls to these methods are recorded but never answered.
@@ -141,6 +142,7 @@ impl ScriptedHost {
             conn: 0,
             opened: 0,
             call_errors: HashMap::new(),
+            call_results: HashMap::new(),
             hang_calls: false,
             hung_methods: HashSet::new(),
         }
@@ -180,7 +182,9 @@ impl ScriptedHost {
                     return vec![];
                 }
                 let id = frame.get("id").cloned().unwrap_or(Json::Null);
-                let value = if method == "fork" {
+                let value = if let Some(configured) = self.call_results.get(&method) {
+                    configured.clone()
+                } else if method == "fork" {
                     let conversation = frame
                         .get("args")
                         .and_then(|args| args.get("conversationId"))
@@ -1163,6 +1167,46 @@ fn list_skills_is_not_queued_behind_a_hanging_command() {
     assert!(matches!(h.ops.get(&3), Some(Ok(_))));
     // The queue is still held by the hung archive: the rename never ran.
     assert!(h.ops.get(&2).is_none());
+}
+
+#[test]
+fn queued_calls_return_host_outcomes_and_default_to_the_shown_conversation() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.call_results.insert("withdrawQueued".to_string(), obj(&[("outcome", Json::from("withdrawn"))]));
+    host.call_results.insert("steerQueued".to_string(), obj(&[("outcome", Json::from("unavailable"))]));
+    let mut h = Harness::new(host);
+    h.handle(Event::Invoke { op: 1, call: Call::SwitchConversation { id: 1 } });
+    h.invoke(2, Call::WithdrawQueued { submission_id: 3, target: None });
+    h.invoke(3, Call::SteerQueued { submission_id: 4, target: Some(2) });
+    assert_eq!(
+        h.ops.get(&2),
+        Some(&Ok(Some(obj(&[("outcome", Json::from("withdrawn"))]))))
+    );
+    assert_eq!(
+        h.ops.get(&3),
+        Some(&Ok(Some(obj(&[("outcome", Json::from("unavailable"))]))))
+    );
+    assert_eq!(
+        h.host.method("withdrawQueued")[0].get("args").cloned(),
+        Some(obj(&[("conversationId", Json::from(1.0)), ("submissionId", Json::from(3.0))]))
+    );
+    assert_eq!(
+        h.host.method("steerQueued")[0].get("args").cloned(),
+        Some(obj(&[("conversationId", Json::from(2.0)), ("submissionId", Json::from(4.0))]))
+    );
+}
+
+#[test]
+fn withdraw_and_steer_need_a_5_14_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(13.0))]);
+    let mut h = Harness::new(host);
+    h.handle(Event::Invoke { op: 1, call: Call::SwitchConversation { id: 1 } });
+    h.invoke(2, Call::WithdrawQueued { submission_id: 3, target: None });
+    h.invoke(3, Call::SteerQueued { submission_id: 3, target: None });
+    assert!(matches!(h.ops.get(&2), Some(Err(e)) if e.contains("needs protocol 5.14")));
+    assert!(matches!(h.ops.get(&3), Some(Err(e)) if e.contains("needs protocol 5.14")));
+    assert!(h.host.method("withdrawQueued").is_empty());
+    assert!(h.host.method("steerQueued").is_empty());
 }
 
 #[test]

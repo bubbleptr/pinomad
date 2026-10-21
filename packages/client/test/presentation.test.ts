@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import { agentOf, queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
-import { AGENT_CASES, IS_BUSY_CASES, QUEUE_CASES, STATUS_CASES, TASK_GRAPH_CASES, USAGE_CASES, chatView } from "./chat-cases.ts";
+import { agentOf, queuedInput, queueItems, statusText, taskRows, usageRows } from "../src/chat.ts";
+import {
+  AGENT_CASES,
+  IS_BUSY_CASES,
+  QUEUED_INPUT_CASES,
+  QUEUE_CASES,
+  STATUS_CASES,
+  TASK_GRAPH_CASES,
+  USAGE_CASES,
+  chatView,
+} from "./chat-cases.ts";
 
 describe("agentOf", () => {
   it("returns an empty agent when no pi.agent doc exists", () => {
@@ -50,6 +59,32 @@ describe("queueItems", () => {
       { id: 1, mode: "followUp", text: "look", imageCount: 2 },
       { id: 2, mode: "write", text: "<pi.note>", imageCount: 0 },
     ]);
+  });
+});
+
+describe("queuedInput", () => {
+  it("returns the original text and images of a queued steer or follow-up", () => {
+    const steer = QUEUED_INPUT_CASES.find((c) => c.name === "steer")!.input;
+    expect(queuedInput(steer.view, steer.id)).toEqual({ text: "focus", images: [] });
+
+    const images = QUEUED_INPUT_CASES.find((c) => c.name === "images")!.input;
+    expect(queuedInput(images.view, images.id)).toEqual({
+      text: "look",
+      images: [
+        { data: "aGk=", mimeType: "image/png" },
+        { data: "aGk=", mimeType: "image/png" },
+      ],
+    });
+  });
+
+  it("has nothing for a write, an unknown id, or no inbox", () => {
+    const write = QUEUED_INPUT_CASES.find((c) => c.name === "write")!.input;
+    expect(queuedInput(write.view, write.id)).toBeUndefined();
+    const future = QUEUED_INPUT_CASES.find((c) => c.name === "future-mode")!.input;
+    expect(queuedInput(future.view, future.id)).toBeUndefined();
+    const missing = QUEUED_INPUT_CASES.find((c) => c.name === "missing")!.input;
+    expect(queuedInput(missing.view, missing.id)).toBeUndefined();
+    expect(queuedInput(chatView(), 1)).toBeUndefined();
   });
 });
 
