@@ -2,7 +2,12 @@ import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from "@hu
 import {
   ActivityIcon,
   AddIcon,
+  AiEditingIcon,
+  AppleReminderIcon,
+  ArchiveArrowDownIcon,
   ArchiveIcon,
+  ArchiveRestoreIcon,
+  ArrowBigUpDashIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUp02Icon,
@@ -17,27 +22,31 @@ import {
   ChevronRightIcon,
   CircleIcon,
   CommandIcon,
-  ComputerIcon,
+  CommandLineIcon,
   ComputerTerminal01Icon,
+  ComputerIcon,
   Copy01Icon,
   CrosshairIcon,
   Delete02Icon,
   File01Icon,
   FileDiffIcon,
   Files01Icon,
+  FileSearchIcon,
   FlashIcon,
   Folder01Icon,
   Folder02Icon,
-  FolderLibraryIcon,
+  FolderAddIcon,
+  FolderGitTwoIcon,
   FolderOpenIcon,
   GitBranchIcon,
+  GitForkIcon,
   Globe02Icon,
+  HammerIcon,
   ImageIcon as HugeImageIcon,
   InformationCircleIcon,
-  KeyIcon,
+  KeyRoundIcon,
   LaptopPhoneSyncIcon,
   LayoutAlignLeftIcon,
-  LeftToRightListBulletIcon,
   LinkSquare02Icon,
   ListTreeIcon,
   Loading03Icon,
@@ -48,7 +57,7 @@ import {
   PuzzleIcon,
   RefreshIcon,
   RobotIcon,
-  Search01Icon,
+  SearchVisualIcon,
   Settings01Icon,
   Settings02Icon,
   SidebarLeftIcon,
@@ -57,7 +66,7 @@ import {
   ThumbsDownIcon,
   ThumbsUpIcon,
   Tick02Icon,
-  UserIcon,
+  UserCircleIcon,
   WrenchIcon,
 } from "@hugeicons/core-free-icons";
 
@@ -79,7 +88,18 @@ function iconComponent(icon: IconSvgElement) {
 }
 
 export const Activity = iconComponent(ActivityIcon);
+export const AiEditing = iconComponent(AiEditingIcon);
+export const AppleReminder = iconComponent(AppleReminderIcon);
+// The same glyph with its frame shaded: the Overview toggle while the card is open.
+export const AppleReminderShaded = iconComponent(
+  AppleReminderIcon.map(([tag, attrs], index) =>
+    index === 0 ? ([tag, { ...attrs, fill: "currentColor", fillOpacity: 0.2 }] as const) : ([tag, attrs] as const),
+  ),
+);
 export const Archive = iconComponent(ArchiveIcon);
+export const ArchiveArrowDown = iconComponent(ArchiveArrowDownIcon);
+export const ArchiveRestore = iconComponent(ArchiveRestoreIcon);
+export const ArrowBigUpDash = iconComponent(ArrowBigUpDashIcon);
 export const ArrowLeft = iconComponent(ArrowLeftIcon);
 export const ArrowRight = iconComponent(ArrowRightIcon);
 export const ArrowUp = iconComponent(ArrowUp02Icon);
@@ -95,6 +115,7 @@ export const Check = iconComponent(Tick02Icon);
 export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
 export const Circle = iconComponent(CircleIcon);
 export const Command = iconComponent(CommandIcon);
+export const CommandLine = iconComponent(CommandLineIcon);
 export const Computer = iconComponent(ComputerIcon);
 export const Copy = iconComponent(Copy01Icon);
 export const Crosshair = iconComponent(CrosshairIcon);
@@ -103,23 +124,26 @@ export const Crosshair = iconComponent(CrosshairIcon);
 // and React 19 throws "Cannot read properties of null (reading 'use')".
 export const FileIcon = iconComponent(File01Icon);
 export const FileDiff = iconComponent(FileDiffIcon);
+export const FileSearch = iconComponent(FileSearchIcon);
 export const Files = iconComponent(Files01Icon);
 export const Flash = iconComponent(FlashIcon);
+export const FolderAdd = iconComponent(FolderAddIcon);
 export const FolderClosed = iconComponent(Folder01Icon);
-export const FolderLibrary = iconComponent(FolderLibraryIcon);
+export const FolderGitTwo = iconComponent(FolderGitTwoIcon);
 export const FolderOpen = iconComponent(FolderOpenIcon);
 export const FolderOpenState = iconComponent(Folder02Icon);
 export const GitBranch = iconComponent(GitBranchIcon);
+export const GitFork = iconComponent(GitForkIcon);
 export const Globe = iconComponent(Globe02Icon);
+export const Hammer = iconComponent(HammerIcon);
 export const ImageIcon = iconComponent(HugeImageIcon);
 export const Info = iconComponent(InformationCircleIcon);
-export const Key = iconComponent(KeyIcon);
+export const KeyRound = iconComponent(KeyRoundIcon);
 export const Devices = iconComponent(LaptopPhoneSyncIcon);
 // A quarter-filled circle: started, not finished (todo items).
 export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
-export const ListBullet = iconComponent(LeftToRightListBulletIcon);
 export const ListTree = iconComponent(ListTreeIcon);
 export const LoaderCircle = iconComponent(Loading03Icon);
 export const MoreHorizontal = iconComponent(MoreHorizontalIcon);
@@ -128,20 +152,19 @@ export const Pencil = iconComponent(PencilEdit01Icon);
 export const Plus = iconComponent(AddIcon);
 export const Puzzle = iconComponent(PuzzleIcon);
 export const RefreshCw = iconComponent(RefreshIcon);
-export const Search = iconComponent(Search01Icon);
+export const SearchVisual = iconComponent(SearchVisualIcon);
 export const Settings = iconComponent(Settings01Icon);
 export const Settings2 = iconComponent(Settings02Icon);
 export const SidebarLeft = iconComponent(SidebarLeftIcon);
 export const Sparkles = iconComponent(SparklesIcon);
 export const Stop = iconComponent(HugeStopIcon);
 // Lucide SquareTerminal: framed console with a prompt. Hugeicons names
-// that glyph ComputerTerminal01; the unframed TerminalIcon stays unused.
+// that glyph ComputerTerminal01.
 export const SquareTerminal = iconComponent(ComputerTerminal01Icon);
-export const Terminal = SquareTerminal;
 export const ThumbsDown = iconComponent(ThumbsDownIcon);
 export const ThumbsUp = iconComponent(ThumbsUpIcon);
 export const Trash2 = iconComponent(Delete02Icon);
-export const User = iconComponent(UserIcon);
+export const UserCircle = iconComponent(UserCircleIcon);
 export const Wrench = iconComponent(WrenchIcon);
 
 // Keep the plain bot glyph available for places that need a chat-specific robot icon.

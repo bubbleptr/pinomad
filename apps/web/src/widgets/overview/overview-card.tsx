@@ -20,7 +20,7 @@ import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
 import { DocumentView } from "../../presentation/documents.tsx";
-import { Computer, FileDiff, FolderClosed, FolderLibrary, GitBranch } from "../../shared/ui/icons.tsx";
+import { Computer, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
@@ -164,7 +164,7 @@ function WorkspaceSection({
   return (
     <Section title="Workspace">
       {isChat ? null : view.checkout !== undefined ? (
-        <Row icon={<FolderLibrary className="size-4" />}>Git worktree</Row>
+        <Row icon={<FolderGitTwo className="size-4" />}>Git worktree</Row>
       ) : (
         <Row icon={<Computer className="size-4" />}>Project folder</Row>
       )}

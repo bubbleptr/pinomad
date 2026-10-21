@@ -1,7 +1,7 @@
 // Ported from Pace's entities/checkout/checkout-strategy-picker.tsx (PiGUI
 // commit 15b9084): the draft's worktree/project-folder picker.
 import { Selector } from "@astryxdesign/core/Selector";
-import { Computer, FolderLibrary } from "@/shared/ui/icons";
+import { Computer, FolderGitTwo } from "@/shared/ui/icons";
 
 export type CheckoutMode = "worktree" | "local";
 
@@ -26,7 +26,7 @@ export function CheckoutStrategyPicker({
           {
             value: "worktree",
             label: "Git worktree",
-            icon: <FolderLibrary aria-hidden="true" className="size-4 shrink-0 text-muted" />,
+            icon: <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />,
           },
           {
             value: "local",
@@ -37,7 +37,7 @@ export function CheckoutStrategyPicker({
         size="sm"
         startIcon={
           value === "worktree"
-            ? <FolderLibrary aria-hidden="true" className="size-4 shrink-0 text-muted" />
+            ? <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />
             : <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />
         }
         value={value}

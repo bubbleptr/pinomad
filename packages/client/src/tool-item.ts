@@ -111,7 +111,7 @@ export function toolKindFromName(name: string | undefined): ToolKind {
   return KIND_ALIASES[normalizeToolName(name)] ?? "tool";
 }
 
-/** A burst of mixed kinds shares the generic wrench, matching Codex's header. */
+/** A burst of mixed kinds shares the generic tool icon, matching Codex's header. */
 export function toolKindFromTools(tools: ToolItem[]): ToolKind {
   const kinds = new Set(tools.map((tool) => toolKindFromName(tool.toolName)));
 
