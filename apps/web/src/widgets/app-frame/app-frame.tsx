@@ -122,7 +122,9 @@ export function AppFrame({
   );
 
   return (
-    <>
+    // The viewport wraps the workbench so every descendant's useToast reaches
+    // the same top-layer stack, not Astryx's detached fallback.
+    <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
       <AppShell
         className="pigui-app-layout text-foreground"
         contentPadding={0}
@@ -252,11 +254,9 @@ export function AppFrame({
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
-          that lists them starts closed. isTopLayer lifts it above dialogs. */}
-      <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
-        <NoticeToasts notices={view.notices} />
-      </ToastViewport>
-    </>
+          that lists them starts closed. */}
+      <NoticeToasts notices={view.notices} />
+    </ToastViewport>
   );
 }
 

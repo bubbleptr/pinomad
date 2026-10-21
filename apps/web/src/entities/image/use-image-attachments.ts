@@ -10,6 +10,8 @@ export function useImageAttachments(accepts: boolean): {
   readonly pending: boolean;
   readonly error: string | null;
   add(files: File[]): void;
+  /** Replace the staged images with already-prepared ones, as an Edit does. */
+  restore(images: readonly MessageImage[]): void;
   remove(index: number): void;
   clear(): void;
 } {
@@ -59,6 +61,18 @@ export function useImageAttachments(accepts: boolean): {
     );
   };
 
+  // Restoring is not add(): the images were already admitted and prepared, so
+  // an edit must not drop them when the model no longer accepts images. The
+  // generation bump keeps a prepare still in flight from appending to the set.
+  const restore = (next: readonly MessageImage[]): void => {
+    const kept = next.slice(0, MAX_IMAGES_PER_MESSAGE);
+    generation.current += 1;
+    taken.current = kept.length;
+    setPreparing(0);
+    setImages([...kept]);
+    setError(next.length > MAX_IMAGES_PER_MESSAGE ? "At most 4 images per message" : null);
+  };
+
   const remove = (index: number): void => {
     taken.current -= 1;
     setImages((current) => current.filter((_, i) => i !== index));
@@ -72,5 +86,5 @@ export function useImageAttachments(accepts: boolean): {
     setError(null);
   };
 
-  return { images, pending: preparing > 0, error, add, remove, clear };
+  return { images, pending: preparing > 0, error, add, restore, remove, clear };
 }
