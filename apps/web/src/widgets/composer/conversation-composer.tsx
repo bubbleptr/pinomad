@@ -7,6 +7,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -39,13 +40,38 @@ export function ConversationComposer({
   const agent = agentOf(conversation);
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
+  const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  const atMentions = useAtMentions(
+    view.agents,
+    inputRef,
+    // A Chat conversation has no project files; like a Chat draft, it offers agents only.
+    view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
+      ? {
+          key: `conversation:${conversation.conversation.id}`,
+          list: (query) =>
+            remote.controller.listFiles(
+              { kind: "conversation", conversationId: conversation.conversation.id },
+              query,
+            ),
+        }
+      : undefined,
+  );
+  // `$` skill mentions (issue #143): the conversation's own scope — a Chat
+  // conversation still lists the user's skills.
+  const skills = useSkillMentions(
+    remote,
+    { kind: "conversation", conversationId: conversation.conversation.id },
+    inputRef,
+    !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
+  );
+  useSkillHighlight(inputRef, value, skills.names);
+  const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const queue = queueItems(conversation);
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
   const { images, pending, error, add, remove, clear } = useImageAttachments(accepts);
   const fileInput = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<ChatPromptInputHandle | null>(null);
   // No "why" slot on menu items: the reason goes into the label itself.
   const addImages =
     accepts || disconnected
@@ -74,21 +100,8 @@ export function ConversationComposer({
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
-        triggers={useAtMentions(
-          view.agents,
-          inputRef,
-          // A Chat conversation has no project files; like a Chat draft, it offers agents only.
-          view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
-            ? {
-                key: `conversation:${conversation.conversation.id}`,
-                list: (query) =>
-                  remote.controller.listFiles(
-                    { kind: "conversation", conversationId: conversation.conversation.id },
-                    query,
-                  ),
-              }
-            : undefined,
-        )}
+        onFocus={skills.request}
+        triggers={triggers.length === 0 ? undefined : triggers}
         onStop={busy ? () => void remote.controller.abort() : undefined}
         attachments={attachmentDrawer({ images, pending, onRemove: remove })}
         hasAttachments={images.length > 0}

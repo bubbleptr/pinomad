@@ -25,6 +25,7 @@ export function ConversationTranscript({
   forkSource,
   onRetry,
   docs,
+  skillNames,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -53,6 +54,8 @@ export function ConversationTranscript({
   onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
+  /** This conversation's `$`-mentionable skill names (issue #143) — user bubbles paint matches. */
+  skillNames?: readonly string[];
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(
@@ -92,6 +95,7 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
+            skillNames={skillNames}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={
               onRetry !== undefined && connected && retry !== undefined && index === items.length - 1
