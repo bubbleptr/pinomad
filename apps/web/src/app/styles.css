@@ -209,13 +209,16 @@ body,
 }
 
 html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
+/* Astryx's reset sets antialiased/grayscale on body. On macOS that turns off
+   CoreText's stem darkening and thins every glyph, most visibly light text on
+   the dark theme, so the platform default comes back here. */
 body {
   margin: 0;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* Low-frequency action buttons (send, steer/withdraw, refresh).
