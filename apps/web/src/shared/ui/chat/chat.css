@@ -954,7 +954,7 @@
 .prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
   gap: var(--spacing-3);
   /* Override Astryx's hover/focus elevation without changing the geometry. */
-  box-shadow: var(--shadow-low);
+  box-shadow: var(--shadow-low), inset 0 0 0 1px var(--color-border-raised);
 }
 
 /* Preserve a focus indicator when the OS suppresses shadows. */

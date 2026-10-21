@@ -35,13 +35,27 @@
    layering instead: frame darkest, main pane just above it, inset fills
    (muted) and raised surfaces lighter in that order, popovers on top. Same
    specificity lift as the font override. Light legs are theme-neutral's
-   values verbatim. */
+   values verbatim.
+
+   Each dark step sits at least 0.03 L above the one below so adjacent
+   layers stay apart, and the greys carry a trace of Pi blue's hue (#4d9abf,
+   h 232) at C 0.006-0.008, too low to read as blue but enough to stop the
+   ladder reading as dead grey. Dark text and icons stop at L 0.94: full
+   white on a near-black ground blooms. Dark borders are solid, not
+   theme-neutral's 10% white, which glows grey over the tinted surfaces. */
 [data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f1f1f1, oklch(0.19 0 0));
-  --color-background-surface: light-dark(#ffffff, oklch(0.218 0 0));
-  --color-background-muted: light-dark(#f1f1f1, oklch(0.248 0 0));
-  --color-background-card: light-dark(#ffffff, oklch(0.26 0 0));
-  --color-background-popover: light-dark(#ffffff, oklch(0.285 0 0));
+  --color-background-body: light-dark(#f1f1f1, oklch(0.165 0.006 232));
+  --color-background-surface: light-dark(#ffffff, oklch(0.2 0.006 232));
+  --color-background-muted: light-dark(#f1f1f1, oklch(0.235 0.007 232));
+  --color-background-card: light-dark(#ffffff, oklch(0.265 0.007 232));
+  --color-background-popover: light-dark(#ffffff, oklch(0.295 0.008 232));
+  --color-border: light-dark(#00000014, oklch(0.31 0.008 232));
+  --color-text-primary: light-dark(#171717, oklch(0.94 0.004 232));
+  --color-icon-primary: light-dark(#171717, oklch(0.94 0.004 232));
+  /* Raised surfaces (composer) are shadow-only in light mode; a black
+     shadow vanishes on a near-black ground, so dark mode edges them with a
+     solid hairline instead. */
+  --color-border-raised: light-dark(transparent, oklch(0.33 0.008 232));
 }
 
 /* —— Semantic token bridge ——
