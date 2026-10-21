@@ -28,7 +28,7 @@ import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, Key, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostsSection } from "./hosts.tsx";
@@ -37,7 +37,7 @@ import { UpdatesSection } from "./updates-section.tsx";
 const SECTIONS = [
   { id: "hosts", title: "Hosts", icon: Computer, group: "device" },
   { id: "updates", title: "Updates", icon: RefreshCw, group: "device" },
-  { id: "providers", title: "Providers", icon: Key, group: "host" },
+  { id: "providers", title: "Providers", icon: KeyRound, group: "host" },
   { id: "models", title: "Models", icon: Sparkles, group: "host" },
   { id: "agents", title: "Agents", icon: Bot, group: "host" },
   { id: "mcp", title: "MCP", icon: Puzzle, group: "host" },

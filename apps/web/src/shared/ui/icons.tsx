@@ -23,6 +23,7 @@ import {
   CircleIcon,
   CommandIcon,
   CommandLineIcon,
+  ComputerTerminal01Icon,
   ComputerIcon,
   Copy01Icon,
   CrosshairIcon,
@@ -43,7 +44,7 @@ import {
   HammerIcon,
   ImageIcon as HugeImageIcon,
   InformationCircleIcon,
-  KeyIcon,
+  KeyRoundIcon,
   LaptopPhoneSyncIcon,
   LayoutAlignLeftIcon,
   LinkSquare02Icon,
@@ -137,7 +138,7 @@ export const Globe = iconComponent(Globe02Icon);
 export const Hammer = iconComponent(HammerIcon);
 export const ImageIcon = iconComponent(HugeImageIcon);
 export const Info = iconComponent(InformationCircleIcon);
-export const Key = iconComponent(KeyIcon);
+export const KeyRound = iconComponent(KeyRoundIcon);
 export const Devices = iconComponent(LaptopPhoneSyncIcon);
 // A quarter-filled circle: started, not finished (todo items).
 export const InProgress = iconComponent(Progress02Icon);
@@ -157,6 +158,9 @@ export const Settings2 = iconComponent(Settings02Icon);
 export const SidebarLeft = iconComponent(SidebarLeftIcon);
 export const Sparkles = iconComponent(SparklesIcon);
 export const Stop = iconComponent(HugeStopIcon);
+// Lucide SquareTerminal: framed console with a prompt. Hugeicons names
+// that glyph ComputerTerminal01.
+export const SquareTerminal = iconComponent(ComputerTerminal01Icon);
 export const ThumbsDown = iconComponent(ThumbsDownIcon);
 export const ThumbsUp = iconComponent(ThumbsUpIcon);
 export const Trash2 = iconComponent(Delete02Icon);
