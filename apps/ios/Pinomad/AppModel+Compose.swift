@@ -135,6 +135,145 @@ extension AppModel {
         }
     }
 
+    /// A notice the app produced itself (the queued actions' outcomes and
+    /// refusals). The descending id keeps it out of the core notice feed.
+    func showToast(_ message: String, level: String = "info") {
+        localToastID &-= 1
+        show(Notice(id: localToastID, level: level, message: message))
+    }
+
+    // ── Queued inputs (#144) ────────────────────────────────────────────
+    // Withdraw and steer are request-class: their outcome and any host
+    // refusal come back here, not as a notice. One request per row at a
+    // time; the Edit copy locks the composer until it is resolved.
+
+    func queuedEditLocksComposer(conversation id: UInt64) -> Bool {
+        queuedEdit.locksComposer(conversation: id)
+    }
+
+    /// Editing restores the queued input over the composer, so it waits for
+    /// an empty composer and for the previous Edit to resolve.
+    func queuedEditDisabled(conversation id: UInt64) -> Bool {
+        guard queuedEdit.canBegin else { return true }
+        let text = drafts[id] ?? ""
+        let tray = trays[id] ?? AttachmentTray()
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !tray.images.isEmpty || tray.preparing > 0
+    }
+
+    /// Withdraw a queued row without editing it. `sent` means it reached the
+    /// transcript before the call landed; every other success is silent.
+    func withdrawQueued(conversation id: UInt64, item: QueueItem) {
+        guard connected, hostSupports("withdrawQueued"), let session,
+              queuedEdit.copy?.id != item.id,
+              queuePending.insert(item.id).inserted
+        else { return }
+        Task { [weak self] in
+            defer { self?.queuePending.remove(item.id) }
+            do {
+                if try await session.withdrawQueued(submissionId: item.id, target: id) == .sent {
+                    self?.showToast("已发出，无法撤回")
+                }
+            } catch {
+                guard let self else { return }
+                self.showToast(self.describe(error), level: "error")
+            }
+        }
+    }
+
+    /// Promote a queued follow-up to steer in place. `steered` only means
+    /// the next available boundary will treat it as steer — it is not an
+    /// "inserted now" notice; `sent` and `unavailable` are equally silent.
+    func steerQueued(conversation id: UInt64, item: QueueItem) {
+        guard connected, hostSupports("steerQueued"), let session,
+              queuedEdit.copy?.id != item.id,
+              queuePending.insert(item.id).inserted
+        else { return }
+        Task { [weak self] in
+            defer { self?.queuePending.remove(item.id) }
+            do {
+                _ = try await session.steerQueued(submissionId: item.id, target: id)
+            } catch {
+                guard let self else { return }
+                self.showToast(self.describe(error), level: "error")
+            }
+        }
+    }
+
+    /// Withdraw a queued row and, if the host still had it, put its text and
+    /// images back. The content is read before the call because a successful
+    /// withdrawal removes the row from the next snapshot.
+    func editQueued(conversation id: UInt64, item: QueueItem) {
+        guard connected, hostSupports("withdrawQueued"), let session,
+              !queuedEditDisabled(conversation: id),
+              queuedEdit.copy?.id != item.id,
+              let input = session.queuedInput(submissionId: item.id)
+        else { return }
+        let copy = QueuedEdit.Copy(
+            conversationId: id, id: item.id, text: input.text, images: input.images)
+        guard queuedEdit.begin(copy) else { return }
+        queuePending.insert(item.id)
+        Task { [weak self] in
+            await self?.resolveQueuedEdit(copy, session: session)
+        }
+    }
+
+    /// The reconnect retry trigger: only a copy whose withdraw reply was
+    /// lost is pending, and the host's withdraw is idempotent.
+    func retryQueuedEditIfNeeded() {
+        guard let session, let copy = queuedEdit.retryOnReconnect(connected: connected) else { return }
+        queuePending.insert(copy.id)
+        Task { [weak self] in
+            await self?.resolveQueuedEdit(copy, session: session)
+        }
+    }
+
+    private func resolveQueuedEdit(_ copy: QueuedEdit.Copy, session: PinomadSession) async {
+        do {
+            let outcome = try await session.withdrawQueued(
+                submissionId: copy.id, target: copy.conversationId)
+            guard queuedEdit.copy == copy else { return }
+            switch outcome {
+            case .withdrawn:
+                guard let restored = queuedEdit.withdrawn() else { return }
+                queuePending.remove(copy.id)
+                putBack(restored)
+            case .sent:
+                queuedEdit.alreadySent()
+                queuePending.remove(copy.id)
+                showToast("已发出，无法撤回")
+            }
+        } catch {
+            guard queuedEdit.copy == copy else { return }
+            // A reply from a replaced session says nothing about the input:
+            // ask again on the live one instead of treating it as a refusal.
+            if self.session !== session {
+                if let live = self.session, live.liveConnected {
+                    await resolveQueuedEdit(copy, session: live)
+                } else {
+                    queuedEdit.failed(connected: false)
+                }
+                return
+            }
+            // Read the core's live connection, not the last published
+            // snapshot: a lost socket can reject the request before the
+            // snapshot that says so lands. The error text never decides.
+            let failure = queuedEdit.failed(connected: session.liveConnected)
+            guard failure == .rejected else { return }
+            queuePending.remove(copy.id)
+            showToast(describe(error), level: "error")
+        }
+    }
+
+    private func putBack(_ copy: QueuedEdit.Copy) {
+        drafts[copy.conversationId] = copy.text
+        var tray = trays[copy.conversationId] ?? AttachmentTray()
+        tray.restore(copy.images)
+        trays[copy.conversationId] = tray
+        transcriptPin += 1
+        queuedEditFocus[copy.conversationId, default: 0] += 1
+    }
+
     private func run(_ call: FfiCall) {
         guard let session else { return }
         Task { _ = try? await session.invoke(call) }

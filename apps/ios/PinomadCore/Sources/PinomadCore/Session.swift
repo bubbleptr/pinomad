@@ -188,6 +188,42 @@ public final class PinomadSession: @unchecked Sendable {
         }
     }
 
+    /// The shown conversation's queued input content, for Edit. A read of
+    /// the core's current view under the client lock, like `snapshot()`, so
+    /// it does not go through the event queue.
+    public func queuedInput(submissionId: UInt64) -> QueuedInput? {
+        client.queuedInput(submissionId: submissionId)
+    }
+
+    /// The connection as the core sees it right now, not the last published
+    /// snapshot. A lost socket can reject an in-flight request before the
+    /// snapshot that says so reaches the UI; an error's meaning must not
+    /// wait for that coalesced update.
+    public var liveConnected: Bool {
+        guard let snapshot = client.snapshot() else { return false }
+        return snapshot.connection == .connected && !snapshot.unauthorized
+    }
+
+    /// Request-class: the outcome and a host refusal both come back here,
+    /// never as a notice. `target` is explicit so a conversation switch while
+    /// the call is in flight cannot redirect it.
+    public func withdrawQueued(submissionId: UInt64, target: UInt64) async throws -> WithdrawOutcome {
+        let result = try await invoke(.withdrawQueued(submissionId: submissionId, target: target))
+        guard case .withdrawQueued(let outcome) = result else {
+            throw SessionError.operationFailed("宿主的回复不是撤回结果")
+        }
+        return outcome
+    }
+
+    /// Request-class, like `withdrawQueued`.
+    public func steerQueued(submissionId: UInt64, target: UInt64) async throws -> SteerOutcome {
+        let result = try await invoke(.steerQueued(submissionId: submissionId, target: target))
+        guard case .steerQueued(let outcome) = result else {
+            throw SessionError.operationFailed("宿主的回复不是引导结果")
+        }
+        return outcome
+    }
+
     public func notifyForeground() { sink.yield(.foreground) }
     public func notifyBackground() { sink.yield(.background) }
     public func notifyNetworkChanged() { sink.yield(.networkChanged) }

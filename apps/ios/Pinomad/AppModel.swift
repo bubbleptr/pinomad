@@ -94,6 +94,19 @@ final class AppModel {
     var creating = false
     /// Staged images per conversation, beside its draft text.
     var trays: [UInt64: AttachmentTray] = [:]
+    /// The queued-input Edit flow: the copy read before withdrawing, its
+    /// request phase, and the composer lock. Memory only; a host switch
+    /// drops it (an unresolved copy is retried after a same-host reconnect).
+    var queuedEdit = QueuedEdit()
+    /// Queued rows whose withdraw/steer request is in flight. An Edit's row
+    /// stays here until its outcome is known.
+    var queuePending: Set<UInt64> = []
+    /// Bumped per conversation when an Edit hands content back, so the open
+    /// composer can focus after the refill.
+    var queuedEditFocus: [UInt64: UInt64] = [:]
+    /// Local toast ids descend from the top so they never collide with the
+    /// core's increasing notice ids.
+    var localToastID: UInt64 = .max
     /// The message image shown full screen, if any.
     var viewing: MessageImage?
     /// In-progress answers per pending question request id.
@@ -404,6 +417,9 @@ final class AppModel {
             drafts = [:]
             questionDrafts = [:]
             trays = [:]
+            queuedEdit.reset()
+            queuePending.removeAll()
+            queuedEditFocus = [:]
             viewing = nil
             draftHome = .chat
             draftCheckout = .worktree
@@ -486,7 +502,12 @@ final class AppModel {
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
-            if connectedNow && !lastSnapshotConnected { syncPushToken() }
+            if connectedNow && !lastSnapshotConnected {
+                syncPushToken()
+                // A withdraw whose reply was lost is retried once the
+                // connection is back; the row may already be gone.
+                retryQueuedEditIfNeeded()
+            }
             lastSnapshotConnected = connectedNow
             advancePushTarget()
             signposter.emitEvent("ui-publish")

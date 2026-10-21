@@ -61,6 +61,32 @@ struct ConversationComposer: View {
 
     private var skillEntries: [SkillEntry]? { model.skills(for: skillScope) }
 
+    /// The 5.14 queued-input calls: live connection plus a host that knows
+    /// them. Older hosts and offline rows keep their plain display.
+    private var canActOnQueue: Bool {
+        connected && model.hostSupports("withdrawQueued")
+    }
+
+    /// An Edit's withdraw is in flight, or its outcome is unknown after a
+    /// drop: the composer and every attachment entry stay locked.
+    private var editLocked: Bool {
+        model.queuedEditLocksComposer(conversation: conversation.id)
+    }
+
+    private var editDisabled: Bool {
+        model.queuedEditDisabled(conversation: conversation.id)
+    }
+
+    private var queuePending: Set<UInt64> {
+        var pending = model.queuePending
+        if let id = model.queuedEdit.copy?.id { pending.insert(id) }
+        return pending
+    }
+
+    private var editFocusRevision: UInt64 {
+        model.queuedEditFocus[conversation.id] ?? 0
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !conversation.questions.isEmpty {
@@ -71,7 +97,16 @@ struct ConversationComposer: View {
                 StatusPill(text: conversation.statusText)
             }
             if !conversation.queueItems.isEmpty {
-                QueueList(items: conversation.queueItems)
+                QueueList(
+                    items: conversation.queueItems,
+                    busy: conversation.busy,
+                    canAct: canActOnQueue,
+                    editDisabled: editDisabled,
+                    pending: queuePending,
+                    onSteer: { model.steerQueued(conversation: conversation.id, item: $0) },
+                    onEdit: { model.editQueued(conversation: conversation.id, item: $0) },
+                    onWithdraw: { model.withdrawQueued(conversation: conversation.id, item: $0) }
+                )
             }
             if mentions.skillMenu.isShowing {
                 SkillMenuView(menu: mentions.skillMenu, choose: chooseSkill)
@@ -92,6 +127,12 @@ struct ConversationComposer: View {
             refreshMentions()
         }
         .onChange(of: model.phase) { _, _ in mentions.close() }
+        .onChange(of: editFocusRevision) { _, _ in
+            // The Edit refill lands asynchronously; put the caret after it
+            // and focus once the now-enabled field is on screen.
+            selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
+            focused = true
+        }
         .onDisappear { mentions.close() }
         .sheet(isPresented: $showModels) {
             ModelSheet(
@@ -124,7 +165,7 @@ struct ConversationComposer: View {
                 focused: $focused,
                 placeholder: conversation.busy ? "追加指令…" : "问点什么…",
                 names: skillEntries?.map(\.name),
-                enabled: connected,
+                enabled: connected && !editLocked,
                 minLines: 1,
                 maxLines: 6
             )
@@ -146,6 +187,7 @@ struct ConversationComposer: View {
                     acceptsImages: acceptsImages,
                     modelName: currentModel?.name ?? currentModel?.modelId,
                     canAddImages: tray.freeSlots > 0,
+                    locked: editLocked,
                     photos: { presentAfterMenu { showPhotos = true } },
                     camera: UIImagePickerController.isSourceTypeAvailable(.camera)
                         ? { presentAfterMenu { showCamera = true } } : nil,
@@ -247,7 +289,7 @@ struct ConversationComposer: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("发送")
                 .accessibilityHint("运行结束后发送；长按可改为立即引导")
-                .disabled(!enabled)
+                .disabled(!enabled || editLocked)
             } else {
                 Button {
                     model.send(conversation: conversation.id, mode: .followUp)
@@ -256,7 +298,7 @@ struct ConversationComposer: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("发送")
-                .disabled(!enabled)
+                .disabled(!enabled || editLocked)
             }
         }
     }
@@ -283,6 +325,9 @@ struct PlusMenu: View {
     let acceptsImages: Bool
     let modelName: String?
     let canAddImages: Bool
+    /// An Edit is resolving: every attachment entry waits for it so a late
+    /// refill cannot mix with a new pick.
+    var locked = false
     let photos: () -> Void
     /// Nil where there is no camera (the simulator).
     let camera: (() -> Void)?
@@ -300,7 +345,7 @@ struct PlusMenu: View {
                     }
                     Button("粘贴图片", systemImage: "doc.on.clipboard", action: paste)
                 }
-                .disabled(!canAddImages)
+                .disabled(!canAddImages || locked)
             } else {
                 Button("添加图片（\(modelName ?? "当前模型")不支持图片）", systemImage: "photo") {}
                     .disabled(true)
@@ -458,38 +503,120 @@ private struct StatusPill: View {
 }
 
 /// Inputs waiting on the run, oldest first; scrolls past about three.
+/// Only steer/follow-up rows carry actions — the protocol rejects writes —
+/// and only while the host is live on 5.14.
 private struct QueueList: View {
     let items: [QueueItem]
+    /// A run is in flight; Steer only makes sense while one is.
+    let busy: Bool
+    /// The connection is live and the host knows the 5.14 calls.
+    let canAct: Bool
+    /// Edit is unavailable for every row — the composer already holds a
+    /// draft or attachment, or another Edit is unresolved.
+    let editDisabled: Bool
+    /// Rows with a request in flight; their actions stay disabled.
+    let pending: Set<UInt64>
+    let onSteer: (QueueItem) -> Void
+    let onEdit: (QueueItem) -> Void
+    let onWithdraw: (QueueItem) -> Void
+
+    /// The action target is 44pt, so a row is 48pt. The ScrollView takes all
+    /// the height it is offered, so its frame tracks this estimate up to
+    /// three rows.
+    private static let rowHeight: CGFloat = 48
+    private static let spacing: CGFloat = 6
+    private static let visibleRows = 3
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Self.spacing) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(spacing: 8) {
-                        Text(tag(item.mode))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(item.text.isEmpty ? " " : item.text)
-                            .font(.footnote)
-                            .lineLimit(1)
-                        if item.imageCount > 0 {
-                            Text("· \(item.imageCount) 张图片")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 14))
+                    row(item)
                 }
             }
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollClipDisabled()
-        // A ScrollView takes all the height it's offered; size it to the
-        // rows (~38pt each) up to three.
-        .frame(height: min(CGFloat(items.count) * 38, 112))
+        .frame(height: height)
+    }
+
+    private var height: CGFloat {
+        let count = CGFloat(items.count)
+        guard count > 0 else { return 0 }
+        let content = count * Self.rowHeight + (count - 1) * Self.spacing
+        let visible = CGFloat(Self.visibleRows) * Self.rowHeight
+            + CGFloat(Self.visibleRows - 1) * Self.spacing
+        return min(content, visible)
+    }
+
+    private func actionable(_ item: QueueItem) -> Bool {
+        canAct && (item.mode == .followUp || item.mode == .steer)
+    }
+
+    @ViewBuilder
+    private func row(_ item: QueueItem) -> some View {
+        if actionable(item) {
+            base(item).contextMenu { actions(item) }
+        } else {
+            base(item)
+        }
+    }
+
+    private func base(_ item: QueueItem) -> some View {
+        HStack(spacing: 8) {
+            Text(tag(item.mode))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(item.text.isEmpty ? " " : item.text)
+                .font(.footnote)
+                .lineLimit(1)
+            if item.imageCount > 0 {
+                Text("· \(item.imageCount) 张图片")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if actionable(item) {
+                Menu {
+                    actions(item)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .disabled(pending.contains(item.id))
+                .accessibilityLabel("排队消息操作")
+                .accessibilityHint("引导、编辑或撤回这条排队消息")
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, actionable(item) ? 2 : 12)
+        .frame(minHeight: Self.rowHeight)
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private func actions(_ item: QueueItem) -> some View {
+        let blocked = pending.contains(item.id)
+        // Write/other never reach here: the host rejects both calls for them.
+        if item.mode == .followUp && busy {
+            Button("引导当前运行", systemImage: "arrow.uturn.right") {
+                onSteer(item)
+            }
+            .disabled(blocked)
+        }
+        Button("编辑", systemImage: "pencil") {
+            onEdit(item)
+        }
+        .disabled(blocked || editDisabled)
+        Button("撤回", systemImage: "arrow.uturn.backward", role: .destructive) {
+            onWithdraw(item)
+        }
+        .disabled(blocked)
     }
 
     private func tag(_ mode: QueueMode) -> String {
