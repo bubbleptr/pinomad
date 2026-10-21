@@ -50,10 +50,6 @@
   --color-border: light-dark(#00000014, oklch(0.33 0 0));
   --color-text-primary: light-dark(#171717, oklch(0.94 0 0));
   --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
-  /* Raised surfaces (composer) are shadow-only in light mode; a black
-     shadow vanishes on a near-black ground, so dark mode edges them with a
-     solid hairline instead. */
-  --color-border-raised: light-dark(transparent, oklch(0.36 0 0));
 }
 
 /* —— Semantic token bridge ——
