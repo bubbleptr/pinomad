@@ -48,6 +48,7 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
+        let skillNames = self.skillNames
         Group {
             if let conversation {
                 if autoScroll {
@@ -57,7 +58,8 @@ struct ConversationView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 24) {
-                                entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
+                                entries(conversation, subagentSummaries: subagentSummaries,
+                                        skillNames: skillNames, isSubagent: isSubagent)
                                 Color.clear.frame(height: 1).id("bottom")
                             }
                             .padding(.horizontal, 16)
@@ -77,7 +79,8 @@ struct ConversationView: View {
                         restoreItemID: subagentReturnAtBottom ? nil : subagentReturnItem,
                         onBottomChange: { transcriptAtBottom = $0 }
                     ) {
-                        entries(conversation, subagentSummaries: subagentSummaries, isSubagent: isSubagent)
+                        entries(conversation, subagentSummaries: subagentSummaries,
+                                skillNames: skillNames, isSubagent: isSubagent)
                     }
                 }
             } else {
@@ -130,7 +133,13 @@ struct ConversationView: View {
                 }
             }
         }
-        .task { model.openConversation(conversationId) }
+        .task {
+            model.openConversation(conversationId)
+            model.requestSkills(for: skillScope)
+        }
+        .onChange(of: model.connected) { _, connected in
+            if connected { model.requestSkills(for: skillScope, force: true) }
+        }
     }
 
     /// Scripted scrolling for perf runs, driven by `PINOMAD_AUTOSCROLL` in
@@ -147,6 +156,14 @@ struct ConversationView: View {
         guard let snapshot = model.snapshot else { return false }
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
+
+    /// The bubble's skill names come from the conversation's own scope, not
+    /// from whether a particular message used the menu.
+    private var skillScope: SkillScope? {
+        model.conversationSkillScope(conversationId)
+    }
+
+    private var skillNames: [String]? { model.skillNames(for: skillScope) }
 
     /// Record where to return before the session switches to the child. The
     /// tapped card's run is a stable anchor; a reader at the end keeps
@@ -200,6 +217,7 @@ struct ConversationView: View {
     private func entries(
         _ conversation: ConversationSnapshot,
         subagentSummaries: [UInt64: SubagentCardSummary],
+        skillNames: [String]?,
         isSubagent: Bool
     ) -> some View {
         // A subagent's run belongs to the delegating task; retryOf only
@@ -212,7 +230,7 @@ struct ConversationView: View {
         let todo = Self.todoLine(conversation)
         ForEach(conversation.chat, id: \.entryId) { entry in
             row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
-                subagentSummaries: subagentSummaries,
+                subagentSummaries: subagentSummaries, skillNames: skillNames,
                 todo: entry.entryId == latestRun ? todo : nil)
         }
     }
@@ -222,11 +240,12 @@ struct ConversationView: View {
         _ entry: ChatEntry,
         retry: RetryRequest?,
         subagentSummaries: [UInt64: SubagentCardSummary],
+        skillNames: [String]?,
         todo: TodoLine?
     ) -> some View {
         switch entry {
         case let .user(_, text, images):
-            UserRow(text: text, images: images).equatable()
+            UserRow(text: text, images: images, skillNames: skillNames).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
@@ -278,14 +297,27 @@ private extension View {
     }
 }
 
-/// What the user sent: the bubble, then any attached images.
+/// What the user sent: the bubble, then any attached images. The bubble
+/// mirrors AgentChatKit's UserMessageView, which takes plain text; the app
+/// needs an attributed copy to paint the conversation's known skill names
+/// blue (issue #143), and the plain-text bubble is unchanged when nothing
+/// matches.
 private struct UserRow: View, Equatable {
     let text: String
     let images: [MessageImage]
+    let skillNames: [String]?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            if !text.isEmpty { UserMessageView(text) }
+            if !text.isEmpty {
+                Text(attributedText)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.fill.tertiary, in: .rect(cornerRadius: 18))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.leading, 48)
+                    .textSelection(.enabled)
+            }
             ForEach(images, id: \.data) { image in
                 InlineImage(ToolImage(data: image.data, mimeType: image.mimeType), maxWidth: 240, maxHeight: 200)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -293,8 +325,23 @@ private struct UserRow: View, Equatable {
         }
     }
 
+    /// The core decides what counts as a mention; the app only converts its
+    /// UTF-16 ranges to attributed ranges and colors them system blue.
+    private var attributedText: AttributedString {
+        var value = AttributedString(text)
+        guard let skillNames, !skillNames.isEmpty else { return value }
+        for range in SkillMentionHighlight.ranges(in: text, names: skillNames) {
+            guard let stringRange = Range(range, in: text),
+                  let lower = AttributedString.Index(stringRange.lowerBound, within: value),
+                  let upper = AttributedString.Index(stringRange.upperBound, within: value)
+            else { continue }
+            value[lower..<upper].foregroundColor = Color(uiColor: .systemBlue)
+        }
+        return value
+    }
+
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.text == rhs.text && lhs.images == rhs.images
+        lhs.text == rhs.text && lhs.images == rhs.images && lhs.skillNames == rhs.skillNames
     }
 }
 

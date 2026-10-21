@@ -20,13 +20,21 @@ public struct MentionToken: Equatable, Sendable {
     /// start a line or follow whitespace; a@b is an address, not a
     /// mention.
     public static func at(text: String, cursor: Int) -> MentionToken? {
+        at(text: text, cursor: cursor, trigger: "@")
+    }
+
+    /// The token for a different trigger character — the $ skill menu
+    /// uses the same token boundaries, replacement and whitespace rules.
+    public static func at(text: String, cursor: Int, trigger: Character) -> MentionToken? {
+        let triggerUnits = Array(String(trigger).utf16)
+        guard triggerUnits.count == 1, let trigger = triggerUnits.first else { return nil }
         let units = Array(text.utf16)
         guard cursor > 0, cursor <= units.count else { return nil }
         // The caret has to be in the token, not on the whitespace after it.
         guard !isWhitespace(units[cursor - 1]) else { return nil }
         var start = cursor - 1
         while start > 0, !isWhitespace(units[start - 1]) { start -= 1 }
-        guard units[start] == 0x40 else { return nil }
+        guard units[start] == trigger else { return nil }
         var end = cursor
         while end < units.count, !isWhitespace(units[end]) { end += 1 }
         let query = String(decoding: units[(start + 1)..<cursor], as: UTF16.self)
