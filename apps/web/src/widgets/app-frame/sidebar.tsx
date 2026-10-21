@@ -1,3 +1,5 @@
+import { Avatar } from "@astryxdesign/core/Avatar";
+import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -11,11 +13,13 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, taskGroupsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { Archive, Bot, ChevronRight, Computer, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, RefreshCw, Settings, Trash2 } from "../../shared/ui/icons.tsx";
+import { Archive, Bot, ChevronRight, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, User } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
-import { HostSwitcher } from "./host-switcher.tsx";
+import { HostsMenu } from "./hosts.tsx";
+import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { clientDeviceName } from "../../address.ts";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
@@ -55,30 +59,20 @@ function useSidebarSectionExpansion(section: "chats" | "projects") {
   return { expanded, contentId, toggle };
 }
 
-export function ConnectionDot({ connection }: { connection: DurableView["connection"] }) {
-  return connection === "connected" ? (
-    <StatusDot variant="success" label="Connected" tooltip="Connected to the host" />
-  ) : (
-    <StatusDot variant={connection === "closed" ? "error" : "warning"} label={connection} tooltip={connection} isPulsing />
-  );
-}
-
-/** The SideNav header band: collapse toggle + connection dot. The slot adds
-    8px block padding each side, so 24px of band lands the toggle on the same
-    40px center line as the main header (Pace's spacer trick). */
+/** The SideNav header band: the collapse toggle. The slot adds 8px block
+    padding each side, so 24px of band lands the toggle on the same 40px
+    center line as the main header (Pace's spacer trick). */
 export function SidebarHeaderBand({
-  connection,
   onCollapse,
   safeLeft,
 }: {
-  connection: DurableView["connection"];
   onCollapse?: () => void;
   /** Left inset reserved for the macOS traffic lights when the sidebar owns the corner. */
   safeLeft?: string;
 }) {
   return (
     <div
-      className="pinomad-drag flex h-6 items-center justify-between px-2"
+      className="pinomad-drag flex h-6 items-center px-2"
       style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
     >
       <IconButton
@@ -88,78 +82,101 @@ export function SidebarHeaderBand({
         variant="ghost"
         onClick={onCollapse}
       />
-      <ConnectionDot connection={connection} />
     </div>
   );
 }
 
-/** Footer slot: the host switcher (desktop only) and the Devices entry. The
-    pair-host dialog is hoisted into AppFrame like Devices' — inside MobileNav
-    it would render in the drawer that this click just closed. */
+/**
+ * The user bar at the foot of the sidebar: who is signed in on the left; the
+ * hosts list and Settings on the right. Dialogs are hoisted into AppFrame —
+ * inside MobileNav they would render in the drawer that this click just
+ * closed.
+ */
 export function SidebarFooter({
   view,
-  onOpenDevices,
+  hostKey,
   onOpenSettings,
-  onPairHost,
   onOpenAccount,
-  onForgetHost,
   onSelect,
 }: {
   view: DurableView;
-  onOpenDevices: () => void;
+  /** The stored host this connection is to — absent for token clients. */
+  hostKey?: string;
   onOpenSettings: () => void;
-  onPairHost: () => void;
   onOpenAccount: () => void;
-  onForgetHost: () => void;
   onSelect?: () => void;
 }) {
   const update = useAppUpdate();
   return (
-    <>
-      {update?.status.state === "ready" ? (
-        <SideNavItem
-          icon={<RefreshCw aria-hidden="true" />}
-          label="Restart to update"
-          // The accessible name must start with the visible label (WCAG 2.5.3)
-          // and then may add the version context.
-          aria-label={`Restart to update${update.status.availableVersion === undefined ? "" : ` to PiNomad ${update.status.availableVersion}`}`}
-          onClick={() => update.install()}
+    <div className="flex items-center gap-1">
+      <div className="min-w-0 flex-1">
+        <UserChip
+          onOpenAccount={() => {
+            onSelect?.();
+            onOpenAccount();
+          }}
         />
-      ) : null}
-      <HostSwitcher
-        onPairAnother={() => {
-          onSelect?.();
-          onPairHost();
-        }}
-        onOpenAccount={() => {
-          onSelect?.();
-          onOpenAccount();
-        }}
-        onForgetHost={() => {
-          onSelect?.();
-          onForgetHost();
-        }}
-      />
-      <SideNavItem
-        icon={<Computer aria-hidden="true" />}
-        label="Devices"
-        isDisabled={view.connection !== "connected"}
-        onClick={() => {
-          onOpenDevices();
-          onSelect?.();
-        }}
-      />
-      <SideNavItem
-        icon={<Settings aria-hidden="true" />}
-        label="Settings"
-        isDisabled={view.connection !== "connected"}
-        onClick={() => {
-          onOpenSettings();
-          onSelect?.();
-        }}
-      />
-    </>
+      </div>
+      <HostsMenu connection={view.connection} connectedHostKey={hostKey} />
+      <span className="relative inline-flex">
+        <IconButton
+          icon={<Settings aria-hidden="true" />}
+          label="Settings"
+          tooltip="Settings"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            onSelect?.();
+            onOpenSettings();
+          }}
+        />
+        {update?.status.state === "ready" ? (
+          <span
+            aria-label="Update ready"
+            className="pointer-events-none absolute right-1 top-1 size-2 rounded-full bg-primary"
+            role="img"
+          />
+        ) : null}
+      </span>
+    </div>
   );
+}
+
+/**
+ * The account this client is signed in to (ADR-0022). Where the page can't
+ * reach an account API at all, the device's own name stands in — the one it
+ * pairs under.
+ */
+function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
+  const account = useAccountModel();
+  const status = account.state.status;
+  const [deviceName, setDeviceName] = useState<string>();
+  useEffect(() => {
+    if (status !== "unavailable") return;
+    let live = true;
+    void clientDeviceName().then((name) => {
+      if (live) setDeviceName(name);
+    });
+    return () => {
+      live = false;
+    };
+  }, [status]);
+  if (account.state.status === "signed-in") {
+    const { user } = account.state;
+    return (
+      <Button
+        label={user}
+        icon={<Avatar name={user} size="xsm" tooltip={false} />}
+        variant="ghost"
+        size="sm"
+        onClick={onOpenAccount}
+      />
+    );
+  }
+  if (status === "signed-out") {
+    return <Button label="Sign in" icon={<User aria-hidden="true" />} variant="ghost" size="sm" onClick={onOpenAccount} />;
+  }
+  return <span className="block truncate px-2 text-sm text-muted">{deviceName}</span>;
 }
 
 // Codex-style section header (Pace's SidebarSectionHeader): the title is the

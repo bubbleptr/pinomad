@@ -64,7 +64,7 @@ stdio server 写 `command`（可选 `args`、`env`、`cwd`——相对的 cwd �
 
 `exposure: "direct"` 时它的截图工具结果图片直接显示在工具卡片上；默认 `codemode` 暴露下脚本也可以 `image()` 把拿到的图片放进输出。
 
-宿主设置在侧栏底部的 Settings 对话框里（ADR-0021）：新建对话的默认模型和思考等级、busy 时 steer / follow-up 消息排队后的投递方式、已存储的登录（可以登出），以及只读的 MCP 配置和宿主数据目录。设置写在宿主数据目录的 `settings.json`（默认 `~/.pinomad/settings.json`），文件里只保存改过的键；没设过的回落到 pi 的 `~/.pi/agent/settings.json`，再回落到内置默认。任一设备改了，所有在线设备立刻看到新值。宿主运行时只有宿主自己写这个文件——要手动编辑请在宿主停止后进行。登录凭据仍共用 pi 的 `~/.pi/agent/auth.json`，登录用 Pi CLI 完成；在这里登出会同时把本机的 Pi CLI 登出。
+宿主设置在侧栏底部的 Settings 对话框里（ADR-0021），按宿主名分组的那几节：新建对话的默认模型和思考等级、busy 时 steer / follow-up 消息排队后的投递方式、已存储的登录（可以登出），以及只读的 MCP 配置和宿主数据目录。设置写在宿主数据目录的 `settings.json`（默认 `~/.pinomad/settings.json`），文件里只保存改过的键；没设过的回落到 pi 的 `~/.pi/agent/settings.json`，再回落到内置默认。任一设备改了，所有在线设备立刻看到新值。同一个对话框最上面的 "This device" 一组属于客户端自己：Hosts 里管理配对过的宿主（切换、忘记、粘贴配对链接配新宿主），桌面端还有 Updates。侧栏底部的电脑图标点开是各宿主的名字和连接状态（呼吸的绿点是已连接，灰点是没连上），点另一台就切过去。宿主运行时只有宿主自己写这个文件——要手动编辑请在宿主停止后进行。登录凭据仍共用 pi 的 `~/.pi/agent/auth.json`，登录用 Pi CLI 完成；在这里登出会同时把本机的 Pi CLI 登出。
 
 ## iOS 账号
 

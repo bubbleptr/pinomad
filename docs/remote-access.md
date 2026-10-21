@@ -9,7 +9,7 @@ bun run start
 # 透传宿主参数：bun run start -- --faux "hi" --data-dir /tmp/demo
 ```
 
-手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备和吊销在 Web 侧栏的 Devices 里管理；吊销设备也可以在那直接点 Revoke。
+手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备在 Web 的 Settings → Devices 里管理，在那直接点 Revoke 就能吊销。
 
 <details><summary>手动/高级：分开跑各个进程</summary>
 
@@ -25,7 +25,7 @@ bun run pair         # 打印配对二维码（一次性，5 分钟过期）
 bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 ```
 
-远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。不开 `--remote-port` / `--relay` 时 `pair` 打印的是回环链接（回环端口 `/secure` 路径上的安全通道），只能给本机上的客户端用，比如桌面端 App。桌面端 App 可以配对多台宿主，在侧栏底部切换（一次只连一台）。App 会自动检查更新（GitHub Release 上的 `latest-mac.yml`，自动下载、不自动安装），下载完成后侧栏底部出现 "Restart to update"，也可以在菜单里手动 Check for Updates…。
+远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。不开 `--remote-port` / `--relay` 时 `pair` 打印的是回环链接（回环端口 `/secure` 路径上的安全通道），只能给本机上的客户端用，比如桌面端 App。桌面端 App 可以配对多台宿主（Settings → Hosts），在侧栏底部的电脑图标里切换（一次只连一台）。App 会自动检查更新（GitHub Release 上的 `latest-mac.yml`，自动下载、不自动安装），下载完成后侧栏底部的 Settings 图标上出现一个圆点，到 Settings → Updates 点 "Restart to update"；也可以在菜单里手动 Check for Updates…。
 
 </details>
 
@@ -160,11 +160,11 @@ pinomad leave [--data-dir DIR]
 
 #### 在客户端里用账号
 
-- Web 从服务端地址打开、还没连过宿主时，首页就是登录；桌面端在首页或宿主切换菜单的 "Account…" 里填服务端地址登录。从宿主自己的端口打开的 Web 不显示账号入口，用配对链接。
+- Web 从服务端地址打开、还没连过宿主时，首页就是登录；桌面端在首页或侧栏底部用户栏的 "Sign in" 里填服务端地址登录。从宿主自己的端口打开的 Web 不显示账号入口，用配对链接。
 - 登录后列出账号下的宿主：点 Pair 由服务端向宿主要邀请、自动完成配对并连上；已经配对过的点 Connect。
 - "Add a host" 给出一条一次性的命令（十分钟内有效），在要加入的机器上运行即可。
 - 宿主的公钥变了（重装）或者宿主拒绝了这台设备（被吊销）时，客户端只提示，不会自己重新配对；确认是自己的操作后点 Pair again。
-- 宿主的 Devices 对话框里能看到每台设备是怎么加入的，也能关掉 "Accept devices from your account"，之后只能扫码。
+- 宿主的 Settings → Devices 里能看到每台设备是怎么加入的，也能关掉 "Accept devices from your account"，之后只能扫码。
 
 #### 宿主侧的设备准入
 

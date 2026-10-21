@@ -1,7 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, HStack, VStack } from "@astryxdesign/core/Layout";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
@@ -15,16 +14,15 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 
-export function DevicesDialog({
+/** Settings → Devices: the devices paired with this host, the account switch, and a new pairing offer. */
+export function DevicesSection({
   view,
   remote,
   self,
-  onClose,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   self?: KeyPair;
-  onClose: () => void;
 }) {
   const connected = view.connection === "connected";
   const selfKey = self === undefined ? undefined : toBase64Url(self.publicKey);
@@ -37,45 +35,30 @@ export function DevicesDialog({
     });
   };
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={440}>
-      <Layout
-        header={
-          <DialogHeader
-            title="Devices"
-            subtitle="Paired devices can reach this host over the secure channel."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            <VStack gap={4} padding={2}>
-              {view.devices.length === 0 ? (
-                <Text type="supporting">No paired devices.</Text>
-              ) : (
-                <List density="compact">
-                  {view.devices.map((device) => (
-                    <DeviceRow
-                      key={device.publicKey}
-                      device={device}
-                      isSelf={device.publicKey === selfKey}
-                      connected={connected}
-                      remote={remote}
-                    />
-                  ))}
-                </List>
-              )}
-              <AccountDevicesSwitch view={view} remote={remote} />
-              {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
-              {offer === undefined ? (
-                <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
-              ) : (
-                <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
-              )}
-            </VStack>
-          </LayoutContent>
-        }
-      />
-    </Dialog>
+    <VStack gap={4}>
+      {view.devices.length === 0 ? (
+        <Text type="supporting">No paired devices.</Text>
+      ) : (
+        <List density="compact">
+          {view.devices.map((device) => (
+            <DeviceRow
+              key={device.publicKey}
+              device={device}
+              isSelf={device.publicKey === selfKey}
+              connected={connected}
+              remote={remote}
+            />
+          ))}
+        </List>
+      )}
+      <AccountDevicesSwitch view={view} remote={remote} />
+      {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
+      {offer === undefined ? (
+        <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
+      ) : (
+        <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
+      )}
+    </VStack>
   );
 }
 

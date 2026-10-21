@@ -8,7 +8,7 @@ import { pairingFragment } from "../../address.ts";
 /**
  * Paste-a-pairing-link form: a valid link becomes the location fragment and a
  * reload re-resolves the address into the pair-confirm flow. Shared by the
- * no-link screen and the desktop's "Pair another host" dialog.
+ * no-link screen, Settings → Hosts, and the connection-failure screens.
  */
 export function PairingLinkForm() {
   const [pasted, setPasted] = useState("");
@@ -19,7 +19,7 @@ export function PairingLinkForm() {
       // Token links deserve the specific hint: they exist, they just can't pair.
       setError(
         /[#?&]token=/.test(pasted)
-          ? "Token links can't pair a device — paste a pairing link instead (pinomad pair, or Devices → Pair a device)."
+          ? "Token links can't pair a device — paste a pairing link instead (pinomad pair, or Settings → Devices → Pair a device)."
           : "That isn't a pairing link — paste one like http://<host>/#pair=… or pinomad://pair#pair=…",
       );
       return;

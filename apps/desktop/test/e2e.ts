@@ -119,17 +119,17 @@ try {
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await page.getByRole("textbox").waitFor({ timeout: 30_000 });
 
-  // Multi-host: a second faux host pairs through the sidebar switcher, which
-  // then swaps between the two — one connection at a time.
+  // Multi-host: a second faux host pairs from Settings → Hosts, and the
+  // sidebar's host menu swaps between the two — one connection at a time.
   const hostB = await startFauxHost(defer, { dataDir: await namedDataDir("Host B"), answers: ["hello from host B"] });
   const tokenB = await connectTo(defer, hostB);
   const { url: pairB } = await tokenB.controller.createPairing();
   const labelA = "Host A";
   const labelB = "Host B";
 
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Pair another host…", exact: true }).click();
-  const pairDialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const pairDialog = page.getByRole("dialog", { name: "Settings" });
+  await pairDialog.getByRole("button", { name: "Hosts", exact: true }).click();
   await pairDialog.getByLabel("Pairing link").fill(pairB);
   await pairDialog.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
@@ -162,24 +162,21 @@ try {
       })
       .then(() => undefined);
 
-  // The switcher lists both hosts; selecting A reloads onto it.
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).waitFor();
+  // The host menu lists both hosts with their status; selecting A reloads onto it.
+  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
   await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelA} (not connected)`, exact: true }).click();
   await page.getByRole("textbox").waitFor({ timeout: 30_000 });
 
-  // A dead host lands on a failure screen that still offers the switcher.
+  // A dead host lands on a failure screen that still lists the hosts.
   await hostB.close();
-  await page.getByRole("button", { name: labelA, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelB, exact: true }).click();
+  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelB} (not connected)`, exact: true }).click();
   await page.getByText("Could not connect to the host", { exact: true }).waitFor({ timeout: 30_000 });
-  await page.getByRole("button", { name: labelB, exact: true }).click();
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).waitFor();
-  await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-failure-switcher.png" });
-  await page.getByRole("menuitemradio", { name: labelA, exact: true }).click();
+  await page.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).click();
   await page.getByRole("textbox").waitFor({ timeout: 30_000 });
 
   // The list is one encrypted blob: neither hostKey appears in plaintext.

@@ -35,7 +35,7 @@ pinomad host --remote-port 7422
 pinomad pair        # 一次性的二维码和链接，5 分钟后过期
 ```
 
-iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设备，不需要的设备可以在侧栏的 Devices 里吊销。
+iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。
 
 配对链接默认用宿主探测到的局域网地址。在 tailnet 里或走隧道时，加上 `--public-url http://<tailnet-ip>:7422`，让链接指向那个地址。宿主在家、人在外面也想连，就在 VPS 上跑中继，见[远程访问](docs/remote-access.md)。
 

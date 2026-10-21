@@ -28,9 +28,10 @@ import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/prot
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
-import { useAppUpdate, type AppUpdate } from "./entities/app-update/use-app-update.ts";
+import { useAppUpdate } from "./entities/app-update/use-app-update.ts";
+import { UpdateStatusNote } from "./entities/app-update/update-status-note.tsx";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
-import { HostSwitcherFallback } from "./widgets/app-frame/host-switcher.tsx";
+import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
 import { AccountPanel } from "./widgets/account/account-panel.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
@@ -153,7 +154,7 @@ function NoHostLink() {
       <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
         <EmptyState
           title="No host link"
-          description="Paste a pairing link from pinomad pair or Devices → Pair a device."
+          description="Paste a pairing link from pinomad pair or Settings → Devices → Pair a device."
         />
         <PairingLinkForm />
       </VStack>
@@ -163,7 +164,7 @@ function NoHostLink() {
     <VStack gap={6} style={{ width: "100%", maxWidth: 420 }}>
       <AccountPanel />
       <VStack gap={2}>
-        <Text type="supporting">Or paste a pairing link from pinomad pair or Devices → Pair a device.</Text>
+        <Text type="supporting">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
         <PairingLinkForm />
       </VStack>
     </VStack>
@@ -280,7 +281,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       <VStack gap={4} hAlign="center">
         <EmptyState
           title="This pairing code was used or has expired"
-          description="Generate a new QR on the host: run bun run pair, or open Devices → Pair a device."
+          description="Generate a new QR on the host: run bun run pair, or open Settings → Devices → Pair a device."
         />
         {hosts.length === 0 ? null : (
           <Button
@@ -371,7 +372,7 @@ export function RemoteWorkbench({
   if (state.status === "failed") {
     // Only a 4401 rejection means the pairing itself is bad — an unreachable
     // host keeps the key and the banner. These screens have no sidebar, so
-    // the host switcher repeats inline.
+    // the hosts list repeats inline.
     return (
       <Centered>
         {state.mismatch !== undefined ? (
@@ -384,7 +385,7 @@ export function RemoteWorkbench({
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        <HostSwitcherFallback />
+        <HostsFallback />
       </Centered>
     );
   }
@@ -438,34 +439,6 @@ export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: 
       description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
     />
   );
-}
-
-/** Live update status under the client-out-of-date banner, desktop only. */
-function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
-  if (update === undefined) return <Text type="supporting">Checking for updates…</Text>;
-  const { status } = update;
-  switch (status.state) {
-    case "checking":
-      return <Text type="supporting">Checking for updates…</Text>;
-    case "available":
-    case "downloading": {
-      const percent = status.progressPercent === undefined ? "" : ` ${Math.round(status.progressPercent)}%`;
-      return <Text type="supporting">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</Text>;
-    }
-    case "ready":
-      return <Button label="Restart to update" variant="primary" onClick={() => update.install()} />;
-    case "error":
-      return (
-        <HStack gap={2} vAlign="center">
-          <Text type="supporting">{status.message}</Text>
-          <Button label="Retry" variant="secondary" onClick={() => update.check()} />
-        </HStack>
-      );
-    case "disabled":
-      return <Text type="supporting">{status.reason ?? "Updates are unavailable in this build."}</Text>;
-    default:
-      return <Text type="supporting">{`PiNomad ${status.currentVersion} is up to date; no newer release found.`}</Text>;
-  }
 }
 
 function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode; hostKey?: string }) {
@@ -565,7 +538,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
     return (
       <Centered>
         {rejected}
-        <HostSwitcherFallback />
+        <HostsFallback />
       </Centered>
     );
   }
@@ -575,6 +548,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
         view={view}
         remote={remote}
         device={device}
+        hostKey={hostKey}
         narrow={narrow}
         drafting={drafting}
         draftingChat={drafting && draft.kind === "chat"}
