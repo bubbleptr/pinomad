@@ -913,6 +913,12 @@
   box-shadow: inset 0 0 0 1px var(--color-border);
 }
 
+/* Focus steps the hairline up to the emphasized border, the same neutral
+   in both themes' terms; no brand color. */
+.prompt-input .astryx-chat-composer > div:has(.prompt-input__input):focus-within {
+  box-shadow: inset 0 0 0 1px var(--color-border-emphasized);
+}
+
 /* Preserve a focus indicator when the OS suppresses shadows. */
 @media (forced-colors: active) {
   .prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
