@@ -170,9 +170,12 @@ function WorkspaceSection({
       )}
       {cwd === undefined ? null : (
         <Row icon={<FolderClosed className="size-4" />} title={cwd}>
-          {/* A path's tail says where it is: an rtl box clips from the left,
-              and the LRM keeps the leading "/" from flipping to the end. */}
-          <span className="block truncate text-left [direction:rtl]">{`\u200E${cwd}`}</span>
+          <span className="flex items-center gap-3">
+            <span className="shrink-0">Directory</span>
+            {/* A path's tail says where it is: an rtl box clips from the left,
+                and the LRM keeps the leading "/" from flipping to the end. */}
+            <span className="min-w-0 flex-1 truncate text-right text-muted [direction:rtl]">{`\u200E${cwd}`}</span>
+          </span>
         </Row>
       )}
       {branch === undefined ? null : <Row icon={<GitBranch className="size-4" />}>{branch}</Row>}
