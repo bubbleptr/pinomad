@@ -50,9 +50,8 @@ const advance = (): void => {
 
 describe("QuestionCard", () => {
   beforeAll(() => {
-    // jsdom has neither Web Animations nor the font loading API.
+    // jsdom lacks Web Animations; the font loading API is stubbed in setup.ts.
     HTMLElement.prototype.animate ??= vi.fn() as unknown as HTMLElement["animate"];
-    if (!("fonts" in document)) Object.defineProperty(document, "fonts", { value: { ready: Promise.resolve() } });
   });
   beforeEach(() => {
     // Testing Library waits on a real-looking setTimeout(0) after each event;
