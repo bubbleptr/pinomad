@@ -101,7 +101,9 @@ private func skill(
         #expect(menu.sections.flatMap(\.skills).map(\.name) == ["deploy", "review", "release", "write"])
     }
 
-    @Test func groupingKeepsProjectFirstAndRanksInsideEachSource() {
+    /// Group headings follow the ranking (the Web menu's rule); every item
+    /// of a group keeps the ranking's order inside it.
+    @Test func groupingFollowsTheRankingAndKeepsEachGroupsOrder() {
         var menu = SkillMenu()
         menu.refresh(text: "$re", cursor: 3, skills: [
             skill("write", "release notes", .user),
@@ -109,8 +111,18 @@ private func skill(
             skill("release", "", .user),
             skill("review", "", .project),
         ])
-        #expect(menu.sections.map(\.source) == [.project, .user])
-        #expect(menu.sections.map { $0.skills.map(\.name) } == [["review"], ["release", "write"]])
+        #expect(menu.sections.map(\.source) == [.user, .project])
+        #expect(menu.sections.map { $0.skills.map(\.name) } == [["release", "write"], ["review"]])
+    }
+
+    @Test func aUserPrefixBeatsAProjectDescriptionAndComesFirst() {
+        var menu = SkillMenu()
+        menu.refresh(text: "$re", cursor: 3, skills: [
+            skill("deploy", "release steps", .project),
+            skill("release", "", .user),
+        ])
+        #expect(menu.sections.map(\.source) == [.user, .project])
+        #expect(menu.sections.map { $0.skills.map(\.name) } == [["release"], ["deploy"]])
     }
 
     @Test func noMatchesStillShowsTheMenu() {

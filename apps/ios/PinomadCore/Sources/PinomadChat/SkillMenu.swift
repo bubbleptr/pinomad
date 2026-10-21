@@ -89,12 +89,19 @@ public struct SkillMenu: Equatable, Sendable {
             left.tier == right.tier ? left.index < right.index : left.tier < right.tier
         }
 
-        // Grouping is by entry source; the ranking stays stable inside each
-        // group. Project comes first because a project skill shadows a
-        // same-named user skill in the prompt.
-        return [SkillSource.project, .user].compactMap { source in
-            let matches = ranked.filter { $0.skill.source == source }.map(\.skill)
-            return matches.isEmpty ? nil : Section(source: source, skills: matches)
+        // Grouping is by entry source, like the Web menu: the heading order
+        // is where each source first appears in the ranking, then each
+        // group keeps the ranking's order. Project still wins a same-name
+        // shadow; that is decided by the host's listing, not here.
+        var order: [SkillSource] = []
+        var grouped: [SkillSource: [SkillEntry]] = [:]
+        for item in ranked {
+            if grouped[item.skill.source] == nil {
+                order.append(item.skill.source)
+                grouped[item.skill.source] = []
+            }
+            grouped[item.skill.source]?.append(item.skill)
         }
+        return order.map { Section(source: $0, skills: grouped[$0] ?? []) }
     }
 }
