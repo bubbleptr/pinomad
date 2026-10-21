@@ -83,12 +83,14 @@ export function SettingsDialog({
   const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
   const connected = view.connection === "connected";
-  const { hosts, activeHostKey } = useHosts();
+  const { hosts } = useHosts();
   const hasUpdater = window.pinomadDesktop?.updates !== undefined;
   // Disconnected, the host group has nothing live to show; land on the
   // device's own hosts instead.
   const active = section ?? (connected ? "providers" : "hosts");
-  const stored = hosts.find((host) => host.hostKey === activeHostKey) ?? hosts[0];
+  // The cached name of the host this connection reaches — a token client
+  // reaches none of the stored ones, whichever pairing is selected.
+  const stored = hosts.find((host) => host.hostKey === hostKey);
   const hostName =
     view.settings?.hostName ?? (stored === undefined ? undefined : hostLabels(hosts).get(stored.hostKey)) ?? "This host";
   const groups = [
