@@ -72,6 +72,10 @@ private struct ComposerTextView: UIViewRepresentable {
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.accessibilityLabel = placeholder
         applyMetrics(to: view)
+        // A restored draft has to be in the storage before ranges are
+        // applied; otherwise the first paint points past an empty buffer.
+        view.text = text
+        view.selectedRange = clamped(selection, length: (text as NSString).length)
         context.coordinator.apply(to: view, text: text, names: names)
         return view
     }
@@ -161,28 +165,35 @@ private struct ComposerTextView: UIViewRepresentable {
         /// has marked text, leave it alone; the next change applies it.
         func apply(to textView: UITextView, text: String, names: [String]?) {
             guard textView.markedTextRange == nil else { return }
+            // UIKit can still hold the previous storage while SwiftUI is
+            // applying a restored draft. Painting by the bound length would
+            // throw, and caching a skipped paint would lose the color.
+            guard textView.text == text else { return }
+            let length = textView.textStorage.length
+            guard length == (text as NSString).length else { return }
             let pointSize = UIFont.preferredFont(forTextStyle: .body).pointSize
             if appliedText == text, appliedNames == names, appliedPointSize == pointSize {
                 return
             }
+
+            let attributes = baseAttributes
+            if length > 0 {
+                textView.textStorage.beginEditing()
+                textView.textStorage.setAttributes(
+                    attributes, range: NSRange(location: 0, length: length))
+                if let names, !names.isEmpty {
+                    for range in SkillMentionHighlight.ranges(
+                        in: text, names: names, limit: length) {
+                        textView.textStorage.addAttribute(
+                            .foregroundColor, value: UIColor.systemBlue, range: range)
+                    }
+                }
+                textView.textStorage.endEditing()
+            }
+            textView.typingAttributes = attributes
             appliedText = text
             appliedNames = names
             appliedPointSize = pointSize
-
-            let length = (text as NSString).length
-            let full = NSRange(location: 0, length: length)
-            let attributes = baseAttributes
-            textView.textStorage.beginEditing()
-            textView.textStorage.setAttributes(attributes, range: full)
-            if let names, !names.isEmpty {
-                for range in SkillMentionHighlight.ranges(in: text, names: names)
-                where NSMaxRange(range) <= length {
-                    textView.textStorage.addAttribute(
-                        .foregroundColor, value: UIColor.systemBlue, range: range)
-                }
-            }
-            textView.textStorage.endEditing()
-            textView.typingAttributes = attributes
         }
 
         private var baseAttributes: [NSAttributedString.Key: Any] {
@@ -230,9 +241,10 @@ private final class ComposerUITextView: UITextView {
             attributes: [.font: font],
             context: nil
         )
-        // boundingRect ignores an empty last line, but the caret needs it.
-        let trailingLines = text.reversed().prefix { $0 == "\n" }.count
-        let content = ceil(rect.height) + CGFloat(trailingLines) * line
+        // boundingRect already counts the empty line after a trailing
+        // newline (and reports one line for empty text), so adding more
+        // would double-count it.
+        let content = ceil(rect.height)
         return max(min(content, maxVisibleHeight), minVisibleHeight)
     }
 
