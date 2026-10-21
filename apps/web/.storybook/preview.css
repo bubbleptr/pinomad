@@ -1,0 +1,15 @@
+/* styles.css pins html/body/#root to the viewport for the app shell;
+   stories and docs pages need to scroll. */
+html:has(body.sb-show-main),
+body.sb-show-main {
+  height: auto;
+  overflow: auto;
+}
+
+.sb-pinomad-canvas {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 1.5rem;
+  background: var(--color-background-surface);
+  color: var(--color-text-primary);
+}
