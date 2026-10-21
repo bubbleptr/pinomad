@@ -1599,7 +1599,7 @@ it("puts the conversation title in the header and the path inside the overview",
   await overview.getByText("/chats/", { exact: false }).waitFor();
   expect(await page.getByText("/chats/", { exact: false }).count()).toBe(1);
   expect(await overview.getByRole("button", { name: /Changes/ }).count()).toBe(0);
-  expect(await overview.getByText("Project folder", { exact: true }).count()).toBe(0);
+  expect(await overview.getByRole("img", { name: /^(Git worktree|Project folder)$/ }).count()).toBe(0);
   // Context usage lives in the card, not under the composer.
   await overview.getByRole("meter", { name: /^Context \d+% used/ }).waitFor();
   expect(await page.getByTestId("context-meter").count()).toBe(1);
@@ -1643,7 +1643,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   const toggle = page.getByRole("button", { name: "Overview", exact: true });
   expect(await toggle.getAttribute("aria-pressed")).toBe("true");
   const overview = page.getByRole("complementary", { name: "Overview" });
-  await overview.getByText("Project folder", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Project folder" }).waitFor();
   const changes = overview.getByRole("button", { name: /Changes/ });
   await changes.getByLabel("2 added, 1 removed", { exact: true }).waitFor();
   await overview.getByRole("button", { name: "1 done", exact: true }).click();
@@ -1822,15 +1822,17 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // A chat conversation has no checkout to name.
+  // A chat conversation has no checkout to name: its folder row says so.
   await prompt(page).fill("chat hi");
   await prompt(page).press("Enter");
   await page.getByText("chat done", { exact: true }).waitFor();
   const overview = page.getByRole("complementary", { name: "Overview" });
-  await overview.getByText("Workspace", { exact: true }).waitFor();
-  expect(await overview.getByText(/^(Git worktree|Project folder)$/).count()).toBe(0);
+  await overview.getByText("Chat folder", { exact: true }).waitFor();
+  expect(await overview.getByRole("img", { name: /^(Git worktree|Project folder)$/ }).count()).toBe(0);
 
-  // A repo project defaults to a worktree: "Git worktree" + its pinomad branch.
+  // A repo project defaults to a worktree: the directory row carries the
+  // worktree icon and the project's name (the worktree's own folder is an id),
+  // with no separate "Git worktree" line, plus its pinomad branch.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: repoName, exact: true }).click();
@@ -1838,7 +1840,9 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await prompt(page).fill("tree hi");
   await prompt(page).press("Enter");
   await page.getByText("tree done", { exact: true }).waitFor();
-  await overview.getByText("Git worktree", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Git worktree" }).waitFor();
+  await overview.getByText(repoName, { exact: true }).waitFor();
+  expect(await overview.getByText("Git worktree", { exact: true }).count()).toBe(0);
   await overview.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
 
   // A plain project with "Project folder" works directly in its directory.
@@ -1850,7 +1854,8 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await prompt(page).fill("direct hi");
   await prompt(page).press("Enter");
   await page.getByText("direct done", { exact: true }).waitFor();
-  await overview.getByText("Project folder", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Project folder" }).waitFor();
+  await overview.getByText(plainName, { exact: true }).waitFor();
   await expect.poll(async () => {
     const id = observer.view.current().organized.projects.find((p) => p.project.name === plainName)
       ?.conversations.find((node) => node.summary.title === "direct hi")?.summary.id;
