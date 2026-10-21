@@ -14,6 +14,7 @@ export function QueuedList({
   busy,
   editDisabled,
   editTooltip,
+  editRetryId,
   narrow,
   pendingIds,
   onSteer,
@@ -28,6 +29,8 @@ export function QueuedList({
   /** Edit is unavailable for every row — the composer already holds a draft. */
   editDisabled: boolean;
   editTooltip?: string;
+  /** The one retained copy whose row may retry Edit while its outcome is unknown. */
+  editRetryId?: number;
   narrow: boolean;
   /** Rows with a request in flight; each row's actions stay disabled until it settles. */
   pendingIds: ReadonlySet<number>;
@@ -53,7 +56,7 @@ export function QueuedList({
             tag={TAGS[item.mode]}
             narrow={narrow}
             isPending={pendingIds.has(item.id)}
-            isEditDisabled={actionable && editDisabled}
+            isEditDisabled={actionable && editDisabled && item.id !== editRetryId}
             editTooltip={editDisabled ? editTooltip : undefined}
             onSteer={actionable && item.mode === "followUp" && busy ? () => onSteer(item) : undefined}
             onEdit={actionable ? () => onEdit(item) : undefined}

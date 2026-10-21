@@ -71,10 +71,16 @@ function gatedAnswer(gate: Promise<void>): FauxResponseStep {
   };
 }
 
-async function openPage(host: OpenedHost, width: number, webOrigin: string) {
+async function openPage(
+  host: OpenedHost,
+  width: number,
+  webOrigin: string,
+  setup?: (page: Page) => Promise<void>,
+) {
   const browser = await chromium.launch();
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 844 } });
+  await setup?.(page);
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
   await prompt(page).waitFor();
   return page;
@@ -1862,6 +1868,83 @@ it("puts a withdrawn follow-up's text and image back into the composer", async (
   await staged(page).waitFor();
   expect(await composer.evaluate((element) => element === document.activeElement)).toBe(true);
   gate.resolve();
+});
+
+it("retries a lost edit withdrawal after reconnect and restores the composer", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const observer = await connectTo(defer, host);
+  let dropped = false;
+  let reconnect = false;
+  const page = await openPage(host, 1280, webOrigin, async (page) => {
+    await page.routeWebSocket(
+      (url) => url.origin === new URL(host.url).origin,
+      (ws) => {
+        if (dropped && !reconnect) {
+          void ws.close();
+          return;
+        }
+        const server = ws.connectToServer();
+        if (dropped) return;
+        const parse = (message: string | Buffer) => {
+          try {
+            return JSON.parse(String(message)) as { type?: string; id?: number; method?: string };
+          } catch {
+            return undefined;
+          }
+        };
+        const withdrawCalls = new Set<number>();
+        ws.onMessage((message) => {
+          const frame = parse(message);
+          if (frame?.type === "call" && frame.method === "withdrawQueued" && typeof frame.id === "number") {
+            withdrawCalls.add(frame.id);
+          }
+          server.send(message);
+        });
+        server.onMessage((message) => {
+          const frame = parse(message);
+          if (!dropped && frame?.type === "result" && typeof frame.id === "number" && withdrawCalls.has(frame.id)) {
+            // The host already committed the withdrawal. Drop the reply and cut
+            // the socket so the composer sees a failure instead of a result.
+            dropped = true;
+            void ws.close();
+            void server.close();
+            return;
+          }
+          ws.send(message);
+        });
+      },
+    );
+  });
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await pasteImage(page, 400, 300);
+  await staged(page).waitFor();
+  await composer.fill("recover me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "recover me" });
+  await row.waitFor();
+
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+  await page.getByText("Host connection lost", { exact: true }).waitFor();
+  // The host withdrew before the reply was lost, so the row is already gone.
+  await row.waitFor({ state: "detached" });
+  reconnect = true;
+  await page.getByText("Host connection lost", { exact: true }).waitFor({ state: "detached" });
+  await expect.poll(() => composer.textContent()).toBe("recover me");
+  await staged(page).waitFor();
+  expect(await composer.evaluate((element) => element === document.activeElement)).toBe(true);
+  gate.resolve();
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
 });
 
 it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle queue", async () => {

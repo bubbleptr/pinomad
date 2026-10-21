@@ -39,6 +39,7 @@ export function ConversationComposer({
 }) {
   const [value, setValue] = useState("");
   const [focusAfterEdit, setFocusAfterEdit] = useState(0);
+  const [awaitingEdit, setAwaitingEdit] = useState(false);
   const toast = useToast();
   const agent = agentOf(conversation);
   const status = statusText(conversation);
@@ -99,16 +100,15 @@ export function ConversationComposer({
   };
   const pendingIds = new Set(pendingActions.map((action) => action.id));
   const editInFlight = pendingActions.some((action) => action.kind === "edit");
-  // The editable is disabled while Edit is in flight, so focus waits for the
-  // render that re-enables it rather than racing the still-disabled element.
-  useEffect(() => {
-    if (focusAfterEdit > 0) inputRef.current?.focusAtEnd();
-  }, [focusAfterEdit]);
   // Restoring a withdrawn row overwrites the composer, so the draft must be
   // empty first; while one Edit is in flight no other row may start one.
-  const editDisabled = value.trim() !== "" || images.length > 0 || imagesPending || editInFlight;
-  const editTooltip =
-    value.trim() !== "" || images.length > 0 || imagesPending ? "Clear the composer to edit" : undefined;
+  const composerOccupied = value.trim() !== "" || images.length > 0 || imagesPending;
+  const editDisabled = composerOccupied || editInFlight || awaitingEdit;
+  const editTooltip = composerOccupied ? "Clear the composer to edit" : undefined;
+  // While Edit is in flight, or its withdraw outcome is unknown after an
+  // error, the composer and every attachment entry stay locked: a later
+  // refill must not overwrite something the user wrote in the meantime.
+  const editLocked = editInFlight || awaitingEdit;
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
   const conversationId = conversation.conversation.id;
   const showError = (error: unknown): void => {
@@ -138,44 +138,67 @@ export function ConversationComposer({
       endAction(item.id);
     }
   };
-  // The original content is snapshotted before withdrawing so an error can
-  // keep it for the next Edit click; once withdrawn, only a filled composer
-  // and a focused input remain.
-  const editCopy = useRef<{
+  // The original content is snapshotted before withdrawing so a lost reply
+  // can be resolved again after reconnect; once withdrawn, only a filled
+  // composer and a focused input remain.
+  type EditCopy = {
     conversationId: typeof conversationId;
     id: number;
     input: NonNullable<ReturnType<typeof queuedInput>>;
-  } | null>(null);
+  };
+  const editCopy = useRef<EditCopy | null>(null);
+  const resolveEdit = async (copy: EditCopy): Promise<void> => {
+    if (!beginAction(copy.id, "edit")) return;
+    try {
+      if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
+        setValue(copy.input.text);
+        restore(copy.input.images);
+        editCopy.current = null;
+        setAwaitingEdit(false);
+        setFocusAfterEdit((count) => count + 1);
+      } else {
+        editCopy.current = null;
+        setAwaitingEdit(false);
+        toast({ body: "Already sent — can't withdraw" });
+      }
+    } catch (error) {
+      // The row may already be gone; keep the copy for the reconnect retry.
+      showError(error);
+      setAwaitingEdit(true);
+    } finally {
+      endAction(copy.id);
+    }
+  };
   const edit = async (item: QueueItem): Promise<void> => {
     const retained =
       editCopy.current?.id === item.id && editCopy.current.conversationId === conversationId
         ? editCopy.current.input
         : undefined;
     const input = retained ?? queuedInput(conversation, item.id);
-    if (input === undefined || !beginAction(item.id, "edit")) return;
-    editCopy.current = { conversationId, id: item.id, input };
-    try {
-      if ((await remote.controller.withdrawQueued(item.id, conversationId)) === "withdrawn") {
-        setValue(input.text);
-        restore(input.images);
-        editCopy.current = null;
-        setFocusAfterEdit((count) => count + 1);
-      } else {
-        editCopy.current = null;
-        toast({ body: "Already sent — can't withdraw" });
-      }
-    } catch (error) {
-      // Keep the copy: after reconnecting, Edit withdraws the still-queued row
-      // again (the host's withdraw is idempotent) and fills the composer.
-      showError(error);
-    } finally {
-      endAction(item.id);
-    }
+    if (input === undefined) return;
+    const copy = { conversationId, id: item.id, input };
+    editCopy.current = copy;
+    await resolveEdit(copy);
   };
+  // A dropped withdraw response leaves the outcome unknown, and the row may
+  // already be gone. Reconnect is the retry trigger: ask by id again, even
+  // without a row, because the host's withdraw is idempotent.
+  useEffect(() => {
+    if (view.connection !== "connected" || !awaitingEdit) return;
+    const copy = editCopy.current;
+    if (copy === null || copy.conversationId !== conversationId) return;
+    if (pendingRows.current.has(copy.id)) return;
+    void resolveEdit(copy);
+  }, [view.connection, awaitingEdit, conversationId]);
+  // The editable is disabled while Edit is in flight, so focus waits for the
+  // render that re-enables it rather than racing the still-disabled element.
+  useEffect(() => {
+    if (focusAfterEdit > 0) inputRef.current?.focusAtEnd();
+  }, [focusAfterEdit]);
 
   const submit = (whenBusy: "steer" | "followUp"): void => {
     const text = value.trim();
-    if ((text === "" && images.length === 0) || imagesPending) return;
+    if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
     requestNotificationPermission();
     void remote.controller.submit(text, whenBusy, { images });
     setValue("");
@@ -191,18 +214,19 @@ export function ConversationComposer({
         busy={busy}
         editDisabled={editDisabled}
         editTooltip={editTooltip}
+        editRetryId={awaitingEdit ? editCopy.current?.id : undefined}
         narrow={narrow}
         pendingIds={pendingIds}
         onSteer={(item) => void steer(item)}
         onEdit={(item) => void edit(item)}
         onWithdraw={(item) => void withdraw(item)}
       />
-      <ImageFileInput inputRef={fileInput} onFiles={add} />
+      <ImageFileInput inputRef={fileInput} onFiles={editLocked ? () => {} : add} />
       <ChatPromptInput
         value={value}
         inputRef={inputRef}
         status={busy ? "streaming" : "ready"}
-        isDisabled={disconnected || editInFlight}
+        isDisabled={disconnected || editLocked}
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
@@ -211,7 +235,7 @@ export function ConversationComposer({
         onStop={busy ? () => void remote.controller.abort() : undefined}
         attachments={attachmentDrawer({ images, pending: imagesPending, onRemove: remove })}
         hasAttachments={images.length > 0}
-        onFiles={add}
+        onFiles={editLocked ? undefined : add}
         error={error}
         startActions={
           <>
@@ -222,12 +246,12 @@ export function ConversationComposer({
                 size: "sm",
                 isIconOnly: true,
                 icon: <Plus aria-hidden="true" />,
-                isDisabled: disconnected,
+                isDisabled: disconnected || editLocked,
               }}
               items={[
                 {
                   label: addImages,
-                  isDisabled: disconnected || !accepts,
+                  isDisabled: disconnected || editLocked || !accepts,
                   onClick: () => fileInput.current?.click(),
                 },
                 { label: "Compact conversation", isDisabled: disconnected, onClick: () => void remote.controller.compact(undefined) },
@@ -249,7 +273,7 @@ export function ConversationComposer({
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
-              isDisabled={disconnected || imagesPending}
+              isDisabled={disconnected || imagesPending || editLocked}
               onClick={() => submit("followUp")}
             />
           ) : null
