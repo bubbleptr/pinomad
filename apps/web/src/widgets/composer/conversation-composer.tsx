@@ -4,13 +4,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
-import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
@@ -18,6 +19,18 @@ import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { Plus } from "../../shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
+
+/** A queued edit's images as bytes, or undefined when any one cannot load. */
+async function resolveImages(
+  images: readonly ViewImage[],
+  load: (ref: string) => Promise<MessageImage>,
+): Promise<MessageImage[] | undefined> {
+  try {
+    return await Promise.all(images.map((image) => loadImageBytes(image, load)));
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The live conversation's composer, Pace-composed: status line, queued
@@ -156,10 +169,24 @@ export function ConversationComposer({
   const resolveEdit = async (copy: EditCopy): Promise<void> => {
     if (!beginAction(copy.id, "edit")) return;
     try {
+      const resolved = await resolveImages(copy.input.images, (ref) => remote.controller.image(ref));
+      if (resolved === undefined) {
+        // Withdrawing without every original would lose an attachment; leave
+        // the queued message where it is and let the user try again.
+        editCopy.current = null;
+        setAwaitingEdit(false);
+        toast({ body: "Couldn't load the original images — try again", type: "error" });
+        return;
+      }
+      // Restored bytes are about to become sendable; reserve their refs now,
+      // before the composer unlocks, so the next send needs no async barrier.
+      await primeImages(resolved);
+      // The copy survives a lost withdraw reply by bytes alone, so a reconnect
+      // retry needs no refs (which may have left the host's live view since).
+      copy.input = { ...copy.input, images: resolved };
       if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
         setValue(copy.input.text);
-        // Layer 3 fetches ref bytes before withdrawing; until then refs stay unrendered.
-        restore(copy.input.images.filter((image): image is MessageImage => "data" in image));
+        restore(resolved);
         editCopy.current = null;
         setAwaitingEdit(false);
         setFocusAfterEdit((count) => count + 1);
@@ -216,7 +243,11 @@ export function ConversationComposer({
     const text = value.trim();
     if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
     requestNotificationPermission();
-    void remote.controller.submit(text, whenBusy, { images });
+    const sending = images;
+    // Staged images were primed before they became sendable. Queue the send
+    // synchronously: an await here could let a conversation switch or a later
+    // message overtake it inside the controller's ordered command queue.
+    void remote.controller.submit(text, whenBusy, { images: sending });
     setValue("");
     clear();
   };

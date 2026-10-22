@@ -12,7 +12,7 @@ import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
-import type { OutgoingImage } from "./images.ts";
+import type { MessageImage, OutgoingImage } from "./images.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -244,6 +244,12 @@ export interface DurableController {
    * request that never queues behind commands. Needs a 5.13 host.
    */
   listSkills(scope: SkillScope): Promise<SkillListing>;
+  /**
+   * The bytes behind an image ref (5.15, ADR-0027), for a block a live
+   * `conversation:` subscription carried in its ref form. A read-only request
+   * that never queues behind commands; rejects when the host predates 5.15.
+   */
+  image(ref: string): Promise<MessageImage>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */

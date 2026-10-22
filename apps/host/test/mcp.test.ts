@@ -8,7 +8,7 @@ import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import { createCodemode } from "../src/extensions/codemode.ts";
-import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, inlineImages, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const context = BACKGROUND_CONTEXT;
@@ -75,7 +75,13 @@ describe("mcp", () => {
       (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "all done",
     );
 
-    const [echo, image, fail] = toolResults(client);
+    // The shared client asks for refs; resolve them to keep checking bytes.
+    const [echo, image, fail] = await Promise.all(
+      toolResults(client).map(async (result) => ({
+        ...result,
+        content: Array.isArray(result.content) ? await inlineImages(client, result.content) : result.content,
+      })),
+    );
     expect(echo?.isError).not.toBe(true);
     expect(echo?.content).toEqual([{ type: "text", text: "hello from mcp" }]);
     expect(image?.content).toEqual([{ type: "image", data: expect.any(String), mimeType: "image/png" }]);

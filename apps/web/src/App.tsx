@@ -14,6 +14,7 @@ import { outgoingImage } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
+import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { useSkillNames } from "./entities/agent/skill-mentions.tsx";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
@@ -518,6 +519,8 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
+  const imageLoad = useMemo(() => (ref: string) => remote.controller.image(ref), [remote]);
+  const imageRetryKey = useImageRetryKey(view);
   // Fork depth is one (ADR-0019 §2): inside a fork or a subagent's conversation
   // no run offers the Fork action. An unknown summary — the shown conversation
   // fell out of `organized` (e.g. its root was archived by another client) —
@@ -564,7 +567,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
     );
   }
   return (
-    <>
+    <ImageSourceProvider load={imageLoad} retryKey={imageRetryKey}>
       <AppFrame
         view={view}
         remote={remote}
@@ -643,6 +646,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
                   ? undefined
                   : async ({ text, images, requestId }) => {
                       requestNotificationPermission();
+                      // Refs go back as refs (outgoingImage), never downloaded first.
                       await remote.controller.submit(text, "followUp", {
                         requestId,
                         images: images.map(outgoingImage),
@@ -668,7 +672,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
       {changesOpen && conversation !== undefined && (
         <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
       )}
-    </>
+    </ImageSourceProvider>
   );
 }
 

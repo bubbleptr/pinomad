@@ -197,6 +197,26 @@ export async function followFirst(client: RemoteDurable): Promise<ConversationId
   return node.summary.id;
 }
 
+/**
+ * A message or tool content array with ref image blocks swapped back for their
+ * bytes. Host tests read stored content through the shared client, which now
+ * subscribes with `images: "ref"` on 5.15; this keeps them asserting bytes.
+ */
+export async function inlineImages(
+  client: RemoteDurable,
+  content: readonly unknown[] | undefined,
+): Promise<unknown[] | undefined> {
+  if (content === undefined) return undefined;
+  return Promise.all(
+    content.map(async (block) => {
+      if (typeof block !== "object" || block === null) return block;
+      const image = block as { type?: unknown; ref?: unknown };
+      if (image.type !== "image" || typeof image.ref !== "string") return block;
+      return { type: "image", ...(await client.controller.image(image.ref)) };
+    }),
+  );
+}
+
 export async function connectTo(
   defer: (cleanup: () => Promise<void> | void) => void,
   host: OpenedHost,

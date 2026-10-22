@@ -3,6 +3,7 @@ import {
   type ChatToolCallItem,
   type ChatToolCallStatus,
 } from "@astryxdesign/core";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
 import type { ComponentProps, ReactNode } from "react";
 import {
   formatToolDuration,
@@ -12,8 +13,10 @@ import {
   type ToolItem,
   type ToolPartState,
 } from "@pinomad/client/tool-item.ts";
-import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { ViewImage } from "@pinomad/protocol/images.ts";
+import { useImageSrc, useNearViewport } from "@/entities/image/image-source";
 import { ChatToolKindIcon } from "@/shared/ui/chat/chat-tool-kind";
+import { ImageIcon } from "@/shared/ui/icons";
 
 /** A transcript tool item plus this client's React detail pane. */
 export type ChatToolItem = Omit<ToolItem, "children"> & {
@@ -84,16 +87,40 @@ export function ChatToolDetail({ tool, className, ...rest }: ChatToolDetailProps
         </ol>
       ) : null}
       {/* PiNomad: result images follow the panes. */}
-      {tool.images
-        ?.filter((image): image is MessageImage => "data" in image)
-        .map((image, index) => (
-          <img
-            key={index}
-            src={`data:${image.mimeType};base64,${image.data}`}
-            alt=""
-            style={{ maxWidth: "100%" }}
-          />
-        ))}
+      {tool.images?.map((image, index) => <ToolResultImage key={index} image={image} />)}
+    </div>
+  );
+}
+
+/**
+ * A tool result image. The placeholder fixes the height so the row does not
+ * jump when the bytes (possibly fetched from a ref) arrive.
+ */
+function ToolResultImage({ image }: { image: ViewImage }) {
+  const [observe, visible] = useNearViewport<HTMLDivElement>();
+  const state = useImageSrc(image, visible);
+  if (state.status === "loading") {
+    return (
+      <div ref={observe} data-testid="tool-image-loading">
+        <Skeleton height={160} width="100%" />
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div
+        ref={observe}
+        role="img"
+        aria-label="Image unavailable"
+        className="flex h-40 w-full items-center justify-center text-muted"
+      >
+        <ImageIcon aria-hidden="true" className="size-6" />
+      </div>
+    );
+  }
+  return (
+    <div ref={observe}>
+      <img src={state.src} alt="" style={{ maxWidth: "100%" }} />
     </div>
   );
 }
