@@ -22,7 +22,6 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { primeImages } from "../../entities/image/image-cache.ts";
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
@@ -382,9 +381,7 @@ function ThreadDetail({
           forkSource={displayName(parentSummary)}
           onRetry={async ({ text, images, requestId }) => {
             requestNotificationPermission();
-            // Same prefill as the main transcript: the just-uploaded bytes
-            // should resolve from the cache when the new snapshot arrives.
-            await primeImages(images);
+            // Refs go back as refs, never downloaded first.
             await remote.controller.submit(text, "followUp", {
               target: side.id,
               requestId,

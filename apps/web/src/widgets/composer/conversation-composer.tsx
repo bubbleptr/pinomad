@@ -178,6 +178,9 @@ export function ConversationComposer({
         toast({ body: "Couldn't load the original images — try again", type: "error" });
         return;
       }
+      // Restored bytes are about to become sendable; reserve their refs now,
+      // before the composer unlocks, so the next send needs no async barrier.
+      await primeImages(resolved);
       // The copy survives a lost withdraw reply by bytes alone, so a reconnect
       // retry needs no refs (which may have left the host's live view since).
       copy.input = { ...copy.input, images: resolved };
@@ -241,13 +244,12 @@ export function ConversationComposer({
     if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
     requestNotificationPermission();
     const sending = images;
+    // Staged images were primed before they became sendable. Queue the send
+    // synchronously: an await here could let a conversation switch or a later
+    // message overtake it inside the controller's ordered command queue.
+    void remote.controller.submit(text, whenBusy, { images: sending });
     setValue("");
     clear();
-    void (async () => {
-      // The prefill only saves a fetch; hashing must not block the send.
-      await primeImages(sending);
-      await remote.controller.submit(text, whenBusy, { images: sending });
-    })();
   };
 
   return (

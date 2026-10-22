@@ -11,7 +11,6 @@ import { AgentSelector } from "../../entities/agent/agent-selector.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
-import { primeImages } from "../../entities/image/image-cache.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
@@ -167,11 +166,10 @@ export function DraftHome({
               const sending = images;
               submittingRef.current = true;
               setSubmitting(true);
-              void (async () => {
-                // Prefill the refs of the bytes being created, so the first
-                // snapshot does not fetch its own upload back.
-                await primeImages(sending);
-                await remote.controller.createConversation(draft, text, {
+              // Staged images were primed before they became sendable, so this
+              // stays synchronous and enters the queue in click order.
+              void remote.controller
+                .createConversation(draft, text, {
                   ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
                   // With a named agent only the overrides go — inherited model
                   // and level resolve host-side from the role at create.
@@ -179,8 +177,7 @@ export function DraftHome({
                     ? { ...(pick.model === undefined ? {} : { model: pick.model }), thinkingLevel: pick.level }
                     : resolution.send),
                   ...(sending.length === 0 ? {} : { images: sending }),
-                });
-              })()
+                })
                 .then(() => {
                   const now = remote.view.current().conversation?.conversation.id;
                   if (now !== undefined && now !== shown) onCreated();

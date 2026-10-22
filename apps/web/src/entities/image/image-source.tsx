@@ -1,6 +1,7 @@
 // Image refs resolve through the connected host. The provider keeps the
-// loader and a retry key that changes on reconnect; hooks retry then, and on
-// remount, but never cache a failure as "this image is gone".
+// loader and a retry key that changes when a reconnection's conversation
+// snapshots land; hooks retry then, and on remount, but never cache a failure
+// as "this image is gone".
 import {
   createContext,
   useContext,
@@ -12,7 +13,7 @@ import {
   type RefCallback,
 } from "react";
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
-import type { ConnectionState } from "@pinomad/protocol/view.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { imageCache, type ImageLoader } from "./image-cache.ts";
 import { imageSrc } from "./image-url.ts";
 
@@ -25,24 +26,72 @@ const ImageSourceContext = createContext<ImageSource | undefined>(undefined);
 
 export function ImageSourceProvider({
   load,
-  connection,
+  retryKey = 0,
   children,
 }: {
   load: ImageLoader;
-  /** When given, every reconnection to the host bumps the hooks' retry key. */
-  connection?: ConnectionState;
+  /** Bumped by `useImageRetryKey` once a reconnection's snapshots are usable. */
+  retryKey?: number;
   children: ReactNode;
 }) {
-  const [retryKey, setRetryKey] = useState(0);
-  const previous = useRef(connection);
-  useEffect(() => {
-    if (connection === "connected" && previous.current !== undefined && previous.current !== "connected") {
-      setRetryKey((key) => key + 1);
-    }
-    previous.current = connection;
-  }, [connection]);
   const value = useMemo(() => ({ load, retryKey }), [load, retryKey]);
   return <ImageSourceContext.Provider value={value}>{children}</ImageSourceContext.Provider>;
+}
+
+/**
+ * Retry ref loads when a reconnection's conversation snapshots arrive, not
+ * when hello flips `connection` to connected. The host sets a subscription's
+ * view before sending its snapshot, so an image call made after the snapshot
+ * can be answered; one made right after hello may still get "Unknown image".
+ *
+ * Main and side streams arrive independently. Each new snapshot bumps the
+ * key, so an image that raced its own stream is retried again when that
+ * stream lands.
+ */
+export function useImageRetryKey(view: DurableView): number {
+  const [retryKey, setRetryKey] = useState(0);
+  const previous = useRef(view.connection);
+  const waiting = useRef<{
+    main?: DurableView["conversation"];
+    side?: DurableView["conversation"];
+  } | undefined>(undefined);
+
+  useEffect(() => {
+    if (view.connection === "connected" && previous.current !== "connected") {
+      const main = view.conversation;
+      const side = view.side?.conversation;
+      if (main === undefined && side === undefined) {
+        // Nothing rendered yet; a later conversation mounts its own hooks.
+        setRetryKey((key) => key + 1);
+      } else {
+        waiting.current = {
+          ...(main === undefined ? {} : { main }),
+          ...(side === undefined ? {} : { side }),
+        };
+      }
+    }
+    if (view.connection !== "connected") waiting.current = undefined;
+    previous.current = view.connection;
+  }, [view.connection, view.conversation, view.side?.conversation]);
+
+  useEffect(() => {
+    const pending = waiting.current;
+    if (pending === undefined || view.connection !== "connected") return;
+    let arrived = false;
+    if (pending.main !== undefined && view.conversation !== pending.main) {
+      pending.main = undefined;
+      arrived = true;
+    }
+    if (pending.side !== undefined && view.side?.conversation !== pending.side) {
+      pending.side = undefined;
+      arrived = true;
+    }
+    if (!arrived) return;
+    if (pending.main === undefined && pending.side === undefined) waiting.current = undefined;
+    setRetryKey((key) => key + 1);
+  }, [view.connection, view.conversation, view.side?.conversation]);
+
+  return retryKey;
 }
 
 export type ImageSrc =
