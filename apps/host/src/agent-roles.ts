@@ -103,13 +103,19 @@ const sameProblem = (a: AgentRoleProblem, b: AgentRoleProblem): boolean => a.fil
 
 /**
  * Watch `dir` (created if absent) for `*.md` agent files. `debounceMs` groups
- * a burst of file events into one reload; tests can shorten it. No locking:
- * the last write wins.
+ * a burst of file events into one reload; `rescanMs` is a safety scan because
+ * OS watcher events can be dropped and, on macOS, the OS stream starts after
+ * watch() returns. Tests can shorten both. No locking: the last write wins.
  */
-export async function openAgentRoles(options: { dir: string; debounceMs?: number }): Promise<AgentRoleStore> {
+export async function openAgentRoles(options: {
+  dir: string;
+  debounceMs?: number;
+  rescanMs?: number;
+}): Promise<AgentRoleStore> {
   const dir = options.dir;
   await mkdir(dir, { recursive: true });
   const debounceMs = options.debounceMs ?? 150;
+  const rescanMs = options.rescanMs ?? 1000;
   const published = new Published<AgentRoles>(
     { roles: [], problems: [] },
     (a, b) => sameList(a.roles, b.roles, sameRole) && sameList(a.problems, b.problems, sameProblem),
@@ -118,8 +124,10 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
   let closed = false;
   let reported = false;
   let timer: NodeJS.Timeout | undefined;
+  let queued = false;
+  let chain: Promise<void> = Promise.resolve();
 
-  const reload = async (): Promise<void> => {
+  const loadOnce = async (): Promise<void> => {
     try {
       published.set(await load(dir));
       reported = false;
@@ -130,7 +138,26 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
     }
   };
 
-  await reload();
+  /**
+   * Serialize scans and coalesce requests. Racing loads could publish an older
+   * snapshot last; a request made during a scan must queue one more scan after it.
+   */
+  const reload = (): Promise<void> => {
+    if (closed) return Promise.resolve();
+    queued = true;
+    chain = chain.then(async () => {
+      if (!queued || closed) return;
+      queued = false;
+      await loadOnce();
+    });
+    return chain;
+  };
+
+  // Watch before the first scan: a file written while the directory is being
+  // read is either in that snapshot or has already produced an event. macOS can
+  // still lose one while its FSEvents stream starts; the safety scan covers it.
+  // Every event is only a signal to rescan — the changed name is ignored so
+  // create, write, rename and atomic replace all take the same path.
   const watcher: FSWatcher = watch(dir, () => {
     if (closed) return;
     clearTimeout(timer);
@@ -139,7 +166,13 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
   watcher.on("error", (error) => {
     if (!reported) console.error(`agent-roles watch failed: ${error.message}`);
     reported = true;
+    // Node closes a watcher that errors; read once now and let the safety scan
+    // cover later changes.
+    void reload();
   });
+
+  await reload();
+  const rescan = setInterval(() => void reload(), rescanMs);
 
   // Existence checks and writes interleave: without this chain two concurrent
   // creates of the same name both see the file absent and the second silently
@@ -201,6 +234,7 @@ export async function openAgentRoles(options: { dir: string; debounceMs?: number
     close() {
       closed = true;
       clearTimeout(timer);
+      clearInterval(rescan);
       watcher.close();
     },
   };
