@@ -4,7 +4,7 @@
 
 默认数据目录是 `~/.pinomad`（session.sqlite、token、目录锁），可用 `--data-dir` 或 `PINOMAD_DATA_DIR` 覆盖；同一数据目录同时只能有一个宿主进程。
 
-对话按项目组织（ADR-0007）：在客户端侧栏的 Projects 里点 Add project，从宿主的文件系统里挑一个目录——从宿主用户的家目录开始，用 Parent folder 返回上一级；选定后宿主把它登记为项目，并直接打开该项目的新对话草稿。也可以启动时用可重复的 `--project DIR` 登记；不选项目的对话归入 Chat。宿主启动时不再自动建对话，第一条消息发出时才新建。
+对话按项目组织（ADR-0007）：在客户端侧栏的 Projects 里点 Add project，从宿主的文件系统里挑一个目录——分栏浏览，从宿主用户的家目录开始，点一个目录就选中它并在右边一栏列出子目录，底部路径栏可跳回任一级（包括 `/`），键盘方向键和输入名字开头也能走；点 Add project 后宿主把选中的目录登记为项目，并直接打开该项目的新对话草稿。也可以启动时用可重复的 `--project DIR` 登记；不选项目的对话归入 Chat。宿主启动时不再自动建对话，第一条消息发出时才新建。
 
 Git 项目的对话默认在独立 worktree 里工作（ADR-0010）：宿主在 `<数据目录>/worktrees/<对话 id>` 检出项目仓库，分支是 `pinomad/<对话 id>-<随机>`，起点是创建时的 HEAD；项目的原目录不会被改动，改动留在分支上，由你自己 merge 或发 PR 合回。新建对话时勾选 "Work directly in project directory" 可以直接在项目目录里工作；非 Git 目录和还没有 commit 的仓库也直接使用项目目录。fork 会得到自己的 worktree，内容复制自父对话在 fork 那一刻的文件状态（已提交、未提交、未跟踪的都在，被 gitignore 的文件不复制）；子代理和所属对话共用一个 worktree。归档对话时干净的 worktree 目录会被删除（分支保留），有未提交改动的保留并提示。注意 worktree 是全新检出，`node_modules`、`.env` 这类被忽略文件不在里面，agent 需要时按 AGENTS.md 自行安装。如果移动或删除了数据目录，在仓库里跑一次 `git worktree prune` 清掉失效的登记。
 
