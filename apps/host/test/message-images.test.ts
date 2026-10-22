@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { MAX_IMAGE_BYTES } from "@pinomad/protocol/images.ts";
-import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { connectTo, inlineImages, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const PNG = { data: "aGVsbG8=", mimeType: "image/png" as const };
@@ -56,6 +57,13 @@ const userContents = (view: ConversationView): readonly (JsonValue | undefined)[
     .filter((entry) => entry.kind === "pi.user")
     .map((entry) => (entry.model?.[0] as { content?: JsonValue } | undefined)?.content);
 
+/** The same contents with ref image blocks resolved through the client. */
+async function inlineUserContents(client: RemoteDurable, view: ConversationView): Promise<unknown[]> {
+  return Promise.all(
+    userContents(view).map((content) => (Array.isArray(content) ? inlineImages(client, content) : content)),
+  );
+}
+
 /** The first image block's ref in a ref-mode conversation snapshot. */
 const firstRef = (snapshot: ServerFrame): string => {
   const content = userContents((snapshot as { value: ConversationView }).value)[0];
@@ -72,7 +80,7 @@ describe("message images", () => {
     await client.controller.submit("look", "followUp", { images: [PNG] });
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
 
-    expect(userContents(client.view.current().conversation!)).toEqual([
+    expect(await inlineUserContents(client, client.view.current().conversation!)).toEqual([
       "hi",
       [
         { type: "text", text: "look" },
@@ -88,7 +96,7 @@ describe("message images", () => {
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
 
     const summary = client.view.current().organized.chats[0]!.summary;
-    expect(userContents(client.view.current().conversation!)).toEqual([
+    expect(await inlineUserContents(client, client.view.current().conversation!)).toEqual([
       [{ type: "image", data: PNG.data, mimeType: "image/png" }],
     ]);
     // No text in the first message → no title rather than an empty one.
@@ -108,7 +116,7 @@ describe("message images", () => {
     finish(fauxAssistantMessage("first answer"));
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "second answer");
 
-    expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
+    expect((await inlineUserContents(client, client.view.current().conversation!)).at(-1)).toEqual([
       { type: "text", text: "later" },
       { type: "image", data: PNG.data, mimeType: "image/png" },
     ]);
@@ -196,7 +204,7 @@ describe("message images", () => {
       await raw.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "r2", images: [{ ref }] }),
     ).toMatchObject({ ok: true });
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
-    expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
+    expect((await inlineUserContents(client, client.view.current().conversation!)).at(-1)).toEqual([
       { type: "text", text: "again" },
       { type: "image", data: PNG.data, mimeType: "image/png" },
     ]);
@@ -228,7 +236,7 @@ describe("message images", () => {
     raw.send({ type: "unsubscribe", stream: `conversation:${id}` });
     expect(await pending).toMatchObject({ ok: true });
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
-    expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
+    expect((await inlineUserContents(client, client.view.current().conversation!)).at(-1)).toEqual([
       { type: "text", text: "again" },
       { type: "image", data: PNG.data, mimeType: "image/png" },
     ]);

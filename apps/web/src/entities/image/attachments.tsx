@@ -4,7 +4,7 @@
 import type { ReactNode, RefObject } from "react";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
-import { imageSrc } from "./message-images.tsx";
+import { imageSrc } from "./image-url.ts";
 
 export function ImageFileInput({
   inputRef,

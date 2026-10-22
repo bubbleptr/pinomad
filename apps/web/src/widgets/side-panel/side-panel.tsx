@@ -381,6 +381,7 @@ function ThreadDetail({
           forkSource={displayName(parentSummary)}
           onRetry={async ({ text, images, requestId }) => {
             requestNotificationPermission();
+            // Refs go back as refs, never downloaded first.
             await remote.controller.submit(text, "followUp", {
               target: side.id,
               requestId,

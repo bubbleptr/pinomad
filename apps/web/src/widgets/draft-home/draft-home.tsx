@@ -163,8 +163,11 @@ export function DraftHome({
               requestNotificationPermission();
               // The shown conversation changes only when the create landed.
               const shown = remote.view.current().conversation?.conversation.id;
+              const sending = images;
               submittingRef.current = true;
               setSubmitting(true);
+              // Staged images were primed before they became sendable, so this
+              // stays synchronous and enters the queue in click order.
               void remote.controller
                 .createConversation(draft, text, {
                   ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
@@ -173,7 +176,7 @@ export function DraftHome({
                   ...(resolution === undefined
                     ? { ...(pick.model === undefined ? {} : { model: pick.model }), thinkingLevel: pick.level }
                     : resolution.send),
-                  ...(images.length === 0 ? {} : { images }),
+                  ...(sending.length === 0 ? {} : { images: sending }),
                 })
                 .then(() => {
                   const now = remote.view.current().conversation?.conversation.id;

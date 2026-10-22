@@ -3,6 +3,7 @@
 // is the friendly pre-check.
 import { useRef, useState } from "react";
 import { MAX_IMAGES_PER_MESSAGE, type MessageImage } from "@pinomad/protocol/images.ts";
+import { primeImages } from "./image-cache.ts";
 import { prepareImage } from "./prepare-image.ts";
 
 export function useImageAttachments(accepts: boolean): {
@@ -46,7 +47,12 @@ export function useImageAttachments(accepts: boolean): {
     const gen = generation.current;
     setPreparing((count) => count + kept.length);
     void Promise.all(kept.map((file) => prepareImage(file))).then(
-      (prepared) => {
+      async (prepared) => {
+        // Reserve the refs before the image becomes sendable. Submit can then
+        // run synchronously, keeping click order in the controller's queue,
+        // while the first snapshot resolves from memory.
+        if (generation.current !== gen) return;
+        await primeImages(prepared);
         // Reserved slots move preparing → staged; the count stays taken.
         if (generation.current !== gen) return;
         setImages((current) => [...current, ...prepared]);
