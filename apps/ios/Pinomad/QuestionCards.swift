@@ -365,19 +365,19 @@ private struct OptionRow: View {
     /// Where the label column starts: the glyph's width plus the gap.
     static let labelInset: CGFloat = 26
 
-    private var icon: String {
+    private var icon: ImageResource {
         switch (multi, picked) {
-        case (true, true): "checkmark.square.fill"
-        case (true, false): "square"
-        case (false, true): "largecircle.fill.circle"
-        case (false, false): "circle"
+        case (true, true): .squareCheck
+        case (true, false): .square
+        case (false, true): .circleDot
+        case (false, false): .circle
         }
     }
 
     var body: some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: icon)
+                Image(icon)
                     .font(.subheadline)
                     .foregroundStyle(picked ? Color.accentColor : .secondary)
                     .frame(width: Self.labelInset - 8)

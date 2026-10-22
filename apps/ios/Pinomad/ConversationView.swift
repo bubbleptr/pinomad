@@ -155,7 +155,7 @@ struct ConversationView: View {
                 Button {
                     showingOverview = true
                 } label: {
-                    Image(systemName: "info.circle")
+                    Image(.info)
                 }
                 .accessibilityLabel("概览")
             }
@@ -447,7 +447,7 @@ private struct RunRow: View, Equatable {
                     .foregroundStyle(.red)
             }
             if let retry {
-                Button("重试", systemImage: "arrow.clockwise", action: retry)
+                Button("重试", image: .rotateCw, action: retry)
                     .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)
             }

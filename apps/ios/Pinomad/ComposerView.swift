@@ -272,7 +272,7 @@ struct ConversationComposer: View {
             Button {
                 model.stop(conversation: conversation.id)
             } label: {
-                SlotIcon(systemName: "stop.fill")
+                SlotIcon(.stop)
             }
             .buttonStyle(.press)
             .accessibilityLabel("停止")
@@ -282,14 +282,14 @@ struct ConversationComposer: View {
                 // Tap queues a follow-up; the long-press menu can steer
                 // the running turn instead.
                 Menu {
-                    Button("引导当前运行（Steer）", systemImage: "arrow.uturn.right") {
+                    Button("引导当前运行（Steer）", image: .redo2) {
                         send(.steer)
                     }
-                    Button("运行完再发（Follow-up）", systemImage: "text.append") {
+                    Button("运行完再发（Follow-up）", image: .listEnd) {
                         send(.followUp)
                     }
                 } label: {
-                    SlotIcon(systemName: "arrow.up")
+                    SlotIcon(.send)
                 } primaryAction: {
                     send(.followUp)
                 }
@@ -302,7 +302,7 @@ struct ConversationComposer: View {
                 Button {
                     send(.followUp)
                 } label: {
-                    SlotIcon(systemName: "arrow.up")
+                    SlotIcon(.send)
                 }
                 .buttonStyle(PressStyle(haptic: false))
                 .accessibilityLabel("发送")
@@ -314,12 +314,21 @@ struct ConversationComposer: View {
 
 /// The filled circle the trailing slot shows for send and stop.
 struct SlotIcon: View {
-    let systemName: String
+    enum Glyph { case send, stop }
+
+    let glyph: Glyph
     @Environment(\.isEnabled) private var isEnabled
 
+    init(_ glyph: Glyph) { self.glyph = glyph }
+
     var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: 15, weight: .bold))
+        Group {
+            switch glyph {
+            case .send: Image(.arrowUp).font(.system(size: 15, weight: .bold))
+            // A solid square: Lucide has no filled stop.
+            case .stop: RoundedRectangle(cornerRadius: 3).frame(width: 12, height: 12)
+            }
+        }
             // Concrete colors: on glass the hierarchical `.primary` gets
             // vibrancy and reads as a disabled grey.
             .foregroundStyle(Color(uiColor: .systemBackground))
@@ -363,23 +372,23 @@ struct PlusMenu: View {
         Menu {
             if acceptsImages {
                 Section {
-                    Button("照片图库", systemImage: "photo.on.rectangle", action: photos)
+                    Button("照片图库", image: .images, action: photos)
                     if let camera {
-                        Button("拍照", systemImage: "camera", action: camera)
+                        Button("拍照", image: .camera, action: camera)
                     }
-                    Button("粘贴图片", systemImage: "doc.on.clipboard", action: paste)
+                    Button("粘贴图片", image: .clipboardPaste, action: paste)
                 }
                 .disabled(!canAddImages || locked)
             } else {
-                Button("添加图片（\(modelName ?? "当前模型")不支持图片）", systemImage: "photo") {}
+                Button("添加图片（\(modelName ?? "当前模型")不支持图片）", image: .image) {}
                     .disabled(true)
             }
             if let compact {
-                Button("压缩上下文", systemImage: "rectangle.compress.vertical", action: compact)
+                Button("压缩上下文", image: .foldVertical, action: compact)
                     .disabled(!connected)
             }
         } label: {
-            Image(systemName: "plus")
+            Image(.plus)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
@@ -412,10 +421,11 @@ struct AttachmentStrip: View {
                                     Button {
                                         remove(index)
                                     } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, .black.opacity(0.6))
-                                            .font(.system(size: 18))
+                                        Image(.x)
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 18, height: 18)
+                                            .background(.black.opacity(0.6), in: .circle)
                                     }
                                     .buttonStyle(.press)
                                     .offset(x: 5, y: -5)
@@ -499,7 +509,7 @@ struct ModelCapsule: View {
                             .lineLimit(1)
                     }
                 }
-                Image(systemName: "chevron.down")
+                Image(.chevronDown)
                     .font(.caption2.weight(.semibold))
             }
             .font(.footnote)
@@ -606,7 +616,7 @@ private struct QueueList: View {
                 Menu {
                     actions(item)
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(.ellipsis)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 44, height: 44)
@@ -630,16 +640,16 @@ private struct QueueList: View {
         let blocked = pending.contains(item.id)
         // Write/other never reach here: the host rejects both calls for them.
         if item.mode == .followUp && busy {
-            Button("引导当前运行", systemImage: "arrow.uturn.right") {
+            Button("引导当前运行", image: .redo2) {
                 onSteer(item)
             }
             .disabled(blocked)
         }
-        Button("编辑", systemImage: "pencil") {
+        Button("编辑", image: .pencil) {
             onEdit(item)
         }
         .disabled(blocked || editDisabled)
-        Button("撤回", systemImage: "arrow.uturn.backward", role: .destructive) {
+        Button("撤回", image: .undo2, role: .destructive) {
             onWithdraw(item)
         }
         .disabled(blocked)

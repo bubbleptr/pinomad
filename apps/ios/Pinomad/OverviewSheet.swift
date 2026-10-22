@@ -43,7 +43,7 @@ struct OverviewSheet: View {
                         Button {
                             dismiss()
                         } label: {
-                            Image(systemName: "xmark")
+                            Image(.x)
                         }
                         .accessibilityLabel("关闭")
                     }
@@ -87,7 +87,7 @@ struct OverviewSheet: View {
             SubagentOverview.of(organized: $0.organized, conversation: conversationId)
         }
         if workspace == nil && subagents == nil {
-            ContentUnavailableView("没有可显示的概览", systemImage: "info.circle")
+            ContentUnavailableView { Label("没有可显示的概览", image: .info) }
         } else {
             List {
                 if let workspace {
@@ -135,7 +135,7 @@ struct OverviewSheet: View {
             folderRow(cwd: cwd, worktree: workspace.worktree, home: workspace.home)
         }
         if let branch = workspace.branch {
-            Label(branch, systemImage: "arrow.triangle.branch")
+            Label(branch, image: .gitBranch)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -144,7 +144,7 @@ struct OverviewSheet: View {
                 LabeledContent {
                     changeStat
                 } label: {
-                    Label("改动", systemImage: "plus.forwardslash.minus")
+                    Label("改动", image: .diff)
                 }
             }
         }
@@ -173,7 +173,7 @@ struct OverviewSheet: View {
                     .truncationMode(.head)
             }
         } icon: {
-            Image(systemName: worktree ? "folder.badge.gearshape" : "folder")
+            Image(worktree ? .folderGit2 : .folder)
         }
     }
 
@@ -257,7 +257,7 @@ struct OverviewSheet: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Image(systemName: "chevron.forward")
+                    Image(.chevronRight)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }

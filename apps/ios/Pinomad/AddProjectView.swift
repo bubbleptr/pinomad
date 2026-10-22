@@ -24,7 +24,7 @@ struct AddProjectView: View {
                                 let crumbs = folderCrumbs(path: listing.path, home: listing.home)
                                 ForEach(crumbs.indices, id: \.self) { index in
                                     if index > 0 {
-                                        Image(systemName: "chevron.right")
+                                        Image(.chevronRight)
                                             .font(.caption2)
                                             .foregroundStyle(.tertiary)
                                     }
@@ -60,7 +60,7 @@ struct AddProjectView: View {
                         Button {
                             go(folder.path)
                         } label: {
-                            Label(folder.name, systemImage: "folder")
+                            Label(folder.name, image: .folder)
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -74,7 +74,7 @@ struct AddProjectView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 if let listing, let up = parentFolder(path: listing.path) {
-                    Button("上一级", systemImage: "arrow.up") { go(up) }
+                    Button("上一级", image: .arrowUp) { go(up) }
                         .disabled(adding)
                 }
             }

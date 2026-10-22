@@ -46,14 +46,14 @@ struct ChangesList: View {
         case .unavailable(let reason, _):
             emptyState(
                 title: "没有可显示的改动",
-                systemImage: "doc.text.magnifyingglass",
+                image: .fileSearch,
                 description: reason
             )
         case .available(let base, let files, let truncated, _):
             if files.isEmpty {
                 emptyState(
                     title: "还没有改动",
-                    systemImage: "checkmark.circle",
+                    image: .circleCheck,
                     description: "这个对话还没有改动任何文件。"
                 )
             } else {
@@ -65,7 +65,7 @@ struct ChangesList: View {
     /// Pull-to-refresh works in every non-list state too — especially the
     /// unavailable reason, which can change as soon as the agent starts a
     /// task in a checkout.
-    private func emptyState(title: String, systemImage: String, description: String) -> some View {
+    private func emptyState(title: String, image: ImageResource, description: String) -> some View {
         ScrollView {
             VStack(spacing: 8) {
                 if panel.loading || panel.error != nil {
@@ -78,7 +78,7 @@ struct ChangesList: View {
                     .padding(.top, 12)
                 }
                 ContentUnavailableView {
-                    Label(title, systemImage: systemImage)
+                    Label(title, image: image)
                 } description: {
                     Text(description)
                 }
@@ -91,7 +91,7 @@ struct ChangesList: View {
     private func failure(_ message: String) -> some View {
         ScrollView {
             ContentUnavailableView {
-                Label("无法读取改动", systemImage: "exclamationmark.triangle")
+                Label("无法读取改动", image: .triangleAlert)
             } description: {
                 Text(message)
             } actions: {
@@ -246,7 +246,7 @@ private struct FileRow: View {
                     .truncationMode(.middle)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.right")
+                    Image(.arrowRight)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text(file.path)
@@ -295,9 +295,9 @@ struct FileDiffView: View {
     var body: some View {
         Group {
             if file.binary {
-                ContentUnavailableView("二进制文件，不显示内容", systemImage: "doc")
+                ContentUnavailableView { Label("二进制文件，不显示内容", image: .file) }
             } else if file.lines.isEmpty {
-                ContentUnavailableView("没有可显示的内容", systemImage: "doc.text")
+                ContentUnavailableView { Label("没有可显示的内容", image: .fileText) }
             } else {
                 diff
             }

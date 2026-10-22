@@ -99,7 +99,7 @@ struct SubagentCardView: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
                 if target != nil {
-                    Image(systemName: "chevron.right")
+                    Image(.chevronRight)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)

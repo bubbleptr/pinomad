@@ -88,7 +88,7 @@ struct PairingCodeView: View {
             Button {
                 UIPasteboard.general.string = offer.url
             } label: {
-                Label("复制链接", systemImage: "doc.on.doc")
+                Label("复制链接", image: .copy)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.tactile(.bordered))

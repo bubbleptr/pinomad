@@ -73,7 +73,7 @@ private struct SkillMentionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles")
+            Image(.sparkles)
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)
