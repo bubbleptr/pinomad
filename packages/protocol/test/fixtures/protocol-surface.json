@@ -1,0 +1,3881 @@
+{
+  "history": [
+    {
+      "calls": [
+        "abort",
+        "addProject",
+        "answer",
+        "archive",
+        "changes",
+        "compact",
+        "createAgent",
+        "createConversation",
+        "createPairing",
+        "deleteAgent",
+        "fork",
+        "listFiles",
+        "listFolders",
+        "listSkills",
+        "logout",
+        "removeProject",
+        "renameConversation",
+        "revokeDevice",
+        "setModel",
+        "setPushToken",
+        "setThinkingLevel",
+        "steerQueued",
+        "submit",
+        "updateAgent",
+        "updateSettings",
+        "withdrawQueued"
+      ],
+      "gates": {
+        "call": {
+          "abort": 0,
+          "addProject": 0,
+          "answer": 0,
+          "archive": 0,
+          "changes": 0,
+          "compact": 0,
+          "createAgent": 6,
+          "createConversation": 0,
+          "createPairing": 0,
+          "deleteAgent": 6,
+          "fork": 0,
+          "listFiles": 10,
+          "listFolders": 3,
+          "listSkills": 13,
+          "logout": 1,
+          "removeProject": 0,
+          "renameConversation": 4,
+          "revokeDevice": 0,
+          "setModel": 0,
+          "setPushToken": 7,
+          "setThinkingLevel": 0,
+          "steerQueued": 14,
+          "submit": 0,
+          "updateAgent": 6,
+          "updateSettings": 2,
+          "withdrawQueued": 14
+        },
+        "feature": {
+          "acceptAccountDevices": 8,
+          "agentConversations": 10,
+          "apnsPush": 9,
+          "hostName": 12,
+          "images": 5,
+          "liveBranch": 11
+        },
+        "stream": {
+          "agents": 6,
+          "auth": 1,
+          "conversations": 0,
+          "devices": 0,
+          "index": 0,
+          "mcp": 0,
+          "models": 1,
+          "settings": 2
+        }
+      },
+      "protocol": {
+        "major": 5,
+        "minor": 14
+      },
+      "streams": [
+        "agents",
+        "auth",
+        "conversations",
+        "devices",
+        "index",
+        "mcp",
+        "models",
+        "settings"
+      ],
+      "surface": {
+        "AgentRole": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "description",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "model",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "prompt",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "thinkingLevel",
+              "optional": true,
+              "type": {
+                "kind": "ref",
+                "name": "ThinkingLevel"
+              }
+            }
+          ]
+        },
+        "AgentRoleProblem": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "file",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "reason",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        "AgentRoles": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "problems",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "AgentRoleProblem"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "roles",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "AgentRole"
+                },
+                "kind": "array"
+              }
+            }
+          ]
+        },
+        "ApnsEnvironment": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "development"
+              },
+              {
+                "kind": "literal",
+                "value": "production"
+              }
+            ]
+          }
+        },
+        "ApnsPushToken": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "apns",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "environment",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "ApnsEnvironment"
+              }
+            }
+          ]
+        },
+        "CallMethod": {
+          "kind": "type",
+          "type": {
+            "kind": "keyof",
+            "type": {
+              "kind": "ref",
+              "name": "CallMethods"
+            }
+          }
+        },
+        "CallMethods": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "abort",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "addProject",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "path",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "Project"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "answer",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "answers",
+                          "optional": false,
+                          "type": {
+                            "element": {
+                              "kind": "ref",
+                              "name": "QuestionAnswer"
+                            },
+                            "kind": "array"
+                          }
+                        },
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "kind",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "requestId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "first",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "boolean"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "archive",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "archived",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "boolean"
+                          }
+                        },
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "changes",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "object",
+                          "members": [
+                            {
+                              "name": "available",
+                              "optional": false,
+                              "type": {
+                                "kind": "literal",
+                                "value": false
+                              }
+                            },
+                            {
+                              "name": "branch",
+                              "optional": true,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "string"
+                              }
+                            },
+                            {
+                              "name": "reason",
+                              "optional": false,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "string"
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "object",
+                          "members": [
+                            {
+                              "name": "available",
+                              "optional": false,
+                              "type": {
+                                "kind": "literal",
+                                "value": true
+                              }
+                            },
+                            {
+                              "name": "base",
+                              "optional": false,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "string"
+                              }
+                            },
+                            {
+                              "name": "branch",
+                              "optional": true,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "string"
+                              }
+                            },
+                            {
+                              "name": "patch",
+                              "optional": false,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "string"
+                              }
+                            },
+                            {
+                              "name": "truncated",
+                              "optional": false,
+                              "type": {
+                                "kind": "primitive",
+                                "name": "boolean"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "compact",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "instructions",
+                          "optional": true,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "taskId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "createAgent",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "role",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "AgentRole"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "createConversation",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "agent",
+                          "optional": true,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "checkout",
+                          "optional": true,
+                          "type": {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "literal",
+                                "value": "project"
+                              },
+                              {
+                                "kind": "literal",
+                                "value": "worktree"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "name": "home",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "Home"
+                          }
+                        },
+                        {
+                          "name": "images",
+                          "optional": true,
+                          "type": {
+                            "element": {
+                              "kind": "ref",
+                              "name": "MessageImage"
+                            },
+                            "kind": "array"
+                          }
+                        },
+                        {
+                          "name": "model",
+                          "optional": true,
+                          "type": {
+                            "kind": "external",
+                            "name": "ModelRef"
+                          }
+                        },
+                        {
+                          "name": "requestId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "text",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "thinkingLevel",
+                          "optional": true,
+                          "type": {
+                            "kind": "ref",
+                            "name": "ThinkingLevel"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "createPairing",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "arguments": [
+                        {
+                          "kind": "primitive",
+                          "name": "string"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "never"
+                        }
+                      ],
+                      "kind": "external",
+                      "name": "Record"
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "expiresAt",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "number"
+                          }
+                        },
+                        {
+                          "name": "url",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "deleteAgent",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "name",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "fork",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "entryId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "removeTools",
+                          "optional": true,
+                          "type": {
+                            "element": {
+                              "kind": "primitive",
+                              "name": "string"
+                            },
+                            "kind": "array"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "listFiles",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "query",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "scope",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "FileScope"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "FileListing"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "listFolders",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "path",
+                          "optional": true,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "FolderListing"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "listSkills",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "scope",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "SkillScope"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "SkillListing"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "logout",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "providerId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "removeProject",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "path",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "renameConversation",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "title",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "revokeDevice",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "publicKey",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setModel",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "model",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ModelRef"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setPushToken",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "token",
+                          "optional": false,
+                          "type": {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "literal",
+                                "value": null
+                              },
+                              {
+                                "kind": "ref",
+                                "name": "PushToken"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "setThinkingLevel",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "level",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "ThinkingLevel"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "steerQueued",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "submissionId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "number"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "outcome",
+                          "optional": false,
+                          "type": {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "literal",
+                                "value": "sent"
+                              },
+                              {
+                                "kind": "literal",
+                                "value": "steered"
+                              },
+                              {
+                                "kind": "literal",
+                                "value": "unavailable"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "submit",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "images",
+                          "optional": true,
+                          "type": {
+                            "element": {
+                              "kind": "ref",
+                              "name": "MessageImage"
+                            },
+                            "kind": "array"
+                          }
+                        },
+                        {
+                          "name": "requestId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "text",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        },
+                        {
+                          "name": "whenBusy",
+                          "optional": false,
+                          "type": {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "literal",
+                                "value": "followUp"
+                              },
+                              {
+                                "kind": "literal",
+                                "value": "steer"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "submissionId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "number"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "updateAgent",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "role",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "AgentRole"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "updateSettings",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "patch",
+                          "optional": false,
+                          "type": {
+                            "kind": "ref",
+                            "name": "HostSettingsPatch"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "withdrawQueued",
+              "optional": false,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "args",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "conversationId",
+                          "optional": false,
+                          "type": {
+                            "kind": "external",
+                            "name": "ConversationId"
+                          }
+                        },
+                        {
+                          "name": "submissionId",
+                          "optional": false,
+                          "type": {
+                            "kind": "primitive",
+                            "name": "number"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "result",
+                    "optional": false,
+                    "type": {
+                      "kind": "object",
+                      "members": [
+                        {
+                          "name": "outcome",
+                          "optional": false,
+                          "type": {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "literal",
+                                "value": "sent"
+                              },
+                              {
+                                "kind": "literal",
+                                "value": "withdrawn"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "ClientFrame": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "index": {
+                  "kind": "ref",
+                  "name": "CallMethod"
+                },
+                "kind": "indexed",
+                "object": {
+                  "constraint": {
+                    "kind": "ref",
+                    "name": "CallMethod"
+                  },
+                  "kind": "mapped",
+                  "optional": false,
+                  "parameter": "M",
+                  "type": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "args",
+                        "optional": false,
+                        "type": {
+                          "index": {
+                            "kind": "literal",
+                            "value": "args"
+                          },
+                          "kind": "indexed",
+                          "object": {
+                            "index": {
+                              "kind": "typeParameter",
+                              "name": "M"
+                            },
+                            "kind": "indexed",
+                            "object": {
+                              "kind": "ref",
+                              "name": "CallMethods"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "name": "id",
+                        "optional": false,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "number"
+                        }
+                      },
+                      {
+                        "name": "method",
+                        "optional": false,
+                        "type": {
+                          "kind": "typeParameter",
+                          "name": "M"
+                        }
+                      },
+                      {
+                        "name": "type",
+                        "optional": false,
+                        "type": {
+                          "kind": "literal",
+                          "value": "call"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "stream",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "StreamName"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "subscribe"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "stream",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "StreamName"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "unsubscribe"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "CodemodeCallSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "args",
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                }
+              },
+              {
+                "name": "details",
+                "optional": true,
+                "type": {
+                  "kind": "unknown"
+                }
+              },
+              {
+                "name": "durationMs",
+                "optional": true,
+                "type": {
+                  "kind": "number"
+                }
+              },
+              {
+                "name": "error",
+                "optional": true,
+                "type": {
+                  "kind": "string"
+                }
+              },
+              {
+                "name": "id",
+                "optional": true,
+                "type": {
+                  "kind": "number"
+                }
+              },
+              {
+                "name": "name",
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                }
+              },
+              {
+                "name": "status",
+                "optional": false,
+                "type": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "literal",
+                      "value": "cancelled"
+                    },
+                    {
+                      "kind": "literal",
+                      "value": "error"
+                    },
+                    {
+                      "kind": "literal",
+                      "value": "ok"
+                    },
+                    {
+                      "kind": "literal",
+                      "value": "running"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "CodemodeSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "calls",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "CodemodeCallSchema"
+                  },
+                  "kind": "array"
+                }
+              },
+              {
+                "name": "code",
+                "optional": true,
+                "type": {
+                  "kind": "string"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "ConversationDefaults": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "model",
+              "optional": true,
+              "type": {
+                "kind": "external",
+                "name": "ModelRef"
+              }
+            },
+            {
+              "name": "thinkingLevel",
+              "optional": true,
+              "type": {
+                "kind": "ref",
+                "name": "ThinkingLevel"
+              }
+            }
+          ]
+        },
+        "ConversationSummary": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "activity",
+              "optional": true,
+              "type": {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "target",
+                    "optional": true,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "name": "tool",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "forkedAt",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "id",
+              "optional": false,
+              "type": {
+                "kind": "external",
+                "name": "ConversationId"
+              }
+            },
+            {
+              "name": "kind",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "conversation"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "fork"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "subagent"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "label",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "parent",
+              "optional": true,
+              "type": {
+                "kind": "external",
+                "name": "ConversationId"
+              }
+            },
+            {
+              "name": "role",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "status",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "failed"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "needs-answer"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "running"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "title",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "updatedAt",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        "DeviceEntry": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "name",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "pairedAt",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "number"
+                }
+              },
+              {
+                "name": "publicKey",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "source",
+                "optional": true,
+                "type": {
+                  "kind": "ref",
+                  "name": "DeviceSource"
+                }
+              }
+            ]
+          }
+        },
+        "DeviceSource": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "account"
+              },
+              {
+                "kind": "literal",
+                "value": "local"
+              },
+              {
+                "kind": "literal",
+                "value": "qr"
+              }
+            ]
+          }
+        },
+        "DiffSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "patch",
+                "optional": false,
+                "type": {
+                  "kind": "string"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "FileListing": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "files",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "primitive",
+                  "name": "string"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "truncated",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            }
+          ]
+        },
+        "FileScope": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "checkout",
+                    "optional": false,
+                    "type": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "literal",
+                          "value": "project"
+                        },
+                        {
+                          "kind": "literal",
+                          "value": "worktree"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "project"
+                    }
+                  },
+                  {
+                    "name": "path",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "conversationId",
+                    "optional": false,
+                    "type": {
+                      "kind": "external",
+                      "name": "ConversationId"
+                    }
+                  },
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "conversation"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "FolderListing": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "folders",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "object",
+                  "members": [
+                    {
+                      "name": "name",
+                      "optional": false,
+                      "type": {
+                        "kind": "primitive",
+                        "name": "string"
+                      }
+                    },
+                    {
+                      "name": "path",
+                      "optional": false,
+                      "type": {
+                        "kind": "primitive",
+                        "name": "string"
+                      }
+                    }
+                  ]
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "home",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "path",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        "Home": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "chat"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "project"
+                    }
+                  },
+                  {
+                    "name": "path",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "HostAuth": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "logins",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "StoredLogin"
+                },
+                "kind": "array"
+              }
+            }
+          ]
+        },
+        "HostDevices": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "devices",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "DeviceEntry"
+                  },
+                  "kind": "array"
+                }
+              }
+            ]
+          }
+        },
+        "HostIndex": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "checkouts",
+                "optional": true,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "WorktreeCheckout"
+                  },
+                  "kind": "array"
+                }
+              },
+              {
+                "name": "conversations",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "IndexEntry"
+                  },
+                  "kind": "array"
+                }
+              },
+              {
+                "name": "projects",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "Project"
+                  },
+                  "kind": "array"
+                }
+              }
+            ]
+          }
+        },
+        "HostSettingKey": {
+          "kind": "type",
+          "type": {
+            "arguments": [
+              {
+                "kind": "keyof",
+                "type": {
+                  "kind": "ref",
+                  "name": "HostSettings"
+                }
+              },
+              {
+                "kind": "literal",
+                "value": "custom"
+              }
+            ],
+            "kind": "external",
+            "name": "Exclude"
+          }
+        },
+        "HostSettings": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "acceptAccountDevices",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "name": "custom",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "HostSettingKey"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "defaultModel",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "external",
+                    "name": "ModelRef"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            {
+              "name": "defaultThinkingLevel",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": null
+                  },
+                  {
+                    "kind": "ref",
+                    "name": "ThinkingLevel"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "followUpMode",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "QueueMode"
+              }
+            },
+            {
+              "name": "hostName",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "steeringMode",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "QueueMode"
+              }
+            }
+          ]
+        },
+        "HostSettingsPatch": {
+          "kind": "type",
+          "type": {
+            "constraint": {
+              "kind": "ref",
+              "name": "HostSettingKey"
+            },
+            "kind": "mapped",
+            "optional": true,
+            "parameter": "K",
+            "type": {
+              "kind": "union",
+              "types": [
+                {
+                  "arguments": [
+                    {
+                      "index": {
+                        "kind": "typeParameter",
+                        "name": "K"
+                      },
+                      "kind": "indexed",
+                      "object": {
+                        "kind": "ref",
+                        "name": "HostSettings"
+                      }
+                    },
+                    {
+                      "kind": "literal",
+                      "value": null
+                    }
+                  ],
+                  "kind": "external",
+                  "name": "Exclude"
+                },
+                {
+                  "kind": "literal",
+                  "value": null
+                }
+              ]
+            }
+          }
+        },
+        "HostStreamName": {
+          "kind": "type",
+          "type": {
+            "kind": "keyof",
+            "type": {
+              "kind": "ref",
+              "name": "HostStreamValues"
+            }
+          }
+        },
+        "HostStreamValues": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "agents",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "AgentRoles"
+              }
+            },
+            {
+              "name": "auth",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "HostAuth"
+              }
+            },
+            {
+              "name": "conversations",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "ConversationSummary"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "devices",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "HostDevices"
+              }
+            },
+            {
+              "name": "index",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "HostIndex"
+              }
+            },
+            {
+              "name": "mcp",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": null
+                  },
+                  {
+                    "kind": "ref",
+                    "name": "McpStatus"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "models",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "ModelSummary"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "settings",
+              "optional": false,
+              "type": {
+                "kind": "ref",
+                "name": "HostSettings"
+              }
+            }
+          ]
+        },
+        "IMAGE_MIME_TYPES": {
+          "initializer": {
+            "elements": [
+              "image/jpeg",
+              "image/png",
+              "image/gif",
+              "image/webp"
+            ],
+            "kind": "array"
+          },
+          "kind": "value"
+        },
+        "ImageMimeType": {
+          "kind": "type",
+          "type": {
+            "index": {
+              "kind": "primitive",
+              "name": "number"
+            },
+            "kind": "indexed",
+            "object": {
+              "kind": "typeof",
+              "name": "IMAGE_MIME_TYPES"
+            }
+          }
+        },
+        "IndexEntry": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "archived",
+                "optional": true,
+                "type": {
+                  "kind": "primitive",
+                  "name": "boolean"
+                }
+              },
+              {
+                "name": "createdAt",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "number"
+                }
+              },
+              {
+                "name": "home",
+                "optional": false,
+                "type": {
+                  "kind": "ref",
+                  "name": "Home"
+                }
+              },
+              {
+                "name": "id",
+                "optional": false,
+                "type": {
+                  "kind": "external",
+                  "name": "ConversationId"
+                }
+              },
+              {
+                "name": "requestId",
+                "optional": true,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "role",
+                "optional": true,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              }
+            ]
+          }
+        },
+        "McpServerStatus": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "error",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "state",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "connected"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "connecting"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "disabled"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "failed"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "tools",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        "McpStatus": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "configPath",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "errors",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "primitive",
+                  "name": "string"
+                },
+                "kind": "array"
+              }
+            },
+            {
+              "name": "servers",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "McpServerStatus"
+                },
+                "kind": "array"
+              }
+            }
+          ]
+        },
+        "MessageImage": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "data",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "mimeType",
+                "optional": false,
+                "type": {
+                  "kind": "ref",
+                  "name": "ImageMimeType"
+                }
+              }
+            ]
+          }
+        },
+        "ModelSummary": {
+          "extends": [
+            {
+              "kind": "external",
+              "name": "ModelRef"
+            }
+          ],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "contextWindow",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "name": "images",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "thinkingLevels",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "ref",
+                  "name": "ThinkingLevel"
+                },
+                "kind": "array"
+              }
+            }
+          ]
+        },
+        "Notice": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "id",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "name": "level",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "error"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "info"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "warning"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "message",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        "PresentationType": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "pinomad.codemode"
+              },
+              {
+                "kind": "literal",
+                "value": "pinomad.diff"
+              },
+              {
+                "kind": "literal",
+                "value": "pinomad.question"
+              },
+              {
+                "kind": "literal",
+                "value": "pinomad.todo"
+              }
+            ]
+          }
+        },
+        "Project": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "addedAt",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "number"
+                }
+              },
+              {
+                "name": "name",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "path",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              }
+            ]
+          }
+        },
+        "ProtocolVersion": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "major",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "name": "minor",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        "PushToken": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "primitive",
+                "name": "string"
+              },
+              {
+                "kind": "ref",
+                "name": "ApnsPushToken"
+              }
+            ]
+          }
+        },
+        "QuestionAnswer": {
+          "kind": "type",
+          "type": {
+            "arguments": [
+              {
+                "kind": "typeof",
+                "name": "QuestionAnswerSchema"
+              }
+            ],
+            "kind": "external",
+            "name": "Static"
+          }
+        },
+        "QuestionAnswerSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "other",
+                "optional": true,
+                "type": {
+                  "kind": "string"
+                }
+              },
+              {
+                "name": "selected",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "string"
+                  },
+                  "kind": "array"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QuestionItemSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "header",
+                "optional": false,
+                "type": {
+                  "kind": "string",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "maxLength",
+                        "value": 16
+                      },
+                      {
+                        "name": "minLength",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "multiSelect",
+                "optional": true,
+                "type": {
+                  "kind": "boolean"
+                }
+              },
+              {
+                "name": "options",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "QuestionOptionSchema"
+                  },
+                  "kind": "array",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "maxItems",
+                        "value": 4
+                      },
+                      {
+                        "name": "minItems",
+                        "value": 2
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "question",
+                "optional": false,
+                "type": {
+                  "kind": "string",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "minLength",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QuestionOptionSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "description",
+                "optional": true,
+                "type": {
+                  "kind": "string"
+                }
+              },
+              {
+                "name": "label",
+                "optional": false,
+                "type": {
+                  "kind": "string",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "minLength",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QuestionRequestSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "askedAt",
+                "optional": false,
+                "type": {
+                  "kind": "number"
+                }
+              },
+              {
+                "name": "id",
+                "optional": false,
+                "type": {
+                  "kind": "string",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "minLength",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "questions",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "QuestionItemSchema"
+                  },
+                  "kind": "array",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "maxItems",
+                        "value": 4
+                      },
+                      {
+                        "name": "minItems",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "resolution",
+                "optional": true,
+                "type": {
+                  "kind": "ref",
+                  "name": "QuestionResolutionSchema"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QuestionResolutionSchema": {
+          "initializer": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "answers",
+                    "optional": false,
+                    "type": {
+                      "element": {
+                        "kind": "ref",
+                        "name": "QuestionAnswerSchema"
+                      },
+                      "kind": "array"
+                    }
+                  },
+                  {
+                    "name": "at",
+                    "optional": false,
+                    "type": {
+                      "kind": "number"
+                    }
+                  },
+                  {
+                    "name": "outcome",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "answered"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "at",
+                    "optional": false,
+                    "type": {
+                      "kind": "number"
+                    }
+                  },
+                  {
+                    "name": "outcome",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "cancelled"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "at",
+                    "optional": false,
+                    "type": {
+                      "kind": "number"
+                    }
+                  },
+                  {
+                    "name": "outcome",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "dismissed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QuestionSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "requests",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "QuestionRequestSchema"
+                  },
+                  "kind": "array"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "QueueMode": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "all"
+              },
+              {
+                "kind": "literal",
+                "value": "one-at-a-time"
+              }
+            ]
+          }
+        },
+        "ServerFrame": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "defaults",
+                    "optional": true,
+                    "type": {
+                      "kind": "ref",
+                      "name": "ConversationDefaults"
+                    }
+                  },
+                  {
+                    "name": "docs",
+                    "optional": false,
+                    "type": {
+                      "element": {
+                        "kind": "object",
+                        "members": [
+                          {
+                            "name": "kind",
+                            "optional": false,
+                            "type": {
+                              "kind": "primitive",
+                              "name": "string"
+                            }
+                          },
+                          {
+                            "name": "presentation",
+                            "optional": true,
+                            "type": {
+                              "kind": "ref",
+                              "name": "PresentationType"
+                            }
+                          }
+                        ]
+                      },
+                      "kind": "array"
+                    }
+                  },
+                  {
+                    "name": "hostVersion",
+                    "optional": true,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "name": "models",
+                    "optional": false,
+                    "type": {
+                      "element": {
+                        "kind": "ref",
+                        "name": "ModelSummary"
+                      },
+                      "kind": "array"
+                    }
+                  },
+                  {
+                    "name": "protocol",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "ProtocolVersion"
+                    }
+                  },
+                  {
+                    "name": "session",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "SessionInfo"
+                    }
+                  },
+                  {
+                    "name": "toolPresentations",
+                    "optional": false,
+                    "type": {
+                      "arguments": [
+                        {
+                          "kind": "primitive",
+                          "name": "string"
+                        },
+                        {
+                          "kind": "ref",
+                          "name": "PresentationType"
+                        }
+                      ],
+                      "kind": "external",
+                      "name": "Record"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "hello"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "error",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "name": "id",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  },
+                  {
+                    "name": "ok",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": false
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "result"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "id",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  },
+                  {
+                    "name": "ok",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": true
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "result"
+                    }
+                  },
+                  {
+                    "name": "value",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "unknown"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "level",
+                    "optional": false,
+                    "type": {
+                      "index": {
+                        "kind": "literal",
+                        "value": "level"
+                      },
+                      "kind": "indexed",
+                      "object": {
+                        "kind": "ref",
+                        "name": "Notice"
+                      }
+                    }
+                  },
+                  {
+                    "name": "message",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "notice"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "ops",
+                    "optional": false,
+                    "type": {
+                      "element": {
+                        "kind": "external",
+                        "name": "Op"
+                      },
+                      "kind": "array"
+                    }
+                  },
+                  {
+                    "name": "stream",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "StreamName"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "ops"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "reason",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "name": "stream",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "StreamName"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "ended"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "stream",
+                    "optional": false,
+                    "type": {
+                      "kind": "ref",
+                      "name": "StreamName"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "snapshot"
+                    }
+                  },
+                  {
+                    "name": "value",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "unknown"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "SessionInfo": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "directory",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "id",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        "SkillListing": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "skills",
+              "optional": false,
+              "type": {
+                "element": {
+                  "kind": "object",
+                  "members": [
+                    {
+                      "name": "description",
+                      "optional": false,
+                      "type": {
+                        "kind": "primitive",
+                        "name": "string"
+                      }
+                    },
+                    {
+                      "name": "name",
+                      "optional": false,
+                      "type": {
+                        "kind": "primitive",
+                        "name": "string"
+                      }
+                    },
+                    {
+                      "name": "source",
+                      "optional": false,
+                      "type": {
+                        "kind": "union",
+                        "types": [
+                          {
+                            "kind": "literal",
+                            "value": "project"
+                          },
+                          {
+                            "kind": "literal",
+                            "value": "user"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "kind": "array"
+              }
+            }
+          ]
+        },
+        "SkillScope": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "checkout",
+                    "optional": false,
+                    "type": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "literal",
+                          "value": "project"
+                        },
+                        {
+                          "kind": "literal",
+                          "value": "worktree"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "project"
+                    }
+                  },
+                  {
+                    "name": "path",
+                    "optional": false,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "conversationId",
+                    "optional": false,
+                    "type": {
+                      "kind": "external",
+                      "name": "ConversationId"
+                    }
+                  },
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "conversation"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "object",
+                "members": [
+                  {
+                    "name": "kind",
+                    "optional": false,
+                    "type": {
+                      "kind": "literal",
+                      "value": "chat"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "StoredLogin": {
+          "extends": [],
+          "kind": "interface",
+          "members": [
+            {
+              "name": "kind",
+              "optional": false,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "api_key"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "oauth"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "providerId",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "name": "subscription",
+              "optional": false,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            }
+          ]
+        },
+        "StreamName": {
+          "kind": "type",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "tasks"
+              },
+              {
+                "kind": "ref",
+                "name": "HostStreamName"
+              },
+              {
+                "head": "conversation:",
+                "kind": "template",
+                "spans": [
+                  {
+                    "literal": "",
+                    "type": {
+                      "kind": "external",
+                      "name": "ConversationId"
+                    }
+                  }
+                ]
+              },
+              {
+                "head": "doc:",
+                "kind": "template",
+                "spans": [
+                  {
+                    "literal": ":",
+                    "type": {
+                      "kind": "primitive",
+                      "name": "string"
+                    }
+                  },
+                  {
+                    "literal": "",
+                    "type": {
+                      "kind": "external",
+                      "name": "ConversationId"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "ThinkingLevel": {
+          "kind": "type",
+          "type": {
+            "kind": "external",
+            "name": "ModelThinkingLevel"
+          }
+        },
+        "TodoItemSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "status",
+                "optional": false,
+                "type": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "literal",
+                      "value": "completed"
+                    },
+                    {
+                      "kind": "literal",
+                      "value": "in_progress"
+                    },
+                    {
+                      "kind": "literal",
+                      "value": "pending"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "text",
+                "optional": false,
+                "type": {
+                  "kind": "string",
+                  "options": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "name": "minLength",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "TodoSchema": {
+          "initializer": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "items",
+                "optional": false,
+                "type": {
+                  "element": {
+                    "kind": "ref",
+                    "name": "TodoItemSchema"
+                  },
+                  "kind": "array"
+                }
+              }
+            ]
+          },
+          "kind": "value"
+        },
+        "WorktreeCheckout": {
+          "kind": "type",
+          "type": {
+            "kind": "object",
+            "members": [
+              {
+                "name": "base",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "branch",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "conversationId",
+                "optional": false,
+                "type": {
+                  "kind": "external",
+                  "name": "ConversationId"
+                }
+              },
+              {
+                "name": "path",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "repo",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "snapshot",
+                "optional": true,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              },
+              {
+                "name": "subdir",
+                "optional": false,
+                "type": {
+                  "kind": "primitive",
+                  "name": "string"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
