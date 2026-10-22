@@ -230,7 +230,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil, organized: organized,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [], organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
@@ -305,7 +305,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: mode == "offline" ? .reconnecting : .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(
                 chats: [ConversationNode(summary: summary, children: [])],
                 projects: [], archived: []
@@ -362,7 +362,7 @@ extension AppModel {
         drafts[1] = "帮我看看这个改动"
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(
                 chats: [ConversationNode(summary: parent, children: [])],
                 projects: [], archived: []
@@ -463,7 +463,7 @@ extension AppModel {
                 )
                 self.publishDevSnapshot(ClientSnapshot(
                     version: UInt64(tick + 1), connection: .connected, unauthorized: false,
-                    protocolMismatch: nil, host: nil, hostName: nil,
+                    protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
                     organized: Organized(chats: [], projects: [], archived: []),
                     notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
                     agents: nil, conversation: conversation
@@ -492,7 +492,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(chats: [], projects: [], archived: []),
             notices: [], models: [],
             defaults: Defaults(model: nil, thinkingLevel: nil),

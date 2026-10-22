@@ -270,17 +270,27 @@ struct SettingsSheet: View {
     }
 }
 
-/// One paired machine's settings: its archived conversations and a pairing
-/// code for another device. Needs that machine connected.
+/// One paired machine's settings: its name, the devices paired with it,
+/// and its archived conversations. Needs that machine connected.
 struct MachineSettingsView: View {
     let model: AppModel
     let hostKey: String
 
+    @State private var renaming = false
+    @State private var nameDraft = ""
+    @State private var revoking: DeviceEntry?
+
     var body: some View {
         List {
-            if hostKey == model.currentHostKey, let organized = model.snapshot?.organized {
-                archivedSection(organized.archived)
-                pairingCodeSection
+            if hostKey == model.currentHostKey, let snapshot = model.snapshot {
+                if snapshot.settings != nil && model.hostSupports(.hostName) {
+                    hostNameSection(snapshot)
+                }
+                devicesSection(snapshot.devices)
+                if let settings = snapshot.settings, model.hostSupports(.acceptAccountDevices) {
+                    accountDevicesSection(settings)
+                }
+                archivedSection(snapshot.organized.archived)
             } else {
                 ContentUnavailableView(
                     "没有连着这台机器", systemImage: "bolt.horizontal.circle",
@@ -288,6 +298,27 @@ struct MachineSettingsView: View {
             }
         }
         .navigationTitle(title)
+        .alert("主机名", isPresented: $renaming) {
+            TextField("名称", text: $nameDraft)
+            Button("取消", role: .cancel) {}
+            Button("保存") { saveName() }
+        } message: {
+            Text("已配对的设备都用这个名字称呼这台机器。")
+        }
+        .alert(
+            revoking.map { "吊销 \($0.name)？" } ?? "",
+            isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
+            presenting: revoking
+        ) { device in
+            Button("取消", role: .cancel) {}
+            Button("吊销", role: .destructive) { model.revoke(device: device.publicKey) }
+        } message: { device in
+            if device.publicKey == model.thisDevicePublicKey {
+                Text("这是这台设备：吊销后马上断开，要用新的配对链接才能再连上。")
+            } else {
+                Text("它会断开，要用新的配对链接才能再连上这台机器。")
+            }
+        }
     }
 
     /// The same name the row that opened this page showed.
@@ -333,25 +364,120 @@ struct MachineSettingsView: View {
         .foregroundStyle(.secondary)
     }
 
-    /// Pair another device from the host on screen (ADR-0022 §7).
-    private var pairingCodeSection: some View {
+    /// The name every paired device labels this machine by (5.12). The host
+    /// cleans what it is sent the way it cleans the machine's own name.
+    private func hostNameSection(_ snapshot: ClientSnapshot) -> some View {
         Section {
+            Button {
+                nameDraft = snapshot.hostName ?? ""
+                renaming = true
+            } label: {
+                LabeledContent("主机名", value: snapshot.hostName ?? "")
+            }
+            .tint(.primary)
+            .disabled(!model.connected)
+            if snapshot.settings?.hostNameCustom == true {
+                Button("改回机器名") { model.setHostName(nil) }
+                    .disabled(!model.connected)
+            }
+        } footer: {
+            Text("不改的话，用机器自己的主机名。")
+        }
+    }
+
+    private func saveName() {
+        let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != model.snapshot?.hostName else { return }
+        model.setHostName(name)
+    }
+
+    /// The devices paired with this machine, and a code to pair another
+    /// (ADR-0022 §7).
+    private func devicesSection(_ devices: [DeviceEntry]) -> some View {
+        Section {
+            if devices.isEmpty {
+                Text("还没有配对的设备。")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(devices, id: \.publicKey) { device in
+                DeviceRow(device: device, isThisDevice: device.publicKey == model.thisDevicePublicKey)
+                    .swipeActions {
+                        Button("吊销", role: .destructive) { revoking = device }
+                            .tint(.red)
+                            .disabled(!model.connected)
+                    }
+                    .contextMenu {
+                        Button("吊销", systemImage: "xmark.circle", role: .destructive) { revoking = device }
+                            .disabled(!model.connected)
+                    }
+            }
             Button {
                 model.present(.pairingCode)
             } label: {
                 Label("给另一台设备配对", systemImage: "qrcode")
             }
             .disabled(!model.connected)
-
-            if !model.connected {
-                Text("连上宿主后才能生成二维码。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
         } header: {
-            Text("配对另一台设备")
+            Text("设备")
         } footer: {
-            Text("对方用相机扫码或打开链接即可配对。")
+            Text(model.connected
+                 ? "对方用相机扫码或打开链接即可配对。左滑一台设备可以吊销它。"
+                 : "连上宿主后才能生成二维码。")
+        }
+    }
+
+    /// Whether the server this machine joined may vouch for new devices
+    /// (ADR-0022 §6, 5.8).
+    private func accountDevicesSection(_ settings: HostSettingsState) -> some View {
+        Section {
+            Toggle("接受账号担保的设备", isOn: Binding(
+                get: { settings.acceptAccountDevices },
+                set: { model.setAcceptAccountDevices($0) }
+            ))
+            .disabled(!model.connected)
+        } footer: {
+            Text("登录了这台机器所加入的服务端的设备，不扫码也能配对。关掉后只能扫码配对。")
+        }
+    }
+}
+
+/// A paired device: its name, when and how it paired, and a badge on this
+/// one.
+private struct DeviceRow: View {
+    let device: DeviceEntry
+    let isThisDevice: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.name)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if isThisDevice {
+                Text("这台设备")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: .capsule)
+            }
+        }
+    }
+
+    /// Date and minute — two devices paired the same day stay apart.
+    private var detail: String {
+        let at = Date(timeIntervalSince1970: device.pairedAt / 1000)
+            .formatted(date: .numeric, time: .shortened)
+        switch device.source {
+        case .qr: return "\(at) 扫码配对"
+        case .local: return "\(at) 在本机配对"
+        case .account: return "\(at) 经账号配对"
+        case nil: return "\(at) 配对"
         }
     }
 }

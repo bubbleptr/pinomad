@@ -11,6 +11,8 @@ private func fakeSnapshot(version: UInt64) -> ClientSnapshot {
         protocolMismatch: nil,
         host: nil,
         hostName: nil,
+        settings: nil,
+        devices: [],
         organized: Organized(chats: [], projects: [], archived: []),
         notices: [],
         models: [],
