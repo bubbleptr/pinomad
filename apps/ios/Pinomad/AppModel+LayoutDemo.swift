@@ -36,32 +36,32 @@ extension AppModel {
         ]
         let organized = Organized(
             chats: [
-                node(summary(1, "周报整理", ago: 2)),
-                node(summary(2, "AirPods 降噪对比", ago: 180)),
-                node(summary(3, "下周去杭州的行程", status: .needsAnswer, ago: 40)),
+                node(summary(1, "Weekly report draft", ago: 2)),
+                node(summary(2, "AirPods noise cancelling comparison", ago: 180)),
+                node(summary(3, "Itinerary for next week's Hangzhou trip", status: .needsAnswer, ago: 40)),
             ],
             projects: [
                 ProjectConversations(
                     project: Project(path: "/Users/void/code/opensource/pinomad", name: "pinomad", addedAt: now),
                     conversations: [
-                        node(summary(10, "修复 hostLabels 冲突后缀", status: .running, ago: 0.5), reviewers),
-                        node(summary(20, "设备页的吊销确认文案", status: .needsAnswer, ago: 12)),
-                        node(summary(21, "升级 @earendil-works 到 1.2.0", ago: 60)),
-                        node(summary(22, "iOS 列表页按机器分组", status: .running, ago: 1)),
-                        node(summary(23, "dureview 评审意见分拣", status: .needsAnswer, ago: 25)),
-                        node(summary(24, "中继断线重连的退避", ago: 240)),
+                        node(summary(10, "Fix hostLabels collision suffix", status: .running, ago: 0.5), reviewers),
+                        node(summary(20, "Revoke confirmation copy on Devices", status: .needsAnswer, ago: 12)),
+                        node(summary(21, "Upgrade @earendil-works to 1.2.0", ago: 60)),
+                        node(summary(22, "Group iOS list by machine", status: .running, ago: 1)),
+                        node(summary(23, "Triage dureview comments", status: .needsAnswer, ago: 25)),
+                        node(summary(24, "Backoff for relay reconnects", ago: 240)),
                     ]
                 ),
                 ProjectConversations(
                     project: Project(path: "/Users/void/code/opensource/AgentChatKit", name: "AgentChatKit", addedAt: now),
                     conversations: [
-                        node(summary(30, "流式 Markdown 的淡入", status: .failed, ago: 300)),
-                        node(summary(31, "长列表滚动卡顿", ago: 1_500)),
+                        node(summary(30, "Streaming Markdown fade-in", status: .failed, ago: 300)),
+                        node(summary(31, "Long list scroll jank", ago: 1_500)),
                     ]
                 ),
             ],
             archived: [
-                ArchivedConversation(node: node(summary(40, "旧的配对流程", ago: 9_000)), project: nil),
+                ArchivedConversation(node: node(summary(40, "Old pairing flow", ago: 9_000)), project: nil),
             ]
         )
         publishDevSnapshot(ClientSnapshot(

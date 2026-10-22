@@ -11,7 +11,7 @@ extension AppModel {
         guard let session else { throw SessionError.sessionClosed }
         let result = try await session.invoke(.changes(conversationId: id))
         guard case .changes(let changes) = result else {
-            throw SessionError.operationFailed("宿主返回了意外的改动结果")
+            throw SessionError.operationFailed("The host returned an unexpected changes result")
         }
         return changes
     }

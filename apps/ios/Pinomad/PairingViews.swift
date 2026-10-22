@@ -14,7 +14,7 @@ struct PairingSources: View {
             Button {
                 model.present(.scanner)
             } label: {
-                Label("扫描二维码", image: .scanQrCode)
+                Label("Scan QR code", image: .scanQrCode)
                     .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
@@ -22,7 +22,7 @@ struct PairingSources: View {
             .controlSize(.large)
 
             HStack(spacing: 8) {
-                TextField("http://…#pair=… 或 pinomad://pair#…", text: $text)
+                TextField("http://…#pair=… or pinomad://pair#…", text: $text)
                     .padding(.horizontal, 16)
                     .frame(minHeight: 44)
                     .glassEffect(.regular, in: .capsule)
@@ -45,11 +45,11 @@ struct PairingSources: View {
                 .controlSize(.large)
             }
             if invalid {
-                Text("不是有效的配对链接——粘贴 `pinomad pair` 打印的完整链接。")
+                Text("Not a valid pairing link. Paste the full link that `pinomad pair` printed.")
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
-            Button("继续", action: submit)
+            Button("Continue", action: submit)
                 .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -76,9 +76,9 @@ struct PairingStartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("连接到宿主")
+                Text("Connect to a Host")
                     .font(.title2.weight(.semibold))
-                Text("在宿主上运行 `pinomad pair`，或在 Web 端打开「设备 → 配对设备」，然后扫码或粘贴链接。")
+                Text("Run `pinomad pair` on the host, or open Settings → Devices → Pair a device on the web, then scan the QR code or paste the link.")
                     .foregroundStyle(.secondary)
             }
             PairingSources(model: model)
@@ -87,28 +87,28 @@ struct PairingStartView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("账号：\(session.username)", image: .userRound)
+                    Label("Account: \(session.username)", image: .userRound)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
-                Text("在账号页里配对它名下的宿主。")
+                Text("Pair the hosts on your account from the account page.")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             } else {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("用账号登录", image: .userRound)
+                    Label("Sign in", image: .userRound)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
-                Text("登录后不用扫码，就能配对你账号下的宿主。")
+                Text("Sign in to pair the hosts on your account without a QR code.")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
-            Text("也可以直接打开 pinomad://pair 链接。")
+            Text("You can also open a pinomad://pair link directly.")
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
             Spacer()
@@ -130,9 +130,9 @@ struct PairConfirmView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let url = pending.target?.url {
-                Text("要和这台宿主配对吗？")
+                Text("Pair with this host?")
                     .font(.title3.weight(.semibold))
-                Text("这台设备会和 \(hostOf(url)) 配对。")
+                Text("This device will pair with \(hostOf(url)).")
                     .foregroundStyle(.secondary)
                 Text(url)
                     .font(.footnote.monospaced())
@@ -141,32 +141,32 @@ struct PairConfirmView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.fill.tertiary, in: .rect(cornerRadius: 10))
                 if model.phase == .connected, let current = model.currentHostLabel {
-                    Text("会断开当前的 \(current)。")
+                    Text("This disconnects \(current).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
-                        Text("取消").frame(maxWidth: .infinity)
+                        Text("Cancel").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.tactile(.glass))
                     Button {
                         model.pair(link: pending.link)
                         dismiss()
                     } label: {
-                        Text("配对").frame(maxWidth: .infinity)
+                        Text("Pair").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.tactile(.glassProminent))
                 }
                 .controlSize(.large)
                 .padding(.top, 8)
             } else {
-                Text("这个配对链接无效")
+                Text("This pairing link isn't valid")
                     .font(.title3.weight(.semibold))
-                Text("在宿主上运行 `pinomad pair`，或在「设备 → 配对设备」里生成新的链接。")
+                Text("Run `pinomad pair` on the host, or create a new link in Settings → Devices → Pair a device.")
                     .foregroundStyle(.secondary)
                 Button { dismiss() } label: {
-                    Text("好").frame(maxWidth: .infinity)
+                    Text("OK").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))
                 .controlSize(.large)

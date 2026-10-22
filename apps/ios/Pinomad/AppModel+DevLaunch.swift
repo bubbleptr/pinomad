@@ -142,20 +142,20 @@ extension AppModel {
     private func startDemo() {
         navPath = [.conversation(1)]
         let body = """
-        这是一段流式输出的演示。**Markdown** 会逐词显现，应该能看到淡入效果。
+        This is a streaming output demo. **Markdown** appears word by word, and you should see it fade in.
 
-        ## 小节标题
+        ## Section heading
 
-        - 列表项一：内容逐渐增长
-        - 列表项二：接着出现
-        - 列表项三：验证节奏
+        - First item: the content keeps growing
+        - Second item: shows up next
+        - Third item: checks the pacing
 
         ```swift
         let stream = StreamingMarkdown()
         stream.append("hello")
         ```
 
-        一段收尾的正文，到这里回答就基本结束了。
+        A closing paragraph of body text; by this point the answer is about done.
         """
         let words = (0..<3).map { _ in body }.joined()
         var text = ""
@@ -177,18 +177,18 @@ extension AppModel {
         let now = Date.now.timeIntervalSince1970 * 1000
         let parent = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
-            title: "发版前的检查", status: nil, updatedAt: now,
+            title: "Pre-release checks", status: nil, updatedAt: now,
             label: nil, role: nil, activity: nil
         )
         let reviewed = ConversationSummary(
             id: 2, kind: .subagent, parent: 1, forkedAt: nil,
             title: "Review the auth middleware", status: nil, updatedAt: now,
-            label: "审查登录中间件", role: "reviewer", activity: nil
+            label: "Review login middleware", role: "reviewer", activity: nil
         )
         let plain = ConversationSummary(
             id: 3, kind: .subagent, parent: 1, forkedAt: nil,
             title: "Write the release notes", status: nil, updatedAt: now,
-            label: "整理发布说明", role: nil, activity: nil
+            label: "Compile release notes", role: nil, activity: nil
         )
         let organized = Organized(
             chats: [ConversationNode(summary: parent, children: [
@@ -197,12 +197,12 @@ extension AppModel {
             ])],
             projects: [], archived: []
         )
-        let reviewOutput = "登录中间件没有发现鉴权绕过；建议把会话过期时间写进配置。"
-        let notesOutput = "发布说明已按「新增 / 修复 / 升级注意」整理。"
+        let reviewOutput = "No auth bypass found in the login middleware; suggest moving the session expiry into config."
+        let notesOutput = "Release notes are grouped under \"Added / Fixed / Upgrade notes\"."
         let tools = [
             ToolItem(
                 state: .outputAvailable,
-                argsText: #"{"task":"审查登录中间件","description":"审查登录中间件"}"#,
+                argsText: #"{"task":"Review login middleware","description":"Review login middleware"}"#,
                 children: [], diffStat: nil, durationMs: nil, images: [],
                 output: reviewOutput, toolCallId: "call-review", toolName: "subagent",
                 pinomad: .subagent(
@@ -212,7 +212,7 @@ extension AppModel {
             ),
             ToolItem(
                 state: .outputAvailable,
-                argsText: #"{"task":"整理发布说明","description":"整理发布说明"}"#,
+                argsText: #"{"task":"Compile release notes","description":"Compile release notes"}"#,
                 children: [], diffStat: nil, durationMs: nil, images: [],
                 output: notesOutput, toolCallId: "call-notes", toolName: "subagent",
                 pinomad: .subagent(
@@ -225,10 +225,10 @@ extension AppModel {
             phase: .settled, failed: false,
             anchorMs: now - 90_000, elapsedMs: 90_000, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: tools, live: false, activeToolCallId: nil)],
-            answer: CotAnswer(text: "两个子代理都完成了：登录中间件没有发现问题，发布说明已按分类整理。", streaming: false)
+            answer: CotAnswer(text: "Both subagents are done: the login middleware looks clean, and the release notes are grouped by category.", streaming: false)
         )
         let chat: [ChatEntry] = [
-            .user(id: "u1", text: "发版前帮我检查登录中间件并整理发布说明。", images: []),
+            .user(id: "u1", text: "Before the release, check the login middleware and put together the release notes.", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conversation = ConversationSnapshot(
@@ -264,17 +264,17 @@ extension AppModel {
             )
         }
         let tasks: [ConversationSummary] = [
-            summary(2, .subagent, "Review the overview sheet", label: "审查概览 sheet", status: .running,
+            summary(2, .subagent, "Review the overview sheet", label: "Review overview sheet", status: .running,
                     role: "reviewer", activity: SummaryActivity(tool: "read", target: "OverviewSheet.swift")),
-            summary(3, .subagent, "Run the iOS tests", label: "跑 iOS 测试", status: .running,
+            summary(3, .subagent, "Run the iOS tests", label: "Run iOS tests", status: .running,
                     activity: SummaryActivity(tool: "bash", target: "xcodebuild test")),
-            summary(4, .subagent, "Pick the branch icon", label: "挑分支图标", status: .needsAnswer),
-            summary(5, .subagent, "Check the Web card", label: "对照 Web 卡片", status: .running),
-            summary(6, .subagent, "Draft the PR body", label: "起草 PR 说明"),
-            summary(7, .subagent, "Screenshot light mode", label: "截浅色模式"),
-            summary(8, .subagent, "Measure sheet height", label: "量 sheet 高度", status: .failed),
+            summary(4, .subagent, "Pick the branch icon", label: "Pick branch icon", status: .needsAnswer),
+            summary(5, .subagent, "Check the Web card", label: "Compare with Web card", status: .running),
+            summary(6, .subagent, "Draft the PR body", label: "Draft PR description"),
+            summary(7, .subagent, "Screenshot light mode", label: "Capture light mode"),
+            summary(8, .subagent, "Measure sheet height", label: "Measure sheet height", status: .failed),
         ]
-        let root = summary(1, .conversation, "对话页的概览 sheet")
+        let root = summary(1, .conversation, "Overview sheet for the conversation page")
         let organized = Organized(
             chats: [],
             projects: [ProjectConversations(
@@ -306,10 +306,10 @@ extension AppModel {
         let cot = CotView(
             phase: .settled, failed: false, anchorMs: now - 120_000, elapsedMs: 120_000, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: calls, live: false, activeToolCallId: nil)],
-            answer: CotAnswer(text: "子代理在后台跑着，结果回来后我再汇总。", streaming: false)
+            answer: CotAnswer(text: "The subagents are running in the background; I'll summarize once their results are in.", streaming: false)
         )
         let chat: [ChatEntry] = [
-            .user(id: "u1", text: "把概览 sheet 做出来，顺便分几个子代理去审查和测试。", images: []),
+            .user(id: "u1", text: "Build the overview sheet, and spin off a few subagents to review and test it.", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conversation = ConversationSnapshot(
@@ -337,8 +337,8 @@ extension AppModel {
                 file("apps/ios/Pinomad/OverviewSheet.swift",
                      ["struct OverviewSheet: View {", "    let model: AppModel", "}"], [], isNew: true),
                 file("apps/ios/Pinomad/ConversationView.swift",
-                     ["Image(systemName: \"info.circle\")", ".accessibilityLabel(\"概览\")"],
-                     ["Image(systemName: \"plus.forwardslash.minus\")", ".accessibilityLabel(\"改动\")"]),
+                     ["Image(systemName: \"info.circle\")", ".accessibilityLabel(\"Overview\")"],
+                     ["Image(systemName: \"plus.forwardslash.minus\")", ".accessibilityLabel(\"Changes\")"]),
                 file("apps/ios/PinomadCore/Sources/PinomadChat/ChangesPanel.swift",
                      ["public mutating func observe(busy: Bool, connected: Bool) -> Token? {"],
                      ["public mutating func observe(busy: Bool) -> Token? {"]),
@@ -363,44 +363,44 @@ extension AppModel {
         let now = Date.now.timeIntervalSince1970 * 1000
         let summary = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
-            title: "上传接口鉴权", status: nil, updatedAt: now,
+            title: "Upload endpoint auth", status: nil, updatedAt: now,
             label: nil, role: nil, activity: nil
         )
         let auth = QuestionItem(
-            question: "上传接口要先加鉴权才能发布。新接口用哪种方式？手机端的钥匙串里已经存着 refresh token。",
-            header: "鉴权方式",
+            question: "The upload endpoint needs auth before it ships. Which approach should the new endpoint use? The phone already keeps a refresh token in its keychain.",
+            header: "Auth method",
             options: [
-                QuestionOption(label: "Bearer token（推荐）", description: "从现有的刷新流程换短期 access token，新接口没有 CSRF 面。"),
-                QuestionOption(label: "复用会话 cookie", description: "和 Web 端同一套中间件，但手机端要管 cookie 和 CSRF。"),
-                QuestionOption(label: "签名上传地址", description: "宿主给每个上传地址签十分钟，接口本身不鉴权。"),
+                QuestionOption(label: "Bearer token (recommended)", description: "Exchange a short-lived access token through the existing refresh flow; the new endpoint has no CSRF surface."),
+                QuestionOption(label: "Reuse session cookie", description: "Same middleware as the web client, but the phone has to manage cookies and CSRF."),
+                QuestionOption(label: "Signed upload URLs", description: "The host signs each upload URL for ten minutes; the endpoint itself skips auth."),
             ],
             multiSelect: nil
         )
         let backfill = QuestionItem(
-            question: "现有数据没有 owner 字段，迁移时怎么回填？",
-            header: "迁移方案",
+            question: "Existing records have no owner field. How should the migration backfill it?",
+            header: "Migration",
             options: [
-                QuestionOption(label: "从审计日志回填", description: "三月之后创建的数据准确；更早的回退到工作区所有者。"),
-                QuestionOption(label: "统一归给工作区所有者", description: nil),
+                QuestionOption(label: "Backfill from audit log", description: "Accurate for records created after March; older ones fall back to the workspace owner."),
+                QuestionOption(label: "Assign all to workspace owner", description: nil),
             ],
             multiSelect: nil
         )
         let tests = QuestionItem(
-            question: "新接口要哪些层的测试覆盖？可以多选。",
-            header: "测试覆盖",
+            question: "Which layers of the new endpoint need test coverage? Pick any that apply.",
+            header: "Test coverage",
             options: [
-                QuestionOption(label: "处理函数单元测试", description: nil),
-                QuestionOption(label: "协议契约快照", description: "在 packages/protocol/test/fixtures 下重录。"),
-                QuestionOption(label: "Playwright 端到端", description: "最慢，需要起真实宿主。"),
+                QuestionOption(label: "Handler unit tests", description: nil),
+                QuestionOption(label: "Protocol contract snapshot", description: "Re-record under packages/protocol/test/fixtures."),
+                QuestionOption(label: "Playwright end-to-end", description: "Slowest; needs a real host running."),
             ],
             multiSelect: true
         )
         let rollout = QuestionItem(
-            question: "要不要放在开关后面发布？",
-            header: "发布顺序",
+            question: "Should this ship behind a flag?",
+            header: "Rollout",
             options: [
-                QuestionOption(label: "加开关，默认关闭", description: nil),
-                QuestionOption(label: "直接发布", description: nil),
+                QuestionOption(label: "Add a flag, off by default", description: nil),
+                QuestionOption(label: "Ship it directly", description: nil),
             ],
             multiSelect: nil
         )
@@ -410,10 +410,10 @@ extension AppModel {
         let cot = CotView(
             phase: .settled, failed: false, anchorMs: now - 6_000, elapsedMs: 6_000, todoWrittenAtMs: nil,
             steps: [],
-            answer: CotAnswer(text: "动手之前有几件事需要你拍板，问题在下面。", streaming: false)
+            answer: CotAnswer(text: "A few things need your call before I start; the questions are below.", streaming: false)
         )
         let chat: [ChatEntry] = [
-            .user(id: "u1", text: "上传接口要加鉴权，你看着办，拿不准的问我。", images: []),
+            .user(id: "u1", text: "Add auth to the upload endpoint. Use your judgment, and ask me if you're unsure.", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conversation = ConversationSnapshot(
@@ -458,19 +458,19 @@ extension AppModel {
         let now = Date.now.timeIntervalSince1970 * 1000
         let parent = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
-            title: "上下文用量演示", status: nil, updatedAt: now,
+            title: "Context usage demo", status: nil, updatedAt: now,
             label: nil, role: nil, activity: nil
         )
         let cot = CotView(
             phase: .settled, failed: false, anchorMs: now - 4_000, elapsedMs: 4_000, todoWrittenAtMs: nil,
             steps: [],
             answer: CotAnswer(
-                text: "上下文用量已经算在核心里，composer 只负责把它画出来。",
+                text: "Context usage is already computed in the core; the composer only draws it.",
                 streaming: false
             )
         )
         let chat: [ChatEntry] = [
-            .user(id: "u1", text: "这个对话用了多少上下文？", images: []),
+            .user(id: "u1", text: "How much context has this conversation used?", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conversation = ConversationSnapshot(
@@ -478,7 +478,7 @@ extension AppModel {
             agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage
         )
-        drafts[1] = "帮我看看这个改动"
+        drafts[1] = "Take a look at these changes"
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
@@ -501,15 +501,15 @@ extension AppModel {
         let start = Date.now.timeIntervalSince1970 * 1000
         let commands = ["bun run typecheck", "rg -n uploadQueue src", "bun test upload", "bun run lint"]
         let lines = [
-            "先跑一遍类型检查，确认改动没有带坏别的地方。",
-            "**找到了**：上传队列在重试时复用了同一个临时文件名。",
-            "改成按尝试次数命名，再跑一次上传测试。",
+            "Running the type check first to make sure the changes didn't break anything else.",
+            "**Found it**: the upload queue reuses the same temp file name on retry.",
+            "Naming it by attempt number instead, then rerunning the upload tests.",
         ]
         let todo = [
-            TodoItem(text: "复现偶发失败", status: .completed),
-            TodoItem(text: "给临时文件加上尝试序号", status: .completed),
-            TodoItem(text: "跑完整测试并确认稳定", status: .inProgress),
-            TodoItem(text: "补一条回归测试", status: .pending),
+            TodoItem(text: "Reproduce the intermittent failure", status: .completed),
+            TodoItem(text: "Add the attempt number to temp files", status: .completed),
+            TodoItem(text: "Run the full suite and confirm it's stable", status: .inProgress),
+            TodoItem(text: "Add a regression test", status: .pending),
         ]
         // A four-bar chart, small enough to inline.
         let chart = "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAIAAABd+SbeAAAAs0lEQVR42u3QMQ3AIBAAQORUEzMiXgRymFGCA5ZK6IaCtqHpJafg0hHjIXOeLEm0aNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq06E2jc7TPES1atGjRokWLFi1atGjRokWLFi1atGjRokWLFi1a9H3RNSqLaNGiRYsWLVq0aNGiRYsWLVq0aNGiRYsWLVq0aNH/i+5ReIFo0aIRLVq0AtGiES1atAXRohEtWrQF0aIRvakLvqujxlgAdtAAAAAASUVORK5CYII="
@@ -530,7 +530,7 @@ extension AppModel {
                 diffStat: nil, durationMs: 300, images: [MessageImage(data: chart, mimeType: "image/png")],
                 output: "Read image coverage/flaky-runs.png", toolCallId: "e2-0", toolName: "read", pinomad: nil
             )], live: false, activeToolCallId: nil)],
-            answer: CotAnswer(text: "原因是重试时临时文件名冲突，我列了一个计划，接下来按计划修。", streaming: false)
+            answer: CotAnswer(text: "The cause is a temp file name collision on retry. I've written up a plan and will fix it next.", streaming: false)
         )
         Task { [weak self] in
             var steps: [CotStep] = []
@@ -556,7 +556,7 @@ extension AppModel {
                 if interims, tick % 4 == 1 {
                     steps.append(.interim(id: "i\(tick)", text: lines[(tick / 4) % lines.count]))
                 } else if tick % 4 == 3 {
-                    steps.append(.thinking(id: "t\(tick)", text: "看一下输出里有没有新的失败，再决定下一步要不要缩小范围。", live: true))
+                    steps.append(.thinking(id: "t\(tick)", text: "Check the output for new failures, then decide whether to narrow the scope next.", live: true))
                 } else {
                     let command = commands[tick % commands.count]
                     steps.append(.tools(id: "s\(tick)", tools: [ToolItem(
@@ -570,9 +570,9 @@ extension AppModel {
                     todoWrittenAtMs: nil, steps: steps, answer: nil
                 )
                 let chat: [ChatEntry] = [
-                    .user(id: "u1", text: "上传测试偶尔会失败，帮我查一下。", images: []),
+                    .user(id: "u1", text: "The upload tests fail now and then. Can you look into it?", images: []),
                     .run(id: "run-1", cot: earlier, forkEntryId: nil, interrupted: false, failure: nil),
-                    .user(id: "u2", text: "按计划修掉，改动尽量小。", images: []),
+                    .user(id: "u2", text: "Fix it per the plan, and keep the changes small.", images: []),
                     .run(id: "run-2", cot: live, forkEntryId: nil, interrupted: false, failure: nil),
                 ]
                 let conversation = ConversationSnapshot(
@@ -601,11 +601,11 @@ extension AppModel {
             answer: CotAnswer(text: answer, streaming: streaming)
         )
         let chat: [ChatEntry] = [
-            .user(id: "u1", text: "演示一轮流式输出", images: []),
+            .user(id: "u1", text: "Demo one round of streaming output", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conv = ConversationSnapshot(
-            id: 1, chat: chat, statusText: streaming ? "正在输出…" : "",
+            id: 1, chat: chat, statusText: streaming ? "Responding…" : "",
             queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil
         )

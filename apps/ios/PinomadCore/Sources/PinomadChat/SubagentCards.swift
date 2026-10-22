@@ -130,9 +130,7 @@ extension ChatAdapter {
         return SubagentCard(
             key: key,
             conversationId: conversationID(of: tool),
-            // A summary with neither label nor task falls back to the core's
-            // English "Subagent"; the interface is Chinese.
-            title: title == "Subagent" ? "子代理" : title,
+            title: title,
             status: status(of: tool.state),
             role: summary?.role.flatMap { $0.isEmpty ? nil : "@\($0)" },
             model: model,

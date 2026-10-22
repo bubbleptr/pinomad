@@ -30,15 +30,15 @@ extension AppModel {
                 do {
                     try accountStore.save(record)
                 } catch {
-                    accountSignOutWarning = "登录已过期，但没能清除钥匙串里的令牌；重启 App 后可能仍保持登录。"
+                    accountSignOutWarning = "Your sign-in expired, but the token couldn't be removed from the keychain. You may still be signed in after the app restarts."
                 }
-                accountNotice = "登录已过期，请重新登录。"
+                accountNotice = "Your sign-in expired. Sign in again."
             } else {
                 accountRecord = record
             }
         } catch {
             accountRecord = nil
-            accountNotice = "读取账号信息失败：\(describe(error))"
+            accountNotice = "Couldn't read the account: \(describe(error))"
         }
     }
 
@@ -103,7 +103,7 @@ extension AppModel {
             do {
                 try accountStore.save(record)
             } catch {
-                saveError = "登录成功，但账号信息没能存进钥匙串：\(describe(error))"
+                saveError = "Signed in, but the account couldn't be saved to the keychain: \(describe(error))"
             }
             await accountRefreshHosts()
             if let saveError { accountError = saveError }
@@ -135,7 +135,7 @@ extension AppModel {
         case .failure(let failure):
             guard accountSession == session else { return }
             if failure.clearsSession {
-                accountSignOutWarning = endAccountSession(notice: "登录已失效，请重新登录。")
+                accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
                 accountHostsError = AccountCopy.message(failure)
             }
@@ -148,7 +148,7 @@ extension AppModel {
                 // A keychain read failure is not "no pairings": keep the last
                 // good account rows and say what happened instead of inviting
                 // a re-pair over a live device key.
-                accountHostsError = "读取本地配对失败：\(describe(error))"
+                accountHostsError = "Couldn't read the saved pairings: \(describe(error))"
                 return
             }
             let result = AccountHosts.reconcile(
@@ -215,7 +215,7 @@ extension AppModel {
     @discardableResult
     func pairViaAccount(hostId: String) async -> Bool {
         guard let session = accountSession, let api = accountAPI() else {
-            accountError = "请先登录账号。"
+            accountError = "Sign in first."
             return false
         }
         guard !accountBusy else { return false }
@@ -236,7 +236,7 @@ extension AppModel {
         case .failure(let failure):
             guard accountSession == session, generation == accountPairingGeneration else { return false }
             if failure.clearsSession {
-                accountSignOutWarning = endAccountSession(notice: "登录已失效，请重新登录。")
+                accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
                 accountError = AccountCopy.message(failure)
             }
@@ -371,7 +371,7 @@ extension AppModel {
                 try accountStore.clear()
                 return nil
             } catch {
-                return "账号已退出，但没能清除钥匙串里的令牌；重启 App 后可能仍保持登录。"
+                return "Signed out, but the token couldn't be removed from the keychain. You may still be signed in after the app restarts."
             }
         }
     }

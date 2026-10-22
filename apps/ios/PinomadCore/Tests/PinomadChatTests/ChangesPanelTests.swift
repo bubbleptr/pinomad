@@ -148,9 +148,9 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
         let old = changes()
         panel.land(first, old)
         let refresh = panel.refresh()
-        panel.fail(try #require(refresh), "宿主没有响应")
+        panel.fail(try #require(refresh), "The host didn't respond")
         #expect(panel.changes == old)
-        #expect(panel.error == "宿主没有响应")
+        #expect(panel.error == "The host didn't respond")
         #expect(!panel.loading)
     }
 }

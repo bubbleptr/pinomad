@@ -8,7 +8,7 @@ import Testing
         #expect(reading.text == "42%")
         #expect(reading.fill == 0.42)
         #expect(reading.detail == "84k / 200k")
-        #expect(reading.accessibilityLabel == "上下文已用 42%，84k / 200k")
+        #expect(reading.accessibilityLabel == "Context 42% used, 84k of 200k tokens")
         #expect(reading.warning == false)
     }
 
@@ -44,7 +44,7 @@ import Testing
         let huge = ContextMeterReading(used: 1e308, window: 200_000)
         #expect(huge.percent == nil)
         #expect(huge.text == "—")
-        #expect(huge.detail == "还没有用量数据")
+        #expect(huge.detail == "No usage data yet")
 
         // A sub-token window divides up instead of down; it is no scale.
         let tinyWindow = ContextMeterReading(used: 1, window: 1e-300)
@@ -59,7 +59,7 @@ import Testing
         #expect(reading.text == "—")
         #expect(reading.fill == 0)
         #expect(reading.warning == false)
-        #expect(reading.detail == "还没有用量数据")
-        #expect(reading.accessibilityLabel == "上下文用量未知")
+        #expect(reading.detail == "No usage data yet")
+        #expect(reading.accessibilityLabel == "Context usage unknown")
     }
 }

@@ -306,7 +306,7 @@ final class AppModel {
             hostsLoaded = true
         } catch {
             closeSession()
-            fail(.unreachable("读取配对信息失败：\(describe(error))"))
+            fail(.unreachable("Couldn't read the saved pairings: \(describe(error))"))
             return
         }
         if let host = hosts.active {
@@ -502,7 +502,7 @@ final class AppModel {
             accountRefreshAfterPairing()
             advancePushTarget()
             if let saveError {
-                lastError = "没能记住这台宿主（\(saveError)）：重启 App 后会回到之前的宿主，要再用它得重新配对。"
+                lastError = "Couldn't save this host (\(saveError)). After a restart the app returns to the previous host, and you'll need to pair again to use this one."
             }
         case .snapshot(let snapshot):
             // Terminal after the first view: revoked (4401) or a hello

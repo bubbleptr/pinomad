@@ -99,7 +99,7 @@ extension AppModel {
                 home: draftHome, text: text, checkout: checkout,
                 model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images))
         } catch {
-            lastError = "新建对话失败：\(describe(error))"
+            lastError = "Couldn't create conversation: \(describe(error))"
             return
         }
         // The op resolves before its snapshot is published — wait for it.
@@ -123,7 +123,7 @@ extension AppModel {
     func listFolders(_ path: String?) async throws -> FolderListing {
         guard let session else { throw SessionError.sessionClosed }
         guard case .folderListing(let listing) = try await session.invoke(.listFolders(path: path)) else {
-            throw SessionError.operationFailed("宿主的回复不是目录列表")
+            throw SessionError.operationFailed("The host's reply wasn't a folder list")
         }
         return listing
     }
@@ -135,7 +135,7 @@ extension AppModel {
         guard case .files(let files, let truncated) = try await session.invoke(
             .listFiles(scope: scope, query: query))
         else {
-            throw SessionError.operationFailed("宿主的回复不是文件列表")
+            throw SessionError.operationFailed("The host's reply wasn't a file list")
         }
         return (files, truncated)
     }
@@ -144,7 +144,7 @@ extension AppModel {
     func addProject(_ path: String) async throws {
         guard let session else { throw SessionError.sessionClosed }
         guard case .project(let project) = try await session.invoke(.addProject(path: path)) else {
-            throw SessionError.operationFailed("宿主的回复不是项目")
+            throw SessionError.operationFailed("The host's reply wasn't a project")
         }
         draftHome = .project(path: project.path ?? path)
     }
@@ -163,8 +163,8 @@ extension AppModel {
     func describe(_ error: Error) -> String {
         switch error {
         case SessionError.operationFailed(let message): message
-        case SessionError.connectionLost: "连接已断开"
-        case SessionError.sessionClosed: "连接已关闭"
+        case SessionError.connectionLost: "Connection lost"
+        case SessionError.sessionClosed: "Connection closed"
         default: error.localizedDescription
         }
     }

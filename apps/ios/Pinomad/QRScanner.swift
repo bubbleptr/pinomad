@@ -20,11 +20,11 @@ struct ScannerView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("扫描二维码")
+                .navigationTitle("Scan QR Code")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { dismiss() }
+                        Button("Cancel") { dismiss() }
                     }
                 }
         }
@@ -45,7 +45,7 @@ struct ScannerView: View {
                     .ignoresSafeArea(edges: .bottom)
                     .overlay(alignment: .bottom) {
                         if rejected {
-                            Text("不是 PiNomad 的配对码")
+                            Text("Not a PiNomad pairing code")
                                 .font(.footnote)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
@@ -55,20 +55,20 @@ struct ScannerView: View {
                     }
             } else {
                 ContentUnavailableView {
-                    Label("这台设备不能扫码", image: .camera)
+                    Label("This device can't scan codes", image: .camera)
                 } description: {
-                    Text("改为粘贴配对链接。")
+                    Text("Paste a pairing link instead.")
                 }
             }
         case .notDetermined:
             ProgressView()
         default:
             ContentUnavailableView {
-                Label("需要相机权限", image: .camera)
+                Label("Camera access needed", image: .camera)
             } description: {
-                Text("PiNomad 只用相机扫描宿主的配对二维码和拍照。")
+                Text("PiNomad uses the camera only to scan a host's pairing QR code and to take photos.")
             } actions: {
-                Button("打开设置") {
+                Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
                 .buttonStyle(.tactile(.borderedProminent))

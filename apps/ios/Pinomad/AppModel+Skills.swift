@@ -49,7 +49,7 @@ extension AppModel {
         Task { [weak self] in
             do {
                 guard case .skills(let skills) = try await session.invoke(.listSkills(scope: scope)) else {
-                    throw SessionError.operationFailed("宿主的回复不是 Skill 列表")
+                    throw SessionError.operationFailed("The host's reply wasn't a skill list")
                 }
                 guard let self, self.sessionGeneration == generation, self.session === session else { return }
                 self.skillCache.receive(

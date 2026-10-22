@@ -157,7 +157,7 @@ struct ConversationComposer: View {
             if !tray.isEmpty || tray.error != nil || imagesBlocked {
                 AttachmentStrip(
                     tray: tray,
-                    note: imagesBlocked ? "\(currentModel?.name ?? "当前模型")不支持图片，移除图片或换模型后再发送" : tray.error,
+                    note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : tray.error,
                     remove: { model.removeImage(conversation: conversation.id, at: $0) },
                     view: { model.viewing = $0 }
                 )
@@ -166,7 +166,7 @@ struct ConversationComposer: View {
                 text: draft,
                 selection: $selection,
                 focused: $focused,
-                placeholder: conversation.busy ? "追加指令…" : "问点什么…",
+                placeholder: conversation.busy ? "Add a follow-up…" : "Ask the agent…",
                 names: skillEntries?.map(\.name),
                 enabled: connected && !editLocked,
                 minLines: 1,
@@ -275,17 +275,17 @@ struct ConversationComposer: View {
                 SlotIcon(.stop)
             }
             .buttonStyle(.press)
-            .accessibilityLabel("停止")
+            .accessibilityLabel("Stop")
             .disabled(!enabled)
         case .send(let enabled, let canSteer):
             if canSteer {
                 // Tap queues a follow-up; the long-press menu can steer
                 // the running turn instead.
                 Menu {
-                    Button("引导当前运行（Steer）", image: .redo2) {
+                    Button("Steer the current run", image: .redo2) {
                         send(.steer)
                     }
-                    Button("运行完再发（Follow-up）", image: .listEnd) {
+                    Button("Send after this run (follow-up)", image: .listEnd) {
                         send(.followUp)
                     }
                 } label: {
@@ -295,8 +295,8 @@ struct ConversationComposer: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(PressStyle(haptic: false))
-                .accessibilityLabel("发送")
-                .accessibilityHint("运行结束后发送；长按可改为立即引导")
+                .accessibilityLabel("Send")
+                .accessibilityHint("Sends after the run finishes. Long-press to steer now instead.")
                 .disabled(!enabled || editLocked)
             } else {
                 Button {
@@ -305,7 +305,7 @@ struct ConversationComposer: View {
                     SlotIcon(.send)
                 }
                 .buttonStyle(PressStyle(haptic: false))
-                .accessibilityLabel("发送")
+                .accessibilityLabel("Send")
                 .disabled(!enabled || editLocked)
             }
         }
@@ -372,19 +372,19 @@ struct PlusMenu: View {
         Menu {
             if acceptsImages {
                 Section {
-                    Button("照片图库", image: .images, action: photos)
+                    Button("Photo library", image: .images, action: photos)
                     if let camera {
-                        Button("拍照", image: .camera, action: camera)
+                        Button("Take photo", image: .camera, action: camera)
                     }
-                    Button("粘贴图片", image: .clipboardPaste, action: paste)
+                    Button("Paste image", image: .clipboardPaste, action: paste)
                 }
                 .disabled(!canAddImages || locked)
             } else {
-                Button("添加图片（\(modelName ?? "当前模型")不支持图片）", image: .image) {}
+                Button("Add images (\(modelName ?? "this model") doesn't accept images)", image: .image) {}
                     .disabled(true)
             }
             if let compact {
-                Button("压缩上下文", image: .foldVertical, action: compact)
+                Button("Compact context", image: .foldVertical, action: compact)
                     .disabled(!connected)
             }
         } label: {
@@ -397,7 +397,7 @@ struct PlusMenu: View {
         .menuStyle(.button)
         .buttonStyle(.press)
         .tint(.secondary)
-        .accessibilityLabel("更多操作")
+        .accessibilityLabel("More actions")
     }
 }
 
@@ -429,7 +429,7 @@ struct AttachmentStrip: View {
                                     }
                                     .buttonStyle(.press)
                                     .offset(x: 5, y: -5)
-                                    .accessibilityLabel("移除第 \(index + 1) 张图片")
+                                    .accessibilityLabel("Remove image \(index + 1)")
                                 }
                         }
                         ForEach(0..<tray.preparing, id: \.self) { _ in
@@ -497,7 +497,7 @@ struct ModelCapsule: View {
                         .lineLimit(1)
                         .foregroundStyle(.red)
                 } else {
-                    Text(label.isEmpty ? "选择模型" : label)
+                    Text(label.isEmpty ? "Choose model" : label)
                         .lineLimit(1)
                         // The label keeps its width; the hint truncates first
                         // when the capsule runs out of room.
@@ -520,7 +520,7 @@ struct ModelCapsule: View {
         }
         .buttonStyle(.press)
         .disabled(!enabled)
-        .accessibilityLabel(problem.map { "模型：\($0)" } ?? "模型：\(label)")
+        .accessibilityLabel(problem.map { "Model: \($0)" } ?? "Model: \(label)")
     }
 }
 
@@ -607,7 +607,7 @@ private struct QueueList: View {
                 .font(.footnote)
                 .lineLimit(1)
             if item.imageCount > 0 {
-                Text("· \(item.imageCount) 张图片")
+                Text("· \(item.imageCount) image\(item.imageCount == 1 ? "" : "s")")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -625,8 +625,8 @@ private struct QueueList: View {
                 .menuStyle(.button)
                 .buttonStyle(.press)
                 .disabled(pending.contains(item.id))
-                .accessibilityLabel("排队消息操作")
-                .accessibilityHint("引导、编辑或撤回这条排队消息")
+                .accessibilityLabel("Queued message actions")
+                .accessibilityHint("Steer, edit, or withdraw this queued message")
             }
         }
         .padding(.leading, 12)
@@ -640,16 +640,16 @@ private struct QueueList: View {
         let blocked = pending.contains(item.id)
         // Write/other never reach here: the host rejects both calls for them.
         if item.mode == .followUp && busy {
-            Button("引导当前运行", image: .redo2) {
+            Button("Steer now", image: .redo2) {
                 onSteer(item)
             }
             .disabled(blocked)
         }
-        Button("编辑", image: .pencil) {
+        Button("Edit", image: .pencil) {
             onEdit(item)
         }
         .disabled(blocked || editDisabled)
-        Button("撤回", image: .undo2, role: .destructive) {
+        Button("Withdraw", image: .undo2, role: .destructive) {
             onWithdraw(item)
         }
         .disabled(blocked)
@@ -657,9 +657,9 @@ private struct QueueList: View {
 
     private func tag(_ mode: QueueMode) -> String {
         switch mode {
-        case .steer: "引导"
-        case .followUp: "追加"
-        case .write, .other: "排队"
+        case .steer: "Steer"
+        case .followUp: "Follow-up"
+        case .write, .other: "Queued"
         }
     }
 }

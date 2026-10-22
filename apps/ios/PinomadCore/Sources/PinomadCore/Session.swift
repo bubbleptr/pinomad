@@ -222,7 +222,7 @@ public final class PinomadSession: @unchecked Sendable {
     public func withdrawQueued(submissionId: UInt64, target: UInt64) async throws -> WithdrawOutcome {
         let result = try await invoke(.withdrawQueued(submissionId: submissionId, target: target))
         guard case .withdrawQueued(let outcome) = result else {
-            throw SessionError.operationFailed("宿主的回复不是撤回结果")
+            throw SessionError.operationFailed("The host's reply wasn't a withdraw result.")
         }
         return outcome
     }
@@ -231,7 +231,7 @@ public final class PinomadSession: @unchecked Sendable {
     public func steerQueued(submissionId: UInt64, target: UInt64) async throws -> SteerOutcome {
         let result = try await invoke(.steerQueued(submissionId: submissionId, target: target))
         guard case .steerQueued(let outcome) = result else {
-            throw SessionError.operationFailed("宿主的回复不是引导结果")
+            throw SessionError.operationFailed("The host's reply wasn't a steer result.")
         }
         return outcome
     }

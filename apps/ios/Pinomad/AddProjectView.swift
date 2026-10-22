@@ -51,10 +51,10 @@ struct AddProjectView: View {
                 } else if let error = browser.error {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(error).foregroundStyle(.red).font(.footnote)
-                        Button("再试一次") { go(browser.retryPath) }
+                        Button("Try again") { go(browser.retryPath) }
                     }
                 } else if let listing, listing.folders.isEmpty {
-                    Text("没有子目录").foregroundStyle(.secondary)
+                    Text("No subfolders").foregroundStyle(.secondary)
                 } else if let listing {
                     ForEach(listing.folders, id: \.path) { folder in
                         Button {
@@ -69,12 +69,12 @@ struct AddProjectView: View {
         }
         .tint(.primary)
         .disabled(adding)
-        .navigationTitle("添加项目")
+        .navigationTitle("Add Project")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 if let listing, let up = parentFolder(path: listing.path) {
-                    Button("上一级", image: .arrowUp) { go(up) }
+                    Button("Parent folder", image: .arrowUp) { go(up) }
                         .disabled(adding)
                 }
             }
@@ -98,7 +98,7 @@ struct AddProjectView: View {
                 add()
             } label: {
                 Group {
-                    if adding { ProgressView() } else { Text("添加为项目") }
+                    if adding { ProgressView() } else { Text("Add as project") }
                 }
                 .frame(maxWidth: .infinity)
             }

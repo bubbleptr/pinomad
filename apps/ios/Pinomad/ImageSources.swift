@@ -42,7 +42,7 @@ private struct ImageSources: ViewModifier {
                 model.attach(conversation: key, accepts: accepts, sources: items.map { item in
                     { @Sendable in
                         guard let data = try await item.loadTransferable(type: Data.self) else {
-                            throw ImagePrep.Failure(description: "无法读取图片")
+                            throw ImagePrep.Failure(description: "Couldn't read the image")
                         }
                         return data
                     }

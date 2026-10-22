@@ -45,16 +45,16 @@ struct AccountView: View {
                 }
             }
 
-            Section("账号下的宿主") {
+            Section("Hosts on Your Account") {
                 if model.accountRefreshing && model.accountRows.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("正在读取账号宿主…")
+                        Text("Loading hosts…")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 } else if model.accountRows.isEmpty, model.accountHostsError == nil {
-                    Text("账号下还没有宿主。")
+                    Text("No hosts on this account yet.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
@@ -77,12 +77,12 @@ struct AccountView: View {
                         .foregroundStyle(.orange)
                 }
 
-                Button("退出登录", role: .destructive) {
+                Button("Sign out", role: .destructive) {
                     Task { await model.accountSignOut(everywhere: false) }
                 }
                 .disabled(model.accountBusy)
 
-                Button("在所有设备上退出", role: .destructive) {
+                Button("Sign out everywhere", role: .destructive) {
                     confirmingSignOutEverywhere = true
                 }
                 .disabled(model.accountBusy)
@@ -90,7 +90,7 @@ struct AccountView: View {
                 Text(AccountCopy.signOutExplanation)
             }
         }
-        .navigationTitle("账号")
+        .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await model.refreshHostsAndAccount()
@@ -100,31 +100,31 @@ struct AccountView: View {
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("完成") { dismiss() }
+                Button("Done") { dismiss() }
             }
         }
         .alert(
-            "要和这台宿主配对吗？",
+            "Pair with this host?",
             isPresented: Binding(
                 get: { pendingAccountPair != nil },
                 set: { if !$0 { pendingAccountPair = nil } })
         ) {
-            Button("取消", role: .cancel) { pendingAccountPair = nil }
-            Button("配对") {
+            Button("Cancel", role: .cancel) { pendingAccountPair = nil }
+            Button("Pair") {
                 let row = pendingAccountPair
                 pendingAccountPair = nil
                 if let row { startAccountPair(row) }
             }
         } message: {
-            Text("会断开当前的 \(model.currentHostLabel ?? "宿主")，但不会忘记它。")
+            Text("This disconnects \(model.currentHostLabel ?? "the current host") but doesn't forget it.")
         }
-        .alert("在所有设备上退出？", isPresented: $confirmingSignOutEverywhere) {
-            Button("取消", role: .cancel) {}
-            Button("退出", role: .destructive) {
+        .alert("Sign out everywhere?", isPresented: $confirmingSignOutEverywhere) {
+            Button("Cancel", role: .cancel) {}
+            Button("Sign out", role: .destructive) {
                 Task { await model.accountSignOut(everywhere: true) }
             }
         } message: {
-            Text("所有设备上的账号会话都会失效；已配对的宿主不受影响，需要重新登录。")
+            Text("Your account is signed out on every device, and each one needs to sign in again. Paired hosts aren't affected.")
         }
     }
 
@@ -137,7 +137,7 @@ struct AccountView: View {
                     Circle()
                         .fill(row.online ? Color.green : Color.secondary)
                         .frame(width: 6, height: 6)
-                    Text(row.online ? "在线" : "离线")
+                    Text(row.online ? "Online" : "Offline")
                     Text("·")
                     Text(statusLabel(row.status))
                 }
@@ -159,11 +159,11 @@ struct AccountView: View {
         switch row.action {
         case .connect(let hostKey):
             if hostKey == model.currentHostKey && model.connected {
-                Text("已连接")
+                Text("Connected")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Button("连接") {
+                Button("Connect") {
                     model.switchHost(hostKey)
                     dismiss()
                 }
@@ -174,7 +174,7 @@ struct AccountView: View {
             if model.accountPairingHostId == row.hostId {
                 ProgressView().controlSize(.small)
             } else {
-                Button(row.action == .rePair ? "重新配对" : "配对") {
+                Button(row.action == .rePair ? "Pair again" : "Pair") {
                     requestAccountPair(row)
                 }
                 .buttonStyle(.tactile(.glass))
@@ -186,10 +186,10 @@ struct AccountView: View {
 
     private func statusLabel(_ status: AccountHostRowStatus) -> String {
         switch status {
-        case .paired: "已配对"
-        case .unpaired: "未配对"
-        case .keyChanged: "公钥变了"
-        case .rejected: "被宿主拒绝"
+        case .paired: "Paired"
+        case .unpaired: "Not paired"
+        case .keyChanged: "Key changed"
+        case .rejected: "Refused by host"
         }
     }
 

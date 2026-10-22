@@ -67,7 +67,7 @@ extension EnvironmentValues {
 /// and a machine's group rows.
 struct HomeSkeleton: View {
     var body: some View {
-        Skeleton(label: "正在载入") {
+        Skeleton(label: "Loading…") {
             VStack(alignment: .leading, spacing: 24) {
                 Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                     GridRow { tile; tile }
@@ -96,7 +96,7 @@ struct HomeSkeleton: View {
 /// way — the shape of `groupRow`: icon, name, count.
 struct GroupRowsSkeleton: View {
     var body: some View {
-        Skeleton(label: "正在同步") { Self.rows }
+        Skeleton(label: "Syncing…") { Self.rows }
     }
 
     static var rows: some View {
@@ -120,7 +120,7 @@ struct GroupRowsSkeleton: View {
 /// where the transcript opens.
 struct ConversationSkeleton: View {
     var body: some View {
-        Skeleton(label: "正在载入对话") {
+        Skeleton(label: "Loading conversation…") {
             VStack(alignment: .leading, spacing: 24) {
                 bubble(width: 200)
                 reply(lines: [nil, nil, 220])

@@ -176,11 +176,11 @@ private struct QuestionCard: View {
                     pick(index, item, option)
                 }
             }
-            OptionRow(label: "其他", description: nil, multi: multi, picked: otherOn) {
+            OptionRow(label: "Other", description: nil, multi: multi, picked: otherOn) {
                 toggleOther(index, multi: multi)
             }
             if otherOn {
-                TextField("你的回答…", text: Binding(
+                TextField("Your answer…", text: Binding(
                     get: { draft.others.indices.contains(index) ? draft.others[index] : "" },
                     set: { text in update { $0.setOther(question: index, text) } }
                 ))
@@ -205,7 +205,7 @@ private struct QuestionCard: View {
             // still has to take its share, which a Group would not.
             HStack {
                 if current > 0 {
-                    Button("上一题") { move(to: current - 1) }
+                    Button("Back") { move(to: current - 1) }
                         .buttonStyle(CardButtonStyle(kind: .plain))
                         // The word lines up with the question, not its padding.
                         .padding(.leading, -CardButtonStyle.plainInset)
@@ -223,14 +223,14 @@ private struct QuestionCard: View {
             HStack {
                 switch heldAction ?? action {
                 case .submit:
-                    Button("提交", action: submit)
+                    Button("Submit", action: submit)
                         .buttonStyle(CardButtonStyle(kind: .primary))
                         .disabled(!connected || sending)
                 case .next:
-                    Button("下一题") { move(to: current + 1) }
+                    Button("Next") { move(to: current + 1) }
                         .buttonStyle(CardButtonStyle(kind: .secondary))
                 case .skip:
-                    Button("跳过") { move(to: current + 1) }
+                    Button("Skip") { move(to: current + 1) }
                         .buttonStyle(CardButtonStyle(kind: .plain))
                         .padding(.trailing, -CardButtonStyle.plainInset)
                 }
@@ -338,8 +338,8 @@ private struct Segments: View {
         }
         .animation(.easeOut(duration: 0.2), value: current)
         .accessibilityElement()
-        .accessibilityLabel("第 \(current + 1) 题，共 \(count) 题，\(headers[current])")
-        .accessibilityValue(answered(current) ? "已回答" : "未回答")
+        .accessibilityLabel("Question \(current + 1) of \(count), \(headers[current])")
+        .accessibilityValue(answered(current) ? "Answered" : "Not answered")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: select(min(current + 1, count - 1))

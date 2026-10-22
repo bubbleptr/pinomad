@@ -50,11 +50,11 @@ struct RootView: View {
         .onOpenURL { url in model.offerPairing(url.absoluteString) }
         // Forgetting could not clear the host-side registration; the only
         // remaining path is revoking this device from the host.
-        .alert("推送登记没注销", isPresented: Binding(
+        .alert("Push registration not cleared", isPresented: Binding(
             get: { model.pushForgetWarning != nil },
             set: { if !$0 { model.pushForgetWarning = nil } }
         )) {
-            Button("好") { model.pushForgetWarning = nil }
+            Button("OK") { model.pushForgetWarning = nil }
         } message: {
             Text(model.pushForgetWarning ?? "")
         }
@@ -66,13 +66,13 @@ struct RootView: View {
         HomeSkeleton()
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
-                    Text(model.currentHostLabel.map { "正在连接 \($0)…" } ?? "正在连接…")
+                    Text(model.currentHostLabel.map { "Connecting to \($0)…" } ?? "Connecting…")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     if model.pairingLink != nil {
-                        Button("取消") { model.cancelPairing() }
+                        Button("Cancel") { model.cancelPairing() }
                     } else if model.hosts.hosts.count > 1 {
-                        Button("换一台宿主") { model.present(.settings) }
+                        Button("Switch host") { model.present(.settings) }
                     }
                 }
                 .padding(.bottom, 16)
@@ -101,28 +101,28 @@ private struct FailureView: View {
                 .multilineTextAlignment(.center)
             VStack(spacing: 10) {
                 if canRetry {
-                    Button("重试") { model.retryConnection() }
+                    Button("Try again") { model.retryConnection() }
                         .buttonStyle(.tactile(.borderedProminent))
                 }
                 if failure == .revoked, let key = model.currentHostKey {
                     if model.accountHostId(for: key) != nil {
-                        Button("经账号重新配对") { model.repairViaAccount(hostKey: key) }
+                        Button("Pair again with your account") { model.repairViaAccount(hostKey: key) }
                             .buttonStyle(.tactile(.bordered))
                             .disabled(model.accountBusy)
                     }
-                    Button("忘记这台宿主", role: .destructive) { model.forget(key) }
+                    Button("Forget this host", role: .destructive) { model.forget(key) }
                         .buttonStyle(.tactile(.bordered))
                 }
                 if pairing {
-                    Button("取消") { model.cancelPairing() }
+                    Button("Cancel") { model.cancelPairing() }
                         .buttonStyle(.tactile(.bordered))
                 }
                 if let previous = model.previousHostKey {
-                    Button("回到 \(model.hostLabels[previous] ?? "之前的宿主")") { model.switchHost(previous) }
+                    Button("Back to \(model.hostLabels[previous] ?? "the previous host")") { model.switchHost(previous) }
                         .buttonStyle(.tactile(.bordered))
                 }
                 if !pairing {
-                    Button("设置") { model.present(.settings) }
+                    Button("Settings") { model.present(.settings) }
                         .buttonStyle(.tactile(.bordered))
                 }
             }
@@ -145,24 +145,24 @@ private struct FailureView: View {
 
     private var title: String {
         switch failure {
-        case .pairingRefused: "这个配对码已失效"
-        case .revoked: "这台设备被宿主拒绝或吊销了"
-        case .appOutdated: "请更新 App"
-        case .hostOutdated: "请升级宿主"
-        case .unreachable: "连不上宿主"
+        case .pairingRefused: "This pairing code is no longer valid"
+        case .revoked: "The host refused or revoked this device"
+        case .appOutdated: "Update the app"
+        case .hostOutdated: "Update the host"
+        case .unreachable: "Couldn't reach the host"
         }
     }
 
     private var detail: String {
         switch failure {
         case .pairingRefused:
-            "它已经用过或过期了。在宿主上运行 pinomad pair，或在「设备 → 配对设备」里生成新的链接。"
+            "It was already used or has expired. Run pinomad pair on the host, or create a new link in Settings → Devices → Pair a device."
         case .revoked:
-            "它没有和\(model.currentHostLabel ?? "这台宿主")配对，或配对已被撤销。"
+            "It isn't paired with \(model.currentHostLabel ?? "this host"), or its pairing was revoked."
         case .appOutdated(let host, let client):
-            "宿主使用协议 \(ConnectFailure.versionText(host)) 版，这个 App 是 \(ConnectFailure.versionText(client)) 版。"
+            "The host uses protocol version \(ConnectFailure.versionText(host)), but this app uses version \(ConnectFailure.versionText(client))."
         case .hostOutdated(let host, let client):
-            "这个 App 使用协议 \(ConnectFailure.versionText(client)) 版，宿主是 \(ConnectFailure.versionText(host)) 版。在宿主上运行 pinomad upgrade。"
+            "This app uses protocol version \(ConnectFailure.versionText(client)), but the host uses version \(ConnectFailure.versionText(host)). Run pinomad upgrade on the host."
         case .unreachable(let message):
             message
         }
@@ -189,14 +189,14 @@ struct ConnectionBanner: View {
             case .reconnecting:
                 bar {
                     ProgressView().controlSize(.small)
-                    Text("重连中…")
+                    Text("Reconnecting…")
                 }
             case .closed:
                 bar {
                     Image(.cloudOff)
-                    Text("已断开")
+                    Text("Disconnected")
                     Spacer(minLength: 8)
-                    Button("重连") { model.retryConnection() }
+                    Button("Reconnect") { model.retryConnection() }
                         .buttonStyle(.tactile(.bordered))
                         .controlSize(.small)
                 }

@@ -31,8 +31,7 @@ public struct SubagentOverview: Equatable, Sendable {
             let name = displayName(summary: task)
             return Row(
                 id: id,
-                // The core's fallback name is English; the interface is Chinese.
-                name: name == "Subagent" ? "子代理" : name,
+                name: name,
                 waiting: task.status == .needsAnswer,
                 activity: task.activity.map { toolDisplayName(name: $0.tool) ?? $0.tool }
             )

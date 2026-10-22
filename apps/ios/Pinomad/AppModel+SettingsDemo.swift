@@ -26,7 +26,7 @@ extension AppModel {
                 token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
         }
         if mode == "failed" {
-            phase = .failed(.unreachable("连不上 mbp.invalid:7777。"))
+            phase = .failed(.unreachable("Couldn't reach mbp.invalid:7777."))
             return
         }
         let now = Date.now.timeIntervalSince1970 * 1000
@@ -37,11 +37,11 @@ extension AppModel {
             )
         }
         let organized = Organized(
-            chats: [ConversationNode(summary: summary(1, "周报整理", ago: 2), children: [])],
+            chats: [ConversationNode(summary: summary(1, "Draft the weekly report", ago: 2), children: [])],
             projects: [],
             archived: [
                 ArchivedConversation(
-                    node: ConversationNode(summary: summary(40, "旧的配对流程", ago: 9_000), children: []),
+                    node: ConversationNode(summary: summary(40, "Old pairing flow", ago: 9_000), children: []),
                     project: Project(path: "/Users/void/code/opensource/pinomad", name: "pinomad", addedAt: now)),
             ]
         )
@@ -54,7 +54,7 @@ extension AppModel {
             devices: [
                 DeviceEntry(publicKey: devicePublicKey(privateKey: privateKey) ?? "", name: "iPhone",
                             pairedAt: now - 3 * 86_400_000, source: .qr),
-                DeviceEntry(publicKey: "demo-mac", name: "Kieran 的 MacBook", pairedAt: now - 40 * 86_400_000,
+                DeviceEntry(publicKey: "demo-mac", name: "Kieran's MacBook", pairedAt: now - 40 * 86_400_000,
                             source: .local),
                 DeviceEntry(publicKey: "demo-ipad", name: "iPad", pairedAt: now - 2 * 3_600_000, source: .account),
             ],

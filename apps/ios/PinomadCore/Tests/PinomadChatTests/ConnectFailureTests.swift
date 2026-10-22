@@ -26,18 +26,18 @@ import PinomadCore
     /// The first-connect deadline names the address that never answered.
     @Test func timeoutNamesTheAddress() {
         #expect(ConnectFailure.timedOut(address: "10.255.255.1:7422") == .unreachable(
-            "15 秒内没有连上 10.255.255.1:7422，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。"))
+            "Couldn't reach 10.255.255.1:7422 within 15 seconds. Check that the host is running, that this phone is on the same network, or that Tailscale is on."))
         #expect(ConnectFailure.timedOut(address: nil) == .unreachable(
-            "15 秒内没有连上宿主，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。"))
+            "Couldn't reach the host within 15 seconds. Check that the host is running, that this phone is on the same network, or that Tailscale is on."))
     }
 
     /// A hello's major comes off the wire: a missing or junk one decodes to
     /// NaN and a huge one won't fit an Int — the page must still render.
     @Test func versionTextSurvivesJunkMajors() {
         #expect(ConnectFailure.versionText(5) == "5")
-        #expect(ConnectFailure.versionText(.nan) == "未知")
-        #expect(ConnectFailure.versionText(1e100) == "未知")
-        #expect(ConnectFailure.versionText(-.infinity) == "未知")
+        #expect(ConnectFailure.versionText(.nan) == "unknown")
+        #expect(ConnectFailure.versionText(1e100) == "unknown")
+        #expect(ConnectFailure.versionText(-.infinity) == "unknown")
     }
 
     /// After the first view, a revoke (4401) or an outdated hello lands in

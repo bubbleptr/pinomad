@@ -26,7 +26,7 @@ struct ModelSheet: View {
         NavigationStack {
             List {
                 if levels.count > 1, query.isEmpty {
-                    Section("思考等级") {
+                    Section("Thinking Level") {
                         let current = clampLevel(levels: levels, want: selected.level)
                         ForEach(levels, id: \.self) { level in
                             Button {
@@ -39,7 +39,7 @@ struct ModelSheet: View {
                         }
                     }
                 }
-                Section("模型") {
+                Section("Models") {
                     ForEach(filterModels(models: models, query: query), id: \.self) { summary in
                         Button {
                             pick(summary)
@@ -53,12 +53,12 @@ struct ModelSheet: View {
             }
             .tint(.primary)
             .disabled(!connected)
-            .searchable(text: $query, prompt: "搜索模型")
-            .navigationTitle("模型")
+            .searchable(text: $query, prompt: "Search models")
+            .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button("Done") { dismiss() }
                 }
             }
         }

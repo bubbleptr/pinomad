@@ -20,16 +20,16 @@ struct SettingsView: View {
                     pairedRow(host)
                 }
                 if machines.isEmpty {
-                    Text("还没有配对的机器。")
+                    Text("No paired hosts yet.")
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                GroupHeader(title: "本机", section: "已配对的机器")
+                GroupHeader(title: "This Device", section: "Paired Hosts")
             }
             // Rows are choices, not links — plain text, not tinted.
             .tint(.primary)
 
-            Section("配对一台") {
+            Section("Pair a Host") {
                 // On the section's card: a list row clips the glass
                 // controls' shadow square, which reads as a smear on the
                 // bare grouped background but not inside the card.
@@ -44,14 +44,14 @@ struct SettingsView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label(model.accountRecord.map { "账号：\($0.username)" } ?? "登录账号",
+                    Label(model.accountRecord.map { "Account: \($0.username)" } ?? "Sign in",
                           image: .userRound)
                 }
                 .tint(.primary)
             } header: {
-                Text("账号")
+                Text("Account")
             } footer: {
-                Text("登录后可以配对账号名下的宿主。")
+                Text("Sign in to pair the hosts on your account.")
             }
 
             pushSection
@@ -64,18 +64,18 @@ struct SettingsView: View {
                         machineRow(host)
                     }
                 } header: {
-                    GroupHeader(title: "机器", section: nil)
+                    GroupHeader(title: "Hosts", section: nil)
                 }
             }
         }
-        .navigationTitle("设置")
+        .navigationTitle("Settings")
         .alert(
-            "忘记 \(forgetting.map(label) ?? "")？",
+            "Forget \(forgetting.map(label) ?? "this host")?",
             isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
             presenting: forgetting
         ) { host in
-            Button("取消", role: .cancel) {}
-            Button("忘记", role: .destructive) {
+            Button("Cancel", role: .cancel) {}
+            Button("Forget", role: .destructive) {
                 let wasLast = machines.count == 1
                 model.forget(host.hostKey)
                 // Nothing left to pick — the pairing page behind has
@@ -84,7 +84,7 @@ struct SettingsView: View {
                 if wasLast { dismiss() }
             }
         } message: { _ in
-            Text("这台设备要用新的配对链接才能再连上它。")
+            Text("This device will need a new pairing link to reconnect to it.")
         }
     }
 
@@ -126,12 +126,12 @@ struct SettingsView: View {
             }
         }
         .swipeActions {
-            Button("忘记", role: .destructive) { forgetting = host }
+            Button("Forget", role: .destructive) { forgetting = host }
                 // The section's plain tint would turn it black.
                 .tint(.red)
         }
         .contextMenu {
-            Button("忘记", image: .trash2, role: .destructive) { forgetting = host }
+            Button("Forget", image: .trash2, role: .destructive) { forgetting = host }
         }
     }
 
@@ -145,7 +145,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label(host))
                     if !live {
-                        Text("连上这台机器后才能查看")
+                        Text("Connect to this host to view it")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -163,14 +163,14 @@ struct SettingsView: View {
             if let hostKey = model.currentHostKey {
                 pushControls(hostKey)
             } else {
-                Text("连上一台机器后才能设置推送。")
+                Text("Connect to a host to set up notifications.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("推送")
+            Text("Notifications")
         } footer: {
-            Text("只带对话标题和事件（「等你回答」「完成」「失败」），标题会经过服务端和 Apple。设置按宿主分别保存。")
+            Text("Notifications carry only the conversation title and the event (\"Waiting for your answer\", \"Finished\", \"Failed\"); titles pass through the server and Apple. Saved separately for each host.")
         }
     }
 
@@ -181,7 +181,7 @@ struct SettingsView: View {
             set: { model.setPushEnabled($0, for: hostKey) }
         )) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("推送通知")
+                Text("Push notifications")
                 if let name = model.currentHostLabel {
                     Text(name)
                         .font(.caption)
@@ -192,21 +192,21 @@ struct SettingsView: View {
         .disabled(!model.pushAvailable(for: hostKey))
 
         if model.snapshot != nil && !model.hostSupports(.apnsPush) {
-            Text("需要把宿主升级到 5.9 或更新才能推送。")
+            Text("Update the host to 5.9 or later to get notifications.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         } else if !model.connected {
-            Text("连上宿主后登记；现在打开会在下次连接时生效。")
+            Text("Registers once the host is connected. Turning it on now takes effect on the next connection.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
 
         if model.pushEnabled(for: hostKey) {
             if model.push.isDenied {
-                Text("通知权限被拒绝了，推送不会送达。")
+                Text("Notification permission is denied, so notifications won't arrive.")
                     .font(.footnote)
                     .foregroundStyle(.orange)
-                Button("去系统设置打开通知") {
+                Button("Turn on notifications in Settings") {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     openURL(url)
                 }
@@ -219,7 +219,7 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
             if let error = model.push.registrationError {
-                Text("APNs 注册失败：\(error)")
+                Text("APNs registration failed: \(error)")
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
@@ -229,11 +229,11 @@ struct SettingsView: View {
     /// The app's version, and the connected host's — the app's own
     /// protocol version is not exposed by the core.
     private var aboutSection: some View {
-        Section("关于") {
-            LabeledContent("App 版本", value: appVersion)
+        Section("About") {
+            LabeledContent("App version", value: appVersion)
             if let info = model.snapshot?.host, let name = model.currentHostLabel {
                 LabeledContent(name) {
-                    Text("\(info.version ?? "源码") · 协议 \(info.protocol.major).\(info.protocol.minor)")
+                    Text("\(info.version ?? "source build") · protocol \(info.protocol.major).\(info.protocol.minor)")
                 }
             }
         }
@@ -263,7 +263,7 @@ struct SettingsSheet: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { dismiss() }
+                        Button("Done") { dismiss() }
                     }
                 }
         }
@@ -293,32 +293,32 @@ struct MachineSettingsView: View {
                 archivedSection(snapshot.organized.archived)
             } else {
                 ContentUnavailableView {
-                    Label("没有连着这台机器", image: .cloudOff)
+                    Label("Not connected to this host", image: .cloudOff)
                 } description: {
-                    Text("连上它之后才能查看它的设置。")
+                    Text("Connect to it to see its settings.")
                 }
             }
         }
         .navigationTitle(title)
-        .alert("主机名", isPresented: $renaming) {
-            TextField("名称", text: $nameDraft)
-            Button("取消", role: .cancel) {}
-            Button("保存") { saveName() }
+        .alert("Host name", isPresented: $renaming) {
+            TextField("Name", text: $nameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { saveName() }
         } message: {
-            Text("已配对的设备都用这个名字称呼这台机器。")
+            Text("Every paired device shows this host under this name.")
         }
         .alert(
-            revoking.map { "吊销 \($0.name)？" } ?? "",
+            revoking.map { "Revoke \($0.name)?" } ?? "",
             isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
             presenting: revoking
         ) { device in
-            Button("取消", role: .cancel) {}
-            Button("吊销", role: .destructive) { model.revoke(device: device.publicKey) }
+            Button("Cancel", role: .cancel) {}
+            Button("Revoke", role: .destructive) { model.revoke(device: device.publicKey) }
         } message: { device in
             if device.publicKey == model.thisDevicePublicKey {
-                Text("这是这台设备：吊销后马上断开，要用新的配对链接才能再连上。")
+                Text("This is this device. Revoking disconnects it right away, and it needs a new pairing link to reconnect.")
             } else {
-                Text("它会断开，要用新的配对链接才能再连上这台机器。")
+                Text("It disconnects and needs a new pairing link to reconnect to this host.")
             }
         }
     }
@@ -327,22 +327,22 @@ struct MachineSettingsView: View {
     private var title: String {
         let host = pairedMachines(stored: model.hosts, session: model.sessionHost)
             .first { $0.hostKey == hostKey }
-        return model.hostLabels[hostKey] ?? host.map { $0.name ?? hostOf($0.url) } ?? "机器"
+        return model.hostLabels[hostKey] ?? host.map { $0.name ?? hostOf($0.url) } ?? "Host"
     }
 
     private func archivedSection(_ archived: [ArchivedConversation]) -> some View {
         Section {
             if archived.isEmpty {
-                Text("没有归档的对话。")
+                Text("No archived conversations.")
                     .foregroundStyle(.secondary)
             }
             ForEach(Array(archived.enumerated()), id: \.offset) { _, entry in
                 archivedRow(entry)
             }
         } header: {
-            Text("已归档")
+            Text("Archived")
         } footer: {
-            Text("归档的对话不在列表里显示，恢复后回到列表。")
+            Text("Archived conversations are hidden from the list. Restore one to bring it back.")
         }
     }
 
@@ -357,7 +357,7 @@ struct MachineSettingsView: View {
             }
             Spacer()
             if let id = entry.node.summary.id {
-                Button("恢复") { model.archive(conversation: id, false) }
+                Button("Restore") { model.archive(conversation: id, false) }
                     .buttonStyle(.tactile(.glass))
                     .controlSize(.small)
                     .disabled(!model.connected)
@@ -374,16 +374,16 @@ struct MachineSettingsView: View {
                 nameDraft = snapshot.hostName ?? ""
                 renaming = true
             } label: {
-                LabeledContent("主机名", value: snapshot.hostName ?? "")
+                LabeledContent("Host name", value: snapshot.hostName ?? "")
             }
             .tint(.primary)
             .disabled(!model.connected)
             if snapshot.settings?.hostNameCustom == true {
-                Button("改回机器名") { model.setHostName(nil) }
+                Button("Use the machine's hostname") { model.setHostName(nil) }
                     .disabled(!model.connected)
             }
         } footer: {
-            Text("不改的话，用机器自己的主机名。")
+            Text("Without a custom name, the machine's hostname is used.")
         }
     }
 
@@ -398,33 +398,33 @@ struct MachineSettingsView: View {
     private func devicesSection(_ devices: [DeviceEntry]) -> some View {
         Section {
             if devices.isEmpty {
-                Text("还没有配对的设备。")
+                Text("No paired devices yet.")
                     .foregroundStyle(.secondary)
             }
             ForEach(devices, id: \.publicKey) { device in
                 DeviceRow(device: device, isThisDevice: device.publicKey == model.thisDevicePublicKey)
                     .swipeActions {
-                        Button("吊销", role: .destructive) { revoking = device }
+                        Button("Revoke", role: .destructive) { revoking = device }
                             .tint(.red)
                             .disabled(!model.connected)
                     }
                     .contextMenu {
-                        Button("吊销", image: .circleX, role: .destructive) { revoking = device }
+                        Button("Revoke", image: .circleX, role: .destructive) { revoking = device }
                             .disabled(!model.connected)
                     }
             }
             Button {
                 model.present(.pairingCode)
             } label: {
-                Label("给另一台设备配对", image: .qrCode)
+                Label("Pair a device", image: .qrCode)
             }
             .disabled(!model.connected)
         } header: {
-            Text("设备")
+            Text("Devices")
         } footer: {
             Text(model.connected
-                 ? "对方用相机扫码或打开链接即可配对。左滑一台设备可以吊销它。"
-                 : "连上宿主后才能生成二维码。")
+                 ? "The other device scans the QR code or opens the link to pair. Swipe left on a device to revoke it."
+                 : "Connect to the host to create a QR code.")
         }
     }
 
@@ -432,13 +432,13 @@ struct MachineSettingsView: View {
     /// (ADR-0022 §6, 5.8).
     private func accountDevicesSection(_ settings: HostSettingsState) -> some View {
         Section {
-            Toggle("接受账号担保的设备", isOn: Binding(
+            Toggle("Accept devices from your account", isOn: Binding(
                 get: { settings.acceptAccountDevices },
                 set: { model.setAcceptAccountDevices($0) }
             ))
             .disabled(!model.connected)
         } footer: {
-            Text("登录了这台机器所加入的服务端的设备，不扫码也能配对。关掉后只能扫码配对。")
+            Text("Devices signed in to the server this host joined can pair without a QR code. Turn this off to allow QR pairing only.")
         }
     }
 }
@@ -461,7 +461,7 @@ private struct DeviceRow: View {
             }
             Spacer()
             if isThisDevice {
-                Text("这台设备")
+                Text("This device")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -476,10 +476,10 @@ private struct DeviceRow: View {
         let at = Date(timeIntervalSince1970: device.pairedAt / 1000)
             .formatted(date: .numeric, time: .shortened)
         switch device.source {
-        case .qr: return "\(at) 扫码配对"
-        case .local: return "\(at) 在本机配对"
-        case .account: return "\(at) 经账号配对"
-        case nil: return "\(at) 配对"
+        case .qr: return "\(at) via QR code"
+        case .local: return "\(at) on this machine"
+        case .account: return "\(at) via account"
+        case nil: return "Paired \(at)"
         }
     }
 }
@@ -513,6 +513,6 @@ private struct MachineDot: View {
         Circle()
             .fill(live ? Color.green : Color.secondary.opacity(0.5))
             .frame(width: 8, height: 8)
-            .accessibilityLabel(live ? "已连接" : "未连接")
+            .accessibilityLabel(live ? "Connected" : "Not connected")
     }
 }

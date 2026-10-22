@@ -34,7 +34,7 @@ extension AppModel {
                     }
                     self.trays[id] = restored
                 }
-                self.lastError = "发送失败：\(error.localizedDescription)"
+                self.lastError = "Couldn't send: \(error.localizedDescription)"
             }
         }
     }
@@ -58,7 +58,7 @@ extension AppModel {
                 }
                 self?.trays[id]?.fulfil(claim, with: prepared)
             } catch {
-                self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "无法读取图片")
+                self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "Couldn't read the image")
             }
         }
     }
@@ -69,7 +69,7 @@ extension AppModel {
         guard UIPasteboard.general.hasImages,
               let data = UIPasteboard.general.image?.jpegData(compressionQuality: 1)
         else {
-            reportAttachProblem(conversation: id, "剪贴板里没有图片")
+            reportAttachProblem(conversation: id, "No image on the clipboard")
             return
         }
         attach(conversation: id, accepts: accepts, sources: [{ @Sendable in data }])
@@ -172,7 +172,7 @@ extension AppModel {
             defer { self?.queuePending.remove(item.id) }
             do {
                 if try await session.withdrawQueued(submissionId: item.id, target: id) == .sent {
-                    self?.showToast("已发出，无法撤回")
+                    self?.showToast("Already sent, can't withdraw")
                 }
             } catch {
                 guard let self else { return }
@@ -241,7 +241,7 @@ extension AppModel {
             case .sent:
                 queuedEdit.alreadySent()
                 queuePending.remove(copy.id)
-                showToast("已发出，无法撤回")
+                showToast("Already sent, can't withdraw")
             }
         } catch let error as SessionError {
             guard queuedEdit.copy == copy else { return }

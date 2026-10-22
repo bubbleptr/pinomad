@@ -36,7 +36,7 @@ struct OverviewSheet: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
-                .navigationTitle("概览")
+                .navigationTitle("Overview")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -45,7 +45,7 @@ struct OverviewSheet: View {
                         } label: {
                             Image(.x)
                         }
-                        .accessibilityLabel("关闭")
+                        .accessibilityLabel("Close")
                     }
                 }
                 .navigationDestination(for: OverviewPage.self) { _ in
@@ -87,14 +87,14 @@ struct OverviewSheet: View {
             SubagentOverview.of(organized: $0.organized, conversation: conversationId)
         }
         if workspace == nil && subagents == nil {
-            ContentUnavailableView { Label("没有可显示的概览", image: .info) }
+            ContentUnavailableView { Label("No overview to show", image: .info) }
         } else {
             List {
                 if let workspace {
-                    Section("工作区") { workspaceRows(workspace) }
+                    Section("Workspace") { workspaceRows(workspace) }
                 }
                 if let subagents {
-                    Section("子代理") { subagentRows(subagents) }
+                    Section("Subagents") { subagentRows(subagents) }
                 }
             }
         }
@@ -144,7 +144,7 @@ struct OverviewSheet: View {
                 LabeledContent {
                     changeStat
                 } label: {
-                    Label("改动", image: .squareDiff)
+                    Label("Changes", image: .squareDiff)
                 }
             }
         }
@@ -185,7 +185,7 @@ struct OverviewSheet: View {
             let project = snapshot?.organized.projects.first { $0.project.path == path }?.project
             return project?.name ?? (path as NSString).lastPathComponent
         case .chat:
-            return "对话文件夹"
+            return "Chat folder"
         default:
             return (cwd as NSString).lastPathComponent
         }
@@ -210,12 +210,12 @@ struct OverviewSheet: View {
             let additions = files.reduce(UInt64(0)) { $0 + $1.additions }
             let deletions = files.reduce(UInt64(0)) { $0 + $1.deletions }
             if files.isEmpty {
-                Text("无")
+                Text("None")
                     .foregroundStyle(.secondary)
             } else if additions == 0 && deletions == 0 {
                 // Binary edits, renames and mode changes touch files
                 // without text lines.
-                Text("\(files.count) 个文件")
+                Text("\(files.count) file\(files.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
             } else {
                 // A truncated patch undercounts: a trailing "+" marks the
@@ -228,7 +228,7 @@ struct OverviewSheet: View {
                 .monospacedDigit()
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(
-                    "\(truncated ? "至少" : "")新增 \(additions) 行，删除 \(deletions) 行"
+                    "\(truncated ? "At least " : "")\(additions) added, \(deletions) removed"
                 )
             }
         }
@@ -253,7 +253,7 @@ struct OverviewSheet: View {
                         .lineLimit(1)
                         .foregroundStyle(.primary)
                     Spacer(minLength: 8)
-                    Text(row.waiting ? "等你回答" : (row.activity ?? "运行中"))
+                    Text(row.waiting ? "Waiting for your answer" : (row.activity ?? "Running"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -266,9 +266,9 @@ struct OverviewSheet: View {
             .tint(.primary)
         }
         let summary = [
-            overview.moreRunning > 0 ? "还有 \(overview.moreRunning) 个运行中" : nil,
-            overview.finished > 0 ? "\(overview.finished) 个已完成" : nil,
-            overview.failed > 0 ? "\(overview.failed) 个失败" : nil,
+            overview.moreRunning > 0 ? "\(overview.moreRunning) more running" : nil,
+            overview.finished > 0 ? "\(overview.finished) done" : nil,
+            overview.failed > 0 ? "\(overview.failed) failed" : nil,
         ].compactMap { $0 }
         if !summary.isEmpty {
             Text(summary.joined(separator: " · "))

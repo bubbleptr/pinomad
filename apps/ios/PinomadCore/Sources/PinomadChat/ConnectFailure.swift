@@ -17,9 +17,9 @@ public enum ConnectFailure: Equatable, Sendable {
     /// The first-connect deadline ran out. `address` is the host:port the
     /// connecting screen named; nil only when the target is already gone.
     public static func timedOut(address: String?) -> Self {
-        let target = address.map { " \($0)" } ?? "宿主"
+        let target = address ?? "the host"
         return .unreachable(
-            "15 秒内没有连上\(target)，请检查宿主是否在运行、手机和宿主是否在同一网络，或 Tailscale 是否开着。")
+            "Couldn't reach \(target) within 15 seconds. Check that the host is running, that this phone is on the same network, or that Tailscale is on.")
     }
 
     /// How the first connect ended; `pairing` is whether it used a link.
@@ -54,7 +54,7 @@ public enum ConnectFailure: Equatable, Sendable {
     /// NaN when the hello's was missing or junk — and `Int(_:)` traps on
     /// anything non-finite or out of range.
     public static func versionText(_ major: Double) -> String {
-        guard major.isFinite, abs(major) < 1_000_000 else { return "未知" }
+        guard major.isFinite, abs(major) < 1_000_000 else { return "unknown" }
         return String(Int(major))
     }
 

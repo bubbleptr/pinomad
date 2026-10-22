@@ -71,6 +71,6 @@ struct ImageViewer: View {
         .onTapGesture { close() }
         .accessibilityAction(.escape) { close() }
         .accessibilityAddTraits(.isImage)
-        .accessibilityLabel("图片")
+        .accessibilityLabel("Image")
     }
 }

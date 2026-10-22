@@ -21,7 +21,7 @@ struct PairingCodeView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     if loading {
-                        ProgressView("正在生成二维码…")
+                        ProgressView("Creating QR code…")
                             .padding(.top, 40)
                     } else if let offer {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -33,11 +33,11 @@ struct PairingCodeView: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("给另一台设备配对")
+            .navigationTitle("Pair a Device")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button("Done") { dismiss() }
                 }
             }
             .task { await load() }
@@ -49,16 +49,16 @@ struct PairingCodeView: View {
     private func offerContent(_ offer: PairingCodeOffer, now: Date) -> some View {
         let seconds = PairingCodeCopy.remainingSeconds(expiresAt: offer.expiresAt, now: now)
         if seconds == 0 {
-            Text("二维码已过期。")
+            Text("This QR code has expired.")
                 .foregroundStyle(.secondary)
-            Button("新二维码") {
+            Button("New QR code") {
                 Task { await load() }
             }
             .buttonStyle(.tactile(.borderedProminent))
             .controlSize(.large)
         } else {
             if PairingCodeCopy.isLoopback(offer.url) {
-                Text("这个链接只在宿主这台机器上有效，另一台设备打不开。要配对手机，请用宿主终端的 pinomad pair，或在 Web 端「设备 → 配对设备」里生成二维码。")
+                Text("This link only works on the host machine itself; other devices can't open it. To pair a phone, run pinomad pair in a terminal on the host, or create a QR code in Settings → Devices → Pair a device on the web.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -70,9 +70,9 @@ struct PairingCodeView: View {
                     .frame(width: 220, height: 220)
                     .padding(20)
                     .background(.white, in: .rect(cornerRadius: 16))
-                    .accessibilityLabel("配对二维码")
+                    .accessibilityLabel("Pairing QR code")
             } else {
-                Text("没能生成二维码，可以把下面的链接复制给对方。")
+                Text("Couldn't create a QR code. Copy the link below to the other device instead.")
                     .font(.footnote)
                     .foregroundStyle(.orange)
             }
@@ -88,13 +88,13 @@ struct PairingCodeView: View {
             Button {
                 UIPasteboard.general.string = offer.url
             } label: {
-                Label("复制链接", image: .copy)
+                Label("Copy link", image: .copy)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.tactile(.bordered))
             .controlSize(.large)
 
-            Text("有效期还剩 \(PairingCodeCopy.countdown(seconds))")
+            Text("Expires in \(PairingCodeCopy.countdown(seconds))")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -107,13 +107,13 @@ struct PairingCodeView: View {
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .multilineTextAlignment(.center)
-            Button("重试") {
+            Button("Try again") {
                 Task { await load() }
             }
             .buttonStyle(.tactile(.bordered))
             .controlSize(.large)
         } else {
-            Text("连上宿主后才能生成二维码。")
+            Text("Connect to the host to create a QR code.")
                 .foregroundStyle(.secondary)
         }
     }
