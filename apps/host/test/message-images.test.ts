@@ -56,6 +56,12 @@ const userContents = (view: ConversationView): readonly (JsonValue | undefined)[
     .filter((entry) => entry.kind === "pi.user")
     .map((entry) => (entry.model?.[0] as { content?: JsonValue } | undefined)?.content);
 
+/** The first image block's ref in a ref-mode conversation snapshot. */
+const firstRef = (snapshot: ServerFrame): string => {
+  const content = userContents((snapshot as { value: ConversationView }).value)[0];
+  return (content as { ref?: string }[]).find((block) => block.ref !== undefined)!.ref!;
+};
+
 describe("message images", () => {
   it("stores text and image blocks on a submit", async () => {
     const host = await startFauxHost(defer, { answers: ["first", "seen"] });
@@ -185,9 +191,9 @@ describe("message images", () => {
     expect(await raw.call("image", { ref })).toEqual({ ok: true, value: PNG });
     expect(await raw.call("image", { ref: "nope" })).toEqual({ ok: false, error: "Unknown image" });
 
-    // A retry sends the ref back; the host stores the bytes, as if they were resent.
+    // A retry sends only the ref back; the host remembers the type with the bytes.
     expect(
-      await raw.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "r2", images: [{ ref, mimeType: "image/png" }] }),
+      await raw.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "r2", images: [{ ref }] }),
     ).toMatchObject({ ok: true });
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
     expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
@@ -195,11 +201,92 @@ describe("message images", () => {
       { type: "image", data: PNG.data, mimeType: "image/png" },
     ]);
     expect(
-      await raw.call("submit", { conversationId: id, text: "x", whenBusy: "followUp", requestId: "r3", images: [{ ref: "nope", mimeType: "image/png" }] }),
+      await raw.call("submit", { conversationId: id, text: "x", whenBusy: "followUp", requestId: "r3", images: [{ ref: "nope" }] }),
     ).toEqual({ ok: false, error: "Image 1 is no longer available" });
 
     // Unsubscribed, the connection no longer vouches for the ref.
     raw.send({ type: "unsubscribe", stream: `conversation:${id}` });
+    await expect.poll(async () => (await raw.call("image", { ref })).ok).toBe(false);
+  });
+
+  it("resolves a submitted ref before its first await, so an immediate unsubscribe cannot invalidate it", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen", "again"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+
+    const raw = await rawClient(host);
+    raw.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    const snapshot = await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    const ref = firstRef(snapshot);
+
+    // The submit frame lands while the subscription is live; the unsubscribe
+    // follows immediately and may finish while the host is still reading the
+    // conversation. The ref has to be resolved before that await.
+    const pending = raw.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "race", images: [{ ref }] });
+    raw.send({ type: "unsubscribe", stream: `conversation:${id}` });
+    expect(await pending).toMatchObject({ ok: true });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
+    expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
+      { type: "text", text: "again" },
+      { type: "image", data: PNG.data, mimeType: "image/png" },
+    ]);
+  });
+
+  it("does not honor another connection's refs until that connection subscribes", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen", "again"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+
+    const first = await rawClient(host);
+    first.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    const snapshot = await first.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    const ref = firstRef(snapshot);
+
+    const second = await rawClient(host);
+    expect(await second.call("image", { ref })).toEqual({ ok: false, error: "Unknown image" });
+    expect(
+      await second.call("submit", { conversationId: id, text: "x", whenBusy: "followUp", requestId: "b1", images: [{ ref }] }),
+    ).toEqual({ ok: false, error: "Image 1 is no longer available" });
+
+    second.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    await second.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    expect(await second.call("image", { ref })).toEqual({ ok: true, value: PNG });
+    expect(
+      await second.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "b2", images: [{ ref }] }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("keeps a ref valid while another live subscription still shows the image", async () => {
+    const host = await startFauxHost(defer, { answers: ["one", "two"] });
+    const raw = await rawClient(host);
+    const create = async (requestId: string): Promise<number> => {
+      const result = await raw.call("createConversation", {
+        home: { kind: "chat" },
+        text: requestId,
+        requestId,
+        images: [PNG],
+      });
+      return (result.value as { conversationId: number }).conversationId;
+    };
+    const first = await create("c1");
+    const second = await create("c2");
+    const subscribe = async (id: number): Promise<ServerFrame> => {
+      raw.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+      return await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    };
+    const firstSnapshot = await subscribe(first);
+    const secondSnapshot = await subscribe(second);
+    const ref = firstRef(firstSnapshot);
+    expect(firstRef(secondSnapshot)).toBe(ref);
+
+    raw.send({ type: "unsubscribe", stream: `conversation:${first}` });
+    expect(await raw.call("image", { ref })).toEqual({ ok: true, value: PNG });
+
+    raw.send({ type: "unsubscribe", stream: `conversation:${second}` });
     await expect.poll(async () => (await raw.call("image", { ref })).ok).toBe(false);
   });
 

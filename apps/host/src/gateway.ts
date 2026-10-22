@@ -1086,8 +1086,13 @@ function callsOf(message: unknown): ReadonlyMap<string, string | undefined> | un
 }
 
 type Subscription = { stop(): Promise<unknown> | void };
-/** `images` is set for a conversation stream subscribed with `images: "ref"`: the refs it sent and their bytes. */
-type SubscriptionState = { subscription?: Subscription; readonly images?: ImageRefs };
+/**
+ * `images` is set for a conversation stream subscribed with `images: "ref"`;
+ * `view` is the raw value the last frame left the client at (the rewrite
+ * target's source), so refs resolve against what this subscription currently
+ * shows instead of a separate ref table.
+ */
+type SubscriptionState = { subscription?: Subscription; readonly images?: ImageRefs; view?: JsonValue };
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
 /** What the client is and how the gateway reaches back into its lifecycle. */
@@ -1203,7 +1208,7 @@ class GatewayClient {
     try {
       await previous?.subscription?.stop();
       if (!current()) return;
-      subscription = await this.#open(stream, send, state.images);
+      subscription = await this.#open(stream, send, state);
     } catch (error) {
       if (current()) {
         await send({ type: "ended", stream, reason: error instanceof Error ? error.message : String(error) });
@@ -1219,7 +1224,7 @@ class GatewayClient {
     state.subscription = subscription;
   }
 
-  async #open(stream: StreamName, send: SendFrame, images: ImageRefs | undefined): Promise<Subscription> {
+  async #open(stream: StreamName, send: SendFrame, state: SubscriptionState | undefined): Promise<Subscription> {
     const source = this.#hostValue(stream);
     if (source !== undefined) {
       // Snapshot, then subscribe, with no await between — a change landing in
@@ -1243,7 +1248,7 @@ class GatewayClient {
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
     }
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
-    return this.#forward(stream, await conversation.watch(context), send, images);
+    return this.#forward(stream, await conversation.watch(context), send, state);
   }
 
   /** The in-memory value source for a host stream, or undefined for the watch-/doc-backed ones. */
@@ -1310,27 +1315,33 @@ class GatewayClient {
     };
   }
 
-  async #forward<T>(stream: StreamName, watch: WatchHandle<T>, send: SendFrame, images?: ImageRefs): Promise<Subscription> {
-    if (images === undefined) {
+  async #forward<T>(stream: StreamName, watch: WatchHandle<T>, send: SendFrame, state?: SubscriptionState): Promise<Subscription> {
+    if (state?.images === undefined) {
       await send({ type: "snapshot", stream, value: watch.value });
       watch.start((_value, ops) => send({ type: "ops", stream, ops }));
       return watch;
     }
+    const images = state.images;
     // Watch callbacks run one at a time, so `before` is always the value the last frame left the client at.
     let before = watch.value as JsonValue;
-    await send({ type: "snapshot", stream, value: images.value(before) });
-    watch.start((value, ops) => {
-      const sent = images.ops(ops, before, value as JsonValue);
+    // Keep the raw view alongside the ref form: #shownImage resolves a ref by
+    // finding its block here, so nothing has to accumulate per ref.
+    state.view = before;
+    await send({ type: "snapshot", stream, value: await images.value(before) });
+    watch.start(async (value, ops) => {
+      const sent = await images.ops(ops, before);
       before = value as JsonValue;
+      state.view = before;
       return send({ type: "ops", stream, ops: sent });
     });
     return watch;
   }
 
-  /** The bytes behind a ref one of this connection's live ref subscriptions sent. */
+  /** The bytes behind a ref one of this connection's live ref subscriptions currently shows. */
   #shownImage(ref: string): MessageImage | undefined {
     for (const state of this.#subscriptions.values()) {
-      const image = state.images?.get(ref);
+      if (state.images === undefined || state.view === undefined) continue;
+      const image = state.images.image(state.view, ref);
       if (image !== undefined) return image;
     }
     return undefined;
@@ -1377,8 +1388,34 @@ class GatewayClient {
       case "removeProject":
         await removeProject(this.#options.harness, (args as CallMethods["removeProject"]["args"]).path, context);
         return null;
+      case "submit": {
+        const input = args as CallMethods["submit"]["args"];
+        // Resolve refs before the first await: this frame arrived while the
+        // subscription was live, and a client may unsubscribe while the host
+        // is still reading the conversation. Looking the ref up afterwards
+        // would turn an accepted submit into "no longer available".
+        const images = this.#attached(input.images);
+        const conversation = await this.#conversation(input.conversationId);
+        // A pending question never blocks the composer (ADR-0011 §4): mark it
+        // dismissed so its wait task finishes, then steer regardless.
+        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
+        const submission = await conversation.submit(
+          { type: "input", content: messageContent(input.text, images), whenBusy: dismissed ? "steer" : input.whenBusy, requestId: input.requestId },
+          context,
+        );
+        void submission.wait(context).then(
+          (settled) => {
+            if (settled.status === "unanswered" && settled.reason !== "aborted") {
+              void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
+            }
+          },
+          () => {},
+        );
+        return { submissionId: submission.id };
+      }
       case "createConversation": {
         const create = args as CallMethods["createConversation"]["args"];
+        // Same rule as submit: resolve before createConversation's first await.
         const images = this.#attached(create.images);
         const conversationId = await createConversation(
           this.#options.harness,
@@ -1482,26 +1519,6 @@ class GatewayClient {
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {
-      case "submit": {
-        const { text, whenBusy, requestId, images: attached } = args as CallMethods["submit"]["args"];
-        const images = this.#attached(attached);
-        // A pending question never blocks the composer (ADR-0011 §4): mark it
-        // dismissed so its wait task finishes, then steer regardless.
-        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
-        const submission = await conversation.submit(
-          { type: "input", content: messageContent(text, images), whenBusy: dismissed ? "steer" : whenBusy, requestId },
-          context,
-        );
-        void submission.wait(context).then(
-          (settled) => {
-            if (settled.status === "unanswered" && settled.reason !== "aborted") {
-              void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
-            }
-          },
-          () => {},
-        );
-        return { submissionId: submission.id };
-      }
       case "withdrawQueued": {
         const { conversationId, submissionId } = args as CallMethods["withdrawQueued"]["args"];
         const id = submissionId as SubmissionId;

@@ -135,6 +135,10 @@
       "wire": "{\"type\":\"call\",\"id\":7,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"中文 ✓ 🚀\",\"whenBusy\":\"followUp\",\"requestId\":\"req-1\",\"images\":[{\"data\":\"AA==\",\"mimeType\":\"image/png\"}]}}"
     },
     {
+      "name": "call-submit-ref",
+      "wire": "{\"type\":\"call\",\"id\":19,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"again\",\"whenBusy\":\"followUp\",\"requestId\":\"req-ref\",\"images\":[{\"ref\":\"abc123\"}]}}"
+    },
+    {
       "name": "call-createConversation",
       "wire": "{\"type\":\"call\",\"id\":8,\"method\":\"createConversation\",\"args\":{\"home\":{\"kind\":\"project\",\"path\":\"/home/u/app\"},\"text\":\"go\",\"requestId\":\"r\",\"checkout\":\"worktree\",\"model\":{\"provider\":\"p\",\"modelId\":\"m\"},\"thinkingLevel\":\"high\"}}"
     },

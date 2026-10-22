@@ -214,8 +214,9 @@ pub enum HostFeature {
     /// `updateSettings`'s `hostName` key (12) — an older host would call the
     /// patch malformed and 4400 the connection.
     HostName,
-    /// `submit`/`createConversation` images given as `{ref, mimeType}` (15)
-    /// — an older host would call them malformed and 4400 the connection.
+    /// `submit`/`createConversation` images given as `{ref}` (15) — the
+    /// host answers with the type it recorded; an older host would call the
+    /// form malformed and 4400 the connection.
     ImageRefs,
 }
 

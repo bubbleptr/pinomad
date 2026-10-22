@@ -48,7 +48,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0020](0020-desktop-connects-as-paired-device.md) | 桌面端连任何宿主都作为已配对设备走安全通道，不读 token；回环端口在 `/secure` 上也接受安全通道；桌面端和 npm 包共用版本号 |
 | [0018](0018-protocol-compatibility.md) | 协议兼容：hello 带 `{ major, minor }`，同一主版本内只增不删；两端对不认识的内容回错误或忽略，不断开；上游数据结构靠契约快照盯着；宿主只支持当前主版本 |
 | [0025](0025-push-via-server-apns.md) | 推送直连 APNs，按环境分开的密钥只放在服务端；宿主经控制连接请服务端发，服务端只转发不保存；开放注册前要先让服务端核对 token 归属 |
-| [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带 sha256 引用，字节用 `image` 调用按需取，发送时可回传引用；存储仍内联在 SQLite |
+| [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |
 | [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（暂不开放注册），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上 |
 
 ## 遗留项的去向

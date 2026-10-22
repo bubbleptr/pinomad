@@ -130,7 +130,7 @@ export interface CallMethods {
       agent?: string;
       /**
        * Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field;
-       * `ImageRef` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
+       * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
        */
       images?: readonly OutgoingImage[];
     };
@@ -148,7 +148,7 @@ export interface CallMethods {
       requestId: string;
       /**
        * Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field;
-       * `ImageRef` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
+       * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
        */
       images?: readonly OutgoingImage[];
     };
@@ -298,7 +298,7 @@ export const FEATURE_SINCE = {
   liveBranch: 11,
   /** `settings`/`updateSettings` carry the host's machine display name (12). */
   hostName: 12,
-  /** `submit`/`createConversation` images may be `ImageRef`s (15); an older host calls them malformed and 4400s. */
+  /** `submit`/`createConversation` images may be `{ ref }` (15); an older host calls them malformed and 4400s. */
   imageRefs: 15,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
@@ -428,12 +428,16 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     typeof args.submissionId === "number" && Number.isSafeInteger(args.submissionId) && args.submissionId >= 1;
   // Shape only — count, mime type, base64 and size limits are the host's check
   // (imageProblem), and so is whether a ref is one the connection was shown.
+  // A ref form is just a nonempty name; the host knows the type it recorded.
   const images = (): boolean =>
     args.images === undefined
     || (Array.isArray(args.images)
       && args.images.every(
         (image) =>
-          record(image) && typeof image.mimeType === "string" && (typeof image.data === "string" || nonempty(image.ref)),
+          record(image)
+          && ("data" in image
+            ? typeof image.data === "string" && typeof image.mimeType === "string"
+            : nonempty(image.ref)),
       ));
   // Shape only — name/description/model rules are the host's check (agentRoleProblem).
   const role = (): boolean =>
