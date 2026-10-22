@@ -21,7 +21,8 @@ struct RootView: View {
                     FailureView(model: model, failure: failure).padding()
                 }
             }
-            .navigationTitle("PiNomad")
+            // Connected, the home page has no title: its machine groups say where you are.
+            .navigationTitle(model.phase == .connected ? "" : "PiNomad")
         }
         .overlay(alignment: .top) {
             if !model.sheetShowsToasts { ToastStack(model: model) }
@@ -37,8 +38,8 @@ struct RootView: View {
         }
         .sheet(item: $model.modal, onDismiss: model.modalDismissed) { modal in
             switch modal {
-            case .hosts: HostsView(model: model)
-            case .account: AccountLoginView(model: model)
+            case .settings: SettingsSheet(model: model)
+            case .account: AccountView(model: model)
             case .pairingCode: PairingCodeView(model: model)
             case .scanner: ScannerView(model: model)
             case .confirm(let pending): PairConfirmView(model: model, pending: pending)
@@ -64,7 +65,7 @@ struct RootView: View {
             if model.pairingLink != nil {
                 Button("取消") { model.cancelPairing() }
             } else if model.hosts.hosts.count > 1 {
-                Button("换一台宿主") { model.present(.hosts) }
+                Button("换一台宿主") { model.present(.settings) }
             }
         }
     }
@@ -111,8 +112,8 @@ private struct FailureView: View {
                     Button("回到 \(model.hostLabels[previous] ?? "之前的宿主")") { model.switchHost(previous) }
                         .buttonStyle(.bordered)
                 }
-                if !pairing, !model.hosts.hosts.isEmpty {
-                    Button("宿主") { model.present(.hosts) }
+                if !pairing {
+                    Button("设置") { model.present(.settings) }
                         .buttonStyle(.bordered)
                 }
             }

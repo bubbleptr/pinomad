@@ -44,6 +44,10 @@ extension AppModel {
 
     func accountAPI() -> AccountAPI? {
         guard let session = accountSession else { return nil }
+        #if DEBUG
+        // A demo account has no server: every account call stops here.
+        if devHostsInjected { return nil }
+        #endif
         return AccountAPI(
             origin: session.serverOrigin,
             token: session.token,
