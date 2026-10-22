@@ -50,7 +50,7 @@ public struct SlashCommandMenu: Equatable, Sendable {
 }
 
 /// What the `+` menu's "add" entries put into a draft: a bare trigger that
-/// opens the matching `@` / `$` / `/` menu once the field has focus.
+/// opens the matching `@` / `$` menu once the field has focus.
 public enum ComposerTrigger {
     /// Replace `selection` with `trigger`, kept apart from neighbouring
     /// text: a leading space after a non-space, and a trailing space before
@@ -70,13 +70,6 @@ public enum ComposerTrigger {
         if let next = after.first, !isWhitespace(next) { inserted += " " }
         let next = Array(before) + Array(inserted.utf16) + Array(after)
         return MentionInsertion(text: String(decoding: next, as: UTF16.self), cursor: cursor)
-    }
-
-    /// A command is the whole message, so `/` only goes into a draft with
-    /// no text yet; nil otherwise rather than rewriting the reader's words.
-    public static func command(into text: String) -> MentionInsertion? {
-        guard text.allSatisfy(\.isWhitespace) else { return nil }
-        return MentionInsertion(text: "/", cursor: 1)
     }
 }
 

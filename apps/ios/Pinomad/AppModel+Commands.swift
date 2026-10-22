@@ -43,17 +43,27 @@ extension AppModel {
     /// steer or follow-up — and leaves no user message; a refusal comes
     /// back as a notice. The draft clears now and returns if the session
     /// was gone.
-    func runCommand(conversation id: UInt64, name: String, args: String?) {
-        guard let session else { return }
+    func runDraftCommand(conversation id: UInt64, name: String, args: String?) {
+        guard session != nil else { return }
         let text = drafts[id] ?? ""
         drafts[id] = ""
+        runCommand(conversation: id, name: name, args: args) { [weak self] in
+            guard let self else { return }
+            if (self.drafts[id] ?? "").isEmpty { self.drafts[id] = text }
+        }
+    }
+
+    /// Run a command picked from the `+` menu: at once, and the draft is
+    /// left alone whatever it holds.
+    func runCommand(conversation id: UInt64, name: String, args: String?,
+                    onSessionGone: (@MainActor () -> Void)? = nil) {
+        guard let session else { return }
         Task { [weak self] in
             do {
                 _ = try await session.invoke(.runCommand(name: name, args: args, target: id))
             } catch {
-                guard let self else { return }
-                if (self.drafts[id] ?? "").isEmpty { self.drafts[id] = text }
-                self.lastError = "Couldn't run /\(name): \(error.localizedDescription)"
+                onSessionGone?()
+                self?.lastError = "Couldn't run /\(name): \(error.localizedDescription)"
             }
         }
     }

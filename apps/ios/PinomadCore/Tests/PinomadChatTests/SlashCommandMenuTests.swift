@@ -97,19 +97,6 @@ private let listing = [
     }
 }
 
-@Suite struct CommandTriggerInsertionTests {
-    @Test func aSlashGoesIntoAnEmptyDraft() {
-        #expect(ComposerTrigger.command(into: "") == MentionInsertion(text: "/", cursor: 1))
-        #expect(ComposerTrigger.command(into: "  \n") == MentionInsertion(text: "/", cursor: 1))
-    }
-
-    /// Prepending would turn the reader's message into a command they did
-    /// not write, so a draft with text gets nothing.
-    @Test func aDraftWithTextGetsNoSlash() {
-        #expect(ComposerTrigger.command(into: "fix the bug") == nil)
-    }
-}
-
 @Suite struct ComposerTriggerTests {
     private func insert(_ trigger: String, _ text: String, at location: Int, length: Int = 0) -> MentionInsertion {
         ComposerTrigger.insert(trigger, into: text, selection: NSRange(location: location, length: length))

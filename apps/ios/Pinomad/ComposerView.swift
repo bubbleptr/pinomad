@@ -251,9 +251,10 @@ struct ConversationComposer: View {
             ? { presentAfterMenu { showCamera = true } } : nil
         // A 5.15 host takes `/compact` instead.
         let compact: (() -> Void)? = commands ? nil : { model.compact() }
-        let runCommand: (() -> Void)? = commands ? { insertCommand() } : nil
-        let commandUnavailable: String? = ComposerTrigger.command(into: draft.wrappedValue) == nil
-            ? "Clear the message first" : nil
+        let listed: PlusMenuCommands? = !commands ? nil
+            : commandEntries.map { entries in
+                .listed(entries, run: { model.runCommand(conversation: conversation.id, name: $0.name, args: nil) })
+            } ?? .loading
         return PlusMenu(
             connected: connected,
             acceptsImages: acceptsImages,
@@ -266,9 +267,9 @@ struct ConversationComposer: View {
             mentionFile: mentionFile,
             useSkill: useSkill,
             mentionAgent: mentionAgent,
-            runCommand: runCommand,
-            commandUnavailable: commandUnavailable,
-            compact: compact
+            commands: listed,
+            compact: compact,
+            onOpen: { model.requestCommands(for: conversation.id) }
         ) {
             EmptyView()
         }
@@ -316,11 +317,6 @@ struct ConversationComposer: View {
         apply(ComposerTrigger.insert(trigger, into: draft.wrappedValue, selection: selection))
     }
 
-    private func insertCommand() {
-        guard let insertion = ComposerTrigger.command(into: draft.wrappedValue) else { return }
-        apply(insertion)
-    }
-
     private func apply(_ insertion: MentionInsertion) {
         draft.wrappedValue = insertion.text
         selection = NSRange(location: insertion.cursor, length: 0)
@@ -340,7 +336,7 @@ struct ConversationComposer: View {
     private func send(_ mode: SubmitMode) {
         switch submit {
         case .command(let name, let args):
-            model.runCommand(conversation: conversation.id, name: name, args: args)
+            model.runDraftCommand(conversation: conversation.id, name: name, args: args)
         case .message:
             model.send(conversation: conversation.id, mode: mode)
         case .blocked:
@@ -465,12 +461,12 @@ struct PlusMenu<Extra: View>: View {
     let mentionFile: (() -> Void)?
     let useSkill: (() -> Void)?
     let mentionAgent: (() -> Void)?
-    /// The `/` entry: nil off a conversation or before 5.15.
-    let runCommand: (() -> Void)?
-    /// Why "Run a Command" is greyed right now, if it is.
-    let commandUnavailable: String?
-    /// Only for a host before 5.15; newer hosts take `/compact`.
+    /// The host's commands: nil off a conversation or before 5.15.
+    let commands: PlusMenuCommands?
+    /// Only for a host before 5.15; newer hosts list `/compact` in commands.
     let compact: (() -> Void)?
+    /// The menu is about to open — the moment to refresh what it lists.
+    let onOpen: (() -> Void)?
     let extra: Extra
 
     init(
@@ -485,9 +481,9 @@ struct PlusMenu<Extra: View>: View {
         mentionFile: (() -> Void)?,
         useSkill: (() -> Void)?,
         mentionAgent: (() -> Void)?,
-        runCommand: (() -> Void)? = nil,
-        commandUnavailable: String? = nil,
+        commands: PlusMenuCommands? = nil,
         compact: (() -> Void)? = nil,
+        onOpen: (() -> Void)? = nil,
         @ViewBuilder extra: () -> Extra
     ) {
         self.connected = connected
@@ -501,9 +497,9 @@ struct PlusMenu<Extra: View>: View {
         self.mentionFile = mentionFile
         self.useSkill = useSkill
         self.mentionAgent = mentionAgent
-        self.runCommand = runCommand
-        self.commandUnavailable = commandUnavailable
+        self.commands = commands
         self.compact = compact
+        self.onOpen = onOpen
         self.extra = extra()
     }
 
@@ -535,24 +531,21 @@ struct PlusMenu<Extra: View>: View {
                     if let mentionAgent {
                         Button("Mention an Agent", image: .userRound, action: mentionAgent)
                     }
-                    if let runCommand {
-                        // The reason is a subtitle: in the title it wraps
-                        // to three lines.
-                        Button(action: runCommand) {
-                            Text("Run a Command")
-                            if let commandUnavailable { Text(commandUnavailable) }
-                            Image(.squareSlash)
-                        }
-                        .disabled(commandUnavailable != nil)
-                    }
                 }
                 .disabled(!connected || locked)
             }
-            if let compact {
+            // Commands act on the conversation rather than adding to the
+            // draft, so they sit with the old Compact entry, not under Add.
+            if commands != nil || compact != nil {
                 Section("Conversation") {
-                    Button("Compact Conversation", image: .foldVertical, action: compact)
-                        .disabled(!connected)
+                    if let commands {
+                        commandsMenu(commands)
+                    }
+                    if let compact {
+                        Button("Compact Conversation", image: .foldVertical, action: compact)
+                    }
                 }
+                .disabled(!connected)
             }
             extra
         } label: {
@@ -566,7 +559,51 @@ struct PlusMenu<Extra: View>: View {
         .buttonStyle(.press)
         .tint(.secondary)
         .accessibilityLabel("Add")
+        // Menu has no "will open" hook; a simultaneous tap on the label
+        // fires as it opens without taking the tap from the menu.
+        .simultaneousGesture(TapGesture().onEnded { onOpen?() })
     }
+
+    /// Every listed command runs at once on tap, with no arguments and
+    /// without touching the draft; arguments go through a typed `/name`.
+    @ViewBuilder
+    private func commandsMenu(_ commands: PlusMenuCommands) -> some View {
+        switch commands {
+        case .loading:
+            Button {} label: {
+                Text("Commands")
+                Text("Loading…")
+                Image(.squareSlash)
+            }
+            .disabled(true)
+        case let .listed(entries, run):
+            Menu {
+                ForEach(entries, id: \.name) { command in
+                    Button {
+                        run(command)
+                    } label: {
+                        Text("/\(command.name)")
+                        if let reason = command.disabled {
+                            Text(reason)
+                        } else if !command.description.isEmpty {
+                            Text(command.description)
+                        }
+                    }
+                    .disabled(command.disabled != nil)
+                }
+            } label: {
+                Label("Commands", image: .squareSlash)
+            }
+            .disabled(entries.isEmpty)
+        }
+    }
+}
+
+/// The `+` menu's Commands entry: still loading, or the host's listing and
+/// what tapping one does.
+enum PlusMenuCommands {
+    case loading
+    case listed([CommandEntry], run: (CommandEntry) -> Void)
 }
 
 /// Staged images (tap to view, × to drop), a spinner per image still being
