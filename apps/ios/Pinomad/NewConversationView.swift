@@ -342,7 +342,7 @@ struct NewConversationView: View {
                 }
             }
         } label: {
-            LocationChip(icon: .circleUser,
+            LocationChip(icon: .userRound,
                          label: selectedAgent.map { "@\($0)" } ?? "Agent")
         }
         .menuOrder(.fixed)

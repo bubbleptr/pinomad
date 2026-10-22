@@ -193,7 +193,7 @@ struct ConnectionBanner: View {
                 }
             case .closed:
                 bar {
-                    Image(.unplug)
+                    Image(.cloudOff)
                     Text("已断开")
                     Spacer(minLength: 8)
                     Button("重连") { model.retryConnection() }

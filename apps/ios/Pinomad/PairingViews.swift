@@ -87,7 +87,7 @@ struct PairingStartView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("账号：\(session.username)", image: .circleUser)
+                    Label("账号：\(session.username)", image: .userRound)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))
@@ -99,7 +99,7 @@ struct PairingStartView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("用账号登录", image: .circleUser)
+                    Label("用账号登录", image: .userRound)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))

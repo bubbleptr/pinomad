@@ -175,7 +175,7 @@ private struct AgentMentionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(.circleUser)
+            Image(.userRound)
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)

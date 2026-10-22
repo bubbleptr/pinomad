@@ -41,7 +41,7 @@ struct ConversationListView: View {
                             Button {
                                 model.switchHost(host.hostKey)
                             } label: {
-                                Label("未连接，轻点连接", image: .unplug)
+                                Label("未连接，轻点连接", image: .cloudOff)
                                     .foregroundStyle(.secondary)
                             }
                             .listRowBackground(Color.clear)
@@ -122,7 +122,7 @@ struct ConversationListView: View {
                 group.project.path.map { (path: $0, group: group) }
             }
             if !organized.chats.isEmpty {
-                groupRow(.chats, title: "对话", image: .messagesSquare,
+                groupRow(.chats, title: "对话", image: .messageCircle,
                          count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
             }
             ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
@@ -305,7 +305,7 @@ private struct AccountBadge: View {
         if let initial {
             Image(systemName: "\(initial).circle")
         } else {
-            Image(.circleUser)
+            Image(.userRound)
         }
     }
 
