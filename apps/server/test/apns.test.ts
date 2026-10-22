@@ -196,11 +196,13 @@ describe("openApns", () => {
     const { apns, fake } = await startApns();
     // Streams opened after the GOAWAY are refused (REFUSED_STREAM) on both
     // ends; the race is timing-dependent, so a few rounds make it near-certain.
+    // A stream cut off before its response is a connection failure, so it must
+    // come back retryable, never as a final rejection (ADR-0025 §5).
     for (let round = 0; round < 50; round++) {
       await send(apns); // a live session for the GOAWAY to land on
       const inFlight = Promise.all([send(apns), send(apns), send(apns)]);
       fake.sessions.at(-1)!.goaway();
-      await inFlight;
+      for (const verdict of await inFlight) expect(["accepted", "retry"]).toContain(verdict.result);
     }
   });
 
