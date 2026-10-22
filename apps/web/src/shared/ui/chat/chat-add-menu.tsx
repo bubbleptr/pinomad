@@ -7,7 +7,15 @@ import { DropdownMenu, DropdownMenuRadioGroup, DropdownMenuSubMenu } from "@astr
 import { Plus } from "@/shared/ui/icons";
 
 /** The ghost `+` button and its menu; children are sections. */
-export function ChatAddMenu({ isDisabled = false, children }: { isDisabled?: boolean; children: ReactNode }) {
+export function ChatAddMenu({
+  isDisabled = false,
+  onOpenChange,
+  children,
+}: {
+  isDisabled?: boolean;
+  onOpenChange?: (isOpen: boolean) => void;
+  children: ReactNode;
+}) {
   return (
     <DropdownMenu
       button={{
@@ -20,6 +28,7 @@ export function ChatAddMenu({ isDisabled = false, children }: { isDisabled?: boo
       }}
       hasChevron={false}
       menuWidth={240}
+      onOpenChange={onOpenChange}
       // Up, like the model popover: below a draft's composer the menu runs
       // off short screens; the layer still flips when there's no room.
       placement="above"

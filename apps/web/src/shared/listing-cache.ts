@@ -110,13 +110,13 @@ const NO_LISTEN = () => () => {};
  * The scope's listing out of `cache` — subscribed so a landed answer
  * re-renders, and requested on mount, on a scope or `enabled` change (a
  * reconnect flips it), whenever the entry is missing or stale. `request` is
- * the focus refresh.
+ * the focus refresh; `request(true)` refetches even a fresh answer.
  */
 export function useCachedListing<Scope, Listing, Item>(
   cache: ListingCache<Scope, Listing, Item>,
   scope: Scope | undefined,
   enabled: boolean,
-): { readonly items: readonly Item[] | undefined; readonly request: () => void } {
+): { readonly items: readonly Item[] | undefined; readonly request: (force?: boolean) => void } {
   const key = scope === undefined ? undefined : cache.keyOf(scope);
   const items = useSyncExternalStore(
     useCallback((notify) => (key === undefined ? NO_LISTEN : cache.subscribe(scope!, notify)), [cache, key]),
@@ -128,9 +128,9 @@ export function useCachedListing<Scope, Listing, Item>(
   scopeRef.current = scope;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
-  const request = useCallback(() => {
+  const request = useCallback((force = false) => {
     const scope = scopeRef.current;
-    if (enabledRef.current && scope !== undefined) cache.request(scope);
+    if (enabledRef.current && scope !== undefined) cache.request(scope, force);
   }, [cache]);
   // Mount and scope changes refresh only when stale; a reconnect (enabled
   // flipping back on) forces a fresh listing — the host may have changed

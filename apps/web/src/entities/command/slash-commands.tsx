@@ -48,7 +48,8 @@ export function commandItems(commands: readonly CommandInfo[], query: string): C
 /**
  * The conversation's `/` trigger (only while `value` is at a command start),
  * its listed commands for send-time recognition (undefined until the first
- * listing lands, or on a pre-5.15 host), and `request` for a focus refresh.
+ * listing lands, or on a pre-5.15 host), and `request` for a focus refresh
+ * (`request(true)` when the + menu opens, so its Commands flyout is current).
  */
 export function useSlashCommands(
   remote: RemoteDurable,
@@ -59,7 +60,7 @@ export function useSlashCommands(
 ): {
   readonly trigger: ChatComposerTrigger | undefined;
   readonly commands: readonly CommandInfo[] | undefined;
-  readonly request: () => void;
+  readonly request: (force?: boolean) => void;
 } {
   const { items: commands, request } = useCachedListing(commandCacheFor(remote), conversationId, enabled);
   const commandsRef = useRef(commands);

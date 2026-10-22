@@ -1,7 +1,7 @@
 // Send-time command handling (issue #254, ADR-0027) in the conversation
 // composer: a disabled command isn't run, text is never a command before the
 // host's list lands, and a pre-5.15 host keeps the old Compact item.
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
 import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
@@ -20,16 +20,21 @@ function setup(options: { listCommands?: () => Promise<CommandListing>; minor?: 
 }
 
 describe("ConversationComposer commands", () => {
-  it("shows a disabled command's reason instead of running it", async () => {
+  it("shows a disabled command's reason instead of running it, typed or in the + menu", async () => {
     const { remote, editable, type } = setup({
       listCommands: async () => ({
         commands: [{ name: "compact", description: "Compact", source: "builtin", disabled: "Busy compacting already" }],
       }),
     });
     await act(async () => {});
+    // On an empty draft the + menu's Commands flyout greys it out with the same reason.
+    const item = screen.getByRole("menuitem", { name: /^\/compact/, hidden: true });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveTextContent("Busy compacting already");
     type("/compact now");
     fireEvent.keyDown(editable, { key: "Enter" });
-    expect(await screen.findByText("Busy compacting already")).toBeInTheDocument();
+    const composer = within(document.querySelector<HTMLElement>('[data-slot="prompt-input"]')!);
+    expect(await composer.findByRole("alert")).toHaveTextContent("Busy compacting already");
     expect(remote.controller.runCommand).not.toHaveBeenCalled();
     expect(remote.controller.submit).not.toHaveBeenCalled();
   });
@@ -47,14 +52,22 @@ describe("ConversationComposer commands", () => {
     const { remote } = setup({ minor: 14 });
     await act(async () => {});
     expect(screen.getByRole("menuitem", { name: "Compact conversation", hidden: true })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Run a command…", hidden: true })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Commands/, hidden: true })).toBeNull();
     expect(remote.controller.listCommands).not.toHaveBeenCalled();
   });
 
-  it("offers Run a command… instead of Compact on a 5.15 host", async () => {
+  it("offers a Commands row instead of Compact on a 5.15 host", async () => {
     setup();
     await act(async () => {});
-    expect(screen.getByRole("menuitem", { name: "Run a command…", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Commands/, hidden: true })).not.toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("menuitem", { name: "Compact conversation", hidden: true })).toBeNull();
+  });
+
+  it("shows the Commands row disabled while the list loads", async () => {
+    setup({ listCommands: () => new Promise(() => {}) });
+    await act(async () => {});
+    const row = screen.getByRole("menuitem", { name: /^Commands/, hidden: true });
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveTextContent("Loading…");
   });
 });

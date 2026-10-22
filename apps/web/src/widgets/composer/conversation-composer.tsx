@@ -1,5 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem, DropdownMenuSubMenu } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
@@ -110,6 +110,16 @@ export function ConversationComposer({
   // Why a typed command wasn't run; any edit to the draft clears it.
   const [commandError, setCommandError] = useState<string | undefined>(undefined);
   useEffect(() => setCommandError(undefined), [value, images.length]);
+  // Why the + menu's Commands row can't open: a command starts at index 0, so
+  // picking one into a draft with a message would bury or replace it.
+  const commandsUnavailable =
+    slash.commands === undefined
+      ? "Loading…"
+      : slash.commands.length === 0
+        ? "None on this host"
+        : value.trim() !== "" || images.length > 0 || imagesPending
+          ? "Clear the message first"
+          : undefined;
   const fileInput = useRef<HTMLInputElement>(null);
   // No "why" slot on menu items: the reason goes into the label itself.
   const addImages =
@@ -323,7 +333,13 @@ export function ConversationComposer({
         error={commandError ?? error}
         startActions={
           <>
-            <ChatAddMenu isDisabled={disconnected || editLocked}>
+            <ChatAddMenu
+              isDisabled={disconnected || editLocked}
+              // Refetch on open so the Commands flyout's list and disabled reasons are current.
+              onOpenChange={(open) => {
+                if (open) slash.request(true);
+              }}
+            >
               <ChatAddMenuSection title="Add">
                 <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
                 {fileSource === undefined ? null : (
@@ -335,16 +351,35 @@ export function ConversationComposer({
                 {roles.length === 0 ? null : (
                   <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
                 )}
-                {/* A command is only recognized at index 0, so this is offered on an empty draft only. */}
-                {listsCommands && value === "" && images.length === 0 && !imagesPending ? (
-                  <DropdownMenuItem label="Run a command…" onClick={() => inputRef.current?.openTrigger("/")} />
-                ) : null}
               </ChatAddMenuSection>
-              {listsCommands ? null : (
-                <ChatAddMenuSection title="Conversation">
+              {/* Commands act on the conversation, not the message — where Compact sat before 5.15. */}
+              <ChatAddMenuSection title="Conversation">
+                {!listsCommands ? (
                   <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
-                </ChatAddMenuSection>
-              )}
+                ) : commandsUnavailable !== undefined ? (
+                  <DropdownMenuSubMenu description={commandsUnavailable} isDisabled label="Commands">
+                    {null}
+                  </DropdownMenuSubMenu>
+                ) : (
+                  // Picking one starts the draft with `/name `, like typing it:
+                  // arguments follow, and Enter runs it through the send path.
+                  <DropdownMenuSubMenu label="Commands">
+                    {(slash.commands ?? []).map((command) => (
+                      <DropdownMenuItem
+                        key={command.name}
+                        description={command.disabled ?? command.description}
+                        isDisabled={command.disabled !== undefined}
+                        label={`/${command.name}`}
+                        onClick={() => {
+                          setValue(`/${command.name} `);
+                          // A frame later: the menu's close hands focus back to its button first.
+                          requestAnimationFrame(() => inputRef.current?.focusAtEnd());
+                        }}
+                      />
+                    ))}
+                  </DropdownMenuSubMenu>
+                )}
+              </ChatAddMenuSection>
             </ChatAddMenu>
             <ModelSelector
               models={view.models}
