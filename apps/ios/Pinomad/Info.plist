@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>扫描宿主的配对二维码，或拍照后作为图片发给 agent。</string>
+	<string>Scan a host's pairing QR code, or take photos to send to the agent.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>PinomadAPSEnvironment</key>
@@ -49,7 +49,7 @@
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>连接局域网里的 PiNomad 宿主。</string>
+	<string>Connect to PiNomad hosts on your local network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

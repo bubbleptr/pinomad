@@ -26,7 +26,7 @@ public enum ImagePrep {
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int
-        else { throw Failure(description: "无法读取图片") }
+        else { throw Failure(description: "Couldn't read the image") }
         // Never upscale: the thumbnail's max side is the smaller of the cap
         // and the image's own long side.
         let options: [CFString: Any] = [
@@ -35,15 +35,15 @@ public enum ImagePrep {
             kCGImageSourceThumbnailMaxPixelSize: min(maxSide, max(width, height)),
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            throw Failure(description: "无法读取图片")
+            throw Failure(description: "Couldn't read the image")
         }
         let out = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)
-        else { throw Failure(description: "无法编码图片") }
+        else { throw Failure(description: "Couldn't encode the image") }
         // Only the quality: no orientation (already baked in) and no
         // carried-over metadata.
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw Failure(description: "无法编码图片") }
+        guard CGImageDestinationFinalize(destination) else { throw Failure(description: "Couldn't encode the image") }
         let prepared = MessageImage(data: (out as Data).base64EncodedString(), mimeType: "image/jpeg")
         if let problem = imageProblem(images: [prepared]) {
             throw Failure(description: problem)

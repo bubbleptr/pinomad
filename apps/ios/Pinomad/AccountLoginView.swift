@@ -62,14 +62,14 @@ struct AccountLoginView: View {
                 case .probing:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("正在检查服务端…").foregroundStyle(.secondary)
+                        Text("Checking the server…").foregroundStyle(.secondary)
                     }
                 case .disabled:
-                    Text("这个服务端没有开启账号。")
+                    Text("This server doesn't have accounts turned on.")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 case .unreachable:
-                    Text("连不上服务端，检查地址和网络。")
+                    Text("Can't reach the server. Check the address and your connection.")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 case .idle, .enabled:
@@ -77,32 +77,32 @@ struct AccountLoginView: View {
                 }
 
                 if phase != .enabled {
-                    Button(phase == .probing ? "正在检查…" : "继续", action: probe)
+                    Button(phase == .probing ? "Checking…" : "Continue", action: probe)
                         .disabled(origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || phase == .probing
                             || busy)
                 }
             } header: {
-                Text("服务端")
+                Text("Server")
             } footer: {
-                Text("账号只走 https://；本机调试可以用 http://127.0.0.1。")
+                Text("Accounts need https://. For local testing, http://127.0.0.1 also works.")
             }
 
             if phase == .enabled {
                 Section {
-                    TextField("用户名", text: $username)
+                    TextField("Username", text: $username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .submitLabel(.next)
-                    SecureField("密码", text: $password)
+                    SecureField("Password", text: $password)
                         .textContentType(.password)
                         .submitLabel(.go)
                         .onSubmit(login)
                 } header: {
-                    Text("登录")
+                    Text("Sign In")
                 } footer: {
-                    Text("登录后可以不用扫码，直接配对你账号下的宿主。")
+                    Text("Once signed in, you can pair the hosts on your account without a QR code.")
                 }
 
                 Section {
@@ -114,7 +114,7 @@ struct AccountLoginView: View {
                             if busy {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Text("登录")
+                                Text("Sign in")
                             }
                             Spacer()
                         }
@@ -136,11 +136,11 @@ struct AccountLoginView: View {
                 }
             }
         }
-        .navigationTitle("登录账号")
+        .navigationTitle("Sign In")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("取消") { dismiss() }
+                Button("Cancel") { dismiss() }
                     .disabled(busy)
             }
         }

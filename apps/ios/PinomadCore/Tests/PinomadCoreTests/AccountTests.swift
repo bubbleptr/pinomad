@@ -286,8 +286,8 @@ struct AccountTests {
     }
 
     @Test func errorCopyKeepsUnknownCodesVisible() {
-        #expect(AccountCopy.message(AccountFailure.network) == "连不上服务端，检查地址和网络。")
-        #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "用户名或密码不对。")
+        #expect(AccountCopy.message(AccountFailure.network) == "Can't reach the server. Check the address and your connection.")
+        #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "Wrong username or password.")
         #expect(AccountCopy.message(AccountFailure(code: "surprise")).contains("surprise"))
     }
 

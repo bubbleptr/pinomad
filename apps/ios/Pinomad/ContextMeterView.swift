@@ -40,7 +40,7 @@ struct ContextMeterView: View {
         // The meter keeps its width; a long model name truncates first.
         .fixedSize()
         .accessibilityLabel(reading.accessibilityLabel)
-        .accessibilityHint("点按查看用量详情")
+        .accessibilityHint("Shows usage details")
         .popover(isPresented: $showingDetail, arrowEdge: .bottom) {
             Text(reading.detail)
                 .font(.footnote.monospacedDigit())

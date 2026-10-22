@@ -39,11 +39,11 @@ public struct AttachmentTray: Equatable, Sendable {
     /// `error`).
     public mutating func reserve(_ count: Int, accepts: Bool) -> Reservation? {
         guard accepts else {
-            error = "当前模型不支持图片"
+            error = "This model doesn't accept images"
             return nil
         }
         let kept = min(count, freeSlots)
-        error = count > kept ? "最多 \(limit) 张图片" : nil
+        error = count > kept ? "At most \(limit) image\(limit == 1 ? "" : "s") per message" : nil
         guard kept > 0 else { return nil }
         taken += kept
         preparing += kept
@@ -89,7 +89,7 @@ public struct AttachmentTray: Equatable, Sendable {
         self.images = kept
         preparing = 0
         taken = kept.count
-        error = images.count > limit ? "最多 \(limit) 张图片" : nil
+        error = images.count > limit ? "At most \(limit) image\(limit == 1 ? "" : "s") per message" : nil
     }
 
     public mutating func clear() {

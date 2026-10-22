@@ -118,7 +118,7 @@ extension AppModel {
         guard hostKey != currentHostKey || phase != .connected else { return }
         #if DEBUG
         if devHostsInjected {
-            showToast("演示数据：不会切换机器。")
+            showToast("Demo data: hosts don't switch.")
             return
         }
         #endif
@@ -135,7 +135,7 @@ extension AppModel {
         // Connecting anyway is right — only the next launch would open the
         // old host — but the reader should know.
         if let saveError {
-            lastError = "没能记住所选宿主（\(saveError)）：重启 App 后会打开之前的宿主。"
+            lastError = "Couldn't save the selected host (\(saveError)). The previous host opens after the app restarts."
         }
     }
 
@@ -146,7 +146,7 @@ extension AppModel {
     func forget(_ hostKey: String) {
         #if DEBUG
         if devHostsInjected {
-            showToast("演示数据：不会忘记机器。")
+            showToast("Demo data: hosts aren't forgotten.")
             return
         }
         #endif
@@ -168,16 +168,16 @@ extension AppModel {
             case .forget:
                 break
             case .forgetWithWarning:
-                warning = "已忘记这台宿主。它可能还留着这台设备的推送登记；到宿主的「设备」页面吊销这台设备后，推送就会停止。"
+                warning = "Forgot this host. It may still have this device registered for notifications; revoke this device on the host's Devices page to stop them."
             case .clearThenForget:
                 do {
                     guard let session = self.session else { throw SessionError.sessionClosed }
                     try await self.clearPushRegistration(on: session)
                     self.push.setMayHaveRegistration(false, for: hostKey)
                 } catch is PushUnregisterTimeout {
-                    warning = "已忘记这台宿主，但注销推送等宿主超时。到宿主的「设备」页面吊销这台设备后，推送就会停止。"
+                    warning = "Forgot this host, but the host timed out clearing notifications. Revoke this device on the host's Devices page to stop them."
                 } catch {
-                    warning = "已忘记这台宿主，但没能注销推送登记（\(self.describe(error))）。到宿主的「设备」页面吊销这台设备后，推送就会停止。"
+                    warning = "Forgot this host, but couldn't clear notifications (\(self.describe(error))). Revoke this device on the host's Devices page to stop them."
                 }
             }
             self.forgetNow(hostKey, warning: warning)
@@ -205,7 +205,7 @@ extension AppModel {
         do {
             try store.update { $0 = $0.forgetting(hostKey) }
         } catch {
-            lastError = "没能忘记这台宿主：\(describe(error))"
+            lastError = "Couldn't forget this host: \(describe(error))"
             return
         }
         push.forget(hostKey)
@@ -223,14 +223,14 @@ extension AppModel {
     /// the host rejects with a message the sheet shows.
     func createPairingOffer() async -> Result<PairingCodeOffer, PairingCodeFailure> {
         guard let session else {
-            return .failure(PairingCodeFailure(message: "还没连上宿主。"))
+            return .failure(PairingCodeFailure(message: "Not connected to the host yet."))
         }
         do {
             switch try await session.invoke(.createPairing) {
             case .pairing(let url, let expiresAt):
                 return .success(PairingCodeOffer(url: url, expiresAt: expiresAt))
             default:
-                return .failure(PairingCodeFailure(message: "宿主没有返回配对信息。"))
+                return .failure(PairingCodeFailure(message: "The host didn't return a pairing link."))
             }
         } catch {
             return .failure(PairingCodeFailure(message: describe(error)))

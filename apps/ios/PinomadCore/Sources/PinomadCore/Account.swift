@@ -503,7 +503,7 @@ public enum AccountHosts {
 
 public enum AccountCopy {
     public static let signOutExplanation =
-        "退出只是服务端不再替这台设备担保，已配对的宿主不受影响。"
+        "Signing out only stops the server from vouching for this device. Paired hosts aren't affected."
 
     /// The warning after a sign-out request failed. On this device an
     /// unauthenticated answer just means the local token was already dead;
@@ -511,39 +511,39 @@ public enum AccountCopy {
     public static func signOutWarning(everywhere: Bool, failure: AccountFailure?) -> String? {
         guard let failure, everywhere || !failure.clearsSession else { return nil }
         return everywhere
-            ? "其他设备可能还没退出；请重新登录后再试一次「在所有设备上退出」。"
-            : "已在这台设备退出，但服务端没有确认；会话会在 30 天内自然过期。"
+            ? "Other devices may still be signed in. Sign in and try Sign out everywhere again."
+            : "Signed out on this device, but the server didn't confirm. The session will expire on its own within 30 days."
     }
 
     public static func message(_ failure: AccountFailure) -> String {
         switch failure.code {
-        case "invalid_credentials": "用户名或密码不对。"
-        case "rate_limited": "尝试次数太多，过几分钟再试。"
-        case "network": "连不上服务端，检查地址和网络。"
-        case "origin_required": "请输入服务端地址。"
-        case "insecure_origin": "服务端地址必须以 https:// 开头。"
-        case "invalid_response": "服务端应答不正确，确认地址指向的是 PiNomad 服务端。"
-        case "unauthenticated": "登录已失效，请重新登录。"
-        case "accounts_disabled": "这个服务端没有开启账号。"
-        case "host_offline": "宿主离线。"
-        case "host_too_old": "宿主版本太旧，需要在宿主上运行 pinomad upgrade。"
-        case "key_mismatch": "宿主的公钥和账号里的记录不一致，请在宿主上重新运行 pinomad join。"
-        case "disabled": "宿主关闭了账号担保配对，只能用二维码或配对链接。"
-        case "not_joined", "rebinding": "宿主正在切换服务端，等它重启后再试。"
-        case "host_timeout": "宿主没有及时应答，再试一次。"
-        case "pair_rejected": "宿主拒绝了这台设备。如果之前吊销过，请改用二维码配对。"
-        case "invalid_offer": "宿主给出的配对应答无效。"
-        case "pairing_not_saved": "已经配对，但这台设备没能保存。"
-        default: "出错了（" + failure.code + "）。"
+        case "invalid_credentials": "Wrong username or password."
+        case "rate_limited": "Too many attempts. Wait a few minutes and try again."
+        case "network": "Can't reach the server. Check the address and your connection."
+        case "origin_required": "Enter the server address."
+        case "insecure_origin": "The server address must start with https://."
+        case "invalid_response": "The server's response wasn't valid. Make sure the address points to a PiNomad server."
+        case "unauthenticated": "You were signed out. Sign in again."
+        case "accounts_disabled": "This server doesn't have accounts turned on."
+        case "host_offline": "The host is offline."
+        case "host_too_old": "The host needs an update (run pinomad upgrade on it)."
+        case "key_mismatch": "The host's key doesn't match its account record. Run pinomad join on it again."
+        case "disabled": "The host doesn't accept account pairing. Pair with a QR code or pairing link instead."
+        case "not_joined", "rebinding": "The host is moving between servers. Try again after it restarts."
+        case "host_timeout": "The host didn't answer in time. Try again."
+        case "pair_rejected": "The host refused this device. If you revoked it before, pair it with a QR code instead."
+        case "invalid_offer": "The host's pairing offer was invalid."
+        case "pairing_not_saved": "Paired, but this device couldn't save the pairing."
+        default: "Something went wrong (" + failure.code + ")."
         }
     }
 
     public static func pairingReason(_ pairing: AccountHostPairing) -> String {
         switch pairing {
         case .available: ""
-        case .offline: "宿主离线，连上后才能配对。"
-        case .hostTooOld: "宿主版本太旧，需要先运行 pinomad upgrade。"
-        case .keyMismatch: "宿主的公钥和账号里的记录不一致，需要先在宿主上重新运行 pinomad join。"
+        case .offline: "The host is offline. It can be paired once it's back online."
+        case .hostTooOld: "The host needs an update. Run pinomad upgrade on it first."
+        case .keyMismatch: "The host's key doesn't match its account record. Run pinomad join on it again first."
         }
     }
 }

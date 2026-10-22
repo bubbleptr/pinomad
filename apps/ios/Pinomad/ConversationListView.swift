@@ -41,7 +41,7 @@ struct ConversationListView: View {
                             Button {
                                 model.switchHost(host.hostKey)
                             } label: {
-                                Label("未连接，轻点连接", image: .cloudOff)
+                                Label("Not connected. Tap to connect", image: .cloudOff)
                                     .foregroundStyle(.secondary)
                             }
                             .listRowBackground(Color.clear)
@@ -67,7 +67,7 @@ struct ConversationListView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "搜索对话")
+        .searchable(text: $query, prompt: "Search conversations")
         .navigationDestination(for: Route.self) { route in
             RouteDestination(model: model, route: route)
         }
@@ -78,17 +78,17 @@ struct ConversationListView: View {
                 } label: {
                     AccountBadge(username: model.accountRecord?.username)
                 }
-                .accessibilityLabel(model.accountRecord.map { "账号：\($0.username)" } ?? "账号")
+                .accessibilityLabel(model.accountRecord.map { "Account: \($0.username)" } ?? "Account")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("设置", image: .settings) {
+                Button("Settings", image: .settings) {
                     model.navPath.append(.settings)
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                Button("新建", image: .squarePen) {
+                Button("New", image: .squarePen) {
                     model.navPath.append(.newConversation)
                 }
                 .disabled(!model.connected)
@@ -122,7 +122,7 @@ struct ConversationListView: View {
                 group.project.path.map { (path: $0, group: group) }
             }
             if !organized.chats.isEmpty {
-                groupRow(.chats, title: "对话", image: .messageCircle,
+                groupRow(.chats, title: "Chats", image: .messageCircle,
                          count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
             }
             ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
@@ -134,7 +134,7 @@ struct ConversationListView: View {
                 Button {
                     model.navPath.append(.addProject)
                 } label: {
-                    Label("添加项目", image: .plus)
+                    Label("Add project", image: .plus)
                         .foregroundStyle(.secondary)
                 }
                 .disabled(!model.connected)
@@ -225,7 +225,7 @@ private struct MachineHeader: View {
                 .foregroundStyle(Color(.label))
                 .lineLimit(1)
             ConnectionDot(online: online)
-                .accessibilityLabel(online ? "已连接" : "未连接")
+                .accessibilityLabel(online ? "Connected" : "Not connected")
         }
         .textCase(nil)
         .padding(.top, 8)

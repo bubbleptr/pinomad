@@ -48,9 +48,9 @@ struct NewConversationView: View {
         guard let agent = selectedAgent, let resolution else { return nil }
         let modelInherited = resolution.modelFrom != .override
         let levelInherited = resolution.levelFrom != .override
-        if modelInherited && levelInherited { return "来自 @\(agent)" }
-        if modelInherited { return "模型来自 @\(agent)" }
-        if levelInherited { return "等级来自 @\(agent)" }
+        if modelInherited && levelInherited { return "from @\(agent)" }
+        if modelInherited { return "model from @\(agent)" }
+        if levelInherited { return "level from @\(agent)" }
         return nil
     }
 
@@ -60,19 +60,19 @@ struct NewConversationView: View {
         guard let problem = resolution?.problem else { return nil }
         switch problem {
         case let .agentMissing(agent, reason):
-            let base = "这台宿主上没有具名 Agent @\(agent)"
-            return ("@\(agent) 不可用", reason.map { base + "：\($0)" } ?? base)
+            let base = "No agent role @\(agent) on this host"
+            return ("@\(agent) unavailable", reason.map { base + ": \($0)" } ?? base)
         case let .modelMissing(agent):
-            return ("@\(agent) 没有可用模型", "@\(agent) 没指定模型，宿主也没有默认模型")
+            return ("No model for @\(agent)", "@\(agent) doesn't set a model and the host has no default model")
         case let .modelUnavailable(agent, model, source):
             let name = "\(model.provider)/\(model.modelId)"
             let from: String
             switch source {
-            case .agent: from = "@\(agent) 指定的模型"
-            case .`default`: from = "宿主默认模型"
-            case .override: from = "选中的模型"
+            case .agent: from = "@\(agent)'s model"
+            case .`default`: from = "the host's default model"
+            case .override: from = "the selected model"
             }
-            return ("\(name) 不可用", "\(name)（\(from)）不在宿主的模型列表里")
+            return ("\(name) unavailable", "\(name) (\(from)) isn't in the host's model list")
         }
     }
 
@@ -101,7 +101,7 @@ struct NewConversationView: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Text("想让 Pi 做点什么？")
+            Text("What should Pi do?")
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
             Spacer()
@@ -114,7 +114,7 @@ struct NewConversationView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
-        .navigationTitle("新对话")
+        .navigationTitle("New Conversation")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { focused = true }
         .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
@@ -151,7 +151,7 @@ struct NewConversationView: View {
             if !tray.isEmpty || tray.error != nil || imagesBlocked {
                 AttachmentStrip(
                     tray: tray,
-                    note: imagesBlocked ? "\(currentModel?.name ?? "当前模型")不支持图片，移除图片或换模型后再发送" : tray.error,
+                    note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : tray.error,
                     // The create already took these; a change now would be
                     // lost when the draft clears.
                     remove: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
@@ -162,7 +162,7 @@ struct NewConversationView: View {
                 text: draft,
                 selection: $selection,
                 focused: $focused,
-                placeholder: "想让 Pi 做什么…",
+                placeholder: "Ask Pi to do something…",
                 names: skillEntries?.map(\.name),
                 enabled: model.connected && !model.creating,
                 minLines: 3,
@@ -212,7 +212,7 @@ struct NewConversationView: View {
                     }
                     .buttonStyle(PressStyle(haptic: false))
                     .disabled(!canSend)
-                    .accessibilityLabel("开始对话")
+                    .accessibilityLabel("Start conversation")
                 }
             }
             .frame(minHeight: 34)
@@ -268,7 +268,7 @@ struct NewConversationView: View {
 
     private var homeLabel: String {
         switch model.draftHome {
-        case .chat: return "无项目"
+        case .chat: return "No project"
         case .project(let path):
             let name = projects.first { $0.path == path }?.name
             return name ?? (path as NSString).lastPathComponent
@@ -277,9 +277,9 @@ struct NewConversationView: View {
 
     private var projectMenu: some View {
         Menu {
-            Button("无项目", image: .messageCircle) { model.draftHome = .chat }
+            Button("No project", image: .messageCircle) { model.draftHome = .chat }
             if !projects.isEmpty {
-                Section("项目") {
+                Section("Projects") {
                     ForEach(projects.indices, id: \.self) { index in
                         let project = projects[index]
                         if let path = project.path {
@@ -291,7 +291,7 @@ struct NewConversationView: View {
                 }
             }
             if model.hostSupports("listFolders") {
-                Button("添加项目…", image: .folderPlus) {
+                Button("Add project…", image: .folderPlus) {
                     model.navPath.append(.addProject)
                 }
             }
@@ -305,11 +305,11 @@ struct NewConversationView: View {
     private var checkoutMenu: some View {
         Menu {
             Button("Git worktree", image: .gitBranch) { model.draftCheckout = .worktree }
-            Button("项目目录", image: .monitor) { model.draftCheckout = .project }
+            Button("Project folder", image: .monitor) { model.draftCheckout = .project }
         } label: {
             LocationChip(
                 icon: model.draftCheckout == .worktree ? .gitBranch : .monitor,
-                label: model.draftCheckout == .worktree ? "Git worktree" : "项目目录"
+                label: model.draftCheckout == .worktree ? "Git worktree" : "Project folder"
             )
         }
         .tint(.secondary)
@@ -322,12 +322,12 @@ struct NewConversationView: View {
     /// subtitle in the menu.
     private var agentMenu: some View {
         Menu {
-            Toggle("不指定", isOn: Binding(
+            Toggle("No agent role", isOn: Binding(
                 get: { selectedAgent == nil },
                 set: { isOn in if isOn { model.setDraftAgent(nil) } }
             ))
             if agentPickerAvailable && !roles.isEmpty {
-                Section("具名 Agent") {
+                Section("Agent Roles") {
                     ForEach(roles, id: \.name) { role in
                         Toggle(isOn: Binding(
                             get: { selectedAgent == role.name },

@@ -49,12 +49,12 @@ struct ConversationsPage: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(removing: .title)
-        .searchable(text: $query, prompt: "搜索对话")
+        .searchable(text: $query, prompt: "Search conversations")
         .toolbar {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                Button("新建", image: .squarePen) {
+                Button("New", image: .squarePen) {
                     // A project's page starts the draft in it; Chats as a Chat.
                     if case .project(let path) = filter { model.draftHome = .project(path: path) }
                     if filter == .chats { model.draftHome = .chat }
@@ -63,13 +63,13 @@ struct ConversationsPage: View {
                 .disabled(!model.connected)
             }
         }
-        .alert("重命名对话", isPresented: Binding(
+        .alert("Rename Conversation", isPresented: Binding(
             get: { renaming != nil },
             set: { if !$0 { renaming = nil } }
         )) {
-            TextField("名称", text: $newTitle)
-            Button("取消", role: .cancel) { renaming = nil }
-            Button("保存") { saveRename() }
+            TextField("Name", text: $newTitle)
+            Button("Cancel", role: .cancel) { renaming = nil }
+            Button("Save") { saveRename() }
         } message: {
             if let renameError { Text(renameError) }
         }
@@ -110,10 +110,10 @@ struct ConversationsPage: View {
 
     private var emptyTitle: String {
         switch filter {
-        case .needsAnswer: "没有需要回复的对话"
-        case .running: "没有运行中的对话"
-        case .failed: "没有失败的对话"
-        default: "还没有对话"
+        case .needsAnswer: "No conversations need an answer"
+        case .running: "No running conversations"
+        case .failed: "No failed conversations"
+        default: "No conversations yet"
         }
     }
 
@@ -127,16 +127,16 @@ struct ConversationsPage: View {
             .quietSeparator()
             .contextMenu {
                 if model.hostSupports("renameConversation") {
-                    Button("重命名", image: .pencil) {
+                    Button("Rename", image: .pencil) {
                         newTitle = displayName(summary: summary)
                         renameError = nil
                         renaming = summary
                     }
                 }
-                Button("归档", image: .archive) { model.archive(conversation: id, true) }
+                Button("Archive", image: .archive) { model.archive(conversation: id, true) }
             }
             .swipeActions(edge: .trailing) {
-                Button("归档", image: .archive) { model.archive(conversation: id, true) }
+                Button("Archive", image: .archive) { model.archive(conversation: id, true) }
                     .tint(.indigo)
             }
         } else {
@@ -198,7 +198,7 @@ struct ConversationRowLabel: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(subagents) 个子代理")
+                .accessibilityLabel("\(subagents) subagent\(subagents == 1 ? "" : "s")")
             }
         }
         .padding(.vertical, 4)
@@ -222,7 +222,7 @@ private struct FamilyStatusDot: View {
                     .phaseAnimator(status == .running ? [1.0, 0.35] : [1.0]) { dot, opacity in
                         dot.opacity(opacity)
                     } animation: { _ in .easeInOut(duration: 1.2) }
-                    .accessibilityLabel(filter.status == nil ? "状态未知" : filter.title)
+                    .accessibilityLabel(filter.status == nil ? "Unknown status" : filter.title)
             } else {
                 Color.clear
             }
@@ -265,11 +265,11 @@ extension ConversationFilter {
 
     var title: String {
         switch self {
-        case .all: "全部"
-        case .needsAnswer: "需要回复"
-        case .running: "运行中"
-        case .failed: "失败"
-        case .chats: "对话"
+        case .all: "All"
+        case .needsAnswer: "Needs Answer"
+        case .running: "Running"
+        case .failed: "Failed"
+        case .chats: "Chats"
         case .project(let path): path
         }
     }

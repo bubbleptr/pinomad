@@ -45,7 +45,7 @@ struct ConversationView: View {
         // Read the node once per version: the title, role, retry rule and
         // card facts all derive from it.
         let node = self.node
-        let title = node.map { displayName(summary: $0.summary) } ?? "对话"
+        let title = node.map { displayName(summary: $0.summary) } ?? "Conversation"
         let subtitle = self.subtitle(role: node?.summary.role)
         let isSubagent = node?.summary.kind == .subagent
         // Card facts only, so a summary's churn (updatedAt/status/activity)
@@ -128,7 +128,7 @@ struct ConversationView: View {
                 // A subagent belongs to its delegating task; the reader only
                 // observes it. No composer, so nothing here can submit,
                 // stop, compact, or change its model.
-                Text("子代理的对话只能查看")
+                Text("Subagent conversations are read-only")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity)
@@ -157,7 +157,7 @@ struct ConversationView: View {
                 } label: {
                     Image(.info)
                 }
-                .accessibilityLabel("概览")
+                .accessibilityLabel("Overview")
             }
         }
         .sheet(isPresented: $showingOverview, onDismiss: {
@@ -323,9 +323,9 @@ struct ConversationView: View {
                    retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
                    retryKey: retry?.requestId).equatable()
         case .compaction:
-            MarkerRow("上下文已压缩")
+            MarkerRow("Context compacted")
         case .reset:
-            MarkerRow("对话已重置")
+            MarkerRow("Conversation reset")
         }
     }
 }
@@ -447,7 +447,7 @@ private struct RunRow: View, Equatable {
                     .foregroundStyle(.red)
             }
             if let retry {
-                Button("重试", image: .rotateCw, action: retry)
+                Button("Retry", image: .rotateCw, action: retry)
                     .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)
             }

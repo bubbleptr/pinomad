@@ -17,7 +17,7 @@ private let jpeg = MessageImage(data: "AAAA", mimeType: "image/jpeg")
         let secondClaim = tray.reserve(3, accepts: true)
         let second = try #require(secondClaim)
         #expect(second.count == 1)
-        #expect(tray.error == "最多 4 张图片")
+        #expect(tray.error == "At most 4 images per message")
         #expect(tray.freeSlots == 0)
         let none = tray.reserve(1, accepts: true)
         #expect(none == nil)
@@ -48,11 +48,11 @@ private let jpeg = MessageImage(data: "AAAA", mimeType: "image/jpeg")
         var tray = AttachmentTray(limit: 4)
         let slotClaim = tray.reserve(2, accepts: true)
         let slot = try #require(slotClaim)
-        tray.fail(slot, message: "无法读取图片")
+        tray.fail(slot, message: "Couldn't read the image")
         #expect(tray.images.isEmpty)
         #expect(tray.preparing == 0)
         #expect(tray.freeSlots == 4)
-        #expect(tray.error == "无法读取图片")
+        #expect(tray.error == "Couldn't read the image")
     }
 
     /// Sending clears the tray; an image still being prepared must not
@@ -113,7 +113,7 @@ private let jpeg = MessageImage(data: "AAAA", mimeType: "image/jpeg")
         #expect(tray.images.map(\.data) == ["B0", "B1", "B2", "B3"])
         #expect(tray.preparing == 0)
         #expect(tray.freeSlots == 0)
-        #expect(tray.error == "最多 4 张图片")
+        #expect(tray.error == "At most 4 images per message")
     }
 }
 

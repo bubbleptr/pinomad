@@ -21,9 +21,9 @@ struct SubagentCardView: View {
 
     private var statusText: String {
         switch card.status {
-        case .running: "运行中"
-        case .done: "完成"
-        case .failed: "失败"
+        case .running: "Running"
+        case .done: "Done"
+        case .failed: "Failed"
         }
     }
 
@@ -56,13 +56,13 @@ struct SubagentCardView: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.press)
-                .accessibilityLabel("\(card.title)，\(statusText)")
-                .accessibilityHint("打开子代理对话")
+                .accessibilityLabel("\(card.title), \(statusText)")
+                .accessibilityHint("Opens the subagent conversation")
             } else {
                 summary
             }
             if let output = card.output, !output.isEmpty {
-                Button(showingOutput ? "收起结果" : "查看结果") {
+                Button(showingOutput ? "Hide result" : "Show result") {
                     showingOutput.toggle()
                 }
                 .font(.caption)

@@ -36,8 +36,8 @@ public struct ContextMeterReading: Equatable, Sendable {
             fill = 0
             warning = false
             text = "—"
-            detail = "还没有用量数据"
-            accessibilityLabel = "上下文用量未知"
+            detail = "No usage data yet"
+            accessibilityLabel = "Context usage unknown"
             return
         }
         let share = used / window
@@ -50,7 +50,7 @@ public struct ContextMeterReading: Equatable, Sendable {
         text = "\(percent)%"
         detail = "\(Self.formatTokens(used)) / \(Self.formatTokens(window))"
         accessibilityLabel =
-            "上下文已用 \(percent)%，\(Self.formatTokens(used)) / \(Self.formatTokens(window))"
+            "Context \(percent)% used, \(Self.formatTokens(used)) of \(Self.formatTokens(window)) tokens"
     }
 
     /// Matches the web's `formatTokens`: whole thousands below a million,

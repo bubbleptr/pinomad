@@ -149,7 +149,7 @@ struct MentionMenuView: View {
                 .buttonStyle(MentionRowStyle())
             }
             if menu.filesTruncated {
-                Text("继续输入以缩小范围")
+                Text("Keep typing to narrow it down")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
@@ -159,7 +159,7 @@ struct MentionMenuView: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("正在查找文件…")
+                    Text("Finding files…")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

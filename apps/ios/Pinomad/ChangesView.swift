@@ -20,7 +20,7 @@ struct ChangesList: View {
 
     var body: some View {
         content
-            .navigationTitle("改动")
+            .navigationTitle("Changes")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear(perform: load)
     }
@@ -28,7 +28,7 @@ struct ChangesList: View {
     @ViewBuilder
     private var content: some View {
         if panel.loading && panel.changes == nil {
-            ProgressView("正在读取改动…")
+            ProgressView("Loading changes…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let changes = panel.changes {
             loaded(changes)
@@ -45,16 +45,16 @@ struct ChangesList: View {
         switch changes {
         case .unavailable(let reason, _):
             emptyState(
-                title: "没有可显示的改动",
+                title: "No changes to show",
                 image: .fileSearch,
                 description: reason
             )
         case .available(let base, let files, let truncated, _):
             if files.isEmpty {
                 emptyState(
-                    title: "还没有改动",
+                    title: "No changes yet",
                     image: .circleCheck,
-                    description: "这个对话还没有改动任何文件。"
+                    description: "This conversation hasn't changed any files yet."
                 )
             } else {
                 fileList(base: base, files: files, truncated: truncated)
@@ -91,11 +91,11 @@ struct ChangesList: View {
     private func failure(_ message: String) -> some View {
         ScrollView {
             ContentUnavailableView {
-                Label("无法读取改动", image: .triangleAlert)
+                Label("Couldn't load changes", image: .triangleAlert)
             } description: {
                 Text(message)
             } actions: {
-                Button("重试") {
+                Button("Retry") {
                     Task { await refresh() }
                 }
                 .buttonStyle(.tactile(.borderedProminent))
@@ -125,14 +125,14 @@ struct ChangesList: View {
                 VStack(alignment: .leading, spacing: 5) {
                     refreshIndicator
                     if !worktree {
-                        Text("这是项目目录里未提交的改动，不只是这个对话做的")
+                        Text("These are the project folder's uncommitted changes, not only this conversation's.")
                     } else {
-                        Text("相对 worktree 起点 \(String(base.prefix(7)))")
+                        Text("Compared with the worktree base \(String(base.prefix(7)))")
                     }
                     if truncated {
-                        Text("改动太大，只显示了前 1 MB")
+                        Text("The diff is too large. Showing the first 1 MB.")
                     }
-                    Text("\(files.count) 个文件，+\(additions) −\(deletions)")
+                    Text("\(files.count) file\(files.count == 1 ? "" : "s"), +\(additions) −\(deletions)")
                         .monospacedDigit()
                 }
                 .font(.footnote)
@@ -156,7 +156,7 @@ struct ChangesList: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
                 Spacer(minLength: 8)
-                Button("重试") {
+                Button("Retry") {
                     Task { await refresh() }
                 }
                 .font(.footnote)
@@ -172,7 +172,7 @@ struct ChangesList: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
-                Text("刷新中…")
+                Text("Refreshing…")
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -201,16 +201,16 @@ private struct FileRow: View {
                 if hasBadge {
                     HStack(spacing: 4) {
                         if file.isNew {
-                            FileBadge("新增", color: .green)
+                            FileBadge("New", color: .green)
                         }
                         if file.isDeleted {
-                            FileBadge("删除", color: .red)
+                            FileBadge("Deleted", color: .red)
                         }
                         if renamed {
-                            FileBadge("重命名", color: .blue)
+                            FileBadge("Renamed", color: .blue)
                         }
                         if file.binary {
-                            FileBadge("二进制", color: .gray)
+                            FileBadge("Binary", color: .gray)
                         }
                     }
                 }
@@ -295,9 +295,9 @@ struct FileDiffView: View {
     var body: some View {
         Group {
             if file.binary {
-                ContentUnavailableView { Label("二进制文件，不显示内容", image: .file) }
+                ContentUnavailableView { Label("Binary file, contents not shown", image: .file) }
             } else if file.lines.isEmpty {
-                ContentUnavailableView { Label("没有可显示的内容", image: .fileText) }
+                ContentUnavailableView { Label("Nothing to show", image: .fileText) }
             } else {
                 diff
             }
