@@ -725,6 +725,12 @@ fn images_need_a_5_5_host() {
 fn image_refs_need_a_5_15_host() {
     let bytes = obj(&[("data", Json::from("aGVsbG8=")), ("mimeType", Json::from("image/png"))]);
     let reference = obj(&[("ref", Json::from("abc123"))]);
+    // Inline bytes win over a ref on the same block, so this is a bytes form.
+    let inline_with_ref = obj(&[
+        ("data", Json::from("aGVsbG8=")),
+        ("mimeType", Json::from("image/png")),
+        ("ref", Json::from("ignored")),
+    ]);
     let submit = |images: Vec<Json>| Call::Submit {
         text: "look".to_string(),
         when_busy: "followUp".to_string(),
@@ -764,7 +770,21 @@ fn image_refs_need_a_5_15_host() {
     assert!(h.host.method("createConversation").is_empty());
     // Bytes alone still reach a 5.14 host.
     h.invoke(5, submit(vec![bytes.clone()]));
-    assert_eq!(h.host.method("submit").len(), 1);
+    // So does a bytes block that happens to carry a ref: the data is the form.
+    h.invoke(6, submit(vec![inline_with_ref.clone()]));
+    h.invoke(7, create(vec![inline_with_ref.clone()]));
+    let submits = h.host.method("submit");
+    assert_eq!(submits.len(), 2);
+    assert_eq!(
+        submits[1].get("args").and_then(|a| a.get("images")).cloned(),
+        Some(Json::array(vec![inline_with_ref.clone()]))
+    );
+    let creates = h.host.method("createConversation");
+    assert_eq!(creates.len(), 1);
+    assert_eq!(
+        creates[0].get("args").and_then(|a| a.get("images")).cloned(),
+        Some(Json::array(vec![inline_with_ref]))
+    );
 
     let mut h = setup();
     h.invoke(1, Call::SwitchConversation { id: 1 });

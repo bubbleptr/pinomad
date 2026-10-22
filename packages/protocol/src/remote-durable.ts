@@ -1,5 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
+import type { OutgoingImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
@@ -98,6 +99,19 @@ export class ProtocolMismatchError extends Error {
 }
 
 type Pending = { resolve(value: unknown): void; reject(error: Error): void };
+
+/**
+ * Whether a batch needs the host's 5.15 image-ref support: a ref with no
+ * inline bytes. Bytes win when both are present, so a block carrying data is
+ * a bytes form an older host understands — same rule as the Rust client.
+ */
+function needsImageRefs(images: readonly OutgoingImage[]): boolean {
+  return images.some((image) => {
+    const data = "data" in image ? image.data : "";
+    const ref = "ref" in image ? image.ref : "";
+    return data === "" && ref !== "";
+  });
+}
 
 class RemoteClient {
   readonly ready: Promise<RemoteDurable>;
@@ -564,7 +578,7 @@ class RemoteClient {
           }
           // A pre-5.15 host calls `{ ref }` malformed and closes with 4400, so
           // refuse it here — bytes still go to a 5.5 host (ADR-0018 §2).
-          if (images.some((image) => "ref" in image) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
+          if (needsImageRefs(images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
             throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
           }
           // A pre-5.10 host would silently ignore `agent` and create an
@@ -599,7 +613,7 @@ class RemoteClient {
             throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
           }
           // Same gate as createConversation: an old host would 4400 the frame.
-          if (images.some((image) => "ref" in image) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
+          if (needsImageRefs(images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
             throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
           }
           return this.#call("submit", {

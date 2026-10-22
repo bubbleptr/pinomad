@@ -434,6 +434,8 @@ describe("RemoteDurable side conversation", () => {
   it("gates image refs on a 5.15 host for submit and createConversation", async () => {
     const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
     const reference = { ref: "abc123" };
+    // Inline bytes win over a ref on the same block, so a 5.14 host can take it.
+    const inlineWithRef = { data: "aGVsbG8=", mimeType: "image/png" as const, ref: "ignored" };
 
     const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 14 } });
     const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
@@ -452,7 +454,15 @@ describe("RemoteDurable side conversation", () => {
       expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "createConversation")).toHaveLength(0);
       // Bytes alone still go to a 5.14 host.
       await remoteOld.controller.submit("bytes", "followUp", { images: [bytes] });
-      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "submit")).toHaveLength(1);
+      // So does a bytes block that happens to carry a ref: the data is the form.
+      await remoteOld.controller.submit("inline", "followUp", { images: [inlineWithRef] });
+      await remoteOld.controller.createConversation({ kind: "chat" }, "inline", { images: [inlineWithRef] });
+      const oldSubmits = old.sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      const oldCreates = old.sent.filter((frame) => frame.type === "call" && frame.method === "createConversation");
+      expect(oldSubmits).toHaveLength(2);
+      expect((oldSubmits[1]!.args as { images: unknown }).images).toEqual([inlineWithRef]);
+      expect(oldCreates).toHaveLength(1);
+      expect((oldCreates[0]!.args as { images: unknown }).images).toEqual([inlineWithRef]);
     } finally {
       remoteOld.close();
     }
