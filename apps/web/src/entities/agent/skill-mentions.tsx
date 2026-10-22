@@ -7,7 +7,7 @@
 // `listSkills` answer. A scope's listing is requested on mount/focus/`$`
 // search and on reconnect; stale-but-known listings stay on screen while a
 // refetch is in flight — the menu never flashes empty between answers.
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
 import type { SearchSource } from "@astryxdesign/core/Typeahead";
 import type { SkillScope } from "@pinomad/protocol/organization.ts";
@@ -15,6 +15,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { skillMentionRanges } from "@pinomad/client/skill-mentions.ts";
 import { Sparkles } from "@/shared/ui/icons";
 import type { ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
+import { useCachedListing } from "@/shared/listing-cache";
 import { applySkillHighlights } from "./skill-highlight.ts";
 import { SkillMentionCache, skillScopeKey, type ListedSkill } from "./skill-list.ts";
 
@@ -31,48 +32,19 @@ export function skillCacheFor(remote: RemoteDurable): SkillMentionCache {
   return cache;
 }
 
-const NO_LISTEN = () => () => {};
-
 /**
  * The scope's listing out of the shared cache — subscribed so a landed answer
  * re-renders, and requested on mount, on a scope or `enabled` change (a
- * reconnect flips it), whenever the entry is missing or stale.
+ * reconnect flips it and forces a fresh listing), whenever the entry is
+ * missing or stale.
  */
 export function useSkillList(
   remote: RemoteDurable,
   scope: SkillScope | undefined,
   enabled: boolean,
 ): { readonly skills: readonly ListedSkill[] | undefined; readonly request: () => void } {
-  const cache = skillCacheFor(remote);
-  const key = scope === undefined ? undefined : skillScopeKey(scope);
-  const skills = useSyncExternalStore(
-    useCallback((notify) => (key === undefined ? NO_LISTEN : cache.subscribe(scope!, notify)), [cache, key]),
-    useCallback(() => (key === undefined ? undefined : cache.snapshot(scope!)), [cache, key]),
-  );
-  // The latest scope/enabled through refs: `request` must not churn identity
-  // when a caller rebuilds the scope object each render.
-  const scopeRef = useRef(scope);
-  scopeRef.current = scope;
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
-  const request = useCallback(() => {
-    const scope = scopeRef.current;
-    if (enabledRef.current && scope !== undefined) cache.request(scope);
-  }, [cache]);
-  // Mount and scope changes refresh only when stale; a reconnect (enabled
-  // flipping back on) forces a fresh listing — the host may have changed
-  // while the client was away (issue #143).
-  const wasDown = useRef(false);
-  useEffect(() => {
-    if (!enabled) {
-      wasDown.current = true;
-      return;
-    }
-    const scope = scopeRef.current;
-    if (scope !== undefined) cache.request(scope, wasDown.current);
-    wasDown.current = false;
-  }, [cache, enabled, key]);
-  return { skills: enabled ? skills : undefined, request };
+  const { items, request } = useCachedListing(skillCacheFor(remote), scope, enabled);
+  return { skills: items, request };
 }
 
 /**
