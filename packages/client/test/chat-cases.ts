@@ -2,6 +2,7 @@
 // these and rust-vectors.ts serializes them for the Rust replay — one table,
 // no copies.
 import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
+import { block } from "./skill-blocks-cases.ts";
 
 export const text = (value: string) => ({ type: "text", text: value });
 
@@ -75,6 +76,18 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
       },
     ]),
   },
+  {
+    // Queued `$review` messages as the host stored them (ADR-0028).
+    name: "skill-blocks",
+    input: chatView([], {}, [
+      { id: 1, mode: "steer", content: `${block("review", "Review steps.")}\n\n$review now` },
+      {
+        id: 2,
+        mode: "followUp",
+        content: [text(`${block("review", "Review steps.")}\n\nlook $review`), { type: "image", data: "aGk=", mimeType: "image/png" }],
+      },
+    ]),
+  },
   { name: "empty", input: chatView() },
 ];
 
@@ -130,6 +143,19 @@ export const QUEUED_INPUT_CASES: NamedCase<QueuedInputCase>[] = [
         },
       ]),
       id: 6,
+    },
+  },
+  {
+    name: "skill-blocks",
+    input: {
+      view: chatView([], {}, [
+        {
+          id: 3,
+          mode: "followUp",
+          content: [text(`${block("review", "Review steps.")}\n\n$review then x`), { type: "image", data: "aGk=", mimeType: "image/png" }],
+        },
+      ]),
+      id: 3,
     },
   },
   {

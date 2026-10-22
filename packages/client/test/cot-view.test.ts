@@ -32,6 +32,12 @@ describe("deriveChat todo stamp", () => {
 });
 
 describe("deriveChat", () => {
+  it("shows a user message without the skill blocks the host prepended", () => {
+    const users = derive("user-skill-blocks").filter((item) => item.kind === "user");
+    expect(users.map((item) => item.text)).toEqual(["$review do x", "look $review"]);
+    expect(users[1]!.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+  });
+
   it("groups consecutive calls, thinking, interim text and answer into a run", () => {
     const entries = derive("settled-run");
     const kinds = entries.map((item) => item.kind);

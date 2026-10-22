@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use crate::json::{js_strict_eq, JsKey, Json};
 use crate::presentation::{classify, ClassifiedDoc};
+use crate::skill_blocks::strip_skill_blocks;
 use crate::text;
 use crate::tool_diff_stat::stat_from_details;
 use crate::tool_item::{DiffStat, MessageImage, PinomadToolDetail, ToolItem, ToolPartState};
@@ -725,7 +726,8 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
             flush!(false);
             items.push(ChatEntry::User {
                 id,
-                text: lossy(&text_of(message.and_then(|m| m.get("content")))),
+                // The typed text, without the host's skill blocks (ADR-0028).
+                text: lossy(strip_skill_blocks(&text_of(message.and_then(|m| m.get("content"))))),
                 images: images_of(message.and_then(|m| m.get("content"))),
             });
         } else if str_eq(kind, "pi.compaction") {

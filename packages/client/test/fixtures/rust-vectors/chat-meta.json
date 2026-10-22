@@ -65,6 +65,11 @@
       "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"look\",\"imageCount\":2}]"
     },
     {
+      "name": "skill-blocks",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review now\"},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\nlook $review\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"$review now\",\"imageCount\":0},{\"id\":2,\"mode\":\"followUp\",\"text\":\"look $review\",\"imageCount\":1}]"
+    },
+    {
       "name": "empty",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
       "expect": "[]"
@@ -94,6 +99,12 @@
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":6,\"mode\":\"steer\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}]}}}",
       "id": 6,
       "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}"
+    },
+    {
+      "name": "skill-blocks",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":3,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review then x\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
+      "id": 3,
+      "expect": "{\"text\":\"$review then x\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}"
     },
     {
       "name": "write",
@@ -170,67 +181,67 @@
     },
     {
       "name": "no-assistant",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":151,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"hi\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":155,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"hi\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "latest-wins",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":152,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":153,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":78000,\"output\":6000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":154,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":156,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":157,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":78000,\"output\":6000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":158,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":84000,\"window\":200000}"
     },
     {
       "name": "skips-aborted-error-zero",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":155,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":156,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"error\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]},{\"id\":157,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"aborted\",\"usage\":{\"input\":50000,\"output\":5000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":55000},\"timestamp\":0}]},{\"id\":158,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":159,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":160,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"error\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]},{\"id\":161,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"aborted\",\"usage\":{\"input\":50000,\"output\":5000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":55000},\"timestamp\":0}]},{\"id\":162,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":12200,\"window\":200000}"
     },
     {
       "name": "usage-missing",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":159,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":8000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":8000},\"timestamp\":0}]},{\"id\":160,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":163,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":8000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":8000},\"timestamp\":0}]},{\"id\":164,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":8000,\"window\":200000}"
     },
     {
       "name": "compaction-tail",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":161,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":162,\"conversationId\":0,\"kind\":\"pi.compaction\"}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":165,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":166,\"conversationId\":0,\"kind\":\"pi.compaction\"}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "reset-tail",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":163,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":164,\"conversationId\":0,\"kind\":\"pi.reset\"}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":167,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":168,\"conversationId\":0,\"kind\":\"pi.reset\"}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "reply-after-compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":165,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":50000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":50000},\"timestamp\":0}]},{\"id\":166,\"conversationId\":0,\"kind\":\"pi.compaction\"},{\"id\":167,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":11000,\"output\":1000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":169,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":50000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":50000},\"timestamp\":0}]},{\"id\":170,\"conversationId\":0,\"kind\":\"pi.compaction\"},{\"id\":171,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":11000,\"output\":1000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":12000,\"window\":200000}"
     },
     {
       "name": "components-sum",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":168,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":60000,\"output\":20000,\"cacheRead\":3000,\"cacheWrite\":1000,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":172,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":60000,\"output\":20000,\"cacheRead\":3000,\"cacheWrite\":1000,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":84000,\"window\":200000}"
     },
     {
       "name": "no-window",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":169,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":173,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": null,
       "expect": "null"
     },
     {
       "name": "zero-window",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":170,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":174,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 0,
       "expect": "null"
     },
     {
       "name": "overflow",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":171,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":250000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":250000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":175,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":250000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":250000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":250000,\"window\":200000}"
     }

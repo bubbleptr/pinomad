@@ -4,6 +4,7 @@
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { block } from "./skill-blocks-cases.ts";
 
 let nextId = 1;
 export const entry = (kind: string, message?: unknown): EntryRecord =>
@@ -213,6 +214,18 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
       assistant([text("seen")]),
       user([image("aGk=", "image/png")]),
       assistant([text("again")]),
+    ]),
+    busy: false,
+  },
+  {
+    // A `$review` message as the host stores it (ADR-0028): the bubble shows
+    // only what the user typed; the images still follow as their own blocks.
+    name: "user-skill-blocks",
+    view: view([
+      user(`${block("review", "Review steps.")}\n\n$review do x`),
+      assistant([text("reviewed")]),
+      user([text(`${block("review", "Review steps.")}\n\nlook $review`), image("aGk=", "image/png")]),
+      assistant([text("seen")]),
     ]),
     busy: false,
   },

@@ -66,6 +66,13 @@ describe("queueItems", () => {
       { id: 1, mode: "steer", text: "look", imageCount: 2 },
     ]);
   });
+
+  it("previews what the user typed, not the skill blocks the host prepended", () => {
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "skill-blocks")!.input)).toEqual([
+      { id: 1, mode: "steer", text: "$review now", imageCount: 0 },
+      { id: 2, mode: "followUp", text: "look $review", imageCount: 1 },
+    ]);
+  });
 });
 
 describe("queuedInput", () => {
@@ -89,6 +96,14 @@ describe("queuedInput", () => {
         { data: "aGk=", mimeType: "image/png" },
         { ref: "5f2a", mimeType: "image/jpeg" },
       ],
+    });
+  });
+
+  it("refills the composer with what the user typed, without the skill blocks", () => {
+    const skill = QUEUED_INPUT_CASES.find((c) => c.name === "skill-blocks")!.input;
+    expect(queuedInput(skill.view, skill.id)).toEqual({
+      text: "$review then x",
+      images: [{ data: "aGk=", mimeType: "image/png" }],
     });
   });
 

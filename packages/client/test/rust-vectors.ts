@@ -41,6 +41,7 @@ import {
   thinkingLevelLabels,
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
+import { stripSkillBlocks } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
 import { pendingQuestions, questionAnswers } from "../src/questions.ts";
@@ -108,6 +109,7 @@ import {
   PARENT_FOLDER_CASES,
 } from "./misc-cases.ts";
 import { PATCH_CASES } from "./patch-cases.ts";
+import { SKILL_BLOCK_CASES } from "./skill-blocks-cases.ts";
 import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
 import {
   CLASSIFY_CASES,
@@ -502,6 +504,16 @@ function patchVector(): VectorFile {
   });
 }
 
+function skillBlocksVector(): VectorFile {
+  return write("skill-blocks", {
+    stripSkillBlocks: SKILL_BLOCK_CASES.map((c) => ({
+      name: c.name,
+      text: c.text,
+      expect: expect(wire(stripSkillBlocks(c.text))),
+    })),
+  });
+}
+
 function skillMentionsVector(): VectorFile {
   return write("skill-mentions", {
     skillMentionRanges: SKILL_MENTION_CASES.map((c) => ({
@@ -648,6 +660,7 @@ export async function buildVectors(): Promise<VectorFile[]> {
     miscVector(),
     patchVector(),
     skillMentionsVector(),
+    skillBlocksVector(),
     await accountVector(),
   ];
 }

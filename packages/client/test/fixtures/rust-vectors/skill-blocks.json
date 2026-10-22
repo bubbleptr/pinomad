@@ -1,0 +1,99 @@
+{
+  "stripSkillBlocks": [
+    {
+      "name": "no-block",
+      "text": "$review do x",
+      "expect": "\"$review do x\""
+    },
+    {
+      "name": "one-block",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nReview steps.\n</skill>\n\n$review do x",
+      "expect": "\"$review do x\""
+    },
+    {
+      "name": "two-blocks",
+      "text": "<skill name=\"deploy\" location=\"/home/u/.agents/skills/deploy/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/deploy.\n\nDeploy steps.\n</skill>\n\n<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nReview\n\nsteps.\n</skill>\n\nrun $deploy after $review",
+      "expect": "\"run $deploy after $review\""
+    },
+    {
+      "name": "empty-body",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\n\n</skill>\n\n$review",
+      "expect": "\"$review\""
+    },
+    {
+      "name": "multiline-text",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n$review\nthen\n\n",
+      "expect": "\"$review\\nthen\\n\\n\""
+    },
+    {
+      "name": "not-at-start",
+      "text": "see\n\n<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n$review",
+      "expect": "\"see\\n\\n<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nSteps.\\n</skill>\\n\\n$review\""
+    },
+    {
+      "name": "block-only",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nSteps.\\n</skill>\""
+    },
+    {
+      "name": "block-then-separator-only",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nSteps.\\n</skill>\\n\\n\""
+    },
+    {
+      "name": "single-newline-separator",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n$review",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nSteps.\\n</skill>\\n$review\""
+    },
+    {
+      "name": "unclosed",
+      "text": "<skill name=\"review\" location=\"/s/SKILL.md\">\nReferences are relative to /s.\n\nSteps.\n\n$review",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/s/SKILL.md\\\">\\nReferences are relative to /s.\\n\\nSteps.\\n\\n$review\""
+    },
+    {
+      "name": "uppercase-name",
+      "text": "<skill name=\"Review\" location=\"/home/u/.agents/skills/Review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/Review.\n\nSteps.\n</skill>\n\n$Review",
+      "expect": "\"<skill name=\\\"Review\\\" location=\\\"/home/u/.agents/skills/Review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/Review.\\n\\nSteps.\\n</skill>\\n\\n$Review\""
+    },
+    {
+      "name": "empty-name",
+      "text": "<skill name=\"\" location=\"/home/u/.agents/skills//SKILL.md\">\nReferences are relative to /home/u/.agents/skills/.\n\nSteps.\n</skill>\n\nhi",
+      "expect": "\"<skill name=\\\"\\\" location=\\\"/home/u/.agents/skills//SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/.\\n\\nSteps.\\n</skill>\\n\\nhi\""
+    },
+    {
+      "name": "missing-references-line",
+      "text": "<skill name=\"review\" location=\"/s/SKILL.md\">\n\nSteps.\n</skill>\n\n$review",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/s/SKILL.md\\\">\\n\\nSteps.\\n</skill>\\n\\n$review\""
+    },
+    {
+      "name": "missing-blank-line",
+      "text": "<skill name=\"review\" location=\"/s/SKILL.md\">\nReferences are relative to /s.\nSteps.\n</skill>\n\n$review",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/s/SKILL.md\\\">\\nReferences are relative to /s.\\nSteps.\\n</skill>\\n\\n$review\""
+    },
+    {
+      "name": "quote-in-location",
+      "text": "<skill name=\"review\" location=\"/a\"b/SKILL.md\">\nReferences are relative to /a\"b.\n\nSteps.\n</skill>\n\n$review",
+      "expect": "\"<skill name=\\\"review\\\" location=\\\"/a\\\"b/SKILL.md\\\">\\nReferences are relative to /a\\\"b.\\n\\nSteps.\\n</skill>\\n\\n$review\""
+    },
+    {
+      "name": "leading-space",
+      "text": " <skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n$review",
+      "expect": "\" <skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nSteps.\\n</skill>\\n\\n$review\""
+    },
+    {
+      "name": "second-block-malformed",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n<skill name=\"x\">\n$review",
+      "expect": "\"<skill name=\\\"x\\\">\\n$review\""
+    },
+    {
+      "name": "two-blocks-no-text",
+      "text": "<skill name=\"review\" location=\"/home/u/.agents/skills/review/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/review.\n\nSteps.\n</skill>\n\n<skill name=\"deploy\" location=\"/home/u/.agents/skills/deploy/SKILL.md\">\nReferences are relative to /home/u/.agents/skills/deploy.\n\nDeploy.\n</skill>",
+      "expect": "\"<skill name=\\\"deploy\\\" location=\\\"/home/u/.agents/skills/deploy/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/deploy.\\n\\nDeploy.\\n</skill>\""
+    },
+    {
+      "name": "unicode",
+      "text": "<skill name=\"review\" location=\"/家/skills/review/SKILL.md\">\nReferences are relative to /家/skills/review.\n\n审查步骤 😀\n</skill>\n\n用 $review 😀",
+      "expect": "\"用 $review 😀\""
+    }
+  ]
+}

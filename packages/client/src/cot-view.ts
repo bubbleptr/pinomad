@@ -8,6 +8,7 @@
 import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
+import { stripSkillBlocks } from "./skill-blocks.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
 
@@ -521,7 +522,8 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) });
+      // The typed text, without the skill blocks the host prepended (ADR-0028).
+      items.push({ kind: "user", id, text: stripSkillBlocks(textOf(message.content)), images: imagesOf(message.content) });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });
