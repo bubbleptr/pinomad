@@ -154,16 +154,7 @@ fn text_of(content: Option<&Json>) -> Vec<u16> {
 
 fn images_of(content: Option<&Json>) -> Vec<MessageImage> {
     let Some(Json::Array(items)) = content else { return Vec::new() };
-    items
-        .iter()
-        .filter(|block| {
-            str_eq(block.get("type"), "image") && block.get("data").is_some() && block.get("mimeType").is_some()
-        })
-        .map(|block| MessageImage {
-            data: string_of_value(block.get("data")).unwrap_or_default(),
-            mime_type: string_of_value(block.get("mimeType")).unwrap_or_default(),
-        })
-        .collect()
+    items.iter().filter_map(MessageImage::from_view_block).collect()
 }
 
 /// `block.type === "toolCall" && block.id !== undefined` — a null id counts.

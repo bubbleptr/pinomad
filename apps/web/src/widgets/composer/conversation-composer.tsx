@@ -4,6 +4,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
@@ -157,7 +158,8 @@ export function ConversationComposer({
     try {
       if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
         setValue(copy.input.text);
-        restore(copy.input.images);
+        // Layer 3 fetches ref bytes before withdrawing; until then refs stay unrendered.
+        restore(copy.input.images.filter((image): image is MessageImage => "data" in image));
         editCopy.current = null;
         setAwaitingEdit(false);
         setFocusAfterEdit((count) => count + 1);

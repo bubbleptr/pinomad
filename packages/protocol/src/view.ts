@@ -12,7 +12,7 @@ import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
-import type { MessageImage } from "./images.ts";
+import type { OutgoingImage } from "./images.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -173,8 +173,8 @@ export interface DurableController {
       checkout?: "worktree" | "project";
       model?: ModelRef;
       thinkingLevel?: ThinkingLevel;
-      /** Up to 4 attached images; needs a 5.5 host. */
-      images?: readonly MessageImage[];
+      /** Up to 4 attached images; needs a 5.5 host, a `{ ref }` entry needs 5.15. */
+      images?: readonly OutgoingImage[];
       /**
        * A named agent to create the conversation with (ADR-0023): its prompt is
        * copied into the new agent's instructions; `model`/`thinkingLevel`
@@ -193,12 +193,13 @@ export interface DurableController {
    * Prompt when idle; otherwise steer or queue a follow-up. `target` defaults
    * to the main shown conversation. `requestId` is an idempotency key: the
    * host admits one submission per key and conversation; defaults to a fresh
-   * one. `images` attaches up to 4 images; needs a 5.5 host.
+   * one. `images` attaches up to 4 images; needs a 5.5 host, a `{ ref }`
+   * entry needs 5.15.
    */
   submit(
     text: string,
     whenBusy: "steer" | "followUp",
-    options?: { target?: ConversationId; requestId?: string; images?: readonly MessageImage[] },
+    options?: { target?: ConversationId; requestId?: string; images?: readonly OutgoingImage[] },
   ): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */

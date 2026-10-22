@@ -60,6 +60,12 @@ describe("queueItems", () => {
       { id: 2, mode: "write", text: "<pi.note>", imageCount: 0 },
     ]);
   });
+
+  it("counts ref images too", () => {
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "images-ref")!.input)).toEqual([
+      { id: 1, mode: "steer", text: "look", imageCount: 2 },
+    ]);
+  });
 });
 
 describe("queuedInput", () => {
@@ -73,6 +79,15 @@ describe("queuedInput", () => {
       images: [
         { data: "aGk=", mimeType: "image/png" },
         { data: "aGk=", mimeType: "image/png" },
+      ],
+    });
+
+    const refs = QUEUED_INPUT_CASES.find((c) => c.name === "images-ref")!.input;
+    expect(queuedInput(refs.view, refs.id)).toEqual({
+      text: "look",
+      images: [
+        { data: "aGk=", mimeType: "image/png" },
+        { ref: "5f2a", mimeType: "image/jpeg" },
       ],
     });
   });

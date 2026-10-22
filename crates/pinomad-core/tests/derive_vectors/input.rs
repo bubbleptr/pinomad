@@ -25,6 +25,7 @@ fn image(json: &Json) -> MessageImage {
     MessageImage {
         data: text(json.get("data")).unwrap_or_default(),
         mime_type: text(json.get("mimeType")).unwrap_or_default(),
+        ref_: text(json.get("ref")),
     }
 }
 

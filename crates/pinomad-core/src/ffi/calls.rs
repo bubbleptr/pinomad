@@ -147,15 +147,9 @@ fn settings_patch(key: &str, value: Json) -> Json {
 }
 
 fn images_json(images: &[MessageImage]) -> Vec<Json> {
-    images
-        .iter()
-        .map(|image| {
-            let mut object = JsonObject::new();
-            set(&mut object, "data", Json::from(image.data.clone()));
-            set(&mut object, "mimeType", Json::from(image.mime_type.clone()));
-            Json::Object(Arc::new(object))
-        })
-        .collect()
+    // Bytes stay inline; a ref-form image goes back as `{ ref }` and the host
+    // answers with the type it recorded (ADR-0027).
+    images.iter().map(MessageImage::to_outgoing_json).collect()
 }
 
 fn answers_json(answers: &[QuestionAnswer]) -> Json {

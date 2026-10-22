@@ -5,6 +5,7 @@
 import { ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { splitSubagentCalls, type ChatEntry, type CotView } from "@pinomad/client/cot-view.ts";
@@ -63,7 +64,10 @@ export function ChatEntryView({
       return (
         <ChatMessage.User>
           <div className="flex flex-col items-end gap-1">
-            {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
+            {entry.images.length === 0 ? null : (
+              // Layer 2 only carries refs through; rendering them needs layer 3's cache.
+              <MessageImages images={entry.images.filter((image): image is MessageImage => "data" in image)} />
+            )}
             {entry.text === "" ? null : (
               <>
                 <ChatMessage.Bubble>

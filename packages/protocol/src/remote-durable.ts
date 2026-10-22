@@ -562,6 +562,11 @@ class RemoteClient {
           if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
             throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
           }
+          // A pre-5.15 host calls `{ ref }` malformed and closes with 4400, so
+          // refuse it here — bytes still go to a 5.5 host (ADR-0018 §2).
+          if (images.some((image) => "ref" in image) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
+            throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
+          }
           // A pre-5.10 host would silently ignore `agent` and create an
           // unassigned conversation — fail instead (ADR-0023 §8).
           if (options?.agent !== undefined && !hostSupportsFeature(this.#hostMinor, "agentConversations")) {
@@ -592,6 +597,10 @@ class RemoteClient {
           const images = options?.images ?? [];
           if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
             throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
+          }
+          // Same gate as createConversation: an old host would 4400 the frame.
+          if (images.some((image) => "ref" in image) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
+            throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
           }
           return this.#call("submit", {
             conversationId: options?.target ?? conversationId(),

@@ -722,6 +722,67 @@ fn images_need_a_5_5_host() {
 }
 
 #[test]
+fn image_refs_need_a_5_15_host() {
+    let bytes = obj(&[("data", Json::from("aGVsbG8=")), ("mimeType", Json::from("image/png"))]);
+    let reference = obj(&[("ref", Json::from("abc123"))]);
+    let submit = |images: Vec<Json>| Call::Submit {
+        text: "look".to_string(),
+        when_busy: "followUp".to_string(),
+        target: None,
+        request_id: None,
+        images,
+    };
+    let create = |images: Vec<Json>| Call::CreateConversation {
+        home: obj(&[("kind", Json::from("chat"))]),
+        text: "hi".to_string(),
+        checkout: None,
+        model: None,
+        thinking_level: None,
+        agent: None,
+        images,
+    };
+
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(14.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, submit(vec![reference.clone()]));
+    // Mixed batches are refused too: the host would 4400 the ref entry.
+    h.invoke(3, submit(vec![bytes.clone(), reference.clone()]));
+    h.invoke(4, create(vec![reference.clone()]));
+    let gated = h
+        .notices()
+        .iter()
+        .filter(|notice| {
+            notice
+                .get("message")
+                .and_then(Json::as_str)
+                .is_some_and(|message| message.to_string_lossy().contains("needs protocol 5.15"))
+        })
+        .count();
+    assert_eq!(gated, 3, "each ref-form call must be refused locally");
+    assert!(h.host.method("submit").is_empty());
+    assert!(h.host.method("createConversation").is_empty());
+    // Bytes alone still reach a 5.14 host.
+    h.invoke(5, submit(vec![bytes.clone()]));
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, submit(vec![reference.clone()]));
+    h.invoke(3, create(vec![reference.clone()]));
+    let submits = h.host.method("submit");
+    assert_eq!(
+        submits[0].get("args").and_then(|a| a.get("images")).cloned(),
+        Some(Json::array(vec![reference.clone()]))
+    );
+    let creates = h.host.method("createConversation");
+    assert_eq!(
+        creates[0].get("args").and_then(|a| a.get("images")).cloned(),
+        Some(Json::array(vec![reference]))
+    );
+}
+
+#[test]
 fn rename_conversation_needs_a_5_4_host() {
     let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(3.0))]);
     let mut h = Harness::new(old);

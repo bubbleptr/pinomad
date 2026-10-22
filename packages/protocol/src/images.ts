@@ -20,10 +20,38 @@ export type MessageImage = { readonly data: string; readonly mimeType: ImageMime
 export type ImageRef = { readonly ref: string; readonly mimeType: ImageMimeType };
 
 /**
+ * An image block as a conversation view can carry it (5.15, ADR-0027): inline
+ * bytes, or a ref the connection was shown. A client must render both forms.
+ */
+export type ViewImage = MessageImage | ImageRef;
+
+/**
  * What submit/createConversation attach: bytes and a type, or just a ref the
  * connection was shown (5.15); the host answers with the type it recorded.
  */
 export type OutgoingImage = MessageImage | { readonly ref: string };
+
+/** The wire form of a viewed image: bytes stay as they are, a ref drops its type (the host has it). */
+export function outgoingImage(image: ViewImage): OutgoingImage {
+  return "data" in image ? image : { ref: image.ref };
+}
+
+/** UTF-8 encoding of the ref input; a module constant because every image reuses the encoder. */
+const REF_ENCODER = new TextEncoder();
+
+/**
+ * `sha256(mimeType + "\n" + data)` as lower-case hex — the host's image ref
+ * (ADR-0027). Browser and Node both expose WebCrypto, so the shared protocol
+ * package needs no Node-only hashing; a client uses this to prefill its cache
+ * before the host sends a snapshot.
+ */
+export async function imageRef(image: MessageImage): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    REF_ENCODER.encode(`${image.mimeType}\n${image.data}`),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export const MAX_IMAGES_PER_MESSAGE = 4;
 /** Decoded bytes — base64 inflates by 4/3, so the wire string is larger. */

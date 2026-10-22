@@ -31,10 +31,16 @@ fn num(value: f64) -> Json {
 }
 
 fn image_json(image: &MessageImage) -> Json {
-    obj(&[
-        ("data", Some(s(&image.data))),
-        ("mimeType", Some(s(&image.mime_type))),
-    ])
+    match &image.ref_ {
+        Some(reference) if image.data.is_empty() => obj(&[
+            ("ref", Some(s(reference))),
+            ("mimeType", Some(s(&image.mime_type))),
+        ]),
+        _ => obj(&[
+            ("data", Some(s(&image.data))),
+            ("mimeType", Some(s(&image.mime_type))),
+        ]),
+    }
 }
 
 fn diff_stat_json(stat: &DiffStat) -> Json {

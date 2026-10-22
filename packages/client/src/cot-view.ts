@@ -6,7 +6,7 @@
 // pi.live doc) instead of Pace's session runtime model.
 
 import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
-import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
@@ -60,7 +60,7 @@ export type CotView = {
 };
 
 export type ChatEntry =
-  | { kind: "user"; id: string; text: string; images: readonly MessageImage[] }
+  | { kind: "user"; id: string; text: string; images: readonly ViewImage[] }
   | {
       kind: "run"; id: string;
       cot: CotView;
@@ -108,6 +108,7 @@ type Block = {
   readonly arguments?: unknown;
   readonly data?: string;
   readonly mimeType?: string;
+  readonly ref?: string;
 };
 
 type AssistantMessageLike = {
@@ -136,16 +137,21 @@ function textOf(content: string | readonly Block[]): string {
     .join("");
 }
 
-function imagesOf(content: string | readonly Block[]): { data: string; mimeType: string }[] {
+/**
+ * The image blocks a view carries (5.15, ADR-0027): inline bytes or a ref.
+ * A block with both is a bytes block — a ref is only a name for bytes the host
+ * declined to resend. An empty name is not an image.
+ */
+function imagesOf(content: string | readonly Block[]): ViewImage[] {
   if (typeof content === "string") return [];
-  return content.flatMap((block) =>
-    block.type === "image" && block.data !== undefined && block.mimeType !== undefined
-      ? [{ data: block.data, mimeType: block.mimeType }]
-      : [],
-  );
+  return content.flatMap((block): ViewImage[] => {
+    if (block.type !== "image" || block.mimeType === undefined) return [];
+    const mimeType = block.mimeType as ImageMimeType;
+    if (typeof block.data === "string" && block.data !== "") return [{ data: block.data, mimeType }];
+    if (typeof block.ref === "string" && block.ref !== "") return [{ ref: block.ref, mimeType }];
+    return [];
+  });
 }
-
-type ToolImage = { data: string; mimeType: string };
 
 type CallBlock = Block & { readonly type: "toolCall"; readonly id: string; readonly name?: string };
 
@@ -515,8 +521,7 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      // The host admits images through imageProblem; the cast is that contract.
-      items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) as MessageImage[] });
+      items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });
@@ -561,7 +566,7 @@ export function deriveChat(
 /** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
 export function retryOf(
   entries: readonly ChatEntry[],
-): { text: string; images: readonly MessageImage[]; requestId: string } | undefined {
+): { text: string; images: readonly ViewImage[]; requestId: string } | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {

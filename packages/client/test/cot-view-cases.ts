@@ -25,6 +25,7 @@ export const text = (value: string) => ({ type: "text", text: value });
 export const thinking = (value: string) => ({ type: "thinking", thinking: value });
 export const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
 export const image = (data: string, mimeType: string) => ({ type: "image", data, mimeType });
+export const imageRef = (ref: string, mimeType: string) => ({ type: "image", ref, mimeType });
 export const view = (entries: EntryRecord[], live: object = {}): ConversationView =>
   ({ conversation: { id: 0 }, entries, docs: { "pi.live": live } }) as unknown as ConversationView;
 export const runs = (entries: ChatEntry[]) => entries.filter((item) => item.kind === "run");
@@ -388,6 +389,36 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     ]),
     busy: false,
   },
+  {
+    name: "user-images-mixed",
+    view: view([
+      user([
+        text("look"),
+        image("aGk=", "image/png"),
+        // Both forms on one block: the bytes win (ADR-0027).
+        { type: "image", data: "aGk=", mimeType: "image/webp", ref: "ignored" },
+        imageRef("5f2a", "image/jpeg"),
+      ]),
+      assistant([text("seen")]),
+    ]),
+    busy: false,
+  },
+  {
+    name: "tool-result-images-mixed",
+    view: view([
+      user("go"),
+      assistant([call("c1", "mcp__shot__capture", {})], "toolUse"),
+      entry("pi.tool-result", {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "mcp__shot__capture",
+        content: [text("captured"), image("aGk=", "image/png"), imageRef("5f2a", "image/jpeg")],
+        isError: false,
+        timestamp: 0,
+      }),
+    ]),
+    busy: false,
+  },
 ];
 
 /** Cases also exercised through `retryOf` — by name into DERIVE_CHAT_CASES. */
@@ -406,6 +437,11 @@ export const RETRY_CASES: DeriveChatCase[] = [
   { name: "retry-reset", view: view([user("go"), entry("pi.reset"), failed()]), busy: false },
   { name: "retry-steer", view: view([user("first"), assistant([text("one")]), user("steer"), failed()]), busy: false },
   { name: "retry-second-failure", view: view([user("go"), failed(), user("go"), failed()]), busy: false },
+  {
+    name: "retry-images-mixed",
+    view: view([user([text("look"), image("aGk=", "image/png"), imageRef("5f2a", "image/jpeg")]), failed()]),
+    busy: false,
+  },
 ];
 
 export interface SplitCase {

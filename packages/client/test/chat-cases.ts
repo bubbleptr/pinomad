@@ -61,6 +61,20 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
       { id: 2, mode: "write", entry: { kind: "pi.note" } },
     ]),
   },
+  {
+    name: "images-ref",
+    input: chatView([], {}, [
+      {
+        id: 1,
+        mode: "steer",
+        content: [
+          text("look"),
+          { type: "image", data: "aGk=", mimeType: "image/png" },
+          { type: "image", ref: "5f2a", mimeType: "image/jpeg" },
+        ],
+      },
+    ]),
+  },
   { name: "empty", input: chatView() },
 ];
 
@@ -99,6 +113,23 @@ export const QUEUED_INPUT_CASES: NamedCase<QueuedInputCase>[] = [
         },
       ]),
       id: 4,
+    },
+  },
+  {
+    name: "images-ref",
+    input: {
+      view: chatView([], {}, [
+        {
+          id: 6,
+          mode: "steer",
+          content: [
+            text("look"),
+            { type: "image", data: "aGk=", mimeType: "image/png" },
+            { type: "image", ref: "5f2a", mimeType: "image/jpeg" },
+          ],
+        },
+      ]),
+      id: 6,
     },
   },
   {
