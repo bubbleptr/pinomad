@@ -324,7 +324,23 @@ struct SlotIcon: View {
             // vibrancy and reads as a disabled grey.
             .foregroundStyle(Color(uiColor: .systemBackground))
             .frame(width: 34, height: 34)
-            .background(Color(uiColor: isEnabled ? .label : .tertiaryLabel), in: .circle)
+            .background {
+                // A small domed key: light from above, a lip on the top
+                // edge, a contact shadow under it.
+                Circle()
+                    .fill(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
+                    // Lit top and shaded bottom: the white key in dark mode
+                    // hides a white lip, so the shade carries the dome there.
+                    .overlay {
+                        Circle().fill(LinearGradient(stops: [
+                            .init(color: .white.opacity(0.22), location: 0),
+                            .init(color: .clear, location: 0.5),
+                            .init(color: .black.opacity(0.14), location: 1),
+                        ], startPoint: .top, endPoint: .bottom))
+                    }
+                    .overlay { TopLip(shape: Circle(), color: .white.opacity(0.35)) }
+                    .shadow(color: .black.opacity(isEnabled ? 0.18 : 0), radius: 2, y: 1.5)
+            }
     }
 }
 
