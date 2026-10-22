@@ -40,7 +40,7 @@ cd apps/ios/PinomadCore
 xcodebuild -scheme PinomadCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-界面图标用 Lucide，生成为自定义 SF Symbol 入库（`Image(.triangleAlert)`、`Label(_, image:)`，随字号和字重缩放）：加图标时往 `apps/ios/scripts/lucide-icons.txt` 加名字再跑 `apps/ios/scripts/lucide-icons.sh`（要 `brew install swiftdraw`），许可见 `docs/licenses/lucide.md`。`packages/agent-chat-kit` 里还是 SF Symbols。
+界面图标用 Lucide，生成为自定义 SF Symbol 入库（App 里是 `Image(.triangleAlert)`、`Label(_, image:)`，kit 里是 `Image(Icon.copy)`，随字号和字重缩放）：加图标时往 `apps/ios/scripts/lucide-icons.txt` 或 `packages/agent-chat-kit/scripts/lucide-icons.txt` 加名字，再跑 `apps/ios/scripts/lucide-icons.sh`（要 `brew install swiftdraw`，两份一起生成），许可见 `docs/licenses/lucide.md`。
 
 App 是 `apps/ios/Pinomad.xcodeproj`（同步文件夹，最低 iOS 26，只做 iPhone）。App 图标是 `apps/ios/Pinomad/AppIcon.icon`，和桌面端的 `apps/desktop/build/icon.icon` 是同一份 Icon Composer 工程，改图标时两份一起换：
 

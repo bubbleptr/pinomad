@@ -38,7 +38,7 @@ public struct AgentTraceView: View {
                             .foregroundStyle(.tertiary)
                             .fixedSize()
                     }
-                    Image(systemName: "chevron.right")
+                    Image(Icon.chevronRight)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
@@ -297,7 +297,7 @@ private struct ThinkingStep: View {
         HStack(spacing: 8) {
             // Same icon column as the tool rows, so every step's text starts
             // at the same x.
-            Image(systemName: "brain")
+            Image(Icon.brain)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
@@ -305,7 +305,7 @@ private struct ThinkingStep: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if showChevron {
-                Image(systemName: "chevron.right")
+                Image(Icon.chevronRight)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -390,14 +390,14 @@ private struct ToolBatchRow: View {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: symbol)
+                    Image(symbol)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
                     InlinePager(page: page) { page in
                         label(for: page)
                     }
-                    Image(systemName: "chevron.right")
+                    Image(Icon.chevronRight)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -422,10 +422,10 @@ private struct ToolBatchRow: View {
 
     /// The running call's symbol while live; settled, the calls' shared
     /// symbol or a generic one when the batch mixes kinds.
-    private var symbol: String {
-        if let running = summary.running { return ToolSymbol.name(for: running.name) }
-        let symbols = Set(calls.map { ToolSymbol.name(for: $0.name) })
-        return symbols.count == 1 ? symbols.first! : "wrench.and.screwdriver"
+    private var symbol: Icon {
+        if let running = summary.running { return ToolSymbol.icon(for: running.name) }
+        let symbols = Set(calls.map { ToolSymbol.icon(for: $0.name) })
+        return symbols.count == 1 ? symbols.first! : .wrench
     }
 
     @ViewBuilder

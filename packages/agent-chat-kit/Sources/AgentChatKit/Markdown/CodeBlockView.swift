@@ -63,7 +63,7 @@ struct CopyButton: View {
             Pasteboard.copy(text)
             copied = true
         } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+            Image(copied ? Icon.check : .copy)
                 .contentTransition(.symbolEffect(.replace))
                 .font(.caption)
                 .frame(width: 28, height: 28)

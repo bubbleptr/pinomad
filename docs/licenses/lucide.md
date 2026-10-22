@@ -1,6 +1,6 @@
 # Lucide 图标的来源与许可证
 
-iOS App 的界面图标（`apps/ios/Pinomad/Assets.xcassets/Lucide`）由 [Lucide](https://lucide.dev) 的 SVG 经 SwiftDraw 转成自定义 SF Symbol（描边展开为轮廓，补出细、粗两档字重）。清单在 `apps/ios/scripts/lucide-icons.txt`，生成脚本是 `apps/ios/scripts/lucide-icons.sh`。
+iOS App 的界面图标（`apps/ios/Pinomad/Assets.xcassets/Lucide`）和 AgentChatKit 的图标（`packages/agent-chat-kit/Sources/AgentChatKit/Resources/Icons.xcassets`）由 [Lucide](https://lucide.dev) 的 SVG 经 SwiftDraw 转成自定义 SF Symbol（描边展开为轮廓，补出细、粗两档字重）。清单在 `apps/ios/scripts/lucide-icons.txt` 和 `packages/agent-chat-kit/scripts/lucide-icons.txt`，生成脚本是 `apps/ios/scripts/lucide-icons.sh`。
 
 - 来源：npm 包 `lucide-static`，固定版本 1.57.0（脚本校验 tarball 的 sha512）
 - 许可：ISC；其中源自 Feather 的图标另有 MIT 许可，原文如下

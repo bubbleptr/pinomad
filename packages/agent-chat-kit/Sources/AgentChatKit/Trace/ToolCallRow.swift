@@ -62,11 +62,11 @@ struct ToolCallRow: View {
         case .streamingInput, .running:
             ProgressView().controlSize(.mini)
         case .failed:
-            Image(systemName: "xmark.circle.fill")
+            Image(Icon.circleX)
                 .font(.caption)
                 .foregroundStyle(.red)
         case .succeeded:
-            Image(systemName: ToolSymbol.name(for: call.name))
+            Image(ToolSymbol.icon(for: call.name))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -121,16 +121,16 @@ private struct DetailBox: View {
     }
 }
 
-/// A symbol for common tool names; anything else gets a generic one.
+/// An icon for common tool names; anything else gets a generic one.
 enum ToolSymbol {
-    static func name(for tool: String) -> String {
+    static func icon(for tool: String) -> Icon {
         let name = tool.lowercased()
-        if name.contains("bash") || name.contains("shell") || name.contains("exec") || name.contains("terminal") { return "terminal" }
-        if name.contains("edit") || name.contains("write") || name.contains("patch") { return "pencil" }
-        if name.contains("read") || name.contains("view") || name.contains("open") { return "doc.text" }
-        if name.contains("grep") || name.contains("search") || name.contains("find") || name.contains("glob") { return "magnifyingglass" }
-        if name.contains("fetch") || name.contains("web") || name.contains("browse") { return "globe" }
-        if name.contains("agent") { return "person.2" }
-        return "wrench.and.screwdriver"
+        if name.contains("bash") || name.contains("shell") || name.contains("exec") || name.contains("terminal") { return .squareTerminal }
+        if name.contains("edit") || name.contains("write") || name.contains("patch") { return .pencil }
+        if name.contains("read") || name.contains("view") || name.contains("open") { return .fileText }
+        if name.contains("grep") || name.contains("search") || name.contains("find") || name.contains("glob") { return .search }
+        if name.contains("fetch") || name.contains("web") || name.contains("browse") { return .globe }
+        if name.contains("agent") { return .users }
+        return .wrench
     }
 }

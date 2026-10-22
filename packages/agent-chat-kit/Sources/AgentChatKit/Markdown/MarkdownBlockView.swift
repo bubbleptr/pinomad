@@ -86,7 +86,7 @@ private struct ListView: View {
     @ViewBuilder
     private func marker(for item: MarkdownListItem, at index: Int) -> some View {
         if let checked = item.checkbox {
-            Image(systemName: checked ? "checkmark.square.fill" : "square")
+            Image(checked ? Icon.squareCheck : .square)
                 .foregroundStyle(checked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 .accessibilityLabel(checked ? Text("Done", bundle: .module) : Text("Not done", bundle: .module))
         } else if list.isOrdered {
