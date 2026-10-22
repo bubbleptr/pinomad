@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 14
+    "minor": 15
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":14},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":15},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":14},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":15},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -226,6 +226,10 @@
         "since": 0
       },
       {
+        "name": "image",
+        "since": 15
+      },
+      {
         "name": "listFiles",
         "since": 10
       },
@@ -338,6 +342,10 @@
         "since": 12
       },
       {
+        "name": "imageRefs",
+        "since": 15
+      },
+      {
         "name": "images",
         "since": 5
       },
@@ -425,6 +433,18 @@
       "minor": 0,
       "call": "fork",
       "expect": true
+    },
+    {
+      "name": "image@15",
+      "minor": 15,
+      "call": "image",
+      "expect": true
+    },
+    {
+      "name": "image@14",
+      "minor": 14,
+      "call": "image",
+      "expect": false
     },
     {
       "name": "listFiles@10",
@@ -622,6 +642,18 @@
       "name": "hostName@11",
       "minor": 11,
       "feature": "hostName",
+      "expect": false
+    },
+    {
+      "name": "imageRefs@15",
+      "minor": 15,
+      "feature": "imageRefs",
+      "expect": true
+    },
+    {
+      "name": "imageRefs@14",
+      "minor": 14,
+      "feature": "imageRefs",
       "expect": false
     },
     {

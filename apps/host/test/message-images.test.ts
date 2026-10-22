@@ -15,6 +15,41 @@ import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView 
 const defer = useCleanups();
 const PNG = { data: "aGVsbG8=", mimeType: "image/png" as const };
 
+/** A bare socket on the host, for frames the controller doesn't send yet. */
+async function rawClient(host: { url: string; token: string }) {
+  const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
+  defer(() => socket.terminate());
+  const frames: ServerFrame[] = [];
+  const waiters = new Set<() => void>();
+  socket.on("message", (data) => {
+    frames.push(JSON.parse(String(data)) as ServerFrame);
+    for (const wake of waiters) wake();
+  });
+  await once(socket, "open");
+  const next = (match: (frame: ServerFrame) => boolean): Promise<ServerFrame> =>
+    new Promise((resolve) => {
+      const check = (): void => {
+        const found = frames.find(match);
+        if (found === undefined) return;
+        waiters.delete(check);
+        resolve(found);
+      };
+      waiters.add(check);
+      check();
+    });
+  let ids = 0;
+  return {
+    send: (frame: unknown): void => socket.send(JSON.stringify(frame)),
+    next,
+    async call(method: string, args: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+      const id = ++ids;
+      socket.send(JSON.stringify({ type: "call", id, method, args }));
+      const { ok, ...rest } = (await next((frame) => frame.type === "result" && frame.id === id)) as ServerFrame & { type: "result" };
+      return ok ? { ok, value: (rest as { value: unknown }).value } : { ok, error: (rest as { error: string }).error };
+    },
+  };
+}
+
 /** Every pi.user entry's stored message content, in order. */
 const userContents = (view: ConversationView): readonly (JsonValue | undefined)[] =>
   view.entries
@@ -130,6 +165,58 @@ describe("message images", () => {
     const second = await startFauxHost(defer, { dataDir: dir.path });
     const after = await connectTo(defer, second);
     await waitForView(after.view, (view) => view.organized.chats[0]?.summary.title === "Continue");
+  });
+
+  it("sends refs to an images: \"ref\" subscription, answers their bytes, and takes them back on submit", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen", "again"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+
+    const raw = await rawClient(host);
+    raw.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    const snapshot = await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    const shown = userContents((snapshot as { value: ConversationView }).value)[0] as { ref?: string; data?: string }[];
+    expect(shown[1]).toEqual({ type: "image", mimeType: "image/png", ref: expect.any(String) });
+    expect(JSON.stringify(snapshot)).not.toContain(PNG.data);
+    const ref = shown[1]!.ref!;
+
+    expect(await raw.call("image", { ref })).toEqual({ ok: true, value: PNG });
+    expect(await raw.call("image", { ref: "nope" })).toEqual({ ok: false, error: "Unknown image" });
+
+    // A retry sends the ref back; the host stores the bytes, as if they were resent.
+    expect(
+      await raw.call("submit", { conversationId: id, text: "again", whenBusy: "followUp", requestId: "r2", images: [{ ref, mimeType: "image/png" }] }),
+    ).toMatchObject({ ok: true });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
+    expect(userContents(client.view.current().conversation!).at(-1)).toEqual([
+      { type: "text", text: "again" },
+      { type: "image", data: PNG.data, mimeType: "image/png" },
+    ]);
+    expect(
+      await raw.call("submit", { conversationId: id, text: "x", whenBusy: "followUp", requestId: "r3", images: [{ ref: "nope", mimeType: "image/png" }] }),
+    ).toEqual({ ok: false, error: "Image 1 is no longer available" });
+
+    // Unsubscribed, the connection no longer vouches for the ref.
+    raw.send({ type: "unsubscribe", stream: `conversation:${id}` });
+    await expect.poll(async () => (await raw.call("image", { ref })).ok).toBe(false);
+  });
+
+  it("keeps sending image bytes inline to a subscription that didn't ask for refs", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+
+    const raw = await rawClient(host);
+    raw.send({ type: "subscribe", stream: `conversation:${id}` });
+    const snapshot = await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    expect(userContents((snapshot as { value: ConversationView }).value)[0]).toEqual([
+      { type: "text", text: "look" },
+      { type: "image", data: PNG.data, mimeType: "image/png" },
+    ]);
   });
 
   it("reports model image support in the models stream", async () => {

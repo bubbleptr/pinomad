@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 14 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 15 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -100,6 +100,7 @@ pub enum CallMethod {
     SetPushToken,
     ListFiles,
     ListSkills,
+    Image,
 }
 
 impl CallMethod {
@@ -133,6 +134,7 @@ impl CallMethod {
             "setPushToken" => Self::SetPushToken,
             "listFiles" => Self::ListFiles,
             "listSkills" => Self::ListSkills,
+            "image" => Self::Image,
             _ => return None,
         })
     }
@@ -164,6 +166,7 @@ impl CallMethod {
             Self::ListFiles => 10,
             Self::ListSkills => 13,
             Self::WithdrawQueued | Self::SteerQueued => 14,
+            Self::Image => 15,
         }
     }
 }
@@ -188,6 +191,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::AgentConversations => 10,
         HostFeature::LiveBranch => 11,
         HostFeature::HostName => 12,
+        HostFeature::ImageRefs => 15,
     };
     host_minor >= since
 }
@@ -210,6 +214,9 @@ pub enum HostFeature {
     /// `updateSettings`'s `hostName` key (12) — an older host would call the
     /// patch malformed and 4400 the connection.
     HostName,
+    /// `submit`/`createConversation` images given as `{ref, mimeType}` (15)
+    /// — an older host would call them malformed and 4400 the connection.
+    ImageRefs,
 }
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.
