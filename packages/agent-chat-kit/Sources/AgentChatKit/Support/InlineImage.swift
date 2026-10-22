@@ -67,10 +67,12 @@ public struct InlineImage: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .task(id: "\(image.id):\(epoch)") {
+        // Key the task on the short ref, never on inline base64: a 6MB
+        // attachment would otherwise be copied into a task id on every body.
+        .task(id: ref.map { "\($0):\(epoch)" }) {
             await fetchIfNeeded()
         }
-        .onChange(of: image.id) {
+        .onChange(of: ref) {
             fetched = nil
             failed = false
         }

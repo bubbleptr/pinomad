@@ -81,7 +81,7 @@ struct ImageViewer: View {
                     .accessibilityLabel("Loading image")
             }
         }
-        .task(id: "\(image.ref ?? image.data):\(epoch)") {
+        .task(id: image.data.isEmpty ? image.ref.map { "\($0):\(epoch)" } : nil) {
             await fetchIfNeeded()
         }
         .contentShape(.rect)
