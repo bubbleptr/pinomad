@@ -295,10 +295,10 @@ describe("gateway", () => {
     // submissionId only exists on the result frame.
     const socket = new WebSocket(`${host.url}?token=${encodeURIComponent(host.token)}`);
     defer(() => socket.terminate());
-    const results = new Map<number, { submissionId: string }>();
+    const results = new Map<number, { submissionId: number }>();
     socket.on("message", (data) => {
       const frame = JSON.parse(String(data)) as ServerFrame;
-      if (frame.type === "result" && frame.ok) results.set(frame.id, frame.value as { submissionId: string });
+      if (frame.type === "result" && frame.ok) results.set(frame.id, frame.value as { submissionId: number });
     });
     await once(socket, "open");
     for (const callId of [1, 2]) {

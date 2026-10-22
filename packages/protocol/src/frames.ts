@@ -146,7 +146,7 @@ export interface CallMethods {
       /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
       images?: readonly MessageImage[];
     };
-    result: { submissionId: string };
+    result: { submissionId: number };
   };
   /**
    * Take a queued input back out of the inbox (5.14). `sent`: it already
