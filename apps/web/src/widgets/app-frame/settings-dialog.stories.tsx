@@ -16,11 +16,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The open section is the dialog's own state: a story picks one by clicking its nav item. */
+/**
+ * The open section is the dialog's own state: a story picks one by clicking it
+ * in the section nav, or, at 640px and below, in the list the dialog opens on.
+ */
 const open = (section: string): Story => ({
   play: async ({ canvasElement }) => {
-    const nav = within(canvasElement).getByRole("navigation", { name: "Settings sections" });
-    await userEvent.click(within(nav).getByText(section));
+    const canvas = within(canvasElement);
+    const nav = canvas.queryByRole("navigation", { name: "Settings sections" });
+    await userEvent.click((nav === null ? canvas : within(nav)).getByText(section));
   },
 });
 
