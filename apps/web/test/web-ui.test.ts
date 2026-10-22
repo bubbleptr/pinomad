@@ -3721,6 +3721,15 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/then \$review \n\$review \s*$/);
 
+  // Other whitespace (a pasted tab) isn't a separator Astryx activates after,
+  // so it still gets the space.
+  await composer.evaluate(() => document.execCommand("insertText", false, "x\t"));
+  await more.click();
+  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
+
   // The menu's project choice is a second entry to the footer picker's state.
   await more.click();
   await page.getByRole("menuitem", { name: /^Project/ }).click();

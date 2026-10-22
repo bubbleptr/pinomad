@@ -139,8 +139,11 @@ function PromptComposerInput({
           }
           editable.focus();
           caretToEnd(editable);
+          // Astryx activates a trigger only after a plain space or a line
+          // break, so any other trailing whitespace (a pasted tab) still
+          // needs the separating space.
           const current = valueRef.current;
-          const text = current === "" || /\s$/.test(current) ? trigger : ` ${trigger}`;
+          const text = current === "" || /[ \n]$/.test(current) ? trigger : ` ${trigger}`;
           // A real insertion, not a controlled-value write: it fires the
           // native `input` Astryx listens to, which both emits the change and
           // runs trigger detection against the caret.
