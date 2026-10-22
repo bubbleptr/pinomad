@@ -24,6 +24,7 @@ import { todo } from "./extensions/todo.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
 import { readServerConfig, resolveRelayOrigin } from "./server-config.ts";
+import { startHostLogRotation } from "./service/log-rotation.ts";
 import { watchModelAuth } from "./model-auth.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel } from "./pi-setup.ts";
@@ -47,6 +48,9 @@ export async function main(argv: readonly string[]): Promise<void> {
   });
 
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+  // launchd appends both host streams to <dataDir>/logs/host.log; Linux uses
+  // journald and foreground runs never create that file, so this is a no-op there.
+  startHostLogRotation(dataDir);
   // The joined server's origin lives in server.json (pinomad join writes it);
   // an explicit --relay must agree with it or the host refuses to start.
   let relayOrigin: string | undefined;
