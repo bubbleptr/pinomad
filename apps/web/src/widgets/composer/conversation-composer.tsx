@@ -5,6 +5,7 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
+import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
@@ -90,6 +91,8 @@ export function ConversationComposer({
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const queue = queueItems(conversation);
   const roles = view.agents?.roles ?? [];
+  // The role the conversation was created with — fixed for its life (ADR-0023).
+  const role = findConversation(view.organized, conversation.conversation.id)?.summary.role;
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
@@ -307,6 +310,11 @@ export function ConversationComposer({
               models={view.models}
               selected={{ model: agent.model, level: agent.thinkingLevel ?? "off" }}
               isDisabled={disconnected}
+              agent={
+                role === undefined
+                  ? undefined
+                  : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
+              }
               onModelChange={(model) => void remote.controller.setModel(model)}
               onLevelChange={(level) => void remote.controller.setThinkingLevel(level)}
             />

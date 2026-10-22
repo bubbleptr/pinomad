@@ -7,7 +7,6 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checkout/checkout-strategy-picker.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { AgentSelector } from "../../entities/agent/agent-selector.tsx";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
@@ -243,13 +242,11 @@ export function DraftHome({
                     ) : null}
                   </ChatAddMenuSection>
                 </ChatAddMenu>
-                {showAgentPicker ? (
-                  <AgentSelector agents={view.agents} value={agent} isDisabled={!connected} onChange={setAgent} />
-                ) : null}
                 <ModelSelector
                   models={view.models}
                   selected={{ model: pick.model, level: pick.level }}
                   isDisabled={!connected}
+                  agent={showAgentPicker ? { kind: "pick", roles: agentRoles, value: agent, onChange: setAgent } : undefined}
                   sourceHint={sourceHint}
                   {...(problem === undefined ? {} : { problem: problemText(problem) })}
                   onModelChange={setModel}
