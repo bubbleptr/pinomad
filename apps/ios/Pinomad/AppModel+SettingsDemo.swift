@@ -46,7 +46,7 @@ extension AppModel {
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: HostInfo(version: "0.9.0", protocol: ProtocolVersion(major: 5, minor: 14)),
-            hostName: "mbp", organized: organized,
+            hostName: "mbp", settings: nil, devices: [], organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         ))

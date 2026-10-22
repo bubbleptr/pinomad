@@ -68,7 +68,7 @@ extension AppModel {
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil,
             host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: mode == "old" ? 2 : 14)),
-            hostName: "mbp",
+            hostName: "mbp", settings: nil, devices: [],
             organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil

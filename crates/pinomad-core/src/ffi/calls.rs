@@ -139,6 +139,13 @@ impl SkillScope {
     }
 }
 
+/// A one-key `updateSettings` patch; `null` clears PiNomad's value.
+fn settings_patch(key: &str, value: Json) -> Json {
+    let mut object = JsonObject::new();
+    set(&mut object, key, value);
+    Json::Object(Arc::new(object))
+}
+
 fn images_json(images: &[MessageImage]) -> Vec<Json> {
     images
         .iter()
@@ -255,6 +262,15 @@ pub enum FfiCall {
     /// Request-class; resolves `CallResult::Pairing`. On the wire since
     /// 5.0 — no version gate.
     CreatePairing,
+    /// Unpair a device by its `DeviceEntry::public_key`; this device's own
+    /// key ends this connection with 4401. On the wire since 5.0.
+    RevokeDevice { public_key: String },
+    /// Rename the machine for every paired device; `None` resets to the
+    /// machine's own name. Needs a 5.12 host — an older one lands a notice.
+    SetHostName { name: Option<String> },
+    /// Whether the joined server may vouch for new devices (ADR-0022 §6).
+    /// Needs a 5.8 host — an older one lands a notice.
+    SetAcceptAccountDevices { accept: bool },
     /// File candidates under `scope`'s root for `@./path` completion.
     /// Request-class, but sent outside the command queue — a slow scan
     /// must not stall submits or switches. Resolves `CallResult::Files`.
@@ -352,6 +368,13 @@ impl FfiCall {
                 target: conversation_id,
             },
             FfiCall::CreatePairing => Call::CreatePairing,
+            FfiCall::RevokeDevice { public_key } => Call::RevokeDevice { public_key },
+            FfiCall::SetHostName { name } => Call::UpdateSettings {
+                patch: settings_patch("hostName", name.map(Json::from).unwrap_or(Json::Null)),
+            },
+            FfiCall::SetAcceptAccountDevices { accept } => Call::UpdateSettings {
+                patch: settings_patch("acceptAccountDevices", Json::Bool(accept)),
+            },
             FfiCall::ListFiles { scope, query } => Call::ListFiles {
                 scope: scope.to_json(),
                 query,
