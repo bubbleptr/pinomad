@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "storybook": "storybook dev --port 6006 --host 127.0.0.1 --no-open",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@astryxdesign/core": "^0.3.0",
@@ -27,6 +29,8 @@
     "@astryxdesign/cli": "^0.3.0",
     "@pinomad/host": "workspace:*",
     "@playwright/test": "^1.61.1",
+    "@storybook/addon-docs": "10.6.2",
+    "@storybook/react-vite": "10.6.2",
     "@tailwindcss/vite": "4.3.1",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
@@ -36,6 +40,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "diff": "8.0.4",
     "jsdom": "29.1.1",
+    "storybook": "10.6.2",
     "tailwindcss": "4.3.1",
     "vite": "^5.4.2"
   }
