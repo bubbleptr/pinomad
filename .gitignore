@@ -10,3 +10,4 @@ apps/ios/**/build/
 apps/ios/**/.swiftpm/
 xcuserdata/
 target/
+storybook-static/

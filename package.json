@@ -16,6 +16,7 @@
     "join": "node apps/host/src/cli/join.ts",
     "leave": "node apps/host/src/cli/leave.ts",
     "web": "cd apps/web && bun run dev",
+    "storybook": "cd apps/web && bun run storybook",
     "site": "cd apps/site && bun run dev",
     "link": "node apps/host/src/cli/web-link.ts",
     "pair": "node apps/host/src/cli/pair.ts",

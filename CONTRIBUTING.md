@@ -14,6 +14,9 @@ bun run host -- --faux "hi"
 # 另一个终端起 Web 客户端开发服务器（http://127.0.0.1:5199）：
 bun run web
 bun run link
+
+# Web 组件的 Storybook（http://127.0.0.1:6006），不需要宿主：
+bun run storybook
 ```
 
 ## 验证
