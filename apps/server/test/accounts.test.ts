@@ -1,8 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -19,6 +18,7 @@ import {
 } from "@pinomad/protocol/relay.ts";
 import { changePassword, openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const GOOD_PASSWORD = "correct horse battery";
@@ -33,14 +33,8 @@ afterEach(async () => {
   for (const socket of sockets) socket.terminate();
   sockets.clear();
   for (const relay of relays.splice(0)) await relay.close();
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) await removeTempDir(dir);
 });
-
-async function tempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "pinomad-server-"));
-  dirs.push(dir);
-  return dir;
-}
 
 interface Started {
   readonly relay: Relay;
@@ -62,7 +56,7 @@ async function startServer(options?: {
   readonly limits?: LoginLimits;
   readonly lockStaleMs?: number;
 }): Promise<Started> {
-  const dataDir = options?.dataDir ?? (await tempDir());
+  const dataDir = options?.dataDir ?? (await tempDir(dirs));
   const bootstrap = options?.bootstrap ?? { user: "admin", password: GOOD_PASSWORD };
   const accounts = await openAccounts({
     dataDir,
@@ -185,7 +179,7 @@ describe("server bootstrap", () => {
   });
 
   it("refuses to start when a bootstrap credential is missing or the password is weak", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir(dirs);
     await expect(openAccounts({ dataDir: dir })).rejects.toThrow();
     await expect(openAccounts({ dataDir: dir, bootstrapUser: "admin" })).rejects.toThrow();
     await expect(openAccounts({ dataDir: dir, bootstrapPassword: GOOD_PASSWORD })).rejects.toThrow();
@@ -199,7 +193,7 @@ describe("server bootstrap", () => {
   });
 
   it("persists users and sessions across a restart", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir(dirs);
     const first = await startServer({ dataDir: dir });
     const token = (await login(first.relay)).json.token as string;
     await stop(first);
@@ -211,7 +205,7 @@ describe("server bootstrap", () => {
   });
 
   it("refuses a second process on the same data directory", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir(dirs);
     // Same stale value on both sides — a shorter contender-side stale would
     // mistake the live lock for an abandoned one and steal it.
     await startServer({ dataDir: dir, lockStaleMs: 2000 });
@@ -223,7 +217,7 @@ describe("server bootstrap", () => {
   it("reports an unwritable lock location as itself, not as a running server", async () => {
     // proper-lockfile creates `<dataDir>.lock` beside the directory: a parent
     // the server can't write (a container's `/`) must not read as "in use".
-    const parent = await tempDir();
+    const parent = await tempDir(dirs);
     const dataDir = join(parent, "server");
     await mkdir(dataDir);
     await chmod(parent, 0o555);
@@ -335,7 +329,7 @@ describe("server login and sessions", () => {
   });
 
   it("routes /api ahead of the static web root", async () => {
-    const web = await tempDir();
+    const web = await tempDir(dirs);
     await writeFile(join(web, "index.html"), "<html>app</html>");
     const { relay } = await startServer({ webRoot: web });
     // A POST to /api/login must reach the API, not the 405-only static handler.
@@ -486,7 +480,7 @@ describe("desktop origin and legacy mode", () => {
   });
 
   it("answers a JSON 404 on /api/* when accounts are off, ahead of the SPA fallback", async () => {
-    const web = await tempDir();
+    const web = await tempDir(dirs);
     await writeFile(join(web, "index.html"), "<html>app</html>");
     const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, webRoot: web });
     relays.push(relay);
@@ -573,12 +567,12 @@ describe("server CLI account mode", () => {
   }
 
   it("refuses a first start without the bootstrap env vars", async () => {
-    const home = await tempDir();
+    const home = await tempDir(dirs);
     await expect(runMain(home, {})).rejects.toThrow(/exited 1: [\s\S]*PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required/);
   });
 
   it("reopens the default data dir after the bootstrap env vars are gone", async () => {
-    const home = await tempDir();
+    const home = await tempDir(dirs);
     // First boot: env vars create the account under ~/.pinomad-server.
     const first = await runMain(home, { PINOMAD_SERVER_USER: "admin", PINOMAD_SERVER_PASSWORD: GOOD_PASSWORD });
     first.child.kill("SIGTERM");

@@ -2,10 +2,7 @@
 // op connections, and the old↔new host/server compatibility matrix.
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -23,6 +20,7 @@ import {
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const GOOD_PASSWORD = "correct horse battery";
@@ -35,14 +33,8 @@ afterEach(async () => {
   for (const socket of sockets) socket.terminate();
   sockets.clear();
   for (const relay of relays.splice(0)) await relay.close();
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) await removeTempDir(dir);
 });
-
-async function tempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "pinomad-server-"));
-  dirs.push(dir);
-  return dir;
-}
 
 interface Started {
   readonly relay: Relay;
@@ -51,7 +43,7 @@ interface Started {
 }
 
 async function startServer(options?: { readonly now?: () => number }): Promise<Started> {
-  const dataDir = await tempDir();
+  const dataDir = await tempDir(dirs);
   const accounts = await openAccounts({
     dataDir,
     bootstrapUser: "admin",

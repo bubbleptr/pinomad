@@ -3,16 +3,13 @@ import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, streamingText, transcript } from "@pinomad/protocol/transcript.ts";
-import { freePort, LONG_ANSWER, tempDir, waitForView } from "./support.ts";
+import { freePort, LONG_ANSWER, stopChild, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const hostDir = fileURLToPath(new URL("..", import.meta.url));
-const cleanups: (() => Promise<void> | void)[] = [];
-afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
+const defer = useCleanups();
 
 interface HostProcess {
   readonly child: ChildProcess;
@@ -26,9 +23,7 @@ async function spawnHost(dataDir: string, port: number, model: readonly string[]
     ["src/main.ts", "--data-dir", dataDir, "--port", String(port), ...model, "--lock-stale-ms", "2000"],
     { cwd: hostDir, stdio: ["ignore", "pipe", "inherit"] },
   );
-  cleanups.push(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-  });
+  defer(() => stopChild(child));
   const lines = createInterface({ input: child.stdout! });
   for await (const line of lines) {
     const event = JSON.parse(line) as { event: string; url: string; tokenFile: string };
@@ -39,13 +34,13 @@ async function spawnHost(dataDir: string, port: number, model: readonly string[]
 
 it("resumes both clients after the host is killed mid-stream and restarted", async () => {
   const dir = await tempDir();
-  cleanups.push(dir.remove);
+  defer(dir.remove);
   const port = await freePort();
   const first = await spawnHost(dir.path, port);
 
   const connect = async (): Promise<RemoteDurable> => {
     const client = await connectRemoteDurable({ url: first.url, token: first.token, reconnectDelayMs: { min: 100, max: 500 } });
-    cleanups.push(() => client.close());
+    defer(() => client.close());
     return client;
   };
   const a = await connect();

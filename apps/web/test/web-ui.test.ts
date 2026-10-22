@@ -45,6 +45,14 @@ async function startWeb(): Promise<string> {
   return new URL(vite.resolvedUrls!.local[0]!).origin;
 }
 
+/** Screenshots are opt-in so a normal test run leaves nothing behind in /tmp. */
+const shotDir = process.env.WEB_UI_SHOT_DIR;
+async function shot(page: Page, name: string): Promise<void> {
+  if (shotDir === undefined) return;
+  await mkdir(shotDir, { recursive: true });
+  await page.screenshot({ path: join(shotDir, `${name}.png`) });
+}
+
 /**
  * The composer editable by its accessible name, whichever role Astryx gives
  * it: a configured trigger menu (named agents, @ file completion) turns the
@@ -2988,7 +2996,7 @@ it("marks Settings when the desktop bridge has an update downloaded and restarts
   );
   await page.getByRole("img", { name: "Update ready" }).waitFor();
   expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
-  await page.screenshot({ path: "/tmp/pinomad-update-ready-sidebar.png" });
+  await shot(page, "update-ready-sidebar");
   const settings = await openSettings(page, "Updates");
   await settings.getByText("PiNomad 0.1.0", { exact: true }).waitFor();
   await settings.getByRole("button", { name: "Restart to update", exact: true }).click();
@@ -3061,7 +3069,7 @@ it("checks for updates instead of reloading on a desktop client-older mismatch",
     }),
   );
   await page.getByText(/Downloading PiNomad 0\.2\.0/).waitFor();
-  await page.screenshot({ path: "/tmp/pinomad-mismatch-downloading.png" });
+  await shot(page, "mismatch-downloading");
 
   await page.evaluate(
     () => (window as unknown as { __setUpdateStatus: (s: unknown) => void }).__setUpdateStatus({
@@ -3071,7 +3079,7 @@ it("checks for updates instead of reloading on a desktop client-older mismatch",
     }),
   );
   await page.getByRole("button", { name: "Restart to update" }).waitFor();
-  await page.screenshot({ path: "/tmp/pinomad-mismatch-ready.png" });
+  await shot(page, "mismatch-ready");
 });
 
 it("manages named agents from the Agents settings section", async () => {

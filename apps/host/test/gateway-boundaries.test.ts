@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { startGateway, type GatewayOptions } from "../src/gateway.ts";
 import { PROTOCOL, type ServerFrame } from "@pinomad/protocol/frames.ts";
-import { startFauxHost, tempDir, useCleanups } from "./support.ts";
+import { startFauxHost, stopChild, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
 const hostDir = fileURLToPath(new URL("..", import.meta.url));
@@ -233,11 +233,7 @@ describe("gateway boundaries", () => {
       cwd: hostDir,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    defer(async () => {
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      child.kill("SIGKILL");
-      await once(child, "exit");
-    });
+    defer(() => stopChild(child));
     const lines = createInterface({ input: child.stdout! });
     let url: string | undefined;
     for await (const line of lines) {

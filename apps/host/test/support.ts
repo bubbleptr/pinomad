@@ -1,3 +1,5 @@
+import type { ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -27,7 +29,16 @@ import type { PushTimers } from "../src/push.ts";
 export function useCleanups(): (cleanup: () => Promise<void> | void) => void {
   const cleanups: (() => Promise<void> | void)[] = [];
   afterEach(async () => {
-    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+    const failures: unknown[] = [];
+    // One failing cleanup must not strand the rest — the later ones remove temp dirs.
+    for (const cleanup of cleanups.splice(0).reverse()) {
+      try {
+        await cleanup();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) throw new AggregateError(failures, "test cleanup failed");
   });
   return (cleanup) => void cleanups.push(cleanup);
 }
@@ -215,9 +226,28 @@ export async function openBoundAccounts(dataDir: string, hostId: string): Promis
   return accounts;
 }
 
+/** Remove a test temp dir and the data-dir lock proper-lockfile puts beside it. */
+export async function removeTempDir(path: string): Promise<void> {
+  await Promise.all([
+    rm(path, { recursive: true, force: true }),
+    rm(`${path}.lock`, { recursive: true, force: true }),
+  ]);
+}
+
 export async function tempDir(): Promise<{ path: string; remove(): Promise<void> }> {
   const path = await mkdtemp(join(tmpdir(), "pinomad-"));
-  return { path, remove: () => rm(path, { recursive: true, force: true }) };
+  return { path, remove: () => removeTempDir(path) };
+}
+
+/**
+ * Stop a spawned host and wait for its exit, so its close path releases the
+ * data-dir lock. SIGKILL would leave `<dataDir>.lock` behind.
+ */
+export async function stopChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, "exit");
+  child.kill("SIGTERM");
+  await exited;
 }
 
 /** Resolve once `predicate` holds for the source's view, checked on every update. */

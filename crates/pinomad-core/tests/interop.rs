@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command as ProcCommand, Stdio};
 use std::time::{Duration, Instant};
 
@@ -23,7 +23,40 @@ struct SpawnedHost {
     child: Child,
     url: String,
     token: String,
-    dir: PathBuf,
+    dir: TempDataDir,
+}
+
+/// A throwaway host data dir. The host's lock lives beside it as `<dir>.lock`,
+/// so removing only the directory would strand the lock.
+struct TempDataDir(PathBuf);
+
+impl TempDataDir {
+    fn new() -> Self {
+        // One data dir admits one host; parallel tests must not share a
+        // millisecond-derived path.
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "pinomad-interop-{}-{}-{}",
+            std::process::id(),
+            now_ms(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDataDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+        let mut lock = self.0.as_os_str().to_os_string();
+        lock.push(".lock");
+        let _ = std::fs::remove_dir_all(PathBuf::from(lock));
+    }
 }
 
 fn repo_root() -> PathBuf {
@@ -35,21 +68,12 @@ fn free_port() -> u16 {
 }
 
 fn spawn_host() -> SpawnedHost {
-    // One data dir admits one host; parallel tests must not share a
-    // millisecond-derived path.
-    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "pinomad-interop-{}-{}-{}",
-        std::process::id(),
-        now_ms(),
-        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TempDataDir::new();
     let port = free_port();
     let mut child = ProcCommand::new("node")
         .arg("apps/host/src/main.ts")
         .arg("--data-dir")
-        .arg(&dir)
+        .arg(dir.path())
         .arg("--port")
         .arg(port.to_string())
         .arg("--faux")
@@ -59,7 +83,10 @@ fn spawn_host() -> SpawnedHost {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn node host");
-    let stdout = child.stdout.take().unwrap();
+    // Own the child and dir before reading readiness: a failed spawn test must
+    // still kill the process and drop its temp trees.
+    let mut host = SpawnedHost { child, url: String::new(), token: String::new(), dir };
+    let stdout = host.child.stdout.take().unwrap();
     let mut lines = BufReader::new(stdout);
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut ready = None;
@@ -81,15 +108,15 @@ fn spawn_host() -> SpawnedHost {
     let parsed = serde_json::from_str::<serde_json::Value>(&ready).expect("ready line JSON");
     let token_file = parsed["tokenFile"].as_str().expect("tokenFile");
     let token = std::fs::read_to_string(token_file).expect("read token file").trim().to_string();
-    let url = parsed["url"].as_str().expect("url").to_string();
-    SpawnedHost { child, url, token, dir }
+    host.url = parsed["url"].as_str().expect("url").to_string();
+    host.token = token;
+    host
 }
 
 impl Drop for SpawnedHost {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
