@@ -72,6 +72,12 @@ extension AppModel {
             startQuestionDemo(mode)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_SETTINGS"] {
+            // The settings pages over two demo machines; `failed` opens on
+            // the failure page instead of the list.
+            startSettingsDemo(mode)
+            return true
+        }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The composer's context meter at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.

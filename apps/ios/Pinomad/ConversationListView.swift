@@ -38,23 +38,12 @@ struct ConversationListView: View {
                     ContentUnavailableView("还没有对话", systemImage: "bubble.left.and.bubble.right",
                                            description: Text("点右上角的新建开始一个。"))
                 }
-                if !organized.archived.isEmpty {
-                    Section("已归档") {
-                        ForEach(Array(organized.archived.enumerated()), id: \.offset) { _, entry in
-                            archivedRow(entry)
-                        }
-                    }
-                }
             } else {
                 ProgressView("正在同步…")
             }
         }
         .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .conversation(let id): ConversationView(model: model, conversationId: id)
-            case .newConversation: NewConversationView(model: model)
-            case .addProject: AddProjectView(model: model)
-            }
+            RouteDestination(model: model, route: route)
         }
         .alert("重命名对话", isPresented: Binding(
             get: { renaming != nil },
@@ -67,27 +56,26 @@ struct ConversationListView: View {
             if let renameError { Text(renameError) }
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    model.present(.account)
+                } label: {
+                    AccountBadge(username: model.accountRecord?.username)
+                }
+                .accessibilityLabel(model.accountRecord.map { "账号：\($0.username)" } ?? "账号")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("新建", systemImage: "square.and.pencil") {
                     model.navPath.append(.newConversation)
                 }
                 .disabled(!model.connected)
             }
-            ToolbarItem(placement: .topBarLeading) {
-                // The host on screen; opens the list to switch, forget or
-                // pair another.
-                Button {
-                    model.present(.hosts)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(model.currentHostLabel ?? "宿主")
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.semibold))
-                    }
-                    .font(.subheadline)
+            // Two glass circles rather than one shared capsule.
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("设置", systemImage: "gearshape") {
+                    model.navPath.append(.settings)
                 }
-                .accessibilityLabel("宿主：\(model.currentHostLabel ?? "")")
             }
         }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
@@ -117,26 +105,6 @@ struct ConversationListView: View {
         } else {
             rowLabel(node)
         }
-    }
-
-    /// Archived roots can't be opened from here; they can be restored.
-    private func archivedRow(_ entry: ArchivedConversation) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(summary: entry.node.summary)).lineLimit(1)
-                if let name = entry.project?.name ?? entry.project?.path {
-                    Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            Spacer()
-            if let id = entry.node.summary.id {
-                Button("恢复") { model.archive(conversation: id, false) }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!model.connected)
-            }
-        }
-        .foregroundStyle(.secondary)
     }
 
     /// Rename is request-class: a refusal comes back as the host's reason,
@@ -197,5 +165,24 @@ struct ConversationListView: View {
         case .failed: .red
         case .other: .secondary
         }
+    }
+}
+
+/// The account in the toolbar: the username's initial in a circle when it
+/// has a symbol (a–z, 0–9), else the generic person. A symbol, not text, so
+/// the toolbar's glass stays a circle like the trailing buttons.
+private struct AccountBadge: View {
+    let username: String?
+
+    var body: some View {
+        Image(systemName: symbol)
+    }
+
+    private var symbol: String {
+        guard let initial = username?.first?.lowercased(), initial.count == 1,
+              let scalar = initial.unicodeScalars.first, scalar.isASCII,
+              CharacterSet.alphanumerics.contains(scalar)
+        else { return "person.crop.circle" }
+        return "\(initial).circle"
     }
 }
