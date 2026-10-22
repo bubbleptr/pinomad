@@ -8,10 +8,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use pinomad_core::ffi::{
-    CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout, FfiCall,
-    FfiCommand, FfiEvent, FileScope, MessageImage, ModelRef, NewConversationHome, PatchLineKind, PinomadClient,
-    ReadyOutcome, SkillEntry, SkillScope, SkillSource, SteerOutcome, StoredHost, SubmitMode, ThinkingLevel,
-    WithdrawOutcome,
+    device_public_key, CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout,
+    DeviceEntry, DeviceSource, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, MessageImage, ModelRef,
+    NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
+    SteerOutcome, StoredHost, SubmitMode, ThinkingLevel, WithdrawOutcome,
 };
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -1007,6 +1007,141 @@ fn snapshot_host_name_ignores_a_non_string_value() {
     host.snapshots.insert("settings".to_string(), obj(&[("hostName", Json::from(12.0))]));
     let h = Harness::boot(host, "req-1");
     assert_eq!(h.client.snapshot().unwrap().host_name, None);
+}
+
+#[test]
+fn snapshot_devices_decode_the_devices_stream() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "devices".to_string(),
+        obj(&[(
+            "devices",
+            Json::array(vec![
+                obj(&[
+                    ("publicKey", Json::from("a-key")),
+                    ("name", Json::from("iPhone")),
+                    ("pairedAt", Json::from(1700000000000.0)),
+                    ("source", Json::from("account")),
+                ]),
+                // Entries from before sources existed, and a source this
+                // client doesn't know, say nothing about how they paired.
+                obj(&[("publicKey", Json::from("b-key")), ("name", Json::from("Mac")), ("pairedAt", Json::from(1.0))]),
+                obj(&[
+                    ("publicKey", Json::from("c-key")),
+                    ("name", Json::from("Pad")),
+                    ("pairedAt", Json::from(2.0)),
+                    ("source", Json::from("carrier-pigeon")),
+                ]),
+                // No key, nothing to revoke: dropped.
+                obj(&[("name", Json::from("ghost")), ("pairedAt", Json::from(3.0))]),
+            ]),
+        )]),
+    );
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().devices,
+        vec![
+            DeviceEntry {
+                public_key: "a-key".to_string(),
+                name: "iPhone".to_string(),
+                paired_at: 1700000000000.0,
+                source: Some(DeviceSource::Account),
+            },
+            DeviceEntry { public_key: "b-key".to_string(), name: "Mac".to_string(), paired_at: 1.0, source: None },
+            DeviceEntry { public_key: "c-key".to_string(), name: "Pad".to_string(), paired_at: 2.0, source: None },
+        ]
+    );
+}
+
+#[test]
+fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "settings".to_string(),
+        obj(&[
+            ("acceptAccountDevices", Json::Bool(false)),
+            ("hostName", Json::from("studio")),
+            ("custom", Json::array(vec![Json::from("steeringMode"), Json::from("hostName")])),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().settings,
+        Some(HostSettingsState { accept_account_devices: false, host_name_custom: true })
+    );
+
+    // The machine's own name: nothing to reset to.
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "settings".to_string(),
+        obj(&[("acceptAccountDevices", Json::Bool(true)), ("custom", Json::array(vec![]))]),
+    );
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().settings,
+        Some(HostSettingsState { accept_account_devices: true, host_name_custom: false })
+    );
+}
+
+#[test]
+fn snapshot_settings_are_none_until_the_stream_has_a_value() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert("settings".to_string(), Json::Null);
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(h.client.snapshot().unwrap().settings, None);
+}
+
+fn call_args(h: &Harness, method: &str) -> Vec<Json> {
+    call_frames(h)
+        .into_iter()
+        .filter(|f| f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == method).unwrap_or(false))
+        .map(|f| f.get("args").cloned().unwrap_or(Json::Null))
+        .collect()
+}
+
+/// The settings page's calls lower to the reference's `revokeDevice` and
+/// single-key `updateSettings` patches; a `None` name is the reset.
+#[test]
+fn device_and_settings_calls_encode_the_reference_frames() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::RevokeDevice { public_key: "a-key".to_string() });
+    h.invoke(2, FfiCall::SetHostName { name: Some("studio".to_string()) });
+    h.invoke(3, FfiCall::SetHostName { name: None });
+    h.invoke(4, FfiCall::SetAcceptAccountDevices { accept: false });
+    assert_eq!(call_args(&h, "revokeDevice"), vec![obj(&[("publicKey", Json::from("a-key"))])]);
+    assert_eq!(
+        call_args(&h, "updateSettings"),
+        vec![
+            obj(&[("patch", obj(&[("hostName", Json::from("studio"))]))]),
+            obj(&[("patch", obj(&[("hostName", Json::Null)]))]),
+            obj(&[("patch", obj(&[("acceptAccountDevices", Json::Bool(false))]))]),
+        ]
+    );
+    // Command-class, like the reference: the op settles as Unit.
+    for op in 1..=4 {
+        assert_eq!(h.ops.get(&op), Some(&Ok(CallResult::Unit)), "op {op}");
+    }
+}
+
+#[test]
+fn renaming_an_older_host_lands_a_notice_instead_of_a_frame() {
+    let mut host = ScriptedHost::new();
+    host.minor = 11.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::SetHostName { name: None });
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::Unit)));
+    assert!(call_args(&h, "updateSettings").is_empty());
+    let notices = &h.client.snapshot().unwrap().notices;
+    assert!(notices.iter().any(|n| n.message.contains("5.12")), "{notices:?}");
+}
+
+#[test]
+fn device_public_key_derives_the_key_the_host_lists() {
+    let pair = pinomad_core::noise::generate_keypair().unwrap();
+    let private = pinomad_core::b64::to_base64url(&pair.private_key);
+    assert_eq!(device_public_key(private), Some(pinomad_core::b64::to_base64url(&pair.public_key)));
+    assert_eq!(device_public_key("not a key".to_string()), None);
+    assert_eq!(device_public_key(pinomad_core::b64::to_base64url(&[1, 2, 3])), None);
 }
 
 #[test]

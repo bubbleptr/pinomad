@@ -3,7 +3,9 @@ import SwiftUI
 
 /// Sign in to the one account (ADR-0022): address first, probe, then the
 /// credentials. The probe is the only thing that leaves the device before a
-/// login, and an insecure address never leaves it at all.
+/// login, and an insecure address never leaves it at all. The root of the
+/// account sheet while signed out; a successful login swaps that sheet to
+/// the account's hosts.
 struct AccountLoginView: View {
     let model: AppModel
 
@@ -24,113 +26,128 @@ struct AccountLoginView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
+            // Why the reader is signed out, when it wasn't their doing
+            // (expired, revoked) or the token outlived the sign-out.
+            if model.accountNotice != nil || model.accountSignOutWarning != nil {
                 Section {
-                    TextField("https://…", text: $origin)
-                        .textContentType(.URL)
+                    if let notice = model.accountNotice {
+                        Text(notice)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                    if let warning = model.accountSignOutWarning {
+                        Text(warning)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+
+            Section {
+                TextField("https://…", text: $origin)
+                    .textContentType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .submitLabel(.continue)
+                    .disabled(phase == .probing || busy)
+                    .onSubmit(probe)
+                    .onChange(of: origin) { _, _ in
+                        if phase != .idle { phase = .idle }
+                        error = nil
+                    }
+
+                switch phase {
+                case .probing:
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在检查服务端…").foregroundStyle(.secondary)
+                    }
+                case .disabled:
+                    Text("这个服务端没有开启账号。")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                case .unreachable:
+                    Text("连不上服务端，检查地址和网络。")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                case .idle, .enabled:
+                    EmptyView()
+                }
+
+                if phase != .enabled {
+                    Button(phase == .probing ? "正在检查…" : "继续", action: probe)
+                        .disabled(origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || phase == .probing
+                            || busy)
+                }
+            } header: {
+                Text("服务端")
+            } footer: {
+                Text("账号只走 https://；本机调试可以用 http://127.0.0.1。")
+            }
+
+            if phase == .enabled {
+                Section {
+                    TextField("用户名", text: $username)
+                        .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .submitLabel(.continue)
-                        .disabled(phase == .probing || busy)
-                        .onSubmit(probe)
-                        .onChange(of: origin) { _, _ in
-                            if phase != .idle { phase = .idle }
-                            error = nil
-                        }
-
-                    switch phase {
-                    case .probing:
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("正在检查服务端…").foregroundStyle(.secondary)
-                        }
-                    case .disabled:
-                        Text("这个服务端没有开启账号。")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    case .unreachable:
-                        Text("连不上服务端，检查地址和网络。")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    case .idle, .enabled:
-                        EmptyView()
-                    }
-
-                    if phase != .enabled {
-                        Button(phase == .probing ? "正在检查…" : "继续", action: probe)
-                            .disabled(origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || phase == .probing
-                                || busy)
-                    }
+                        .submitLabel(.next)
+                    SecureField("密码", text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.go)
+                        .onSubmit(login)
                 } header: {
-                    Text("服务端")
+                    Text("登录")
                 } footer: {
-                    Text("账号只走 https://；本机调试可以用 http://127.0.0.1。")
+                    Text("登录后可以不用扫码，直接配对你账号下的宿主。")
                 }
 
-                if phase == .enabled {
-                    Section {
-                        TextField("用户名", text: $username)
-                            .textContentType(.username)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.next)
-                        SecureField("密码", text: $password)
-                            .textContentType(.password)
-                            .submitLabel(.go)
-                            .onSubmit(login)
-                    } header: {
-                        Text("登录")
-                    } footer: {
-                        Text("登录后可以不用扫码，直接配对你账号下的宿主。")
-                    }
-
-                    Section {
-                        Button {
-                            login()
-                        } label: {
-                            HStack {
-                                Spacer()
-                                if busy {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Text("登录")
-                                }
-                                Spacer()
+                Section {
+                    Button {
+                        login()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if busy {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("登录")
                             }
+                            Spacer()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(busy
-                            || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || password.isEmpty)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
                     }
+                    .buttonStyle(.glassProminent)
+                    .disabled(busy
+                        || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || password.isEmpty)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
+            }
 
-                if let error {
-                    Section {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
+            if let error {
+                Section {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("登录账号")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                        .disabled(busy)
-                }
+        }
+        .navigationTitle("登录账号")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("取消") { dismiss() }
+                    .disabled(busy)
             }
-            .interactiveDismissDisabled(busy)
-            .task {
-                if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? "" }
-                if username.isEmpty { username = model.accountRecord?.username ?? "" }
-            }
+        }
+        .interactiveDismissDisabled(busy)
+        .task {
+            if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? "" }
+            if username.isEmpty { username = model.accountRecord?.username ?? "" }
         }
     }
 
@@ -173,8 +190,6 @@ struct AccountLoginView: View {
             busy = false
             if let failure {
                 error = AccountCopy.message(failure)
-            } else {
-                dismiss()
             }
         }
     }

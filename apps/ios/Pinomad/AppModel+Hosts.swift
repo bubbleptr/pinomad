@@ -116,6 +116,12 @@ extension AppModel {
     /// Make `hostKey` the launch host and connect to it.
     func switchHost(_ hostKey: String) {
         guard hostKey != currentHostKey || phase != .connected else { return }
+        #if DEBUG
+        if devHostsInjected {
+            showToast("演示数据：不会切换机器。")
+            return
+        }
+        #endif
         var saveError: String?
         do {
             try store.update { $0 = $0.activating(hostKey) }
@@ -138,6 +144,12 @@ extension AppModel {
     /// refuses the clear — is still forgotten; the reader is sent to the
     /// host's Devices page instead.
     func forget(_ hostKey: String) {
+        #if DEBUG
+        if devHostsInjected {
+            showToast("演示数据：不会忘记机器。")
+            return
+        }
+        #endif
         // The switch is not proof either way: it may have been turned off
         // while offline after a successful registration. The flag is set
         // before a register and cleared only by a successful clear, so it

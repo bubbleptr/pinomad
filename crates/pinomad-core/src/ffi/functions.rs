@@ -354,6 +354,16 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
     crate::frames::host_supports_feature(host_minor, feature)
 }
 
+/// The base64url public key a stored host's `private_key` pairs with — the
+/// `DeviceEntry::public_key` the host lists for this device. `None` when
+/// the text is not a 32-byte base64url key.
+#[uniffi::export]
+pub fn device_public_key(private_key: String) -> Option<String> {
+    let bytes = crate::b64::from_base64url(&private_key).ok()?;
+    let pair = crate::noise::keypair_from_private(&bytes).ok()?;
+    Some(crate::b64::to_base64url(&pair.public_key))
+}
+
 /// Where a pairing link would connect and which host it names, or `None`
 /// when it is not a usable pairing link — what the confirm page shows, and
 /// how the app knows which stored host a finished pairing became.

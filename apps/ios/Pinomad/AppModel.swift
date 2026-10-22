@@ -23,7 +23,9 @@ final class AppModel {
     /// scan arriving while another sheet is up waits for it to close
     /// instead of being dropped by SwiftUI.
     enum Modal: Identifiable {
-        case hosts
+        /// Settings over a page that has no list to push it from (the
+        /// connecting and failure pages).
+        case settings
         case account
         case pairingCode
         case scanner
@@ -31,7 +33,7 @@ final class AppModel {
 
         var id: String {
             switch self {
-            case .hosts: "hosts"
+            case .settings: "settings"
             case .account: "account"
             case .pairingCode: "pairingCode"
             case .scanner: "scanner"
@@ -192,6 +194,18 @@ final class AppModel {
     /// Publish a demo snapshot through the slot the session normally fills;
     /// the setter itself stays file-private.
     func publishDevSnapshot(_ snapshot: ClientSnapshot) { self.snapshot = snapshot }
+
+    /// A demo host list stands in for the keychain's; switching and
+    /// forgetting must then neither write the keychain nor dial anything.
+    var devHostsInjected = false
+
+    /// Stand a demo host list in for the keychain's, with `stored.active` as
+    /// the session's host. Nothing is written to the keychain.
+    func useDevHosts(_ stored: StoredHosts) {
+        devHostsInjected = true
+        hosts = stored
+        if let active = stored.active { pairing.connect(active) }
+    }
     #endif
 
     func start() {

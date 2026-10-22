@@ -246,6 +246,7 @@ export function openApns(config: ApnsConfig): ApnsSender {
           resolve({ result: "retry", reason: "session unavailable" });
           return;
         }
+        let responded = false;
         let status = 0;
         let responseHeaders: IncomingHttpHeaders = {};
         const chunks: Buffer[] = [];
@@ -259,11 +260,18 @@ export function openApns(config: ApnsConfig): ApnsSender {
         };
         const timer = setTimeout(() => finish({ result: "retry", reason: "apns timeout" }), REQUEST_TIMEOUT_MS);
         stream.on("response", (headers) => {
+          responded = true;
           status = Number(headers[":status"] ?? 0);
           responseHeaders = headers;
         });
         stream.on("data", (chunk: Buffer) => chunks.push(chunk));
         stream.on("end", () => {
+          // A GOAWAY can end an in-flight stream before APNs answers: that is a
+          // connection failure, not an HTTP verdict (ADR-0025 §5).
+          if (!responded) {
+            finish({ result: "retry", reason: "connection closed" });
+            return;
+          }
           let body: unknown;
           try {
             body = JSON.parse(Buffer.concat(chunks).toString("utf8"));

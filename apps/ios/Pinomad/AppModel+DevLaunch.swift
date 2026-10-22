@@ -80,6 +80,20 @@ extension AppModel {
             startQuestionDemo(mode)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_SETTINGS"] {
+            // The settings pages over two demo machines; `failed` opens on
+            // the failure page instead of the list.
+            startSettingsDemo(mode)
+            return true
+        }
+        if let mode = env["PINOMAD_DEMO_LAYOUT"] {
+            // The conversation list grouped by machine: two paired hosts
+            // (one connected), chats, two projects, a family with subagents;
+            // `old` connects a host too old to add projects.
+            phase = .connected
+            startLayoutDemo(mode)
+            return true
+        }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The composer's context meter at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.
@@ -224,7 +238,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil, organized: organized,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [], organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
@@ -335,7 +349,7 @@ extension AppModel {
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false, protocolMismatch: nil,
             host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 14)),
-            hostName: nil, organized: organized,
+            hostName: nil, settings: nil, devices: [], organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
@@ -410,7 +424,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: mode == "offline" ? .reconnecting : .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(
                 chats: [ConversationNode(summary: summary, children: [])],
                 projects: [], archived: []
@@ -467,7 +481,7 @@ extension AppModel {
         drafts[1] = "帮我看看这个改动"
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(
                 chats: [ConversationNode(summary: parent, children: [])],
                 projects: [], archived: []
@@ -568,7 +582,7 @@ extension AppModel {
                 )
                 self.publishDevSnapshot(ClientSnapshot(
                     version: UInt64(tick + 1), connection: .connected, unauthorized: false,
-                    protocolMismatch: nil, host: nil, hostName: nil,
+                    protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
                     organized: Organized(chats: [], projects: [], archived: []),
                     notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
                     agents: nil, conversation: conversation
@@ -597,7 +611,7 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil,
+            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [],
             organized: Organized(chats: [], projects: [], archived: []),
             notices: [], models: [],
             defaults: Defaults(model: nil, thinkingLevel: nil),

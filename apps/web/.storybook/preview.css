@@ -1,0 +1,26 @@
+/* styles.css pins html/body/#root to the viewport for the app shell;
+   stories and docs pages need to scroll. */
+html:has(body.sb-show-main),
+body.sb-show-main {
+  height: auto;
+  overflow: auto;
+}
+
+.sb-pinomad-canvas {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 1.5rem;
+  background: var(--color-background-surface);
+  color: var(--color-text-primary);
+}
+
+/* Stories sit in the conversation column's width (max-w-[44rem], centred,
+   as in conversation-transcript.tsx); `canvasWidth: "full"` opts out. */
+.sb-pinomad-column {
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.sb-pinomad-column[data-width="full"] {
+  max-width: none;
+}

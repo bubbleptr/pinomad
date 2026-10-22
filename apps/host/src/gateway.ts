@@ -264,12 +264,15 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       response.end();
     });
   });
-  const server = new WebSocketServer({ server: http });
   await new Promise<void>((resolve, reject) => {
     http.once("listening", resolve);
     http.once("error", reject);
     http.listen(options.port, "127.0.0.1");
   });
+  // Attached only once listening: ws re-emits the http server's errors on
+  // itself, so a listen error (a taken port) would throw unhandled there and
+  // never reach the reject above.
+  const server = new WebSocketServer({ server: http });
   const { port } = http.address() as AddressInfo;
   // A page this listener itself served is trusted by construction; the bound
   // port can be ephemeral, so the origin is computed after listen.
@@ -359,7 +362,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     register(tokenConnection(socket));
   });
 
-  remote = await startRemote(options, admission, register);
+  remote = await startRemote(options, admission, register).catch(async (error: unknown) => {
+    // Startup fails, so nobody will call close(): free the loopback port here.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => http.close(() => resolve()));
+    throw error;
+  });
   const secure = options.secure;
   // Flipping the account switch off kills account offers still in flight —
   // they were minted under a grant that no longer stands (ADR-0022 §6).
@@ -655,13 +663,14 @@ async function startRemote(
       response.end();
     });
   });
-  const secure = new WebSocketServer({ server: http });
-  secure.on("connection", (socket) => secureHandshake(socket, spec, admission, register));
   await new Promise<void>((resolveListen, reject) => {
     http.once("listening", resolveListen);
     http.once("error", reject);
     http.listen(remote.port, "0.0.0.0");
   });
+  // After listen, as on the loopback port: a listen error must reach reject.
+  const secure = new WebSocketServer({ server: http });
+  secure.on("connection", (socket) => secureHandshake(socket, spec, admission, register));
   const { port } = http.address() as AddressInfo;
   const url = `ws://127.0.0.1:${port}`;
   const advertiseUrl = remote.publicUrl?.replace(/\/+$/, "") ?? `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${port}`;

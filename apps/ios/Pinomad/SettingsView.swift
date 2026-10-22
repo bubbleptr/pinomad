@@ -1,0 +1,516 @@
+import PinomadChat
+import PinomadCore
+import SwiftUI
+import UIKit
+
+/// Settings in two groups: this device (its paired machines, pairing
+/// another, push, about) and one row per paired machine, leading to that
+/// machine's own settings. Pushed from the list; needs no connection.
+struct SettingsView: View {
+    let model: AppModel
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @State private var forgetting: HostRecord?
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(machines, id: \.hostKey) { host in
+                    pairedRow(host)
+                }
+                if machines.isEmpty {
+                    Text("还没有配对的机器。")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                GroupHeader(title: "本机", section: "已配对的机器")
+            }
+            // Rows are choices, not links — plain text, not tinted.
+            .tint(.primary)
+
+            Section("配对一台") {
+                // On the section's card: a list row clips the glass
+                // controls' shadow square, which reads as a smear on the
+                // bare grouped background but not inside the card.
+                PairingSources(model: model)
+                    .padding(.vertical, 6)
+            }
+
+            // The failure and connecting pages reach the account only from
+            // here: the avatar lives on the list, the first-run page only
+            // shows before anything is paired.
+            Section {
+                Button {
+                    model.present(.account)
+                } label: {
+                    Label(model.accountRecord.map { "账号：\($0.username)" } ?? "登录账号",
+                          systemImage: "person.crop.circle")
+                }
+                .tint(.primary)
+            } header: {
+                Text("账号")
+            } footer: {
+                Text("登录后可以配对账号名下的宿主。")
+            }
+
+            pushSection
+
+            aboutSection
+
+            if !machines.isEmpty {
+                Section {
+                    ForEach(machines, id: \.hostKey) { host in
+                        machineRow(host)
+                    }
+                } header: {
+                    GroupHeader(title: "机器", section: nil)
+                }
+            }
+        }
+        .navigationTitle("设置")
+        .alert(
+            "忘记 \(forgetting.map(label) ?? "")？",
+            isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+            presenting: forgetting
+        ) { host in
+            Button("取消", role: .cancel) {}
+            Button("忘记", role: .destructive) {
+                let wasLast = machines.count == 1
+                model.forget(host.hostKey)
+                // Nothing left to pick — the pairing page behind has
+                // the same ways to pair. Forgetting waits for the
+                // unregister call, so decide from the list we had.
+                if wasLast { dismiss() }
+            }
+        } message: { _ in
+            Text("这台设备要用新的配对链接才能再连上它。")
+        }
+    }
+
+    private var machines: [HostRecord] {
+        pairedMachines(stored: model.hosts, session: model.sessionHost)
+    }
+
+    private func label(_ host: HostRecord) -> String {
+        model.hostLabels[host.hostKey] ?? host.name ?? hostOf(host.url)
+    }
+
+    private func isLive(_ host: HostRecord) -> Bool {
+        host.hostKey == model.currentHostKey && model.connected
+    }
+
+    /// Tap to switch — the only way to until the list groups by machine.
+    private func pairedRow(_ host: HostRecord) -> some View {
+        Button {
+            guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
+            model.switchHost(host.hostKey)
+            // Switching resets the stack already; in the sheet this closes it.
+            dismiss()
+        } label: {
+            HStack(spacing: 10) {
+                MachineDot(live: isLive(host))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label(host))
+                        .foregroundStyle(.primary)
+                    Text(host.url)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if host.hostKey == model.currentHostKey {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+        .swipeActions {
+            Button("忘记", role: .destructive) { forgetting = host }
+                // The section's plain tint would turn it black.
+                .tint(.red)
+        }
+        .contextMenu {
+            Button("忘记", systemImage: "trash", role: .destructive) { forgetting = host }
+        }
+    }
+
+    /// Only the connected machine's page opens; the others need a
+    /// connection to read anything from.
+    private func machineRow(_ host: HostRecord) -> some View {
+        let live = isLive(host)
+        return NavigationLink(value: Route.machine(host.hostKey)) {
+            HStack(spacing: 10) {
+                MachineDot(live: live)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label(host))
+                    if !live {
+                        Text("连上这台机器后才能查看")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .disabled(!live)
+    }
+
+    /// The switch for the host on screen. The preference is per host; the
+    /// registration itself needs that host connected and at least 5.9.
+    @ViewBuilder
+    private var pushSection: some View {
+        Section {
+            if let hostKey = model.currentHostKey {
+                pushControls(hostKey)
+            } else {
+                Text("连上一台机器后才能设置推送。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("推送")
+        } footer: {
+            Text("只带对话标题和事件（「等你回答」「完成」「失败」），标题会经过服务端和 Apple。设置按宿主分别保存。")
+        }
+    }
+
+    @ViewBuilder
+    private func pushControls(_ hostKey: String) -> some View {
+        Toggle(isOn: Binding(
+            get: { model.pushEnabled(for: hostKey) },
+            set: { model.setPushEnabled($0, for: hostKey) }
+        )) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("推送通知")
+                if let name = model.currentHostLabel {
+                    Text(name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .disabled(!model.pushAvailable(for: hostKey))
+
+        if model.snapshot != nil && !model.hostSupports(.apnsPush) {
+            Text("需要把宿主升级到 5.9 或更新才能推送。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else if !model.connected {
+            Text("连上宿主后登记；现在打开会在下次连接时生效。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+
+        if model.pushEnabled(for: hostKey) {
+            if model.push.isDenied {
+                Text("通知权限被拒绝了，推送不会送达。")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                Button("去系统设置打开通知") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                }
+                .font(.footnote)
+            }
+
+            if let error = model.pushError {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+            if let error = model.push.registrationError {
+                Text("APNs 注册失败：\(error)")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    /// The app's version, and the connected host's — the app's own
+    /// protocol version is not exposed by the core.
+    private var aboutSection: some View {
+        Section("关于") {
+            LabeledContent("App 版本", value: appVersion)
+            if let info = model.snapshot?.host, let name = model.currentHostLabel {
+                LabeledContent(name) {
+                    Text("\(info.version ?? "源码") · 协议 \(info.protocol.major).\(info.protocol.minor)")
+                }
+            }
+        }
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        guard let build = info?["CFBundleVersion"] as? String else { return version }
+        return "\(version) (\(build))"
+    }
+}
+
+/// Settings opened as a sheet — from the connecting and failure pages,
+/// which have no list to push it from.
+struct SettingsSheet: View {
+    let model: AppModel
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SettingsView(model: model)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: Route.self) { route in
+                    RouteDestination(model: model, route: route)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+/// One paired machine's settings: its name, the devices paired with it,
+/// and its archived conversations. Needs that machine connected.
+struct MachineSettingsView: View {
+    let model: AppModel
+    let hostKey: String
+
+    @State private var renaming = false
+    @State private var nameDraft = ""
+    @State private var revoking: DeviceEntry?
+
+    var body: some View {
+        List {
+            if hostKey == model.currentHostKey, let snapshot = model.snapshot {
+                if snapshot.settings != nil && model.hostSupports(.hostName) {
+                    hostNameSection(snapshot)
+                }
+                devicesSection(snapshot.devices)
+                if let settings = snapshot.settings, model.hostSupports(.acceptAccountDevices) {
+                    accountDevicesSection(settings)
+                }
+                archivedSection(snapshot.organized.archived)
+            } else {
+                ContentUnavailableView(
+                    "没有连着这台机器", systemImage: "bolt.horizontal.circle",
+                    description: Text("连上它之后才能查看它的设置。"))
+            }
+        }
+        .navigationTitle(title)
+        .alert("主机名", isPresented: $renaming) {
+            TextField("名称", text: $nameDraft)
+            Button("取消", role: .cancel) {}
+            Button("保存") { saveName() }
+        } message: {
+            Text("已配对的设备都用这个名字称呼这台机器。")
+        }
+        .alert(
+            revoking.map { "吊销 \($0.name)？" } ?? "",
+            isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
+            presenting: revoking
+        ) { device in
+            Button("取消", role: .cancel) {}
+            Button("吊销", role: .destructive) { model.revoke(device: device.publicKey) }
+        } message: { device in
+            if device.publicKey == model.thisDevicePublicKey {
+                Text("这是这台设备：吊销后马上断开，要用新的配对链接才能再连上。")
+            } else {
+                Text("它会断开，要用新的配对链接才能再连上这台机器。")
+            }
+        }
+    }
+
+    /// The same name the row that opened this page showed.
+    private var title: String {
+        let host = pairedMachines(stored: model.hosts, session: model.sessionHost)
+            .first { $0.hostKey == hostKey }
+        return model.hostLabels[hostKey] ?? host.map { $0.name ?? hostOf($0.url) } ?? "机器"
+    }
+
+    private func archivedSection(_ archived: [ArchivedConversation]) -> some View {
+        Section {
+            if archived.isEmpty {
+                Text("没有归档的对话。")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(archived.enumerated()), id: \.offset) { _, entry in
+                archivedRow(entry)
+            }
+        } header: {
+            Text("已归档")
+        } footer: {
+            Text("归档的对话不在列表里显示，恢复后回到列表。")
+        }
+    }
+
+    /// Archived roots can't be opened from here; they can be restored.
+    private func archivedRow(_ entry: ArchivedConversation) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName(summary: entry.node.summary)).lineLimit(1)
+                if let name = entry.project?.name ?? entry.project?.path {
+                    Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer()
+            if let id = entry.node.summary.id {
+                Button("恢复") { model.archive(conversation: id, false) }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(!model.connected)
+            }
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    /// The name every paired device labels this machine by (5.12). The host
+    /// cleans what it is sent the way it cleans the machine's own name.
+    private func hostNameSection(_ snapshot: ClientSnapshot) -> some View {
+        Section {
+            Button {
+                nameDraft = snapshot.hostName ?? ""
+                renaming = true
+            } label: {
+                LabeledContent("主机名", value: snapshot.hostName ?? "")
+            }
+            .tint(.primary)
+            .disabled(!model.connected)
+            if snapshot.settings?.hostNameCustom == true {
+                Button("改回机器名") { model.setHostName(nil) }
+                    .disabled(!model.connected)
+            }
+        } footer: {
+            Text("不改的话，用机器自己的主机名。")
+        }
+    }
+
+    private func saveName() {
+        let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != model.snapshot?.hostName else { return }
+        model.setHostName(name)
+    }
+
+    /// The devices paired with this machine, and a code to pair another
+    /// (ADR-0022 §7).
+    private func devicesSection(_ devices: [DeviceEntry]) -> some View {
+        Section {
+            if devices.isEmpty {
+                Text("还没有配对的设备。")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(devices, id: \.publicKey) { device in
+                DeviceRow(device: device, isThisDevice: device.publicKey == model.thisDevicePublicKey)
+                    .swipeActions {
+                        Button("吊销", role: .destructive) { revoking = device }
+                            .tint(.red)
+                            .disabled(!model.connected)
+                    }
+                    .contextMenu {
+                        Button("吊销", systemImage: "xmark.circle", role: .destructive) { revoking = device }
+                            .disabled(!model.connected)
+                    }
+            }
+            Button {
+                model.present(.pairingCode)
+            } label: {
+                Label("给另一台设备配对", systemImage: "qrcode")
+            }
+            .disabled(!model.connected)
+        } header: {
+            Text("设备")
+        } footer: {
+            Text(model.connected
+                 ? "对方用相机扫码或打开链接即可配对。左滑一台设备可以吊销它。"
+                 : "连上宿主后才能生成二维码。")
+        }
+    }
+
+    /// Whether the server this machine joined may vouch for new devices
+    /// (ADR-0022 §6, 5.8).
+    private func accountDevicesSection(_ settings: HostSettingsState) -> some View {
+        Section {
+            Toggle("接受账号担保的设备", isOn: Binding(
+                get: { settings.acceptAccountDevices },
+                set: { model.setAcceptAccountDevices($0) }
+            ))
+            .disabled(!model.connected)
+        } footer: {
+            Text("登录了这台机器所加入的服务端的设备，不扫码也能配对。关掉后只能扫码配对。")
+        }
+    }
+}
+
+/// A paired device: its name, when and how it paired, and a badge on this
+/// one.
+private struct DeviceRow: View {
+    let device: DeviceEntry
+    let isThisDevice: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.name)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if isThisDevice {
+                Text("这台设备")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: .capsule)
+            }
+        }
+    }
+
+    /// Date and minute — two devices paired the same day stay apart.
+    private var detail: String {
+        let at = Date(timeIntervalSince1970: device.pairedAt / 1000)
+            .formatted(date: .numeric, time: .shortened)
+        switch device.source {
+        case .qr: return "\(at) 扫码配对"
+        case .local: return "\(at) 在本机配对"
+        case .account: return "\(at) 经账号配对"
+        case nil: return "\(at) 配对"
+        }
+    }
+}
+
+/// A group's name above its first section's own header, so the page reads
+/// as two groups rather than a run of equal sections.
+private struct GroupHeader: View {
+    let title: String
+    let section: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // `Color.primary`, not `.primary`: the header's own style is
+            // the secondary level, which `.primary` would resolve against.
+            Text(title)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(Color.primary)
+            if let section {
+                Text(section)
+            }
+        }
+        .textCase(nil)
+    }
+}
+
+/// Green while the session is connected to this machine, grey otherwise.
+private struct MachineDot: View {
+    let live: Bool
+
+    var body: some View {
+        Circle()
+            .fill(live ? Color.green : Color.secondary.opacity(0.5))
+            .frame(width: 8, height: 8)
+            .accessibilityLabel(live ? "已连接" : "未连接")
+    }
+}

@@ -29,6 +29,12 @@ pub struct ClientSnapshot {
     /// `None` until the stream lands, on older hosts, and when the field is
     /// missing or not a string — the platform keeps its cached name then.
     pub host_name: Option<String>,
+    /// The settings stream's switches the settings page edits — `None`
+    /// until the stream lands or when the host doesn't serve it.
+    pub settings: Option<HostSettingsState>,
+    /// The devices paired with this host (the `devices` stream), in the
+    /// host's order.
+    pub devices: Vec<DeviceEntry>,
     /// Chats and projects with their conversations, grouped for navigation.
     pub organized: Organized,
     /// Command failures land here with a stable, increasing id — the
@@ -45,6 +51,41 @@ pub struct ClientSnapshot {
     pub agents: Option<AgentRoles>,
     /// The shown conversation and everything its screen reads.
     pub conversation: Option<ConversationSnapshot>,
+}
+
+/// The part of `HostSettings` (settings.ts) the settings page edits.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct HostSettingsState {
+    /// Whether the joined server may vouch for new devices (ADR-0022 §6).
+    pub accept_account_devices: bool,
+    /// The host name comes from PiNomad's settings.json rather than the
+    /// machine — `SetHostName { name: None }` has something to reset.
+    pub host_name_custom: bool,
+}
+
+/// One paired device (devices.ts `DeviceEntry`).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct DeviceEntry {
+    /// Base64url X25519 public key — what `RevokeDevice` takes, and what
+    /// `device_public_key` derives for this device.
+    pub public_key: String,
+    pub name: String,
+    /// Epoch milliseconds.
+    pub paired_at: f64,
+    /// `None` on entries from before sources existed, and for a source
+    /// this client doesn't know.
+    pub source: Option<DeviceSource>,
+}
+
+/// How a device registered (devices.ts `DeviceSource`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum DeviceSource {
+    /// A one-time offer the user was shown.
+    Qr,
+    /// A loopback-only offer for a client on the host's machine.
+    Local,
+    /// One the joined server vouched for.
+    Account,
 }
 
 /// The shown conversation, fully derived.
@@ -204,6 +245,44 @@ fn host_name_of(view: &Json) -> Option<String> {
         .map(|s| s.to_string_lossy())
 }
 
+fn settings_of(view: &Json) -> Option<HostSettingsState> {
+    let settings = view.get("settings").filter(|s| !matches!(s, Json::Null))?;
+    let host_name_custom = settings
+        .get("custom")
+        .and_then(Json::as_array)
+        .map(|keys| keys.iter().any(|k| k.as_str().map(|s| s.to_string_lossy() == "hostName").unwrap_or(false)))
+        .unwrap_or(false);
+    Some(HostSettingsState {
+        // Defaults on (settings.ts); a host older than the switch omits it.
+        accept_account_devices: !matches!(settings.get("acceptAccountDevices"), Some(Json::Bool(false))),
+        host_name_custom,
+    })
+}
+
+fn devices_of(view: &Json) -> Vec<DeviceEntry> {
+    let text = |entry: &Json, key: &str| entry.get(key).and_then(Json::as_str).map(|s| s.to_string_lossy());
+    view.get("devices")
+        .and_then(Json::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|entry| {
+                    Some(DeviceEntry {
+                        public_key: text(entry, "publicKey")?,
+                        name: text(entry, "name").unwrap_or_default(),
+                        paired_at: entry.get("pairedAt").and_then(Json::as_number).unwrap_or(f64::NAN),
+                        source: match text(entry, "source").as_deref() {
+                            Some("qr") => Some(DeviceSource::Qr),
+                            Some("local") => Some(DeviceSource::Local),
+                            Some("account") => Some(DeviceSource::Account),
+                            _ => None,
+                        },
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn host_of(view: &Json) -> Option<HostInfo> {
     let host = view.get("host")?;
     let protocol = host.get("protocol")?;
@@ -293,6 +372,8 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         protocol_mismatch: mismatch_of(&view),
         host: host_of(&view),
         host_name: host_name_of(&view),
+        settings: settings_of(&view),
+        devices: devices_of(&view),
         organized,
         notices: notices_of(&view),
         models: models_of(&view),

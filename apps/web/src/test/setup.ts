@@ -137,6 +137,12 @@ Object.defineProperty(HTMLElement.prototype, "getAnimations", {
   value: () => [],
 });
 
+// The question pager waits on `document.fonts.ready`, which jsdom lacks.
+Object.defineProperty(document, "fonts", {
+  configurable: true,
+  value: { ready: Promise.resolve() },
+});
+
 // jsdom lacks the native modal lifecycle; Chromium/Electron tests cover focus trapping.
 HTMLDialogElement.prototype.showModal = function () {
   this.setAttribute("open", "");
