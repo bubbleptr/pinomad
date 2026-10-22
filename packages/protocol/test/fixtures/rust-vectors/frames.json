@@ -1,4 +1,8 @@
 {
+  "protocol": {
+    "major": 5,
+    "minor": 14
+  },
   "serverFrames": [
     {
       "name": "hello",
@@ -175,12 +179,252 @@
       "wire": "{\"type\":\"call\",\"id\":10,\"method\":\"setPushToken\",\"args\":{\"token\":null}}"
     }
   ],
+  "gates": {
+    "call": [
+      {
+        "name": "abort",
+        "since": 0
+      },
+      {
+        "name": "addProject",
+        "since": 0
+      },
+      {
+        "name": "answer",
+        "since": 0
+      },
+      {
+        "name": "archive",
+        "since": 0
+      },
+      {
+        "name": "changes",
+        "since": 0
+      },
+      {
+        "name": "compact",
+        "since": 0
+      },
+      {
+        "name": "createAgent",
+        "since": 6
+      },
+      {
+        "name": "createConversation",
+        "since": 0
+      },
+      {
+        "name": "createPairing",
+        "since": 0
+      },
+      {
+        "name": "deleteAgent",
+        "since": 6
+      },
+      {
+        "name": "fork",
+        "since": 0
+      },
+      {
+        "name": "listFiles",
+        "since": 10
+      },
+      {
+        "name": "listFolders",
+        "since": 3
+      },
+      {
+        "name": "listSkills",
+        "since": 13
+      },
+      {
+        "name": "logout",
+        "since": 1
+      },
+      {
+        "name": "removeProject",
+        "since": 0
+      },
+      {
+        "name": "renameConversation",
+        "since": 4
+      },
+      {
+        "name": "revokeDevice",
+        "since": 0
+      },
+      {
+        "name": "setModel",
+        "since": 0
+      },
+      {
+        "name": "setPushToken",
+        "since": 7
+      },
+      {
+        "name": "setThinkingLevel",
+        "since": 0
+      },
+      {
+        "name": "steerQueued",
+        "since": 14
+      },
+      {
+        "name": "submit",
+        "since": 0
+      },
+      {
+        "name": "updateAgent",
+        "since": 6
+      },
+      {
+        "name": "updateSettings",
+        "since": 2
+      },
+      {
+        "name": "withdrawQueued",
+        "since": 14
+      }
+    ],
+    "stream": [
+      {
+        "name": "agents",
+        "since": 6
+      },
+      {
+        "name": "auth",
+        "since": 1
+      },
+      {
+        "name": "conversations",
+        "since": 0
+      },
+      {
+        "name": "devices",
+        "since": 0
+      },
+      {
+        "name": "index",
+        "since": 0
+      },
+      {
+        "name": "mcp",
+        "since": 0
+      },
+      {
+        "name": "models",
+        "since": 1
+      },
+      {
+        "name": "settings",
+        "since": 2
+      }
+    ],
+    "feature": [
+      {
+        "name": "acceptAccountDevices",
+        "since": 8
+      },
+      {
+        "name": "agentConversations",
+        "since": 10
+      },
+      {
+        "name": "apnsPush",
+        "since": 9
+      },
+      {
+        "name": "hostName",
+        "since": 12
+      },
+      {
+        "name": "images",
+        "since": 5
+      },
+      {
+        "name": "liveBranch",
+        "since": 11
+      }
+    ]
+  },
   "versionGates": [
     {
-      "name": "listFiles@9",
-      "minor": 9,
-      "call": "listFiles",
+      "name": "abort@0",
+      "minor": 0,
+      "call": "abort",
+      "expect": true
+    },
+    {
+      "name": "addProject@0",
+      "minor": 0,
+      "call": "addProject",
+      "expect": true
+    },
+    {
+      "name": "answer@0",
+      "minor": 0,
+      "call": "answer",
+      "expect": true
+    },
+    {
+      "name": "archive@0",
+      "minor": 0,
+      "call": "archive",
+      "expect": true
+    },
+    {
+      "name": "changes@0",
+      "minor": 0,
+      "call": "changes",
+      "expect": true
+    },
+    {
+      "name": "compact@0",
+      "minor": 0,
+      "call": "compact",
+      "expect": true
+    },
+    {
+      "name": "createAgent@6",
+      "minor": 6,
+      "call": "createAgent",
+      "expect": true
+    },
+    {
+      "name": "createAgent@5",
+      "minor": 5,
+      "call": "createAgent",
       "expect": false
+    },
+    {
+      "name": "createConversation@0",
+      "minor": 0,
+      "call": "createConversation",
+      "expect": true
+    },
+    {
+      "name": "createPairing@0",
+      "minor": 0,
+      "call": "createPairing",
+      "expect": true
+    },
+    {
+      "name": "deleteAgent@6",
+      "minor": 6,
+      "call": "deleteAgent",
+      "expect": true
+    },
+    {
+      "name": "deleteAgent@5",
+      "minor": 5,
+      "call": "deleteAgent",
+      "expect": false
+    },
+    {
+      "name": "fork@0",
+      "minor": 0,
+      "call": "fork",
+      "expect": true
     },
     {
       "name": "listFiles@10",
@@ -189,51 +433,21 @@
       "expect": true
     },
     {
-      "name": "agentConversations@9",
+      "name": "listFiles@9",
       "minor": 9,
-      "feature": "agentConversations",
+      "call": "listFiles",
       "expect": false
     },
     {
-      "name": "agentConversations@10",
-      "minor": 10,
-      "feature": "agentConversations",
+      "name": "listFolders@3",
+      "minor": 3,
+      "call": "listFolders",
       "expect": true
     },
     {
-      "name": "apnsPush@9",
-      "minor": 9,
-      "feature": "apnsPush",
-      "expect": true
-    },
-    {
-      "name": "liveBranch@10",
-      "minor": 10,
-      "feature": "liveBranch",
-      "expect": false
-    },
-    {
-      "name": "liveBranch@11",
-      "minor": 11,
-      "feature": "liveBranch",
-      "expect": true
-    },
-    {
-      "name": "hostName@11",
-      "minor": 11,
-      "feature": "hostName",
-      "expect": false
-    },
-    {
-      "name": "hostName@12",
-      "minor": 12,
-      "feature": "hostName",
-      "expect": true
-    },
-    {
-      "name": "listSkills@12",
-      "minor": 12,
-      "call": "listSkills",
+      "name": "listFolders@2",
+      "minor": 2,
+      "call": "listFolders",
       "expect": false
     },
     {
@@ -243,15 +457,75 @@
       "expect": true
     },
     {
-      "name": "withdrawQueued@13",
-      "minor": 13,
-      "call": "withdrawQueued",
+      "name": "listSkills@12",
+      "minor": 12,
+      "call": "listSkills",
       "expect": false
     },
     {
-      "name": "withdrawQueued@14",
+      "name": "logout@1",
+      "minor": 1,
+      "call": "logout",
+      "expect": true
+    },
+    {
+      "name": "logout@0",
+      "minor": 0,
+      "call": "logout",
+      "expect": false
+    },
+    {
+      "name": "removeProject@0",
+      "minor": 0,
+      "call": "removeProject",
+      "expect": true
+    },
+    {
+      "name": "renameConversation@4",
+      "minor": 4,
+      "call": "renameConversation",
+      "expect": true
+    },
+    {
+      "name": "renameConversation@3",
+      "minor": 3,
+      "call": "renameConversation",
+      "expect": false
+    },
+    {
+      "name": "revokeDevice@0",
+      "minor": 0,
+      "call": "revokeDevice",
+      "expect": true
+    },
+    {
+      "name": "setModel@0",
+      "minor": 0,
+      "call": "setModel",
+      "expect": true
+    },
+    {
+      "name": "setPushToken@7",
+      "minor": 7,
+      "call": "setPushToken",
+      "expect": true
+    },
+    {
+      "name": "setPushToken@6",
+      "minor": 6,
+      "call": "setPushToken",
+      "expect": false
+    },
+    {
+      "name": "setThinkingLevel@0",
+      "minor": 0,
+      "call": "setThinkingLevel",
+      "expect": true
+    },
+    {
+      "name": "steerQueued@14",
       "minor": 14,
-      "call": "withdrawQueued",
+      "call": "steerQueued",
       "expect": true
     },
     {
@@ -261,10 +535,118 @@
       "expect": false
     },
     {
-      "name": "steerQueued@14",
-      "minor": 14,
-      "call": "steerQueued",
+      "name": "submit@0",
+      "minor": 0,
+      "call": "submit",
       "expect": true
+    },
+    {
+      "name": "updateAgent@6",
+      "minor": 6,
+      "call": "updateAgent",
+      "expect": true
+    },
+    {
+      "name": "updateAgent@5",
+      "minor": 5,
+      "call": "updateAgent",
+      "expect": false
+    },
+    {
+      "name": "updateSettings@2",
+      "minor": 2,
+      "call": "updateSettings",
+      "expect": true
+    },
+    {
+      "name": "updateSettings@1",
+      "minor": 1,
+      "call": "updateSettings",
+      "expect": false
+    },
+    {
+      "name": "withdrawQueued@14",
+      "minor": 14,
+      "call": "withdrawQueued",
+      "expect": true
+    },
+    {
+      "name": "withdrawQueued@13",
+      "minor": 13,
+      "call": "withdrawQueued",
+      "expect": false
+    },
+    {
+      "name": "acceptAccountDevices@8",
+      "minor": 8,
+      "feature": "acceptAccountDevices",
+      "expect": true
+    },
+    {
+      "name": "acceptAccountDevices@7",
+      "minor": 7,
+      "feature": "acceptAccountDevices",
+      "expect": false
+    },
+    {
+      "name": "agentConversations@10",
+      "minor": 10,
+      "feature": "agentConversations",
+      "expect": true
+    },
+    {
+      "name": "agentConversations@9",
+      "minor": 9,
+      "feature": "agentConversations",
+      "expect": false
+    },
+    {
+      "name": "apnsPush@9",
+      "minor": 9,
+      "feature": "apnsPush",
+      "expect": true
+    },
+    {
+      "name": "apnsPush@8",
+      "minor": 8,
+      "feature": "apnsPush",
+      "expect": false
+    },
+    {
+      "name": "hostName@12",
+      "minor": 12,
+      "feature": "hostName",
+      "expect": true
+    },
+    {
+      "name": "hostName@11",
+      "minor": 11,
+      "feature": "hostName",
+      "expect": false
+    },
+    {
+      "name": "images@5",
+      "minor": 5,
+      "feature": "images",
+      "expect": true
+    },
+    {
+      "name": "images@4",
+      "minor": 4,
+      "feature": "images",
+      "expect": false
+    },
+    {
+      "name": "liveBranch@11",
+      "minor": 11,
+      "feature": "liveBranch",
+      "expect": true
+    },
+    {
+      "name": "liveBranch@10",
+      "minor": 10,
+      "feature": "liveBranch",
+      "expect": false
     }
   ]
 }

@@ -6,7 +6,15 @@
 // the shape the wire actually carries: JSON texts, hex blobs, decoded ops.
 import { applyImmutable } from "@earendil-works/chord/delta";
 import { UnsafePathError, PathError } from "@earendil-works/chord/delta";
-import { hostSupportsCall, hostSupportsFeature, PROTOCOL } from "../src/frames.ts";
+import {
+  CALL_SINCE,
+  FEATURE_SINCE,
+  HOST_STREAMS,
+  hostSupportsCall,
+  hostSupportsFeature,
+  PROTOCOL,
+  type CallMethod,
+} from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession } from "../src/secure-channel.ts";
 import { pairingFragment, parsePairParam } from "../src/pairing-link.ts";
@@ -110,32 +118,29 @@ function framesVector(): VectorFile {
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];
-  // The version gates the two ends must agree on (ADR-0018 §2): each case is
-  // `hostSupportsCall`/`hostSupportsFeature` at the boundary minor.
+  // The complete version gates (ADR-0018 §2), not a hand-picked sample: the
+  // Rust mirror must know every row, and its calls/streams/features must flip
+  // at the same minor. Sorted so fixture diffs show additions in place.
+  const sorted = (entries: [string, number][]) => entries.sort(([a], [b]) => a.localeCompare(b));
+  const calls = sorted(Object.entries(CALL_SINCE)).map(([name, since]) => ({ name, since }));
+  const streams = sorted(Object.entries(HOST_STREAMS)).map(([name, since]) => ({ name, since }));
+  const features = sorted(Object.entries(FEATURE_SINCE)).map(([name, since]) => ({ name, since }));
+  const gates = { call: calls, stream: streams, feature: features };
   const versionGates = [
-    { name: "listFiles@9", minor: 9, call: "listFiles", expect: false },
-    { name: "listFiles@10", minor: 10, call: "listFiles", expect: true },
-    { name: "agentConversations@9", minor: 9, feature: "agentConversations", expect: false },
-    { name: "agentConversations@10", minor: 10, feature: "agentConversations", expect: true },
-    { name: "apnsPush@9", minor: 9, feature: "apnsPush", expect: true },
-    { name: "liveBranch@10", minor: 10, feature: "liveBranch", expect: false },
-    { name: "liveBranch@11", minor: 11, feature: "liveBranch", expect: true },
-    { name: "hostName@11", minor: 11, feature: "hostName", expect: false },
-    { name: "hostName@12", minor: 12, feature: "hostName", expect: true },
-    { name: "listSkills@12", minor: 12, call: "listSkills", expect: false },
-    { name: "listSkills@13", minor: 13, call: "listSkills", expect: true },
-    { name: "withdrawQueued@13", minor: 13, call: "withdrawQueued", expect: false },
-    { name: "withdrawQueued@14", minor: 14, call: "withdrawQueued", expect: true },
-    { name: "steerQueued@13", minor: 13, call: "steerQueued", expect: false },
-    { name: "steerQueued@14", minor: 14, call: "steerQueued", expect: true },
-  ].map((gate) => ({
-    ...gate,
-    expect:
-      gate.call !== undefined
-        ? hostSupportsCall(gate.minor, gate.call as never)
-        : hostSupportsFeature(gate.minor, gate.feature as never),
-  }));
-  return write("frames", { serverFrames, badJson, clientFrames, versionGates });
+    ...calls.flatMap(({ name, since }) => [
+      { name: `${name}@${since}`, minor: since, call: name, expect: hostSupportsCall(since, name as CallMethod) },
+      ...(since > 0
+        ? [{ name: `${name}@${since - 1}`, minor: since - 1, call: name, expect: hostSupportsCall(since - 1, name as CallMethod) }]
+        : []),
+    ]),
+    ...features.flatMap(({ name, since }) => [
+      { name: `${name}@${since}`, minor: since, feature: name, expect: hostSupportsFeature(since, name as never) },
+      ...(since > 0
+        ? [{ name: `${name}@${since - 1}`, minor: since - 1, feature: name, expect: hostSupportsFeature(since - 1, name as never) }]
+        : []),
+    ]),
+  ];
+  return write("frames", { protocol: PROTOCOL, serverFrames, badJson, clientFrames, gates, versionGates });
 }
 
 // ─── Delta ───────────────────────────────────────────────────────────────────
