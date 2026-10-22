@@ -15,7 +15,7 @@
    - 已由 ADR-0011 取代：不做审批闸门，agent 需要和用户对齐时用结构化提问。
 4. **上下文**：由内置扩展 `context` 提供系统提示词的几个分段：PiNomad 自己的开场说明、工作目录、项目上下文、Skills。每次请求都重新从文件系统读取，修改 AGENTS.md 或 Skill 文件后不用重启。
    - AGENTS.md 读两类：`~/.agents/AGENTS.md`（全局），以及从文件系统根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md（项目，靠近 cwd 的排在后面）。
-   - Skills 从 `<cwd>/.agents/skills` 和 `~/.agents/skills` 读取，同名时项目的生效。
+   - Skills 从 cwd 到 git 根每一层的 `.agents/skills`（不在 git 仓库里时只有 cwd 一层）和 `~/.agents/skills` 读取；同名时离 cwd 越近的越优先，所有项目层都压过用户目录（issue #163）。
    - AGENTS.md 和 Skills 不从 `~/.pi` 读（ADR-0001）。宿主仍然复用 pi 的两类设施（ADR-0002）：`~/.pi/agent` 下的模型认证，以及 pi 的 settings.json，用来读默认模型、思考等级、重试、压缩和代理配置（`SettingsManager.create(cwd)`，同时会读项目下的 `.pi/settings.json`）。PiNomad 要不要有自己的设置文件，等做设置界面时再决定。
      - 已由 ADR-0021 决定：宿主设置存在数据目录的 `settings.json`，没设过的项回落到 pi 的设置；凭据暂时仍共用 pi 的 `auth.json`。
    - 文件加载复用 `pi-coding-agent` 导出的 `loadProjectContextFiles`、`loadSkills`、`formatSkillsForPrompt`。
@@ -25,4 +25,6 @@
 - 宿主进程能执行任意命令，安全边界完全依赖"只监听本机 + token"。做远程访问之前，必须先定好认证方式和审批策略（ADR-0003 遗留项）。
   - 认证已由 ADR-0008 决定；审批闸门由 ADR-0011 决定不做。
 - 只扫描 `<cwd>/.agents/skills`：在仓库子目录里启动时，看不到仓库根目录下的 Skills。
+  - 已由 issue #163 解决：现在从 cwd 逐层扫到 git 根，但不越过 git 根。
 - Skill 文件格式有误时目前直接忽略，不会提示用户。
+  - 已由 issue #163 解决：诊断以 JSON 单行写入宿主日志，同一进程内同一路径和消息只记一次；协议不变。

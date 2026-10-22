@@ -7,7 +7,7 @@ import { once } from "node:events";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type ConversationId } from "@earendil-works/pi-durable";
@@ -66,15 +66,23 @@ async function writeSkill(dir: string, name: string, description: string, extra 
   await writeFile(join(dir, name, "SKILL.md"), SKILL(name, description, extra));
 }
 
-/** A project dir with committed `committed` project skills. */
-async function initProject(path: string, committed: string[]): Promise<void> {
+async function initRepo(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
   await run("git", ["-C", path, "init", "-b", "main"]);
+}
+
+async function commitAll(path: string): Promise<void> {
+  await run("git", ["-C", path, "add", "-A"]);
+  await run("git", ["-C", path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "init"]);
+}
+
+/** A project dir with committed `committed` project skills. */
+async function initProject(path: string, committed: string[]): Promise<void> {
+  await initRepo(path);
   for (const name of committed) {
     await writeSkill(join(path, ".agents", "skills"), name, `Project ${name} steps`);
   }
-  await run("git", ["-C", path, "add", "-A"]);
-  await run("git", ["-C", path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "init"]);
+  await commitAll(path);
 }
 
 /** Discovery order inside an entry is upstream's; what matters is which names list, and their source. */
@@ -101,6 +109,61 @@ describe("listSkills", () => {
     expect(namesOf(listing)).toEqual(["deploy", "review"]);
     expect(listing.skills[0]).toEqual({ name: "deploy", description: "Project deploy steps", source: "project" });
     expect(listing.skills[1]).toEqual({ name: "review", description: "User review steps", source: "user" });
+  });
+
+  it("lists every project layer up to the git root, nearest first on a name collision", async () => {
+    const repo = await tempDir();
+    defer(repo.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    const project = join(repo.path, "apps", "desk");
+    await mkdir(project, { recursive: true });
+    await initProject(repo.path, ["router", "shared"]);
+    await writeSkill(join(repo.path, "apps", ".agents", "skills"), "shared", "Middle shared steps");
+    await writeSkill(join(project, ".agents", "skills"), "local", "Project local steps");
+
+    const host = await startFauxHost(defer, { projects: [project], agentsHome: agentsHome.path });
+    const raw = await socketTo(host);
+
+    const listing = skillsOf(await call(raw, "listSkills", { scope: { kind: "project", path: project, checkout: "project" } }));
+    expect(sortedNames(listing)).toEqual(["local", "router", "shared"]);
+    expect(listing.skills.find((skill) => skill.name === "shared")).toMatchObject({
+      description: "Middle shared steps",
+      source: "project",
+    });
+
+    // The prompt section uses the same loader, so it sees exactly these names.
+    const promptSkills = scopedSkills(project, agentsHome.path);
+    expect(promptSkills.map((scoped) => scoped.skill.name).sort()).toEqual(["local", "router", "shared"]);
+    expect(promptSkills.find((scoped) => scoped.skill.name === "shared")?.skill.description).toBe("Middle shared steps");
+  });
+
+  it("stops at the git root instead of reading an ancestor's .agents/skills", async () => {
+    const parent = await tempDir();
+    defer(parent.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    await writeSkill(join(parent.path, ".agents", "skills"), "outside", "Outside steps");
+    const repo = join(parent.path, "repo");
+    const project = join(repo, "app");
+    await mkdir(project, { recursive: true });
+    await initRepo(repo);
+    await writeSkill(join(repo, ".agents", "skills"), "inside", "Inside steps");
+
+    expect(scopedSkills(project, agentsHome.path).map((scoped) => scoped.skill.name)).toEqual(["inside"]);
+  });
+
+  it("reads only the project directory when it is outside git", async () => {
+    const parent = await tempDir();
+    defer(parent.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    const project = join(parent.path, "project");
+    await mkdir(project, { recursive: true });
+    await writeSkill(join(parent.path, ".agents", "skills"), "ancestor", "Ancestor steps");
+    await writeSkill(join(project, ".agents", "skills"), "local", "Local steps");
+
+    expect(scopedSkills(project, agentsHome.path).map((scoped) => scoped.skill.name)).toEqual(["local"]);
   });
 
   it("keeps a project's disabled skill shadowing the user's, and drops both", async () => {
@@ -162,6 +225,42 @@ describe("listSkills", () => {
 
     const live = skillsOf(await call(raw, "listSkills", { scope: { kind: "project", path: project.path, checkout: "project" } }));
     expect(sortedNames(live)).toEqual(["deploy", "draft", "review"]);
+  });
+
+  it("for a worktree checkout keeps committed skills from every layer up to the git root", async () => {
+    const repo = await tempDir();
+    defer(repo.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    const project = join(repo.path, "apps", "desk");
+    await mkdir(project, { recursive: true });
+    await initRepo(repo.path);
+    const rootSkills = join(repo.path, ".agents", "skills");
+    const middleSkills = join(repo.path, "apps", ".agents", "skills");
+    const localSkills = join(project, ".agents", "skills");
+    await writeSkill(rootSkills, "committed-root", "Committed root steps");
+    await writeSkill(middleSkills, "committed-middle", "Committed middle steps");
+    await writeSkill(localSkills, "committed-local", "Committed local steps");
+    await commitAll(repo.path);
+    await writeSkill(rootSkills, "draft-root", "Uncommitted root steps");
+    await writeSkill(middleSkills, "draft-middle", "Uncommitted middle steps");
+    await writeSkill(localSkills, "draft-local", "Uncommitted local steps");
+
+    const host = await startFauxHost(defer, { projects: [project], agentsHome: agentsHome.path });
+    const raw = await socketTo(host);
+
+    const worktree = skillsOf(await call(raw, "listSkills", { scope: { kind: "project", path: project, checkout: "worktree" } }));
+    expect(sortedNames(worktree)).toEqual(["committed-local", "committed-middle", "committed-root"]);
+
+    const live = skillsOf(await call(raw, "listSkills", { scope: { kind: "project", path: project, checkout: "project" } }));
+    expect(sortedNames(live)).toEqual([
+      "committed-local",
+      "committed-middle",
+      "committed-root",
+      "draft-local",
+      "draft-middle",
+      "draft-root",
+    ]);
   });
 
   it("treats a project outside git like checkout project", async () => {
@@ -253,6 +352,41 @@ describe("listSkills", () => {
     await rm(project.path, { recursive: true, force: true });
     const gone = await call(raw, "listSkills", { scope: { kind: "project", path: project.path, checkout: "project" } });
     expect(gone).toMatchObject({ ok: false });
+  });
+
+  it("writes a malformed skill's diagnostics once per process", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    const broken = join(project.path, ".agents", "skills", "broken", "SKILL.md");
+    await mkdir(join(project.path, ".agents", "skills", "broken"), { recursive: true });
+    await writeFile(broken, "not frontmatter\n");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    defer(() => errors.mockRestore());
+
+    // The prompt reloads on every request; the same broken file must not log twice.
+    scopedSkills(project.path, agentsHome.path);
+    scopedSkills(project.path, agentsHome.path);
+
+    const logged: Record<string, unknown>[] = [];
+    for (const call of errors.mock.calls) {
+      const line = call[0];
+      if (typeof line !== "string") continue;
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.event === "skill") logged.push(parsed);
+      } catch {
+        // Some other single-line log format; not this test's concern.
+      }
+    }
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      event: "skill",
+      level: "warning",
+      path: broken,
+      message: "description is required",
+    });
   });
 
   it("answers an empty list when the skills dirs are absent or their files invalid", async () => {
