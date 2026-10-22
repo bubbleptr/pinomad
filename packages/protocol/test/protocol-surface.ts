@@ -1,13 +1,14 @@
-// Protocol surface snapshot (issue #165, ADR-0018): extract the online types
-// with the TypeScript compiler API, normalize them, and keep an append-only
-// history. This lives under test/ because packages/protocol/src must stay
-// browser-safe (ADR-0024); only the test runner needs the compiler.
+// Protocol surface snapshot (issue #165, ADR-0018): collect the online types
+// with the TypeScript compiler API, print each declaration in a normalized
+// form, and keep an append-only history. This lives under test/ because
+// packages/protocol/src must stay browser-safe (ADR-0024).
+import { createHash } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ts from "typescript";
 import { CALL_SINCE, FEATURE_SINCE, HOST_STREAMS, PROTOCOL } from "../src/frames.ts";
 
-export type Json = null | boolean | number | string | Json[] | { readonly [key: string]: Json };
+export type SurfaceText = Readonly<Record<string, string>>;
 
 export interface ProtocolGateTables {
   readonly call: Readonly<Record<string, number>>;
@@ -15,13 +16,23 @@ export interface ProtocolGateTables {
   readonly feature: Readonly<Record<string, number>>;
 }
 
-export interface ProtocolSurfaceRecord {
+export interface ProtocolSurfaceBase {
   readonly protocol: { readonly major: number; readonly minor: number };
   readonly calls: readonly string[];
   readonly streams: readonly string[];
   readonly gates: ProtocolGateTables;
-  readonly surface: Readonly<Record<string, Json>>;
 }
+
+/** The newest record carries the full surface; older records keep only its hash. */
+export interface ProtocolSurfaceEntry extends ProtocolSurfaceBase {
+  readonly surface: SurfaceText;
+}
+
+export interface ProtocolSurfaceArchive extends ProtocolSurfaceBase {
+  readonly surfaceHash: string;
+}
+
+export type ProtocolSurfaceRecord = ProtocolSurfaceEntry | ProtocolSurfaceArchive;
 
 export interface ProtocolSurfaceHistory {
   readonly history: readonly ProtocolSurfaceRecord[];
@@ -35,8 +46,8 @@ const CONFIG_PATH = resolve(HERE, "../tsconfig.json");
 export const SURFACE_PATH = resolve(HERE, "fixtures/protocol-surface.json");
 
 /**
- * The online roots. Presentation schemas are values, so they are followed
- * through their initializers into the nested schemas (for example
+ * The online roots. Presentation schemas are values, so the reference walk
+ * follows their initializers into the nested schemas (for example
  * TodoSchema -> TodoItemSchema).
  */
 const ROOTS = [
@@ -57,6 +68,7 @@ interface ProgramSources {
 }
 
 const compareName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const printer = ts.createPrinter({ removeComments: true });
 
 /** The protocol package's own sources only; test files never declare the wire. */
 function isProtocolFile(file: string): boolean {
@@ -156,42 +168,129 @@ function isProtocolDeclaration(node: ts.Node): boolean {
   return isProtocolFile(node.getSourceFile().fileName);
 }
 
-function symbolDeclaration(node: ts.Node, checker: ts.TypeChecker): ts.Declaration | undefined {
-  let symbol = checker.getSymbolAtLocation(node);
-  if (symbol === undefined) return undefined;
-  if ((symbol.flags & ts.SymbolFlags.Alias) !== 0) {
-    try {
-      symbol = checker.getAliasedSymbol(symbol);
-    } catch {
-      return undefined;
-    }
+function nodeSortText(node: ts.Node, sourceFile: ts.SourceFile): string {
+  if (
+    ts.isPropertyAssignment(node)
+    || ts.isPropertySignature(node)
+    || ts.isPropertyDeclaration(node)
+    || ts.isMethodSignature(node)
+    || ts.isMethodDeclaration(node)
+  ) {
+    return node.name.getText(sourceFile);
   }
-  return symbol.declarations?.find(isProtocolDeclaration);
+  return node.getText(sourceFile);
 }
 
-function propertyName(name: ts.PropertyName): string {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
-  if (ts.isPrivateIdentifier(name)) return "#" + name.text;
-  return name.getText();
+function sortedNodes<T extends ts.Node>(nodes: ts.NodeArray<T>, sourceFile: ts.SourceFile): ts.NodeArray<T> {
+  const sorted = [...nodes].sort((a, b) => compareName(nodeSortText(a, sourceFile), nodeSortText(b, sourceFile)));
+  return ts.factory.createNodeArray(sorted, nodes.hasTrailingComma);
 }
 
-function compareJson(a: Json, b: Json): number {
-  return compareName(JSON.stringify(a), JSON.stringify(b));
+/**
+ * Normalize a declaration for printing: drop readonly, sort object members
+ * and union members, and leave references as names. The printer then handles
+ * every syntax the protocol grows into, including initializer expressions.
+ */
+function surfaceTransformer(sourceFile: ts.SourceFile): ts.TransformerFactory<ts.Node> {
+  return (context) => {
+    const visitor: ts.Visitor = (node) => {
+      if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+        return ts.visitNode(node.type, visitor) ?? node.type;
+      }
+      if (ts.isMappedTypeNode(node) && node.readonlyToken !== undefined) {
+        return ts.visitEachChild(
+          ts.factory.updateMappedTypeNode(node, undefined, node.typeParameter, node.nameType, node.questionToken, node.type, node.members),
+          visitor,
+          context,
+        );
+      }
+      if (ts.canHaveModifiers(node)) {
+        const modifiers = ts.getModifiers(node);
+        if (modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) {
+          const withoutReadonly = modifiers.filter((modifier) => modifier.kind !== ts.SyntaxKind.ReadonlyKeyword);
+          return ts.visitEachChild(ts.factory.replaceModifiers(node, withoutReadonly), visitor, context);
+        }
+      }
+      if (ts.isUnionTypeNode(node)) {
+        return ts.visitEachChild(ts.factory.updateUnionTypeNode(node, sortedNodes(node.types, sourceFile)), visitor, context);
+      }
+      if (
+        ts.isCallExpression(node)
+        && ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression)
+        && node.expression.expression.text === "Type"
+        && node.expression.name.text === "Union"
+      ) {
+        const value = node.arguments[0];
+        if (value !== undefined && ts.isArrayLiteralExpression(value)) {
+          const sorted = ts.factory.updateArrayLiteralExpression(value, sortedNodes(value.elements, sourceFile));
+          return ts.visitEachChild(
+            ts.factory.updateCallExpression(node, node.expression, node.typeArguments, [sorted]),
+            visitor,
+            context,
+          );
+        }
+      }
+      if (ts.isTypeLiteralNode(node)) {
+        return ts.visitEachChild(ts.factory.updateTypeLiteralNode(node, sortedNodes(node.members, sourceFile)), visitor, context);
+      }
+      if (ts.isInterfaceDeclaration(node)) {
+        return ts.visitEachChild(
+          ts.factory.updateInterfaceDeclaration(
+            node,
+            node.modifiers,
+            node.name,
+            node.typeParameters,
+            node.heritageClauses,
+            sortedNodes(node.members, sourceFile),
+          ),
+          visitor,
+          context,
+        );
+      }
+      if (ts.isObjectLiteralExpression(node)) {
+        return ts.visitEachChild(
+          ts.factory.updateObjectLiteralExpression(node, sortedNodes(node.properties, sourceFile)),
+          visitor,
+          context,
+        );
+      }
+      if (ts.isClassDeclaration(node)) {
+        return ts.visitEachChild(
+          ts.factory.updateClassDeclaration(
+            node,
+            node.modifiers,
+            node.name,
+            node.typeParameters,
+            node.heritageClauses,
+            sortedNodes(node.members, sourceFile),
+          ),
+          visitor,
+          context,
+        );
+      }
+      return ts.visitEachChild(node, visitor, context);
+    };
+    return (root) => ts.visitNode(root, visitor) as ts.Node;
+  };
 }
 
-function sortedJson(values: readonly Json[]): Json[] {
-  const distinct = new Map<string, Json>();
-  for (const value of values) distinct.set(JSON.stringify(value), value);
-  return [...distinct.values()].sort(compareJson);
-}
-
-interface Serializer {
-  type(node: ts.TypeNode): Json;
-  expression(node: ts.Expression): Json;
+function printDeclaration(declaration: ts.Declaration): string {
+  const sourceFile = declaration.getSourceFile();
+  const parent = declaration.parent;
+  const statement = ts.isVariableDeclaration(declaration) && ts.isVariableStatement(parent.parent)
+    ? parent.parent
+    : declaration;
+  const result = ts.transform(statement, [surfaceTransformer(sourceFile)]);
+  try {
+    return printer.printNode(ts.EmitHint.Unspecified, result.transformed[0]!, sourceFile).trim();
+  } finally {
+    result.dispose();
+  }
 }
 
 /** Extract the current protocol surface. sources lets tests mutate a file in memory. */
-export function extractProtocolSurface(options: { readonly sources?: ReadonlyMap<string, string> } = {}): ProtocolSurfaceRecord {
+export function extractProtocolSurface(options: { readonly sources?: ReadonlyMap<string, string> } = {}): ProtocolSurfaceEntry {
   const { program, rootNames } = createProgram(options.sources);
   const checker = program.getTypeChecker();
   const sourceFiles = new Map<string, ts.SourceFile>();
@@ -200,407 +299,54 @@ export function extractProtocolSurface(options: { readonly sources?: ReadonlyMap
     if (source !== undefined) sourceFiles.set(resolve(file), source);
   }
 
-  const declarations = new Map<string, Json>();
-  const origin = new Map<string, ts.Declaration>();
+  const collected = new Map<string, ts.Declaration>();
   const active = new Set<string>();
+
+  const local = (node: ts.Node): ts.Declaration | undefined => {
+    let symbol = checker.getSymbolAtLocation(node);
+    if (symbol === undefined) return undefined;
+    if ((symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+      try {
+        symbol = checker.getAliasedSymbol(symbol);
+      } catch {
+        return undefined;
+      }
+    }
+    const declaration = symbol.declarations?.find(isProtocolDeclaration);
+    return declaration === undefined ? undefined : topLevelDeclaration(declaration);
+  };
 
   const include = (declaration: ts.Declaration): string => {
     const name = declName(declaration);
     if (name === undefined) throw new Error("protocol surface reached an unnamed declaration");
-    const prior = origin.get(name);
+    const prior = collected.get(name);
     if (prior !== undefined) {
       if (prior !== declaration) throw new Error("two protocol declarations share the name " + name);
       return name;
     }
     if (active.has(name)) return name;
     active.add(name);
-    declarations.set(name, serializeDeclaration(declaration));
-    origin.set(name, declaration);
+    collected.set(name, declaration);
+    visit(declaration);
     active.delete(name);
     return name;
   };
 
-  const local = (node: ts.Node): ts.Declaration | undefined => {
-    const declaration = symbolDeclaration(node, checker);
-    if (declaration === undefined) return undefined;
-    return ts.isTypeParameterDeclaration(declaration) ? declaration : topLevelDeclaration(declaration);
-  };
-
-  const reference = (node: ts.Node, args: ts.NodeArray<ts.TypeNode> | undefined, externalName: string): Json => {
-    const declaration = local(node);
-    if (declaration === undefined) {
-      return {
-        kind: "external",
-        name: externalName,
-        ...(args === undefined ? {} : { arguments: args.map((arg) => serializer.type(arg)) }),
-      };
-    }
-    if (ts.isTypeParameterDeclaration(declaration)) {
-      return {
-        kind: "typeParameter",
-        name: declaration.name.text,
-        ...(args === undefined ? {} : { arguments: args.map((arg) => serializer.type(arg)) }),
-      };
-    }
-    return {
-      kind: "ref",
-      name: include(declaration),
-      ...(args === undefined ? {} : { arguments: args.map((arg) => serializer.type(arg)) }),
-    };
-  };
-
-  const typeParameter = (node: ts.TypeParameterDeclaration): Json => ({
-    name: node.name.text,
-    ...(node.constraint === undefined ? {} : { constraint: serializer.type(node.constraint) }),
-    ...(node.default === undefined ? {} : { default: serializer.type(node.default) }),
-  });
-
-  const signature = (node: ts.SignatureDeclarationBase): { readonly [key: string]: Json } => ({
-    ...(node.typeParameters === undefined ? {} : { typeParameters: node.typeParameters.map(typeParameter) }),
-    parameters: node.parameters.map((parameter) => ({
-      name: parameter.name.getText(),
-      optional: parameter.questionToken !== undefined,
-      rest: parameter.dotDotDotToken !== undefined,
-      type: parameter.type === undefined ? { kind: "unknown" } : serializer.type(parameter.type),
-    })),
-    returns: node.type === undefined ? { kind: "unknown" } : serializer.type(node.type),
-  });
-
-  const member = (node: ts.TypeElement | ts.ClassElement): Json => {
-    if (ts.isPropertySignature(node) || ts.isPropertyDeclaration(node)) {
-      return {
-        name: propertyName(node.name),
-        optional: node.questionToken !== undefined,
-        type: node.type === undefined ? { kind: "unknown" } : serializer.type(node.type),
-      };
-    }
-    if (ts.isMethodSignature(node) || ts.isMethodDeclaration(node)) {
-      return { name: propertyName(node.name), optional: node.questionToken !== undefined, function: signature(node) };
-    }
-    if (ts.isCallSignatureDeclaration(node)) return { kind: "call", function: signature(node) };
-    if (ts.isConstructSignatureDeclaration(node)) return { kind: "construct", function: signature(node) };
-    if (ts.isIndexSignatureDeclaration(node)) {
-      return {
-        kind: "index",
-        key: node.parameters[0]?.type === undefined ? { kind: "unknown" } : serializer.type(node.parameters[0].type),
-        type: node.type === undefined ? { kind: "unknown" } : serializer.type(node.type),
-      };
-    }
-    if (ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
-      return {
-        name: propertyName(node.name),
-        accessor: ts.isGetAccessorDeclaration(node) ? "get" : "set",
-        type: node.type === undefined ? { kind: "unknown" } : serializer.type(node.type),
-      };
-    }
-    throw new Error("unsupported protocol member " + ts.SyntaxKind[node.kind]);
-  };
-
-  const members = (nodes: ts.NodeArray<ts.TypeElement | ts.ClassElement>): Json[] =>
-    nodes.map(member).sort(compareJson);
-
-  const serializeDeclaration = (declaration: ts.Declaration): Json => {
-    if (ts.isInterfaceDeclaration(declaration)) {
-      return {
-        kind: "interface",
-        extends: (declaration.heritageClauses ?? [])
-          .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
-          .flatMap((clause) => clause.types.map((type) => reference(type.expression, type.typeArguments, type.expression.getText())))
-          .sort(compareJson),
-        members: members(declaration.members),
-      };
-    }
-    if (ts.isTypeAliasDeclaration(declaration)) {
-      return { kind: "type", type: serializer.type(declaration.type) };
-    }
-    if (ts.isClassDeclaration(declaration)) {
-      return {
-        kind: "class",
-        extends: (declaration.heritageClauses ?? [])
-          .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
-          .flatMap((clause) => clause.types.map((type) => reference(type.expression, type.typeArguments, type.expression.getText()))),
-        implements: (declaration.heritageClauses ?? [])
-          .filter((clause) => clause.token === ts.SyntaxKind.ImplementsKeyword)
-          .flatMap((clause) => clause.types.map((type) => reference(type.expression, type.typeArguments, type.expression.getText()))),
-        members: members(declaration.members),
-      };
-    }
-    if (ts.isEnumDeclaration(declaration)) {
-      return {
-        kind: "enum",
-        members: declaration.members
-          .map((entry) => ({
-            name: entry.name.getText(),
-            ...(entry.initializer === undefined ? {} : { value: serializer.expression(entry.initializer) }),
-          }))
-          .sort(compareJson),
-      };
-    }
-    if (ts.isVariableDeclaration(declaration)) {
-      if (!ts.isIdentifier(declaration.name)) throw new Error("protocol surface reached a destructured variable");
-      return {
-        kind: "value",
-        ...(declaration.type === undefined ? {} : { declared: serializer.type(declaration.type) }),
-        initializer: declaration.initializer === undefined ? null : serializer.expression(declaration.initializer),
-      };
-    }
-    if (ts.isFunctionDeclaration(declaration)) {
-      return { kind: "function", ...signature(declaration) };
-    }
-    throw new Error("unsupported protocol declaration " + ts.SyntaxKind[declaration.kind]);
-  };
-
-  const literal = (node: ts.Node): Json => {
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-    if (ts.isNumericLiteral(node)) return Number(node.text);
-    if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
-    if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
-    if (node.kind === ts.SyntaxKind.NullKeyword) return null;
-    return { kind: "syntax", text: normalizeText(node.getText()) };
-  };
-
-  const tupleElement = (node: ts.TypeNode | ts.NamedTupleMember): Json => {
-    if (ts.isNamedTupleMember(node)) {
-      return {
-        name: node.name.text,
-        optional: node.questionToken !== undefined,
-        rest: node.dotDotDotToken !== undefined,
-        type: serializer.type(node.type),
-      };
-    }
-    if (ts.isOptionalTypeNode(node)) return { optional: true, type: serializer.type(node.type) };
-    if (ts.isRestTypeNode(node)) return { rest: true, type: serializer.type(node.type) };
-    return serializer.type(node);
-  };
-
-  const serializeType = (node: ts.TypeNode): Json => {
-    switch (node.kind) {
-      case ts.SyntaxKind.StringKeyword: return { kind: "primitive", name: "string" };
-      case ts.SyntaxKind.NumberKeyword: return { kind: "primitive", name: "number" };
-      case ts.SyntaxKind.BooleanKeyword: return { kind: "primitive", name: "boolean" };
-      case ts.SyntaxKind.BigIntKeyword: return { kind: "primitive", name: "bigint" };
-      case ts.SyntaxKind.SymbolKeyword: return { kind: "primitive", name: "symbol" };
-      case ts.SyntaxKind.ObjectKeyword: return { kind: "primitive", name: "object" };
-      case ts.SyntaxKind.UndefinedKeyword: return { kind: "primitive", name: "undefined" };
-      case ts.SyntaxKind.NeverKeyword: return { kind: "primitive", name: "never" };
-      case ts.SyntaxKind.UnknownKeyword: return { kind: "primitive", name: "unknown" };
-      case ts.SyntaxKind.AnyKeyword: return { kind: "primitive", name: "any" };
-      case ts.SyntaxKind.VoidKeyword: return { kind: "primitive", name: "void" };
-      case ts.SyntaxKind.ThisType: return { kind: "this" };
-      default: break;
-    }
-    if (ts.isParenthesizedTypeNode(node)) return serializer.type(node.type);
-    if (ts.isLiteralTypeNode(node)) return { kind: "literal", value: literal(node.literal) };
-    if (ts.isUnionTypeNode(node)) return { kind: "union", types: sortedJson(node.types.map((type) => serializer.type(type))) };
-    if (ts.isIntersectionTypeNode(node)) return { kind: "intersection", types: sortedJson(node.types.map((type) => serializer.type(type))) };
-    if (ts.isArrayTypeNode(node)) return { kind: "array", element: serializer.type(node.elementType) };
-    if (ts.isTupleTypeNode(node)) return { kind: "tuple", elements: node.elements.map(tupleElement) };
-    if (ts.isTypeOperatorNode(node)) {
-      if (node.operator === ts.SyntaxKind.ReadonlyKeyword) return serializer.type(node.type);
-      if (node.operator === ts.SyntaxKind.KeyOfKeyword) return { kind: "keyof", type: serializer.type(node.type) };
-      if (node.operator === ts.SyntaxKind.UniqueKeyword) return { kind: "unique", type: serializer.type(node.type) };
-      throw new Error("unsupported type operator " + ts.SyntaxKind[node.operator]);
-    }
-    if (ts.isTypeQueryNode(node)) {
-      const declaration = local(node.exprName);
-      return declaration === undefined
-        ? { kind: "typeof", name: node.exprName.getText() }
-        : { kind: "typeof", name: include(declaration) };
-    }
-    if (ts.isTypeReferenceNode(node)) {
-      return reference(node.typeName, node.typeArguments, node.typeName.getText());
-    }
-    if (ts.isIndexedAccessTypeNode(node)) {
-      return { kind: "indexed", object: serializer.type(node.objectType), index: serializer.type(node.indexType) };
-    }
-    if (ts.isMappedTypeNode(node)) {
-      return {
-        kind: "mapped",
-        parameter: node.typeParameter.name.text,
-        constraint: node.typeParameter.constraint === undefined ? { kind: "unknown" } : serializer.type(node.typeParameter.constraint),
-        type: node.type === undefined ? { kind: "unknown" } : serializer.type(node.type),
-        optional: node.questionToken !== undefined,
-      };
-    }
-    if (ts.isConditionalTypeNode(node)) {
-      return {
-        kind: "conditional",
-        check: serializer.type(node.checkType),
-        extends: serializer.type(node.extendsType),
-        true: serializer.type(node.trueType),
-        false: serializer.type(node.falseType),
-      };
-    }
-    if (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
-      return { kind: ts.isFunctionTypeNode(node) ? "function" : "constructor", ...signature(node) };
-    }
-    if (ts.isTypeLiteralNode(node)) return { kind: "object", members: members(node.members) };
-    if (ts.isTypePredicateNode(node)) {
-      return {
-        kind: "predicate",
-        parameter: node.parameterName.getText(),
-        type: node.type === undefined ? null : serializer.type(node.type),
-      };
-    }
-    if (ts.isImportTypeNode(node)) {
-      return {
-        kind: "import",
-        argument: serializer.type(node.argument),
-        qualifier: node.qualifier === undefined ? null : node.qualifier.getText(),
-      };
-    }
-    if (ts.isTemplateLiteralTypeNode(node)) {
-      return {
-        kind: "template",
-        head: node.head.text,
-        spans: node.templateSpans.map((span) => ({ literal: span.literal.text, type: serializer.type(span.type) })),
-      };
-    }
-    if (ts.isInferTypeNode(node)) return { kind: "infer", name: node.typeParameter.name.text };
-    throw new Error("unsupported protocol type " + ts.SyntaxKind[node.kind] + " at " + node.getText().slice(0, 80));
-  };
-
-  const typeboxMethod = (expression: ts.Expression): string | undefined => {
-    if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.expression)) return undefined;
-    return expression.expression.text === "Type" ? expression.name.text : undefined;
-  };
-
-  const isTypeboxCall = (node: ts.Expression, method: string): node is ts.CallExpression =>
-    ts.isCallExpression(node) && typeboxMethod(node.expression) === method;
-
-  const objectMembers = (properties: ts.NodeArray<ts.ObjectLiteralElementLike>): Json[] =>
-    properties.map((property): Json => {
-      if (ts.isPropertyAssignment(property)) {
-        return { name: propertyName(property.name), value: serializer.expression(property.initializer) };
-      }
-      if (ts.isShorthandPropertyAssignment(property)) {
-        return { name: property.name.text, value: serializer.expression(property.name) };
-      }
-      if (ts.isSpreadAssignment(property)) {
-        return { kind: "spread", value: serializer.expression(property.expression) };
-      }
-      if (ts.isMethodDeclaration(property)) {
-        return { name: propertyName(property.name), function: signature(property) };
-      }
-      throw new Error("unsupported object member " + ts.SyntaxKind[property.kind]);
-    }).sort(compareJson);
-
-  const schemaMembers = (properties: ts.NodeArray<ts.ObjectLiteralElementLike>): Json[] =>
-    properties.map((property): Json => {
-      if (!ts.isPropertyAssignment(property)) throw new Error("schema object members must be property assignments");
-      const optional = isTypeboxCall(property.initializer, "Optional");
-      return {
-        name: propertyName(property.name),
-        optional,
-        type: serializer.expression(optional ? (property.initializer as ts.CallExpression).arguments[0]! : property.initializer),
-      };
-    }).sort(compareJson);
-
-  const serializeCall = (node: ts.CallExpression): Json => {
-    const method = typeboxMethod(node.expression);
-    const argument = (index: number): Json => {
-      const value = node.arguments[index];
-      return value === undefined ? { kind: "unknown" } : serializer.expression(value);
-    };
-    if (method === "Object") {
-      const value = node.arguments[0];
-      if (value === undefined || !ts.isObjectLiteralExpression(value)) return { kind: "call", callee: "Type.Object", arguments: [] };
-      return { kind: "object", members: schemaMembers(value.properties) };
-    }
-    if (method === "Array") {
-      return {
-        kind: "array",
-        element: argument(0),
-        ...(node.arguments[1] === undefined ? {} : { options: serializer.expression(node.arguments[1]) }),
-      };
-    }
-    if (method === "Optional") return { kind: "optional", type: argument(0) };
-    if (method === "Union") {
-      const value = node.arguments[0];
-      if (value === undefined || !ts.isArrayLiteralExpression(value)) {
-        return { kind: "call", callee: "Type.Union", arguments: node.arguments.map((entry) => serializer.expression(entry)) };
-      }
-      return { kind: "union", types: sortedJson(value.elements.map((entry) => serializer.expression(entry))) };
-    }
-    if (method === "Literal") return { kind: "literal", value: argument(0) };
-    if (method === "String") return { kind: "string", ...(node.arguments[0] === undefined ? {} : { options: argument(0) }) };
-    if (method === "Number") return { kind: "number", ...(node.arguments[0] === undefined ? {} : { options: argument(0) }) };
-    if (method === "Boolean") return { kind: "boolean" };
-    if (method === "Unknown") return { kind: "unknown" };
-    if (method === "Any") return { kind: "any" };
-    if (method === "Null") return { kind: "null" };
-    if (method === "Undefined") return { kind: "undefined" };
-    if (method === "Never") return { kind: "never" };
-    if (method !== undefined) {
-      return { kind: "call", callee: "Type." + method, arguments: node.arguments.map((entry) => serializer.expression(entry)) };
-    }
-    return {
-      kind: "call",
-      callee: serializer.expression(node.expression),
-      ...(node.typeArguments === undefined ? {} : { typeArguments: node.typeArguments.map((entry) => serializer.type(entry)) }),
-      arguments: node.arguments.map((entry) => serializer.expression(entry)),
-    };
-  };
-
-  const serializeExpression = (node: ts.Expression): Json => {
-    if (ts.isParenthesizedExpression(node)) return serializer.expression(node.expression);
-    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node)) {
-      return serializer.expression(node.expression);
-    }
-    if (ts.isObjectLiteralExpression(node)) return { kind: "object", members: objectMembers(node.properties) };
-    if (ts.isArrayLiteralExpression(node)) return { kind: "array", elements: node.elements.map((entry) => serializer.expression(entry)) };
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-    if (ts.isNumericLiteral(node)) return Number(node.text);
-    if (ts.isBigIntLiteral(node)) return node.text;
-    if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
-    if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
-    if (node.kind === ts.SyntaxKind.NullKeyword) return null;
+  function visit(node: ts.Node): void {
     if (ts.isIdentifier(node)) {
-      if (node.text === "undefined") return { kind: "undefined" };
       const declaration = local(node);
-      if (declaration === undefined) return { kind: "identifier", name: node.text };
-      return { kind: "ref", name: include(declaration) };
+      if (declaration !== undefined) include(declaration);
     }
-    if (ts.isPropertyAccessExpression(node)) {
-      return { kind: "property", object: serializer.expression(node.expression), name: node.name.text };
-    }
-    if (ts.isCallExpression(node)) return serializeCall(node);
-    if (ts.isNewExpression(node)) {
-      return {
-        kind: "new",
-        callee: serializer.expression(node.expression),
-        arguments: (node.arguments ?? []).map((entry) => serializer.expression(entry)),
-      };
-    }
-    if (ts.isPrefixUnaryExpression(node)) {
-      return { kind: "unary", operator: ts.tokenToString(node.operator) ?? String(node.operator), value: serializer.expression(node.operand) };
-    }
-    if (ts.isBinaryExpression(node)) {
-      return {
-        kind: "binary",
-        operator: node.operatorToken.getText(),
-        left: serializer.expression(node.left),
-        right: serializer.expression(node.right),
-      };
-    }
-    if (ts.isTemplateExpression(node)) {
-      return {
-        kind: "template",
-        head: node.head.text,
-        spans: node.templateSpans.map((span) => ({ literal: span.literal.text, value: serializer.expression(span.expression) })),
-      };
-    }
-    return { kind: "syntax", text: normalizeText(node.getText()) };
-  };
-
-  const serializer: Serializer = {
-    type: serializeType,
-    expression: serializeExpression,
-  };
+    ts.forEachChild(node, visit);
+  }
 
   for (const root of ROOTS) include(findRoot(sourceFiles, root.file, root.name));
 
-  const surface = Object.fromEntries([...declarations.entries()].sort(([a], [b]) => compareName(a, b)));
+  const surface = Object.fromEntries(
+    [...collected.entries()]
+      .map(([name, declaration]) => [name, printDeclaration(declaration)] as const)
+      .sort(([a], [b]) => compareName(a, b)),
+  );
   return {
     protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor },
     calls: Object.keys(CALL_SINCE).sort(compareName),
@@ -616,10 +362,6 @@ export function extractProtocolSurface(options: { readonly sources?: ReadonlyMap
 
 function sortedRecord(entries: readonly (readonly [string, number])[]): Readonly<Record<string, number>> {
   return Object.fromEntries([...entries].sort(([a], [b]) => compareName(a, b)));
-}
-
-function normalizeText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 function protocolLabel(protocol: { readonly major: number; readonly minor: number }): string {
@@ -641,7 +383,7 @@ function isSortedUnique(values: readonly string[]): boolean {
   return true;
 }
 
-function validateGates(record: ProtocolSurfaceRecord): void {
+function validateGates(record: ProtocolSurfaceBase): void {
   const { major, minor } = record.protocol;
   assert(Number.isInteger(major) && major >= 0, "protocol major " + major + " is not a non-negative integer");
   assert(Number.isInteger(minor) && minor >= 0, "protocol minor " + minor + " is not a non-negative integer");
@@ -669,7 +411,31 @@ function validateGates(record: ProtocolSurfaceRecord): void {
   }
 }
 
-function validateTransition(previous: ProtocolSurfaceRecord, current: ProtocolSurfaceRecord): void {
+function hasSurface(record: ProtocolSurfaceRecord): record is ProtocolSurfaceEntry {
+  return "surface" in record;
+}
+
+function validateHistoryShape(history: readonly ProtocolSurfaceRecord[]): void {
+  history.forEach((record, index) => {
+    validateGates(record);
+    if (index === history.length - 1) {
+      assert(hasSurface(record), "the last history entry must carry the full surface");
+      assert(!("surfaceHash" in record), "the last history entry must not carry surfaceHash");
+      for (const [name, text] of Object.entries(record.surface)) {
+        assert(name.length > 0 && typeof text === "string" && text.length > 0, "surface entry " + name + " must be a non-empty string");
+      }
+      return;
+    }
+    if (hasSurface(record)) fail("only the last history entry may carry the full surface");
+    const hash = record.surfaceHash;
+    assert(
+      typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash),
+      "history entry " + protocolLabel(record.protocol) + " must carry a sha256 surfaceHash",
+    );
+  });
+}
+
+function validateTransition(previous: ProtocolSurfaceBase, current: ProtocolSurfaceBase): void {
   const from = previous.protocol;
   const to = current.protocol;
   const increased = to.major > from.major || (to.major === from.major && to.minor > from.minor);
@@ -706,39 +472,51 @@ function validateTransition(previous: ProtocolSurfaceRecord, current: ProtocolSu
 /** Validate an append-only history: increasing versions, additive gates, no same-major deletions. */
 export function validateHistory(history: readonly ProtocolSurfaceRecord[]): void {
   assert(history.length > 0, "protocol surface history is empty");
+  validateHistoryShape(history);
   history.forEach((record, index) => {
-    validateGates(record);
     if (index > 0) validateTransition(history[index - 1]!, record);
   });
 }
 
+function archive(entry: ProtocolSurfaceEntry): ProtocolSurfaceArchive {
+  const { surface, ...base } = entry;
+  return { ...base, surfaceHash: hashSurface(surface) };
+}
+
 /**
- * Append current when the protocol version moved. A changed surface at the
- * same version is refused: bump PROTOCOL first, then re-record.
+ * Append current when the protocol version moved, compacting the previous
+ * record to a hash. A changed surface at the same version is refused: bump
+ * PROTOCOL first, then re-record.
  */
-export function recordSurface(history: ProtocolSurfaceHistory, current: ProtocolSurfaceRecord): ProtocolSurfaceHistory {
+export function recordSurface(history: ProtocolSurfaceHistory, current: ProtocolSurfaceEntry): ProtocolSurfaceHistory {
   if (history.history.length === 0) {
     validateHistory([current]);
     return { history: [current] };
   }
   validateHistory(history.history);
   const last = history.history.at(-1)!;
+  if (!hasSurface(last)) fail("the last history entry must carry the full surface");
   if (stableStringify(current) === stableStringify(last)) return history;
   if (current.protocol.major === last.protocol.major && current.protocol.minor === last.protocol.minor) {
     fail(
       "protocol surface changed at " + protocolLabel(current.protocol) + " but PROTOCOL was not bumped; bump PROTOCOL before re-recording",
     );
   }
-  const next = [...history.history, current];
+  const next = [...history.history.slice(0, -1), archive(last), current];
   validateHistory(next);
   return { history: next };
 }
 
-function sortJson(value: unknown): Json {
+/** sha256 of the normalized surface, so older records can stay compact. */
+export function hashSurface(surface: SurfaceText): string {
+  return createHash("sha256").update(stableStringify(surface)).digest("hex");
+}
+
+function sortJson(value: unknown): unknown {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.map(sortJson);
   if (typeof value === "object") {
-    const out: Record<string, Json> = {};
+    const out: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort(compareName)) {
       out[key] = sortJson((value as Record<string, unknown>)[key]);
     }
