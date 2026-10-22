@@ -293,6 +293,11 @@ pub struct RemoteDurable {
     current: Option<u64>,
     side: Option<u64>,
     host_minor: u32,
+    /// Monotonic count of times the shown conversation's streams became
+    /// fresh. A boolean is not enough: the platform may coalesce the hello
+    /// snapshot (false) and the resubscribed snapshot (true) into one, and
+    /// the UI still needs a new value to trigger ref retries.
+    conversation_fresh_epoch: u64,
     hello_models: Json,
     hello_defaults: Json,
     host_version: Option<Json>,
@@ -335,6 +340,7 @@ impl RemoteDurable {
             current: None,
             side: None,
             host_minor: 0,
+            conversation_fresh_epoch: 0,
             hello_models: Json::Null,
             hello_defaults: Json::Object(Arc::new(JsonObject::new())),
             host_version: None,
@@ -390,6 +396,13 @@ impl RemoteDurable {
                 .filter(|stream| self.wanted.contains(*stream))
                 .all(|stream| self.fresh.contains(stream))
         })
+    }
+
+    /// How many times the shown conversation's streams have become fresh.
+    /// The UI retries failed refs when this changes; it does not need to
+    /// observe the false state, which snapshot coalescing may drop.
+    pub fn conversation_fresh_epoch(&self) -> u64 {
+        self.conversation_fresh_epoch
     }
 
     pub fn handle(&mut self, event: Event) -> Vec<Command> {
@@ -678,8 +691,12 @@ impl RemoteDurable {
         if !self.wanted.contains(&units) {
             return Ok(());
         }
+        let was_fresh = self.conversation_is_fresh();
         self.values.insert(units.clone(), value);
         self.fresh.insert(units.clone());
+        if !was_fresh && self.conversation_is_fresh() {
+            self.conversation_fresh_epoch += 1;
+        }
         self.refresh()?;
         // Waiters resolve after the refresh — matching the reference's
         // ordering (snapshot sets values, then resolves the waiters).
@@ -1367,6 +1384,9 @@ impl RemoteDurable {
                 self.current = Some(id);
                 if let Some(previous) = previous {
                     self.release(previous, self.side);
+                }
+                if previous != Some(id) && self.conversation_is_fresh() {
+                    self.conversation_fresh_epoch += 1;
                 }
             }
             Slot::Side => {

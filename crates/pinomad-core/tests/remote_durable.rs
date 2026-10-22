@@ -634,6 +634,8 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
     let mut h = setup();
     h.invoke(1, Call::SwitchConversation { id: 1 });
     assert!(h.remote.conversation_is_fresh());
+    let epoch = h.remote.conversation_fresh_epoch();
+    assert!(epoch > 0);
 
     // The hello re-sends the subscribe, but the host holds the fresh
     // conversation snapshot: the old view is still on screen while a ref
@@ -643,6 +645,7 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
     h.fire_timer();
     assert!(h.host.subscribes().contains(&"conversation:1".to_string()));
     assert!(!h.remote.conversation_is_fresh());
+    assert_eq!(h.remote.conversation_fresh_epoch(), epoch);
 
     h.host.held.clear();
     h.deliver(obj(&[
@@ -654,6 +657,7 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
         ])),
     ]));
     assert!(h.remote.conversation_is_fresh());
+    assert_eq!(h.remote.conversation_fresh_epoch(), epoch + 1);
 }
 
 #[test]

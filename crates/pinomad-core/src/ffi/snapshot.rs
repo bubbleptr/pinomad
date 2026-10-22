@@ -119,6 +119,10 @@ pub struct ConversationSnapshot {
     /// screen) and true when the new snapshot lands, so ref images can wait
     /// to fetch until their subscription is actually live.
     pub fresh: bool,
+    /// Monotonic freshness marker; changes whenever the shown conversation
+    /// becomes fresh on a (re)connect. The UI retries ref images on a
+    /// change, even if snapshot coalescing skipped the false state.
+    pub fresh_epoch: u64,
 }
 
 fn connection_of(view: &Json) -> ConnectionState {
@@ -300,7 +304,7 @@ fn host_of(view: &Json) -> Option<HostInfo> {
     })
 }
 
-fn conversation_of(view: &Json, fresh: bool) -> Option<ConversationSnapshot> {
+fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<ConversationSnapshot> {
     let conversation = view.get("conversation")?;
     let id = crate::json::num_key(
         conversation
@@ -362,6 +366,7 @@ fn conversation_of(view: &Json, fresh: bool) -> Option<ConversationSnapshot> {
         busy,
         context_usage,
         fresh,
+        fresh_epoch,
     })
 }
 
@@ -372,6 +377,7 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
     let empty = Json::Null;
     let organized = Organized::from_json(view.get("organized").unwrap_or(&empty));
     let fresh = remote.conversation_is_fresh();
+    let fresh_epoch = remote.conversation_fresh_epoch();
     Some(ClientSnapshot {
         version: remote.version(),
         connection: connection_of(&view),
@@ -386,6 +392,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         models: models_of(&view),
         defaults: defaults_of(&view),
         agents: agents_of(&view),
-        conversation: conversation_of(&view, fresh),
+        conversation: conversation_of(&view, fresh, fresh_epoch),
     })
 }

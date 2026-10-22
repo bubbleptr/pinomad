@@ -158,7 +158,7 @@ final class AppModel {
     /// image epoch). A connected hello alone is not enough: the host may not
     /// have rebuilt the conversation subscription yet.
     var imageEpoch: UInt64 = 0
-    private var lastConversationFresh = false
+    private var lastConversationFreshEpoch: UInt64 = 0
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
     let accountStore = KeychainAccountStore()
@@ -387,7 +387,7 @@ final class AppModel {
         snapshot = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
-        lastConversationFresh = false
+        lastConversationFreshEpoch = 0
     }
 
     /// A fresh 15-second window for this attempt. The callback carries the
@@ -438,7 +438,7 @@ final class AppModel {
         pushError = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
-        lastConversationFresh = false
+        lastConversationFreshEpoch = 0
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()
@@ -530,9 +530,9 @@ final class AppModel {
                 markAccountRejected(host)
             }
             self.snapshot = snapshot
-            let conversationFresh = snapshot.conversation?.fresh == true
-            if conversationFresh && !lastConversationFresh { imageEpoch &+= 1 }
-            lastConversationFresh = conversationFresh
+            let freshEpoch = snapshot.conversation?.freshEpoch ?? 0
+            if freshEpoch > lastConversationFreshEpoch { imageEpoch &+= 1 }
+            lastConversationFreshEpoch = freshEpoch
             if let hostKey = sessionHost?.hostKey {
                 cacheHostName(snapshot.hostName, for: hostKey)
             }
