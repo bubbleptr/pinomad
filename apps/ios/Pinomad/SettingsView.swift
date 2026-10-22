@@ -37,6 +37,23 @@ struct SettingsView: View {
                     .padding(.vertical, 6)
             }
 
+            // The failure and connecting pages reach the account only from
+            // here: the avatar lives on the list, the first-run page only
+            // shows before anything is paired.
+            Section {
+                Button {
+                    model.present(.account)
+                } label: {
+                    Label(model.accountRecord.map { "账号：\($0.username)" } ?? "登录账号",
+                          systemImage: "person.crop.circle")
+                }
+                .tint(.primary)
+            } header: {
+                Text("账号")
+            } footer: {
+                Text("登录后可以配对账号名下的宿主。")
+            }
+
             pushSection
 
             aboutSection
