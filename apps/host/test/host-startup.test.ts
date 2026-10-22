@@ -10,7 +10,7 @@ import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { startRelay } from "@pinomad/server/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
 import { writeServerConfig } from "../src/server-config.ts";
-import { freePort, openBoundAccounts, tempDir, useCleanups } from "./support.ts";
+import { freePort, openBoundAccounts, stopChild, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -21,12 +21,7 @@ it("keeps the host credential out of startup logs while local clients can connec
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     stdio: ["ignore", "pipe", "pipe"],
   });
-  defer(async () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = once(child, "exit");
-    child.kill("SIGTERM");
-    await exited;
-  });
+  defer(() => stopChild(child));
   let output = "";
   child.stdout.on("data", (chunk) => { output += String(chunk); });
   child.stderr.on("data", (chunk) => { output += String(chunk); });
@@ -73,9 +68,7 @@ describe("server.json", () => {
       "--relay",
       "https://b.example.com",
     ]);
-    defer(() => {
-      child.kill("SIGKILL");
-    });
+    defer(() => stopChild(child));
     expect(await exited).not.toBe(0);
     expect(output()).toContain("disagrees");
     expect(output()).toContain("server.json");
@@ -95,11 +88,7 @@ describe("server.json", () => {
     await writeServerConfig(data.path, { origin });
 
     const { child, output, exited } = runHost(["--faux", "x", "--data-dir", data.path, "--port", "0"]);
-    defer(async () => {
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      child.kill("SIGTERM");
-      await exited;
-    });
+    defer(() => stopChild(child));
     // The relay log line proves the whole path: read config, dial, register.
     const deadline = Date.now() + 15_000;
     while (!output().includes('"event":"relay"') || !output().includes('"status":"registered"')) {

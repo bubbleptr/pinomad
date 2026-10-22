@@ -1,7 +1,6 @@
 import { once } from "node:events";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,6 +15,7 @@ import {
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
+import { removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const hostKeys = ed25519.keygen();
@@ -28,13 +28,12 @@ afterEach(async () => {
   for (const client of clients) client.terminate();
   clients.clear();
   for (const relay of relays.splice(0)) await relay.close();
-  for (const dir of dataDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dataDirs.splice(0)) await removeTempDir(dir);
 });
 
 /** A relay whose accounts bind only `hostKeys` — every other well-signed key is a stranger. */
 async function startWithAccounts(options?: Partial<RelayOptions>): Promise<{ relay: Relay; accounts: Accounts }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "pinomad-relay-accounts-"));
-  dataDirs.push(dataDir);
+  const dataDir = await tempDir(dataDirs, "pinomad-relay-accounts-");
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: "correct horse battery" });
   accounts.joinHost({ token: accounts.createJoinToken(1).token, hostId, noisePublicKey: "A".repeat(43) });
   const relay = await startRelay({
@@ -405,8 +404,7 @@ describe("relay web client serving", () => {
   }
 
   async function webRoot(files: Record<string, string>): Promise<{ path: string }> {
-    const dir = await mkdtemp(join(tmpdir(), "pinomad-relay-web-"));
-    afterEach(() => rm(dir, { recursive: true, force: true }));
+    const dir = await tempDir(dataDirs, "pinomad-relay-web-");
     for (const [name, body] of Object.entries(files)) {
       await mkdir(join(dir, name, ".."), { recursive: true });
       await writeFile(join(dir, name), body);

@@ -3,10 +3,7 @@
 // the account binding, per-host and
 // global in-flight caps answer `retry`, and a malformed push is a protocol
 // violation like any other. Raw /host sockets stand in for hosts.
-import { mkdtemp, rm } from "node:fs/promises";
 import { once } from "node:events";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { generateKeyPairSync } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -26,6 +23,7 @@ import {
 import { openAccounts, type Accounts } from "../src/accounts.ts";
 import type { ApnsSender } from "../src/apns.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { removeTempDir, tempDir } from "./support.ts";
 import { fakeApns } from "./apns-fake.ts";
 
 const ORIGIN = "https://relay.example.com";
@@ -44,14 +42,8 @@ afterEach(async () => {
   sockets.clear();
   for (const relay of relays.splice(0)) await relay.close();
   for (const close of closers.splice(0)) await close();
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) await removeTempDir(dir);
 });
-
-async function tempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "pinomad-server-"));
-  dirs.push(dir);
-  return dir;
-}
 
 /** An ApnsSender double: scripted verdicts, no HTTP/2 anywhere. */
 function fakeApnsSender(
@@ -87,7 +79,7 @@ async function startServer(options?: {
   readonly push?: ApnsSender;
   readonly pushLimits?: { perHost?: number; total?: number };
 }): Promise<{ relay: Relay; accounts: Accounts }> {
-  const dataDir = await tempDir();
+  const dataDir = await tempDir(dirs);
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
   const relay = await startRelay({
     port: 0,
