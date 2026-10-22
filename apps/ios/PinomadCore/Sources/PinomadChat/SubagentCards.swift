@@ -148,7 +148,7 @@ extension ChatAdapter {
         }
     }
 
-    private static func conversationID(of tool: ToolItem) -> UInt64? {
+    static func conversationID(of tool: ToolItem) -> UInt64? {
         guard let detail = tool.pinomad,
               case let .subagent(conversationId, _, _, _, _) = detail
         else { return nil }

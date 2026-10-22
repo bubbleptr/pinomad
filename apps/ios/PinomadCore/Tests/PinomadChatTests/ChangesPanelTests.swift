@@ -19,7 +19,8 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
     /// the older answer must not replace the newer one.
     @Test func onlyTheNewestRequestLands() throws {
         var panel = ChangesPanel()
-        let first = panel.open(busy: false)
+        let opened = panel.open(busy: false, connected: true)
+        let first = try #require(opened)
         let refresh = panel.refresh()
         let second = try #require(refresh)
         let newer = changes("newer", [file("new.swift")])
@@ -31,7 +32,8 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
 
     @Test func aStaleFailureIsIgnored() throws {
         var panel = ChangesPanel()
-        let first = panel.open(busy: false)
+        let opened = panel.open(busy: false, connected: true)
+        let first = try #require(opened)
         let refresh = panel.refresh()
         let second = try #require(refresh)
         panel.fail(first, "older request failed")
@@ -44,9 +46,10 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
 
     /// A result arriving after the sheet closed belongs to nothing on
     /// screen; dropping it also keeps a reopen from showing stale data.
-    @Test func aLateResultAfterCloseIsDropped() {
+    @Test func aLateResultAfterCloseIsDropped() throws {
         var panel = ChangesPanel()
-        let token = panel.open(busy: false)
+        let opened = panel.open(busy: false, connected: true)
+        let token = try #require(opened)
         panel.close()
         panel.land(token, changes("late", [file("late.swift")]))
         #expect(panel.changes == nil)
@@ -55,38 +58,76 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
         #expect(panel.error == nil)
     }
 
-    /// The panel follows the Web dialog: refresh once when a run settles.
+    /// The overview follows the Web card: refresh once when a run settles.
     /// A busy value that was false on open, or unchanged false, is not a
     /// settling run and must not refetch.
     @Test func onlyTheFallingBusyEdgeRefreshes() throws {
         var panel = ChangesPanel()
-        _ = panel.open(busy: false)
-        #expect(panel.observe(busy: false) == nil)
-        #expect(panel.observe(busy: true) == nil)
-        let settledEdge = panel.observe(busy: false)
+        _ = panel.open(busy: false, connected: true)
+        #expect(panel.observe(busy: false, connected: true) == nil)
+        #expect(panel.observe(busy: true, connected: true) == nil)
+        let settledEdge = panel.observe(busy: false, connected: true)
         let settled = try #require(settledEdge)
         #expect(panel.loading)
-        #expect(panel.observe(busy: false) == nil)
-        #expect(panel.observe(busy: true) == nil)
-        let settledAgainEdge = panel.observe(busy: false)
+        #expect(panel.observe(busy: false, connected: true) == nil)
+        #expect(panel.observe(busy: true, connected: true) == nil)
+        let settledAgainEdge = panel.observe(busy: false, connected: true)
         let settledAgain = try #require(settledAgainEdge)
         #expect(settled != settledAgain)
     }
 
-    @Test func openingWhileBusySeesTheSettlingEdge() throws {
+    /// A streaming run keeps editing the checkout: opening mid-run does
+    /// not ask, the settle does.
+    @Test func openingWhileBusyWaitsForTheSettle() throws {
         var panel = ChangesPanel()
-        _ = panel.open(busy: true)
-        #expect(panel.observe(busy: true) == nil)
-        let edge = panel.observe(busy: false)
+        #expect(panel.open(busy: true, connected: true) == nil)
+        #expect(!panel.loading)
+        #expect(panel.observe(busy: true, connected: true) == nil)
+        let edge = panel.observe(busy: false, connected: true)
         _ = try #require(edge)
         #expect(panel.loading)
+    }
+
+    /// Opening offline cannot ask; the reconnect does. A reconnect also
+    /// retries after a drop, when the last answer may be stale or failed.
+    @Test func aReconnectRefreshes() throws {
+        var panel = ChangesPanel()
+        #expect(panel.open(busy: false, connected: false) == nil)
+        let reconnected = panel.observe(busy: false, connected: true)
+        _ = try #require(reconnected)
+        #expect(panel.observe(busy: false, connected: false) == nil)
+        let again = panel.observe(busy: false, connected: true)
+        _ = try #require(again)
+    }
+
+    @Test func aReconnectMidRunWaitsForTheSettle() throws {
+        var panel = ChangesPanel()
+        _ = panel.open(busy: false, connected: true)
+        #expect(panel.observe(busy: true, connected: false) == nil)
+        #expect(panel.observe(busy: true, connected: true) == nil)
+        let settled = panel.observe(busy: false, connected: true)
+        _ = try #require(settled)
+    }
+
+    /// Pushing the file list is an explicit ask: it loads even mid-run
+    /// when nothing is there yet, but never doubles an in-flight fetch or
+    /// replaces a result already on screen.
+    @Test func showingTheListLoadsOnlyWhenEmpty() throws {
+        var panel = ChangesPanel()
+        _ = panel.open(busy: true, connected: true)
+        let demanded = panel.load()
+        let token = try #require(demanded)
+        #expect(panel.load() == nil)
+        panel.land(token, changes())
+        #expect(panel.load() == nil)
     }
 
     /// A refresh is a refresh, not a reset: the last good result stays on
     /// screen (and stays readable) until the new one lands.
     @Test func refreshingKeepsTheLastGoodResult() throws {
         var panel = ChangesPanel()
-        let first = panel.open(busy: false)
+        let opened = panel.open(busy: false, connected: true)
+        let first = try #require(opened)
         let old = changes("old", [file("old.swift")])
         panel.land(first, old)
         let refresh = panel.refresh()
@@ -102,7 +143,8 @@ private func file(_ path: String, additions: UInt64 = 1) -> PatchFile {
 
     @Test func aFailedRefreshKeepsTheLastGoodResult() throws {
         var panel = ChangesPanel()
-        let first = panel.open(busy: false)
+        let opened = panel.open(busy: false, connected: true)
+        let first = try #require(opened)
         let old = changes()
         panel.land(first, old)
         let refresh = panel.refresh()

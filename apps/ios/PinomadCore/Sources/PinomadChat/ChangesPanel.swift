@@ -1,9 +1,14 @@
 import PinomadCore
 
-/// The conversation Changes sheet's state: the last result, whether a
-/// fetch is in flight, and which fetch is allowed to land. Only the
-/// newest request wins, and closing the sheet ends the epoch so a late
-/// answer cannot reach a reopened panel.
+/// The overview sheet's change stat and the file list pushed from it: the
+/// last result, whether a fetch is in flight, and which fetch is allowed
+/// to land. Only the newest request wins, and closing the sheet ends the
+/// epoch so a late answer cannot reach a reopened panel.
+///
+/// Fetches follow the Web overview card: on open, when a run settles, and
+/// after a reconnect — never while a run is streaming edits or the
+/// connection is down. Pushing the file list and refreshing it are
+/// explicit asks and load regardless.
 ///
 /// The pure part exists so those rules stay testable without a live
 /// session — the view only supplies call outcomes and busy snapshots.
@@ -21,19 +26,20 @@ public struct ChangesPanel: Equatable, Sendable {
     public private(set) var error: String?
     public private(set) var isOpen = false
     private var generation = 0
-    /// The busy value observed last while open — the refresh trigger is
-    /// its true-to-false edge, not busy alone.
-    private var lastBusy: Bool?
+    /// Whether the last observation could fetch (connected and idle) —
+    /// the trigger is its false-to-true edge: a run settling or the
+    /// connection coming back.
+    private var lastReady: Bool?
 
     public init() {}
 
-    /// Show the sheet and start its first fetch. The current busy value
-    /// is only the baseline: opening while a run is already going still
-    /// refreshes when that run settles.
-    public mutating func open(busy: Bool) -> Token {
+    /// Show the sheet. Fetches now when idle and connected; otherwise the
+    /// value is only the baseline, and the settle or reconnect fetches.
+    public mutating func open(busy: Bool, connected: Bool) -> Token? {
         isOpen = true
-        lastBusy = busy
-        return start()
+        let ready = connected && !busy
+        lastReady = ready
+        return ready ? start() : nil
     }
 
     /// Pull-to-refresh or the Retry button. Refreshing a panel that is no
@@ -43,14 +49,22 @@ public struct ChangesPanel: Equatable, Sendable {
         return start()
     }
 
-    /// Feed a busy snapshot from the conversation. Returns a token only on
-    /// the falling edge (a run finished), when the Web dialog refreshes too.
-    public mutating func observe(busy: Bool) -> Token? {
-        guard isOpen else { return nil }
-        let settled = lastBusy == true && !busy
-        lastBusy = busy
-        guard settled else { return nil }
+    /// The file list was pushed: load it if nothing is on screen or on the
+    /// way — opening mid-run deferred the first fetch.
+    public mutating func load() -> Token? {
+        guard isOpen, changes == nil, !loading else { return nil }
         return start()
+    }
+
+    /// Feed the conversation's busy and connection state. Returns a token
+    /// only when the panel becomes able to fetch: a run finished, or the
+    /// connection came back with no run going.
+    public mutating func observe(busy: Bool, connected: Bool) -> Token? {
+        guard isOpen else { return nil }
+        let ready = connected && !busy
+        let edge = lastReady == false && ready
+        lastReady = ready
+        return edge ? start() : nil
     }
 
     /// A successful fetch. The epoch check drops both an older overlapping
@@ -73,7 +87,7 @@ public struct ChangesPanel: Equatable, Sendable {
     /// The sheet went away: no in-flight answer belongs on screen anymore.
     public mutating func close() {
         isOpen = false
-        lastBusy = nil
+        lastReady = nil
         generation += 1
         loading = false
     }
