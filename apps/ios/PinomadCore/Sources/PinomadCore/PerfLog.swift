@@ -76,9 +76,18 @@ public final class PerfLog: @unchecked Sendable {
         monitor = FrameMonitor { [weak self] gapMs, frameMs in
             self?.record("hitch", version: nil, ms: gapMs, span: frameMs)
         }
+        // A screen with no snapshots arriving (an idle conversation) never
+        // reaches the publish flush; write every 5 s too, off the main
+        // thread so the write itself doesn't show up as a hitch.
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in self?.flush() }
+        timer.resume()
+        flushTimer = timer
     }
 
     private var monitor: FrameMonitor?
+    private var flushTimer: DispatchSourceTimer?
 
     /// Resident size in MB — good enough for the 250 MB budget check.
     private static func footprint() -> Double? {

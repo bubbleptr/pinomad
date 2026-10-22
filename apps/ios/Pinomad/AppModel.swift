@@ -67,6 +67,9 @@ final class AppModel {
     /// that fails after its handshake (which already made the new host the
     /// launch one) still offers the way back. Cleared once a session is up.
     private(set) var hostBeforePairing: String?
+    /// Bumped by each completed pairing handshake — the success haptic's
+    /// trigger, which an ordinary reconnect never fires.
+    private(set) var pairings = 0
     /// The conversation on screen when the same host's session was rebuilt
     /// — the new session has to be told to show it again once up.
     private var reopenAfterReady: UInt64?
@@ -493,6 +496,7 @@ final class AppModel {
             // the launch host — the session is this host's device now,
             // whatever the first view turns out to say.
             pairing.paired(host)
+            pairings += 1
             accountRejectedHostKeys.remove(host.hostKey)
             reloadHosts()
             accountRefreshAfterPairing()

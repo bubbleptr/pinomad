@@ -143,9 +143,9 @@ struct ConversationListView: View {
                 .listRowSeparator(.hidden, edges: .bottom)
             }
         } else {
-            ProgressView("正在同步…")
-                .frame(maxWidth: .infinity)
+            GroupRowsSkeleton()
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
     }
 

@@ -10,7 +10,7 @@ struct RootView: View {
             Group {
                 switch model.phase {
                 case .loading:
-                    ProgressView("正在启动…")
+                    HomeSkeleton()
                 case .pairing:
                     PairingStartView(model: model)
                 case .connecting:
@@ -45,6 +45,7 @@ struct RootView: View {
             case .confirm(let pending): PairConfirmView(model: model, pending: pending)
             }
         }
+        .sensoryFeedback(.success, trigger: model.pairings)
         // `pinomad://pair#…` — the confirm page decides what to do with it.
         .onOpenURL { url in model.offerPairing(url.absoluteString) }
         // Forgetting could not clear the host-side registration; the only
@@ -59,15 +60,23 @@ struct RootView: View {
         }
     }
 
+    /// The home page's shape — where a connection lands — with what it is
+    /// waiting on and the ways out at the bottom.
     private var connectingView: some View {
-        VStack(spacing: 16) {
-            ProgressView(model.currentHostLabel.map { "正在连接 \($0)…" } ?? "正在连接…")
-            if model.pairingLink != nil {
-                Button("取消") { model.cancelPairing() }
-            } else if model.hosts.hosts.count > 1 {
-                Button("换一台宿主") { model.present(.settings) }
+        HomeSkeleton()
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 12) {
+                    Text(model.currentHostLabel.map { "正在连接 \($0)…" } ?? "正在连接…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if model.pairingLink != nil {
+                        Button("取消") { model.cancelPairing() }
+                    } else if model.hosts.hosts.count > 1 {
+                        Button("换一台宿主") { model.present(.settings) }
+                    }
+                }
+                .padding(.bottom, 16)
             }
-        }
     }
 }
 
@@ -166,6 +175,15 @@ struct ConnectionBanner: View {
     let model: AppModel
 
     var body: some View {
+        // The parent animates so the bar slides in and out, not only swaps.
+        ZStack {
+            content.transition(.move(edge: .top).combined(with: .opacity))
+        }
+        .animation(Motion.reveal, value: model.phase == .connected ? model.snapshot?.connection : nil)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let connection = model.snapshot?.connection, model.phase == .connected {
             switch connection {
             case .reconnecting:
@@ -226,7 +244,12 @@ struct ToastStack: View {
             }
         }
         .padding(.horizontal, 16)
-        .animation(.snappy, value: model.toasts.map(\.id))
+        .animation(Motion.reveal, value: model.toasts.map(\.id))
+        // Only an error arriving buzzes; a dismissal also changes the ids.
+        .sensoryFeedback(trigger: model.toasts.map(\.id)) { old, new in
+            let added = Set(new).subtracting(old)
+            return model.toasts.contains { added.contains($0.id) && $0.level == "error" } ? .error : nil
+        }
     }
 }
 

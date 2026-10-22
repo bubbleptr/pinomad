@@ -61,6 +61,7 @@ struct ConversationView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 24) {
+                                Color.clear.frame(height: 1).id("top")
                                 entries(conversation, subagentSummaries: subagentSummaries,
                                         skillNames: skillNames, isSubagent: isSubagent)
                                 Color.clear.frame(height: 1).id("bottom")
@@ -70,9 +71,21 @@ struct ConversationView: View {
                         }
                         .defaultScrollAnchor(.bottom)
                         .task {
+                            // `bounce` sweeps end to end so a settled
+                            // conversation scrolls too; otherwise follow
+                            // the end as a stream grows.
+                            var up = false
                             while !Task.isCancelled {
-                                proxy.scrollTo("bottom", anchor: .bottom)
-                                try? await Task.sleep(for: .milliseconds(120))
+                                if autoScrollBounce {
+                                    up.toggle()
+                                    withAnimation(.linear(duration: 1)) {
+                                        proxy.scrollTo(up ? "top" : "bottom", anchor: up ? .top : .bottom)
+                                    }
+                                    try? await Task.sleep(for: .milliseconds(1400))
+                                } else {
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                    try? await Task.sleep(for: .milliseconds(120))
+                                }
                             }
                         }
                     }
@@ -87,15 +100,30 @@ struct ConversationView: View {
                     }
                 }
             } else {
-                ProgressView("正在载入对话…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ConversationSkeleton()
             }
         }
         .environment(\.inlineImageAction, InlineImageAction { image in
             model.viewing = MessageImage(data: image.data, mimeType: image.mimeType)
         })
+        // A run ending while the reader watches: done or failed. A stop is
+        // the reader's own doing and stays quiet.
+        .sensoryFeedback(trigger: conversation?.busy) { old, new in
+            guard old == true, new == false,
+                  case .run(_, _, _, let interrupted, let failure)? = conversation?.chat.last
+            else { return nil }
+            if failure != nil { return .error }
+            return interrupted ? nil : .success
+        }
+        // A question arriving; opening a conversation that already has one doesn't count.
+        .sensoryFeedback(.impact(weight: .medium), trigger: conversation?.questions.count) { old, new in
+            guard let old, let new else { return false }
+            return new > old
+        }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
-        .safeAreaInset(edge: .bottom) {
+        // A bar, not a plain inset: the transcript scrolling under it gets
+        // the system's soft edge instead of a hard cut at the card.
+        .safeAreaBar(edge: .bottom) {
             if isSubagent {
                 // A subagent belongs to its delegating task; the reader only
                 // observes it. No composer, so nothing here can submit,
@@ -157,6 +185,14 @@ struct ConversationView: View {
     private var autoScroll: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
+        #else
+        return false
+        #endif
+    }
+
+    private var autoScrollBounce: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] == "bounce"
         #else
         return false
         #endif

@@ -216,6 +216,7 @@ struct NewConversationView: View {
                 }
             }
             .frame(minHeight: 34)
+            .sensoryFeedback(.impact(weight: .light), trigger: model.creating) { old, new in !old && new }
             HStack(spacing: 8) {
                 projectMenu
                 if case .project = model.draftHome {
