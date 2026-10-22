@@ -1,14 +1,42 @@
+import { writeFileSync, type FSWatcher } from "node:fs";
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
+import { describe, expect, it, vi } from "vitest";
 import { openAgentRoles, type AgentRoleStore } from "../src/agent-roles.ts";
 import { tempDir, useCleanups } from "./support.ts";
 
+const watcherSetup = vi.hoisted(() => ({
+  beforeWatch: undefined as (() => void) | undefined,
+  dropEvents: false,
+}));
+
+// Simulate the window between the first scan and a real OS watcher: the hook
+// writes the file before watch() starts, so only a scan after arming can see it.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    watch: ((...args: unknown[]) => {
+      watcherSetup.beforeWatch?.();
+      const watcher = Reflect.apply(actual.watch, actual, args) as FSWatcher;
+      if (watcherSetup.dropEvents) watcher.close();
+      return watcher;
+    }) as typeof actual.watch,
+  };
+});
+
 const defer = useCleanups();
 
-async function openStore(dir: string, debounceMs = 20): Promise<AgentRoleStore> {
-  const store = await openAgentRoles({ dir: join(dir, "agents"), debounceMs });
+async function openStore(
+  dir: string,
+  options: { debounceMs?: number; rescanMs?: number } = {},
+): Promise<AgentRoleStore> {
+  const store = await openAgentRoles({
+    dir: join(dir, "agents"),
+    debounceMs: options.debounceMs ?? 20,
+    rescanMs: options.rescanMs,
+  });
   defer(() => store.close());
   return store;
 }
@@ -146,6 +174,32 @@ describe("agent-roles", () => {
     await writeRole(dir.path, "by-hand.md", VALID);
     const value = await arrived;
     expect(value.roles[0]).toMatchObject({ name: "by-hand", description: "Reviews code changes", prompt: "Look for mistakes." });
+  });
+
+  it("does not lose a file written while the watcher is being set up", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    watcherSetup.beforeWatch = () => writeFileSync(join(dir.path, "agents", "by-hand.md"), VALID);
+    try {
+      const store = await openStore(dir.path);
+      expect(store.value.roles.map((role) => role.name)).toEqual(["by-hand"]);
+    } finally {
+      watcherSetup.beforeWatch = undefined;
+    }
+  });
+
+  it("republishes when the watcher misses an event", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    watcherSetup.dropEvents = true;
+    try {
+      const store = await openStore(dir.path, { rescanMs: 25 });
+      const arrived = next(store, (value) => value.roles.some((role) => role.name === "by-hand"));
+      await writeRole(dir.path, "by-hand.md", VALID);
+      await arrived;
+    } finally {
+      watcherSetup.dropEvents = false;
+    }
   });
 });
 
