@@ -1,4 +1,5 @@
-# Lucide icons the app uses, one name per line (lucide.dev/icons).
+# Lucide icons the app uses, one name per line (lucide.dev/icons); a name
+# with an SVG in icons/ is our own drawing on the same grid.
 # `lucide-icons.sh` turns each into a custom SF Symbol under
 # Pinomad/Assets.xcassets/Lucide; Swift refers to them as ImageResource
 # (`triangle-alert` → `.triangleAlert`).
@@ -19,7 +20,6 @@ circle-user
 circle-x
 clipboard-paste
 copy
-diff
 ellipsis
 file
 file-search
@@ -47,6 +47,7 @@ settings
 sparkles
 square
 square-check
+square-diff
 square-pen
 trash-2
 triangle-alert

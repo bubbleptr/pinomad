@@ -36,7 +36,10 @@ generate() {
     # icons keep their relative sizes; this one lands a circle on SF's.
     # (`auto` crops each icon to itself.) The 2px stroke is the regular
     # weight; the thin and heavy ends scale it so font weights interpolate.
-    swiftdraw "$WORK/package/icons/$name.svg" --format sfsymbol --insets 4,1,4,1 \
+    # Our own drawings on Lucide's grid live in icons/ and win over Lucide.
+    src="$ROOT/apps/ios/scripts/icons/$name.svg"
+    [ -f "$src" ] || src="$WORK/package/icons/$name.svg"
+    swiftdraw "$src" --format sfsymbol --insets 4,1,4,1 \
       --ultralight-stroke-width 50% --black-stroke-width 150% \
       --output "$set/$name.svg" >/dev/null
     cat >"$set/Contents.json" <<EOF
