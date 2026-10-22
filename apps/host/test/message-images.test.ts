@@ -260,6 +260,38 @@ describe("message images", () => {
     ).toMatchObject({ ok: true });
   });
 
+  it("takes a ref on createConversation before the first await", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen", "again"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const source = client.view.current().conversation!.conversation.id;
+
+    const raw = await rawClient(host);
+    raw.send({ type: "subscribe", stream: `conversation:${source}`, images: "ref" });
+    const snapshot = await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${source}`);
+    const ref = firstRef(snapshot);
+
+    // Resolve the ref before createConversation's first await, just like submit.
+    const pending = raw.call("createConversation", {
+      home: { kind: "chat" },
+      text: "from ref",
+      requestId: "create-ref",
+      images: [{ ref }],
+    });
+    raw.send({ type: "unsubscribe", stream: `conversation:${source}` });
+    const created = await pending;
+    expect(created).toMatchObject({ ok: true });
+    const id = (created.value as { conversationId: number }).conversationId;
+
+    raw.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    const after = await raw.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    expect(userContents((after as { value: ConversationView }).value)[0]).toEqual([
+      { type: "text", text: "from ref" },
+      { type: "image", mimeType: "image/png", ref: expect.any(String) },
+    ]);
+  });
+
   it("keeps a ref valid while another live subscription still shows the image", async () => {
     const host = await startFauxHost(defer, { answers: ["one", "two"] });
     const raw = await rawClient(host);
