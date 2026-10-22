@@ -142,6 +142,9 @@ final class AppModel {
     /// The `$` skill listings for this host session, one entry per scope
     /// (issue #143). Reset when the host changes.
     var skillCache = SkillListCache()
+    /// The `/` command listings for this host session, one entry per
+    /// conversation (issue #254). Reset when the host changes.
+    var commandCache = CommandListCache()
     /// The first-connect deadline for the current attempt, nil once it is
     /// ready or has failed.
     private var connectWatchdog: ConnectWatchdog?
@@ -448,6 +451,7 @@ final class AppModel {
             navPath = []
             reopenAfterReady = nil
             skillCache.reset()
+            commandCache.reset()
             drafts = [:]
             questionDrafts = [:]
             trays = [:]

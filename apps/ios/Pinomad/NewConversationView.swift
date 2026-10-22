@@ -35,23 +35,34 @@ struct NewConversationView: View {
     /// Whether this host knows `createConversation`'s agent arg.
     private var agentPickerAvailable: Bool { model.hostSupports(.agentConversations) }
 
-    /// The picker stays up while a pick survives a now-empty snapshot so the
-    /// reader can clear it (the web's rule); an empty roles list alone hides
-    /// it. A pick that outlived a host downgrade also keeps the chip, with
-    /// only "不指定" — otherwise there is no way back to a plain draft.
+    /// The model sheet's Agent section stays while a pick survives a
+    /// now-empty snapshot so the reader can clear it (the web's rule); an
+    /// empty roles list alone hides it. A pick that outlived a host
+    /// downgrade keeps the section with only "No Agent" — otherwise there is
+    /// no way back to a plain draft.
     private var showAgentPicker: Bool {
         selectedAgent != nil || (agentPickerAvailable && !roles.isEmpty)
     }
 
-    /// An inherited side reads "来自 @name"; an overridden side drops it.
+    private var agentChoice: ModelSheetAgent? {
+        guard showAgentPicker else { return nil }
+        return .pick(
+            selected: selectedAgent,
+            roles: agentPickerAvailable ? roles : [],
+            hint: sourceHint,
+            onSelect: { model.setDraftAgent($0) })
+    }
+
+    /// Which sides still come from the picked role; an overridden side is
+    /// the reader's own.
     private var sourceHint: String? {
         guard let agent = selectedAgent, let resolution else { return nil }
         let modelInherited = resolution.modelFrom != .override
         let levelInherited = resolution.levelFrom != .override
-        if modelInherited && levelInherited { return "from @\(agent)" }
-        if modelInherited { return "model from @\(agent)" }
-        if levelInherited { return "level from @\(agent)" }
-        return nil
+        if modelInherited && levelInherited { return "Model and thinking level come from @\(agent)." }
+        if modelInherited { return "Model comes from @\(agent); the thinking level is your pick." }
+        if levelInherited { return "Thinking level comes from @\(agent); the model is your pick." }
+        return "Model and thinking level are your picks; the rest comes from @\(agent)."
     }
 
     /// The capsule's short red label and the card's full reason when the
@@ -116,7 +127,11 @@ struct NewConversationView: View {
         .padding(.bottom, 8)
         .navigationTitle("New Conversation")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { focused = true }
+        .onAppear {
+            // A kept draft resumes at its end, where add entries go too.
+            selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
+            focused = true
+        }
         .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
         .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
@@ -138,6 +153,7 @@ struct NewConversationView: View {
                 model: model,
                 models: model.snapshot?.models ?? [],
                 selected: pick,
+                agent: agentChoice,
                 onModel: { model.setDraftModel($0) },
                 onLevel: { model.setDraftLevel($0) }
             )
@@ -175,31 +191,21 @@ struct NewConversationView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 10) {
-                PlusMenu(
-                    connected: model.connected,
-                    acceptsImages: acceptsImages,
-                    modelName: currentModel?.name ?? currentModel?.modelId,
-                    canAddImages: tray.freeSlots > 0,
-                    photos: { presentAfterMenu { showPhotos = true } },
-                    camera: UIImagePickerController.isSourceTypeAvailable(.camera)
-                        ? { presentAfterMenu { showCamera = true } } : nil,
-                    paste: { model.pasteImage(into: key, accepts: acceptsImages) },
-                    compact: nil
-                )
+                plusMenu
                 // Images added mid-create would miss the request and then be
                 // cleared with the draft — hold the menu like the text field.
                 .disabled(model.creating)
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
+                    prefix: selectedAgent.map { "@\($0)" },
                     enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true),
-                    sourceHint: sourceHint,
                     problem: problemText?.label
                 ) {
                     focused = false
                     showModels = true
                 }
                 // Let the capsule take its ideal width; the spacer gives up
-                // the room first so the model and source hint both read.
+                // the room first so the agent and model both read.
                 .layoutPriority(1)
                 Spacer(minLength: 0)
                 if model.creating {
@@ -221,9 +227,6 @@ struct NewConversationView: View {
                 projectMenu
                 if case .project = model.draftHome {
                     checkoutMenu
-                }
-                if showAgentPicker {
-                    agentMenu
                 }
             }
         }
@@ -266,9 +269,42 @@ struct NewConversationView: View {
         focused = true
     }
 
+    private var plusMenu: some View {
+        let mentionFile: (() -> Void)? = mentionScope == nil ? nil : { insertTrigger("@./") }
+        let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
+        let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
+        let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
+            ? { presentAfterMenu { showCamera = true } } : nil
+        return PlusMenu(
+            connected: model.connected,
+            acceptsImages: acceptsImages,
+            modelName: currentModel?.name ?? currentModel?.modelId,
+            canAddImages: tray.freeSlots > 0,
+            photos: { presentAfterMenu { showPhotos = true } },
+            camera: camera,
+            paste: { model.pasteImage(into: key, accepts: acceptsImages) },
+            mentionFile: mentionFile,
+            useSkill: useSkill,
+            mentionAgent: mentionAgent
+        ) {
+            homeSection
+            if case .project = model.draftHome {
+                checkoutSection
+            }
+        }
+    }
+
+    /// An add entry's trigger at the caret; focusing opens its menu.
+    private func insertTrigger(_ trigger: String) {
+        let insertion = ComposerTrigger.insert(trigger, into: draft.wrappedValue, selection: selection)
+        draft.wrappedValue = insertion.text
+        selection = NSRange(location: insertion.cursor, length: 0)
+        focused = true
+    }
+
     private var homeLabel: String {
         switch model.draftHome {
-        case .chat: return "No project"
+        case .chat: return "No Project"
         case .project(let path):
             let name = projects.first { $0.path == path }?.name
             return name ?? (path as NSString).lastPathComponent
@@ -277,7 +313,7 @@ struct NewConversationView: View {
 
     private var projectMenu: some View {
         Menu {
-            Button("No project", image: .messageCircle) { model.draftHome = .chat }
+            Button("No Project", image: .messageCircle) { model.draftHome = .chat }
             if !projects.isEmpty {
                 Section("Projects") {
                     ForEach(projects.indices, id: \.self) { index in
@@ -291,7 +327,7 @@ struct NewConversationView: View {
                 }
             }
             if model.hostSupports("listFolders") {
-                Button("Add project…", image: .folderPlus) {
+                Button("Add Project…", image: .folderPlus) {
                     model.navPath.append(.addProject)
                 }
             }
@@ -304,50 +340,61 @@ struct NewConversationView: View {
 
     private var checkoutMenu: some View {
         Menu {
-            Button("Git worktree", image: .gitBranch) { model.draftCheckout = .worktree }
-            Button("Project folder", image: .monitor) { model.draftCheckout = .project }
+            Button("Git Worktree", image: .gitBranch) { model.draftCheckout = .worktree }
+            Button("Project Folder", image: .monitor) { model.draftCheckout = .project }
         } label: {
             LocationChip(
                 icon: model.draftCheckout == .worktree ? .gitBranch : .monitor,
-                label: model.draftCheckout == .worktree ? "Git worktree" : "Project folder"
+                label: model.draftCheckout == .worktree ? "Git Worktree" : "Project Folder"
             )
         }
         .tint(.secondary)
         .disabled(!model.connected)
     }
 
-    /// The draft's named agent (ADR-0023). A fixed order keeps "不指定"
-    /// above the section however the menu lays itself out around the chip.
-    /// Toggle supplies the checkmark; two Texts make the description a
-    /// subtitle in the menu.
-    private var agentMenu: some View {
-        Menu {
-            Toggle("No agent role", isOn: Binding(
-                get: { selectedAgent == nil },
-                set: { isOn in if isOn { model.setDraftAgent(nil) } }
-            ))
-            if agentPickerAvailable && !roles.isEmpty {
-                Section("Agent Roles") {
-                    ForEach(roles, id: \.name) { role in
-                        Toggle(isOn: Binding(
-                            get: { selectedAgent == role.name },
-                            set: { isOn in if isOn { model.setDraftAgent(role.name) } }
-                        )) {
-                            Text("@\(role.name)")
-                            if !role.description.isEmpty {
-                                Text(role.description)
-                            }
-                        }
+    /// The `+` menu's copy of the footer's project choice; both bind the
+    /// same draft state. Toggles supply the checkmark.
+    @ViewBuilder
+    private var homeSection: some View {
+        Section("Project") {
+            Toggle(isOn: Binding(
+                get: { model.draftHome == .chat },
+                set: { if $0 { model.draftHome = .chat } }
+            )) {
+                Label("No Project", image: .messageCircle)
+            }
+            ForEach(projects.indices, id: \.self) { index in
+                let project = projects[index]
+                if let path = project.path {
+                    Toggle(isOn: Binding(
+                        get: { model.draftHome == .project(path: path) },
+                        set: { if $0 { model.draftHome = .project(path: path) } }
+                    )) {
+                        Label(project.name ?? (path as NSString).lastPathComponent, image: .folder)
                     }
                 }
             }
-        } label: {
-            LocationChip(icon: .userRound,
-                         label: selectedAgent.map { "@\($0)" } ?? "Agent")
         }
-        .menuOrder(.fixed)
-        .tint(.secondary)
-        .disabled(!model.connected || model.creating)
+        .disabled(!model.connected)
+    }
+
+    @ViewBuilder
+    private var checkoutSection: some View {
+        Section("Checkout") {
+            Toggle(isOn: Binding(
+                get: { model.draftCheckout == .worktree },
+                set: { if $0 { model.draftCheckout = .worktree } }
+            )) {
+                Label("Git Worktree", image: .gitBranch)
+            }
+            Toggle(isOn: Binding(
+                get: { model.draftCheckout == .project },
+                set: { if $0 { model.draftCheckout = .project } }
+            )) {
+                Label("Project Folder", image: .monitor)
+            }
+        }
+        .disabled(!model.connected)
     }
 }
 
