@@ -53,7 +53,7 @@ extension AppModel {
                 }
                 guard let self, self.sessionGeneration == generation, self.session === session else { return }
                 self.skillCache.receive(
-                    request, skills: skills, now: Date.timeIntervalSinceReferenceDate)
+                    request, items: skills, now: Date.timeIntervalSinceReferenceDate)
             } catch {
                 guard let self, self.sessionGeneration == generation, self.session === session else { return }
                 self.skillCache.fail(request)

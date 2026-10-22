@@ -22,7 +22,7 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
         #expect(cache.snapshot(conversation) == nil)
         let request = try required(cache.request(conversation, now: 100))
         #expect(cache.snapshot(conversation) == nil)
-        cache.receive(request, skills: [listed("review")], now: 101)
+        cache.receive(request, items: [listed("review")], now: 101)
         #expect(cache.snapshot(conversation)?.map(\.name) == ["review"])
     }
 
@@ -30,23 +30,23 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
         var cache = SkillListCache()
         let first = try required(cache.request(conversation, now: 100))
         #expect(cache.request(conversation, now: 100) == nil)
-        cache.receive(first, skills: [listed("review")], now: 101)
+        cache.receive(first, items: [listed("review")], now: 101)
         #expect(cache.request(conversation, now: 102) == nil)
     }
 
     @Test func aFreshAnswerSurvivesTheTTL() throws {
         var cache = SkillListCache(ttl: 5)
         let first = try required(cache.request(conversation, now: 100))
-        cache.receive(first, skills: [listed("review")], now: 100)
+        cache.receive(first, items: [listed("review")], now: 100)
         #expect(cache.request(conversation, now: 104.9) == nil)
         let second = try required(cache.request(conversation, now: 105))
-        #expect(second.scope == conversation)
+        #expect(second.key == conversation)
     }
 
     @Test func forceRefreshesAnOtherwiseFreshEntry() throws {
         var cache = SkillListCache()
         let first = try required(cache.request(conversation, now: 100))
-        cache.receive(first, skills: [listed("review")], now: 100)
+        cache.receive(first, items: [listed("review")], now: 100)
         #expect(cache.request(conversation, now: 101, force: true) != nil)
     }
 
@@ -61,7 +61,7 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
     @Test func aFailureKeepsTheLastGoodAnswer() throws {
         var cache = SkillListCache()
         let first = try required(cache.request(conversation, now: 100))
-        cache.receive(first, skills: [listed("review")], now: 100)
+        cache.receive(first, items: [listed("review")], now: 100)
         let refresh = try required(cache.request(conversation, now: 106))
         cache.fail(refresh)
         #expect(cache.snapshot(conversation)?.map(\.name) == ["review"])
@@ -73,10 +73,10 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
     @Test func scopesAreIsolated() throws {
         var cache = SkillListCache()
         let seven = try required(cache.request(conversation, now: 100))
-        cache.receive(seven, skills: [listed("review")], now: 100)
+        cache.receive(seven, items: [listed("review")], now: 100)
         #expect(cache.snapshot(other) == nil)
         let eight = try required(cache.request(other, now: 100))
-        cache.receive(eight, skills: [listed("deploy")], now: 100)
+        cache.receive(eight, items: [listed("deploy")], now: 100)
         #expect(cache.snapshot(conversation)?.map(\.name) == ["review"])
         #expect(cache.snapshot(other)?.map(\.name) == ["deploy"])
     }
@@ -86,7 +86,7 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
         let first = try required(cache.request(conversation, now: 100))
         cache.reset()
         #expect(cache.snapshot(conversation) == nil)
-        cache.receive(first, skills: [listed("old")], now: 101)
+        cache.receive(first, items: [listed("old")], now: 101)
         #expect(cache.snapshot(conversation) == nil)
     }
 
@@ -95,9 +95,9 @@ private func required(_ request: SkillListCache.Request?) throws -> SkillListCac
         let first = try required(cache.request(conversation, now: 100))
         cache.fail(first)
         let second = try required(cache.request(conversation, now: 100))
-        cache.receive(first, skills: [listed("stale")], now: 101)
+        cache.receive(first, items: [listed("stale")], now: 101)
         #expect(cache.snapshot(conversation) == nil)
-        cache.receive(second, skills: [listed("fresh")], now: 101)
+        cache.receive(second, items: [listed("fresh")], now: 101)
         #expect(cache.snapshot(conversation)?.map(\.name) == ["fresh"])
     }
 }
