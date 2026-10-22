@@ -19,15 +19,14 @@ public struct TodoLineView: View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
                 if list.isFinished {
-                    Image(Icon.circleCheck)
-                        .foregroundStyle(.green)
+                    TodoStatusMark(status: .completed)
                     Text("Todo \(list.completedCount)/\(list.items.count)", bundle: .module)
                         .monospacedDigit()
                 } else {
                     Text(verbatim: "\(list.completedCount)/\(list.items.count)")
                         .monospacedDigit()
                     if let current = list.current {
-                        TodoStatusIcon(status: current.status)
+                        TodoStatusMark(status: current.status)
                         Text(current.text)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -75,7 +74,7 @@ struct TodoListView: View {
             }
             ForEach(Array(line.list.items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    TodoStatusIcon(status: item.status)
+                    TodoStatusMark(status: item.status)
                         .font(.callout)
                     Text(item.text)
                         .font(.callout)
@@ -88,27 +87,6 @@ struct TodoListView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.fill.quaternary, in: .rect(cornerRadius: 12))
-    }
-}
-
-private struct TodoStatusIcon: View {
-    let status: TodoList.Status
-
-    var body: some View {
-        switch status {
-        case .completed:
-            Image(Icon.circleCheck)
-                .foregroundStyle(.green)
-                .accessibilityLabel(String(localized: "Done", bundle: .module))
-        case .inProgress:
-            Image(Icon.circleDot)
-                .foregroundStyle(.tint)
-                .accessibilityLabel(String(localized: "In progress", bundle: .module))
-        case .pending:
-            Image(Icon.circle)
-                .foregroundStyle(.tertiary)
-                .accessibilityLabel(String(localized: "Not done", bundle: .module))
-        }
     }
 }
 
