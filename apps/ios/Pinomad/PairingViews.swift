@@ -18,7 +18,7 @@ struct PairingSources: View {
                     .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.tactile(.glassProminent))
             .controlSize(.large)
 
             HStack(spacing: 8) {
@@ -41,7 +41,7 @@ struct PairingSources: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonBorderShape(.circle)
-                .buttonStyle(.glass)
+                .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
             }
             if invalid {
@@ -50,7 +50,7 @@ struct PairingSources: View {
                     .foregroundStyle(.red)
             }
             Button("继续", action: submit)
-                .buttonStyle(.glass)
+                .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .disabled(text.allSatisfy(\.isWhitespace))
@@ -90,7 +90,7 @@ struct PairingStartView: View {
                     Label("账号：\(session.username)", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
                 Text("在账号页里配对它名下的宿主。")
                     .font(.footnote)
@@ -102,7 +102,7 @@ struct PairingStartView: View {
                     Label("用账号登录", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
                 Text("登录后不用扫码，就能配对你账号下的宿主。")
                     .font(.footnote)
@@ -149,14 +149,14 @@ struct PairConfirmView: View {
                     Button { dismiss() } label: {
                         Text("取消").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.tactile(.glass))
                     Button {
                         model.pair(link: pending.link)
                         dismiss()
                     } label: {
                         Text("配对").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.tactile(.glassProminent))
                 }
                 .controlSize(.large)
                 .padding(.top, 8)
@@ -168,7 +168,7 @@ struct PairConfirmView: View {
                 Button { dismiss() } label: {
                     Text("好").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.tactile(.glass))
                 .controlSize(.large)
                 .padding(.top, 8)
             }

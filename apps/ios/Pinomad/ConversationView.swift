@@ -448,7 +448,7 @@ private struct RunRow: View, Equatable {
             }
             if let retry {
                 Button("重试", systemImage: "arrow.clockwise", action: retry)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)
             }
             // The run's last element (ADR-0026 §4), under the answer.

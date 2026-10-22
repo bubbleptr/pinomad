@@ -210,7 +210,7 @@ struct NewConversationView: View {
                     } label: {
                         SlotIcon(systemName: "arrow.up")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressStyle(haptic: false))
                     .disabled(!canSend)
                     .accessibilityLabel("开始对话")
                 }

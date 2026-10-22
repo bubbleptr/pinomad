@@ -291,7 +291,7 @@ private struct StatusTiles: View {
             .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(.separator), lineWidth: 0.5) }
             .contentShape(.rect(cornerRadius: 22))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
     }
 }
 

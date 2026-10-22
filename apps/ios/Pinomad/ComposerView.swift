@@ -274,7 +274,7 @@ struct ConversationComposer: View {
             } label: {
                 SlotIcon(systemName: "stop.fill")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.press)
             .accessibilityLabel("停止")
             .disabled(!enabled)
         case .send(let enabled, let canSteer):
@@ -294,7 +294,7 @@ struct ConversationComposer: View {
                     send(.followUp)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(haptic: false))
                 .accessibilityLabel("发送")
                 .accessibilityHint("运行结束后发送；长按可改为立即引导")
                 .disabled(!enabled || editLocked)
@@ -304,7 +304,7 @@ struct ConversationComposer: View {
                 } label: {
                     SlotIcon(systemName: "arrow.up")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(haptic: false))
                 .accessibilityLabel("发送")
                 .disabled(!enabled || editLocked)
             }
@@ -385,6 +385,8 @@ struct PlusMenu: View {
                 .frame(width: 34, height: 34)
                 .background(.fill.tertiary, in: .circle)
         }
+        .menuStyle(.button)
+        .buttonStyle(.press)
         .tint(.secondary)
         .accessibilityLabel("更多操作")
     }
@@ -415,7 +417,7 @@ struct AttachmentStrip: View {
                                             .foregroundStyle(.white, .black.opacity(0.6))
                                             .font(.system(size: 18))
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.press)
                                     .offset(x: 5, y: -5)
                                     .accessibilityLabel("移除第 \(index + 1) 张图片")
                                 }
@@ -506,7 +508,7 @@ struct ModelCapsule: View {
             .frame(height: 34)
             .background(.fill.tertiary, in: .capsule)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
         .disabled(!enabled)
         .accessibilityLabel(problem.map { "模型：\($0)" } ?? "模型：\(label)")
     }
@@ -611,7 +613,7 @@ private struct QueueList: View {
                         .contentShape(.rect)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(.press)
                 .disabled(pending.contains(item.id))
                 .accessibilityLabel("排队消息操作")
                 .accessibilityHint("引导、编辑或撤回这条排队消息")
