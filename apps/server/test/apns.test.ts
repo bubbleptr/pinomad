@@ -192,6 +192,18 @@ describe("openApns", () => {
     expect(fake.sessions.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("settles sends still in flight when a GOAWAY lands", async () => {
+    const { apns, fake } = await startApns();
+    // Streams opened after the GOAWAY are refused (REFUSED_STREAM) on both
+    // ends; the race is timing-dependent, so a few rounds make it near-certain.
+    for (let round = 0; round < 50; round++) {
+      await send(apns); // a live session for the GOAWAY to land on
+      const inFlight = Promise.all([send(apns), send(apns), send(apns)]);
+      fake.sessions.at(-1)!.goaway();
+      await inFlight;
+    }
+  });
+
   it("drops an environment whose key fails to parse", async () => {
     const fake = await fakeApns();
     servers.push(fake);

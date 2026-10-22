@@ -47,6 +47,9 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
   server.on("session", (session) => {
     sessions.push(session);
     session.on("stream", (stream, headers) => {
+      // A stream racing a GOAWAY closes with REFUSED_STREAM. That's the
+      // sender's verdict to classify; here it would only be an unhandled error.
+      stream.on("error", () => {});
       const chunks: Buffer[] = [];
       stream.on("data", (chunk: Buffer) => chunks.push(chunk));
       stream.on("end", () => {

@@ -22,7 +22,6 @@ import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { writeServerConfig } from "../src/server-config.ts";
 import {
   connectTo,
-  freePort,
   ManualTimers,
   pairDevice,
   startChat,
@@ -148,7 +147,7 @@ async function pushHost(
   const host = await startFauxHost(defer, {
     ...rest,
     dataDir: dir,
-    remote: { port: await freePort() },
+    remote: { port: 0 },
     push: { transport: apns.transport, timers },
   });
   return { host, apns, timers, dataDir: dir };
@@ -156,7 +155,7 @@ async function pushHost(
 
 describe("push token registration", () => {
   it("registers, replaces, and clears a device's APNs token; the devices stream never carries it", async () => {
-    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: 0 } });
     const { client, device } = await pairDevice(defer, host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);
@@ -180,7 +179,7 @@ describe("push token registration", () => {
   });
 
   it("refuses a legacy Expo token without a 4400, and explains the environment", async () => {
-    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: 0 } });
     const { client } = await pairDevice(defer, host, "phone");
     await expect(client.controller.setPushToken("ExponentPushToken[abc]")).rejects.toThrow(/no longer go through Expo/);
     await expect(client.controller.setPushToken("anything-string")).rejects.toThrow(/no longer go through Expo/);
@@ -190,7 +189,7 @@ describe("push token registration", () => {
   });
 
   it("rejects token clients, bad token shapes, and unpaired devices", async () => {
-    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: 0 } });
     const tokenClient = await connectTo(defer, host);
     await expect(tokenClient.controller.setPushToken(TOKEN_A)).rejects.toThrow(/secure channel/);
 
@@ -214,7 +213,7 @@ describe("push token registration", () => {
   });
 
   it("refuses APNs registration while the host is not joined to an account", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const { client } = await pairDevice(defer, host, "phone");
     await expect(client.controller.setPushToken(TOKEN_A)).rejects.toThrow(/joined to an account/);
     // Deregistration needs no account — it's local cleanup.
@@ -233,7 +232,7 @@ describe("push token registration", () => {
   });
 
   it("deletes the device's token in the same commit as revocation", async () => {
-    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: await joinedDir(), remote: { port: 0 } });
     const { client, device } = await pairDevice(defer, host, "phone");
     const key = toBase64Url(device.publicKey);
     const tokenClient = await connectTo(defer, host);

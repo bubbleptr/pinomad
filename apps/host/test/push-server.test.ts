@@ -127,7 +127,7 @@ async function joinedHost(
   const host = await startFauxHost(defer, {
     ...options,
     dataDir: dataDir.path,
-    remote: { port: await freePort() },
+    remote: { port: 0 },
     relay: { origin, reconnectDelayMs: { min: 50, max: 200 } },
   });
   await waitForRelayState(host, "registered");
