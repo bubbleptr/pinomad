@@ -215,11 +215,13 @@ private struct MachineHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // Concrete colors: a section header dims hierarchical styles.
+            // The icon matches the group rows' icons below it.
             Image(.monitor)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(Color(.secondaryLabel))
             Text(label)
                 .font(.title3.weight(.semibold))
-                // A concrete color: a section header dims hierarchical styles.
                 .foregroundStyle(Color(.label))
                 .lineLimit(1)
             ConnectionDot(online: online)
