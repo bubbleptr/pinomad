@@ -8,11 +8,22 @@ struct ImageViewer: View {
     let image: MessageImage
     let close: () -> Void
 
+    @Environment(\.inlineImageLoader) private var loader
+    @Environment(\.inlineImageEpoch) private var epoch
+    @State private var fetched: ToolImage?
+    @State private var failed = false
     @State private var scale: CGFloat = 1
     @State private var settledScale: CGFloat = 1
     @State private var drag: CGSize = .zero
     /// Where the last pan left the zoomed image; each new drag adds to it.
     @State private var settledDrag: CGSize = .zero
+
+    private var displayed: ToolImage? {
+        if !image.data.isEmpty {
+            return ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref)
+        }
+        return fetched
+    }
 
     private func recentre() {
         drag = .zero
@@ -24,7 +35,8 @@ struct ImageViewer: View {
             Color.black
                 .opacity(1 - min(abs(drag.height) / 400, 0.6))
                 .ignoresSafeArea()
-            if let decoded = InlineImage.decoded(ToolImage(data: image.data, mimeType: image.mimeType)) {
+            if let shown = displayed,
+               let decoded = InlineImage.decoded(shown) {
                 decoded
                     .resizable()
                     .scaledToFit()
@@ -58,7 +70,19 @@ struct ImageViewer: View {
                                 }
                             }
                     )
+            } else if failed {
+                Image(.triangleAlert)
+                    .font(.largeTitle)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Couldn't load image")
+            } else {
+                ProgressView()
+                    .tint(.white)
+                    .accessibilityLabel("Loading image")
             }
+        }
+        .task(id: image.data.isEmpty ? image.ref.map { "\($0):\(epoch)" } : nil) {
+            await fetchIfNeeded()
         }
         .contentShape(.rect)
         .onTapGesture(count: 2) {
@@ -72,5 +96,24 @@ struct ImageViewer: View {
         .accessibilityAction(.escape) { close() }
         .accessibilityAddTraits(.isImage)
         .accessibilityLabel("Image")
+    }
+
+    private func fetchIfNeeded() async {
+        guard image.data.isEmpty, let ref = image.ref, !ref.isEmpty else {
+            if image.data.isEmpty { failed = true }
+            return
+        }
+        failed = false
+        guard let loader else {
+            failed = true
+            return
+        }
+        do {
+            let loaded = try await loader.image(for: ref)
+            fetched = loaded
+            failed = false
+        } catch {
+            failed = true
+        }
     }
 }

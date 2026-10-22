@@ -103,6 +103,10 @@ final class AppModel {
     /// request phase, and the composer lock. Memory only; a host switch
     /// drops it (an unresolved copy is retried after a same-host reconnect).
     var queuedEdit = QueuedEdit()
+    /// Conversations whose queued copy is resolving ref images before any
+    /// withdraw starts. The composer stays locked meanwhile so a ref copy
+    /// cannot land over new typing.
+    var queuedEditPreparing: Set<UInt64> = []
     /// Queued rows whose withdraw/steer request is in flight. An Edit's row
     /// stays here until its outcome is known.
     var queuePending: Set<UInt64> = []
@@ -146,6 +150,15 @@ final class AppModel {
     /// window starts paused and gets a full 15 seconds on foreground.
     private var isInBackground = UIApplication.shared.applicationState == .background
     let store = KeychainHostStore()
+    /// Content-addressed image bytes for ref-mode conversations (ADR-0027).
+    /// UI-owned: fetches never enter the session's ordered state.
+    let images = ImageStore()
+    /// Bumped when the shown conversation's ref subscription becomes fresh,
+    /// so a failed ref fetch retries on reconnect (AgentChatKit's inline
+    /// image epoch). A connected hello alone is not enough: the host may not
+    /// have rebuilt the conversation subscription yet.
+    var imageEpoch: UInt64 = 0
+    private var lastConversationFreshEpoch: UInt64 = 0
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
     let accountStore = KeychainAccountStore()
@@ -374,6 +387,7 @@ final class AppModel {
         snapshot = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
+        lastConversationFreshEpoch = 0
     }
 
     /// A fresh 15-second window for this attempt. The callback carries the
@@ -424,6 +438,7 @@ final class AppModel {
         pushError = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
+        lastConversationFreshEpoch = 0
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()
@@ -437,6 +452,7 @@ final class AppModel {
             questionDrafts = [:]
             trays = [:]
             queuedEdit.reset()
+            queuedEditPreparing.removeAll()
             queuePending.removeAll()
             queuedEditFocus = [:]
             viewing = nil
@@ -514,6 +530,9 @@ final class AppModel {
                 markAccountRejected(host)
             }
             self.snapshot = snapshot
+            let freshEpoch = snapshot.conversation?.freshEpoch ?? 0
+            if freshEpoch > lastConversationFreshEpoch { imageEpoch &+= 1 }
+            lastConversationFreshEpoch = freshEpoch
             if let hostKey = sessionHost?.hostKey {
                 cacheHostName(snapshot.hostName, for: hostKey)
             }

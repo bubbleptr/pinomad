@@ -83,7 +83,7 @@ public enum ChatAdapter {
             diffStat: tool.diffStat.map {
                 AgentChatCore.DiffStat(additions: Int($0.additions), deletions: Int($0.deletions))
             },
-            images: tool.images.map { ToolImage(data: $0.data, mimeType: $0.mimeType) },
+            images: tool.images.map { ToolImage(data: $0.data, mimeType: $0.mimeType, ref: $0.ref) },
             children: tool.children.enumerated().map { index, child in
                 call(child, fallbackId: "\(id).c\(index)")
             },

@@ -234,7 +234,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -320,7 +320,7 @@ extension AppModel {
                 conversationId: 1, path: worktree, repo: projectPath, subdir: "",
                 branch: "pinomad/overview-sheet", base: "4e73cdb9a1f0c2d3", snapshot: nil
             ),
-            busy: false, contextUsage: nil
+            busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
         )
         func file(_ path: String, _ added: [String], _ removed: [String], isNew: Bool = false) -> PatchFile {
             let lines = [PatchLine(kind: .meta, text: "@@ -1,\(removed.count) +1,\(added.count) @@")]
@@ -420,7 +420,7 @@ extension AppModel {
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
             questions: [PendingQuestion(kind: "ask_user_question", request: request)],
-            todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil
+            todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: mode == "offline" ? .reconnecting : .connected, unauthorized: false,
@@ -476,7 +476,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage, fresh: true, freshEpoch: 1
         )
         drafts[1] = "Take a look at these changes"
         publishDevSnapshot(ClientSnapshot(
@@ -578,7 +578,7 @@ extension AppModel {
                 let conversation = ConversationSnapshot(
                     id: 1, chat: chat, statusText: "", queueItems: [],
                     agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-                    questions: [], todo: todo, home: nil, checkout: nil, busy: true, contextUsage: nil
+                    questions: [], todo: todo, home: nil, checkout: nil, busy: true, contextUsage: nil, fresh: true, freshEpoch: 1
                 )
                 self.publishDevSnapshot(ClientSnapshot(
                     version: UInt64(tick + 1), connection: .connected, unauthorized: false,
@@ -607,7 +607,7 @@ extension AppModel {
         let conv = ConversationSnapshot(
             id: 1, chat: chat, statusText: streaming ? "Responding…" : "",
             queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil
+            questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,

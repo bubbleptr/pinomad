@@ -176,8 +176,8 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 /// only ever answers the Request-class variants (`AddProject`,
 /// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
 /// `CreatePairing`, `WithdrawQueued`, `SteerQueued`) and the out-of-queue
-/// `ListFiles`; the rest fail into a view notice while reporting
-/// `OperationSucceeded { value: Unit }`.
+/// `ListFiles`, `ListSkills`, and `Image`; the rest fail into a view notice
+/// while reporting `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
     /// Prompt when idle; otherwise steer or queue a follow-up. `target`
@@ -275,6 +275,12 @@ pub enum FfiCall {
     /// Request-class, sent outside the command queue like `listFiles`.
     /// Resolves `CallResult::Skills`. Needs a 5.13 host.
     ListSkills { scope: SkillScope },
+    /// The bytes behind an image ref (5.15, ADR-0027). Read-only, outside
+    /// the command queue like `listFiles`; resolves `CallResult::Image`.
+    Image {
+        #[uniffi(name = "ref")]
+        ref_: String,
+    },
 }
 
 impl FfiCall {
@@ -288,6 +294,7 @@ impl FfiCall {
             FfiCall::CreatePairing => Some(ResultKind::Pairing),
             FfiCall::ListFiles { .. } => Some(ResultKind::Files),
             FfiCall::ListSkills { .. } => Some(ResultKind::Skills),
+            FfiCall::Image { .. } => Some(ResultKind::Image),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
             _ => None,
@@ -376,6 +383,7 @@ impl FfiCall {
             FfiCall::ListSkills { scope } => Call::ListSkills {
                 scope: scope.to_json(),
             },
+            FfiCall::Image { ref_ } => Call::Image { ref_ },
         }
     }
 }

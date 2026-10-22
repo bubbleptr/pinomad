@@ -104,7 +104,7 @@ struct ConversationView: View {
             }
         }
         .environment(\.inlineImageAction, InlineImageAction { image in
-            model.viewing = MessageImage(data: image.data, mimeType: image.mimeType)
+            model.viewing = MessageImage(data: image.data, mimeType: image.mimeType, ref: image.ref)
         })
         // A run ending while the reader watches: done or failed. A stop is
         // the reader's own doing and stays quiet.
@@ -339,7 +339,8 @@ private struct ImageViewerHost<Content: View>: View {
     var body: some View {
         content
             .environment(\.inlineImageAction, InlineImageAction { image in
-                viewing = ViewedImage(image: MessageImage(data: image.data, mimeType: image.mimeType))
+                viewing = ViewedImage(image: MessageImage(
+                    data: image.data, mimeType: image.mimeType, ref: image.ref))
             })
             .fullScreenCover(item: $viewing) { viewed in
                 ImageViewer(image: viewed.image) { viewing = nil }
@@ -376,9 +377,13 @@ private struct UserRow: View, Equatable {
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             if !text.isEmpty { UserMessageView(attributedText) }
-            ForEach(images, id: \.data) { image in
-                InlineImage(ToolImage(data: image.data, mimeType: image.mimeType), maxWidth: 240, maxHeight: 200)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                InlineImage(
+                    ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref),
+                    maxWidth: 240,
+                    maxHeight: 200
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }

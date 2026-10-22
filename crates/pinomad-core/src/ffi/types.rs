@@ -141,6 +141,9 @@ pub enum CallResult {
     /// `listSkills` — the `$`-mentionable skills in the scope, project entry
     /// first.
     Skills { skills: Vec<SkillEntry> },
+    /// `image` — the decoded bytes a ref named (5.15, ADR-0027). The ref is
+    /// cleared: the bytes are what the caller asked for.
+    Image { image: MessageImage },
     /// `createPairing` — the one-time offer another device scans; `url`
     /// carries the host key and secret, `expires_at` is epoch ms.
     Pairing { url: String, expires_at: f64 },
@@ -208,6 +211,28 @@ pub(crate) fn pairing_of(value: Option<&Json>) -> Result<(String, f64), String> 
         .and_then(Json::as_number)
         .ok_or_else(|| "malformed createPairing result: expiresAt".to_string())?;
     Ok((url, expires_at))
+}
+
+/// `image`'s typed result — strict like `changes_of`: a ref lookup without
+/// usable bytes is a host-contract violation, and the caller may cache what
+/// comes back under the ref it asked for.
+pub(crate) fn image_of(value: Option<&Json>) -> Result<MessageImage, String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed image result".to_string())?;
+    let data = value
+        .get("data")
+        .and_then(Json::as_str)
+        .filter(|data| !data.is_empty())
+        .map(|data| data.to_string_lossy())
+        .ok_or_else(|| "malformed image result: data".to_string())?;
+    let mime_type = value
+        .get("mimeType")
+        .and_then(Json::as_str)
+        .filter(|mime| !mime.is_empty())
+        .map(|mime| mime.to_string_lossy())
+        .ok_or_else(|| "malformed image result: mimeType".to_string())?;
+    Ok(MessageImage { data, mime_type, ref_: None })
 }
 
 /// `listFiles`'s typed result — strict like `changes_of`: a malformed shape

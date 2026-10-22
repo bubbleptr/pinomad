@@ -112,14 +112,22 @@ public struct ToolCall: Sendable, Equatable, Identifiable {
 
 /// An image attached to a tool result, as wire data — decoding is the
 /// view's job so the model stays UI-free.
-public struct ToolImage: Sendable, Equatable {
-    /// Base64-encoded image bytes.
+public struct ToolImage: Sendable, Equatable, Identifiable {
+    /// Base64-encoded image bytes; empty for a ref the view still has to
+    /// fetch (ADR-0027).
     public var data: String
     public var mimeType: String
+    /// The host's content ref when the conversation runs in ref mode.
+    public var ref: String?
 
-    public init(data: String, mimeType: String) {
+    /// A ref identifies the bytes across snapshots; inline bytes are their
+    /// own identity. Used by `ForEach` and the decode cache.
+    public var id: String { ref ?? data }
+
+    public init(data: String, mimeType: String, ref: String? = nil) {
         self.data = data
         self.mimeType = mimeType
+        self.ref = ref
     }
 }
 

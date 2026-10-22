@@ -105,6 +105,11 @@ pub enum Call {
     /// `listSkills` — the `$`-mentionable skills for a scope (issue #143).
     /// Same read-only, unqueued shape as `listFiles`. Needs a 5.13 host.
     ListSkills { scope: Json },
+    /// `image` — the bytes behind a ref this connection's conversation
+    /// stream was shown (5.15, ADR-0027). Read-only and unqueued like
+    /// `listFiles`: a slow fetch must not hold up commands, and a hung
+    /// command must not hide a picture the screen already needs.
+    Image { ref_: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -192,9 +197,9 @@ enum OpKind {
     /// `abort` — not part of the serialized chain; failure becomes a notice
     /// and the op still reports success (the promise resolves).
     Unqueued,
-    /// `listFiles` — not part of the serialized chain either, but the
-    /// caller owns the result like a Request: a read-only completion query
-    /// resolves with the host's answer or its error.
+    /// `listFiles` / `listSkills` / `image` — not part of the serialized
+    /// chain either, but the caller owns the result like a Request: a
+    /// read-only query resolves with the host's answer or its error.
     Direct,
 }
 
@@ -287,7 +292,16 @@ pub struct RemoteDurable {
     state: Option<JsonObject>,
     current: Option<u64>,
     side: Option<u64>,
+    /// This connection's hello has arrived. A subscribe must wait for it:
+    /// the last connection's minor says nothing about this host, and the
+    /// hello's wanted loop sends the right form with the new minor.
+    hello_received: bool,
     host_minor: u32,
+    /// Monotonic count of times the shown conversation's streams became
+    /// fresh. A boolean is not enough: the platform may coalesce the hello
+    /// snapshot (false) and the resubscribed snapshot (true) into one, and
+    /// the UI still needs a new value to trigger ref retries.
+    conversation_fresh_epoch: u64,
     hello_models: Json,
     hello_defaults: Json,
     host_version: Option<Json>,
@@ -329,7 +343,9 @@ impl RemoteDurable {
             state: None,
             current: None,
             side: None,
+            hello_received: false,
             host_minor: 0,
+            conversation_fresh_epoch: 0,
             hello_models: Json::Null,
             hello_defaults: Json::Object(Arc::new(JsonObject::new())),
             host_version: None,
@@ -372,6 +388,26 @@ impl RemoteDurable {
     /// version a delivered snapshot is tagged with.
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    /// Whether the shown conversation's own stream has sent a snapshot on
+    /// the current connection. False between a reconnect hello and the
+    /// resubscribed stream's fresh value, which is exactly when a ref lookup
+    /// would not resolve yet.
+    pub fn conversation_is_fresh(&self) -> bool {
+        self.current.is_some_and(|id| {
+            self.conversation_streams(id)
+                .iter()
+                .filter(|stream| self.wanted.contains(*stream))
+                .all(|stream| self.fresh.contains(stream))
+        })
+    }
+
+    /// How many times the shown conversation's streams have become fresh.
+    /// The UI retries failed refs when this changes; it does not need to
+    /// observe the false state, which snapshot coalescing may drop.
+    pub fn conversation_fresh_epoch(&self) -> u64 {
+        self.conversation_fresh_epoch
     }
 
     pub fn handle(&mut self, event: Event) -> Vec<Command> {
@@ -445,6 +481,7 @@ impl RemoteDurable {
 
     /// `#open` — a new connection generation.
     fn open(&mut self) {
+        self.hello_received = false;
         self.next_conn += 1;
         let id = self.next_conn;
         let inner = self.transport.open();
@@ -489,6 +526,20 @@ impl RemoteDurable {
             conn.inner.send(text, &mut conn_out);
             self.drain_conn_out(conn_out);
         }
+    }
+
+    /// Subscribe to one stream. Conversation streams ask a 5.15 host for
+    /// refs on every (re)subscribe; the minor is read here, never cached,
+    /// because a reconnect may land on another host version (ADR-0027).
+    fn subscribe_stream(&mut self, stream: Vec<u16>) {
+        // Before the hello the minor is unknown; the hello's #wanted loop
+        // sends this stream with the right form once it has read it.
+        if !self.hello_received {
+            return;
+        }
+        let images = host_supports_feature(self.host_minor, HostFeature::ImageRefs)
+            && U16String(stream.clone()).to_string_lossy().starts_with("conversation:");
+        self.send(ClientFrame::Subscribe { stream: U16String(stream), images });
     }
 
     /// `#receive` — one complete JSON text frame; errors are channel
@@ -593,6 +644,7 @@ impl RemoteDurable {
             _ => 0,
         };
         self.host_minor = host_minor;
+        self.hello_received = true;
         self.attempt = 0;
         self.docs = parse_docs(&frame)?;
         self.hello_models = frame.get("models").cloned().unwrap_or(Json::Null);
@@ -627,7 +679,7 @@ impl RemoteDurable {
             }
         }
         for stream in self.wanted.clone() {
-            self.send(ClientFrame::Subscribe { stream: U16String(stream) });
+            self.subscribe_stream(stream);
         }
         if self.state.is_some() {
             self.set_or_clear("session", frame.get("session").cloned());
@@ -651,8 +703,12 @@ impl RemoteDurable {
         if !self.wanted.contains(&units) {
             return Ok(());
         }
+        let was_fresh = self.conversation_is_fresh();
         self.values.insert(units.clone(), value);
         self.fresh.insert(units.clone());
+        if !was_fresh && self.conversation_is_fresh() {
+            self.conversation_fresh_epoch += 1;
+        }
         self.refresh()?;
         // Waiters resolve after the refresh — matching the reference's
         // ordering (snapshot sets values, then resolves the waiters).
@@ -858,7 +914,7 @@ impl RemoteDurable {
             | Call::WithdrawQueued { .. }
             | Call::SteerQueued { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. } | Call::ListSkills { .. } => OpKind::Direct,
+            Call::ListFiles { .. } | Call::ListSkills { .. } | Call::Image { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1188,6 +1244,12 @@ impl RemoteDurable {
                 }
                 steps.push_back(Step::Call { method: "listSkills", args: obj(&[("scope", scope.clone())]) });
             }
+            Call::Image { ref_ } => {
+                if !host_supports_call(self.host_minor, "image") {
+                    return Err(too_old("5.15"));
+                }
+                steps.push_back(Step::Call { method: "image", args: obj(&[("ref", Json::from(ref_.clone()))]) });
+            }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });
         Ok(steps)
@@ -1270,7 +1332,7 @@ impl RemoteDurable {
                         .collect();
                     for stream in missing {
                         self.wanted.insert(stream.clone());
-                        self.send(ClientFrame::Subscribe { stream: U16String(stream) });
+                        self.subscribe_stream(stream);
                     }
                     if waiting.is_empty() {
                         if let Err(error) = self.apply_show(slot, id) {
@@ -1316,7 +1378,7 @@ impl RemoteDurable {
                         }
                     } else {
                         self.wanted.insert(tasks.clone());
-                        self.send(ClientFrame::Subscribe { stream: U16String(tasks.clone()) });
+                        self.subscribe_stream(tasks.clone());
                         self.active[index].waiting = Some(Wait::Snapshots(BTreeSet::from([tasks])));
                         return;
                     }
@@ -1334,6 +1396,9 @@ impl RemoteDurable {
                 self.current = Some(id);
                 if let Some(previous) = previous {
                     self.release(previous, self.side);
+                }
+                if previous != Some(id) && self.conversation_is_fresh() {
+                    self.conversation_fresh_epoch += 1;
                 }
             }
             Slot::Side => {

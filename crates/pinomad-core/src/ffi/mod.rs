@@ -31,6 +31,7 @@ pub(crate) enum ResultKind {
     Files,
     Pairing,
     Skills,
+    Image,
     WithdrawQueued,
     SteerQueued,
 }
@@ -129,6 +130,13 @@ impl PinomadClient {
                             Ok(skills) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Skills { skills },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::Image) => match image_of(value.as_ref()) {
+                            Ok(image) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::Image { image },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

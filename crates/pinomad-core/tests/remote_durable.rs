@@ -223,6 +223,14 @@ impl ScriptedHost {
             .collect()
     }
 
+    /// The last subscribe frame for `stream`, with its optional ref mode.
+    fn subscription(&self, stream: &str) -> Option<Json> {
+        self.sent.iter().rev().find(|frame| {
+            frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy() == "subscribe").unwrap_or(false)
+                && frame.get("stream").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some(stream.to_string())
+        }).cloned()
+    }
+
     fn unsubscribes(&self) -> Vec<String> {
         self.sent
             .iter()
@@ -578,6 +586,122 @@ fn close_4401_before_ready_rejects_unauthorized() {
         })
         .expect("ready outcome");
     assert_eq!(ready, ReadyOutcome::Unauthorized);
+}
+
+// ─── image refs (5.15, ADR-0027) ─────────────────────────────────────
+
+fn has_ref_mode(frame: Option<&Json>) -> bool {
+    frame.and_then(|f| f.get("images")).and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some("ref".to_string())
+}
+
+#[test]
+fn a_5_15_host_gets_ref_subs_for_conversations_only() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    assert!(has_ref_mode(h.host.subscription("conversation:1").as_ref()));
+    // Host streams and doc streams predate refs; the flag is a
+    // conversation-stream contract only.
+    assert!(!has_ref_mode(h.host.subscription("conversations").as_ref()));
+    assert!(!has_ref_mode(h.host.subscription("settings").as_ref()));
+    assert!(!has_ref_mode(h.host.subscription(&format!("doc:{DOC_KIND}:1")).as_ref()));
+    assert!(!has_ref_mode(h.host.subscription("tasks").as_ref()));
+}
+
+#[test]
+fn a_5_14_host_gets_no_ref_subs() {
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![("protocol".to_string(), protocol_obj(14.0))],
+    );
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    assert!(!has_ref_mode(h.host.subscription("conversation:1").as_ref()));
+}
+
+#[test]
+fn reconnect_resubscribes_a_conversation_with_refs() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    let before = h.host.subscribes().len();
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert!(h.host.subscribes().len() > before);
+    assert!(has_ref_mode(h.host.subscription("conversation:1").as_ref()));
+}
+
+#[test]
+fn conversation_freshness_waits_for_the_reconnect_snapshot() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    assert!(h.remote.conversation_is_fresh());
+    let epoch = h.remote.conversation_fresh_epoch();
+    assert!(epoch > 0);
+
+    // The hello re-sends the subscribe, but the host holds the fresh
+    // conversation snapshot: the old view is still on screen while a ref
+    // lookup would not resolve on the host yet.
+    h.host.held.insert("conversation:1".to_string());
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert!(h.host.subscribes().contains(&"conversation:1".to_string()));
+    assert!(!h.remote.conversation_is_fresh());
+    assert_eq!(h.remote.conversation_fresh_epoch(), epoch);
+
+    h.host.held.clear();
+    h.deliver(obj(&[
+        ("type", Json::from("snapshot")),
+        ("stream", Json::from("conversation:1")),
+        ("value", obj(&[
+            ("conversation", obj(&[("id", Json::from(1.0))])),
+            ("entries", Json::array(vec![])),
+        ])),
+    ]));
+    assert!(h.remote.conversation_is_fresh());
+    assert_eq!(h.remote.conversation_fresh_epoch(), epoch + 1);
+}
+
+#[test]
+fn subscriptions_wait_for_the_hello() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut remote = RemoteDurable::new(RemoteDurableOptions {
+        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
+        reconnect_delay_ms: None,
+        request_id: None,
+    });
+    let _ = remote.take();
+    // Switching before hello records the wanted streams but cannot send yet:
+    // the previous connection's minor says nothing about this host.
+    let before = remote.handle(Event::Invoke { op: 1, call: Call::SwitchConversation { id: 1 } });
+    assert!(!before.iter().any(|command| matches!(command, Command::SendBytes { .. })));
+
+    let after = remote.handle(Event::SocketData { conn: 1, bytes: host.hello().into_bytes() });
+    let frames: Vec<Json> = after
+        .iter()
+        .filter_map(|command| match command {
+            Command::SendBytes { bytes, .. } => Json::parse(std::str::from_utf8(bytes).expect("frame")).ok(),
+            _ => None,
+        })
+        .collect();
+    let conversation = frames
+        .iter()
+        .find(|frame| {
+            frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some("subscribe".to_string())
+                && frame.get("stream").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some("conversation:1".to_string())
+        })
+        .expect("conversation subscribe after hello");
+    assert!(has_ref_mode(Some(conversation)));
+}
+
+#[test]
+fn ref_mode_follows_the_minor_of_each_hello() {
+    // The first connection is 5.15, the reconnect announces 5.14: the
+    // resent subscribe must drop the flag, not keep the stale decision.
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.disconnect(1000, None);
+    h.host.hello_extras = vec![("protocol".to_string(), protocol_obj(14.0))];
+    h.fire_timer();
+    assert!(!has_ref_mode(h.host.subscription("conversation:1").as_ref()));
 }
 
 // ─── side conversation ────────────────────────────────────────────────
@@ -1211,6 +1335,48 @@ fn list_files_is_not_queued_behind_a_hanging_command() {
     assert!(matches!(h.ops.get(&3), Some(Ok(_))));
     // The queue is still held by the hung archive: the rename never ran.
     assert!(h.ops.get(&2).is_none());
+}
+
+#[test]
+fn image_needs_a_5_15_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(14.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::Image { ref_: "abc123".to_string() });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.15")));
+    assert!(h.host.method("image").is_empty());
+}
+
+#[test]
+fn image_is_direct_and_resolves_its_bytes() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.call_results.insert(
+        "image".to_string(),
+        obj(&[
+            ("data", Json::from("AA==")),
+            ("mimeType", Json::from("image/png")),
+        ]),
+    );
+    let mut h = Harness::new(host);
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::RenameConversation { id: 1, title: "x".to_string() });
+    h.invoke(3, Call::Image { ref_: "abc123".to_string() });
+    assert_eq!(h.host.method("archive").len(), 1);
+    // Same read-only, unqueued shape as listFiles: a hung command must not
+    // block fetching an image the screen already needs.
+    assert!(h.host.method("renameConversation").is_empty());
+    assert_eq!(h.host.method("image").len(), 1);
+    assert_eq!(
+        h.host.method("image")[0].get("args").cloned(),
+        Some(obj(&[("ref", Json::from("abc123"))])),
+    );
+    assert_eq!(
+        h.ops.get(&3),
+        Some(&Ok(Some(obj(&[
+            ("data", Json::from("AA==")),
+            ("mimeType", Json::from("image/png")),
+        ])))),
+    );
 }
 
 #[test]

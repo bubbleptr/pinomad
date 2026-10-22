@@ -35,11 +35,11 @@ pub struct DiffStat {
     pub deletions: f64,
 }
 
-/// An image block carried on a tool result or a user message. Inline bytes
-/// live in `data`; a ref-form block leaves it empty and names the bytes in
-/// `ref_`. This is the transitional layer-2 shape — layer 4 decides the final
-/// iOS FFI shape (ADR-0027) — and the field stays optional with a UniFFI
-/// default so existing Swift `MessageImage(data:mimeType:)` call sites compile.
+/// An image as the iOS FFI carries it (ADR-0027): bytes in `data`, or a
+/// `ref_` with `data` empty that the caller must resolve through `image`.
+/// Both forms are permanent — a view may hold either — and the field stays
+/// optional with a UniFFI default so byte-only call sites keep their
+/// `MessageImage(data:mimeType:)` initializer.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct MessageImage {

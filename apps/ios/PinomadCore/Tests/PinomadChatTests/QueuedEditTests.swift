@@ -96,4 +96,59 @@ private let copy = QueuedEdit.Copy(
         #expect(edit.copy == copy)
         #expect(edit.phase == .withdrawing)
     }
+
+    /// A ref copy must be resolved to bytes before the withdraw, because
+    /// withdrawing removes the only view the ref was valid through. If any
+    /// image fails, the flow stays idle and the row is never withdrawn.
+    @Test func failedRefResolutionLeavesTheEditIdleAndWithdrawsNothing() async {
+        let refCopy = QueuedEdit.Copy(
+            conversationId: 7,
+            id: 42,
+            text: "edit me",
+            images: [
+                MessageImage(data: "", mimeType: "image/jpeg", ref: "missing-ref"),
+            ]
+        )
+        var edit = QueuedEdit()
+        var withdrew = false
+
+        do {
+            let resolved = try await refCopy.resolvingImages { _ in
+                throw ResolutionFailure.missing
+            }
+            _ = edit.begin(resolved)
+            withdrew = true
+        } catch ResolutionFailure.missing {
+            // Expected: the caller must not begin (and so cannot withdraw).
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+
+        #expect(!withdrew)
+        #expect(edit.phase == .idle)
+        #expect(edit.copy == nil)
+        #expect(refCopy.images.first?.ref == "missing-ref")
+    }
+
+    @Test func resolvingReplacesEveryRefWithItsBytes() async throws {
+        let refCopy = QueuedEdit.Copy(
+            conversationId: 7,
+            id: 42,
+            text: "edit me",
+            images: [
+                MessageImage(data: "", mimeType: "image/jpeg", ref: "one"),
+                MessageImage(data: "already", mimeType: "image/png"),
+            ]
+        )
+        let resolved = try await refCopy.resolvingImages { ref in
+            #expect(ref == "one")
+            return CachedImage(data: "bytes", mimeType: "image/png")
+        }
+        #expect(resolved.images.map(\.data) == ["bytes", "already"])
+        #expect(resolved.images.allSatisfy { $0.ref == nil })
+    }
+}
+
+private enum ResolutionFailure: Error {
+    case missing
 }
