@@ -144,7 +144,7 @@ struct OverviewSheet: View {
                 LabeledContent {
                     changeStat
                 } label: {
-                    Label("改动", image: .diff)
+                    Label("改动", image: .squareDiff)
                 }
             }
         }

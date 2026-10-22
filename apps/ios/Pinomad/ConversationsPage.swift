@@ -277,10 +277,10 @@ extension ConversationFilter {
     var image: ImageResource {
         switch self {
         case .all: .inbox
-        case .needsAnswer: .bellDot
+        case .needsAnswer: .bellCheck
         case .running: .circleDashed
-        case .failed: .triangleAlert
-        case .chats: .messagesSquare
+        case .failed: .ban
+        case .chats: .messageCircle
         case .project: .folder
         }
     }

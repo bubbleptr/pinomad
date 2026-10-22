@@ -45,7 +45,7 @@ struct SettingsView: View {
                     model.present(.account)
                 } label: {
                     Label(model.accountRecord.map { "账号：\($0.username)" } ?? "登录账号",
-                          image: .circleUser)
+                          image: .userRound)
                 }
                 .tint(.primary)
             } header: {
@@ -293,7 +293,7 @@ struct MachineSettingsView: View {
                 archivedSection(snapshot.organized.archived)
             } else {
                 ContentUnavailableView {
-                    Label("没有连着这台机器", image: .unplug)
+                    Label("没有连着这台机器", image: .cloudOff)
                 } description: {
                     Text("连上它之后才能查看它的设置。")
                 }
