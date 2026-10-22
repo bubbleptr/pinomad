@@ -18,12 +18,14 @@ struct PairingSources: View {
                     .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
 
             HStack(spacing: 8) {
                 TextField("http://…#pair=… 或 pinomad://pair#…", text: $text)
-                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 44)
+                    .glassEffect(.regular, in: .capsule)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -38,7 +40,9 @@ struct PairingSources: View {
                     }
                 }
                 .labelStyle(.iconOnly)
-                .buttonBorderShape(.capsule)
+                .buttonBorderShape(.circle)
+                .buttonStyle(.glass)
+                .controlSize(.large)
             }
             if invalid {
                 Text("不是有效的配对链接——粘贴 `pinomad pair` 打印的完整链接。")
@@ -46,7 +50,8 @@ struct PairingSources: View {
                     .foregroundStyle(.red)
             }
             Button("继续", action: submit)
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
+                .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .disabled(text.allSatisfy(\.isWhitespace))
         }
@@ -85,7 +90,7 @@ struct PairingStartView: View {
                     Label("账号：\(session.username)", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.large)
                 Text("在账号页里配对它名下的宿主。")
                     .font(.footnote)
@@ -97,7 +102,7 @@ struct PairingStartView: View {
                     Label("用账号登录", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.large)
                 Text("登录后不用扫码，就能配对你账号下的宿主。")
                     .font(.footnote)
@@ -144,14 +149,14 @@ struct PairConfirmView: View {
                     Button { dismiss() } label: {
                         Text("取消").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     Button {
                         model.pair(link: pending.link)
                         dismiss()
                     } label: {
                         Text("配对").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                 }
                 .controlSize(.large)
                 .padding(.top, 8)
@@ -163,7 +168,7 @@ struct PairConfirmView: View {
                 Button { dismiss() } label: {
                     Text("好").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.large)
                 .padding(.top, 8)
             }

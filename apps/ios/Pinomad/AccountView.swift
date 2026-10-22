@@ -167,7 +167,7 @@ struct AccountView: View {
                     model.switchHost(hostKey)
                     dismiss()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.small)
             }
         case .pair, .rePair:
@@ -177,7 +177,7 @@ struct AccountView: View {
                 Button(row.action == .rePair ? "重新配对" : "配对") {
                     requestAccountPair(row)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.small)
                 .disabled(!row.pairable || model.accountBusy)
             }

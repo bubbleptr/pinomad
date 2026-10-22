@@ -30,9 +30,11 @@ struct SettingsView: View {
             .tint(.primary)
 
             Section("配对一台") {
+                // On the section's card: a list row clips the glass
+                // controls' shadow square, which reads as a smear on the
+                // bare grouped background but not inside the card.
                 PairingSources(model: model)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
+                    .padding(.vertical, 6)
             }
 
             pushSection
@@ -306,7 +308,7 @@ struct MachineSettingsView: View {
             Spacer()
             if let id = entry.node.summary.id {
                 Button("恢复") { model.archive(conversation: id, false) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .controlSize(.small)
                     .disabled(!model.connected)
             }
