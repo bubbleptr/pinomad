@@ -2227,7 +2227,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["paired answer"],
-    remote: { port: await freePort() },
+    remote: { port: 0 },
   });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2274,7 +2274,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
 
 it("manages paired devices from Settings → Devices", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
@@ -2372,7 +2372,7 @@ it("pairs a device by pasting the loopback link on the no-link screen", async ()
 
 it("names the host and opens no socket until a pair link is confirmed", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;
@@ -2395,7 +2395,7 @@ it("names the host and opens no socket until a pair link is confirmed", async ()
 
 it("drops a pair link back to the no-link screen on Cancel", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;
@@ -2413,7 +2413,7 @@ it("drops a pair link back to the no-link screen on Cancel", async () => {
 
 it("re-resolves the address when the hash changes in place", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;
@@ -2435,7 +2435,7 @@ it("re-resolves the address when the hash changes in place", async () => {
 
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;
@@ -2460,7 +2460,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["paired answer", "second answer"],
-    remote: { port: await freePort() },
+    remote: { port: 0 },
   });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2503,7 +2503,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
 
 it("tells a fresh browser that a spent pairing code was used or expired", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;
@@ -2530,7 +2530,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
 
 it("keeps a rejected pairing's recovery button reachable by scrolling on a short viewport", async () => {
   const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: await freePort() } });
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
   const pair = pairingUrl.split("#pair=")[1]!;

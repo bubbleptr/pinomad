@@ -9,6 +9,7 @@ import { join, resolve, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { AgentDoc, type Harness } from "@earendil-works/pi-durable";
 import type { FileListing, FileScope } from "@pinomad/protocol/organization.ts";
+import { checkoutAt, worktreeSettled } from "./checkout.ts";
 import { IndexDoc } from "./organization.ts";
 
 /** One enumeration's output: the candidate paths it found, and whether any bound cut it short. */
@@ -353,8 +354,11 @@ export async function listFiles(
     // Chats live under <dataDir>/chats — never a project checkout.
     if (cwd.startsWith(join(dataDir, "chats") + sep)) return { files: [], truncated: false };
     // The checkout must already exist: never ensureWorktree, never fall back
-    // to the project directory (issue #138).
-    const info = await stat(cwd).catch(() => undefined);
+    // to the project directory (issue #138). A worktree still being checked
+    // out is waited for, never listed half-written.
+    const record = checkoutAt((await harness.snapshot(IndexDoc, context))?.checkouts, cwd);
+    const ready = record === undefined || (await worktreeSettled(record));
+    const info = ready ? await stat(cwd).catch(() => undefined) : undefined;
     if (info === undefined || !info.isDirectory()) {
       throw new Error(`Conversation ${scope.conversationId}'s checkout is unavailable: ${cwd}`);
     }

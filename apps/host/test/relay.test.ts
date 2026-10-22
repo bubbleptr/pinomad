@@ -463,7 +463,7 @@ describe("relay link", () => {
     const { origin } = await startTestRelay(dir.path);
     const host = await startFauxHost(defer, {
       dataDir: dir.path,
-      remote: { port: await freePort() },
+      remote: { port: 0 },
       relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
     });
     await waitForRelayState(host, "registered");

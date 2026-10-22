@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
+import { createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ import { DevicesDoc, RevocationsDoc } from "../src/devices.ts";
 import { pickLanAddress } from "../src/gateway.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { removeServerConfig, writeServerConfig } from "../src/server-config.ts";
-import { connectTo, freePort, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -110,7 +111,7 @@ describe("remote access", () => {
   });
 
   it("pairs a device and the client can drive conversations", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() }, answers: ["paired hello"] });
+    const host = await startFauxHost(defer, { remote: { port: 0 }, answers: ["paired hello"] });
     expect(host.remote).toBeDefined();
     const tokenClient = await connectTo(defer, host);
 
@@ -134,7 +135,7 @@ describe("remote access", () => {
   });
 
   it("reconnects a registered device without pairing", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -147,7 +148,7 @@ describe("remote access", () => {
   });
 
   it("rejects wrong, reused, expired, and absent pairing secrets", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort(), pairingTtlMs: 60 } });
+    const host = await startFauxHost(defer, { remote: { port: 0, pairingTtlMs: 60 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -172,7 +173,7 @@ describe("remote access", () => {
   });
 
   it("accepts a registered device resending its pair payload (lost reply retry)", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -185,7 +186,7 @@ describe("remote access", () => {
   });
 
   it("revoking a device closes its live client and rejects reconnects", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -201,7 +202,7 @@ describe("remote access", () => {
   });
 
   it("keeps an established session alive past the handshake timeout", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort(), handshakeTimeoutMs: 100 } });
+    const host = await startFauxHost(defer, { remote: { port: 0, handshakeTimeoutMs: 100 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -222,14 +223,14 @@ describe("remote access", () => {
   });
 
   it("still closes a socket that never sends the handshake", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort(), handshakeTimeoutMs: 100 } });
+    const host = await startFauxHost(defer, { remote: { port: 0, handshakeTimeoutMs: 100 } });
     const socket = new WebSocket(host.remote!.url);
     const [code] = await once(socket, "close");
     expect(code).toBe(1008);
   });
 
   it("does not serve token auth or garbage on the remote port", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const socket = new WebSocket(`${host.remote!.url}?token=${host.token}`);
     const closed = once(socket, "close");
     socket.on("open", () => socket.send(JSON.stringify({ type: "subscribe", stream: "tasks" })));
@@ -246,8 +247,7 @@ describe("remote access", () => {
   it("keeps the same host key across a restart; a paired device reconnects without pairing", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const port = await freePort();
-    const first = await startFauxHost(defer, { dataDir: dir.path, remote: { port } });
+    const first = await startFauxHost(defer, { dataDir: dir.path, remote: { port: 0 } });
     const tokenClient = await connectTo(defer, first);
     const { url } = await createPairing(tokenClient);
     const { secret } = pairFrom(url);
@@ -257,7 +257,7 @@ describe("remote access", () => {
     await paired.close();
     await first.close();
 
-    const reopened = await startFauxHost(defer, { dataDir: dir.path, remote: { port } });
+    const reopened = await startFauxHost(defer, { dataDir: dir.path, remote: { port: 0 } });
     expect(reopened.remote!.hostKey).toEqual(key);
     const remote = await connectDevice(reopened, device);
     expect(remote.view.current().connection).toBe("connected");
@@ -270,7 +270,7 @@ describe("remote access", () => {
     await writeFile(join(webRoot.path, "index.html"), "<html>pinomad</html>");
     await writeFile(join(webRoot.path, "assets", "app.js"), "console.log(1)");
 
-    const host = await startFauxHost(defer, { webRoot: webRoot.path, remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { webRoot: webRoot.path, remote: { port: 0 } });
     const http = `http://127.0.0.1:${new URL(host.remote!.url).port}`;
 
     const index = await fetch(`${http}/`);
@@ -321,7 +321,7 @@ describe("remote access", () => {
   });
 
   it("reports the web client missing when webRoot is absent", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const http = `http://127.0.0.1:${new URL(host.remote!.url).port}`;
     const response = await fetch(`${http}/`);
     expect(response.status).toBe(503);
@@ -339,7 +339,7 @@ describe("account-source admission", () => {
   async function joinedHost(): Promise<{ host: OpenedHost; dataDir: string }> {
     const dir = await tempDir();
     defer(dir.remove);
-    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: 0 } });
     await writeServerConfig(dir.path, { origin: SERVER });
     return { host, dataDir: dir.path };
   }
@@ -444,7 +444,7 @@ describe("account-source admission", () => {
     // Only ever possible on a dev checkout between join and this change: a
     // file with `origin` but no `binding`.
     await writeFile(join(dir.path, "server.json"), JSON.stringify({ origin: SERVER }));
-    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { dataDir: dir.path, remote: { port: 0 } });
     const tokenClient = await connectTo(defer, host);
     expect(await host.createAccountOffer()).toBeUndefined();
 
@@ -455,8 +455,22 @@ describe("account-source admission", () => {
     expect(remote.view.current().connection).toBe("connected");
   });
 
+  // A taken port must reject startup. ws re-emits the http server's listen
+  // error on a WebSocketServer that has no listener: attached before listen,
+  // that turned EADDRINUSE into an uncaught exception and a hung startup.
+  it.each([
+    { listener: "loopback", address: "127.0.0.1", options: (port: number) => ({ port }) },
+    { listener: "remote", address: "0.0.0.0", options: (port: number) => ({ remote: { port } }) },
+  ])("rejects startup when the $listener port is taken", async ({ address, options }) => {
+    const taken = createServer();
+    await new Promise<void>((resolve) => taken.listen(0, address, resolve));
+    defer(() => new Promise<void>((resolve) => taken.close(() => resolve())));
+    const { port } = taken.address() as AddressInfo;
+    await expect(startFauxHost(defer, options(port))).rejects.toMatchObject({ code: "EADDRINUSE" });
+  }, 5_000);
+
   it("still connects a device registered before sources existed", async () => {
-    const host = await startFauxHost(defer, { remote: { port: await freePort() } });
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
     const device = generateKeyPair();
     // A record written by a host that predated sources: no `source` field.
     await host.harness.commit(async (tx) => {

@@ -152,6 +152,15 @@ export const worktreeExists = async (path: string): Promise<boolean> =>
   );
 
 /**
+ * Whether a record's worktree is real once in-flight git work on its repo
+ * settles. `git worktree add` creates the directory before checking files
+ * out, so a reader waits out `ensureWorktree` instead of listing a
+ * half-written checkout. Never creates one (issue #138).
+ */
+export const worktreeSettled = (record: WorktreeCheckout): Promise<boolean> =>
+  locked(record.repo, () => worktreeExists(record.path));
+
+/**
  * Create the directory for a record that lacks one: an existing branch is
  * reused (committed work survives `rm -rf` and crashes between commit and
  * first use); a new branch starts at `base`, overlaid with the fork snapshot
