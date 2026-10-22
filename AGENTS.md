@@ -1,6 +1,6 @@
 # PiNomad — Agent 说明
 
-架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0027，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办记在 GitHub Issues，按 milestone 分组（用法见 `docs/agents/issue-tracker.md`）；`docs/roadmap.md` 只放方向和顺序，阶段或顺序变了才改。PR 用 `Closes #N` 关闭对应的 issue，不往 roadmap 里写进度。
+架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0028，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办记在 GitHub Issues，按 milestone 分组（用法见 `docs/agents/issue-tracker.md`）；`docs/roadmap.md` 只放方向和顺序，阶段或顺序变了才改。PR 用 `Closes #N` 关闭对应的 issue，不往 roadmap 里写进度。
 
 新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 milestone 和 issue，用法进 README（中英两份 `README.md` / `README.zh-CN.md` 要同步）和 `docs/` 下的使用文档（`usage.md`、`remote-access.md`、`service.md`、`website.md`），不写进 ADR。新增 ADR 时同步更新索引。
 

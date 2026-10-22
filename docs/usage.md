@@ -17,7 +17,9 @@ Chat 对话在 `<数据目录>/chats/<对话 id>` 里工作。fork 和子代理�
 agent 用 read / write / edit / bash 工具，执行前不需要审批；拿不准方向时用 `ask_user_question` 向用户提 1–4 个带选项的问题，问题卡片显示在输入框上方，用户也可以不回卡片、直接在对话里回复（ADR-0011）。agent 还可以用 `subagent` 把一个自包含的任务交给子代理：子代理在自己的对话里从零开始（看不到父对话），和父对话共用同一个检出，同一轮里的多个子代理并发执行；它不能向用户提问，需要澄清时写进回答交回父代理；默认沿用父对话的模型和思考等级，也可以在调用时用 `model`（`provider/modelId`）和 `thinkingLevel` 指定。中止父对话会连带中止子代理。edit / write 的结果带 unified diff，渲染成 diff 而不是文本；对话标题栏的 Overview 按钮打开一张浮在对话区右上角的概览卡片（从新对话页发出第一条消息时自动打开，窄屏除外）：项目对话的检出方式（Git worktree 或 Project folder）、工作目录、分支、改动行数（worktree 相对基线 commit，项目目录则是未提交的改动，每轮运行结束时刷新，点开看完整 diff）、上下文窗口用量和已花费的金额、运行中的子代理和 MCP 服务器状态。新对话页在输入框下方选择项目和检出方式。agent 还有 `codemode`（ADR-0013）：写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文，适合并发读多个文件、先过滤大段 bash 输出再看、批量改文件，以及调用 MCP 工具。脚本里能调 read / bash / edit / write 和 MCP 工具，不能调 `ask_user_question`、`subagent` 和 `codemode` 自己；一次 codemode 调用在 Web 上是一张卡片，列出脚本、每次嵌套调用的状态和耗时，以及脚本输出。嵌套调用不单独进 transcript；宿主崩溃或重启后脚本按确定性重放续跑，已完成的嵌套调用不会重跑，脚本分叉或超时过期才按失败收尾。系统提示词会带上以下内容，每次请求都重新读取（ADR-0006）：
 
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
-- Skills：从 cwd 往上每一层的 `.agents/skills`，直到 git 根（不在 git 仓库里时只看 cwd），以及 `~/.agents/skills`；同名时离 cwd 越近的越优先，所有项目层都压过用户目录。
+- Skills：从 cwd 往上每一层的 `.agents/skills`，直到 git 根（不在 git 仓库里时只看 cwd），以及 `~/.agents/skills`；同名时离 cwd 越近的越优先，所有项目层都压过用户目录。标了 `disable-model-invocation: true` 的 skill 不进这个列表，模型不会自己挑它。
+
+在消息里输入 `$` 可以从菜单里选 skill，输入框会高亮认得的 `$name`。发送时宿主把每个被提及的 skill 的全文（去掉 frontmatter）放在消息前面交给模型，所以明确调用不依赖模型自己去读；`disable-model-invocation` 的 skill 也能这样调用。界面上的消息、排队消息和对话标题只显示你输入的文字。skill 文件读不出来时这一条照原文发出，并提示错误（ADR-0028）。
 
 具名 Agent（ADR-0023）是宿主级的可复用角色配置：每个具名 Agent 一个 Markdown 文件，放在 `<数据目录>/agents/<名字>.md`（默认 `~/.pinomad/agents/`，跟着 `--data-dir` / `PINOMAD_DATA_DIR` 走），文件是 YAML frontmatter 加提示词正文：
 

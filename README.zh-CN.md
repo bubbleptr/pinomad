@@ -74,7 +74,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 | codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
 | MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |
 | 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩放并转成 JPEG |
-| AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills |
+| AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills；消息里用 `$名字` 提及的 skill 会把全文随消息发给模型 |
 
 细节和 MCP 配置说明见[使用说明](docs/usage.md)。
 
