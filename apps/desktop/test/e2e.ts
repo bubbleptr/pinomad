@@ -53,6 +53,8 @@ try {
   const app = await electron.launch({ args: ["."], cwd: appDir, env });
   defer(() => app.close());
   const page = await app.firstWindow();
+  // The composer is a combobox once the skill and @ menus attach, a textbox before.
+  const prompt = page.getByRole("textbox", { name: "Prompt" }).or(page.getByRole("combobox", { name: "Prompt" }));
   const cspViolations: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error" && /content security policy/i.test(message.text())) {
@@ -74,10 +76,9 @@ try {
   await page.getByRole("button", { name: "Pair", exact: true }).click();
 
   // Pairing runs, the page reloads into the workbench, and the channel works.
-  const composer = page.getByRole("textbox");
-  await composer.waitFor({ timeout: 30_000 });
-  await composer.fill("hello from electron");
-  await composer.press("Enter");
+  await prompt.waitFor({ timeout: 30_000 });
+  await prompt.fill("hello from electron");
+  await prompt.press("Enter");
   await page.getByText("hello from the desktop").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: "/tmp/pinomad-desktop-connected.png" });
 
@@ -117,7 +118,7 @@ try {
   );
   await page.getByText("Pair with this host?").waitFor({ timeout: 30_000 });
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+  await prompt.waitFor({ timeout: 30_000 });
 
   // Multi-host: a second faux host pairs from Settings → Hosts, and the
   // sidebar's host menu swaps between the two — one connection at a time.
@@ -138,10 +139,9 @@ try {
     throw new Error("multi-host pairing showed the replace warning");
   }
   await page.getByRole("button", { name: "Pair", exact: true }).click();
-  const composerB = page.getByRole("textbox");
-  await composerB.waitFor({ timeout: 30_000 });
-  await composerB.fill("hello from electron on B");
-  await composerB.press("Enter");
+  await prompt.waitFor({ timeout: 30_000 });
+  await prompt.fill("hello from electron on B");
+  await prompt.press("Enter");
   await page.getByText("hello from host B").waitFor({ timeout: 30_000 });
 
   // The menu fades in on open; wait for the entry animation so screenshots
@@ -168,7 +168,7 @@ try {
   await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
   await page.getByRole("menuitem", { name: `${labelA} (not connected)`, exact: true }).click();
-  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+  await prompt.waitFor({ timeout: 30_000 });
 
   // A dead host lands on a failure screen that still lists the hosts.
   await hostB.close();
@@ -177,7 +177,7 @@ try {
   await page.getByText("Could not connect to the host", { exact: true }).waitFor({ timeout: 30_000 });
   await page.screenshot({ path: "/tmp/pinomad-desktop-failure-switcher.png" });
   await page.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).click();
-  await page.getByRole("textbox").waitFor({ timeout: 30_000 });
+  await prompt.waitFor({ timeout: 30_000 });
 
   // The list is one encrypted blob: neither hostKey appears in plaintext.
   const blob = await readFile(join(env["PINOMAD_USER_DATA_DIR"]!, "hosts.bin"));
