@@ -774,6 +774,55 @@ fn list_files_resolves_a_typed_result() {
     );
 }
 
+/// `image` (5.15, ADR-0027): unqueued like `listFiles`, decodes to the
+/// typed bytes. A malformed result fails the op, and a pre-5.15 host is
+/// refused locally instead of 4400ing the socket.
+#[test]
+fn image_resolves_bytes_and_is_gated_on_5_15() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "image".to_string(),
+        obj(&[
+            ("data", Json::from("AA==")),
+            ("mimeType", Json::from("image/png")),
+        ]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Image {
+            image: MessageImage {
+                data: "AA==".to_string(),
+                mime_type: "image/png".to_string(),
+                ref_: None,
+            },
+        })),
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "image").unwrap_or(false)
+    });
+    assert_eq!(
+        call.and_then(|f| f.get("args").cloned()),
+        Some(obj(&[("ref", Json::from("abc123"))])),
+    );
+
+    let mut bad = ScriptedHost::new();
+    bad.call_results.insert("image".to_string(), obj(&[("data", Json::from("AA=="))]));
+    let mut h = Harness::boot(bad, "req-1");
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("malformed image result")));
+
+    let mut old = ScriptedHost::new();
+    old.minor = 14.0;
+    let mut h = Harness::boot(old, "req-1");
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.15")));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()) != Some("image".to_string())
+    }));
+}
+
 #[test]
 fn list_files_result_malformed_or_error_fails_the_op() {
     for (index, value) in [

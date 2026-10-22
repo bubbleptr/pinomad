@@ -332,7 +332,9 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
 /// Client → host frames; the wire text is `JSON.stringify` of the object.
 #[derive(Clone, Debug)]
 pub enum ClientFrame {
-    Subscribe { stream: U16String },
+    /// `images` asks a 5.15 host to send `{ref}` blocks for a
+    /// `conversation:` stream (ADR-0027); other streams ignore it.
+    Subscribe { stream: U16String, images: bool },
     Unsubscribe { stream: U16String },
     Call { id: f64, method: U16String, args: Json },
 }
@@ -341,9 +343,12 @@ pub fn encode_client_frame(frame: &ClientFrame) -> String {
     let mut object = JsonObject::new();
     let stream_of = |stream: &U16String| Json::String(stream.clone());
     match frame {
-        ClientFrame::Subscribe { stream } => {
+        ClientFrame::Subscribe { stream, images } => {
             object.set(U16String::from_str("type"), Json::from("subscribe"));
             object.set(U16String::from_str("stream"), stream_of(stream));
+            if *images {
+                object.set(U16String::from_str("images"), Json::from("ref"));
+            }
         }
         ClientFrame::Unsubscribe { stream } => {
             object.set(U16String::from_str("type"), Json::from("unsubscribe"));

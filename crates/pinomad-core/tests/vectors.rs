@@ -87,6 +87,7 @@ fn client_frames_encode_byte_identical() {
         let frame = match kind.as_str() {
             "subscribe" => ClientFrame::Subscribe {
                 stream: decoded.get("stream").unwrap().as_str().unwrap().clone(),
+                images: decoded.get("images").and_then(Json::as_str).map(|v| v.to_string_lossy()) == Some("ref".to_string()),
             },
             "unsubscribe" => ClientFrame::Unsubscribe {
                 stream: decoded.get("stream").unwrap().as_str().unwrap().clone(),

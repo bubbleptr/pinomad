@@ -105,6 +105,11 @@ pub enum Call {
     /// `listSkills` — the `$`-mentionable skills for a scope (issue #143).
     /// Same read-only, unqueued shape as `listFiles`. Needs a 5.13 host.
     ListSkills { scope: Json },
+    /// `image` — the bytes behind a ref this connection's conversation
+    /// stream was shown (5.15, ADR-0027). Read-only and unqueued like
+    /// `listFiles`: a slow fetch must not hold up commands, and a hung
+    /// command must not hide a picture the screen already needs.
+    Image { ref_: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -192,9 +197,9 @@ enum OpKind {
     /// `abort` — not part of the serialized chain; failure becomes a notice
     /// and the op still reports success (the promise resolves).
     Unqueued,
-    /// `listFiles` — not part of the serialized chain either, but the
-    /// caller owns the result like a Request: a read-only completion query
-    /// resolves with the host's answer or its error.
+    /// `listFiles` / `listSkills` / `image` — not part of the serialized
+    /// chain either, but the caller owns the result like a Request: a
+    /// read-only query resolves with the host's answer or its error.
     Direct,
 }
 
@@ -491,6 +496,15 @@ impl RemoteDurable {
         }
     }
 
+    /// Subscribe to one stream. Conversation streams ask a 5.15 host for
+    /// refs on every (re)subscribe; the minor is read here, never cached,
+    /// because a reconnect may land on another host version (ADR-0027).
+    fn subscribe_stream(&mut self, stream: Vec<u16>) {
+        let images = self.host_minor >= 15
+            && U16String(stream.clone()).to_string_lossy().starts_with("conversation:");
+        self.send(ClientFrame::Subscribe { stream: U16String(stream), images });
+    }
+
     /// `#receive` — one complete JSON text frame; errors are channel
     /// failures like a JSON.parse/apply exception inside the transport.
     fn receive_text(&mut self, text: &str) {
@@ -627,7 +641,7 @@ impl RemoteDurable {
             }
         }
         for stream in self.wanted.clone() {
-            self.send(ClientFrame::Subscribe { stream: U16String(stream) });
+            self.subscribe_stream(stream);
         }
         if self.state.is_some() {
             self.set_or_clear("session", frame.get("session").cloned());
@@ -858,7 +872,7 @@ impl RemoteDurable {
             | Call::WithdrawQueued { .. }
             | Call::SteerQueued { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. } | Call::ListSkills { .. } => OpKind::Direct,
+            Call::ListFiles { .. } | Call::ListSkills { .. } | Call::Image { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1188,6 +1202,12 @@ impl RemoteDurable {
                 }
                 steps.push_back(Step::Call { method: "listSkills", args: obj(&[("scope", scope.clone())]) });
             }
+            Call::Image { ref_ } => {
+                if !host_supports_call(self.host_minor, "image") {
+                    return Err(too_old("5.15"));
+                }
+                steps.push_back(Step::Call { method: "image", args: obj(&[("ref", Json::from(ref_.clone()))]) });
+            }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });
         Ok(steps)
@@ -1270,7 +1290,7 @@ impl RemoteDurable {
                         .collect();
                     for stream in missing {
                         self.wanted.insert(stream.clone());
-                        self.send(ClientFrame::Subscribe { stream: U16String(stream) });
+                        self.subscribe_stream(stream);
                     }
                     if waiting.is_empty() {
                         if let Err(error) = self.apply_show(slot, id) {
@@ -1316,7 +1336,7 @@ impl RemoteDurable {
                         }
                     } else {
                         self.wanted.insert(tasks.clone());
-                        self.send(ClientFrame::Subscribe { stream: U16String(tasks.clone()) });
+                        self.subscribe_stream(tasks.clone());
                         self.active[index].waiting = Some(Wait::Snapshots(BTreeSet::from([tasks])));
                         return;
                     }
