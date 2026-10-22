@@ -11,6 +11,7 @@ import type { Context } from "@earendil-works/chord";
 import { AgentDoc, type Harness } from "@earendil-works/pi-durable";
 import { loadSkills, type Skill } from "@earendil-works/pi-coding-agent";
 import type { SkillListing, SkillScope } from "@pinomad/protocol/organization.ts";
+import { checkoutAt, worktreeSettled } from "./checkout.ts";
 import { type RootMode, hasHead, inWorkTree } from "./files.ts";
 import { IndexDoc } from "./organization.ts";
 
@@ -182,7 +183,8 @@ export function createSkillLister(
  * A conversation's root is its persisted AgentState cwd — a Chat's is under
  * `<dataDir>/chats`, so its project entry is empty and only user skills list.
  * A missing cwd is a business error: never ensureWorktree, never fall back to
- * the project directory (same rule as listFiles, issue #138).
+ * the project directory (same rule as listFiles, issue #138). A worktree
+ * still being checked out is waited for, never listed half-written.
  */
 export async function listSkills(
   harness: Harness,
@@ -198,7 +200,9 @@ export async function listSkills(
     if (agent === undefined) throw new Error(`Conversation ${scope.conversationId} does not exist`);
     const cwd = agent.cwd;
     if (cwd === undefined) throw new Error(`Conversation ${scope.conversationId} has no checkout`);
-    const info = await stat(cwd).catch(() => undefined);
+    const record = checkoutAt((await harness.snapshot(IndexDoc, context))?.checkouts, cwd);
+    const ready = record === undefined || (await worktreeSettled(record));
+    const info = ready ? await stat(cwd).catch(() => undefined) : undefined;
     if (info === undefined || !info.isDirectory()) {
       throw new Error(`Conversation ${scope.conversationId}'s checkout is unavailable: ${cwd}`);
     }
