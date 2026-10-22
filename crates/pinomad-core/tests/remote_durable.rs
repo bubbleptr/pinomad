@@ -661,6 +661,38 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
 }
 
 #[test]
+fn subscriptions_wait_for_the_hello() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut remote = RemoteDurable::new(RemoteDurableOptions {
+        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
+        reconnect_delay_ms: None,
+        request_id: None,
+    });
+    let _ = remote.take();
+    // Switching before hello records the wanted streams but cannot send yet:
+    // the previous connection's minor says nothing about this host.
+    let before = remote.handle(Event::Invoke { op: 1, call: Call::SwitchConversation { id: 1 } });
+    assert!(!before.iter().any(|command| matches!(command, Command::SendBytes { .. })));
+
+    let after = remote.handle(Event::SocketData { conn: 1, bytes: host.hello().into_bytes() });
+    let frames: Vec<Json> = after
+        .iter()
+        .filter_map(|command| match command {
+            Command::SendBytes { bytes, .. } => Json::parse(std::str::from_utf8(bytes).expect("frame")).ok(),
+            _ => None,
+        })
+        .collect();
+    let conversation = frames
+        .iter()
+        .find(|frame| {
+            frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some("subscribe".to_string())
+                && frame.get("stream").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some("conversation:1".to_string())
+        })
+        .expect("conversation subscribe after hello");
+    assert!(has_ref_mode(Some(conversation)));
+}
+
+#[test]
 fn ref_mode_follows_the_minor_of_each_hello() {
     // The first connection is 5.15, the reconnect announces 5.14: the
     // resent subscribe must drop the flag, not keep the stale decision.

@@ -292,6 +292,10 @@ pub struct RemoteDurable {
     state: Option<JsonObject>,
     current: Option<u64>,
     side: Option<u64>,
+    /// This connection's hello has arrived. A subscribe must wait for it:
+    /// the last connection's minor says nothing about this host, and the
+    /// hello's wanted loop sends the right form with the new minor.
+    hello_received: bool,
     host_minor: u32,
     /// Monotonic count of times the shown conversation's streams became
     /// fresh. A boolean is not enough: the platform may coalesce the hello
@@ -339,6 +343,7 @@ impl RemoteDurable {
             state: None,
             current: None,
             side: None,
+            hello_received: false,
             host_minor: 0,
             conversation_fresh_epoch: 0,
             hello_models: Json::Null,
@@ -476,6 +481,7 @@ impl RemoteDurable {
 
     /// `#open` — a new connection generation.
     fn open(&mut self) {
+        self.hello_received = false;
         self.next_conn += 1;
         let id = self.next_conn;
         let inner = self.transport.open();
@@ -526,7 +532,12 @@ impl RemoteDurable {
     /// refs on every (re)subscribe; the minor is read here, never cached,
     /// because a reconnect may land on another host version (ADR-0027).
     fn subscribe_stream(&mut self, stream: Vec<u16>) {
-        let images = self.host_minor >= 15
+        // Before the hello the minor is unknown; the hello's #wanted loop
+        // sends this stream with the right form once it has read it.
+        if !self.hello_received {
+            return;
+        }
+        let images = host_supports_feature(self.host_minor, HostFeature::ImageRefs)
             && U16String(stream.clone()).to_string_lossy().starts_with("conversation:");
         self.send(ClientFrame::Subscribe { stream: U16String(stream), images });
     }
@@ -633,6 +644,7 @@ impl RemoteDurable {
             _ => 0,
         };
         self.host_minor = host_minor;
+        self.hello_received = true;
         self.attempt = 0;
         self.docs = parse_docs(&frame)?;
         self.hello_models = frame.get("models").cloned().unwrap_or(Json::Null);
