@@ -4,7 +4,7 @@ import { request as httpRequest } from "node:http";
 import { createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -148,6 +148,13 @@ describe("remote access", () => {
   });
 
   it("rejects wrong, reused, expired, and absent pairing secrets", async () => {
+    // The offer lifetime is what this test asserts, so Date is frozen: time
+    // advances only where the test says so, never by how long a refused
+    // handshake or a busy scheduler took between minting and using the offer.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    defer(() => {
+      vi.useRealTimers();
+    });
     const host = await startFauxHost(defer, { remote: { port: 0, pairingTtlMs: 60 } });
     const tokenClient = await connectTo(defer, host);
     const { url } = await createPairing(tokenClient);
@@ -162,10 +169,10 @@ describe("remote access", () => {
     // The offer is consumed: a second device presenting it must be refused.
     await expect(connectDevice(host, generateKeyPair(), { secret, name: "other" })).rejects.toThrow();
 
-    // Expired: a fresh offer past its TTL.
+    // Expired: a fresh offer, then the clock crosses its TTL.
     const { url: expiredUrl } = await createPairing(tokenClient);
     const { secret: expiredSecret } = pairFrom(expiredUrl);
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    vi.setSystemTime(Date.now() + 61);
     await expect(connectDevice(host, generateKeyPair(), { secret: expiredSecret, name: "late" })).rejects.toThrow();
 
     await waitForView(tokenClient.view, (view) => view.devices.length === 1);
