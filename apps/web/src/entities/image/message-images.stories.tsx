@@ -4,7 +4,10 @@ import { ImageSourceProvider } from "./image-source.tsx";
 import { moss, sky, sunset } from "./image-fixtures.ts";
 import { MessageImages } from "./message-images.tsx";
 
-const REF = { ref: "story-image-ref", mimeType: "image/png" as const };
+// Distinct refs keep one story's cached bytes out of the next story.
+const REF_LOADED = { ref: "story-image-ref-loaded", mimeType: "image/png" as const };
+const REF_LOADING = { ref: "story-image-ref-loading", mimeType: "image/png" as const };
+const REF_FAILED = { ref: "story-image-ref-failed", mimeType: "image/png" as const };
 const neverLoads = () => new Promise<MessageImage>(() => {});
 const failsToLoad = () => Promise.reject(new Error("host offline"));
 
@@ -24,7 +27,7 @@ export const Several: Story = {
 };
 
 export const RefLoaded: Story = {
-  args: { images: [REF] },
+  args: { images: [REF_LOADED] },
   render: (args) => (
     <ImageSourceProvider load={() => Promise.resolve(sky)}>
       <MessageImages {...args} />
@@ -33,7 +36,7 @@ export const RefLoaded: Story = {
 };
 
 export const RefLoading: Story = {
-  args: { images: [REF] },
+  args: { images: [REF_LOADING] },
   render: (args) => (
     <ImageSourceProvider load={neverLoads}>
       <MessageImages {...args} />
@@ -42,7 +45,7 @@ export const RefLoading: Story = {
 };
 
 export const RefFailed: Story = {
-  args: { images: [REF] },
+  args: { images: [REF_FAILED] },
   render: (args) => (
     <ImageSourceProvider load={failsToLoad}>
       <MessageImages {...args} />
