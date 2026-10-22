@@ -87,7 +87,7 @@ struct PairingStartView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                Text("在账号里配对你账号下的宿主。")
+                Text("在账号页里配对它名下的宿主。")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             } else {

@@ -57,7 +57,7 @@ struct SettingsView: View {
         ) { host in
             Button("取消", role: .cancel) {}
             Button("忘记", role: .destructive) {
-                let wasLast = model.hosts.hosts.count == 1
+                let wasLast = machines.count == 1
                 model.forget(host.hostKey)
                 // Nothing left to pick — the pairing page behind has
                 // the same ways to pair. Forgetting waits for the
@@ -268,7 +268,14 @@ struct MachineSettingsView: View {
                     description: Text("连上它之后才能查看它的设置。"))
             }
         }
-        .navigationTitle(model.hostLabels[hostKey] ?? "机器")
+        .navigationTitle(title)
+    }
+
+    /// The same name the row that opened this page showed.
+    private var title: String {
+        let host = pairedMachines(stored: model.hosts, session: model.sessionHost)
+            .first { $0.hostKey == hostKey }
+        return model.hostLabels[hostKey] ?? host.map { $0.name ?? hostOf($0.url) } ?? "机器"
     }
 
     private func archivedSection(_ archived: [ArchivedConversation]) -> some View {
