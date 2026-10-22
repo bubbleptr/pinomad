@@ -78,6 +78,13 @@ extension AppModel {
             startSettingsDemo(mode)
             return true
         }
+        if env["PINOMAD_DEMO_LAYOUT"] != nil {
+            // The conversation list grouped by machine: two paired hosts
+            // (one connected), chats, two projects, a family with subagents.
+            phase = .connected
+            startLayoutDemo()
+            return true
+        }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The composer's context meter at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.

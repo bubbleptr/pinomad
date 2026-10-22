@@ -21,7 +21,8 @@ struct RootView: View {
                     FailureView(model: model, failure: failure).padding()
                 }
             }
-            .navigationTitle("PiNomad")
+            // Connected, the home page has no title: its machine groups say where you are.
+            .navigationTitle(model.phase == .connected ? "" : "PiNomad")
         }
         .overlay(alignment: .top) {
             if !model.sheetShowsToasts { ToastStack(model: model) }

@@ -1,17 +1,15 @@
 import PinomadCore
 import SwiftUI
 
-/// The organized conversation list: chats and project groups as the host
-/// sends them, one row per family root — forks and subagents roll up into
-/// their root's status and recency rather than getting rows of their own
-/// (the web sidebar's rule, via the core's family derivations).
+/// The home page: the family statuses as four tiles, then every paired
+/// machine with its Chats and projects — each a page of its own, so the
+/// page stays short however many conversations there are. One connection
+/// at a time (#148): another machine's groups are unknown until it is the
+/// one connected, so it shows as a row that connects it.
 struct ConversationListView: View {
     let model: AppModel
 
-    /// The row being renamed, and the title being typed.
-    @State private var renaming: ConversationSummary?
-    @State private var newTitle = ""
-    @State private var renameError: String?
+    @State private var query = ""
 
     var body: some View {
         List {
@@ -22,38 +20,56 @@ struct ConversationListView: View {
                 Label(model.lastError, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.orange)
+                    .listRowBackground(Color.clear)
             }
-            if let organized = model.snapshot?.organized {
-                if !organized.chats.isEmpty {
-                    Section("对话") {
-                        ForEach(organized.chats, id: \.summary.id) { row($0) }
-                    }
-                }
-                ForEach(Array(organized.projects.enumerated()), id: \.offset) { _, group in
-                    Section(group.project.name ?? group.project.path ?? "项目") {
-                        ForEach(group.conversations, id: \.summary.id) { row($0) }
-                    }
-                }
-                if organized.chats.isEmpty && organized.projects.isEmpty {
-                    ContentUnavailableView("还没有对话", systemImage: "bubble.left.and.bubble.right",
-                                           description: Text("点右上角的新建开始一个。"))
-                }
+            if !query.isEmpty, let organized = model.snapshot?.organized {
+                searchResults(organized)
             } else {
-                ProgressView("正在同步…")
+                if let organized = model.snapshot?.organized {
+                    StatusTiles(roots: allRoots(organized).map(\.node)) { filter in
+                        model.navPath.append(.conversations(filter))
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+                ForEach(machines, id: \.hostKey) { host in
+                    Section {
+                        if host.hostKey == model.currentHostKey {
+                            currentMachine
+                        } else {
+                            Button {
+                                model.switchHost(host.hostKey)
+                            } label: {
+                                Label("未连接，轻点连接", systemImage: "bolt.horizontal.circle")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden, edges: .bottom)
+                        }
+                    } header: {
+                        MachineHeader(
+                            label: label(host),
+                            online: host.hostKey == model.currentHostKey
+                                && model.snapshot?.connection == .connected
+                        )
+                    }
+                }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground))
+        .overlay {
+            if !query.isEmpty, let organized = model.snapshot?.organized,
+               !allRoots(organized).contains(where: { matches($0.node) }) {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "搜索对话")
         .navigationDestination(for: Route.self) { route in
             RouteDestination(model: model, route: route)
-        }
-        .alert("重命名对话", isPresented: Binding(
-            get: { renaming != nil },
-            set: { if !$0 { renaming = nil } }
-        )) {
-            TextField("名称", text: $newTitle)
-            Button("取消", role: .cancel) { renaming = nil }
-            Button("保存") { saveRename() }
-        } message: {
-            if let renameError { Text(renameError) }
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -65,106 +81,206 @@ struct ConversationListView: View {
                 .accessibilityLabel(model.accountRecord.map { "账号：\($0.username)" } ?? "账号")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button("设置", systemImage: "gearshape") {
+                    model.navPath.append(.settings)
+                }
+            }
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
                 Button("新建", systemImage: "square.and.pencil") {
                     model.navPath.append(.newConversation)
                 }
                 .disabled(!model.connected)
             }
-            // Two glass circles rather than one shared capsule.
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("设置", systemImage: "gearshape") {
-                    model.navPath.append(.settings)
-                }
-            }
         }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
     }
 
+    /// Every paired machine in stored order — positions do not jump when
+    /// the connection moves — plus a host a pairing just made that the
+    /// keychain failed to keep.
+    private var machines: [HostRecord] {
+        var hosts = model.hosts.hosts
+        if let session = model.sessionHost, !hosts.contains(where: { $0.hostKey == session.hostKey }) {
+            hosts.insert(session, at: 0)
+        }
+        return hosts
+    }
+
+    private func label(_ host: HostRecord) -> String {
+        model.hostLabels[host.hostKey] ?? host.name ?? hostOf(host.url)
+    }
+
     @ViewBuilder
-    private func row(_ node: ConversationNode) -> some View {
-        let summary = node.summary
-        if let id = summary.id {
-            NavigationLink(value: Route.conversation(id)) {
-                rowLabel(node)
+    private var currentMachine: some View {
+        if let organized = model.snapshot?.organized {
+            if !organized.chats.isEmpty {
+                groupRow(.chats, title: "对话", systemImage: "bubble.left.and.bubble.right",
+                         count: organized.chats.count)
             }
-            .contextMenu {
-                if model.hostSupports("renameConversation") {
-                    Button("重命名", systemImage: "pencil") {
-                        newTitle = displayName(summary: summary)
-                        renameError = nil
-                        renaming = summary
+            ForEach(Array(organized.projects.enumerated()), id: \.offset) { _, group in
+                if let path = group.project.path {
+                    groupRow(.project(path), title: group.project.name ?? path,
+                             systemImage: "folder", count: group.conversations.count)
+                }
+            }
+            Button {
+                model.navPath.append(.addProject)
+            } label: {
+                Label("添加项目", systemImage: "plus")
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(!model.connected)
+            .listRowBackground(Color.clear)
+            // Ends the machine's group; the next header separates it.
+            .listRowSeparator(.hidden, edges: .bottom)
+        } else {
+            ProgressView("正在同步…")
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+        }
+    }
+
+    /// While searching, the matching roots of the connected machine replace
+    /// the groups.
+    @ViewBuilder
+    private func searchResults(_ organized: Organized) -> some View {
+        let results = allRoots(organized).filter { matches($0.node) }
+        ForEach(results, id: \.node.summary.id) { entry in
+            if let id = entry.node.summary.id {
+                NavigationLink(value: Route.conversation(id)) {
+                    ConversationRowLabel(node: entry.node, project: entry.project)
+                }
+                .quietSeparator()
+                // Rules only between results, as on the conversations pages.
+                .listRowSeparator(.hidden, edges: .top)
+                .listRowSeparator(id == results.last?.node.summary.id ? .hidden : .automatic, edges: .bottom)
+                .listRowBackground(Color.clear)
+            }
+        }
+    }
+
+    private func matches(_ node: ConversationNode) -> Bool {
+        displayName(summary: node.summary).localizedCaseInsensitiveContains(query)
+    }
+
+    private func groupRow(_ filter: ConversationFilter, title: String, systemImage: String, count: Int) -> some View {
+        NavigationLink(value: Route.conversations(filter)) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28)
+                Text(title)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .padding(.vertical, 6)
+            .shortSeparator()
+        }
+        .quietSeparator()
+        .listRowBackground(Color.clear)
+    }
+}
+
+/// Every root on the machine with the project it belongs to (nil for a
+/// Chat) — the tiles count them and the filter pages list them.
+func allRoots(_ organized: Organized) -> [(node: ConversationNode, project: String?)] {
+    organized.chats.map { ($0, nil) }
+        + organized.projects.flatMap { group in
+            group.conversations.map { ($0, group.project.name ?? group.project.path) }
+        }
+}
+
+/// A machine's section header: its name and connection dot — the only
+/// place the app shows host state (#252).
+private struct MachineHeader: View {
+    let label: String
+    let online: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "desktopcomputer")
+                .foregroundStyle(.secondary)
+            Text(label)
+                .font(.title3.weight(.semibold))
+                // A concrete color: a section header dims hierarchical styles.
+                .foregroundStyle(Color(.label))
+                .lineLimit(1)
+            ConnectionDot(online: online)
+                .accessibilityLabel(online ? "已连接" : "未连接")
+        }
+        .textCase(nil)
+        .padding(.top, 8)
+    }
+}
+
+/// Green and breathing while connected, grey otherwise — the only place
+/// the app shows host state (#252).
+struct ConnectionDot: View {
+    let online: Bool
+
+    var body: some View {
+        Circle()
+            .fill(online ? Color.green : Color.secondary.opacity(0.5))
+            .frame(width: 10, height: 10)
+            .phaseAnimator(online ? [1.0, 0.35] : [1.0]) { dot, opacity in
+                dot.opacity(opacity)
+            } animation: { _ in .easeInOut(duration: 1.2) }
+    }
+}
+
+/// The four family statuses as tiles; each opens its filtered list.
+private struct StatusTiles: View {
+    let roots: [ConversationNode]
+    let open: (ConversationFilter) -> Void
+
+    var body: some View {
+        let statuses = roots.map { familyStatus(node: $0) }
+        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                tile(.all, count: nil)
+                tile(.needsAnswer, count: statuses.filter { $0 == .needsAnswer }.count)
+            }
+            GridRow {
+                tile(.running, count: statuses.filter { $0 == .running }.count)
+                tile(.failed, count: statuses.filter { $0 == .failed }.count)
+            }
+        }
+    }
+
+    private func tile(_ filter: ConversationFilter, count: Int?) -> some View {
+        Button {
+            open(filter)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: filter.systemImage)
+                    .font(.title2)
+                    .foregroundStyle(filter.tint)
+                    .symbolEffect(.pulse, isActive: filter == .running && (count ?? 0) > 0)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(filter.title)
+                        .foregroundStyle(.primary)
+                    if let count {
+                        Text("\(count)")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     }
                 }
-                Button("归档", systemImage: "archivebox") { model.archive(conversation: id, true) }
+                .font(.body.weight(.medium))
             }
-            .swipeActions(edge: .trailing) {
-                Button("归档", systemImage: "archivebox") { model.archive(conversation: id, true) }
-                    .tint(.indigo)
-            }
-        } else {
-            rowLabel(node)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .frame(height: 104, alignment: .bottomLeading)
+            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 22))
+            .contentShape(.rect(cornerRadius: 22))
         }
-    }
-
-    /// Rename is request-class: a refusal comes back as the host's reason,
-    /// shown in the alert, which stays up for another try.
-    private func saveRename() {
-        guard let summary = renaming, let id = summary.id else { return }
-        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title != displayName(summary: summary) else {
-            renaming = nil
-            return
-        }
-        Task {
-            do {
-                try await model.rename(conversation: id, to: title)
-                renaming = nil
-            } catch {
-                renameError = model.describe(error)
-                renaming = summary
-            }
-        }
-    }
-
-    private func rowLabel(_ node: ConversationNode) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(summary: node.summary))
-                    .lineLimit(1)
-                if let status = familyStatus(node: node) {
-                    Text(statusText(status))
-                        .font(.caption)
-                        .foregroundStyle(statusColor(status))
-                }
-            }
-            Spacer()
-            if let at = familyUpdatedAt(node: node) {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(relativeTime(at: at, now: context.date.timeIntervalSince1970 * 1000))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-
-    private func statusText(_ status: ConversationStatus) -> String {
-        switch status {
-        case .needsAnswer: "需要回复"
-        case .running: "运行中"
-        case .failed: "失败"
-        case .other(let raw): raw
-        }
-    }
-
-    private func statusColor(_ status: ConversationStatus) -> Color {
-        switch status {
-        case .needsAnswer: .orange
-        case .running: .green
-        case .failed: .red
-        case .other: .secondary
-        }
+        .buttonStyle(.plain)
     }
 }
 
