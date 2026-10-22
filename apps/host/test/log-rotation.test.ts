@@ -43,6 +43,40 @@ describe("host log rotation", () => {
     expect(await readdir(logs)).toEqual(["host.log", "host.log.1", "host.log.2", "host.log.3"]);
   });
 
+  it("keeps history and the current log when the copy fails", async () => {
+    const { dataDir, logs, log } = await dataDirWithLogs();
+    const content = Buffer.alloc(HOST_LOG_MAX_BYTES + 1, 0x64);
+    await writeFile(log, content);
+    await writeFile(join(logs, "host.log.1"), "one");
+    await writeFile(join(logs, "host.log.2"), "two");
+    await writeFile(join(logs, "host.log.3"), "three");
+
+    await expect(
+      rotateHostLog(dataDir, async (_source, destination) => {
+        await writeFile(destination, "partial");
+        throw new Error("copy failed");
+      }),
+    ).rejects.toThrow("copy failed");
+
+    expect((await readFile(log)).equals(content)).toBe(true);
+    expect(await readFile(join(logs, "host.log.1"), "utf8")).toBe("one");
+    expect(await readFile(join(logs, "host.log.2"), "utf8")).toBe("two");
+    expect(await readFile(join(logs, "host.log.3"), "utf8")).toBe("three");
+    expect(await readdir(logs)).toEqual(["host.log", "host.log.1", "host.log.2", "host.log.3"]);
+  });
+
+  it("discards a stale temporary copy before rotating", async () => {
+    const { dataDir, logs, log } = await dataDirWithLogs();
+    const content = Buffer.alloc(HOST_LOG_MAX_BYTES + 1, 0x65);
+    await writeFile(log, content);
+    await writeFile(join(logs, "host.log.rotating"), "stale");
+
+    await expect(rotateHostLog(dataDir)).resolves.toBe(true);
+
+    expect((await readFile(join(logs, "host.log.1"))).equals(content)).toBe(true);
+    expect(await readdir(logs)).toEqual(["host.log", "host.log.1"]);
+  });
+
   it("does nothing when the log file is missing", async () => {
     const data = await tempDir();
     defer(data.remove);

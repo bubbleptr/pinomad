@@ -16,8 +16,11 @@ export const HOST_LOG_HISTORY = 3;
 export const HOST_LOG_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 const hostLogPath = (dataDir: string): string => join(dataDir, "logs", "host.log");
+const rotationTempPath = (log: string): string => `${log}.rotating`;
 
 const isMissing = (error: unknown): boolean => (error as { code?: string }).code === "ENOENT";
+
+type CopyFile = (source: string, destination: string) => Promise<void>;
 
 /**
  * Rotates <dataDir>/logs/host.log when it exceeds the limit.
@@ -26,9 +29,16 @@ const isMissing = (error: unknown): boolean => (error as { code?: string }).code
  * no-op. That is deliberate: the file's presence is the only signal needed, and
  * an already installed launchd service picks rotation up without reinstalling
  * its plist.
+ *
+ * The copy is injectable so tests can exercise a failed copy without filling a
+ * disk. History is only touched after that copy succeeds.
  */
-export async function rotateHostLog(dataDir: string): Promise<boolean> {
+export async function rotateHostLog(dataDir: string, copy: CopyFile = copyFile): Promise<boolean> {
   const log = hostLogPath(dataDir);
+  const temp = rotationTempPath(log);
+  // A previous process may have died mid-copy; a partial temp is never history.
+  await rm(temp, { force: true });
+
   let size: number;
   try {
     size = (await stat(log)).size;
@@ -38,6 +48,14 @@ export async function rotateHostLog(dataDir: string): Promise<boolean> {
   }
   if (size <= HOST_LOG_MAX_BYTES) return false;
 
+  try {
+    await copy(log, temp);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+
+  // The new copy exists, so it is safe to move the old history out of the way.
   await rm(`${log}.${HOST_LOG_HISTORY}`, { force: true });
   for (let index = HOST_LOG_HISTORY - 1; index >= 1; index -= 1) {
     try {
@@ -46,7 +64,7 @@ export async function rotateHostLog(dataDir: string): Promise<boolean> {
       if (!isMissing(error)) throw error;
     }
   }
-  await copyFile(log, `${log}.1`);
+  await rename(temp, `${log}.1`);
   // Truncate the same inode; launchd's open descriptor keeps pointing at it.
   await truncate(log, 0);
   return true;

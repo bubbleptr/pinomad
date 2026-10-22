@@ -48,9 +48,6 @@ export async function main(argv: readonly string[]): Promise<void> {
   });
 
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
-  // launchd appends both host streams to <dataDir>/logs/host.log; Linux uses
-  // journald and foreground runs never create that file, so this is a no-op there.
-  startHostLogRotation(dataDir);
   // The joined server's origin lives in server.json (pinomad join writes it);
   // an explicit --relay must agree with it or the host refuses to start.
   let relayOrigin: string | undefined;
@@ -178,6 +175,11 @@ export async function main(argv: readonly string[]): Promise<void> {
 
   const options = values.faux !== undefined ? fauxOptions(() => () => fauxAssistantMessage(values.faux!)) : await piOptions();
   const host = await openHost(options);
+  // Only the host that won the data-dir lock may rotate the shared log; a
+  // second host has already exited above, so its timer never runs.
+  // launchd appends both streams to <dataDir>/logs/host.log; Linux uses
+  // journald and foreground runs never create that file, so this is a no-op.
+  const stopLogRotation = startHostLogRotation(dataDir);
   const { defaultModel: effectiveModel } = host.settings.value;
   const model = effectiveModel === null ? null : `${effectiveModel.provider}/${effectiveModel.modelId}`;
   // Credentials stay in the local token file; generating a browser link is an explicit CLI action.
@@ -202,6 +204,7 @@ export async function main(argv: readonly string[]): Promise<void> {
   const stop = (): void => {
     if (stopping) return;
     stopping = true;
+    stopLogRotation();
     void host.close().finally(() => process.exit(0));
   };
   process.on("SIGINT", stop);
@@ -211,6 +214,7 @@ export async function main(argv: readonly string[]): Promise<void> {
   void host.closed.then((end) => {
     if (end.reason !== "failed" || stopping) return;
     stopping = true;
+    stopLogRotation();
     const error = end.error instanceof Error ? end.error.message : String(end.error);
     process.stderr.write(`${JSON.stringify({ event: "fatal", error })}\n`);
     void host.close().finally(() => process.exit(1));
