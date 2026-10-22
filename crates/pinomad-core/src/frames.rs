@@ -69,20 +69,109 @@ pub fn host_stream_names() -> Vec<&'static str> {
     HOST_STREAMS.iter().map(|(name, _)| *name).collect()
 }
 
-/// Minor version that introduced each call (`CALL_SINCE`); absent → 5.0.
-fn call_since(method: &str) -> u32 {
-    match method {
-        "logout" => 1,
-        "updateSettings" => 2,
-        "listFolders" => 3,
-        "renameConversation" => 4,
-        "createAgent" | "updateAgent" | "deleteAgent" => 6,
-        "setPushToken" => 7,
-        "listFiles" => 10,
-        "listSkills" => 13,
-        "withdrawQueued" | "steerQueued" => 14,
-        _ => 0,
+/// Every call method in the protocol (`CallMethods` in frames.ts). Keeping
+/// this as an enum makes the since table exhaustive: a TS addition without a
+/// Rust variant fails the comparison vectors, which carry every call name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallMethod {
+    AddProject,
+    RemoveProject,
+    ListFolders,
+    CreateConversation,
+    Archive,
+    RenameConversation,
+    Submit,
+    WithdrawQueued,
+    SteerQueued,
+    Abort,
+    Compact,
+    SetModel,
+    SetThinkingLevel,
+    Fork,
+    Answer,
+    Changes,
+    CreatePairing,
+    RevokeDevice,
+    Logout,
+    UpdateSettings,
+    CreateAgent,
+    UpdateAgent,
+    DeleteAgent,
+    SetPushToken,
+    ListFiles,
+    ListSkills,
+}
+
+impl CallMethod {
+    /// Parse the wire name. Unknown names are not protocol errors here: the
+    /// client keeps its historical 5.0 fallback (see `call_since`).
+    pub fn from_str(method: &str) -> Option<Self> {
+        Some(match method {
+            "addProject" => Self::AddProject,
+            "removeProject" => Self::RemoveProject,
+            "listFolders" => Self::ListFolders,
+            "createConversation" => Self::CreateConversation,
+            "archive" => Self::Archive,
+            "renameConversation" => Self::RenameConversation,
+            "submit" => Self::Submit,
+            "withdrawQueued" => Self::WithdrawQueued,
+            "steerQueued" => Self::SteerQueued,
+            "abort" => Self::Abort,
+            "compact" => Self::Compact,
+            "setModel" => Self::SetModel,
+            "setThinkingLevel" => Self::SetThinkingLevel,
+            "fork" => Self::Fork,
+            "answer" => Self::Answer,
+            "changes" => Self::Changes,
+            "createPairing" => Self::CreatePairing,
+            "revokeDevice" => Self::RevokeDevice,
+            "logout" => Self::Logout,
+            "updateSettings" => Self::UpdateSettings,
+            "createAgent" => Self::CreateAgent,
+            "updateAgent" => Self::UpdateAgent,
+            "deleteAgent" => Self::DeleteAgent,
+            "setPushToken" => Self::SetPushToken,
+            "listFiles" => Self::ListFiles,
+            "listSkills" => Self::ListSkills,
+            _ => return None,
+        })
     }
+
+    /// Minor version that introduced the call (`CALL_SINCE`); 0 is 5.0.
+    /// No default arm: a new variant must state its gate.
+    pub fn since(self) -> u32 {
+        match self {
+            Self::AddProject
+            | Self::RemoveProject
+            | Self::CreateConversation
+            | Self::Archive
+            | Self::Submit
+            | Self::Abort
+            | Self::Compact
+            | Self::SetModel
+            | Self::SetThinkingLevel
+            | Self::Fork
+            | Self::Answer
+            | Self::Changes
+            | Self::CreatePairing
+            | Self::RevokeDevice => 0,
+            Self::ListFolders => 3,
+            Self::RenameConversation => 4,
+            Self::Logout => 1,
+            Self::UpdateSettings => 2,
+            Self::CreateAgent | Self::UpdateAgent | Self::DeleteAgent => 6,
+            Self::SetPushToken => 7,
+            Self::ListFiles => 10,
+            Self::ListSkills => 13,
+            Self::WithdrawQueued | Self::SteerQueued => 14,
+        }
+    }
+}
+
+/// Minor version that introduced each call (`CALL_SINCE`); unknown methods
+/// keep the historical 5.0 fallback.
+fn call_since(method: &str) -> u32 {
+    CallMethod::from_str(method).map_or(0, CallMethod::since)
 }
 
 /// Whether a host of the given minor version knows `method`.

@@ -41,7 +41,7 @@ export interface HostStreamValues {
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6 } satisfies Record<
+export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -235,29 +235,48 @@ export type PushToken = string | ApnsPushToken;
 
 export type CallMethod = keyof CallMethods;
 
-/** Minor version that introduced each call; calls absent here date from 5.0. */
-const CALL_SINCE: Partial<Record<CallMethod, number>> = {
+/**
+ * Minor version that introduced each call (ADR-0018 §2); calls dated 0 are
+ * part of 5.0. This is the single exhaustive call table: a new `CallMethods`
+ * entry without a row fails type checking, and the Rust vectors carry every
+ * row so the Rust mirror cannot silently fall back to 5.0.
+ */
+export const CALL_SINCE: Record<CallMethod, number> = {
+  addProject: 0,
+  removeProject: 0,
+  listFolders: 3,
+  listFiles: 10,
+  listSkills: 13,
+  createConversation: 0,
+  archive: 0,
+  renameConversation: 4,
+  submit: 0,
+  withdrawQueued: 14,
+  steerQueued: 14,
+  abort: 0,
+  compact: 0,
+  setModel: 0,
+  setThinkingLevel: 0,
+  fork: 0,
+  answer: 0,
+  changes: 0,
+  createPairing: 0,
+  revokeDevice: 0,
   logout: 1,
   updateSettings: 2,
-  listFolders: 3,
-  renameConversation: 4,
   createAgent: 6,
   updateAgent: 6,
   deleteAgent: 6,
   setPushToken: 7,
-  listFiles: 10,
-  listSkills: 13,
-  withdrawQueued: 14,
-  steerQueued: 14,
 };
 
 /** Whether a host of the given minor version knows `method`. */
 export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean {
-  return hostMinor >= (CALL_SINCE[method] ?? 0);
+  return hostMinor >= CALL_SINCE[method];
 }
 
 /** Minor version that introduced each call-arg feature (ADR-0018 §2). */
-const FEATURE_SINCE = {
+export const FEATURE_SINCE = {
   images: 5,
   acceptAccountDevices: 8,
   apnsPush: 9,
@@ -361,35 +380,8 @@ function isStreamName(stream: string): stream is StreamName {
 const isCallMethod = (method: string): method is CallMethod =>
   (CALL_METHODS as readonly string[]).includes(method);
 
-/** Call names kept in sync with CallMethods; the switch below validates their args. */
-const CALL_METHODS = [
-  "addProject",
-  "removeProject",
-  "listFolders",
-  "createConversation",
-  "archive",
-  "renameConversation",
-  "submit",
-  "withdrawQueued",
-  "steerQueued",
-  "abort",
-  "compact",
-  "setModel",
-  "setThinkingLevel",
-  "fork",
-  "answer",
-  "changes",
-  "createPairing",
-  "revokeDevice",
-  "logout",
-  "updateSettings",
-  "createAgent",
-  "updateAgent",
-  "deleteAgent",
-  "setPushToken",
-  "listFiles",
-  "listSkills",
-] as const satisfies readonly CallMethod[];
+/** Call names kept in sync with CallMethods by deriving them from the exhaustive gate table. */
+const CALL_METHODS = Object.keys(CALL_SINCE) as readonly CallMethod[];
 
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
   defaultModel: (value) => value === null || (record(value) && nonempty(value.provider) && nonempty(value.modelId)),

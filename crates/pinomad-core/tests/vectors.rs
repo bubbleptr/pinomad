@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
 use pinomad_core::frames::{
-    classify_server_frame, decode_server_frame, encode_client_frame, host_supports_call, host_supports_feature,
-    ClientFrame, HostFeature, ServerFrame,
+    classify_server_frame, decode_server_frame, encode_client_frame, host_streams, host_supports_call,
+    host_supports_feature, CallMethod, ClientFrame, HostFeature, ServerFrame, PROTOCOL,
 };
 use pinomad_core::json::Json;
 use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param};
@@ -102,11 +102,86 @@ fn client_frames_encode_byte_identical() {
     }
 }
 
-/// The since-table boundary cases the TS reference generated — the Rust
-/// gates must agree on which minor knows each call and feature.
+fn feature_of(name: &str) -> HostFeature {
+    match name {
+        "images" => HostFeature::Images,
+        "acceptAccountDevices" => HostFeature::AcceptAccountDevices,
+        "apnsPush" => HostFeature::ApnsPush,
+        "agentConversations" => HostFeature::AgentConversations,
+        "liveBranch" => HostFeature::LiveBranch,
+        "hostName" => HostFeature::HostName,
+        other => panic!("unknown feature {other}"),
+    }
+}
+
+/// The protocol version and every complete gate table the TS reference
+/// generated — Rust must know every row and flip at the same minor, including
+/// calls that date from 5.0.
 #[test]
-fn version_gates_agree_with_the_reference() {
+fn protocol_and_version_gates_agree_with_the_reference() {
     let file = load("rust-vectors/frames");
+    let protocol = field(&file, "protocol");
+    assert_eq!(
+        PROTOCOL.major,
+        field(protocol, "major").as_number().unwrap() as u32,
+        "protocol major"
+    );
+    assert_eq!(
+        PROTOCOL.minor,
+        field(protocol, "minor").as_number().unwrap() as u32,
+        "protocol minor"
+    );
+
+    let gates = field(&file, "gates");
+    for case in field(gates, "call").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let since = field(case, "since").as_number().unwrap() as u32;
+        assert!(
+            CallMethod::from_str(&name).is_some(),
+            "{name}: CallMethod is missing a TS call"
+        );
+        assert!(host_supports_call(since, &name), "{name}@{since} should be supported");
+        if since > 0 {
+            assert!(
+                !host_supports_call(since - 1, &name),
+                "{name}@{} should predate the call",
+                since - 1
+            );
+        }
+    }
+    // Unknown methods keep the historical 5.0 fallback (issue #165 behavior
+    // preservation): they were supported at every minor before this change.
+    assert!(host_supports_call(0, "not-a-protocol-call"));
+
+    for case in field(gates, "stream").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let since = field(case, "since").as_number().unwrap() as u32;
+        assert!(
+            host_streams(since).contains(&name.as_str()),
+            "{name}@{since} should be a host stream"
+        );
+        if since > 0 {
+            assert!(
+                !host_streams(since - 1).contains(&name.as_str()),
+                "{name}@{} should predate the stream",
+                since - 1
+            );
+        }
+    }
+
+    for case in field(gates, "feature").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let since = field(case, "since").as_number().unwrap() as u32;
+        assert!(host_supports_feature(since, feature_of(&name)), "{name}@{since}");
+        if since > 0 {
+            assert!(
+                !host_supports_feature(since - 1, feature_of(&name)),
+                "{name}@{} should predate the feature",
+                since - 1
+            );
+        }
+    }
+
     for case in field(&file, "versionGates").as_array().unwrap().iter() {
         let name = as_text(field(case, "name"));
         let minor = field(case, "minor").as_number().unwrap() as u32;
@@ -114,16 +189,7 @@ fn version_gates_agree_with_the_reference() {
         let supported = if let Some(method) = case.get("call").and_then(Json::as_str) {
             host_supports_call(minor, &method.to_string_lossy())
         } else {
-            let feature = match as_text(field(case, "feature")).as_str() {
-                "images" => HostFeature::Images,
-                "acceptAccountDevices" => HostFeature::AcceptAccountDevices,
-                "apnsPush" => HostFeature::ApnsPush,
-                "agentConversations" => HostFeature::AgentConversations,
-                "liveBranch" => HostFeature::LiveBranch,
-                "hostName" => HostFeature::HostName,
-                other => panic!("{name}: unknown feature {other}"),
-            };
-            host_supports_feature(minor, feature)
+            host_supports_feature(minor, feature_of(&as_text(field(case, "feature"))))
         };
         assert_eq!(supported, expect, "{name}");
     }
