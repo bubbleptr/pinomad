@@ -87,15 +87,30 @@ struct ConversationView: View {
                     }
                 }
             } else {
-                ProgressView("正在载入对话…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ConversationSkeleton()
             }
         }
         .environment(\.inlineImageAction, InlineImageAction { image in
             model.viewing = MessageImage(data: image.data, mimeType: image.mimeType)
         })
+        // A run ending while the reader watches: done or failed. A stop is
+        // the reader's own doing and stays quiet.
+        .sensoryFeedback(trigger: conversation?.busy) { old, new in
+            guard old == true, new == false,
+                  case .run(_, _, _, let interrupted, let failure)? = conversation?.chat.last
+            else { return nil }
+            if failure != nil { return .error }
+            return interrupted ? nil : .success
+        }
+        // A question arriving; opening a conversation that already has one doesn't count.
+        .sensoryFeedback(.impact(weight: .medium), trigger: conversation?.questions.count) { old, new in
+            guard let old, let new else { return false }
+            return new > old
+        }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
-        .safeAreaInset(edge: .bottom) {
+        // A bar, not a plain inset: the transcript scrolling under it gets
+        // the system's soft edge instead of a hard cut at the card.
+        .safeAreaBar(edge: .bottom) {
             if isSubagent {
                 // A subagent belongs to its delegating task; the reader only
                 // observes it. No composer, so nothing here can submit,

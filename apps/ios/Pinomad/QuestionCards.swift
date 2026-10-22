@@ -294,7 +294,7 @@ private struct QuestionCard: View {
             cut.disablesAnimations = true
             withTransaction(cut) { page = next }
         } else {
-            withAnimation(.smooth(duration: 0.35)) { page = next }
+            withAnimation(Motion.settle) { page = next }
         }
     }
 

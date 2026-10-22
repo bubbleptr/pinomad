@@ -7,7 +7,7 @@ import SwiftUI
 
 /// The shown conversation's input: run status and queued inputs above a
 /// glass card holding the draft and its actions. Sits in the transcript's
-/// bottom safe-area inset, so the keyboard and the scroll inset follow it.
+/// bottom safe-area bar, so the keyboard and the scroll inset follow it.
 struct ConversationComposer: View {
     let model: AppModel
     let conversation: ConversationSnapshot
@@ -18,6 +18,8 @@ struct ConversationComposer: View {
     @State private var mentions = MentionCoordinator()
     @State private var selection = NSRange()
     @State private var focused = false
+    /// Bumped by each send, for the tap's haptic.
+    @State private var sends = 0
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
 
@@ -117,6 +119,7 @@ struct ConversationComposer: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        .sensoryFeedback(.impact(weight: .light), trigger: sends)
         .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
         .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
@@ -253,6 +256,11 @@ struct ConversationComposer: View {
         )
     }
 
+    private func send(_ mode: SubmitMode) {
+        model.send(conversation: conversation.id, mode: mode)
+        sends += 1
+    }
+
     @ViewBuilder
     private var sendSlot: some View {
         // A blocked image set holds the send the same way preparing does.
@@ -275,15 +283,15 @@ struct ConversationComposer: View {
                 // the running turn instead.
                 Menu {
                     Button("引导当前运行（Steer）", systemImage: "arrow.uturn.right") {
-                        model.send(conversation: conversation.id, mode: .steer)
+                        send(.steer)
                     }
                     Button("运行完再发（Follow-up）", systemImage: "text.append") {
-                        model.send(conversation: conversation.id, mode: .followUp)
+                        send(.followUp)
                     }
                 } label: {
                     SlotIcon(systemName: "arrow.up")
                 } primaryAction: {
-                    model.send(conversation: conversation.id, mode: .followUp)
+                    send(.followUp)
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
@@ -292,7 +300,7 @@ struct ConversationComposer: View {
                 .disabled(!enabled || editLocked)
             } else {
                 Button {
-                    model.send(conversation: conversation.id, mode: .followUp)
+                    send(.followUp)
                 } label: {
                     SlotIcon(systemName: "arrow.up")
                 }
