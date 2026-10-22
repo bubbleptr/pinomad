@@ -379,6 +379,19 @@ impl RemoteDurable {
         self.version
     }
 
+    /// Whether the shown conversation's own stream has sent a snapshot on
+    /// the current connection. False between a reconnect hello and the
+    /// resubscribed stream's fresh value, which is exactly when a ref lookup
+    /// would not resolve yet.
+    pub fn conversation_is_fresh(&self) -> bool {
+        self.current.is_some_and(|id| {
+            self.conversation_streams(id)
+                .iter()
+                .filter(|stream| self.wanted.contains(*stream))
+                .all(|stream| self.fresh.contains(stream))
+        })
+    }
+
     pub fn handle(&mut self, event: Event) -> Vec<Command> {
         self.view_dirty = false;
         match event {

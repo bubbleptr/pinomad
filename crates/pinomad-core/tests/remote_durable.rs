@@ -630,6 +630,33 @@ fn reconnect_resubscribes_a_conversation_with_refs() {
 }
 
 #[test]
+fn conversation_freshness_waits_for_the_reconnect_snapshot() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    assert!(h.remote.conversation_is_fresh());
+
+    // The hello re-sends the subscribe, but the host holds the fresh
+    // conversation snapshot: the old view is still on screen while a ref
+    // lookup would not resolve on the host yet.
+    h.host.held.insert("conversation:1".to_string());
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert!(h.host.subscribes().contains(&"conversation:1".to_string()));
+    assert!(!h.remote.conversation_is_fresh());
+
+    h.host.held.clear();
+    h.deliver(obj(&[
+        ("type", Json::from("snapshot")),
+        ("stream", Json::from("conversation:1")),
+        ("value", obj(&[
+            ("conversation", obj(&[("id", Json::from(1.0))])),
+            ("entries", Json::array(vec![])),
+        ])),
+    ]));
+    assert!(h.remote.conversation_is_fresh());
+}
+
+#[test]
 fn ref_mode_follows_the_minor_of_each_hello() {
     // The first connection is 5.15, the reconnect announces 5.14: the
     // resent subscribe must drop the flag, not keep the stale decision.

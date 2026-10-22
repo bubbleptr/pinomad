@@ -153,9 +153,12 @@ final class AppModel {
     /// Content-addressed image bytes for ref-mode conversations (ADR-0027).
     /// UI-owned: fetches never enter the session's ordered state.
     let images = ImageStore()
-    /// Bumped when the connection comes or goes, so a failed ref fetch is
-    /// retried on reconnect (AgentChatKit's inline image epoch).
+    /// Bumped when the shown conversation's ref subscription becomes fresh,
+    /// so a failed ref fetch retries on reconnect (AgentChatKit's inline
+    /// image epoch). A connected hello alone is not enough: the host may not
+    /// have rebuilt the conversation subscription yet.
     var imageEpoch: UInt64 = 0
+    private var lastConversationFresh = false
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
     let accountStore = KeychainAccountStore()
@@ -384,6 +387,7 @@ final class AppModel {
         snapshot = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
+        lastConversationFresh = false
     }
 
     /// A fresh 15-second window for this attempt. The callback carries the
@@ -434,6 +438,7 @@ final class AppModel {
         pushError = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
+        lastConversationFresh = false
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()
@@ -525,6 +530,9 @@ final class AppModel {
                 markAccountRejected(host)
             }
             self.snapshot = snapshot
+            let conversationFresh = snapshot.conversation?.fresh == true
+            if conversationFresh && !lastConversationFresh { imageEpoch &+= 1 }
+            lastConversationFresh = conversationFresh
             if let hostKey = sessionHost?.hostKey {
                 cacheHostName(snapshot.hostName, for: hostKey)
             }
@@ -533,7 +541,6 @@ final class AppModel {
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
-            if connectedNow != lastSnapshotConnected { imageEpoch &+= 1 }
             if connectedNow && !lastSnapshotConnected { syncPushToken() }
             if connectedNow {
                 // Retry on every connected view, not just the disconnect

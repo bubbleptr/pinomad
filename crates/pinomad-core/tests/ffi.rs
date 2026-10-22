@@ -539,6 +539,7 @@ fn queued_call_results_are_typed_and_queued_input_reads_on_demand() {
     ]);
     h.host.snapshots.insert("conversation:1".to_string(), conversation);
     h.invoke(4, FfiCall::SwitchConversation { id: 1 });
+    assert!(h.client.snapshot().unwrap().conversation.expect("conversation").fresh);
     let input = h.client.queued_input(7).expect("queued input");
     assert_eq!(input.text, "hello");
     assert_eq!(
