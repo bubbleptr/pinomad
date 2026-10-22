@@ -27,6 +27,8 @@ Swift 只能在 macOS 上构建。`scripts/mbp swift test` 在 Mac 上直接在�
 
 ## 约定
 
+- 图标用 Lucide，生成为自定义 SF Symbol，放在 `Sources/AgentChatKit/Resources/Icons.xcassets`，代码里通过 `Icon` 引用（`Image(Icon.copy)`）。清单是 `scripts/lucide-icons.txt`，生成脚本在 PiNomad 的 `apps/ios/scripts/lucide-icons.sh`（SwiftDraw，固定裁切）。不用 SF Symbols。
+
 - 依赖锁精确版本，不用发布不到 7 天的版本。
 - 改代码走 `feat/` / `fix/` / `chore/` 分支和 PR，提交信息用 Conventional Commits。
 - 代码注释用英文，优先写为什么。文档用中文，放在 `docs/` 下。

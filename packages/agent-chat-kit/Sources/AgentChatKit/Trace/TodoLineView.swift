@@ -19,7 +19,7 @@ public struct TodoLineView: View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
                 if list.isFinished {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(Icon.circleCheck)
                         .foregroundStyle(.green)
                     Text("Todo \(list.completedCount)/\(list.items.count)", bundle: .module)
                         .monospacedDigit()
@@ -97,15 +97,15 @@ private struct TodoStatusIcon: View {
     var body: some View {
         switch status {
         case .completed:
-            Image(systemName: "checkmark.circle.fill")
+            Image(Icon.circleCheck)
                 .foregroundStyle(.green)
                 .accessibilityLabel(String(localized: "Done", bundle: .module))
         case .inProgress:
-            Image(systemName: "circle.lefthalf.filled")
+            Image(Icon.circleDot)
                 .foregroundStyle(.tint)
                 .accessibilityLabel(String(localized: "In progress", bundle: .module))
         case .pending:
-            Image(systemName: "circle")
+            Image(Icon.circle)
                 .foregroundStyle(.tertiary)
                 .accessibilityLabel(String(localized: "Not done", bundle: .module))
         }

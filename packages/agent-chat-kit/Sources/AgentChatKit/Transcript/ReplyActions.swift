@@ -17,10 +17,10 @@ public struct ReplyActions: View {
                 Button {
                     copy(markdown)
                 } label: {
-                    Label { Text("Copy as Markdown", bundle: .module) } icon: { Image(systemName: "chevron.left.forwardslash.chevron.right") }
+                    Label { Text("Copy as Markdown", bundle: .module) } icon: { Image(Icon.code) }
                 }
             } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                Image(copied ? Icon.check : .copy)
                     .contentTransition(.symbolEffect(.replace))
                     .font(.footnote)
                     .frame(width: 32, height: 32)
