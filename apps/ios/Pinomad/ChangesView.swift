@@ -3,53 +3,26 @@ import PinomadCore
 import SwiftUI
 import UIKit
 
-/// The conversation's changes sheet: the file list the host derived from
-/// the checkout's diff, with a pushed diff page per file. The state rules
-/// live in `PinomadChat.ChangesPanel`; this view only supplies fetches,
-/// busy snapshots, and the sheet's lifetime.
-struct ChangesSheet: View {
-    let model: AppModel
-    let conversationId: UInt64
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var panel = ChangesPanel()
-
-    private var conversation: ConversationSnapshot? {
-        model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
-    }
-
-    private var busy: Bool { conversation?.busy ?? false }
-    private var checkout: WorktreeCheckout? { conversation?.checkout }
+/// The conversation's changes: the file list the host derived from the
+/// checkout's diff, with a pushed diff page per file. Pushed inside the
+/// overview sheet, which owns the fetches — the list shows the same result
+/// the overview's +N −M was counted from. The state rules live in
+/// `PinomadChat.ChangesPanel`.
+struct ChangesList: View {
+    let panel: ChangesPanel
+    /// Whether the conversation works in its own worktree; otherwise the
+    /// diff is the project directory's, not only this conversation's.
+    let worktree: Bool
+    /// Pull-to-refresh and Retry.
+    let refresh: () async -> Void
+    /// Pushing the list asks for it when nothing is there yet.
+    let load: () -> Void
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("改动")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("关闭")
-                    }
-                }
-                .navigationDestination(for: PatchFile.self) { file in
-                    FileDiffView(file: file)
-                }
-        }
-        .task { await open() }
-        // The Web dialog refreshes once when a run settles; any other busy
-        // change (or an unchanged false) is not new work to look at.
-        .onChange(of: busy) { _, next in
-            guard let token = panel.observe(busy: next) else { return }
-            Task { await load(token) }
-        }
-        // Attached to the stack, not its content: pushing a file page must
-        // not end the sheet's epoch, while dismissing the sheet must.
-        .onDisappear { panel.close() }
+        content
+            .navigationTitle("改动")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear(perform: load)
     }
 
     @ViewBuilder
@@ -151,7 +124,7 @@ struct ChangesSheet: View {
             } header: {
                 VStack(alignment: .leading, spacing: 5) {
                     refreshIndicator
-                    if checkout == nil {
+                    if !worktree {
                         Text("这是项目目录里未提交的改动，不只是这个对话做的")
                     } else {
                         Text("相对 worktree 起点 \(String(base.prefix(7)))")
@@ -170,27 +143,6 @@ struct ChangesSheet: View {
         }
         .listStyle(.plain)
         .refreshable { await refresh() }
-    }
-
-    private func open() async {
-        let token = panel.open(busy: busy)
-        await load(token)
-    }
-
-    private func refresh() async {
-        guard let token = panel.refresh() else { return }
-        await load(token)
-    }
-
-    private func load(_ token: ChangesPanel.Token) async {
-        do {
-            let changes = try await model.changes(conversation: conversationId)
-            panel.land(token, changes)
-        } catch is CancellationError {
-            // The sheet is going away; `close()` already ended the epoch.
-        } catch {
-            panel.fail(token, model.describe(error))
-        }
     }
 
     /// A failed refresh keeps the last good result; this banner is how that

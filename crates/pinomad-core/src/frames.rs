@@ -97,6 +97,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::AcceptAccountDevices => 8,
         HostFeature::ApnsPush => 9,
         HostFeature::AgentConversations => 10,
+        HostFeature::LiveBranch => 11,
         HostFeature::HostName => 12,
     };
     host_minor >= since
@@ -114,6 +115,9 @@ pub enum HostFeature {
     /// `createConversation`'s `agent` field — an older host ignores it and
     /// silently creates an unassigned conversation (ADR-0023 §8).
     AgentConversations,
+    /// `changes()` reports the checkout's live `branch` (11) — on an older
+    /// host an absent branch says nothing, so the worktree record stands in.
+    LiveBranch,
     /// `updateSettings`'s `hostName` key (12) — an older host would call the
     /// patch malformed and 4400 the connection.
     HostName,

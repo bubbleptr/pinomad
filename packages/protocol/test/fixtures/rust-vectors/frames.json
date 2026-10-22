@@ -207,6 +207,18 @@
       "expect": true
     },
     {
+      "name": "liveBranch@10",
+      "minor": 10,
+      "feature": "liveBranch",
+      "expect": false
+    },
+    {
+      "name": "liveBranch@11",
+      "minor": 11,
+      "feature": "liveBranch",
+      "expect": true
+    },
+    {
       "name": "hostName@11",
       "minor": 11,
       "feature": "hostName",

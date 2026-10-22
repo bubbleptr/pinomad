@@ -13,7 +13,10 @@ struct ConversationView: View {
     let model: AppModel
     let conversationId: UInt64
 
-    @State private var showingChanges = false
+    @State private var showingOverview = false
+    /// A subagent picked in the overview, pushed once the sheet is gone —
+    /// pushing under a presented sheet glitches the transition.
+    @State private var overviewSubagent: UInt64?
     /// Whether the transcript is following its end. Captured when a card
     /// pushes a child so returning at the end keeps following the stream.
     @State private var transcriptAtBottom = true
@@ -43,7 +46,7 @@ struct ConversationView: View {
         // card facts all derive from it.
         let node = self.node
         let title = node.map { displayName(summary: $0.summary) } ?? "对话"
-        let role = node?.summary.role
+        let subtitle = self.subtitle(role: node?.summary.role)
         let isSubagent = node?.summary.kind == .subagent
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
@@ -108,20 +111,27 @@ struct ConversationView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .conversationRoleSubtitle(role)
+        .conversationSubtitle(subtitle)
         .toolbar {
+            // Not disabled offline: the folder, branch and subagents come
+            // from the snapshot; only the change stat needs the host.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    showingChanges = true
+                    showingOverview = true
                 } label: {
-                    Image(systemName: "plus.forwardslash.minus")
+                    Image(systemName: "info.circle")
                 }
-                .accessibilityLabel("改动")
-                .disabled(!connected)
+                .accessibilityLabel("概览")
             }
         }
-        .sheet(isPresented: $showingChanges) {
-            ChangesSheet(model: model, conversationId: conversationId)
+        .sheet(isPresented: $showingOverview, onDismiss: {
+            guard let child = overviewSubagent else { return }
+            overviewSubagent = nil
+            openSubagent(child, from: conversation.flatMap { ChatAdapter.runSpawning(child, in: $0.chat) })
+        }) {
+            OverviewSheet(model: model, conversationId: conversationId) { child in
+                overviewSubagent = child
+            }
         }
         .sheet(item: $tracedRun) { run in
             if let conversation {
@@ -165,10 +175,24 @@ struct ConversationView: View {
 
     private var skillNames: [String]? { model.skillNames(for: skillScope) }
 
+    /// 「@角色 · 项目 · 分支」, each part when known. The branch is the
+    /// worktree record's: the live one needs a `changes()` call, which only
+    /// the overview makes.
+    private func subtitle(role: String?) -> String? {
+        var parts: [String] = []
+        if let role { parts.append("@\(role)") }
+        if case .project(let path)? = conversation?.home {
+            let project = model.snapshot?.organized.projects.first { $0.project.path == path }?.project
+            parts.append(project?.name ?? (path as NSString).lastPathComponent)
+        }
+        if let branch = conversation?.checkout?.branch { parts.append(branch) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Record where to return before the session switches to the child. The
-    /// tapped card's run is a stable anchor; a reader at the end keeps
+    /// run that delegated it is a stable anchor; a reader at the end keeps
     /// following the parent's stream instead.
-    private func openSubagent(_ child: UInt64, from run: String) {
+    private func openSubagent(_ child: UInt64, from run: String?) {
         subagentReturnItem = run
         subagentReturnAtBottom = transcriptAtBottom
         model.navPath.append(.conversation(child))
@@ -288,9 +312,9 @@ private struct TracedRun: Identifiable {
 private extension View {
     /// An empty subtitle would still reserve a line under the title.
     @ViewBuilder
-    func conversationRoleSubtitle(_ role: String?) -> some View {
-        if let role {
-            navigationSubtitle("@\(role)")
+    func conversationSubtitle(_ subtitle: String?) -> some View {
+        if let subtitle {
+            navigationSubtitle(subtitle)
         } else {
             self
         }
