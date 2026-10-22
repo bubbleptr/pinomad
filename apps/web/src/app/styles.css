@@ -716,7 +716,8 @@ html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-s
 }
 
 /* The overview card (widgets/overview) floats in the chat column's top-right.
-   On wide layouts the column makes room for it instead of being covered: the
+   On wide layouts the chat's scroll area makes room for it instead of being
+   covered (as its own padding, so the scrollbar stays on the edge): the
    padding is just enough that the centered 44rem transcript ends left of the
    card (right gutter = (W + p - 44rem) / 2 >= card + both gaps), zero when
    the gutter already fits it, and capped so the chat keeps at least 32rem. */

@@ -607,6 +607,11 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
         ) : (
           <ChatLayout
             key={conversation.conversation.id}
+            // The room the overview card needs goes inside the scroll area,
+            // so the scrollbar stays on the column's edge.
+            className={`motion-safe:transition-[padding] motion-safe:duration-200 motion-safe:ease-out${
+              overviewOpen && !narrow ? " pigui-overview-clearance" : ""
+            }`}
             style={chatColumn}
             composer={
               // Same 44rem centered column as the message list, so the
