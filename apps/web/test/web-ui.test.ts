@@ -2097,6 +2097,28 @@ it("shows a queued follow-up above the composer until the run takes it", async (
   await page.getByText("followed", { exact: true }).waitFor();
 });
 
+it("keeps the chat scrollbar at the column edge while the conversation clears the overview card", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["clearance done"] });
+  const page = await openPage(host, 1280, webOrigin);
+  await prompt(page).fill("clearance hi");
+  await prompt(page).press("Enter");
+  await page.getByText("clearance done", { exact: true }).waitFor();
+  const overview = page.getByRole("complementary", { name: "Overview" });
+  await overview.waitFor();
+
+  // At 1280 the gutter can't fit the card, so the column makes room — inside
+  // the scroll area: its scrollbar stays on the column's edge, while the
+  // centered conversation (composer included) ends left of the card.
+  const scroller = page.locator(".astryx-chat-layout");
+  const right = async (locator: Locator) => {
+    const box = (await locator.boundingBox())!;
+    return box.x + box.width;
+  };
+  await expect.poll(async () => (await right(prompt(page))) <= (await overview.boundingBox())!.x).toBe(true);
+  expect(await right(scroller)).toBeCloseTo(await right(scroller.locator("xpath=..")), 0);
+});
+
 it("shows where a conversation runs in the overview and honors the draft checkout picker", async () => {
   const webOrigin = await startWeb();
   const repoDir = await tempDir();
