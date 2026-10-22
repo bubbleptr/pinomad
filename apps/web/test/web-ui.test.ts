@@ -211,27 +211,23 @@ const allNodes = (view: { organized: { chats: readonly ConversationNode[]; proje
 };
 
 /**
- * Drive the folder picker to an absolute path: "Parent folder" climbs to "/",
- * then each segment's row steps down. The footer's path is the settle check —
- * the next row is only clicked once its parent listing has actually landed.
+ * Drive the folder picker to an absolute path: the path bar's "/" selects the
+ * root, then each segment's row is selected in the newest column — scoped to it,
+ * since a name like "var" can sit in an earlier column too. Clicking a row waits
+ * for it to appear, i.e. for its parent's listing to land; the path bar's
+ * `data-path` confirms each step took.
  */
 async function pickFolder(page: Page, target: string): Promise<void> {
   const dialog = page.getByRole("dialog");
-  const pathText = dialog.getByTestId("picker-path");
-  const up = dialog.getByRole("button", { name: "Parent folder", exact: true });
-  await pathText.waitFor();
-  for (;;) {
-    const current = await pathText.textContent();
-    if (current === "/") break;
-    await up.click();
-    await expect.poll(async () => await pathText.textContent()).not.toBe(current);
-  }
+  const pathBar = dialog.getByTestId("picker-path");
+  await pathBar.getByRole("button", { name: "/", exact: true }).click();
+  await expect.poll(async () => await pathBar.getAttribute("data-path")).toBe("/");
   let walked = "";
   for (const segment of target.split("/").filter(Boolean)) {
     walked += `/${segment}`;
-    await dialog.getByRole("button", { name: segment, exact: true }).click();
+    await dialog.getByRole("listbox").last().getByRole("option", { name: segment, exact: true }).click();
     const expected = walked;
-    await expect.poll(async () => await pathText.textContent()).toBe(expected);
+    await expect.poll(async () => await pathBar.getAttribute("data-path")).toBe(expected);
   }
 }
 

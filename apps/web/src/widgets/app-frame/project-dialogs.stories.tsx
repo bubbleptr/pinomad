@@ -13,8 +13,11 @@ function listingAt(path: string, folders: readonly string[]): FolderListing {
 }
 
 const FOLDERS: Record<string, readonly string[]> = {
-  [HOME]: ["code", "Desktop", "Documents", "Downloads"],
-  [`${HOME}/code`]: ["pinomad", "dotfiles", "scratch"],
+  "/": ["Applications", "Users", "opt", "usr"],
+  "/Users": ["Shared", "v"],
+  [HOME]: ["code", "Desktop", "Documents", "Downloads", "毕业论文与课题组资料-2026春季学期最终提交版本"],
+  [`${HOME}/code`]: ["dotfiles", "pinomad", "pinomad-experimental-relay-reconnect-with-backoff", "scratch"],
+  [`${HOME}/code/pinomad`]: ["apps", "crates", "docs", "packages"],
 };
 
 const remote = {

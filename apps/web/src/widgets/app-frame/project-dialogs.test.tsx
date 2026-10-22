@@ -1,6 +1,6 @@
 // The folder picker walks the host filesystem through controller.listFolders;
 // a controllable fake remote stands in for it, resolving calls out of order.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
@@ -40,10 +40,19 @@ function fakeRemote() {
       return addRequest.promise;
     }),
   };
+  /** Settle the newest request for `path` (`undefined` is the home call). */
+  const answer = async (path: string | undefined, result: FolderListing | Error) => {
+    const at = listCalls.lastIndexOf(path);
+    expect(at, `no listFolders(${path}) call`).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      if (result instanceof Error) listRequests[at]!.reject(result);
+      else listRequests[at]!.resolve(result);
+    });
+  };
   return {
     remote: { controller } as unknown as RemoteDurable,
     listCalls,
-    listRequests,
+    answer,
     addProject: controller.addProject,
     nextAdd: () => addRequest,
   };
@@ -53,118 +62,189 @@ function renderPicker(remote: RemoteDurable) {
   const onAdded = vi.fn();
   const onClose = vi.fn();
   render(<AddProjectDialog remote={remote} connected onAdded={onAdded} onClose={onClose} />);
-  return { onAdded, onClose, dialog: () => screen.getByRole("dialog") };
+  const dialog = () => screen.getByRole("dialog");
+  return {
+    onAdded,
+    onClose,
+    dialog,
+    option: (name: string) => within(dialog()).getByRole("option", { name }),
+    strip: () => within(dialog()).getByRole("group", { name: "Folders" }),
+    selectedPath: () => within(dialog()).getByTestId("picker-path").getAttribute("data-path"),
+  };
+}
+
+/** Open the picker with home listed. */
+async function openAtHome(folders: readonly string[]) {
+  const fake = fakeRemote();
+  const picker = renderPicker(fake.remote);
+  await fake.answer(undefined, listingAt(HOME, folders));
+  return { fake, ...picker };
 }
 
 describe("AddProjectDialog", () => {
-  it("renders the home listing and navigates into a folder row", async () => {
+  it("selects a clicked folder, previews it in the next column, and adds the selection", async () => {
     const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog } = renderPicker(fake.remote);
-    expect(fake.listCalls).toEqual([undefined]);
+    const { fake, option, selectedPath, dialog, onAdded } = await openAtHome(["code", "docs"]);
+    expect(selectedPath()).toBe(HOME);
 
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code", "docs"]));
-    expect(await within(dialog()).findByText("~")).toBeInTheDocument();
-    expect(await within(dialog()).findByText("code")).toBeInTheDocument();
-    expect(within(dialog()).getByText("docs")).toBeInTheDocument();
-
-    await user.click(within(dialog()).getByText("code"));
+    await user.click(option("code"));
+    expect(selectedPath()).toBe(`${HOME}/code`);
+    expect(option("code")).toHaveAttribute("aria-selected", "true");
     expect(fake.listCalls).toEqual([undefined, `${HOME}/code`]);
-  });
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["pinomad"]));
+    // Home's column stays beside the preview of code.
+    expect(option("docs")).toBeInTheDocument();
+    expect(option("pinomad")).toBeInTheDocument();
 
-  it("applies only the latest navigation when responses land out of order", async () => {
-    const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
-    await within(dialog()).findByText("code");
-
-    // Into code, then — while that load is still out — back to ~ via the crumb.
-    await user.click(within(dialog()).getByText("code"));
-    fake.listRequests[1]!.resolve(listingAt(`${HOME}/code`, ["sub"]));
-    await within(dialog()).findByText("sub");
-    await user.click(within(dialog()).getByText("sub"));
-    await user.click(within(dialog()).getByText("~"));
-    expect(fake.listCalls).toEqual([undefined, `${HOME}/code`, `${HOME}/code/sub`, HOME]);
-
-    // The older "sub" answer arriving last must not win.
-    fake.listRequests[3]!.resolve(listingAt(HOME, ["code"]));
-    fake.listRequests[2]!.resolve(listingAt(`${HOME}/code/sub`, ["a-folder"]));
-    await waitFor(() => expect(within(dialog()).queryByText("a-folder")).toBeNull());
-    expect(within(dialog()).getByText("code")).toBeInTheDocument();
-  });
-
-  it("shows a listFolders error in place and still navigates back", async () => {
-    const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
-    await within(dialog()).findByText("code");
-
-    await user.click(within(dialog()).getByText("code"));
-    fake.listRequests[1]!.reject(new Error("Permission denied: /Users/v/code"));
-    expect(await within(dialog()).findByText(/Permission denied/)).toBeInTheDocument();
-    // The last good listing's crumbs stay so the user can go back.
-    expect(within(dialog()).getByText("~")).toBeInTheDocument();
-
-    await user.click(within(dialog()).getByRole("button", { name: "Parent folder" }));
-    expect(fake.listCalls.at(-1)).toBe("/Users");
-    fake.listRequests.at(-1)!.resolve(listingAt("/Users", ["etc"]));
-    expect(await within(dialog()).findByText("etc")).toBeInTheDocument();
-    expect(within(dialog()).queryByText(/Permission denied/)).toBeNull();
-  });
-
-  it("adds the shown folder and hands the project to onAdded", async () => {
-    const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog, onAdded } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, []));
-    await within(dialog()).findByText("No subfolders");
-
+    // Add takes the selected folder, not the deepest column shown.
     await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
-    expect(fake.addProject).toHaveBeenCalledWith(HOME);
-    const project: Project = { path: HOME, name: "v", addedAt: 1 };
+    expect(fake.addProject).toHaveBeenCalledWith(`${HOME}/code`);
+    const project: Project = { path: `${HOME}/code`, name: "code", addedAt: 1 };
     fake.nextAdd().resolve(project);
     await waitFor(() => expect(onAdded).toHaveBeenCalledWith(project));
   });
 
-  it("shows an addProject error inline and does not call onAdded", async () => {
+  it("ignores a slow answer for a folder the selection already left", async () => {
     const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog, onAdded } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
-    await within(dialog()).findByText("code");
+    const { fake, option, dialog } = await openAtHome(["code", "docs"]);
 
-    await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
-    fake.nextAdd().reject(new Error("No such directory: /Users/v"));
-    expect(await within(dialog()).findByText(/No such directory/)).toBeInTheDocument();
-    expect(onAdded).not.toHaveBeenCalled();
-    // The add failure lands in the footer: the folder rows stay shown.
-    expect(within(dialog()).getByText("code")).toBeInTheDocument();
-    // Still open: the host's error must not have closed the dialog.
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(option("code"));
+    await user.click(option("docs"));
+    await fake.answer(`${HOME}/docs`, listingAt(`${HOME}/docs`, ["notes"]));
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["pinomad"]));
 
-    // Navigating after the failed add clears the footer error.
-    await user.click(within(dialog()).getByRole("button", { name: "Parent folder" }));
-    fake.listRequests.at(-1)!.resolve(listingAt("/Users", ["etc"]));
-    await within(dialog()).findByText("etc");
-    expect(within(dialog()).queryByText(/No such directory/)).toBeNull();
+    expect(option("notes")).toBeInTheDocument();
+    expect(within(dialog()).queryByRole("option", { name: "pinomad" })).toBeNull();
+    // Coming back to code uses the cached listing instead of asking again.
+    await user.click(option("code"));
+    expect(option("pinomad")).toBeInTheDocument();
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/code`, `${HOME}/docs`]);
   });
 
-  it("locks navigation while an add is pending", async () => {
+  it("shows a listing error in its column; Try again re-asks for that folder", async () => {
     const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog, onAdded } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
-    await within(dialog()).findByText("code");
+    const { fake, option, dialog } = await openAtHome(["code"]);
+
+    await user.click(option("code"));
+    await fake.answer(`${HOME}/code`, new Error("Permission denied: /Users/v/code"));
+    expect(within(dialog()).getByText(/Permission denied/)).toBeInTheDocument();
+
+    await user.click(within(dialog()).getByRole("button", { name: "Try again" }));
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/code`, `${HOME}/code`]);
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["sub"]));
+    expect(option("sub")).toBeInTheDocument();
+    expect(within(dialog()).queryByText(/Permission denied/)).toBeNull();
+  });
+
+  it("retries, not adds, when Enter is pressed on a column's Try again", async () => {
+    const user = userEvent.setup();
+    const { fake, option, dialog } = await openAtHome(["code"]);
+
+    await user.click(option("code"));
+    await fake.answer(`${HOME}/code`, new Error("Permission denied: /Users/v/code"));
+    within(dialog()).getByRole("button", { name: "Try again" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(fake.addProject).not.toHaveBeenCalled();
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/code`, `${HOME}/code`]);
+  });
+
+  it("lists a folder whose name contains a newline", async () => {
+    const user = userEvent.setup();
+    const { fake, dialog } = await openAtHome(["team\nrepo"]);
+
+    const row = within(dialog())
+      .getAllByRole("option")
+      .find((element) => element.textContent === "team\nrepo")!;
+    await user.click(row);
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/team\nrepo`]);
+  });
+
+  it("drops a pending → once the selection moves elsewhere", async () => {
+    const user = userEvent.setup();
+    const { fake, option, strip, selectedPath } = await openAtHome(["code", "docs"]);
+
+    await user.click(option("code"));
+    strip().focus();
+    await user.keyboard("{ArrowRight}");
+    await user.click(option("docs"));
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["pinomad"]));
+
+    // Coming back to code selects code itself, not its first child.
+    await user.click(option("code"));
+    expect(selectedPath()).toBe(`${HOME}/code`);
+  });
+
+  it("climbs above home through the path bar", async () => {
+    const user = userEvent.setup();
+    const { fake, option, selectedPath, dialog } = await openAtHome(["code"]);
+
+    const bar = within(within(dialog()).getByTestId("picker-path"));
+    await user.click(bar.getByRole("button", { name: "/" }));
+    expect(selectedPath()).toBe("/");
+    await fake.answer("/", listingAt("/", ["Users", "opt"]));
+    expect(option("opt")).toBeInTheDocument();
+  });
+
+  it("moves with the arrow keys and descends once a slow listing lands", async () => {
+    const user = userEvent.setup();
+    const { fake, strip, selectedPath, dialog } = await openAtHome(["code", "docs"]);
+    strip().focus();
+
+    await user.keyboard("{ArrowDown}");
+    expect(selectedPath()).toBe(`${HOME}/code`);
+    // → before code's listing arrives still lands on its first child.
+    await user.keyboard("{ArrowRight}");
+    expect(selectedPath()).toBe(`${HOME}/code`);
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["pinomad"]));
+    expect(selectedPath()).toBe(`${HOME}/code/pinomad`);
+
+    await user.keyboard("{ArrowLeft}{ArrowDown}");
+    expect(selectedPath()).toBe(`${HOME}/docs`);
+    // ← from home leaves it for its parent, listed under "/".
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(selectedPath()).toBe("/Users");
+    expect(fake.listCalls).toContain("/");
+
+    await user.keyboard("{Enter}");
+    expect(fake.addProject).toHaveBeenCalledWith("/Users");
+    expect(within(dialog()).getByRole("button", { name: "Adding…" })).toBeInTheDocument();
+  });
+
+  it("jumps to a folder by typing its name", async () => {
+    const user = userEvent.setup();
+    const { strip, selectedPath } = await openAtHome(["apps", "code", "crates", "docs"]);
+    strip().focus();
+
+    await user.keyboard("cr");
+    expect(selectedPath()).toBe(`${HOME}/crates`);
+  });
+
+  it("shows an addProject error in the footer and clears it on the next selection", async () => {
+    const user = userEvent.setup();
+    const { fake, option, dialog, onAdded } = await openAtHome(["code"]);
 
     await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
-    // Rows and Parent folder must not issue another listFolders mid-add.
-    await user.click(within(dialog()).getByText("code"));
-    await user.click(within(dialog()).getByRole("button", { name: "Parent folder" }));
+    await act(async () => fake.nextAdd().reject(new Error("No such directory: /Users/v")));
+    expect(within(dialog()).getByRole("alert")).toHaveTextContent("No such directory");
+    expect(onAdded).not.toHaveBeenCalled();
+    // Still open, with the folders in place.
+    expect(option("code")).toBeInTheDocument();
+
+    await user.click(option("code"));
+    expect(within(dialog()).queryByRole("alert")).toBeNull();
+  });
+
+  it("locks the selection while an add is pending", async () => {
+    const user = userEvent.setup();
+    const { fake, option, strip, selectedPath, dialog, onAdded } = await openAtHome(["code"]);
+
+    await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
+    await user.click(option("code"));
+    strip().focus();
+    await user.keyboard("{ArrowDown}{ArrowLeft}");
+    expect(selectedPath()).toBe(HOME);
     expect(fake.listCalls).toEqual([undefined]);
-    // Astryx marks disabled buttons with aria-disabled, not the attribute.
-    expect(within(dialog()).getByRole("button", { name: "Parent folder" })).toHaveAttribute("aria-disabled", "true");
 
     const project: Project = { path: HOME, name: "v", addedAt: 1 };
     fake.nextAdd().resolve(project);
@@ -174,35 +254,18 @@ describe("AddProjectDialog", () => {
   it("offers Try again when the first load fails", async () => {
     const user = userEvent.setup();
     const fake = fakeRemote();
-    const { dialog } = renderPicker(fake.remote);
-    fake.listRequests[0]!.reject(new Error("Not connected to the host"));
+    const { option, dialog } = renderPicker(fake.remote);
+    await fake.answer(undefined, new Error("Not connected to the host"));
 
-    expect(await within(dialog()).findByText(/Not connected/)).toBeInTheDocument();
-    // No listing means no crumbs to escape with — the button is the way out.
-    expect(within(dialog()).queryByText("~")).toBeNull();
-    const retry = within(dialog()).getByRole("button", { name: "Try again" });
-    await user.click(retry);
+    expect(within(dialog()).getByText(/Not connected/)).toBeInTheDocument();
+    // Nothing is selected yet, so there is nothing to add.
+    await user.click(within(dialog()).getByRole("button", { name: "Add project" }));
+    expect(fake.addProject).not.toHaveBeenCalled();
+    await user.click(within(dialog()).getByRole("button", { name: "Try again" }));
     expect(fake.listCalls).toEqual([undefined, undefined]);
 
-    fake.listRequests[1]!.resolve(listingAt(HOME, ["code"]));
-    expect(await within(dialog()).findByText("code")).toBeInTheDocument();
+    await fake.answer(undefined, listingAt(HOME, ["code"]));
+    expect(option("code")).toBeInTheDocument();
     expect(within(dialog()).queryByText(/Not connected/)).toBeNull();
-  });
-
-  it("Try again re-requests the folder that failed", async () => {
-    const user = userEvent.setup();
-    const fake = fakeRemote();
-    const { dialog } = renderPicker(fake.remote);
-    fake.listRequests[0]!.resolve(listingAt(HOME, ["code"]));
-    await within(dialog()).findByText("code");
-
-    await user.click(within(dialog()).getByText("code"));
-    fake.listRequests[1]!.reject(new Error("Permission denied: /Users/v/code"));
-    expect(await within(dialog()).findByText(/Permission denied/)).toBeInTheDocument();
-
-    await user.click(within(dialog()).getByRole("button", { name: "Try again" }));
-    expect(fake.listCalls.at(-1)).toBe(`${HOME}/code`);
-    fake.listRequests.at(-1)!.resolve(listingAt(`${HOME}/code`, ["sub"]));
-    expect(await within(dialog()).findByText("sub")).toBeInTheDocument();
   });
 });
