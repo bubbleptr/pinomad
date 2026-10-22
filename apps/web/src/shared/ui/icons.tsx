@@ -90,12 +90,6 @@ function iconComponent(icon: IconSvgElement) {
 export const Activity = iconComponent(ActivityIcon);
 export const AiEditing = iconComponent(AiEditingIcon);
 export const AppleReminder = iconComponent(AppleReminderIcon);
-// The same glyph with its frame shaded: the Overview toggle while the card is open.
-export const AppleReminderShaded = iconComponent(
-  AppleReminderIcon.map(([tag, attrs], index) =>
-    index === 0 ? ([tag, { ...attrs, fill: "currentColor", fillOpacity: 0.2 }] as const) : ([tag, attrs] as const),
-  ),
-);
 export const Archive = iconComponent(ArchiveIcon);
 export const ArchiveArrowDown = iconComponent(ArchiveArrowDownIcon);
 export const ArchiveRestore = iconComponent(ArchiveRestoreIcon);

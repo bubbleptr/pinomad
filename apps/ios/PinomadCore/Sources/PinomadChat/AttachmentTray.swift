@@ -79,6 +79,19 @@ public struct AttachmentTray: Equatable, Sendable {
         error = message
     }
 
+    /// Replace the staged images with already-prepared ones, as an Edit
+    /// does. The withdrawn images were admitted before, so a model that no
+    /// longer accepts images must not drop them; the generation bump keeps a
+    /// batch still preparing from appending to the restored set.
+    public mutating func restore(_ images: [MessageImage]) {
+        let kept = Array(images.prefix(limit))
+        generation += 1
+        self.images = kept
+        preparing = 0
+        taken = kept.count
+        error = images.count > limit ? "最多 \(limit) 张图片" : nil
+    }
+
     public mutating func clear() {
         images = []
         preparing = 0

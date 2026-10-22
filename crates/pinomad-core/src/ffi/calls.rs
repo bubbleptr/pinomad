@@ -174,8 +174,9 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 /// Every call the mobile UI can make, as typed data. `OperationFailed`
 /// only ever answers the Request-class variants (`AddProject`,
 /// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
-/// `CreatePairing`) and the out-of-queue `ListFiles`; the rest fail into
-/// a view notice while reporting `OperationSucceeded { value: Unit }`.
+/// `CreatePairing`, `WithdrawQueued`, `SteerQueued`) and the out-of-queue
+/// `ListFiles`; the rest fail into a view notice while reporting
+/// `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
     /// Prompt when idle; otherwise steer or queue a follow-up. `target`
@@ -232,6 +233,13 @@ pub enum FfiCall {
     /// Abort `target`'s run (the shown conversation's by default). Not
     /// queued behind the serialized commands.
     Abort { target: Option<u64> },
+    /// Take a queued input out of `target`'s inbox (the shown conversation by
+    /// default). Request-class; resolves `CallResult::WithdrawQueued`. Needs a
+    /// 5.14 host.
+    WithdrawQueued { submission_id: u64, target: Option<u64> },
+    /// Promote a queued follow-up to steer in place on `target`. Request-class;
+    /// resolves `CallResult::SteerQueued`. Needs a 5.14 host.
+    SteerQueued { submission_id: u64, target: Option<u64> },
     /// Hide or restore a top-level conversation in the index.
     Archive { id: u64, archived: bool },
     /// Register (`Some`) or clear (`None`) this device's APNs token.
@@ -270,6 +278,8 @@ impl FfiCall {
             FfiCall::CreatePairing => Some(ResultKind::Pairing),
             FfiCall::ListFiles { .. } => Some(ResultKind::Files),
             FfiCall::ListSkills { .. } => Some(ResultKind::Skills),
+            FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
+            FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
             _ => None,
         }
     }
@@ -330,6 +340,12 @@ impl FfiCall {
             },
             FfiCall::AddProject { path } => Call::AddProject { path },
             FfiCall::Abort { target } => Call::Abort { target },
+            FfiCall::WithdrawQueued { submission_id, target } => {
+                Call::WithdrawQueued { submission_id, target }
+            }
+            FfiCall::SteerQueued { submission_id, target } => {
+                Call::SteerQueued { submission_id, target }
+            }
             FfiCall::Archive { id, archived } => Call::Archive { id, archived },
             FfiCall::SetPushToken { token } => Call::SetPushToken { token },
             FfiCall::Changes { conversation_id } => Call::Changes {

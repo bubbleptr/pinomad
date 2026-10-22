@@ -13,7 +13,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { displayName, rootOf } from "@pinomad/client/family.ts";
 import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
-import { AppleReminder, AppleReminderShaded } from "../../shared/ui/icons.tsx";
+import { AppleReminder } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
@@ -122,7 +122,9 @@ export function AppFrame({
   );
 
   return (
-    <>
+    // The viewport wraps the workbench so every descendant's useToast reaches
+    // the same top-layer stack, not Astryx's detached fallback.
+    <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
       <AppShell
         className="pigui-app-layout text-foreground"
         contentPadding={0}
@@ -252,11 +254,9 @@ export function AppFrame({
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —
           rejected commands only surface as notices otherwise, and the panel
-          that lists them starts closed. isTopLayer lifts it above dialogs. */}
-      <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
-        <NoticeToasts notices={view.notices} />
-      </ToastViewport>
-    </>
+          that lists them starts closed. */}
+      <NoticeToasts notices={view.notices} />
+    </ToastViewport>
   );
 }
 
@@ -367,8 +367,9 @@ function FrameHeader({
       {showOverview ? (
         <IconButton
           aria-pressed={overviewOpen}
-          // The shaded frame says the card is open, beside aria-pressed.
-          icon={overviewOpen ? <AppleReminderShaded className="size-4" /> : <AppleReminder className="size-4" />}
+          // The shaded button says the card is open, beside aria-pressed.
+          className={overviewOpen ? "bg-[var(--color-overlay-pressed)]" : undefined}
+          icon={<AppleReminder className="size-4" />}
           label="Overview"
           size="sm"
           tooltip={overviewOpen ? "Hide overview" : "Show overview"}

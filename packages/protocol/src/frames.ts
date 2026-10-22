@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 13 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 14 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -147,6 +147,24 @@ export interface CallMethods {
       images?: readonly MessageImage[];
     };
     result: { submissionId: string };
+  };
+  /**
+   * Take a queued input back out of the inbox (5.14). `sent`: it already
+   * reached the transcript.
+   */
+  withdrawQueued: {
+    args: { conversationId: ConversationId; submissionId: number };
+    result: { outcome: "withdrawn" | "sent" };
+  };
+  /**
+   * Promote a queued follow-up to steer in place (5.14); it is placed at the
+   * next boundary that takes steers, in queue order. `steered` does not promise
+   * an immediate placement: one-at-a-time steering takes only the earliest
+   * steer at each boundary.
+   */
+  steerQueued: {
+    args: { conversationId: ConversationId; submissionId: number };
+    result: { outcome: "steered" | "sent" | "unavailable" };
   };
   abort: { args: { conversationId: ConversationId }; result: null };
   compact: { args: { conversationId: ConversationId; instructions?: string }; result: { taskId: string } };
@@ -229,6 +247,8 @@ const CALL_SINCE: Partial<Record<CallMethod, number>> = {
   setPushToken: 7,
   listFiles: 10,
   listSkills: 13,
+  withdrawQueued: 14,
+  steerQueued: 14,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -350,6 +370,8 @@ const CALL_METHODS = [
   "archive",
   "renameConversation",
   "submit",
+  "withdrawQueued",
+  "steerQueued",
   "abort",
   "compact",
   "setModel",
@@ -382,6 +404,8 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
   const conversationId = (): boolean =>
     typeof args.conversationId === "number" && Number.isSafeInteger(args.conversationId) && args.conversationId >= 1;
+  const submissionId = (): boolean =>
+    typeof args.submissionId === "number" && Number.isSafeInteger(args.submissionId) && args.submissionId >= 1;
   // Shape only — count, mime type, base64 and size limits are the host's check (imageProblem).
   const images = (): boolean =>
     args.images === undefined
@@ -401,6 +425,9 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
         && nonempty(args.requestId) && images()
       );
+    case "withdrawQueued":
+    case "steerQueued":
+      return conversationId() && submissionId();
     case "abort":
       return conversationId();
     case "setThinkingLevel":

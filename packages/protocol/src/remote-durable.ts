@@ -617,6 +617,30 @@ class RemoteClient {
             (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
           );
       },
+      // Requests, not commands: a failed withdraw/steer must reach the
+      // caller's Undo/Edit affordance instead of becoming a notice.
+      withdrawQueued: (submissionId, target) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "withdrawQueued")) {
+            throw new Error("The host is too old for this (needs protocol 5.14); run `pinomad upgrade` on the host");
+          }
+          const { outcome } = await this.#call("withdrawQueued", {
+            conversationId: target ?? conversationId(),
+            submissionId,
+          });
+          return outcome;
+        }),
+      steerQueued: (submissionId, target) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "steerQueued")) {
+            throw new Error("The host is too old for this (needs protocol 5.14); run `pinomad upgrade` on the host");
+          }
+          const { outcome } = await this.#call("steerQueued", {
+            conversationId: target ?? conversationId(),
+            submissionId,
+          });
+          return outcome;
+        }),
       setThinkingLevel: (level) => this.#command(() => this.#call("setThinkingLevel", { conversationId: conversationId(), level })),
       setModel: (model) => this.#command(() => this.#call("setModel", { conversationId: conversationId(), model })),
       toggleTasks: () =>

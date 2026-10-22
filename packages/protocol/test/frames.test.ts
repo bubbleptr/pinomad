@@ -99,6 +99,23 @@ describe("parseClientFrame", () => {
     expect(hostSupportsCall(13, "listSkills")).toBe(true);
   });
 
+  it("accepts withdrawQueued and steerQueued with a positive integer submissionId", () => {
+    for (const method of ["withdrawQueued", "steerQueued"] as const) {
+      expect(kinds({ type: "call", id: 1, method, args: { conversationId: 7, submissionId: 3 } })).toBe("frame");
+      for (const submissionId of [0, -1, 1.5, "3", null, undefined]) {
+        expect(kinds({ type: "call", id: 1, method, args: { conversationId: 7, submissionId } })).toBe("malformed");
+      }
+      expect(kinds({ type: "call", id: 1, method, args: { submissionId: 3 } })).toBe("malformed");
+    }
+  });
+
+  it("introduces withdrawQueued and steerQueued at minor 14", () => {
+    expect(hostSupportsCall(13, "withdrawQueued")).toBe(false);
+    expect(hostSupportsCall(14, "withdrawQueued")).toBe(true);
+    expect(hostSupportsCall(13, "steerQueued")).toBe(false);
+    expect(hostSupportsCall(14, "steerQueued")).toBe(true);
+  });
+
   it("accepts setThinkingLevel; the removed cycleThinking is an unknown call", () => {
     expect(
       kinds({

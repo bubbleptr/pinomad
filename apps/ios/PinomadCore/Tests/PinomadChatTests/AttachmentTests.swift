@@ -97,6 +97,24 @@ private let jpeg = MessageImage(data: "AAAA", mimeType: "image/jpeg")
         #expect(tray.images.isEmpty)
         #expect(tray.freeSlots == 4)
     }
+
+    /// Edit replaces whatever was staged with the withdrawn copy, keeps the
+    /// per-message cap, and ignores a prepare that was still in flight.
+    @Test func restoringAnEditReplacesTheTrayAndKeepsTheLimit() throws {
+        var tray = AttachmentTray(limit: 4)
+        let staleClaim = tray.reserve(1, accepts: true)
+        let stale = try #require(staleClaim)
+        let restored = (0..<5).map { MessageImage(data: "B\($0)", mimeType: "image/jpeg") }
+
+        tray.restore(restored)
+        tray.fulfil(stale, with: [jpeg])
+
+        #expect(tray.images.count == 4)
+        #expect(tray.images.map(\.data) == ["B0", "B1", "B2", "B3"])
+        #expect(tray.preparing == 0)
+        #expect(tray.freeSlots == 0)
+        #expect(tray.error == "最多 4 张图片")
+    }
 }
 
 @Suite struct SendSlotImageTests {

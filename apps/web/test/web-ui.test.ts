@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxThinking,
+  fauxToolCall,
+  type FauxResponseStep,
+} from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc, AssistantEntry, type ConversationId } from "@earendil-works/pi-durable";
 import { chromium, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { question } from "@pinomad/host/src/extensions/question.ts";
@@ -49,10 +55,32 @@ async function startWeb(): Promise<string> {
 const prompt = (root: Page | Locator): Locator =>
   root.getByRole("textbox", { name: "Prompt" }).or(root.getByRole("combobox", { name: "Prompt" }));
 
-async function openPage(host: OpenedHost, width: number, webOrigin: string) {
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+/** A faux answer that holds the run at the model request until the gate opens. */
+function gatedAnswer(gate: Promise<void>): FauxResponseStep {
+  return async () => {
+    await gate;
+    return fauxAssistantMessage("turn done");
+  };
+}
+
+async function openPage(
+  host: OpenedHost,
+  width: number,
+  webOrigin: string,
+  setup?: (page: Page) => Promise<void>,
+) {
   const browser = await chromium.launch();
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 844 } });
+  await setup?.(page);
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
   await prompt(page).waitFor();
   return page;
@@ -1599,7 +1627,7 @@ it("puts the conversation title in the header and the path inside the overview",
   await overview.getByText("/chats/", { exact: false }).waitFor();
   expect(await page.getByText("/chats/", { exact: false }).count()).toBe(1);
   expect(await overview.getByRole("button", { name: /Changes/ }).count()).toBe(0);
-  expect(await overview.getByText("Project folder", { exact: true }).count()).toBe(0);
+  expect(await overview.getByRole("img", { name: /^(Git worktree|Project folder)$/ }).count()).toBe(0);
   // Context usage lives in the card, not under the composer.
   await overview.getByRole("meter", { name: /^Context \d+% used/ }).waitFor();
   expect(await page.getByTestId("context-meter").count()).toBe(1);
@@ -1643,7 +1671,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   const toggle = page.getByRole("button", { name: "Overview", exact: true });
   expect(await toggle.getAttribute("aria-pressed")).toBe("true");
   const overview = page.getByRole("complementary", { name: "Overview" });
-  await overview.getByText("Project folder", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Project folder" }).waitFor();
   const changes = overview.getByRole("button", { name: /Changes/ });
   await changes.getByLabel("2 added, 1 removed", { exact: true }).waitFor();
   await overview.getByRole("button", { name: "1 done", exact: true }).click();
@@ -1776,6 +1804,274 @@ it("compacts the conversation from the more-actions menu", async () => {
   await page.locator("[data-toast-id]").getByText("Compaction", { exact: false }).waitFor();
 });
 
+it("offers Steer, Edit, and Withdraw on a queued follow-up and withdraws it", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await composer.fill("take it back");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "take it back" });
+  await row.waitFor();
+  for (const name of ["Steer the run with this message", "Edit queued message", "Withdraw queued message"]) {
+    await row.getByRole("button", { name, exact: true }).waitFor();
+  }
+
+  // A draft in the composer blocks Edit until it is cleared.
+  await composer.fill("draft");
+  expect(await row.getByRole("button", { name: "Edit queued message", exact: true }).isDisabled()).toBe(true);
+  await composer.fill("");
+
+  await row.getByRole("button", { name: "Withdraw queued message", exact: true }).click();
+  await row.waitFor({ state: "detached" });
+  expect((observer.view.current().conversation!.docs["pi.inbox"] as { items: unknown[] }).items).toEqual([]);
+  gate.resolve();
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
+});
+
+it("puts a withdrawn follow-up's text and image back into the composer", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await pasteImage(page, 400, 300);
+  await staged(page).waitFor();
+  await composer.fill("edit me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "edit me" });
+  await row.waitFor();
+  await expect.poll(() => row.getByText("1 image", { exact: false }).count()).toBe(1);
+
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+  await row.waitFor({ state: "detached" });
+  await expect.poll(() => composer.textContent()).toBe("edit me");
+  await staged(page).waitFor();
+  expect(await composer.evaluate((element) => element === document.activeElement)).toBe(true);
+  gate.resolve();
+});
+
+it("retries a lost edit withdrawal after reconnect and restores the composer", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const observer = await connectTo(defer, host);
+  let dropped = false;
+  let reconnect = false;
+  const page = await openPage(host, 1280, webOrigin, async (page) => {
+    await page.routeWebSocket(
+      (url) => url.origin === new URL(host.url).origin,
+      (ws) => {
+        if (dropped && !reconnect) {
+          void ws.close();
+          return;
+        }
+        const server = ws.connectToServer();
+        if (dropped) return;
+        const parse = (message: string | Buffer) => {
+          try {
+            return JSON.parse(String(message)) as { type?: string; id?: number; method?: string };
+          } catch {
+            return undefined;
+          }
+        };
+        const withdrawCalls = new Set<number>();
+        ws.onMessage((message) => {
+          const frame = parse(message);
+          if (frame?.type === "call" && frame.method === "withdrawQueued" && typeof frame.id === "number") {
+            withdrawCalls.add(frame.id);
+          }
+          server.send(message);
+        });
+        server.onMessage((message) => {
+          const frame = parse(message);
+          if (!dropped && frame?.type === "result" && typeof frame.id === "number" && withdrawCalls.has(frame.id)) {
+            // The host already committed the withdrawal. Drop the reply and cut
+            // the socket so the composer sees a failure instead of a result.
+            dropped = true;
+            void ws.close();
+            void server.close();
+            return;
+          }
+          ws.send(message);
+        });
+      },
+    );
+  });
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await pasteImage(page, 400, 300);
+  await staged(page).waitFor();
+  await composer.fill("recover me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "recover me" });
+  await row.waitFor();
+
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+  await page.getByText("Host connection lost", { exact: true }).waitFor();
+  // The host withdrew before the reply was lost, so the row is already gone.
+  await row.waitFor({ state: "detached" });
+  reconnect = true;
+  await page.getByText("Host connection lost", { exact: true }).waitFor({ state: "detached" });
+  await expect.poll(() => composer.textContent()).toBe("recover me");
+  await staged(page).waitFor();
+  expect(await composer.evaluate((element) => element === document.activeElement)).toBe(true);
+  gate.resolve();
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
+});
+
+it("unlocks the composer when the host rejects an edit withdrawal", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const page = await openPage(host, 1280, webOrigin, async (page) => {
+    await page.routeWebSocket(
+      (url) => url.origin === new URL(host.url).origin,
+      (ws) => {
+        const server = ws.connectToServer();
+        ws.onMessage((message) => {
+          try {
+            const frame = JSON.parse(String(message)) as {
+              type?: string;
+              method?: string;
+              args?: { submissionId?: number };
+            };
+            if (frame.type === "call" && frame.method === "withdrawQueued" && frame.args !== undefined) {
+              // A real host rejection that leaves the row queued: the id does
+              // not exist, so no withdrawal commits.
+              frame.args.submissionId = 999_999;
+              server.send(JSON.stringify(frame));
+              return;
+            }
+          } catch {
+            // Not JSON; forward it unchanged.
+          }
+          server.send(message);
+        });
+      },
+    );
+  });
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await composer.fill("keep me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "keep me" });
+  await row.waitFor();
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+
+  // The host's ok:false surfaces as a toast; the row is still queued because
+  // the withdrawal never committed, so Edit unlocks for another try.
+  await page.locator("[data-toast-id]").getByText(/999999|does not exist/i).waitFor();
+  await row.waitFor();
+  await expect.poll(() => row.getByRole("button", { name: "Edit queued message", exact: true }).isDisabled()).toBe(false);
+  await composer.fill("after rejection");
+  await expect.poll(() => composer.textContent()).toBe("after rejection");
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Add images/, exact: false }).waitFor();
+  await page.keyboard.press("Escape");
+  gate.resolve();
+});
+
+it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle queue", async () => {
+  const webOrigin = await startWeb();
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [
+      gatedAnswer(gate.promise),
+      fauxAssistantMessage("boom", { errorMessage: "provider blew up", stopReason: "error" }),
+    ],
+  });
+  defer(gate.resolve);
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await composer.fill("promote me");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const promoted = page.getByTestId("chat-queued-message").filter({ hasText: "promote me" });
+  await promoted.waitFor();
+  await promoted.getByRole("button", { name: "Steer the run with this message", exact: true }).click();
+  await expect.poll(() => promoted.locator('[data-slot="queued-message-tag"]').textContent()).toBe("Steer");
+  expect(await promoted.getByRole("button", { name: "Steer the run with this message", exact: true }).count()).toBe(0);
+
+  // Two more follow-ups: the first run's final boundary takes one, the other
+  // survives the next run's model error for the idle-queue assertion below.
+  await composer.fill("selected next");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  await page.getByTestId("chat-queued-message").filter({ hasText: "selected next" }).waitFor();
+  await composer.fill("left queued");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const leftover = page.getByTestId("chat-queued-message").filter({ hasText: "left queued" });
+  await leftover.waitFor();
+
+  const conversationId = observer.view.current().conversation!.conversation.id;
+  const conversation = await host.harness.conversation(conversationId, BACKGROUND_CONTEXT);
+  await conversation!.submit(
+    {
+      type: "write",
+      entry: {
+        kind: "pinomad.note",
+        data: { note: "x" },
+        model: [{ role: "user", content: "note", timestamp: Date.now() }],
+      },
+    },
+    BACKGROUND_CONTEXT,
+  );
+  const write = page.getByTestId("chat-queued-message").filter({ hasText: "<pinomad.note>" });
+  await write.waitFor();
+  expect(await write.getByRole("button").count()).toBe(0);
+
+  gate.resolve();
+  await waitForView(observer.view, (view) => {
+    const inbox = (view.conversation!.docs["pi.inbox"] as { items: { mode: string }[] }).items;
+    return !isBusy(view.conversation!) && inbox.length === 1 && inbox[0]!.mode === "followUp";
+  });
+  await leftover.waitFor();
+  await expect.poll(() => leftover.locator('[data-slot="queued-message-tag"]').textContent()).toBe("Follow-up");
+  expect(await leftover.getByRole("button", { name: "Steer the run with this message", exact: true }).count()).toBe(0);
+  await leftover.getByRole("button", { name: "Edit queued message", exact: true }).waitFor();
+  await leftover.getByRole("button", { name: "Withdraw queued message", exact: true }).waitFor();
+});
+
 it("shows a queued follow-up above the composer until the run takes it", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, {
@@ -1822,15 +2118,17 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // A chat conversation has no checkout to name.
+  // A chat conversation has no checkout to name: its folder row says so.
   await prompt(page).fill("chat hi");
   await prompt(page).press("Enter");
   await page.getByText("chat done", { exact: true }).waitFor();
   const overview = page.getByRole("complementary", { name: "Overview" });
-  await overview.getByText("Workspace", { exact: true }).waitFor();
-  expect(await overview.getByText(/^(Git worktree|Project folder)$/).count()).toBe(0);
+  await overview.getByText("Chat folder", { exact: true }).waitFor();
+  expect(await overview.getByRole("img", { name: /^(Git worktree|Project folder)$/ }).count()).toBe(0);
 
-  // A repo project defaults to a worktree: "Git worktree" + its pinomad branch.
+  // A repo project defaults to a worktree: the directory row carries the
+  // worktree icon and the project's name (the worktree's own folder is an id),
+  // with no separate "Git worktree" line, plus its pinomad branch.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: repoName, exact: true }).click();
@@ -1838,7 +2136,9 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await prompt(page).fill("tree hi");
   await prompt(page).press("Enter");
   await page.getByText("tree done", { exact: true }).waitFor();
-  await overview.getByText("Git worktree", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Git worktree" }).waitFor();
+  await overview.getByText(repoName, { exact: true }).waitFor();
+  expect(await overview.getByText("Git worktree", { exact: true }).count()).toBe(0);
   await overview.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
 
   // A plain project with "Project folder" works directly in its directory.
@@ -1850,7 +2150,8 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await prompt(page).fill("direct hi");
   await prompt(page).press("Enter");
   await page.getByText("direct done", { exact: true }).waitFor();
-  await overview.getByText("Project folder", { exact: true }).waitFor();
+  await overview.getByRole("img", { name: "Project folder" }).waitFor();
+  await overview.getByText(plainName, { exact: true }).waitFor();
   await expect.poll(async () => {
     const id = observer.view.current().organized.projects.find((p) => p.project.name === plainName)
       ?.conversations.find((node) => node.summary.title === "direct hi")?.summary.id;
