@@ -109,7 +109,9 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
     sessions,
     streamErrors,
     flushHeld(result) {
-      for (const { stream } of held.splice(0)) answer(stream, result);
+      for (const { stream } of held.splice(0)) {
+        if (!stream.destroyed) answer(stream, result);
+      }
     },
     waitForCalls(n) {
       return new Promise((resolve) => {

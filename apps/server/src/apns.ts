@@ -146,6 +146,12 @@ export function openApns(config: ApnsConfig): ApnsSender {
     if (!session.destroyed) session.destroy();
   };
 
+  /** Retire a healthy session without aborting its in-flight streams. */
+  const retireSession = (state: EnvironmentState, session: ClientHttp2Session): void => {
+    if (state.session === session) state.session = undefined;
+    if (!session.closed && !session.destroyed) session.close();
+  };
+
   /** One session per environment, rebuilt after GOAWAY/error/close (ADR-0025 §2). */
   const sessionFor = (environment: ApnsEnvironment, state: EnvironmentState): ClientHttp2Session => {
     const existing = state.session;
@@ -283,11 +289,12 @@ export function openApns(config: ApnsConfig): ApnsSender {
           finish(classify(request.environment, status, responseHeaders, body, state));
         });
         stream.on("error", () => {
-          // APNs refused this stream on the current connection; drop the
-          // session so the retry rebuilds it (ADR-0025 §2).
+          // REFUSED_STREAM only rejects this stream; the connection can still
+          // finish its other in-flight sends. Retire the session so the next
+          // send reconnects without aborting them (ADR-0025 §2).
           const refused = stream.rstCode === constants.NGHTTP2_REFUSED_STREAM;
           finish({ result: "retry", reason: "connection error" });
-          if (refused) dropSession(state, session);
+          if (refused) retireSession(state, session);
         });
         stream.on("aborted", () => finish({ result: "retry", reason: "connection aborted" }));
         stream.end(body);

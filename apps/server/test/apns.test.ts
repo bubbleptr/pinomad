@@ -6,7 +6,7 @@ import { constants } from "node:http2";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PushNotification } from "@pinomad/protocol/relay.ts";
 import { loadApnsConfig, openApns, type ApnsSender } from "../src/apns.ts";
-import { fakeApns, type FakeApns } from "./apns-fake.ts";
+import { fakeApns, type ApnsAnswer, type FakeApns } from "./apns-fake.ts";
 
 const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const TEST_PEM = privateKey.export({ format: "pem", type: "pkcs8" }) as string;
@@ -187,6 +187,31 @@ describe("openApns", () => {
     await fake.waitForStreamErrors(1);
 
     refusing = false;
+    expect(await send(apns)).toEqual({ result: "accepted", reason: "ok" });
+    expect(fake.sessions).toHaveLength(2);
+  });
+
+  it("keeps other in-flight sends alive when APNs refuses one stream", async () => {
+    let releaseRefusal!: () => void;
+    const refusal = new Promise<ApnsAnswer>((resolve) => {
+      releaseRefusal = () => resolve({ close: constants.NGHTTP2_REFUSED_STREAM });
+    });
+    const { apns, fake } = await startApns((call) => {
+      if (call.token === "refused") return refusal;
+      if (call.token === "healthy") return { status: 200, hold: true };
+      return { status: 200 };
+    });
+
+    const refused = send(apns, { token: "refused" });
+    const healthy = send(apns, { token: "healthy" });
+    await fake.waitForCalls(2);
+    expect(fake.sessions).toHaveLength(1);
+
+    releaseRefusal();
+    expect(await refused).toEqual({ result: "retry", reason: "connection error" });
+    fake.flushHeld({ status: 200 });
+    expect(await healthy).toEqual({ result: "accepted", reason: "ok" });
+
     expect(await send(apns)).toEqual({ result: "accepted", reason: "ok" });
     expect(fake.sessions).toHaveLength(2);
   });
