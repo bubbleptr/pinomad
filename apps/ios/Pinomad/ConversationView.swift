@@ -61,6 +61,7 @@ struct ConversationView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 24) {
+                                Color.clear.frame(height: 1).id("top")
                                 entries(conversation, subagentSummaries: subagentSummaries,
                                         skillNames: skillNames, isSubagent: isSubagent)
                                 Color.clear.frame(height: 1).id("bottom")
@@ -70,9 +71,21 @@ struct ConversationView: View {
                         }
                         .defaultScrollAnchor(.bottom)
                         .task {
+                            // `bounce` sweeps end to end so a settled
+                            // conversation scrolls too; otherwise follow
+                            // the end as a stream grows.
+                            var up = false
                             while !Task.isCancelled {
-                                proxy.scrollTo("bottom", anchor: .bottom)
-                                try? await Task.sleep(for: .milliseconds(120))
+                                if autoScrollBounce {
+                                    up.toggle()
+                                    withAnimation(.linear(duration: 1)) {
+                                        proxy.scrollTo(up ? "top" : "bottom", anchor: up ? .top : .bottom)
+                                    }
+                                    try? await Task.sleep(for: .milliseconds(1400))
+                                } else {
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                    try? await Task.sleep(for: .milliseconds(120))
+                                }
                             }
                         }
                     }
@@ -172,6 +185,14 @@ struct ConversationView: View {
     private var autoScroll: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] != nil
+        #else
+        return false
+        #endif
+    }
+
+    private var autoScrollBounce: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["PINOMAD_AUTOSCROLL"] == "bounce"
         #else
         return false
         #endif

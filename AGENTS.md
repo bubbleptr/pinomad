@@ -75,7 +75,8 @@ DEVICECTL_CHILD_PINOMAD_PERFLOG=1 DEVICECTL_CHILD_PINOMAD_KEEPSCREEN=1 \
   DEVICECTL_CHILD_PINOMAD_OPEN=<对话id> \
   xcrun devicectl device process launch --device 00008150-001608822678401C build.kieran.pinomad
 # 帧停顿（>2 帧的帧间隔）记为 hitch 事件，附 gap 和预期帧时长；
-# PINOMAD_AUTOSCROLL 让对话页定时滚到底部，用于远程测量滚动卡顿；
+# PINOMAD_AUTOSCROLL 让对话页定时滚到底部，用于远程测量滚动卡顿；=bounce 时在首尾之间来回滚，
+# 用于测已经停下的长对话（PerfLog 也每 5s 落盘一次，不依赖新快照）；
 # PINOMAD_AUTOPAIR 下配对失败每 15s 自动重试（约 10 分钟窗口）。
 xcrun devicectl device copy from --device 00008150-001608822678401C \
   --source Documents/perf.ndjson \
