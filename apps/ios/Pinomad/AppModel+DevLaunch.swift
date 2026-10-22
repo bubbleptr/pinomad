@@ -78,11 +78,12 @@ extension AppModel {
             startSettingsDemo(mode)
             return true
         }
-        if env["PINOMAD_DEMO_LAYOUT"] != nil {
+        if let mode = env["PINOMAD_DEMO_LAYOUT"] {
             // The conversation list grouped by machine: two paired hosts
-            // (one connected), chats, two projects, a family with subagents.
+            // (one connected), chats, two projects, a family with subagents;
+            // `old` connects a host too old to add projects.
             phase = .connected
-            startLayoutDemo()
+            startLayoutDemo(mode)
             return true
         }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {

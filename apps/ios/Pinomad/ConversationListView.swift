@@ -115,26 +115,33 @@ struct ConversationListView: View {
     @ViewBuilder
     private var currentMachine: some View {
         if let organized = model.snapshot?.organized {
+            // The folder picker needs listFolders (protocol 5.3); an older
+            // host gets no add row, and its last project ends the group.
+            let canAdd = model.hostSupports("listFolders")
+            let projects = organized.projects.compactMap { group in
+                group.project.path.map { (path: $0, group: group) }
+            }
             if !organized.chats.isEmpty {
                 groupRow(.chats, title: "对话", systemImage: "bubble.left.and.bubble.right",
-                         count: organized.chats.count)
+                         count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
             }
-            ForEach(Array(organized.projects.enumerated()), id: \.offset) { _, group in
-                if let path = group.project.path {
-                    groupRow(.project(path), title: group.project.name ?? path,
-                             systemImage: "folder", count: group.conversations.count)
+            ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
+                groupRow(.project(entry.path), title: entry.group.project.name ?? entry.path,
+                         systemImage: "folder", count: entry.group.conversations.count,
+                         endsGroup: !canAdd && index == projects.count - 1)
+            }
+            if canAdd {
+                Button {
+                    model.navPath.append(.addProject)
+                } label: {
+                    Label("添加项目", systemImage: "plus")
+                        .foregroundStyle(.secondary)
                 }
+                .disabled(!model.connected)
+                .listRowBackground(Color.clear)
+                // Ends the machine's group; the next header separates it.
+                .listRowSeparator(.hidden, edges: .bottom)
             }
-            Button {
-                model.navPath.append(.addProject)
-            } label: {
-                Label("添加项目", systemImage: "plus")
-                    .foregroundStyle(.secondary)
-            }
-            .disabled(!model.connected)
-            .listRowBackground(Color.clear)
-            // Ends the machine's group; the next header separates it.
-            .listRowSeparator(.hidden, edges: .bottom)
         } else {
             ProgressView("正在同步…")
                 .frame(maxWidth: .infinity)
@@ -165,7 +172,9 @@ struct ConversationListView: View {
         displayName(summary: node.summary).localizedCaseInsensitiveContains(query)
     }
 
-    private func groupRow(_ filter: ConversationFilter, title: String, systemImage: String, count: Int) -> some View {
+    private func groupRow(
+        _ filter: ConversationFilter, title: String, systemImage: String, count: Int, endsGroup: Bool
+    ) -> some View {
         NavigationLink(value: Route.conversations(filter)) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
@@ -184,6 +193,7 @@ struct ConversationListView: View {
             .shortSeparator()
         }
         .quietSeparator()
+        .listRowSeparator(endsGroup ? .hidden : .automatic, edges: .bottom)
         .listRowBackground(Color.clear)
     }
 }

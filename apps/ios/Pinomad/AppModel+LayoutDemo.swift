@@ -5,8 +5,9 @@ import PinomadCore
 /// `PINOMAD_DEMO_LAYOUT`: the conversation list grouped by machine, without
 /// a host — two paired machines (the first connected), chats, two projects,
 /// a family whose subagents roll up into its row, and one archived root.
+/// `old` connects a 5.2 host, which has no folder picker.
 extension AppModel {
-    func startLayoutDemo() {
+    func startLayoutDemo(_ mode: String) {
         useDevHosts(StoredHosts(
             hosts: [
                 HostRecord(url: "ws://mbp:7777", hostKey: "demo-mbp", privateKey: "", name: "mbp"),
@@ -65,7 +66,9 @@ extension AppModel {
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: "mbp",
+            protocolMismatch: nil,
+            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: mode == "old" ? 2 : 14)),
+            hostName: "mbp",
             organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
