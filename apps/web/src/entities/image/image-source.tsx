@@ -51,6 +51,12 @@ export function ImageSourceProvider({
 export function useImageRetryKey(view: DurableView): number {
   const [retryKey, setRetryKey] = useState(0);
   const previous = useRef(view.connection);
+  // What the last connected render showed. A reconnect compares against it,
+  // so a snapshot that arrives in the same render as "connected" still bumps.
+  const lastSeen = useRef<{
+    main?: DurableView["conversation"];
+    side?: DurableView["conversation"];
+  } | undefined>(undefined);
   const waiting = useRef<{
     main?: DurableView["conversation"];
     side?: DurableView["conversation"];
@@ -58,37 +64,42 @@ export function useImageRetryKey(view: DurableView): number {
 
   useEffect(() => {
     if (view.connection === "connected" && previous.current !== "connected") {
-      const main = view.conversation;
-      const side = view.side?.conversation;
-      if (main === undefined && side === undefined) {
-        // Nothing rendered yet; a later conversation mounts its own hooks.
-        setRetryKey((key) => key + 1);
+      const seen = lastSeen.current;
+      if (seen !== undefined && (seen.main !== undefined || seen.side !== undefined)) {
+        waiting.current = { ...seen };
       } else {
-        waiting.current = {
-          ...(main === undefined ? {} : { main }),
-          ...(side === undefined ? {} : { side }),
-        };
+        // Nothing was rendered before the reconnect; a shown conversation
+        // mounts its hooks fresh, so there is nothing to retry yet.
+        waiting.current = undefined;
       }
     }
     if (view.connection !== "connected") waiting.current = undefined;
     previous.current = view.connection;
-  }, [view.connection, view.conversation, view.side?.conversation]);
+  }, [view.connection]);
 
   useEffect(() => {
+    if (view.connection !== "connected") return;
     const pending = waiting.current;
-    if (pending === undefined || view.connection !== "connected") return;
-    let arrived = false;
-    if (pending.main !== undefined && view.conversation !== pending.main) {
-      pending.main = undefined;
-      arrived = true;
+    if (pending !== undefined) {
+      let arrived = false;
+      if (pending.main !== undefined && view.conversation !== pending.main) {
+        pending.main = undefined;
+        arrived = true;
+      }
+      if (pending.side !== undefined && view.side?.conversation !== pending.side) {
+        pending.side = undefined;
+        arrived = true;
+      }
+      if (!arrived) return;
+      if (pending.main === undefined && pending.side === undefined) waiting.current = undefined;
+      setRetryKey((key) => key + 1);
     }
-    if (pending.side !== undefined && view.side?.conversation !== pending.side) {
-      pending.side = undefined;
-      arrived = true;
+    if (waiting.current === undefined) {
+      lastSeen.current = {
+        ...(view.conversation === undefined ? {} : { main: view.conversation }),
+        ...(view.side?.conversation === undefined ? {} : { side: view.side.conversation }),
+      };
     }
-    if (!arrived) return;
-    if (pending.main === undefined && pending.side === undefined) waiting.current = undefined;
-    setRetryKey((key) => key + 1);
   }, [view.connection, view.conversation, view.side?.conversation]);
 
   return retryKey;
