@@ -16,6 +16,6 @@ describe.each(Object.entries(modules))("%s", (_path, module) => {
   const stories = composeStories(module) as Record<string, ComponentType>;
   it.each(Object.entries(stories))("%s renders", (_name, Story) => {
     const { container } = render(<Story />);
-    expect(container.querySelector(".sb-pinomad-canvas")?.childElementCount).toBeGreaterThan(0);
+    expect(container.querySelector(".sb-pinomad-column")?.childElementCount).toBeGreaterThan(0);
   });
 });

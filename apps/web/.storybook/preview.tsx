@@ -26,16 +26,19 @@ const preview: Preview = {
   decorators: [
     // Theme tokens are scoped to the Theme element, so the canvas surface is
     // painted inside it; Storybook's own body stays unthemed.
-    (Story, { globals }) => (
+    (Story, { globals, parameters }) => (
       <Theme theme={neutralTheme} mode={globals.mode as Mode}>
         <div className="sb-pinomad-canvas">
-          <Story />
+          <div className="sb-pinomad-column" data-width={parameters.canvasWidth ?? "column"}>
+            <Story />
+          </div>
         </div>
       </Theme>
     ),
   ],
   parameters: {
     layout: "fullscreen",
+    canvasWidth: "column",
     // FSD layers, bottom up.
     options: { storySort: { order: ["Shared", "Entities", "Presentation", "Widgets"] } },
   },

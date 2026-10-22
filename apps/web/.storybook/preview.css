@@ -13,3 +13,14 @@ body.sb-show-main {
   background: var(--color-background-surface);
   color: var(--color-text-primary);
 }
+
+/* Stories sit in the conversation column's width (max-w-[44rem], centred,
+   as in conversation-transcript.tsx); `canvasWidth: "full"` opts out. */
+.sb-pinomad-column {
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.sb-pinomad-column[data-width="full"] {
+  max-width: none;
+}

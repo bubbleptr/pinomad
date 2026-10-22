@@ -16,7 +16,7 @@ iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-002
 
 查 Astryx 组件的 props、variants 和 token 时，在 `apps/web` 下跑 `bunx astryx component <Name>`（`component --list` 列全部组件，`docs tokens` 查 token）。CLI 版本跟着 `@astryxdesign/core` 走；在仓库根目录跑会拉到 npm 上同名的无关包。不跑 `astryx init`：它会往 AGENTS.md 灌整段英文组件索引。
 
-Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，端口 6006）：story 和组件放在一起（`*.stories.tsx`），装饰器套 Astryx `Theme` 和 `styles.css`，工具栏切明暗。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。
+Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，端口 6006）：story 和组件放在一起（`*.stories.tsx`），装饰器套 Astryx `Theme` 和 `styles.css`，工具栏切明暗；画布默认是对话栏宽度（44rem，居中），整屏的组件在 story 上设 `parameters: { canvasWidth: "full" }`。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。
 
 ## 验证
 
