@@ -1,8 +1,8 @@
 name: Rust core
 
-# PR gate for the Rust client core (ADR-0024 §12): typecheck, then `bun run test`,
-# which runs the JS suite and cargo test (with and without `ffi`). The ios job
-# builds the xcframework, runs the Swift tests, and builds the app.
+# iOS gate for the Rust client core (ADR-0024 §12): builds the xcframework,
+# runs the Swift tests, and builds the app. The Linux checks (typecheck, test,
+# build) live in ci.yml and run on every non-doc PR.
 on:
   pull_request:
     paths:
@@ -29,27 +29,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.12
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "25"
-      # Reads rust-toolchain.toml for the pinned channel.
-      - uses: dtolnay/rust-toolchain@stable
-      - run: bun install --frozen-lockfile
-      # Run from apps/web so bunx uses its locked @playwright/test; at the
-      # root bunx fetches the latest playwright and installs a mismatched
-      # browser build.
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/web
-      - run: bun run typecheck
-      - run: bun run test
-
   # ADR-0024 §12: the xcframework and UniFFI bindings only build on macOS.
   # From a clean checkout: build the core, run PinomadCore's Swift tests
   # on an iOS simulator, and build the app — all unsigned.
