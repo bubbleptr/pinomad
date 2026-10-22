@@ -6,8 +6,6 @@ brain
 check
 chevron-right
 circle
-circle-check
-circle-dot
 circle-x
 code
 copy
