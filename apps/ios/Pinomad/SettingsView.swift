@@ -356,7 +356,7 @@ struct MachineSettingsView: View {
             Spacer()
             if let id = entry.node.summary.id {
                 Button("恢复") { model.archive(conversation: id, false) }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.tactile(.glass))
                     .controlSize(.small)
                     .disabled(!model.connected)
             }

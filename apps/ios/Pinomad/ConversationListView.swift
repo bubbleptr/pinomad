@@ -288,9 +288,10 @@ private struct StatusTiles: View {
             .padding(16)
             .frame(height: 104, alignment: .bottomLeading)
             .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 22))
+            .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(.separator), lineWidth: 0.5) }
             .contentShape(.rect(cornerRadius: 22))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
     }
 }
 

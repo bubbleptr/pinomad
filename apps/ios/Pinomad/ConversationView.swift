@@ -135,6 +135,14 @@ struct ConversationView: View {
                     .padding(.vertical, 10)
             } else if let conversation {
                 ConversationComposer(model: model, conversation: conversation)
+                    // The agent at work, in the empty strip under the card:
+                    // hung from the bar's bottom edge down past the home
+                    // indicator; with the keyboard up, the keyboard covers it.
+                    .overlay(alignment: .bottom) {
+                        WorkingDots(active: conversation.busy)
+                            .frame(height: 44)
+                            .alignmentGuide(.bottom) { $0[.top] }
+                    }
             }
         }
         .navigationTitle(title)
@@ -440,7 +448,7 @@ private struct RunRow: View, Equatable {
             }
             if let retry {
                 Button("重试", systemImage: "arrow.clockwise", action: retry)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)
             }
             // The run's last element (ADR-0026 §4), under the answer.

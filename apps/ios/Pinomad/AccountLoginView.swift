@@ -119,7 +119,7 @@ struct AccountLoginView: View {
                             Spacer()
                         }
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.tactile(.glassProminent))
                     .disabled(busy
                         || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || password.isEmpty)

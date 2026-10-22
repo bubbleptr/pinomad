@@ -398,7 +398,7 @@ private struct OptionRow: View {
             .padding(.vertical, 5)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
         .accessibilityAddTraits(picked ? .isSelected : [])
     }
 }
@@ -425,6 +425,7 @@ private struct CardButtonStyle: ButtonStyle {
             .background(background, in: .capsule)
             .contentShape(.capsule)
             .opacity(configuration.isPressed ? 0.6 : 1)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 
     private var foreground: Color {

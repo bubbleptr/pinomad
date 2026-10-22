@@ -54,7 +54,7 @@ struct PairingCodeView: View {
             Button("新二维码") {
                 Task { await load() }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.tactile(.borderedProminent))
             .controlSize(.large)
         } else {
             if PairingCodeCopy.isLoopback(offer.url) {
@@ -91,7 +91,7 @@ struct PairingCodeView: View {
                 Label("复制链接", systemImage: "doc.on.doc")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.tactile(.bordered))
             .controlSize(.large)
 
             Text("有效期还剩 \(PairingCodeCopy.countdown(seconds))")
@@ -110,7 +110,7 @@ struct PairingCodeView: View {
             Button("重试") {
                 Task { await load() }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.tactile(.bordered))
             .controlSize(.large)
         } else {
             Text("连上宿主后才能生成二维码。")

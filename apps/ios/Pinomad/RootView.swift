@@ -102,28 +102,28 @@ private struct FailureView: View {
             VStack(spacing: 10) {
                 if canRetry {
                     Button("重试") { model.retryConnection() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.tactile(.borderedProminent))
                 }
                 if failure == .revoked, let key = model.currentHostKey {
                     if model.accountHostId(for: key) != nil {
                         Button("经账号重新配对") { model.repairViaAccount(hostKey: key) }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.tactile(.bordered))
                             .disabled(model.accountBusy)
                     }
                     Button("忘记这台宿主", role: .destructive) { model.forget(key) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.tactile(.bordered))
                 }
                 if pairing {
                     Button("取消") { model.cancelPairing() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.tactile(.bordered))
                 }
                 if let previous = model.previousHostKey {
                     Button("回到 \(model.hostLabels[previous] ?? "之前的宿主")") { model.switchHost(previous) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.tactile(.bordered))
                 }
                 if !pairing {
                     Button("设置") { model.present(.settings) }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.tactile(.bordered))
                 }
             }
             .controlSize(.large)
@@ -197,7 +197,7 @@ struct ConnectionBanner: View {
                     Text("已断开")
                     Spacer(minLength: 8)
                     Button("重连") { model.retryConnection() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.tactile(.bordered))
                         .controlSize(.small)
                 }
             case .connected, .outdated:

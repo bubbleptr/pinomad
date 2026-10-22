@@ -98,7 +98,7 @@ struct ChangesList: View {
                 Button("重试") {
                     Task { await refresh() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.tactile(.borderedProminent))
             }
             .frame(maxWidth: .infinity, minHeight: 420)
         }

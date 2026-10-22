@@ -69,7 +69,7 @@ struct ScannerView: View {
                 Button("打开设置") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.tactile(.borderedProminent))
             }
         }
     }

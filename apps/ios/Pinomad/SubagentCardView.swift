@@ -55,7 +55,7 @@ struct SubagentCardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.press)
                 .accessibilityLabel("\(card.title)，\(statusText)")
                 .accessibilityHint("打开子代理对话")
             } else {
@@ -66,7 +66,7 @@ struct SubagentCardView: View {
                     showingOutput.toggle()
                 }
                 .font(.caption)
-                .buttonStyle(.plain)
+                .buttonStyle(.press)
                 .foregroundStyle(.secondary)
                 if showingOutput {
                     ScrollView([.horizontal, .vertical], showsIndicators: false) {

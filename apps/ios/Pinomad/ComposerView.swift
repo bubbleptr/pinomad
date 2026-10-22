@@ -274,7 +274,7 @@ struct ConversationComposer: View {
             } label: {
                 SlotIcon(systemName: "stop.fill")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.press)
             .accessibilityLabel("停止")
             .disabled(!enabled)
         case .send(let enabled, let canSteer):
@@ -294,7 +294,7 @@ struct ConversationComposer: View {
                     send(.followUp)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(haptic: false))
                 .accessibilityLabel("发送")
                 .accessibilityHint("运行结束后发送；长按可改为立即引导")
                 .disabled(!enabled || editLocked)
@@ -304,7 +304,7 @@ struct ConversationComposer: View {
                 } label: {
                     SlotIcon(systemName: "arrow.up")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(haptic: false))
                 .accessibilityLabel("发送")
                 .disabled(!enabled || editLocked)
             }
@@ -324,7 +324,23 @@ struct SlotIcon: View {
             // vibrancy and reads as a disabled grey.
             .foregroundStyle(Color(uiColor: .systemBackground))
             .frame(width: 34, height: 34)
-            .background(Color(uiColor: isEnabled ? .label : .tertiaryLabel), in: .circle)
+            .background {
+                // A small domed key: light from above, a lip on the top
+                // edge, a contact shadow under it.
+                Circle()
+                    .fill(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
+                    // Lit top and shaded bottom: the white key in dark mode
+                    // hides a white lip, so the shade carries the dome there.
+                    .overlay {
+                        Circle().fill(LinearGradient(stops: [
+                            .init(color: .white.opacity(0.22), location: 0),
+                            .init(color: .clear, location: 0.5),
+                            .init(color: .black.opacity(0.14), location: 1),
+                        ], startPoint: .top, endPoint: .bottom))
+                    }
+                    .overlay { TopLip(shape: Circle(), color: .white.opacity(0.35)) }
+                    .shadow(color: .black.opacity(isEnabled ? 0.18 : 0), radius: 2, y: 1.5)
+            }
     }
 }
 
@@ -369,6 +385,8 @@ struct PlusMenu: View {
                 .frame(width: 34, height: 34)
                 .background(.fill.tertiary, in: .circle)
         }
+        .menuStyle(.button)
+        .buttonStyle(.press)
         .tint(.secondary)
         .accessibilityLabel("更多操作")
     }
@@ -399,7 +417,7 @@ struct AttachmentStrip: View {
                                             .foregroundStyle(.white, .black.opacity(0.6))
                                             .font(.system(size: 18))
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.press)
                                     .offset(x: 5, y: -5)
                                     .accessibilityLabel("移除第 \(index + 1) 张图片")
                                 }
@@ -490,7 +508,7 @@ struct ModelCapsule: View {
             .frame(height: 34)
             .background(.fill.tertiary, in: .capsule)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
         .disabled(!enabled)
         .accessibilityLabel(problem.map { "模型：\($0)" } ?? "模型：\(label)")
     }
@@ -595,7 +613,7 @@ private struct QueueList: View {
                         .contentShape(.rect)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(.press)
                 .disabled(pending.contains(item.id))
                 .accessibilityLabel("排队消息操作")
                 .accessibilityHint("引导、编辑或撤回这条排队消息")

@@ -35,7 +35,7 @@ struct ContextMeterView: View {
             .padding(.vertical, 5)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.press)
         .padding(.vertical, -5)
         // The meter keeps its width; a long model name truncates first.
         .fixedSize()

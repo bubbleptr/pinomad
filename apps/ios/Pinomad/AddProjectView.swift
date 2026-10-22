@@ -29,7 +29,7 @@ struct AddProjectView: View {
                                             .foregroundStyle(.tertiary)
                                     }
                                     Button(crumbs[index].label) { go(crumbs[index].path) }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(.press)
                                         .font(.footnote)
                                         .foregroundStyle(index == crumbs.count - 1 ? .primary : .secondary)
                                         .id(index)
@@ -102,7 +102,7 @@ struct AddProjectView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.tactile(.borderedProminent))
             .controlSize(.large)
             .disabled(listing == nil || browser.loading || adding || !model.connected)
         }
