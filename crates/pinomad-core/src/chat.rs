@@ -93,21 +93,13 @@ fn image_count_of(content: Option<&Json>) -> u64 {
     }
 }
 
-/// The image blocks of a queued input, mirroring cot-view's imagesOf.
+/// The image blocks of a queued input, in either wire form (ADR-0027);
+/// mirrors cot-view's imagesOf.
 fn images_of(content: Option<&Json>) -> Vec<MessageImage> {
     let Some(Json::Array(items)) = content else {
         return Vec::new();
     };
-    items
-        .iter()
-        .filter(|block| {
-            str_eq(block.get("type"), "image") && block.get("data").is_some() && block.get("mimeType").is_some()
-        })
-        .map(|block| MessageImage {
-            data: block.get("data").map(|v| U16String::js_string(v).to_string_lossy()).unwrap_or_default(),
-            mime_type: block.get("mimeType").map(|v| U16String::js_string(v).to_string_lossy()).unwrap_or_default(),
-        })
-        .collect()
+    items.iter().filter_map(MessageImage::from_view_block).collect()
 }
 
 fn lit(text: &str) -> Vec<u16> {

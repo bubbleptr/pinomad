@@ -907,6 +907,10 @@ impl RemoteDurable {
         let too_old_images = || {
             "The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host".to_string()
         };
+        let too_old_image_refs = || {
+            "The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host"
+                .to_string()
+        };
         let mut steps = VecDeque::new();
         match call {
             Call::AddProject { path } => {
@@ -938,6 +942,11 @@ impl RemoteDurable {
             Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
+                }
+                // A pre-5.15 host calls `{ ref }` malformed and closes with
+                // 4400; bytes still reach a 5.5 host (ADR-0018 §2).
+                if has_image_ref(images) && !host_supports_feature(self.host_minor, HostFeature::ImageRefs) {
+                    return Err(too_old_image_refs());
                 }
                 // A pre-5.10 host would silently ignore `agent` and create an
                 // unassigned conversation — fail instead (ADR-0023 §8).
@@ -978,6 +987,10 @@ impl RemoteDurable {
             Call::Submit { text, when_busy, target, request_id, images } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
+                }
+                // Same gate as createConversation.
+                if has_image_ref(images) && !host_supports_feature(self.host_minor, HostFeature::ImageRefs) {
+                    return Err(too_old_image_refs());
                 }
                 let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
@@ -1707,6 +1720,19 @@ fn parse_docs(frame: &Json) -> Result<Vec<DocDecl>, String> {
             presentation: doc.get("presentation").cloned(),
         })
         .collect())
+}
+
+/// Whether any outgoing image is the ref form `{ ref }` with no inline
+/// bytes; a block carrying both is a bytes block on the wire.
+fn has_image_ref(images: &[Json]) -> bool {
+    images.iter().any(|image| {
+        let has_bytes = image.get("data").and_then(Json::as_str).is_some_and(|data| !data.is_empty());
+        !has_bytes
+            && image
+                .get("ref")
+                .and_then(Json::as_str)
+                .is_some_and(|reference| !reference.is_empty())
+    })
 }
 
 fn obj(fields: &[(&str, Json)]) -> Json {

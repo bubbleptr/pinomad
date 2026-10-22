@@ -10,6 +10,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hostSupportsCall, type CallMethods } from "@pinomad/protocol/frames.ts";
+import { outgoingImage } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -642,7 +643,10 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
                   ? undefined
                   : async ({ text, images, requestId }) => {
                       requestNotificationPermission();
-                      await remote.controller.submit(text, "followUp", { requestId, images });
+                      await remote.controller.submit(text, "followUp", {
+                        requestId,
+                        images: images.map(outgoingImage),
+                      });
                     }
               }
             />

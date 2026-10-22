@@ -12,6 +12,7 @@ import {
   type ToolItem,
   type ToolPartState,
 } from "@pinomad/client/tool-item.ts";
+import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { ChatToolKindIcon } from "@/shared/ui/chat/chat-tool-kind";
 
 /** A transcript tool item plus this client's React detail pane. */
@@ -83,14 +84,16 @@ export function ChatToolDetail({ tool, className, ...rest }: ChatToolDetailProps
         </ol>
       ) : null}
       {/* PiNomad: result images follow the panes. */}
-      {tool.images?.map((image, index) => (
-        <img
-          key={index}
-          src={`data:${image.mimeType};base64,${image.data}`}
-          alt=""
-          style={{ maxWidth: "100%" }}
-        />
-      ))}
+      {tool.images
+        ?.filter((image): image is MessageImage => "data" in image)
+        .map((image, index) => (
+          <img
+            key={index}
+            src={`data:${image.mimeType};base64,${image.data}`}
+            alt=""
+            style={{ maxWidth: "100%" }}
+          />
+        ))}
     </div>
   );
 }

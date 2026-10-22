@@ -1,3 +1,4 @@
+import type { ViewImage } from "@pinomad/protocol/images.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 
 /**
@@ -22,8 +23,8 @@ export type ToolItem = {
   /** Per-edit line counts; rendered as additions/deletions stats. */
   diffStat?: { additions: number; deletions: number };
   durationMs?: number;
-  /** Image blocks of the tool result, rendered after the output pane. */
-  images?: readonly { data: string; mimeType: string }[];
+  /** Image blocks of the tool result, rendered after the output pane; bytes or a ref (ADR-0027). */
+  images?: readonly ViewImage[];
   output?: string;
   state: ToolPartState;
   toolCallId?: string;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { imageProblem } from "../src/images.ts";
+import { ImageRefs } from "../../../apps/host/src/image-refs.ts";
+import { imageProblem, imageRef, type MessageImage, outgoingImage } from "../src/images.ts";
 import { IMAGE_CASES, png } from "./images-cases.ts";
 
 const CASE = (name: string) => IMAGE_CASES.find((c) => c.name === name)!;
@@ -41,5 +42,41 @@ describe("imageProblem", () => {
 
   it("keeps the shared case table in sync with png()", () => {
     expect(png()).toEqual({ data: "aGVsbG8=", mimeType: "image/png" });
+  });
+});
+
+describe("outgoingImage", () => {
+  it("sends bytes as they are and names only the ref otherwise", () => {
+    const bytes: MessageImage = { data: "aGVsbG8=", mimeType: "image/png" };
+    expect(outgoingImage(bytes)).toBe(bytes);
+    expect(outgoingImage({ ref: "abc123", mimeType: "image/png" })).toEqual({ ref: "abc123" });
+  });
+});
+
+describe("imageRef", () => {
+  it("hashes the type and the bytes exactly like the host", async () => {
+    const image: MessageImage = { data: "aGVsbG8=", mimeType: "image/png" };
+    const imageRefs = new ImageRefs();
+    const rewritten = (await imageRefs.value({
+      entries: [
+        {
+          id: 1,
+          kind: "pi.user",
+          model: [{ role: "user", content: [{ type: "image", data: image.data, mimeType: image.mimeType }] }],
+        },
+      ],
+      docs: {},
+    })) as {
+      entries: { model: { content: { type: string; ref?: string }[] }[] }[];
+    };
+    const hostRef = rewritten.entries[0]!.model[0]!.content[0]!.ref;
+    expect(hostRef).toMatch(/^[0-9a-f]{64}$/);
+    expect(await imageRef(image)).toBe(hostRef);
+  });
+
+  it("binds the mime type as well as the bytes", async () => {
+    const asPng = await imageRef({ data: "aGVsbG8=", mimeType: "image/png" });
+    const asJpeg = await imageRef({ data: "aGVsbG8=", mimeType: "image/jpeg" });
+    expect(asJpeg).not.toBe(asPng);
   });
 });

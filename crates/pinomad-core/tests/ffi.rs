@@ -366,6 +366,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             images: vec![MessageImage {
                 data: "AA==".to_string(),
                 mime_type: "image/png".to_string(),
+                ref_: None,
             }],
         },
     );
@@ -450,6 +451,48 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
 }
 
 #[test]
+fn ffi_sends_image_refs_and_keeps_bytes_inline() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::SwitchConversation { id: 1 });
+    h.invoke(
+        2,
+        FfiCall::Submit {
+            text: "look".to_string(),
+            when_busy: SubmitMode::FollowUp,
+            target: None,
+            request_id: None,
+            images: vec![
+                MessageImage {
+                    data: "aGk=".to_string(),
+                    mime_type: "image/png".to_string(),
+                    ref_: None,
+                },
+                MessageImage {
+                    data: String::new(),
+                    mime_type: "image/jpeg".to_string(),
+                    ref_: Some("abc123".to_string()),
+                },
+                // Data wins when both forms are present.
+                MessageImage {
+                    data: "AA==".to_string(),
+                    mime_type: "image/png".to_string(),
+                    ref_: Some("ignored".to_string()),
+                },
+            ],
+        },
+    );
+    let frames = call_frames(&h);
+    assert_eq!(
+        frames[0].get("args").and_then(|args| args.get("images")).cloned(),
+        Some(Json::array(vec![
+            obj(&[("data", Json::from("aGk=")), ("mimeType", Json::from("image/png"))]),
+            obj(&[("ref", Json::from("abc123"))]),
+            obj(&[("data", Json::from("AA==")), ("mimeType", Json::from("image/png"))]),
+        ]))
+    );
+}
+
+#[test]
 fn queued_call_results_are_typed_and_queued_input_reads_on_demand() {
     let mut h = Harness::new();
     h.host.call_results.insert("withdrawQueued".to_string(), obj(&[("outcome", Json::from("sent"))]));
@@ -503,6 +546,7 @@ fn queued_call_results_are_typed_and_queued_input_reads_on_demand() {
         vec![MessageImage {
             data: "aGk=".to_string(),
             mime_type: "image/png".to_string(),
+            ref_: None,
         }]
     );
     assert!(h.client.queued_input(2).is_none());

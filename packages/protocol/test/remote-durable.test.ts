@@ -431,6 +431,57 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("gates image refs on a 5.15 host for submit and createConversation", async () => {
+    const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
+    const reference = { ref: "abc123" };
+    // Inline bytes win over a ref on the same block, so a 5.14 host can take it.
+    const inlineWithRef = { data: "aGVsbG8=", mimeType: "image/png" as const, ref: "ignored" };
+
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 14 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await remoteOld.controller.submit("look", "followUp", { images: [reference] });
+      await waitForView(remoteOld, (view) =>
+        view.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.15"),
+        ),
+      );
+      // A mixed batch is refused too: the host would 4400 the ref entry.
+      await remoteOld.controller.submit("both", "followUp", { images: [bytes, reference] });
+      await remoteOld.controller.createConversation({ kind: "chat" }, "new", { images: [reference] });
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "submit")).toHaveLength(0);
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "createConversation")).toHaveLength(0);
+      // Bytes alone still go to a 5.14 host.
+      await remoteOld.controller.submit("bytes", "followUp", { images: [bytes] });
+      // So does a bytes block that happens to carry a ref: the data is the form.
+      await remoteOld.controller.submit("inline", "followUp", { images: [inlineWithRef] });
+      await remoteOld.controller.createConversation({ kind: "chat" }, "inline", { images: [inlineWithRef] });
+      const oldSubmits = old.sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      const oldCreates = old.sent.filter((frame) => frame.type === "call" && frame.method === "createConversation");
+      expect(oldSubmits).toHaveLength(2);
+      expect((oldSubmits[1]!.args as { images: unknown }).images).toEqual([inlineWithRef]);
+      expect(oldCreates).toHaveLength(1);
+      expect((oldCreates[0]!.args as { images: unknown }).images).toEqual([inlineWithRef]);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.submit("look", "followUp", { images: [reference] });
+      await remote.controller.createConversation({ kind: "chat" }, "new", { images: [reference] });
+      const submits = sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      const creates = sent.filter((frame) => frame.type === "call" && frame.method === "createConversation");
+      expect((submits[0]!.args as { images: unknown }).images).toEqual([reference]);
+      expect((creates[0]!.args as { images: unknown }).images).toEqual([reference]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("rejects renameConversation against a 5.3 host and sends it on 5.4", async () => {
     const old = fakeTransport([{}], { protocol: { major: 5, minor: 3 } });
     const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });

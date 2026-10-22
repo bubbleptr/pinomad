@@ -172,6 +172,25 @@ describe("deriveChat", () => {
     expect(users[1]).toMatchObject({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
   });
 
+  it("collects ref images and prefers bytes when a block carries both", () => {
+    const run = runs(derive("tool-result-images-mixed")).at(-1)!;
+    const step = run.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") return;
+    expect(step.tools[0]!.images).toEqual([
+      { data: "aGk=", mimeType: "image/png" },
+      { ref: "5f2a", mimeType: "image/jpeg" },
+    ]);
+
+    const user = derive("user-images-mixed").find((item) => item.kind === "user")!;
+    expect(user).toMatchObject({
+      images: [
+        { data: "aGk=", mimeType: "image/png" },
+        { data: "aGk=", mimeType: "image/webp" },
+        { ref: "5f2a", mimeType: "image/jpeg" },
+      ],
+    });
+  });
+
   it("splits runs at compaction and reset entries", () => {
     const entries = derive("boundaries");
     expect(entries.map((item) => item.kind)).toEqual(["user", "run", "compaction", "reset", "user", "run"]);
@@ -231,6 +250,17 @@ describe("retryOf", () => {
 
   it("reuses the user's images", () => {
     expect(retryOf(derive("retry-images"))).toEqual({ text: "look", images: [{ data: "aGk=", mimeType: "image/png" }], requestId: expect.any(String) });
+  });
+
+  it("reuses ref images as refs", () => {
+    expect(retryOf(derive("retry-images-mixed"))).toEqual({
+      text: "look",
+      images: [
+        { data: "aGk=", mimeType: "image/png" },
+        { ref: "5f2a", mimeType: "image/jpeg" },
+      ],
+      requestId: expect.any(String),
+    });
   });
 
   it("treats an image-only prompt as retryable", () => {

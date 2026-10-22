@@ -7,7 +7,7 @@ import type { ConversationId, ConversationView } from "@earendil-works/pi-durabl
 import { classify, type PresentationType, type TodoState } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
-import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { ViewImage } from "@pinomad/protocol/images.ts";
 import type { ConversationSummary, ExtensionDocView } from "@pinomad/protocol/view.ts";
 import { lastTodoWriteMs } from "@/entities/todo/todo-card";
 import { ChatEntryView } from "./chat-entries.tsx";
@@ -51,7 +51,7 @@ export function ConversationTranscript({
    * failed run, so a second click or another client's retry admits once on
    * the host. Absent on read-only transcripts (subagent conversations).
    */
-  onRetry?: (retry: { text: string; images: readonly MessageImage[]; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly ViewImage[]; requestId: string }) => Promise<void>;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
   /** This conversation's `$`-mentionable skill names (issue #143) — user bubbles paint matches. */

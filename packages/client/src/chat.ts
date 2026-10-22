@@ -12,13 +12,14 @@ import type {
   TaskId,
   UsageState,
 } from "@earendil-works/pi-durable";
-import type { MessageImage } from "@pinomad/protocol/images.ts";
+import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 
 type Block = {
   readonly type: string;
   readonly text?: string;
   readonly data?: string;
   readonly mimeType?: string;
+  readonly ref?: string;
 };
 type Message = { readonly role: string; readonly content: string | readonly Block[] };
 
@@ -32,14 +33,16 @@ function imageCountOf(content: Message["content"]): number {
   return content.filter((block) => block.type === "image").length;
 }
 
-function imagesOf(content: Message["content"]): MessageImage[] {
+/** The image blocks of a queued input, in either wire form (ADR-0027); bytes win when both are present. */
+function imagesOf(content: Message["content"]): ViewImage[] {
   if (typeof content === "string" || !Array.isArray(content)) return [];
-  // The host admits images through imageProblem; the cast is that contract.
-  return content.flatMap((block) =>
-    block.type === "image" && block.data !== undefined && block.mimeType !== undefined
-      ? [{ data: block.data, mimeType: block.mimeType as MessageImage["mimeType"] }]
-      : [],
-  );
+  return content.flatMap((block): ViewImage[] => {
+    if (block.type !== "image" || block.mimeType === undefined) return [];
+    const mimeType = block.mimeType as ImageMimeType;
+    if (typeof block.data === "string" && block.data !== "") return [{ data: block.data, mimeType }];
+    if (typeof block.ref === "string" && block.ref !== "") return [{ ref: block.ref, mimeType }];
+    return [];
+  });
 }
 
 const liveOf = (view: ConversationView): LiveState => (view.docs["pi.live"] ?? {}) as LiveState;
@@ -81,7 +84,7 @@ export function queueItems(view: ConversationView): QueueItem[] {
 /** A queued input's original content, for an Edit affordance that withdraws then refills the composer. */
 export interface QueuedInput {
   readonly text: string;
-  readonly images: MessageImage[];
+  readonly images: ViewImage[];
 }
 
 /** The content of a queued steer/follow-up, or undefined for a write or an unknown id. */

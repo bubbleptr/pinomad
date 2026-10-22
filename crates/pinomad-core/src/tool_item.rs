@@ -2,8 +2,9 @@
 // the display helpers every client renders with — display names, targets,
 // durations, and the kind icon class.
 
-use crate::json::Json;
+use crate::json::{Json, JsonObject};
 use crate::tool_target::tool_target;
+use crate::u16str::U16String;
 
 /// Lifecycle of a tool invocation as rendered in the trace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,12 +35,64 @@ pub struct DiffStat {
     pub deletions: f64,
 }
 
-/// An image block carried on a tool result or a user message.
+/// An image block carried on a tool result or a user message. Inline bytes
+/// live in `data`; a ref-form block leaves it empty and names the bytes in
+/// `ref_`. This is the transitional layer-2 shape — layer 4 decides the final
+/// iOS FFI shape (ADR-0027) — and the field stays optional with a UniFFI
+/// default so existing Swift `MessageImage(data:mimeType:)` call sites compile.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct MessageImage {
     pub data: String,
     pub mime_type: String,
+    /// `ref` on the Swift side; `None` for an inline image.
+    #[cfg_attr(feature = "ffi", uniffi(name = "ref", default = None))]
+    pub ref_: Option<String>,
+}
+
+impl MessageImage {
+    /// The image block a conversation view carries (5.15, ADR-0027), or `None`
+    /// when `block` is not an image. Inline bytes win over a ref when both are
+    /// present; an empty string is not a usable data or ref form.
+    pub fn from_view_block(block: &Json) -> Option<Self> {
+        let is_image = block
+            .get("type")
+            .and_then(Json::as_str)
+            .is_some_and(|kind| kind.units() == U16String::from_str("image").units());
+        if !is_image {
+            return None;
+        }
+        let mime_type = block.get("mimeType").and_then(Json::as_str)?.to_string_lossy();
+        if let Some(data) = block.get("data").and_then(Json::as_str).filter(|data| !data.is_empty()) {
+            return Some(MessageImage {
+                data: data.to_string_lossy(),
+                mime_type,
+                ref_: None,
+            });
+        }
+        let reference = block.get("ref").and_then(Json::as_str).filter(|reference| !reference.is_empty())?;
+        Some(MessageImage {
+            data: String::new(),
+            mime_type,
+            ref_: Some(reference.to_string_lossy()),
+        })
+    }
+
+    /// The outgoing wire form (5.15): bytes when present, else the ref; the
+    /// host supplies the mime type it recorded for a ref.
+    pub fn to_outgoing_json(&self) -> Json {
+        let mut object = JsonObject::new();
+        match &self.ref_ {
+            Some(reference) if self.data.is_empty() => {
+                object.set(U16String::from_str("ref"), Json::from(reference.clone()));
+            }
+            _ => {
+                object.set(U16String::from_str("data"), Json::from(self.data.clone()));
+                object.set(U16String::from_str("mimeType"), Json::from(self.mime_type.clone()));
+            }
+        }
+        Json::Object(std::sync::Arc::new(object))
+    }
 }
 
 /// Tool rendering the item shape cannot express as data (ADR-0005).
