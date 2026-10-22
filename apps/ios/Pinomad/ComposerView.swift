@@ -251,9 +251,12 @@ struct ConversationComposer: View {
             ? { presentAfterMenu { showCamera = true } } : nil
         // A 5.15 host takes `/compact` instead.
         let compact: (() -> Void)? = commands ? nil : { model.compact() }
+        // A command starts the message, so it waits for an empty draft.
+        let blocked: String? = draft.wrappedValue.allSatisfy(\.isWhitespace)
+            ? nil : "Clear the message first"
         let listed: PlusMenuCommands? = !commands ? nil
             : commandEntries.map { entries in
-                .listed(entries, run: { model.runCommand(conversation: conversation.id, name: $0.name, args: nil) })
+                .listed(entries, blocked: blocked, pick: { pickCommand($0) })
             } ?? .loading
         return PlusMenu(
             connected: connected,
@@ -315,6 +318,12 @@ struct ConversationComposer: View {
     /// An add entry's trigger at the caret; focusing opens its menu.
     private func insertTrigger(_ trigger: String) {
         apply(ComposerTrigger.insert(trigger, into: draft.wrappedValue, selection: selection))
+    }
+
+    /// `/name ` into the empty draft, caret at the end; Send runs it.
+    private func pickCommand(_ command: CommandEntry) {
+        guard let insertion = ComposerTrigger.command(command.name, into: draft.wrappedValue) else { return }
+        apply(insertion)
     }
 
     private func apply(_ insertion: MentionInsertion) {
@@ -564,8 +573,9 @@ struct PlusMenu<Extra: View>: View {
         .simultaneousGesture(TapGesture().onEnded { onOpen?() })
     }
 
-    /// Every listed command runs at once on tap, with no arguments and
-    /// without touching the draft; arguments go through a typed `/name`.
+    /// A picked command goes into the empty draft as `/name ` for optional
+    /// arguments, and Send runs it. With text in the draft every entry is
+    /// greyed with `blocked` as the subtitle.
     @ViewBuilder
     private func commandsMenu(_ commands: PlusMenuCommands) -> some View {
         switch commands {
@@ -576,20 +586,20 @@ struct PlusMenu<Extra: View>: View {
                 Image(.squareSlash)
             }
             .disabled(true)
-        case let .listed(entries, run):
+        case let .listed(entries, blocked, pick):
             Menu {
                 ForEach(entries, id: \.name) { command in
                     Button {
-                        run(command)
+                        pick(command)
                     } label: {
                         Text("/\(command.name)")
-                        if let reason = command.disabled {
+                        if let reason = command.disabled ?? blocked {
                             Text(reason)
                         } else if !command.description.isEmpty {
                             Text(command.description)
                         }
                     }
-                    .disabled(command.disabled != nil)
+                    .disabled(command.disabled != nil || blocked != nil)
                 }
             } label: {
                 Label("Commands", image: .squareSlash)
@@ -599,11 +609,11 @@ struct PlusMenu<Extra: View>: View {
     }
 }
 
-/// The `+` menu's Commands entry: still loading, or the host's listing and
-/// what tapping one does.
+/// The `+` menu's Commands entry: still loading, or the host's listing,
+/// why picking is held right now (text in the draft), and what a pick does.
 enum PlusMenuCommands {
     case loading
-    case listed([CommandEntry], run: (CommandEntry) -> Void)
+    case listed([CommandEntry], blocked: String?, pick: (CommandEntry) -> Void)
 }
 
 /// Staged images (tap to view, × to drop), a spinner per image still being

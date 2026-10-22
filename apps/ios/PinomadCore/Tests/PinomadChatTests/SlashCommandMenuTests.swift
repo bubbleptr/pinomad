@@ -97,6 +97,31 @@ private let listing = [
     }
 }
 
+@Suite struct CommandPickInsertionTests {
+    /// Picked into an empty draft: ready for arguments, Send runs it.
+    @Test func anEmptyDraftGetsTheCommand() {
+        #expect(ComposerTrigger.command("compact", into: "")
+            == MentionInsertion(text: "/compact ", cursor: 9))
+        #expect(ComposerTrigger.command("compact", into: " \n")
+            == MentionInsertion(text: "/compact ", cursor: 9))
+    }
+
+    /// The reader's words would become arguments or be lost, so nothing
+    /// is inserted and the menu greys the entry instead.
+    @Test func aDraftWithTextGetsNothing() {
+        #expect(ComposerTrigger.command("compact", into: "fix the bug") == nil)
+    }
+
+    /// The insertion is exactly what the send path recognises as a command.
+    @Test func theInsertionRunsAsTheCommandOnSend() throws {
+        let entry = CommandEntry(name: "compact", description: "", argumentHint: nil,
+                                 source: .builtin, disabled: nil)
+        let insertion = try #require(ComposerTrigger.command("compact", into: ""))
+        #expect(ComposerSubmit(draft: insertion.text + "keep notes", commands: [entry], hasImages: false)
+            == .command(name: "compact", args: "keep notes"))
+    }
+}
+
 @Suite struct ComposerTriggerTests {
     private func insert(_ trigger: String, _ text: String, at location: Int, length: Int = 0) -> MentionInsertion {
         ComposerTrigger.insert(trigger, into: text, selection: NSRange(location: location, length: length))

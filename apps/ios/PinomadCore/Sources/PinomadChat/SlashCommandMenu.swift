@@ -49,8 +49,8 @@ public struct SlashCommandMenu: Equatable, Sendable {
     }
 }
 
-/// What the `+` menu's "add" entries put into a draft: a bare trigger that
-/// opens the matching `@` / `$` menu once the field has focus.
+/// What the `+` menu puts into a draft: a bare trigger that opens the
+/// matching `@` / `$` menu once the field has focus, or a picked command.
 public enum ComposerTrigger {
     /// Replace `selection` with `trigger`, kept apart from neighbouring
     /// text: a leading space after a non-space, and a trailing space before
@@ -70,6 +70,16 @@ public enum ComposerTrigger {
         if let next = after.first, !isWhitespace(next) { inserted += " " }
         let next = Array(before) + Array(inserted.utf16) + Array(after)
         return MentionInsertion(text: String(decoding: next, as: UTF16.self), cursor: cursor)
+    }
+
+    /// A command picked from the `+` menu: `/name ` with the caret at the
+    /// end, ready for arguments. A command is the whole message and starts
+    /// at index 0, so a draft with text gets nil — neither replaced nor
+    /// turned into arguments.
+    public static func command(_ name: String, into text: String) -> MentionInsertion? {
+        guard text.allSatisfy(\.isWhitespace) else { return nil }
+        let inserted = "/" + name + " "
+        return MentionInsertion(text: inserted, cursor: inserted.utf16.count)
     }
 }
 
