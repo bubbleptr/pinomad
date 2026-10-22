@@ -4,12 +4,13 @@
 // see. Read-only: answers from the filesystem or git, never materializes
 // checkouts, never writes durable state.
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { Context } from "@earendil-works/chord";
 import { AgentDoc, type Harness } from "@earendil-works/pi-durable";
-import { loadSkills, type Skill } from "@earendil-works/pi-coding-agent";
+import { loadSkills, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 import type { SkillListing, SkillScope } from "@pinomad/protocol/organization.ts";
 import { checkoutAt, worktreeSettled } from "./checkout.ts";
 import { type RootMode, hasHead, inWorkTree } from "./files.ts";
@@ -38,12 +39,59 @@ export function invocableSkillName(name: string): boolean {
   );
 }
 
+// One host process logs each finding once: the prompt reloads on every model
+// request and the $ menu rescans often, so a broken skill must not flood the log.
+const reportedDiagnostics = new Set<string>();
+
+function reportDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void {
+  for (const diagnostic of diagnostics) {
+    // The key is the finding (path + message), not which load produced it.
+    const key = `${diagnostic.path ?? ""}\0${diagnostic.message}`;
+    if (reportedDiagnostics.has(key)) continue;
+    reportedDiagnostics.add(key);
+    console.error(JSON.stringify({
+      event: "skill",
+      level: diagnostic.type === "error" ? "error" : "warning",
+      ...(diagnostic.path === undefined ? {} : { path: diagnostic.path }),
+      message: diagnostic.message,
+    }));
+  }
+}
+
 /** One entry directory's skills, tagged with the source PiNomad records for it. */
 function entrySkills(dir: string, source: "project" | "user", agentsHome: string): ScopedSkill[] {
+  // Most ancestors have no skills directory; loadSkills would report each one
+  // as a missing-path warning on every request, which is noise, not a finding.
+  if (!existsSync(dir)) return [];
   // One entry per loadSkills call keeps upstream's within-entry realpath and
   // name dedupe; the merge below owns cross-entry precedence.
-  const { skills } = loadSkills({ cwd: dir, agentDir: agentsHome, includeDefaults: false, skillPaths: [dir] });
+  const { skills, diagnostics } = loadSkills({ cwd: dir, agentDir: agentsHome, includeDefaults: false, skillPaths: [dir] });
+  reportDiagnostics(diagnostics);
   return skills.map((skill) => ({ skill, source }));
+}
+
+/**
+ * The project entry directories from `root` up to the git root, nearest
+ * first. A `.git` file counts (worktrees and submodules), and the walk stops
+ * at the git root: `<agentsHome>/skills` is the user entry, never a project
+ * ancestor. Outside git only `root` itself is a project layer.
+ */
+function projectSkillLayers(root: string): { readonly dirs: readonly string[]; readonly gitRoot?: string } {
+  const start = resolve(root);
+  const dirs = [start];
+  let dir = start;
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) return { dirs, gitRoot: dir };
+    const parent = dirname(dir);
+    if (parent === dir) return { dirs: [start] };
+    dir = parent;
+    dirs.push(dir);
+  }
+}
+
+/** Every layer's project entry, flattened nearest-first. */
+function projectSkills(dirs: readonly string[], agentsHome: string): ScopedSkill[] {
+  return dirs.flatMap((dir) => entrySkills(join(dir, ".agents", "skills"), "project", agentsHome));
 }
 
 /**
@@ -66,35 +114,41 @@ export function mergeSkills(entries: readonly (readonly ScopedSkill[])[]): Scope
 
 /**
  * The skills a system prompt rooted at `root` would carry — the shared
- * loader behind the context extension's skills section: the project entry
- * (`<root>/.agents/skills`) merged over the user entry (`<agentsHome>/skills`),
- * or the user entry alone when there is no root (a Chat draft).
+ * loader behind the context extension's skills section: every project layer
+ * from `root` up to the git root, nearest first, merged over the user entry
+ * (`<agentsHome>/skills`); or the user entry alone when there is no root (a
+ * Chat draft).
  */
 export function scopedSkills(root: string | undefined, agentsHome: string): ScopedSkill[] {
-  return mergeSkills([
-    ...(root === undefined ? [] : [entrySkills(join(root, ".agents", "skills"), "project", agentsHome)]),
-    entrySkills(join(agentsHome, "skills"), "user", agentsHome),
-  ]);
+  const project = root === undefined ? [] : projectSkills(projectSkillLayers(root).dirs, agentsHome);
+  return mergeSkills([project, entrySkills(join(agentsHome, "skills"), "user", agentsHome)]);
 }
 
 /**
- * The committed `.agents/skills` paths under `root`, project-relative — what
- * a fresh worktree would carry (ADR-0010). `null` when no worktree could
- * check out (the root is not in a work tree, or has no commits yet) — the
- * caller treats that scope like `"project"`.
+ * The committed `.agents/skills` paths under the project's git root,
+ * root-relative — what a fresh worktree would carry (ADR-0010). One ls-tree
+ * covers every layer's pathspec. `null` when no worktree could check out (the
+ * root is not in a work tree, or has no commits yet) — the caller treats that
+ * scope like `"project"`.
  */
-async function committedSkillFiles(root: string): Promise<Set<string> | null> {
-  if (!(await inWorkTree(root)) || !(await hasHead(root))) return null;
-  // execFile, no shell; `-C` scopes the listing to the project's own
-  // subdirectory and the output is project-relative.
-  const { stdout } = await exec("git", ["-C", root, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ".agents/skills"], {
-    maxBuffer: 4 * 1024 * 1024,
+async function committedSkillFiles(gitRoot: string, layers: readonly string[]): Promise<Set<string> | null> {
+  if (!(await inWorkTree(gitRoot)) || !(await hasHead(gitRoot))) return null;
+  // execFile, no shell; `-C gitRoot` plus --full-name keeps output relative to
+  // the repository top level, so every layer's file compares the same way.
+  const pathspecs = layers.map((dir) => {
+    const rel = relative(gitRoot, dir).split(sep).join("/");
+    return rel === "" ? ".agents/skills" : `${rel}/.agents/skills`;
   });
+  const { stdout } = await exec(
+    "git",
+    ["-C", gitRoot, "ls-tree", "-r", "-z", "--full-name", "--name-only", "HEAD", "--", ...pathspecs],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
   return new Set(stdout.split("\0").filter((path) => path !== ""));
 }
 
 /**
- * One scope's listing: the project entry merged over the user entry — for
+ * One scope's listing: every project layer merged over the user entry — for
  * `head` keeping only project skills whose file is committed at HEAD (a
  * fresh worktree would not have the uncommitted ones). The name check runs
  * last: names the composer cannot type stay in the prompt but not in the
@@ -107,12 +161,14 @@ export async function enumerateSkills(
 ): Promise<SkillListing> {
   let project: ScopedSkill[] = [];
   if (root !== undefined) {
-    project = entrySkills(join(root, ".agents", "skills"), "project", agentsHome);
-    if (mode === "head") {
-      const committed = await committedSkillFiles(root);
+    const layers = projectSkillLayers(root);
+    project = projectSkills(layers.dirs, agentsHome);
+    const gitRoot = layers.gitRoot;
+    if (mode === "head" && gitRoot !== undefined) {
+      const committed = await committedSkillFiles(gitRoot, layers.dirs);
       if (committed !== null) {
         project = project.filter((scoped) =>
-          committed.has(relative(root, scoped.skill.filePath).split(sep).join("/")),
+          committed.has(relative(gitRoot, scoped.skill.filePath).split(sep).join("/")),
         );
       }
     }
