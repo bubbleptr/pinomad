@@ -136,6 +136,45 @@ describe("AddProjectDialog", () => {
     expect(within(dialog()).queryByText(/Permission denied/)).toBeNull();
   });
 
+  it("retries, not adds, when Enter is pressed on a column's Try again", async () => {
+    const user = userEvent.setup();
+    const { fake, option, dialog } = await openAtHome(["code"]);
+
+    await user.click(option("code"));
+    await fake.answer(`${HOME}/code`, new Error("Permission denied: /Users/v/code"));
+    within(dialog()).getByRole("button", { name: "Try again" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(fake.addProject).not.toHaveBeenCalled();
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/code`, `${HOME}/code`]);
+  });
+
+  it("lists a folder whose name contains a newline", async () => {
+    const user = userEvent.setup();
+    const { fake, dialog } = await openAtHome(["team\nrepo"]);
+
+    const row = within(dialog())
+      .getAllByRole("option")
+      .find((element) => element.textContent === "team\nrepo")!;
+    await user.click(row);
+    expect(fake.listCalls).toEqual([undefined, `${HOME}/team\nrepo`]);
+  });
+
+  it("drops a pending → once the selection moves elsewhere", async () => {
+    const user = userEvent.setup();
+    const { fake, option, strip, selectedPath } = await openAtHome(["code", "docs"]);
+
+    await user.click(option("code"));
+    strip().focus();
+    await user.keyboard("{ArrowRight}");
+    await user.click(option("docs"));
+    await fake.answer(`${HOME}/code`, listingAt(`${HOME}/code`, ["pinomad"]));
+
+    // Coming back to code selects code itself, not its first child.
+    await user.click(option("code"));
+    expect(selectedPath()).toBe(`${HOME}/code`);
+  });
+
   it("climbs above home through the path bar", async () => {
     const user = userEvent.setup();
     const { fake, option, selectedPath, dialog } = await openAtHome(["code"]);

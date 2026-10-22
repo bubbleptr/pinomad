@@ -149,13 +149,16 @@ export function AddProjectDialog({
   const pathBar = anchor === undefined || anchor === "/" ? crumbs : [{ label: "/", path: "/" }, ...crumbs];
 
   // Every column of the chain is listed; usually all but the newest are cached.
-  const chainKey = chain.join("\n");
+  // Keyed with NUL, the one byte a POSIX folder name cannot contain.
+  const chainKey = chain.join("\0");
   useEffect(() => {
-    for (const path of chainKey.split("\n")) if (path !== "") load(path);
+    for (const path of chainKey.split("\0")) if (path !== "") load(path);
   }, [chainKey, load]);
 
   const select = (path: string): void => {
     if (adding) return;
+    // A → still waiting on a listing belongs to the folder being left.
+    descend.current = undefined;
     setAddError(undefined);
     setSelected(path);
   };
@@ -188,7 +191,8 @@ export function AddProjectDialog({
   };
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
-    if (selected === undefined || adding) return;
+    // Keys on a control inside the strip (a column's Try again) are that control's.
+    if (event.target !== event.currentTarget || selected === undefined || adding) return;
     const siblings = foldersOf(column) ?? [];
     const index = siblings.findIndex((folder) => folder.path === selected);
     switch (event.key) {
