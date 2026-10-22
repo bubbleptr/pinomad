@@ -2,7 +2,7 @@ import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
-import type { MessageImage } from "./images.ts";
+import type { MessageImage, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 14 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 15 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -128,8 +128,11 @@ export interface CallMethods {
       thinkingLevel?: ThinkingLevel;
       /** A named agent to create the conversation with (ADR-0023). Needs a 5.10 host — older hosts ignore the field. */
       agent?: string;
-      /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
-      images?: readonly MessageImage[];
+      /**
+       * Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field;
+       * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
+       */
+      images?: readonly OutgoingImage[];
     };
     result: { conversationId: ConversationId };
   };
@@ -143,11 +146,21 @@ export interface CallMethods {
       whenBusy: "steer" | "followUp";
       /** Makes a resend after a lost reply admit nothing new. */
       requestId: string;
-      /** Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field. */
-      images?: readonly MessageImage[];
+      /**
+       * Up to 4; checked by the host (imageProblem). Needs a 5.5 host — older hosts ignore the field;
+       * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
+       */
+      images?: readonly OutgoingImage[];
     };
     result: { submissionId: number };
   };
+  /**
+   * The bytes behind an image ref (5.15, ADR-0027). Answers only refs this
+   * connection's live `images: "ref"` subscriptions carried; a ref from a
+   * stream since unsubscribed is an `ok:false`. Read-only, sent outside the
+   * command queue like `listFiles`.
+   */
+  image: { args: { ref: string }; result: MessageImage };
   /**
    * Take a queued input back out of the inbox (5.14). `sent`: it already
    * reached the transcript.
@@ -268,6 +281,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   updateAgent: 6,
   deleteAgent: 6,
   setPushToken: 7,
+  image: 15,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -284,6 +298,8 @@ export const FEATURE_SINCE = {
   liveBranch: 11,
   /** `settings`/`updateSettings` carry the host's machine display name (12). */
   hostName: 12,
+  /** `submit`/`createConversation` images may be `{ ref }` (15); an older host calls them malformed and 4400s. */
+  imageRefs: 15,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -316,7 +332,17 @@ export type ServerFrame =
   | { readonly type: "notice"; readonly level: Notice["level"]; readonly message: string };
 
 export type ClientFrame =
-  | { readonly type: "subscribe"; readonly stream: StreamName }
+  | {
+      readonly type: "subscribe";
+      readonly stream: StreamName;
+      /**
+       * `"ref"` (5.15, ADR-0027): a `conversation:` stream carries image blocks
+       * as `{ type: "image", mimeType, ref }`, bytes fetched with `image`.
+       * Other streams and older hosts ignore it and send bytes inline, so a
+       * client reads both forms.
+       */
+      readonly images?: "ref";
+    }
   | { readonly type: "unsubscribe"; readonly stream: StreamName }
   | {
       [M in CallMethod]: {
@@ -347,7 +373,9 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
     const stream = value.stream;
     if (typeof stream !== "string") return { kind: "malformed" };
     if (isStreamName(stream)) {
-      return { kind: "frame", frame: { type: value.type, stream } };
+      // A value this host doesn't know is a newer client's form: fall back to inline.
+      const refs = value.type === "subscribe" && value.images === "ref";
+      return { kind: "frame", frame: refs ? { type: "subscribe", stream, images: "ref" } : { type: value.type, stream } };
     }
     // A name under a known stream kind is a malformed frame; anything else is
     // a stream this host predates.
@@ -398,11 +426,19 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     typeof args.conversationId === "number" && Number.isSafeInteger(args.conversationId) && args.conversationId >= 1;
   const submissionId = (): boolean =>
     typeof args.submissionId === "number" && Number.isSafeInteger(args.submissionId) && args.submissionId >= 1;
-  // Shape only — count, mime type, base64 and size limits are the host's check (imageProblem).
+  // Shape only — count, mime type, base64 and size limits are the host's check
+  // (imageProblem), and so is whether a ref is one the connection was shown.
+  // A ref form is just a nonempty name; the host knows the type it recorded.
   const images = (): boolean =>
     args.images === undefined
     || (Array.isArray(args.images)
-      && args.images.every((image) => record(image) && typeof image.data === "string" && typeof image.mimeType === "string"));
+      && args.images.every(
+        (image) =>
+          record(image)
+          && ("data" in image
+            ? typeof image.data === "string" && typeof image.mimeType === "string"
+            : nonempty(image.ref)),
+      ));
   // Shape only — name/description/model rules are the host's check (agentRoleProblem).
   const role = (): boolean =>
     record(args.role)
@@ -444,6 +480,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       );
     case "changes":
       return conversationId();
+    case "image":
+      return nonempty(args.ref);
     case "addProject":
     case "removeProject":
       return nonempty(args.path);

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server as HttpServer } from "n
 import type { AddressInfo } from "node:net";
 import { homedir, networkInterfaces } from "node:os";
 import { join, sep } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context, JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -63,7 +63,8 @@ import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
 import { createSkillLister, enumerateSkills, listSkills, type SkillLister } from "./skills.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
-import { imageProblem } from "@pinomad/protocol/images.ts";
+import { imageProblem, type MessageImage, type OutgoingImage } from "@pinomad/protocol/images.ts";
+import { ImageRefs } from "./image-refs.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
@@ -1085,7 +1086,13 @@ function callsOf(message: unknown): ReadonlyMap<string, string | undefined> | un
 }
 
 type Subscription = { stop(): Promise<unknown> | void };
-type SubscriptionState = { subscription?: Subscription };
+/**
+ * `images` is set for a conversation stream subscribed with `images: "ref"`;
+ * `view` is the raw value the last frame left the client at (the rewrite
+ * target's source), so refs resolve against what this subscription currently
+ * shows instead of a separate ref table.
+ */
+type SubscriptionState = { subscription?: Subscription; readonly images?: ImageRefs; view?: JsonValue };
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
 /** What the client is and how the gateway reaches back into its lifecycle. */
@@ -1186,14 +1193,14 @@ class GatewayClient {
   }
 
   async #receive(frame: ClientFrame): Promise<void> {
-    if (frame.type === "subscribe") await this.#subscribe(frame.stream);
+    if (frame.type === "subscribe") await this.#subscribe(frame.stream, frame.images === "ref");
     else if (frame.type === "unsubscribe") await this.#unsubscribe(frame.stream);
     else await this.#answer(frame.id, frame.method, frame.args);
   }
 
-  async #subscribe(stream: StreamName): Promise<void> {
+  async #subscribe(stream: StreamName, imageRefs: boolean): Promise<void> {
     const previous = this.#subscriptions.get(stream);
-    const state: SubscriptionState = {};
+    const state: SubscriptionState = imageRefs && stream.startsWith("conversation:") ? { images: new ImageRefs() } : {};
     this.#subscriptions.set(stream, state);
     const current = () => !this.#disposed && this.#subscriptions.get(stream) === state;
     const send: SendFrame = (frame) => (current() ? this.send(frame) : Promise.resolve());
@@ -1201,7 +1208,7 @@ class GatewayClient {
     try {
       await previous?.subscription?.stop();
       if (!current()) return;
-      subscription = await this.#open(stream, send);
+      subscription = await this.#open(stream, send, state);
     } catch (error) {
       if (current()) {
         await send({ type: "ended", stream, reason: error instanceof Error ? error.message : String(error) });
@@ -1217,7 +1224,7 @@ class GatewayClient {
     state.subscription = subscription;
   }
 
-  async #open(stream: StreamName, send: SendFrame): Promise<Subscription> {
+  async #open(stream: StreamName, send: SendFrame, state: SubscriptionState | undefined): Promise<Subscription> {
     const source = this.#hostValue(stream);
     if (source !== undefined) {
       // Snapshot, then subscribe, with no await between — a change landing in
@@ -1241,7 +1248,7 @@ class GatewayClient {
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
     }
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
-    return this.#forward(stream, await conversation.watch(context), send);
+    return this.#forward(stream, await conversation.watch(context), send, state);
   }
 
   /** The in-memory value source for a host stream, or undefined for the watch-/doc-backed ones. */
@@ -1308,10 +1315,49 @@ class GatewayClient {
     };
   }
 
-  async #forward<T>(stream: StreamName, watch: WatchHandle<T>, send: SendFrame): Promise<Subscription> {
-    await send({ type: "snapshot", stream, value: watch.value });
-    watch.start((_value, ops) => send({ type: "ops", stream, ops }));
+  async #forward<T>(stream: StreamName, watch: WatchHandle<T>, send: SendFrame, state?: SubscriptionState): Promise<Subscription> {
+    if (state?.images === undefined) {
+      await send({ type: "snapshot", stream, value: watch.value });
+      watch.start((_value, ops) => send({ type: "ops", stream, ops }));
+      return watch;
+    }
+    const images = state.images;
+    // Watch callbacks run one at a time, so `before` is always the value the last frame left the client at.
+    let before = watch.value as JsonValue;
+    // Keep the raw view alongside the ref form: #shownImage resolves a ref by
+    // finding its block here, so nothing has to accumulate per ref.
+    state.view = before;
+    await send({ type: "snapshot", stream, value: await images.value(before) });
+    watch.start(async (value, ops) => {
+      const sent = await images.ops(ops, before);
+      before = value as JsonValue;
+      state.view = before;
+      return send({ type: "ops", stream, ops: sent });
+    });
     return watch;
+  }
+
+  /** The bytes behind a ref one of this connection's live ref subscriptions currently shows. */
+  #shownImage(ref: string): MessageImage | undefined {
+    for (const state of this.#subscriptions.values()) {
+      if (state.images === undefined || state.view === undefined) continue;
+      const image = state.images.image(state.view, ref);
+      if (image !== undefined) return image;
+    }
+    return undefined;
+  }
+
+  /** Attached images with refs swapped back for their bytes, then checked like freshly sent ones. */
+  #attached(images: readonly OutgoingImage[] | undefined): MessageImage[] | undefined {
+    const resolved = images?.map((image, index) => {
+      if ("data" in image) return image;
+      const shown = this.#shownImage(image.ref);
+      if (shown === undefined) throw new Error(`Image ${index + 1} is no longer available`);
+      return shown;
+    });
+    const problem = imageProblem(resolved ?? []);
+    if (problem !== undefined) throw new Error(problem);
+    return resolved;
   }
 
   async #unsubscribe(stream: StreamName): Promise<void> {
@@ -1342,10 +1388,35 @@ class GatewayClient {
       case "removeProject":
         await removeProject(this.#options.harness, (args as CallMethods["removeProject"]["args"]).path, context);
         return null;
+      case "submit": {
+        const input = args as CallMethods["submit"]["args"];
+        // Resolve refs before the first await: this frame arrived while the
+        // subscription was live, and a client may unsubscribe while the host
+        // is still reading the conversation. Looking the ref up afterwards
+        // would turn an accepted submit into "no longer available".
+        const images = this.#attached(input.images);
+        const conversation = await this.#conversation(input.conversationId);
+        // A pending question never blocks the composer (ADR-0011 §4): mark it
+        // dismissed so its wait task finishes, then steer regardless.
+        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
+        const submission = await conversation.submit(
+          { type: "input", content: messageContent(input.text, images), whenBusy: dismissed ? "steer" : input.whenBusy, requestId: input.requestId },
+          context,
+        );
+        void submission.wait(context).then(
+          (settled) => {
+            if (settled.status === "unanswered" && settled.reason !== "aborted") {
+              void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
+            }
+          },
+          () => {},
+        );
+        return { submissionId: submission.id };
+      }
       case "createConversation": {
         const create = args as CallMethods["createConversation"]["args"];
-        const problem = imageProblem(create.images ?? []);
-        if (problem !== undefined) throw new Error(problem);
+        // Same rule as submit: resolve before createConversation's first await.
+        const images = this.#attached(create.images);
         const conversationId = await createConversation(
           this.#options.harness,
           this.#options.dataDir,
@@ -1353,7 +1424,7 @@ class GatewayClient {
             home: create.home,
             text: create.text,
             requestId: create.requestId,
-            ...(create.images === undefined ? {} : { images: create.images }),
+            ...(images === undefined ? {} : { images }),
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
             ...(create.model === undefined ? {} : { model: create.model }),
             ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
@@ -1440,30 +1511,14 @@ class GatewayClient {
         const input = args as CallMethods["listSkills"]["args"];
         return listSkills(this.#options.harness, this.#skills, input.scope, context);
       }
+      case "image": {
+        const image = this.#shownImage((args as CallMethods["image"]["args"]).ref);
+        if (image === undefined) throw new Error("Unknown image");
+        return image;
+      }
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);
     switch (method) {
-      case "submit": {
-        const { text, whenBusy, requestId, images } = args as CallMethods["submit"]["args"];
-        const problem = imageProblem(images ?? []);
-        if (problem !== undefined) throw new Error(problem);
-        // A pending question never blocks the composer (ADR-0011 §4): mark it
-        // dismissed so its wait task finishes, then steer regardless.
-        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
-        const submission = await conversation.submit(
-          { type: "input", content: messageContent(text, images), whenBusy: dismissed ? "steer" : whenBusy, requestId },
-          context,
-        );
-        void submission.wait(context).then(
-          (settled) => {
-            if (settled.status === "unanswered" && settled.reason !== "aborted") {
-              void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
-            }
-          },
-          () => {},
-        );
-        return { submissionId: submission.id };
-      }
       case "withdrawQueued": {
         const { conversationId, submissionId } = args as CallMethods["withdrawQueued"]["args"];
         const id = submissionId as SubmissionId;

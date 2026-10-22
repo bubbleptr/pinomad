@@ -110,8 +110,9 @@ describe("protocol surface", () => {
   it("keeps the full surface only on the newest record", async () => {
     const history = await loadHistory();
     const current = extractProtocolSurface();
-    const first = { ...structuredClone(current), protocol: { major: 5, minor: 15 } };
-    const second = { ...structuredClone(current), protocol: { major: 5, minor: 16 } };
+    const { major, minor } = current.protocol;
+    const first = { ...structuredClone(current), protocol: { major, minor: minor + 1 } };
+    const second = { ...structuredClone(current), protocol: { major, minor: minor + 2 } };
     const afterFirst = recordSurface(history, first);
     expect("surface" in afterFirst.history.at(-1)!).toBe(true);
     const afterSecond = recordSurface(afterFirst, second);
@@ -119,6 +120,9 @@ describe("protocol surface", () => {
     for (const record of afterSecond.history.slice(0, -1)) {
       expect("surface" in record).toBe(false);
       expect("surfaceHash" in record).toBe(true);
+    }
+    // The current record and the first appended one both archive today's surface.
+    for (const record of afterSecond.history.slice(-3, -1)) {
       expect((record as ProtocolSurfaceArchive).surfaceHash).toBe(hashSurface(current.surface));
     }
     const last = afterSecond.history.at(-1)!;
@@ -248,11 +252,12 @@ describe("protocol surface", () => {
   it("requires a new gate to land after the previous minor", async () => {
     const history = await loadHistory();
     const record = mutableLatest(history);
+    const { major, minor } = record.protocol;
     record.protocol.minor += 1;
     record.calls.push("futureCall");
     record.calls.sort();
     record.gates.call.futureCall = record.protocol.minor - 1;
-    expect(() => validateHistory(append(history, record))).toThrow(/must be greater than 5\.14/);
+    expect(() => validateHistory(append(history, record))).toThrow(`must be greater than ${major}.${minor}`);
 
     const later = mutableLatest(history);
     later.protocol.minor += 1;

@@ -76,6 +76,11 @@ function framesVector(): VectorFile {
       name: "call-submit",
       wire: wire({ type: "call", id: 7, method: "submit", args: { conversationId: 2, text: "中文 ✓ 🚀", whenBusy: "followUp", requestId: "req-1", images: [{ data: "AA==", mimeType: "image/png" }] } }),
     },
+    // 5.15: a retry can name the image by ref alone (ADR-0027).
+    {
+      name: "call-submit-ref",
+      wire: wire({ type: "call", id: 19, method: "submit", args: { conversationId: 2, text: "again", whenBusy: "followUp", requestId: "req-ref", images: [{ ref: "abc123" }] } }),
+    },
     {
       name: "call-createConversation",
       wire: wire({ type: "call", id: 8, method: "createConversation", args: { home: { kind: "project", path: "/home/u/app" }, text: "go", requestId: "r", checkout: "worktree", model: { provider: "p", modelId: "m" }, thinkingLevel: "high" } }),

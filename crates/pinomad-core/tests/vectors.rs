@@ -110,6 +110,7 @@ fn feature_of(name: &str) -> HostFeature {
         "agentConversations" => HostFeature::AgentConversations,
         "liveBranch" => HostFeature::LiveBranch,
         "hostName" => HostFeature::HostName,
+        "imageRefs" => HostFeature::ImageRefs,
         other => panic!("unknown feature {other}"),
     }
 }

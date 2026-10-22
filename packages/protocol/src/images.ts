@@ -8,6 +8,23 @@ export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
 /** One attached image: base64 bytes (no `data:` prefix) and its type. */
 export type MessageImage = { readonly data: string; readonly mimeType: ImageMimeType };
 
+/**
+ * An image named by its content (5.15, ADR-0027): a conversation stream
+ * subscribed with `images: "ref"` carries image blocks as
+ * `{ type: "image", mimeType, ref }`, and the `image` call returns the bytes.
+ * The ref binds both the bytes and their mime type — the same bytes as PNG and
+ * JPEG are different images — so the host keeps the type it recorded. `ref` is
+ * otherwise opaque; equal refs are equal images, so a client may cache bytes by
+ * ref for as long as it likes.
+ */
+export type ImageRef = { readonly ref: string; readonly mimeType: ImageMimeType };
+
+/**
+ * What submit/createConversation attach: bytes and a type, or just a ref the
+ * connection was shown (5.15); the host answers with the type it recorded.
+ */
+export type OutgoingImage = MessageImage | { readonly ref: string };
+
 export const MAX_IMAGES_PER_MESSAGE = 4;
 /** Decoded bytes — base64 inflates by 4/3, so the wire string is larger. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

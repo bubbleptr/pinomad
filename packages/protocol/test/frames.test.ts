@@ -237,6 +237,31 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
   });
 
+  it("accepts image refs on submit (5.15); a ref is only a name", () => {
+    const submit = (images: unknown) =>
+      kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "hi", whenBusy: "followUp", requestId: "r", images } });
+    expect(submit([{ ref: "abc" }, { data: "aGVsbG8=", mimeType: "image/png" }])).toBe("frame");
+    expect(submit([{ ref: "abc", mimeType: "image/png" }])).toBe("frame");
+    expect(submit([{ ref: "" }])).toBe("malformed");
+    expect(submit([{ ref: 4 }])).toBe("malformed");
+    // A data form still needs its type; mixing a bad data field with a ref is malformed.
+    expect(submit([{ ref: "abc", data: 4 }])).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "image", args: { ref: "abc" } })).toBe("frame");
+    expect(kinds({ type: "call", id: 1, method: "image", args: { ref: "" } })).toBe("malformed");
+  });
+
+  it("keeps a subscribe's images: \"ref\" and drops values it doesn't know", () => {
+    expect(parseClientFrame({ type: "subscribe", stream: "conversation:3", images: "ref" })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "conversation:3", images: "ref" },
+    });
+    // A newer client's form this host predates degrades to inline bytes, not a 4400.
+    expect(parseClientFrame({ type: "subscribe", stream: "conversation:3", images: "thumb" })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "conversation:3" },
+    });
+  });
+
   it("accepts a string, APNs object, or null token on setPushToken, rejecting malformed shapes", () => {
     // The legacy string still parses — its refusal is an ok:false answer, not
     // a 4400 (ADR-0025 §7).
