@@ -203,6 +203,20 @@ export interface DurableController {
   compact(instructions: string | undefined): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */
   abort(target?: ConversationId): Promise<void>;
+  /**
+   * Take a queued input out of `target`'s inbox (the main shown conversation
+   * by default). `sent` means it already reached the transcript. Needs a 5.14
+   * host; rejects with the host's error — the caller shows it.
+   */
+  withdrawQueued(submissionId: number, target?: ConversationId): Promise<"withdrawn" | "sent">;
+  /**
+   * Promote a queued follow-up to steer in place on `target` (the main shown
+   * conversation by default); it is placed at the next boundary that takes
+   * steers, in queue order. `unavailable` means it was withdrawn or otherwise
+   * settled before it could be promoted. Needs a 5.14 host; rejects with the
+   * host's error — the caller shows it.
+   */
+  steerQueued(submissionId: number, target?: ConversationId): Promise<"steered" | "sent" | "unavailable">;
   /** Set the shown conversation's thinking level; rejects when the model can't take it. */
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setModel(model: ModelRef): Promise<void>;

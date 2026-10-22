@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { QueuedList } from "./queued-list.tsx";
 
 const meta = {
@@ -9,6 +10,14 @@ const meta = {
       { id: 1, mode: "steer", text: "Skip the e2e suite, just run unit tests", imageCount: 0 },
       { id: 2, mode: "followUp", text: "Then open a PR against main", imageCount: 0 },
     ],
+    canAct: true,
+    busy: true,
+    editDisabled: false,
+    narrow: false,
+    pendingIds: new Set(),
+    onSteer: fn(),
+    onEdit: fn(),
+    onWithdraw: fn(),
   },
 } satisfies Meta<typeof QueuedList>;
 
@@ -26,6 +35,19 @@ export const EveryMode: Story = {
       { id: 4, mode: "write", text: "<custom>", imageCount: 0 },
     ],
   },
+};
+
+export const RequestInFlight: Story = {
+  args: { pendingIds: new Set([2]) },
+};
+
+export const ComposerOccupied: Story = {
+  args: { editDisabled: true, editTooltip: "Clear the composer to edit" },
+};
+
+// Disconnected, or a host older than the 5.14 queued-input calls: rows are read-only.
+export const ReadOnly: Story = {
+  args: { canAct: false },
 };
 
 export const LongMessage: Story = {

@@ -65,6 +65,50 @@
       "expect": "[]"
     }
   ],
+  "queuedInput": [
+    {
+      "name": "steer",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"focus\"}]}}}",
+      "id": 1,
+      "expect": "{\"text\":\"focus\",\"images\":[]}"
+    },
+    {
+      "name": "followUp",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"then this\"}]}]}}}",
+      "id": 1,
+      "expect": "{\"text\":\"then this\",\"images\":[]}"
+    },
+    {
+      "name": "images",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":4,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
+      "id": 4,
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}"
+    },
+    {
+      "name": "write",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":2,\"mode\":\"write\",\"entry\":{\"kind\":\"pi.note\"}}]}}}",
+      "id": 2,
+      "expect": "null"
+    },
+    {
+      "name": "future-mode",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":5,\"mode\":\"later\",\"content\":\"not a steer yet\"}]}}}",
+      "id": 5,
+      "expect": "null"
+    },
+    {
+      "name": "missing",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"focus\"}]}}}",
+      "id": 99,
+      "expect": "null"
+    },
+    {
+      "name": "no-inbox",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{}}",
+      "id": 1,
+      "expect": "null"
+    }
+  ],
   "usageRows": [
     {
       "name": "model-and-tool",

@@ -98,6 +98,15 @@ function framesVector(): VectorFile {
       name: "call-listSkills-chat",
       wire: wire({ type: "call", id: 16, method: "listSkills", args: { scope: { kind: "chat" } } }),
     },
+    // 5.14: withdraw/promote queued input (issue #144).
+    {
+      name: "call-withdrawQueued",
+      wire: wire({ type: "call", id: 17, method: "withdrawQueued", args: { conversationId: 2, submissionId: 3 } }),
+    },
+    {
+      name: "call-steerQueued",
+      wire: wire({ type: "call", id: 18, method: "steerQueued", args: { conversationId: 2, submissionId: 3 } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];
@@ -113,6 +122,10 @@ function framesVector(): VectorFile {
     { name: "hostName@12", minor: 12, feature: "hostName", expect: true },
     { name: "listSkills@12", minor: 12, call: "listSkills", expect: false },
     { name: "listSkills@13", minor: 13, call: "listSkills", expect: true },
+    { name: "withdrawQueued@13", minor: 13, call: "withdrawQueued", expect: false },
+    { name: "withdrawQueued@14", minor: 14, call: "withdrawQueued", expect: true },
+    { name: "steerQueued@13", minor: 13, call: "steerQueued", expect: false },
+    { name: "steerQueued@14", minor: 14, call: "steerQueued", expect: true },
   ].map((gate) => ({
     ...gate,
     expect:

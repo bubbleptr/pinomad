@@ -2,7 +2,7 @@
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":13},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":14},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -12,7 +12,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":13},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":14},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -159,6 +159,14 @@
       "wire": "{\"type\":\"call\",\"id\":16,\"method\":\"listSkills\",\"args\":{\"scope\":{\"kind\":\"chat\"}}}"
     },
     {
+      "name": "call-withdrawQueued",
+      "wire": "{\"type\":\"call\",\"id\":17,\"method\":\"withdrawQueued\",\"args\":{\"conversationId\":2,\"submissionId\":3}}"
+    },
+    {
+      "name": "call-steerQueued",
+      "wire": "{\"type\":\"call\",\"id\":18,\"method\":\"steerQueued\",\"args\":{\"conversationId\":2,\"submissionId\":3}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -220,6 +228,30 @@
       "name": "listSkills@13",
       "minor": 13,
       "call": "listSkills",
+      "expect": true
+    },
+    {
+      "name": "withdrawQueued@13",
+      "minor": 13,
+      "call": "withdrawQueued",
+      "expect": false
+    },
+    {
+      "name": "withdrawQueued@14",
+      "minor": 14,
+      "call": "withdrawQueued",
+      "expect": true
+    },
+    {
+      "name": "steerQueued@13",
+      "minor": 13,
+      "call": "steerQueued",
+      "expect": false
+    },
+    {
+      "name": "steerQueued@14",
+      "minor": 14,
+      "call": "steerQueued",
       "expect": true
     }
   ]

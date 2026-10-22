@@ -31,6 +31,8 @@ pub(crate) enum ResultKind {
     Files,
     Pairing,
     Skills,
+    WithdrawQueued,
+    SteerQueued,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -133,6 +135,20 @@ impl PinomadClient {
                             Ok((url, expires_at)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Pairing { url, expires_at },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::WithdrawQueued) => match withdraw_outcome_of(value.as_ref()) {
+                            Ok(outcome) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::WithdrawQueued { outcome },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::SteerQueued) => match steer_outcome_of(value.as_ref()) {
+                            Ok(outcome) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::SteerQueued { outcome },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },
@@ -258,6 +274,17 @@ impl PinomadClient {
     pub fn snapshot(&self) -> Option<ClientSnapshot> {
         let inner = self.inner.lock().expect("client poisoned");
         snapshot::build(&inner.remote)
+    }
+
+    /// The original text and images of a queued steer/follow-up, or `None` for
+    /// a write or an unknown id. Read on demand from the current view — images
+    /// stay out of every `ConversationSnapshot` (the Edit affordance is rare;
+    /// the per-update FFI copy is not).
+    pub fn queued_input(&self, submission_id: u64) -> Option<QueuedInput> {
+        let inner = self.inner.lock().expect("client poisoned");
+        let view = inner.remote.view()?;
+        let conversation = view.get("conversation")?;
+        crate::chat::queued_input(conversation, submission_id)
     }
 }
 

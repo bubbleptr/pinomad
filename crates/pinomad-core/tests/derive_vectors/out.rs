@@ -3,7 +3,7 @@
 // production boundary is UniFFI, not JSON.
 use std::sync::Arc;
 
-use pinomad_core::chat::{AgentState, QueueItem, TaskRow, UsageRow};
+use pinomad_core::chat::{AgentState, QueueItem, QueuedInput, TaskRow, UsageRow};
 use pinomad_core::cot_view::{ChatEntry, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::presentation::ClassifiedDoc;
@@ -209,6 +209,16 @@ pub fn queue_items_json(items: &[QueueItem]) -> Json {
             })
             .collect(),
     )
+}
+
+pub fn queued_input_json(input: &QueuedInput) -> Json {
+    obj(&[
+        ("text", Some(s(&input.text))),
+        (
+            "images",
+            Some(Json::array(input.images.iter().map(image_json).collect())),
+        ),
+    ])
 }
 
 pub fn usage_rows_json(rows: &[UsageRow]) -> Json {

@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 13 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 14 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -80,6 +80,7 @@ fn call_since(method: &str) -> u32 {
         "setPushToken" => 7,
         "listFiles" => 10,
         "listSkills" => 13,
+        "withdrawQueued" | "steerQueued" => 14,
         _ => 0,
     }
 }

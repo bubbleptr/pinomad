@@ -18,8 +18,12 @@ import {
   type EntryId,
   type EntryRecord,
   type Harness,
+  InboxDoc,
   type JsonObject,
   LiveDoc,
+  type SubmissionId,
+  type SubmissionRecord,
+  type Tx,
   type LiveState,
   type ToolSlot,
   type WatchHandle,
@@ -92,6 +96,52 @@ const context: Context = BACKGROUND_CONTEXT;
  * fork can land between the check and the create.
  */
 const forkTails = new WeakMap<Harness, Promise<unknown>>();
+
+/**
+ * `Tx.submission` is the transaction's committed-submission read; upstream
+ * types it only on `Session` because it is internal, but commits use it for
+ * exactly this purpose (the inbox boundary does). Keeping the read in the
+ * commit is what makes steerQueued's validation and mode change atomic.
+ */
+type SubmissionReadTx = Tx & { submission(id: SubmissionId): Promise<SubmissionRecord | undefined> };
+
+/**
+ * Refuse a submission that is not this conversation's user input: a write
+ * has no content, and promoting or withdrawing it would corrupt reset
+ * semantics. Throws so the gateway answers `ok:false`.
+ */
+function assertQueuedInput(record: SubmissionRecord, conversationId: ConversationId): void {
+  if (record.conversationId !== conversationId) {
+    throw new Error(`Submission ${record.id} belongs to another conversation`);
+  }
+  if (record.type !== "input") throw new Error(`Submission ${record.id} is a write, not a message`);
+}
+
+/**
+ * Mark every unresolved `pinomad.question` request in `docs` dismissed — the
+ * user chose to reply in chat instead (ADR-0011 §4). The wait task sees the
+ * doc change and ends the tool. Shared by submit's standalone commit and
+ * steerQueued's combined one; both re-check inside the commit because a
+ * client answer may have landed meanwhile.
+ */
+async function dismissPendingQuestions(
+  tx: Tx,
+  docs: readonly ExtensionDoc[],
+  conversationId: ConversationId,
+): Promise<boolean> {
+  let dismissed = false;
+  for (const doc of docs) {
+    const value = await tx.doc(doc.token, conversationId);
+    if (!Value.Check(QuestionSchema, value)) continue;
+    for (const request of value.requests) {
+      if (request.resolution === undefined) {
+        request.resolution = { outcome: "dismissed", at: Date.now() };
+        dismissed = true;
+      }
+    }
+  }
+  return dismissed;
+}
 
 function serializedFork<T>(harness: Harness, work: () => Promise<T>): Promise<T> {
   const next = (forkTails.get(harness) ?? Promise.resolve()).then(work, work);
@@ -1405,6 +1455,43 @@ class GatewayClient {
         );
         return { submissionId: submission.id };
       }
+      case "withdrawQueued": {
+        const { conversationId, submissionId } = args as CallMethods["withdrawQueued"]["args"];
+        const id = submissionId as SubmissionId;
+        const submission = await this.#options.harness.submission(id, context);
+        if (submission === undefined) throw new Error(`Submission ${submissionId} does not exist`);
+        assertQueuedInput(await submission.status(context), conversationId);
+        await this.#options.harness.abortSubmission(id, context, conversationId);
+        // Read the record after the abort: "sent" means the input reached the
+        // transcript (it has an entry), not that its status is still placed.
+        // An aborted run settles a placed input unanswered/aborted yet keeps
+        // its entry, so the status cannot decide this.
+        const after = await this.#options.harness.submission(id, context);
+        if (after === undefined) throw new Error(`Submission ${submissionId} does not exist`);
+        return { outcome: (await after.status(context)).entry === undefined ? "withdrawn" : "sent" };
+      }
+      case "steerQueued": {
+        const { conversationId, submissionId } = args as CallMethods["steerQueued"]["args"];
+        const id = submissionId as SubmissionId;
+        return await this.#options.harness.commit(async (tx) => {
+          const record = await (tx as SubmissionReadTx).submission(id);
+          if (record === undefined) throw new Error(`Submission ${submissionId} does not exist`);
+          assertQueuedInput(record, conversationId);
+          if (record.entry !== undefined) return { outcome: "sent" as const };
+          if (record.status !== "queued") return { outcome: "unavailable" as const };
+          const inbox = await tx.doc(InboxDoc, conversationId);
+          const item = inbox.items.find((candidate) => candidate.id === id);
+          if (item === undefined) {
+            throw new Error(`Submission ${submissionId} is not queued in the inbox`);
+          }
+          // Only steered closes a question (ADR-0011 §4): the mode change and
+          // the dismissal share this commit, so the agent is never released
+          // without the user's new input.
+          await dismissPendingQuestions(tx, this.#questionDocs(), conversationId);
+          if (item.mode === "followUp") item.mode = "steer";
+          return { outcome: "steered" as const };
+        }, context);
+      }
       case "renameConversation": {
         const { title } = args as CallMethods["renameConversation"]["args"];
         const trimmed = title.trim();
@@ -1540,7 +1627,7 @@ class GatewayClient {
    * task sees the doc change and ends the tool. True when any were dismissed.
    */
   async #dismissPendingQuestions(conversationId: ConversationId, context: Context): Promise<boolean> {
-    const questionDocs = (this.#options.docs ?? []).filter((doc) => doc.presentation === "pinomad.question");
+    const questionDocs = this.#questionDocs();
     // Snapshot first: submits happen on every message, so committing blindly
     // would write on every send and materialize an empty doc per conversation.
     const snapshots = await Promise.all(questionDocs.map((doc) => this.#options.harness.snapshot(doc.token, conversationId, context)));
@@ -1548,21 +1635,15 @@ class GatewayClient {
       (value) => Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined),
     );
     if (!pending) return false;
-    return await this.#options.harness.commit(async (tx) => {
-      let dismissed = false;
-      for (const doc of questionDocs) {
-        const value = await tx.doc(doc.token, conversationId);
-        if (!Value.Check(QuestionSchema, value)) continue;
-        // Re-check inside the commit: a client answer may have landed meanwhile.
-        for (const request of value.requests) {
-          if (request.resolution === undefined) {
-            request.resolution = { outcome: "dismissed", at: Date.now() };
-            dismissed = true;
-          }
-        }
-      }
-      return dismissed;
-    }, context);
+    return await this.#options.harness.commit(
+      (tx) => dismissPendingQuestions(tx, questionDocs, conversationId),
+      context,
+    );
+  }
+
+  /** This host's `pinomad.question` docs, in the order the hello declares them. */
+  #questionDocs(): readonly ExtensionDoc[] {
+    return (this.#options.docs ?? []).filter((doc) => doc.presentation === "pinomad.question");
   }
 
   /**
