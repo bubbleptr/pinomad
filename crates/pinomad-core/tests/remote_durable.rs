@@ -1426,6 +1426,85 @@ fn list_skills_is_not_queued_behind_a_hanging_command() {
 }
 
 #[test]
+fn list_commands_needs_a_5_17_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(16.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::ListCommands { conversation_id: 7 });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.17")));
+    assert!(h.host.method("listCommands").is_empty());
+}
+
+#[test]
+fn list_commands_is_not_queued_behind_a_hanging_command() {
+    let mut h = setup();
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::ListCommands { conversation_id: 7 });
+    assert_eq!(h.host.method("listCommands").len(), 1);
+    assert_eq!(
+        h.host.method("listCommands")[0].get("args").cloned(),
+        Some(obj(&[("conversationId", Json::from(7.0))]))
+    );
+    assert!(matches!(h.ops.get(&2), Some(Ok(_))));
+}
+
+#[test]
+fn run_command_queues_and_targets_the_shown_conversation_by_default() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::RunCommand {
+        name: "compact".to_string(),
+        args: Some("keep API notes".to_string()),
+        target: None,
+    });
+    h.invoke(3, Call::RunCommand { name: "compact".to_string(), args: None, target: Some(2) });
+    let runs: Vec<Option<Json>> = h.host.method("runCommand").iter().map(|f| f.get("args").cloned()).collect();
+    assert_eq!(
+        runs,
+        [
+            Some(obj(&[
+                ("conversationId", Json::from(1.0)),
+                ("name", Json::from("compact")),
+                ("args", Json::from("keep API notes")),
+            ])),
+            Some(obj(&[("conversationId", Json::from(2.0)), ("name", Json::from("compact"))])),
+        ]
+    );
+    assert!(h.notices().is_empty());
+
+    // A hung command ahead of it holds runCommand back: it is queued.
+    let mut h = setup();
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::RunCommand { name: "compact".to_string(), args: None, target: Some(1) });
+    assert!(h.host.method("runCommand").is_empty());
+}
+
+#[test]
+fn run_command_failures_become_notices() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.call_errors.insert("runCommand".to_string(), "Unknown command: /nope".to_string());
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::RunCommand { name: "nope".to_string(), args: None, target: None });
+    assert!(matches!(h.ops.get(&2), Some(Ok(None))));
+    assert_eq!(
+        h.last_notice().get("message").and_then(Json::as_str).map(|m| m.to_string_lossy()),
+        Some("Unknown command: /nope".to_string())
+    );
+
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(16.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::RunCommand { name: "compact".to_string(), args: None, target: None });
+    assert!(h.host.method("runCommand").is_empty());
+    assert!(matches!(h.ops.get(&2), Some(Ok(None))));
+    assert!(h.notices().iter().any(|n| {
+        n.get("message").and_then(Json::as_str).map(|m| m.to_string_lossy().contains("needs protocol 5.17")).unwrap_or(false)
+    }));
+}
+
+#[test]
 fn queued_calls_return_host_outcomes_and_default_to_the_shown_conversation() {
     let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
     host.call_results.insert("withdrawQueued".to_string(), obj(&[("outcome", Json::from("withdrawn"))]));

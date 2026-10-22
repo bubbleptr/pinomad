@@ -64,6 +64,7 @@ import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from
 import { expandSkills, mentionedSkillNames } from "./skill-expansion.ts";
 import { stripSkillBlocks } from "@pinomad/client/skill-blocks.ts";
 import { createSkillLister, enumerateSkills, listSkills, scopeSkills, type ListedSkill, type SkillLister } from "./skills.ts";
+import { listCommands, runCommand } from "./commands.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem, type MessageImage, type OutgoingImage } from "@pinomad/protocol/images.ts";
 import { ImageRefs } from "./image-refs.ts";
@@ -1375,6 +1376,16 @@ class GatewayClient {
     return conversation;
   }
 
+  /** Start a manual compaction and report its outcome as a notice once it settles. */
+  async #compact(conversation: Conversation, instructions: string | undefined): ReturnType<Conversation["compact"]> {
+    const taskId = await conversation.compact(instructions, context);
+    void this.#options.harness.waitForTask(taskId, context).then(
+      (receipt) => void this.send({ type: "notice", level: "info", message: `Compaction ${receipt.state.outcome.status}.` }),
+      () => {},
+    );
+    return taskId;
+  }
+
   async #answer(id: number, method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<void> {
     try {
       const value = await this.#call(method, args);
@@ -1592,12 +1603,14 @@ class GatewayClient {
         return null;
       case "compact": {
         const { instructions } = args as CallMethods["compact"]["args"];
-        const taskId = await conversation.compact(instructions, context);
-        void this.#options.harness.waitForTask(taskId, context).then(
-          (receipt) => void this.send({ type: "notice", level: "info", message: `Compaction ${receipt.state.outcome.status}.` }),
-          () => {},
-        );
-        return { taskId };
+        return { taskId: await this.#compact(conversation, instructions) };
+      }
+      case "listCommands":
+        return listCommands();
+      case "runCommand": {
+        const { name, args: input } = args as CallMethods["runCommand"]["args"];
+        await runCommand({ compact: (instructions) => this.#compact(conversation, instructions) }, name, input);
+        return null;
       }
       case "setModel": {
         const { model: ref } = args as CallMethods["setModel"]["args"];

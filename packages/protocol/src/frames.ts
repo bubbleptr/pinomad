@@ -5,6 +5,7 @@ import type { HostAuth } from "./auth.ts";
 import type { MessageImage, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
+import type { CommandListing } from "./commands.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { ApnsEnvironment } from "./relay.ts";
@@ -88,7 +89,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 16 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 17 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -112,6 +113,11 @@ export interface CallMethods {
    * Read-only, sent outside the command queue like `listFiles`.
    */
   listSkills: { args: { scope: SkillScope }; result: SkillListing };
+  /**
+   * The slash commands a conversation's composer may offer (5.17, ADR-0029).
+   * Read-only, sent outside the command queue like `listSkills`.
+   */
+  listCommands: { args: { conversationId: ConversationId }; result: CommandListing };
   /**
    * Create a top-level conversation at `home`, submit `text`, idempotent on `requestId`.
    * `checkout`: project conversations default to a git worktree when the project
@@ -195,6 +201,12 @@ export interface CallMethods {
   };
   abort: { args: { conversationId: ConversationId }; result: null };
   compact: { args: { conversationId: ConversationId; instructions?: string }; result: { taskId: string } };
+  /**
+   * Run a host-declared command by its listed `name` (5.17, ADR-0029); `args`
+   * is the text after it. An unknown name fails the call. Mutating, so the
+   * client queues it behind earlier commands like `compact`.
+   */
+  runCommand: { args: { conversationId: ConversationId; name: string; args?: string }; result: null };
   setModel: { args: { conversationId: ConversationId; model: ModelRef }; result: null };
   /** Set the agent's thinking level; rejects when the model doesn't support it. */
   setThinkingLevel: { args: { conversationId: ConversationId; level: ThinkingLevel }; result: null };
@@ -274,6 +286,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   listFolders: 3,
   listFiles: 10,
   listSkills: 13,
+  listCommands: 17,
   createConversation: 0,
   archive: 0,
   renameConversation: 4,
@@ -282,6 +295,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   steerQueued: 14,
   abort: 0,
   compact: 0,
+  runCommand: 17,
   setModel: 0,
   setThinkingLevel: 0,
   fork: 0,
@@ -480,6 +494,11 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId() && nonempty(args.level);
     case "compact":
       return conversationId() && (args.instructions === undefined || typeof args.instructions === "string");
+    case "listCommands":
+      return conversationId();
+    case "runCommand":
+      // Shape only — an unknown name is the host's `ok:false`, not malformed.
+      return conversationId() && nonempty(args.name) && (args.args === undefined || typeof args.args === "string");
     case "setModel":
       return conversationId() && record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId);
     case "fork":

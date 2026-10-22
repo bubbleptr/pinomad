@@ -658,6 +658,17 @@ class RemoteClient {
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),
         ),
+      runCommand: (name, args, target) =>
+        this.#command(() => {
+          if (!hostSupportsCall(this.#hostMinor, "runCommand")) {
+            throw new Error("The host is too old for this (needs protocol 5.17); run `pinomad upgrade` on the host");
+          }
+          return this.#call("runCommand", {
+            conversationId: target ?? conversationId(),
+            name,
+            ...(args === undefined ? {} : { args }),
+          });
+        }),
       // Not queued: it resolves once the conversation is idle.
       abort: (target) => {
         const targetConversation = target ?? this.#current;
@@ -749,6 +760,13 @@ class RemoteClient {
           return Promise.reject(new Error("The host is too old for this (needs protocol 5.13); run `pinomad upgrade` on the host"));
         }
         return this.#call("listSkills", { scope });
+      },
+      // Same unqueued shape as listSkills (issue #254).
+      listCommands: (id) => {
+        if (!hostSupportsCall(this.#hostMinor, "listCommands")) {
+          return Promise.reject(new Error("The host is too old for this (needs protocol 5.17); run `pinomad upgrade` on the host"));
+        }
+        return this.#call("listCommands", { conversationId: id });
       },
       createPairing: () => this.#request(() => this.#call("createPairing", {})),
       revokeDevice: (publicKey) => this.#command(() => this.#call("revokeDevice", { publicKey })),

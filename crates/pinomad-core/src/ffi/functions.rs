@@ -338,6 +338,23 @@ pub fn skill_mention_ranges(text: String, names: Vec<String>) -> Vec<MentionRang
     crate::skill_mentions::skill_mention_ranges(&text, &names)
 }
 
+/// The host-declared command `text` invokes, if any (issue #254, ADR-0029):
+/// `/<name>` at index 0 with `name` in `names` (from `listCommands`), then
+/// the end or whitespace; the rest, trimmed, is `args`. Anything else —
+/// `/usr/bin/x`, an unknown `/foo`, `hello /compact` — is a plain message.
+#[uniffi::export]
+pub fn parse_command_input(text: String, names: Vec<String>) -> Option<CommandInput> {
+    let text = crate::u16str::U16String::from_str(&text);
+    let names = names
+        .iter()
+        .map(|name| crate::u16str::U16String::from_str(name))
+        .collect();
+    crate::command_input::parse_command_input(&text, &names).map(|input| CommandInput {
+        name: input.name.to_string_lossy(),
+        args: input.args.map(|args| args.to_string_lossy()),
+    })
+}
+
 /// Whether a host speaking protocol minor `host_minor` knows `method` (the
 /// wire name, e.g. "renameConversation") — older hosts reject unknown calls,
 /// so the UI hides what they can't do.

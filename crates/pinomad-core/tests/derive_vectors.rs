@@ -861,3 +861,33 @@ fn account_pairing_links_replay() {
         }
     }
 }
+
+/// Slash-command recognition (issue #254) — the `{name, args?}` the
+/// reference parsed, or null for a plain message.
+#[test]
+fn command_input_replay() {
+    let file = load("command-input");
+    for case in cases(&file, "parseCommandInput") {
+        let name = as_text(field(case, "name"));
+        let text = field(case, "text").as_str().expect("text").clone();
+        let names: std::collections::HashSet<U16String> = Json::parse(&as_text(field(case, "names")))
+            .unwrap()
+            .as_array()
+            .expect("names")
+            .iter()
+            .filter_map(|n| n.as_str().cloned())
+            .collect();
+        let got = match pinomad_core::command_input::parse_command_input(&text, &names) {
+            None => Json::Null,
+            Some(input) => {
+                let mut object = pinomad_core::json::JsonObject::new();
+                object.set(U16String::from_str("name"), Json::String(input.name));
+                if let Some(args) = input.args {
+                    object.set(U16String::from_str("args"), Json::String(args));
+                }
+                Json::Object(std::sync::Arc::new(object))
+            }
+        };
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}

@@ -43,6 +43,7 @@ import {
 import { parsePatch } from "../src/patch.ts";
 import { stripSkillBlocks } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
+import { parseCommandInput } from "../src/command-input.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
 import { pendingQuestions, questionAnswers } from "../src/questions.ts";
 import { hostLabels, parseStoredHost, type StoredHost } from "../src/stored-host.ts";
@@ -111,6 +112,7 @@ import {
 import { PATCH_CASES } from "./patch-cases.ts";
 import { SKILL_BLOCK_CASES } from "./skill-blocks-cases.ts";
 import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
+import { COMMAND_INPUT_CASES } from "./command-input-cases.ts";
 import {
   CLASSIFY_CASES,
   DIFF_STAT_CASES,
@@ -525,6 +527,17 @@ function skillMentionsVector(): VectorFile {
   });
 }
 
+function commandInputVector(): VectorFile {
+  return write("command-input", {
+    parseCommandInput: COMMAND_INPUT_CASES.map((c) => ({
+      name: c.name,
+      text: c.text,
+      names: wire(c.names),
+      expect: expect(wire(parseCommandInput(c.text, c.names.map((name) => ({ name }))) ?? null)),
+    })),
+  });
+}
+
 // ─── Account client (request building + response parsing are split — the
 // Rust core does both, the platform owns the socket) ─────────────────────────
 
@@ -661,6 +674,7 @@ export async function buildVectors(): Promise<VectorFile[]> {
     patchVector(),
     skillMentionsVector(),
     skillBlocksVector(),
+    commandInputVector(),
     await accountVector(),
   ];
 }

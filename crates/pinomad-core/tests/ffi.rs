@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use pinomad_core::ffi::{
-    device_public_key, CallResult, ClientError, ConnectionState, ConversationChanges, ConversationCheckout,
+    device_public_key, parse_command_input, CallResult, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
     DeviceEntry, DeviceSource, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
     SteerOutcome, StoredHost, SubmitMode, ThinkingLevel, WithdrawOutcome,
@@ -957,6 +957,147 @@ fn list_skills_needs_a_5_13_host() {
     assert!(call_frames(&h).iter().all(|f| {
         f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "listSkills").unwrap_or(true)
     }));
+}
+
+/// `listCommands` (ADR-0029): a Request-class call sent outside the queue
+/// whose success decodes to `CallResult::Commands`, optional fields included.
+#[test]
+fn list_commands_resolves_a_typed_result() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "listCommands".to_string(),
+        obj(&[(
+            "commands",
+            Json::array(vec![
+                obj(&[
+                    ("name", Json::from("compact")),
+                    ("description", Json::from("Summarize older context")),
+                    ("argumentHint", Json::from("[instructions]")),
+                    ("source", Json::from("builtin")),
+                ]),
+                obj(&[
+                    ("name", Json::from("deploy")),
+                    ("description", Json::from("Deploys")),
+                    ("source", Json::from("plugin")),
+                    ("disabled", Json::from("Busy")),
+                ]),
+            ]),
+        )]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::ListCommands { conversation_id: 7 });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Commands {
+            commands: vec![
+                CommandEntry {
+                    name: "compact".to_string(),
+                    description: "Summarize older context".to_string(),
+                    argument_hint: Some("[instructions]".to_string()),
+                    source: CommandSource::Builtin,
+                    disabled: None,
+                },
+                CommandEntry {
+                    name: "deploy".to_string(),
+                    description: "Deploys".to_string(),
+                    argument_hint: None,
+                    source: CommandSource::Plugin,
+                    disabled: Some("Busy".to_string()),
+                },
+            ],
+        }))
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "listCommands").unwrap_or(false)
+    });
+    assert_eq!(call.and_then(|f| f.get("args").cloned()), Some(obj(&[("conversationId", Json::from(7.0))])));
+}
+
+#[test]
+fn list_commands_result_malformed_or_error_fails_the_op() {
+    let entry = |extra: (&str, Json)| {
+        obj(&[
+            ("name", Json::from("x")),
+            ("description", Json::from("y")),
+            ("source", Json::from("builtin")),
+            extra,
+        ])
+    };
+    for (index, value) in [
+        obj(&[]),                                                                   // missing commands
+        obj(&[("commands", Json::array(vec![Json::from("compact")]))]),             // entry not an object
+        obj(&[("commands", Json::array(vec![entry(("source", Json::from("other")))]))]), // unknown source
+        obj(&[("commands", Json::array(vec![entry(("argumentHint", Json::from(3.0)))]))]), // non-string hint
+        obj(&[("commands", Json::array(vec![entry(("disabled", Json::Bool(true)))]))]), // non-string reason
+        Json::Null,                                                                 // not an object
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("listCommands".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::ListCommands { conversation_id: 7 });
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed listCommands result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("listCommands".to_string(), "Conversation 9 does not exist".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::ListCommands { conversation_id: 9 });
+    assert_eq!(h.ops.get(&1), Some(&Err("Conversation 9 does not exist".to_string())));
+}
+
+#[test]
+fn list_commands_needs_a_5_17_host() {
+    let mut host = ScriptedHost::new();
+    host.minor = 16.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::ListCommands { conversation_id: 7 });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.17")));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "listCommands").unwrap_or(true)
+    }));
+}
+
+/// `runCommand` is Command-class: the frame carries the name and the
+/// trimmed args, and the op resolves `Unit`.
+#[test]
+fn run_command_sends_name_and_args() {
+    let mut h = Harness::boot(ScriptedHost::new(), "req-1");
+    h.invoke(
+        1,
+        FfiCall::RunCommand { name: "compact".to_string(), args: Some("keep API notes".to_string()), target: Some(3) },
+    );
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::Unit)));
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "runCommand").unwrap_or(false)
+    });
+    assert_eq!(
+        call.and_then(|f| f.get("args").cloned()),
+        Some(obj(&[
+            ("conversationId", Json::from(3.0)),
+            ("name", Json::from("compact")),
+            ("args", Json::from("keep API notes")),
+        ]))
+    );
+}
+
+#[test]
+fn parse_command_input_splits_a_listed_command() {
+    let names = vec!["compact".to_string()];
+    assert_eq!(
+        parse_command_input("/compact  keep API notes ".to_string(), names.clone()),
+        Some(CommandInput { name: "compact".to_string(), args: Some("keep API notes".to_string()) })
+    );
+    assert_eq!(
+        parse_command_input("/compact".to_string(), names.clone()),
+        Some(CommandInput { name: "compact".to_string(), args: None })
+    );
+    assert_eq!(parse_command_input("/usr/bin/x".to_string(), names.clone()), None);
+    assert_eq!(parse_command_input(" /compact".to_string(), names), None);
 }
 
 #[test]

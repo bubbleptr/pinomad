@@ -76,6 +76,11 @@ pub enum Call {
     /// the next boundary that takes steers, in queue order. Request-class.
     SteerQueued { submission_id: u64, target: Option<u64> },
     Compact { instructions: Option<String> },
+    /// `runCommand` — run the host-declared command `name` on `target`
+    /// (the shown conversation by default); `args` is the text after the
+    /// name (ADR-0029). Command-class like `compact`: queued, and a failure
+    /// (an unknown name, a pre-5.17 host) lands as a notice. Needs 5.17.
+    RunCommand { name: String, args: Option<String>, target: Option<u64> },
     /// Not queued behind the command chain — it resolves once the
     /// conversation is idle, same as the reference.
     Abort { target: Option<u64> },
@@ -118,6 +123,10 @@ pub enum Call {
     /// `listFiles`: a slow fetch must not hold up commands, and a hung
     /// command must not hide a picture the screen already needs.
     Image { ref_: String },
+    /// `listCommands` — the slash commands the host declares for a
+    /// conversation (ADR-0029). Same read-only, unqueued shape as
+    /// `listSkills`. Needs a 5.17 host.
+    ListCommands { conversation_id: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -933,7 +942,7 @@ impl RemoteDurable {
             | Call::WithdrawQueued { .. }
             | Call::SteerQueued { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. } | Call::ListSkills { .. } | Call::Image { .. } => OpKind::Direct,
+            Call::ListFiles { .. } | Call::ListSkills { .. } | Call::Image { .. } | Call::ListCommands { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1111,6 +1120,19 @@ impl RemoteDurable {
                 }
                 steps.push_back(Step::Call { method: "compact", args: Json::Object(Arc::new(args)) });
             }
+            Call::RunCommand { name, args: input, target } => {
+                if !host_supports_call(self.host_minor, "runCommand") {
+                    return Err(too_old("5.17"));
+                }
+                let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
+                let mut args = JsonObject::new();
+                set(&mut args, "conversationId", Json::Number(conversation as f64));
+                set(&mut args, "name", Json::from(name.clone()));
+                if let Some(input) = input {
+                    set(&mut args, "args", Json::from(input.clone()));
+                }
+                steps.push_back(Step::Call { method: "runCommand", args: Json::Object(Arc::new(args)) });
+            }
             Call::Abort { target } => {
                 let Some(conversation) = target.or(self.current) else {
                     // abort resolves (with a notice) without a call.
@@ -1270,6 +1292,13 @@ impl RemoteDurable {
                     return Err(too_old("5.15"));
                 }
                 steps.push_back(Step::Call { method: "image", args: obj(&[("ref", Json::from(ref_.clone()))]) });
+            }
+            Call::ListCommands { conversation_id } => {
+                if !host_supports_call(self.host_minor, "listCommands") {
+                    return Err(too_old("5.17"));
+                }
+                let args = obj(&[("conversationId", Json::Number(*conversation_id as f64))]);
+                steps.push_back(Step::Call { method: "listCommands", args });
             }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });

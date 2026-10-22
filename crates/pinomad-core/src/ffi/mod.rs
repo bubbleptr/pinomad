@@ -32,6 +32,7 @@ pub(crate) enum ResultKind {
     Pairing,
     Skills,
     Image,
+    Commands,
     WithdrawQueued,
     SteerQueued,
 }
@@ -54,7 +55,7 @@ struct Inner {
 ///   `setPushToken`, `changes`, `createPairing`) reject the op: the platform
 ///   sees `OperationFailed { op, error }`.
 /// - Command-class calls (everything else: `submit`, `switchConversation`,
-///   `createConversation`, `archive`, `compact`, `answer`, `setModel`,
+///   `createConversation`, `archive`, `compact`, `runCommand`, `answer`, `setModel`,
 ///   `setThinkingLevel`, `revokeDevice`, `updateSettings`) and the
 ///   unqueued `abort` still emit
 ///   `OperationSucceeded { value: Unit }` on failure — the reason lands as
@@ -137,6 +138,13 @@ impl PinomadClient {
                             Ok(image) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Image { image },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::Commands) => match commands_of(value.as_ref()) {
+                            Ok(commands) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::Commands { commands },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

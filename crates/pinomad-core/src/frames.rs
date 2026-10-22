@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 16 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 17 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -101,6 +101,8 @@ pub enum CallMethod {
     ListFiles,
     ListSkills,
     Image,
+    ListCommands,
+    RunCommand,
 }
 
 impl CallMethod {
@@ -135,6 +137,8 @@ impl CallMethod {
             "listFiles" => Self::ListFiles,
             "listSkills" => Self::ListSkills,
             "image" => Self::Image,
+            "listCommands" => Self::ListCommands,
+            "runCommand" => Self::RunCommand,
             _ => return None,
         })
     }
@@ -167,6 +171,7 @@ impl CallMethod {
             Self::ListSkills => 13,
             Self::WithdrawQueued | Self::SteerQueued => 14,
             Self::Image => 15,
+            Self::ListCommands | Self::RunCommand => 17,
         }
     }
 }

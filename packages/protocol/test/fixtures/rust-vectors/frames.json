@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 16
+    "minor": 17
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":16},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":17},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":16},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":17},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -183,6 +183,18 @@
       "wire": "{\"type\":\"call\",\"id\":18,\"method\":\"steerQueued\",\"args\":{\"conversationId\":2,\"submissionId\":3}}"
     },
     {
+      "name": "call-listCommands",
+      "wire": "{\"type\":\"call\",\"id\":19,\"method\":\"listCommands\",\"args\":{\"conversationId\":2}}"
+    },
+    {
+      "name": "call-runCommand",
+      "wire": "{\"type\":\"call\",\"id\":20,\"method\":\"runCommand\",\"args\":{\"conversationId\":2,\"name\":\"compact\",\"args\":\"keep API notes\"}}"
+    },
+    {
+      "name": "call-runCommand-no-args",
+      "wire": "{\"type\":\"call\",\"id\":21,\"method\":\"runCommand\",\"args\":{\"conversationId\":2,\"name\":\"compact\"}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -242,6 +254,10 @@
         "since": 15
       },
       {
+        "name": "listCommands",
+        "since": 17
+      },
+      {
         "name": "listFiles",
         "since": 10
       },
@@ -268,6 +284,10 @@
       {
         "name": "revokeDevice",
         "since": 0
+      },
+      {
+        "name": "runCommand",
+        "since": 17
       },
       {
         "name": "setModel",
@@ -463,6 +483,18 @@
       "expect": false
     },
     {
+      "name": "listCommands@17",
+      "minor": 17,
+      "call": "listCommands",
+      "expect": true
+    },
+    {
+      "name": "listCommands@16",
+      "minor": 16,
+      "call": "listCommands",
+      "expect": false
+    },
+    {
       "name": "listFiles@10",
       "minor": 10,
       "call": "listFiles",
@@ -533,6 +565,18 @@
       "minor": 0,
       "call": "revokeDevice",
       "expect": true
+    },
+    {
+      "name": "runCommand@17",
+      "minor": 17,
+      "call": "runCommand",
+      "expect": true
+    },
+    {
+      "name": "runCommand@16",
+      "minor": 16,
+      "call": "runCommand",
+      "expect": false
     },
     {
       "name": "setModel@0",

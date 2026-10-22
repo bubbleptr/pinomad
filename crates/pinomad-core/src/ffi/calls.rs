@@ -230,6 +230,13 @@ pub enum FfiCall {
         skills: Option<Vec<String>>,
     },
     Compact { instructions: Option<String> },
+    /// Run the host-declared command `name` (from `ListCommands`) on
+    /// `target`, the shown conversation by default; `args` is the text
+    /// after the name — `parse_command_input` splits a draft into both
+    /// (ADR-0029). Command-class like `Compact`: resolves `Unit`, and a
+    /// failure (an unknown name, a pre-5.17 host) lands in
+    /// `snapshot().notices`. Needs a 5.17 host.
+    RunCommand { name: String, args: Option<String>, target: Option<u64> },
     /// Answer a pending `pinomad.question` request on `target` (the shown
     /// conversation by default).
     Answer {
@@ -291,6 +298,11 @@ pub enum FfiCall {
         #[uniffi(name = "ref")]
         ref_: String,
     },
+    /// The slash commands the host declares for `conversation_id` (ADR-0029)
+    /// — there is no client-side fallback list. Request-class, sent outside
+    /// the command queue like `listSkills`. Resolves `CallResult::Commands`.
+    /// Needs a 5.17 host.
+    ListCommands { conversation_id: u64 },
 }
 
 impl FfiCall {
@@ -305,6 +317,7 @@ impl FfiCall {
             FfiCall::ListFiles { .. } => Some(ResultKind::Files),
             FfiCall::ListSkills { .. } => Some(ResultKind::Skills),
             FfiCall::Image { .. } => Some(ResultKind::Image),
+            FfiCall::ListCommands { .. } => Some(ResultKind::Commands),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
             _ => None,
@@ -358,6 +371,7 @@ impl FfiCall {
                 skills,
             },
             FfiCall::Compact { instructions } => Call::Compact { instructions },
+            FfiCall::RunCommand { name, args, target } => Call::RunCommand { name, args, target },
             FfiCall::Answer {
                 kind,
                 request_id,
@@ -398,6 +412,7 @@ impl FfiCall {
                 scope: scope.to_json(),
             },
             FfiCall::Image { ref_ } => Call::Image { ref_ },
+            FfiCall::ListCommands { conversation_id } => Call::ListCommands { conversation_id },
         }
     }
 }

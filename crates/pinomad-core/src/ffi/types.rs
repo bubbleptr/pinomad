@@ -144,6 +144,8 @@ pub enum CallResult {
     /// `image` — the decoded bytes a ref named (5.15, ADR-0027). The ref is
     /// cleared: the bytes are what the caller asked for.
     Image { image: MessageImage },
+    /// `listCommands` — the host-declared slash commands, in menu order.
+    Commands { commands: Vec<CommandEntry> },
     /// `createPairing` — the one-time offer another device scans; `url`
     /// carries the host key and secret, `expires_at` is epoch ms.
     Pairing { url: String, expires_at: f64 },
@@ -308,6 +310,72 @@ pub(crate) fn skills_of(value: Option<&Json>) -> Result<Vec<SkillEntry>, String>
             Ok(SkillEntry { name, description, source })
         })
         .collect()
+}
+
+/// A `listCommands` entry (ADR-0029): what a `/` menu shows and
+/// `RunCommand` takes. `name` has no leading slash.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct CommandEntry {
+    pub name: String,
+    pub description: String,
+    /// What may follow the name, e.g. `[instructions]`.
+    pub argument_hint: Option<String>,
+    pub source: CommandSource,
+    /// Set when the command exists but can't run now: the reason, shown
+    /// greyed out.
+    pub disabled: Option<String>,
+}
+
+/// The `listCommands` `source` field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum CommandSource {
+    Builtin,
+    Plugin,
+}
+
+/// `listCommands`'s typed result — strict like `skills_of`: a malformed
+/// shape is a host-contract violation and fails the op.
+pub(crate) fn commands_of(value: Option<&Json>) -> Result<Vec<CommandEntry>, String> {
+    let malformed = || "malformed listCommands result: commands".to_string();
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed listCommands result".to_string())?;
+    let text = |entry: &Json, name: &str| entry.get(name).and_then(Json::as_str).map(|s| s.to_string_lossy());
+    // An optional field may be absent, never a non-string.
+    let optional = |entry: &Json, name: &str| match entry.get(name) {
+        None => Ok(None),
+        Some(field) => field.as_str().map(|s| Some(s.to_string_lossy())).ok_or_else(malformed),
+    };
+    value
+        .get("commands")
+        .and_then(Json::as_array)
+        .ok_or_else(malformed)?
+        .iter()
+        .map(|entry| {
+            let name = text(entry, "name").ok_or_else(malformed)?;
+            let description = text(entry, "description").ok_or_else(malformed)?;
+            let source = match text(entry, "source").as_deref() {
+                Some("builtin") => CommandSource::Builtin,
+                Some("plugin") => CommandSource::Plugin,
+                _ => return Err(malformed()),
+            };
+            Ok(CommandEntry {
+                name,
+                description,
+                argument_hint: optional(entry, "argumentHint")?,
+                source,
+                disabled: optional(entry, "disabled")?,
+            })
+        })
+        .collect()
+}
+
+/// `parse_command_input`'s answer: the listed command a draft invokes and
+/// the trimmed text after it (absent when there is none).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct CommandInput {
+    pub name: String,
+    pub args: Option<String>,
 }
 
 /// The `changes` call's payload, mirroring the wire union
