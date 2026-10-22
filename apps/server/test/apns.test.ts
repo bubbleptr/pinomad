@@ -2,6 +2,7 @@
 // provider token, one HTTP/2 session per environment, and the verdict
 // classification — all against a fake h2c APNs, never the real endpoints.
 import { generateKeyPairSync } from "node:crypto";
+import { constants } from "node:http2";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PushNotification } from "@pinomad/protocol/relay.ts";
 import { loadApnsConfig, openApns, type ApnsSender } from "../src/apns.ts";
@@ -174,36 +175,41 @@ describe("openApns", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("rebuilds the session after a GOAWAY", async () => {
-    const { apns, fake } = await startApns();
-    expect(await send(apns)).toEqual({ result: "accepted", reason: "ok" });
-    expect(fake.sessions).toHaveLength(1);
+  it("refuses a received stream without an unhandled error, then rebuilds the session", async () => {
+    let refusing = true;
+    const { apns, fake } = await startApns(() =>
+      refusing ? { close: constants.NGHTTP2_REFUSED_STREAM } : { status: 200 },
+    );
 
-    fake.sessions[0]!.goaway();
-    // The next send waits for a fresh session — poll it into existence.
-    const deadline = Date.now() + 5_000;
-    let verdict;
-    for (;;) {
-      verdict = await send(apns);
-      if (verdict.result === "accepted") break;
-      if (Date.now() > deadline) throw new Error(`send never recovered: ${JSON.stringify(verdict)}`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    expect(fake.sessions.length).toBeGreaterThanOrEqual(2);
+    expect(await send(apns)).toEqual({ result: "retry", reason: "connection error" });
+    // The fake server saw the stream error too: without a listener this test
+    // would exit with an unhandled NGHTTP2_REFUSED_STREAM.
+    await fake.waitForStreamErrors(1);
+
+    refusing = false;
+    expect(await send(apns)).toEqual({ result: "accepted", reason: "ok" });
+    expect(fake.sessions).toHaveLength(2);
   });
 
-  it("settles sends still in flight when a GOAWAY lands", async () => {
-    const { apns, fake } = await startApns();
-    // Streams opened after the GOAWAY are refused (REFUSED_STREAM) on both
-    // ends; the race is timing-dependent, so a few rounds make it near-certain.
-    // A stream cut off before its response is a connection failure, so it must
-    // come back retryable, never as a final rejection (ADR-0025 §5).
-    for (let round = 0; round < 50; round++) {
-      await send(apns); // a live session for the GOAWAY to land on
-      const inFlight = Promise.all([send(apns), send(apns), send(apns)]);
-      fake.sessions.at(-1)!.goaway();
-      for (const verdict of await inFlight) expect(["accepted", "retry"]).toContain(verdict.result);
-    }
+  it("retries a received stream that closes without a response", async () => {
+    const { apns, fake } = await startApns(() => ({ close: constants.NGHTTP2_NO_ERROR }));
+    // A GOAWAY can end the stream before APNs answers: a connection failure,
+    // never a final "HTTP 0" rejection (ADR-0025 §5).
+    expect(await send(apns)).toEqual({ result: "retry", reason: "connection closed" });
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("retries a request a GOAWAY cuts off, then sends on a fresh session", async () => {
+    let holding = true;
+    const { apns, fake } = await startApns(() => (holding ? { status: 200, hold: true } : { status: 200 }));
+    const inFlight = send(apns);
+    await fake.waitForCalls(1);
+    holding = false;
+    fake.sessions.at(-1)!.goaway();
+
+    expect((await inFlight).result).toBe("retry");
+    expect(await send(apns)).toEqual({ result: "accepted", reason: "ok" });
+    expect(fake.sessions.length).toBeGreaterThanOrEqual(2);
   });
 
   it("drops an environment whose key fails to parse", async () => {

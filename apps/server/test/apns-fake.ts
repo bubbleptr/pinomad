@@ -12,15 +12,20 @@ export interface ApnsCall {
   readonly payload: unknown;
 }
 
-export interface ApnsAnswer {
-  readonly status: number;
-  /** The JSON error body APNs returns on non-200; omitted → an empty object. */
-  readonly body?: unknown;
-  /** Extra response headers (e.g. `retry-after`). */
-  readonly headers?: Record<string, string>;
-  /** Hold the response instead of answering — for in-flight/cap tests. */
-  readonly hold?: boolean;
-}
+export type ApnsAnswer =
+  | {
+      readonly status: number;
+      /** The JSON error body APNs returns on non-200; omitted → an empty object. */
+      readonly body?: unknown;
+      /** Extra response headers (e.g. `retry-after`). */
+      readonly headers?: Record<string, string>;
+      /** Hold the response instead of answering — for in-flight/cap tests. */
+      readonly hold?: boolean;
+    }
+  | {
+      /** Close the stream without responding, with this HTTP/2 error code. */
+      readonly close: number;
+    };
 
 export interface FakeApns {
   /** The authority to hand to openApns' per-environment config. */
@@ -28,9 +33,13 @@ export interface FakeApns {
   readonly calls: ApnsCall[];
   /** Every server-side session — lets a test goaway or kill the connection. */
   readonly sessions: Http2Session[];
+  /** Errors emitted by server-side streams, e.g. one refused after a GOAWAY. */
+  readonly streamErrors: Error[];
   /** Answer every held stream with `answer`. */
   flushHeld(answer: ApnsAnswer): void;
   waitForCalls(n: number): Promise<void>;
+  /** Resolves once `n` server-side stream errors have been seen. */
+  waitForStreamErrors(n: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -38,18 +47,33 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
   const calls: ApnsCall[] = [];
   const held: { stream: import("node:http2").ServerHttp2Stream; call: ApnsCall }[] = [];
   const sessions: Http2Session[] = [];
+  const streamErrors: Error[] = [];
   const waiters: { n: number; resolve(): void }[] = [];
-  const answer = (stream: import("node:http2").ServerHttp2Stream, { status, body, headers }: ApnsAnswer): void => {
-    stream.respond({ ":status": status, "content-type": "application/json", ...headers });
-    stream.end(JSON.stringify(body ?? {}));
+  const streamErrorWaiters: { n: number; resolve(): void }[] = [];
+  const answer = (stream: import("node:http2").ServerHttp2Stream, result: ApnsAnswer): void => {
+    if ("close" in result) {
+      stream.close(result.close);
+      return;
+    }
+    stream.respond({ ":status": result.status, "content-type": "application/json", ...result.headers });
+    stream.end(JSON.stringify(result.body ?? {}));
   };
   const server: Http2Server = createServer();
   server.on("session", (session) => {
     sessions.push(session);
     session.on("stream", (stream, headers) => {
-      // A stream racing a GOAWAY closes with REFUSED_STREAM. That's the
-      // sender's verdict to classify; here it would only be an unhandled error.
-      stream.on("error", () => {});
+      // A stream cut off after a GOAWAY or an explicit refusal errors on the
+      // server side too. Record it so tests can wait for that event instead
+      // of sleeping; without a listener Node would throw it as unhandled.
+      stream.on("error", (error) => {
+        streamErrors.push(error);
+        for (const waiter of [...streamErrorWaiters]) {
+          if (streamErrors.length >= waiter.n) {
+            streamErrorWaiters.splice(streamErrorWaiters.indexOf(waiter), 1);
+            waiter.resolve();
+          }
+        }
+      });
       const chunks: Buffer[] = [];
       stream.on("data", (chunk: Buffer) => chunks.push(chunk));
       stream.on("end", () => {
@@ -68,7 +92,7 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
           }
         }
         void Promise.resolve(responder?.(call) ?? { status: 200 }).then((result) => {
-          if (result.hold) held.push({ stream, call });
+          if ("hold" in result && result.hold) held.push({ stream, call });
           else if (!stream.destroyed) answer(stream, result);
         });
       });
@@ -83,6 +107,7 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
     authority: `http://127.0.0.1:${port}`,
     calls,
     sessions,
+    streamErrors,
     flushHeld(result) {
       for (const { stream } of held.splice(0)) answer(stream, result);
     },
@@ -90,6 +115,12 @@ export async function fakeApns(responder?: (call: ApnsCall) => ApnsAnswer | Prom
       return new Promise((resolve) => {
         if (calls.length >= n) resolve();
         else waiters.push({ n, resolve });
+      });
+    },
+    waitForStreamErrors(n) {
+      return new Promise((resolve) => {
+        if (streamErrors.length >= n) resolve();
+        else streamErrorWaiters.push({ n, resolve });
       });
     },
     close() {

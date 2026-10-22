@@ -8,7 +8,7 @@
 // variables as PEM contents and must never reach logs, errors, or HTTP/2
 // debug output.
 import { createPrivateKey, sign, type KeyObject } from "node:crypto";
-import { connect, type ClientHttp2Session, type IncomingHttpHeaders } from "node:http2";
+import { connect, constants, type ClientHttp2Session, type IncomingHttpHeaders } from "node:http2";
 import type { ApnsEnvironment, PushNotification, PushVerdict } from "@pinomad/protocol/relay.ts";
 
 /** Per-environment credentials; `authority` exists only so tests can inject a fake APNs. */
@@ -140,17 +140,19 @@ export function openApns(config: ApnsConfig): ApnsSender {
     return jwt;
   };
 
+  /** Drop a broken session; the next send reconnects (ADR-0025 §2). */
+  const dropSession = (state: EnvironmentState, session: ClientHttp2Session): void => {
+    if (state.session === session) state.session = undefined;
+    if (!session.destroyed) session.destroy();
+  };
+
   /** One session per environment, rebuilt after GOAWAY/error/close (ADR-0025 §2). */
   const sessionFor = (environment: ApnsEnvironment, state: EnvironmentState): ClientHttp2Session => {
     const existing = state.session;
     if (existing !== undefined && !existing.destroyed && !existing.closed) return existing;
     const session = connect(state.authority);
-    const drop = (): void => {
-      if (state.session === session) state.session = undefined;
-      if (!session.destroyed) session.destroy();
-    };
-    session.once("goaway", drop);
-    session.once("error", drop);
+    session.once("goaway", () => dropSession(state, session));
+    session.once("error", () => dropSession(state, session));
     session.once("close", () => {
       if (state.session === session) state.session = undefined;
     });
@@ -280,7 +282,13 @@ export function openApns(config: ApnsConfig): ApnsSender {
           }
           finish(classify(request.environment, status, responseHeaders, body, state));
         });
-        stream.on("error", () => finish({ result: "retry", reason: "connection error" }));
+        stream.on("error", () => {
+          // APNs refused this stream on the current connection; drop the
+          // session so the retry rebuilds it (ADR-0025 §2).
+          const refused = stream.rstCode === constants.NGHTTP2_REFUSED_STREAM;
+          finish({ result: "retry", reason: "connection error" });
+          if (refused) dropSession(state, session);
+        });
         stream.on("aborted", () => finish({ result: "retry", reason: "connection aborted" }));
         stream.end(body);
       });
