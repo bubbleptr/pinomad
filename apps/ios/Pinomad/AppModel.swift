@@ -186,6 +186,8 @@ final class AppModel {
     var pendingOpen: UInt64?
     /// Retries an injected pairing link while the phase is a failure.
     var pairRetryTask: Task<Void, Never>?
+    /// A demo's answer to `changes()` — a demo has no session to ask.
+    var devChanges: ConversationChanges?
 
     /// Publish a demo snapshot through the slot the session normally fills;
     /// the setter itself stays file-private.

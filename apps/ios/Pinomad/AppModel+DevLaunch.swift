@@ -56,6 +56,14 @@ extension AppModel {
             startSubagentDemo()
             return true
         }
+        if let mode = env["PINOMAD_DEMO_OVERVIEW"] {
+            // The overview sheet: a worktree conversation in a project, a
+            // change stat (`truncated` marks it approximate), and running
+            // plus settled subagents.
+            phase = .connected
+            startOverviewDemo(truncated: mode == "truncated")
+            return true
+        }
         if let mode = env["PINOMAD_DEMO_TRACE"] {
             // A run that keeps working: the capsule's live label, the todo
             // line and the trace sheet following new steps. `quiet` never
@@ -217,6 +225,117 @@ extension AppModel {
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: nil, hostName: nil, organized: organized,
+            notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+            agents: nil, conversation: conversation
+        ))
+        replyStreams.sync(chat: chat)
+    }
+
+    /// A project conversation in its own worktree that delegated seven
+    /// subagents — four still running, one waiting for an answer — with a
+    /// canned `changes()` answer behind the overview's stat and file list.
+    private func startOverviewDemo(truncated: Bool) {
+        navPath = [.conversation(1)]
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let projectPath = "/Users/void/code/pinomad"
+        let worktree = "/Users/void/.pinomad/worktrees/pinomad/overview-sheet"
+        func summary(
+            _ id: UInt64, _ kind: SummaryKind, _ title: String, label: String? = nil,
+            status: ConversationStatus? = nil, role: String? = nil, activity: SummaryActivity? = nil
+        ) -> ConversationSummary {
+            ConversationSummary(
+                id: id, kind: kind, parent: kind == .subagent ? 1 : nil, forkedAt: nil,
+                title: title, status: status, updatedAt: now,
+                label: label, role: role, activity: activity
+            )
+        }
+        let tasks: [ConversationSummary] = [
+            summary(2, .subagent, "Review the overview sheet", label: "审查概览 sheet", status: .running,
+                    role: "reviewer", activity: SummaryActivity(tool: "read", target: "OverviewSheet.swift")),
+            summary(3, .subagent, "Run the iOS tests", label: "跑 iOS 测试", status: .running,
+                    activity: SummaryActivity(tool: "bash", target: "xcodebuild test")),
+            summary(4, .subagent, "Pick the branch icon", label: "挑分支图标", status: .needsAnswer),
+            summary(5, .subagent, "Check the Web card", label: "对照 Web 卡片", status: .running),
+            summary(6, .subagent, "Draft the PR body", label: "起草 PR 说明"),
+            summary(7, .subagent, "Screenshot light mode", label: "截浅色模式"),
+            summary(8, .subagent, "Measure sheet height", label: "量 sheet 高度", status: .failed),
+        ]
+        let root = summary(1, .conversation, "对话页的概览 sheet")
+        let organized = Organized(
+            chats: [],
+            projects: [ProjectConversations(
+                project: Project(path: projectPath, name: "pinomad", addedAt: now),
+                conversations: [ConversationNode(
+                    summary: root,
+                    children: tasks.map { ConversationNode(summary: $0, children: []) }
+                )]
+            )],
+            archived: []
+        )
+        let calls = tasks.map { task in
+            let state: ToolPartState = switch task.status {
+            case .running?, .needsAnswer?: .inputAvailable
+            case .failed?: .outputError
+            default: .outputAvailable
+            }
+            return ToolItem(
+                state: state,
+                argsText: #"{"task":"\#(task.label ?? "")"}"#,
+                children: [], diffStat: nil, durationMs: nil, images: [],
+                output: nil, toolCallId: "call-\(task.id ?? 0)", toolName: "subagent",
+                pinomad: .subagent(
+                    conversationId: task.id ?? 0, output: nil, model: nil,
+                    startedAt: now - 120_000, endedAt: nil
+                )
+            )
+        }
+        let cot = CotView(
+            phase: .settled, failed: false, anchorMs: now - 120_000, elapsedMs: 120_000, todoWrittenAtMs: nil,
+            steps: [.tools(id: "s1", tools: calls, live: false, activeToolCallId: nil)],
+            answer: CotAnswer(text: "子代理在后台跑着，结果回来后我再汇总。", streaming: false)
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "把概览 sheet 做出来，顺便分几个子代理去审查和测试。", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
+        ]
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: [],
+            agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: worktree),
+            questions: [], todo: nil, home: .project(path: projectPath),
+            checkout: WorktreeCheckout(
+                conversationId: 1, path: worktree, repo: projectPath, subdir: "",
+                branch: "pinomad/overview-sheet", base: "4e73cdb9a1f0c2d3", snapshot: nil
+            ),
+            busy: false, contextUsage: nil
+        )
+        func file(_ path: String, _ added: [String], _ removed: [String], isNew: Bool = false) -> PatchFile {
+            let lines = [PatchLine(kind: .meta, text: "@@ -1,\(removed.count) +1,\(added.count) @@")]
+                + removed.map { PatchLine(kind: .del, text: "-" + $0) }
+                + added.map { PatchLine(kind: .add, text: "+" + $0) }
+            return PatchFile(
+                path: path, oldPath: nil, isNew: isNew, isDeleted: false, binary: false,
+                additions: UInt64(added.count), deletions: UInt64(removed.count), lines: lines
+            )
+        }
+        devChanges = .available(
+            base: "4e73cdb9a1f0c2d3",
+            files: [
+                file("apps/ios/Pinomad/OverviewSheet.swift",
+                     ["struct OverviewSheet: View {", "    let model: AppModel", "}"], [], isNew: true),
+                file("apps/ios/Pinomad/ConversationView.swift",
+                     ["Image(systemName: \"info.circle\")", ".accessibilityLabel(\"概览\")"],
+                     ["Image(systemName: \"plus.forwardslash.minus\")", ".accessibilityLabel(\"改动\")"]),
+                file("apps/ios/PinomadCore/Sources/PinomadChat/ChangesPanel.swift",
+                     ["public mutating func observe(busy: Bool, connected: Bool) -> Token? {"],
+                     ["public mutating func observe(busy: Bool) -> Token? {"]),
+            ],
+            truncated: truncated,
+            branch: "pinomad/overview-sheet"
+        )
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false, protocolMismatch: nil,
+            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 14)),
+            hostName: nil, organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
