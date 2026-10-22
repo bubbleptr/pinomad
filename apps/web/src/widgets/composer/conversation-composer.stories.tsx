@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { userEvent, within } from "storybook/test";
 import { busyConversation, fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
 import { ConversationComposer } from "./conversation-composer.tsx";
 
@@ -31,3 +32,10 @@ export const Disconnected: Story = {
 };
 
 export const Narrow: Story = { args: { narrow: true } };
+
+/** The + menu: what can be added to the message, then conversation actions. */
+export const AddMenu: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));
+  },
+};

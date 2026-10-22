@@ -1,4 +1,4 @@
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem, DropdownMenuRadioItem } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -8,16 +8,17 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checkout/checkout-strategy-picker.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { AgentSelector } from "../../entities/agent/agent-selector.tsx";
-import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
+import { ChatAddMenu, ChatAddMenuChoice, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
-import { ChatAdd, FileDiff, FolderClosed, ListTree, Plus, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
 // Pace's four draft suggestions; representative first-touch prompts.
@@ -93,9 +94,8 @@ export function DraftHome({
     minor !== undefined
     && hostSupportsFeature(minor, "agentConversations")
     && (agentRoles.length > 0 || agent !== undefined);
-  const atMentions = useAtMentions(
-    view.agents,
-    inputRef,
+  // The project's file listing, which also decides whether "Mention a file…" is offered.
+  const fileSource: MentionFiles | undefined =
     draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
       ? {
           key: `project:${draft.path}:${checkoutMode}`,
@@ -105,8 +105,8 @@ export function DraftHome({
               query,
             ),
         }
-      : undefined,
-  );
+      : undefined;
+  const atMentions = useAtMentions(view.agents, inputRef, fileSource);
   // `$` skill mentions (issue #143): a project draft scopes to the project
   // (worktree mode lists only the skills a fresh checkout would carry); a
   // Chat draft lists the user's skills.
@@ -196,23 +196,53 @@ export function DraftHome({
             error={error}
             startActions={
               <>
-                <DropdownMenu
-                  button={{
-                    label: "More actions",
-                    variant: "ghost",
-                    size: "sm",
-                    isIconOnly: true,
-                    icon: <Plus aria-hidden="true" />,
-                    isDisabled: !connected,
-                  }}
-                  items={[
-                    {
-                      label: addImages,
-                      isDisabled: !connected || !accepts,
-                      onClick: () => fileInput.current?.click(),
-                    },
-                  ]}
-                />
+                <ChatAddMenu isDisabled={!connected}>
+                  <ChatAddMenuSection title="Add">
+                    <DropdownMenuItem
+                      label={addImages}
+                      isDisabled={!accepts}
+                      onClick={() => fileInput.current?.click()}
+                    />
+                    {fileSource === undefined ? null : (
+                      <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
+                    )}
+                    {skills.trigger === undefined ? null : (
+                      <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                    )}
+                    {agentRoles.length === 0 ? null : (
+                      <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                    )}
+                  </ChatAddMenuSection>
+                  {/* A second entry to the footer's pickers, bound to the same state. */}
+                  <ChatAddMenuSection title="Conversation">
+                    <ChatAddMenuChoice
+                      label="Project"
+                      value={draft.kind === "chat" ? "chat" : draft.path}
+                      valueLabel={
+                        draft.kind === "chat"
+                          ? "No project"
+                          : (view.organized.projects.find((entry) => entry.project.path === draft.path)?.project.name ?? draft.path)
+                      }
+                      onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
+                    >
+                      <DropdownMenuRadioItem value="chat" label="No project" />
+                      {view.organized.projects.map((entry) => (
+                        <DropdownMenuRadioItem key={entry.project.path} value={entry.project.path} label={entry.project.name} />
+                      ))}
+                    </ChatAddMenuChoice>
+                    {draft.kind === "project" ? (
+                      <ChatAddMenuChoice
+                        label="Where to work"
+                        value={checkoutMode}
+                        valueLabel={checkoutMode === "worktree" ? "Git worktree" : "Project folder"}
+                        onChange={(picked) => setCheckoutMode(picked === "worktree" ? "worktree" : "local")}
+                      >
+                        <DropdownMenuRadioItem value="worktree" label="Git worktree" />
+                        <DropdownMenuRadioItem value="local" label="Project folder" />
+                      </ChatAddMenuChoice>
+                    ) : null}
+                  </ChatAddMenuSection>
+                </ChatAddMenu>
                 {showAgentPicker ? (
                   <AgentSelector agents={view.agents} value={agent} isDisabled={!connected} onChange={setAgent} />
                 ) : null}

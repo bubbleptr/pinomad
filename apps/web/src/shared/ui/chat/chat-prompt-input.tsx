@@ -34,10 +34,44 @@ export type ChatPromptInputHandle = {
    * `$name` mention highlights (issue #143, CSS Custom Highlight API).
    */
   editable(): HTMLElement | null;
+  /**
+   * Append a trigger (`@`, `@./`, `$`) at the end of the draft and open its
+   * menu, as if typed there: a separating space goes first when the draft
+   * ends in a word, since Astryx only activates a trigger at the start or
+   * after whitespace.
+   */
+  openTrigger(trigger: string): void;
 };
 
 function editableOf(root: HTMLDivElement | null): HTMLElement | null {
   return root?.querySelector<HTMLElement>('[aria-multiline="true"]') ?? null;
+}
+
+/**
+ * Put the caret after the last character — inside the last text node when
+ * there is one: Astryx's trigger detection reads the text before a caret
+ * only when the caret sits in a text node.
+ */
+function caretToEnd(editable: HTMLElement): void {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
+  let last: Node | null = null;
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    last = node;
+  }
+  const range = document.createRange();
+  if (last === null) {
+    range.selectNodeContents(editable);
+    range.collapse(false);
+  } else {
+    range.setStart(last, last.textContent?.length ?? 0);
+    range.collapse(true);
+  }
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 /**
@@ -68,6 +102,8 @@ function PromptComposerInput({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerInputHandle | null>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   useEffect(() => {
     if (!inputRef) {
@@ -81,15 +117,7 @@ function PromptComposerInput({
           return;
         }
         editable.focus();
-        const selection = window.getSelection();
-        if (!selection) {
-          return;
-        }
-        const range = document.createRange();
-        range.selectNodeContents(editable);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
+        caretToEnd(editable);
       },
       emitInput: () => {
         const editable = editableOf(rootRef.current);
@@ -101,6 +129,24 @@ function PromptComposerInput({
         }
       },
       editable: () => editableOf(rootRef.current),
+      openTrigger: (trigger) => {
+        // A frame later: picked from a menu, the menu's close hands focus
+        // back to its button right after the item's click handler returns.
+        requestAnimationFrame(() => {
+          const editable = editableOf(rootRef.current);
+          if (!editable) {
+            return;
+          }
+          editable.focus();
+          caretToEnd(editable);
+          const current = valueRef.current;
+          const text = current === "" || /\s$/.test(current) ? trigger : ` ${trigger}`;
+          // A real insertion, not a controlled-value write: it fires the
+          // native `input` Astryx listens to, which both emits the change and
+          // runs trigger detection against the caret.
+          document.execCommand("insertText", false, text);
+        });
+      },
     };
     return () => {
       inputRef.current = null;

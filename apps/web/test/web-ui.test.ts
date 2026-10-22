@@ -50,6 +50,8 @@ const shotDir = process.env.WEB_UI_SHOT_DIR;
 async function shot(page: Page, name: string): Promise<void> {
   if (shotDir === undefined) return;
   await mkdir(shotDir, { recursive: true });
+  // Let popover and menu enter animations finish.
+  await page.waitForTimeout(300);
   await page.screenshot({ path: join(shotDir, `${name}.png`) });
 }
 
@@ -3635,4 +3637,78 @@ it("keeps the agent candidates when the draft's file listing fails", async () =>
   // The failed request never clears the agent candidate and no Files group appears.
   await expect.poll(async () => menu.getByRole("option").count(), { timeout: 3000 }).toBe(1);
   expect(await menu.getByRole("group", { name: "Files" }).count()).toBe(0);
+});
+
+it("opens the file and skill menus from the + menu, appending the trigger to the draft", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
+  const project = await tempDir();
+  defer(project.remove);
+  await writeFile(join(project.path, "README.md"), "# proj\n");
+  await mkdir(join(project.path, ".agents", "skills", "review"), { recursive: true });
+  await writeFile(
+    join(project.path, ".agents", "skills", "review", "SKILL.md"),
+    "---\nname: review\ndescription: Project review steps\n---\n\nReview.\n",
+  );
+  await run("git", ["-C", project.path, "init", "-b", "main"]);
+  await run("git", ["-C", project.path, "add", "-A"]);
+  await run("git", ["-C", project.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path, projects: [project.path] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  const projectName = project.path.split("/").at(-1)!;
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
+  const composer = page.getByRole("combobox", { name: "Prompt" });
+  const more = page.getByRole("button", { name: "More actions", exact: true });
+
+  // An empty draft: the file trigger goes in as-is and its menu opens on files.
+  await more.click();
+  await shot(page, "draft-plus-menu");
+  await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).click();
+  const files = page.getByRole("listbox", { name: "Agents and files" });
+  await files.getByRole("group", { name: "Files" }).getByRole("option", { name: /README\.md/ }).waitFor();
+  await shot(page, "plus-file-menu");
+  // Focus is back in the composer, so the keyboard narrows the open menu.
+  await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
+  await page.keyboard.type("READ");
+  await expect.poll(() => files.getByRole("option").count()).toBe(1);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.textContent()).toBe("@./README.md ");
+
+  // A draft that ends in a word gets a separating space so `$` can activate.
+  // The keyboard path: open the menu, jump to the item by its first letter, pick it.
+  await page.keyboard.type("then");
+  await more.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
+  await page.keyboard.type("U");
+  await expect
+    .poll(() => page.getByRole("menuitem", { name: "Use a skill…", exact: true }).evaluate((el) => el === document.activeElement))
+    .toBe(true);
+  await page.keyboard.press("Enter");
+  const skills = page.getByRole("listbox", { name: "Skills" });
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.textContent()).toBe("@./README.md then $review ");
+
+  // After a line break the trigger starts the new line, no space needed.
+  await page.keyboard.press("Shift+Enter");
+  await more.click();
+  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/then \$review \n\$review \s*$/);
+
+  // The menu's project choice is a second entry to the footer picker's state.
+  await more.click();
+  await page.getByRole("menuitem", { name: /^Project/ }).click();
+  await page.getByRole("menuitemradio", { name: projectName, exact: true }).waitFor();
+  await shot(page, "draft-plus-menu-project");
+  await page.getByRole("menuitemradio", { name: "No project", exact: true }).click();
+  await expect.poll(() => page.getByRole("combobox", { name: "Project", exact: true }).textContent()).toContain("No project");
 });
