@@ -138,6 +138,12 @@ class RemoteClient {
   #nextNotice = 1;
   /** The connected host's minor version; gates minor-gated streams and calls. */
   #hostMinor = 0;
+  /**
+   * Whether this connection's hello has arrived. A subscribe must wait for it:
+   * the previous connection's minor says nothing about this host, and only the
+   * hello decides whether conversation streams may ask for refs.
+   */
+  #helloReceived = false;
   /** The last hello's model list — `view.models` until the `models` stream's snapshot arrives. */
   #helloModels: readonly ModelSummary[] = [];
   /** The last hello's defaults — `view.defaults` until the `settings` stream's snapshot arrives. */
@@ -162,6 +168,7 @@ class RemoteClient {
   }
 
   #open(): void {
+    this.#helloReceived = false;
     const connection: FrameConnection = this.#transport.open({
       message: (data) => {
         if (this.#connection === connection) this.#receive(JSON.parse(data) as ServerFrame);
@@ -265,6 +272,7 @@ class RemoteClient {
             ? (announced as { minor: number }).minor
             : 0;
         this.#hostMinor = hostMinor;
+        this.#helloReceived = true;
         this.#attempt = 0;
         this.#docs = frame.docs;
         this.#toolPresentations = frame.toolPresentations;
@@ -286,7 +294,7 @@ class RemoteClient {
         }
         if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
         if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
-        for (const stream of this.#wanted) this.#send({ type: "subscribe", stream });
+        for (const stream of this.#wanted) this.#subscribe(stream);
         if (this.#state !== undefined) {
           this.#update({
             session: frame.session,
@@ -384,7 +392,9 @@ class RemoteClient {
     const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
     for (const stream of missing) {
       this.#wanted.add(stream);
-      this.#send({ type: "subscribe", stream });
+      // Before the hello the minor is not known yet; the hello's #wanted loop
+      // sends this stream with the right form once it has read the version.
+      if (this.#helloReceived) this.#subscribe(stream);
     }
     await shown;
   }
@@ -399,6 +409,15 @@ class RemoteClient {
       this.#fresh.delete(stream);
       this.#send({ type: "unsubscribe", stream });
     }
+  }
+
+  /**
+   * Subscribe with the wire form this host's minor supports: conversation
+   * streams ask for refs on 5.15+, docs and older hosts stay inline.
+   */
+  #subscribe(stream: StreamName): void {
+    const refs = stream.startsWith("conversation:") && hostSupportsFeature(this.#hostMinor, "imageRefs");
+    this.#send({ type: "subscribe", stream, ...(refs ? { images: "ref" as const } : {}) });
   }
 
   /** A host-level stream's latest value, or undefined until its first snapshot lands. */
@@ -703,6 +722,14 @@ class RemoteClient {
           return Promise.reject(new Error("The host is too old for this (needs protocol 5.10); run `pinomad upgrade` on the host"));
         }
         return this.#call("listFiles", { scope, query });
+      },
+      // Same unqueued shape as listFiles: fetching image bytes is read-only
+      // and must not wait behind a hanging command (ADR-0027).
+      image: (ref) => {
+        if (!hostSupportsCall(this.#hostMinor, "image")) {
+          return Promise.reject(new Error("The host is too old for this (needs protocol 5.15); run `pinomad upgrade` on the host"));
+        }
+        return this.#call("image", { ref });
       },
       // Same unqueued shape as listFiles: a read-only completion query must
       // not wait behind a hanging command (issue #143).

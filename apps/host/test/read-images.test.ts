@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
 import { createCoding } from "../src/extensions/coding.ts";
-import { connectTo, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, inlineImages, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -85,10 +85,14 @@ describe("read images", () => {
     const result = client.view
       .current()
       .conversation!.entries.filter((entry) => entry.kind === "pi.tool-result")
-      .map((entry) => entry.model?.[0] as { content?: { type: string; data?: string; mimeType?: string }[]; isError?: boolean })
+      .map((entry) => entry.model?.[0] as { content?: unknown[]; isError?: boolean })
       .at(-1);
     expect(result?.isError).not.toBe(true);
-    const image = result?.content?.find((block) => block.type === "image");
+    // The shared client subscribes with refs on 5.15; resolve them to bytes.
+    const content = Array.isArray(result?.content) ? await inlineImages(client, result.content) : undefined;
+    const image = content?.find((block) => (block as { type?: string }).type === "image") as
+      | { data?: string; mimeType?: string }
+      | undefined;
     expect(image?.mimeType).toMatch(/^image\//);
     const size = imageSize(Buffer.from(image?.data ?? "", "base64"));
     expect(Math.max(size.width, size.height)).toBeLessThanOrEqual(2000);

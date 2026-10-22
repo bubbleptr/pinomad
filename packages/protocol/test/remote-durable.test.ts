@@ -668,6 +668,89 @@ it("closes the side when the archive removes it or its root", async () => {
   });
 });
 
+describe("RemoteDurable image refs", () => {
+  const conversationSubscribes = (sent: readonly ClientFrame[]) =>
+    sent.filter(
+      (frame): frame is Extract<ClientFrame, { type: "subscribe" }> =>
+        frame.type === "subscribe" && frame.stream.startsWith("conversation:"),
+    );
+
+  it("asks for ref images on every conversation subscribe on a 5.15 host, including after reconnect", async () => {
+    const { transport, sent, disconnect } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+      const refsFor = (stream: StreamName) =>
+        sent.find((frame) => frame.type === "subscribe" && frame.stream === stream);
+      expect(refsFor("conversation:1" as StreamName)).toMatchObject({ images: "ref" });
+      expect(refsFor("conversation:2" as StreamName)).toMatchObject({ images: "ref" });
+      // Documents are inline prose, not images — they stay on the plain form.
+      const doc = refsFor(`doc:${DOC.kind}:1` as StreamName);
+      expect(doc?.type).toBe("subscribe");
+      expect((doc as { images?: string }).images).toBeUndefined();
+
+      // A reconnect must re-ask for refs, not fall back to inline bytes.
+      const before = sent.length;
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected" && sent.length > before);
+      const resent = conversationSubscribes(sent.slice(before));
+      expect(resent.map((frame) => frame.stream).sort()).toEqual(["conversation:1", "conversation:2"]);
+      expect(resent.every((frame) => frame.images === "ref")).toBe(true);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("keeps conversation subscriptions inline on a 5.14 host", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 14 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+      const subscribed = conversationSubscribes(sent);
+      expect(subscribed.map((frame) => frame.stream).sort()).toEqual(["conversation:1", "conversation:2"]);
+      expect(subscribed.every((frame) => frame.images === undefined)).toBe(true);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects image() on a 5.14 host without sending a frame", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 14 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.image("abc")).rejects.toThrow("needs protocol 5.15");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "image")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("sends image() outside the command queue", async () => {
+    // A hung command holds #commands; reading image bytes must not wait behind it.
+    const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
+    const { transport, sent, holdCall } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "image" ? { ok: true, value: bytes } : undefined,
+    );
+    holdCall("archive");
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      const hanging = remote.controller.archive(id(1), true);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "archive")).toBe(true);
+      await expect(remote.controller.image("abc")).resolves.toEqual(bytes);
+      const calls = sent.filter((frame) => frame.type === "call");
+      expect(calls.map((frame) => frame.method)).toEqual(["archive", "image"]);
+      remote.close();
+      // close() fails the pending archive call — the command resolves into a notice.
+      await hanging;
+    } finally {
+      remote.close();
+    }
+  });
+});
+
 describe("RemoteDurable minor-version gating", () => {
   const subscribes = (sent: readonly ClientFrame[]): string[] =>
     sent.flatMap((frame) => (frame.type === "subscribe" ? [frame.stream] : []));

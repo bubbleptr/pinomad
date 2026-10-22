@@ -326,6 +326,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     answer: fn(async () => {}),
     changes: fn(async () => ({ available: true as const, base: "c0ffee0", patch: PATCH, truncated: false, branch: "pinomad/1-parser" })),
     listFiles: fn(async () => ({ files: ["src/parser.ts", "src/lexer.ts", "test/parser.test.ts"], truncated: false })),
+    image: fn(async () => ({ data: "aGVsbG8=", mimeType: "image/png" as const })),
     listSkills: fn(async () => ({
       skills: [
         { name: "review", description: "Review a diff against repo standards", source: "project" as const },

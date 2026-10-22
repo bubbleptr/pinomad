@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { ImageSourceProvider } from "@/entities/image/image-source";
 import {
   ChatTool,
   ChatToolGroup,
@@ -141,6 +142,27 @@ describe("ChatTool", () => {
     expect(tool).toHaveAttribute("data-state", "output-error");
     // Astryx renders errorMessage as visually hidden row text for a11y.
     expect(screen.getAllByText(/ENOENT: file not found/).length).toBeGreaterThan(0);
+  });
+
+  it("loads a tool result ref through the image source and shows its bytes", async () => {
+    const user = userEvent.setup();
+    const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
+    const { container } = render(
+      <ImageSourceProvider load={async () => bytes}>
+        <ChatTool
+          argsText='{"path":"shot.png"}'
+          images={[{ ref: "abc123", mimeType: "image/png" }]}
+          output="read shot.png"
+          state="output-available"
+          toolName="read"
+        />
+      </ImageSourceProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /read/ }));
+    await waitFor(() => {
+      expect(container.querySelector('img[src="data:image/png;base64,aGVsbG8="]')).not.toBeNull();
+    });
   });
 
   // PiNomad: coverage for the `detail` deviation — a custom pane replaces the
