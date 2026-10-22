@@ -61,7 +61,9 @@ import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./chec
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
-import { createSkillLister, enumerateSkills, listSkills, type SkillLister } from "./skills.ts";
+import { expandSkillMentions } from "./skill-expansion.ts";
+import { stripSkillBlocks } from "@pinomad/client/skill-blocks.ts";
+import { createSkillLister, enumerateSkills, listSkills, scopeSkills, type ListedSkill, type SkillLister } from "./skills.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem, type MessageImage, type OutgoingImage } from "@pinomad/protocol/images.ts";
 import { ImageRefs } from "./image-refs.ts";
@@ -87,7 +89,7 @@ import {
   IndexDoc,
   removeProject,
 } from "./organization.ts";
-import type { HostIndex } from "@pinomad/protocol/organization.ts";
+import type { HostIndex, SkillScope } from "@pinomad/protocol/organization.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
@@ -1024,8 +1026,9 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
     typeof message.content === "string"
       ? message.content
       : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
-  // An image-only message has no text — no title rather than an empty one.
-  const title = text.replace(/\s+/g, " ").trim();
+  // The typed text, not the skill blocks ahead of it (ADR-0028). An
+  // image-only message has no text — no title rather than an empty one.
+  const title = stripSkillBlocks(text).replace(/\s+/g, " ").trim();
   return title === "" ? {} : { title };
 }
 
@@ -1396,11 +1399,12 @@ class GatewayClient {
         // would turn an accepted submit into "no longer available".
         const images = this.#attached(input.images);
         const conversation = await this.#conversation(input.conversationId);
+        const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id });
         // A pending question never blocks the composer (ADR-0011 §4): mark it
         // dismissed so its wait task finishes, then steer regardless.
         const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
         const submission = await conversation.submit(
-          { type: "input", content: messageContent(input.text, images), whenBusy: dismissed ? "steer" : input.whenBusy, requestId: input.requestId },
+          { type: "input", content: messageContent(text, images), whenBusy: dismissed ? "steer" : input.whenBusy, requestId: input.requestId },
           context,
         );
         void submission.wait(context).then(
@@ -1417,12 +1421,21 @@ class GatewayClient {
         const create = args as CallMethods["createConversation"]["args"];
         // Same rule as submit: resolve before createConversation's first await.
         const images = this.#attached(create.images);
+        // The conversation does not exist yet: expand against the scope the
+        // draft's `$` menu listed (a worktree draft reads the project's
+        // committed skills in place — its checkout is created later).
+        const text = await this.#expandSkills(
+          create.text,
+          create.home.kind === "chat"
+            ? { kind: "chat" }
+            : { kind: "project", path: create.home.path, checkout: create.checkout ?? "worktree" },
+        );
         const conversationId = await createConversation(
           this.#options.harness,
           this.#options.dataDir,
           {
             home: create.home,
-            text: create.text,
+            text,
             requestId: create.requestId,
             ...(images === undefined ? {} : { images }),
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
@@ -1683,6 +1696,37 @@ class GatewayClient {
         return await this.#changes(conversation, context);
       }
     }
+  }
+
+  /**
+   * `text` as the model reads it: every `$`-mentioned skill of `scope` in
+   * front, in pi's `/skill:` format (ADR-0028). It never fails the send — a
+   * scope that cannot be listed, or a skill file that cannot be read, leaves
+   * the text (or that skill) as typed, with a notice.
+   */
+  async #expandSkills(text: string, scope: SkillScope): Promise<string> {
+    // Most messages have no `$` at all; they skip the listing.
+    if (!text.includes("$")) return text;
+    let skills: readonly ListedSkill[];
+    try {
+      skills = await scopeSkills(this.#options.harness, this.#skills, scope, context);
+    } catch (error) {
+      void this.send({
+        type: "notice",
+        level: "warning",
+        message: `Skills were not expanded: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return text;
+    }
+    const expanded = await expandSkillMentions(text, skills);
+    for (const failure of expanded.failures) {
+      void this.send({
+        type: "notice",
+        level: "error",
+        message: `Could not read skill "${failure.name}" (${failure.filePath}): ${failure.message}`,
+      });
+    }
+    return expanded.text;
   }
 
   /**
