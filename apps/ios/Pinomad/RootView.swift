@@ -1,3 +1,4 @@
+import AgentChatKit
 import PinomadChat
 import PinomadCore
 import SwiftUI
@@ -29,6 +30,8 @@ struct RootView: View {
         }
         // Above every page — conversations and the draft both stage and
         // show images — so a tap anywhere opens here and nothing lingers.
+        .environment(\.inlineImageLoader, model.inlineImageLoader)
+        .environment(\.inlineImageEpoch, model.imageEpoch)
         .fullScreenCover(item: Binding(
             get: { model.viewing.map(ViewedImage.init) },
             set: { model.viewing = $0?.image }
@@ -253,8 +256,8 @@ struct ToastStack: View {
     }
 }
 
-/// `fullScreenCover(item:)` wants an identity; an image's bytes are one.
+/// `fullScreenCover(item:)` wants an identity; bytes or a ref are one.
 struct ViewedImage: Identifiable {
     let image: MessageImage
-    var id: String { image.data }
+    var id: String { image.ref ?? image.data }
 }

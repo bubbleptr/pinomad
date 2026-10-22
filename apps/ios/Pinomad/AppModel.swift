@@ -103,6 +103,10 @@ final class AppModel {
     /// request phase, and the composer lock. Memory only; a host switch
     /// drops it (an unresolved copy is retried after a same-host reconnect).
     var queuedEdit = QueuedEdit()
+    /// Conversations whose queued copy is resolving ref images before any
+    /// withdraw starts. The composer stays locked meanwhile so a ref copy
+    /// cannot land over new typing.
+    var queuedEditPreparing: Set<UInt64> = []
     /// Queued rows whose withdraw/steer request is in flight. An Edit's row
     /// stays here until its outcome is known.
     var queuePending: Set<UInt64> = []
@@ -146,6 +150,12 @@ final class AppModel {
     /// window starts paused and gets a full 15 seconds on foreground.
     private var isInBackground = UIApplication.shared.applicationState == .background
     let store = KeychainHostStore()
+    /// Content-addressed image bytes for ref-mode conversations (ADR-0027).
+    /// UI-owned: fetches never enter the session's ordered state.
+    let images = ImageStore()
+    /// Bumped when the connection comes or goes, so a failed ref fetch is
+    /// retried on reconnect (AgentChatKit's inline image epoch).
+    var imageEpoch: UInt64 = 0
     // Account state (ADR-0022). The token lives in the keychain and the
     // in-memory record only; everything else here is view state.
     let accountStore = KeychainAccountStore()
@@ -437,6 +447,7 @@ final class AppModel {
             questionDrafts = [:]
             trays = [:]
             queuedEdit.reset()
+            queuedEditPreparing.removeAll()
             queuePending.removeAll()
             queuedEditFocus = [:]
             viewing = nil
@@ -522,6 +533,7 @@ final class AppModel {
             for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
+            if connectedNow != lastSnapshotConnected { imageEpoch &+= 1 }
             if connectedNow && !lastSnapshotConnected { syncPushToken() }
             if connectedNow {
                 // Retry on every connected view, not just the disconnect

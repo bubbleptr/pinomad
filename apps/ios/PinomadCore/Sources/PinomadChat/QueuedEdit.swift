@@ -102,3 +102,37 @@ public struct QueuedEdit: Equatable, Sendable {
         phase = .idle
     }
 }
+
+public enum QueuedEditImageError: Error, Equatable {
+    case missingReference
+}
+
+extension QueuedEdit.Copy {
+    /// Resolve every ref in the queued copy to bytes before the withdraw.
+    /// A ref is valid only while its stream is subscribed; withdrawing first
+    /// would make it unresolvable (ADR-0027 §5). All-or-nothing: one failure
+    /// throws and the caller keeps the row queued.
+    public func resolvingImages(
+        using load: @escaping @Sendable (String) async throws -> CachedImage
+    ) async throws -> QueuedEdit.Copy {
+        var resolved: [MessageImage] = []
+        resolved.reserveCapacity(images.count)
+        for image in images {
+            if !image.data.isEmpty {
+                resolved.append(image)
+                continue
+            }
+            guard let ref = image.ref, !ref.isEmpty else {
+                throw QueuedEditImageError.missingReference
+            }
+            let bytes = try await load(ref)
+            resolved.append(MessageImage(data: bytes.data, mimeType: bytes.mimeType))
+        }
+        return QueuedEdit.Copy(
+            conversationId: conversationId,
+            id: id,
+            text: text,
+            images: resolved
+        )
+    }
+}

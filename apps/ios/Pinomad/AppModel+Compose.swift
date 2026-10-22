@@ -1,3 +1,5 @@
+import AgentChatCore
+import AgentChatKit
 import Foundation
 import PinomadChat
 import PinomadCore
@@ -56,7 +58,13 @@ extension AppModel {
                     let data = try await load()
                     prepared.append(try await Task.detached { try ImagePrep.prepare(data) }.value)
                 }
-                self?.trays[id]?.fulfil(claim, with: prepared)
+                guard let self else { return }
+                // The first snapshot naming these bytes should hit the local
+                // cache, not download the attachment back from the host.
+                for image in prepared {
+                    await self.images.prefill(CachedImage(data: image.data, mimeType: image.mimeType))
+                }
+                self.trays[id]?.fulfil(claim, with: prepared)
             } catch {
                 self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "Couldn't read the image")
             }
@@ -148,13 +156,13 @@ extension AppModel {
     // time; the Edit copy locks the composer until it is resolved.
 
     func queuedEditLocksComposer(conversation id: UInt64) -> Bool {
-        queuedEdit.locksComposer(conversation: id)
+        queuedEdit.locksComposer(conversation: id) || queuedEditPreparing.contains(id)
     }
 
     /// Editing restores the queued input over the composer, so it waits for
     /// an empty composer and for the previous Edit to resolve.
     func queuedEditDisabled(conversation id: UInt64) -> Bool {
-        guard queuedEdit.canBegin else { return true }
+        guard queuedEdit.canBegin, queuedEditPreparing.isEmpty else { return true }
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
         return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -207,14 +215,41 @@ extension AppModel {
         guard connected, hostSupports("withdrawQueued"), let session,
               !queuedEditDisabled(conversation: id),
               queuedEdit.copy?.id != item.id,
+              queuedEditPreparing.isEmpty,
               let input = session.queuedInput(submissionId: item.id)
         else { return }
         let copy = QueuedEdit.Copy(
             conversationId: id, id: item.id, text: input.text, images: input.images)
-        guard queuedEdit.begin(copy) else { return }
+        // Refs are valid only while the row is still in the subscribed view;
+        // resolve every image before withdrawing, or the copy could not be
+        // resent after the row leaves the inbox (ADR-0027 §5).
+        queuedEditPreparing.insert(id)
         queuePending.insert(item.id)
         Task { [weak self] in
-            await self?.resolveQueuedEdit(copy, session: session)
+            guard let self else { return }
+            do {
+                let resolved = try await copy.resolvingImages { ref in
+                    try await self.cachedImage(ref: ref)
+                }
+                // A host switch drops the prepared copy; never begin a
+                // withdraw on the replaced session after the fetch lands.
+                guard self.session === session, self.queuedEditPreparing.contains(id) else {
+                    self.queuedEditPreparing.remove(id)
+                    self.queuePending.remove(item.id)
+                    return
+                }
+                guard self.queuedEdit.begin(resolved) else {
+                    self.queuedEditPreparing.remove(id)
+                    self.queuePending.remove(item.id)
+                    return
+                }
+                self.queuedEditPreparing.remove(id)
+                await self.resolveQueuedEdit(resolved, session: session)
+            } catch {
+                self.queuedEditPreparing.remove(id)
+                self.queuePending.remove(item.id)
+                self.showToast("Couldn't load an image for editing. Try again.", level: "error")
+            }
         }
     }
 
@@ -294,6 +329,33 @@ extension AppModel {
         trays[copy.conversationId] = tray
         transcriptPin += 1
         queuedEditFocus[copy.conversationId, default: 0] += 1
+    }
+
+    /// One ref's bytes, from disk/memory or the host. The cache coalesces
+    /// concurrent requests and retries failures; the session's ordered loop
+    /// only carries the read-only `image` call.
+    func cachedImage(ref: String) async throws -> CachedImage {
+        guard let session else { throw SessionError.sessionClosed }
+        return try await images.load(ref: ref) { ref in
+            let result = try await session.invoke(.image(ref: ref))
+            guard case .image(let image) = result else {
+                throw SessionError.operationFailed("The host's reply wasn't an image.")
+            }
+            return CachedImage(data: image.data, mimeType: image.mimeType)
+        }
+    }
+
+    /// What AgentChatKit asks for when a ref image scrolls into view.
+    func inlineImage(ref: String) async throws -> ToolImage {
+        let image = try await cachedImage(ref: ref)
+        return ToolImage(data: image.data, mimeType: image.mimeType, ref: ref)
+    }
+
+    var inlineImageLoader: InlineImageLoader {
+        InlineImageLoader { [weak self] ref in
+            guard let self else { throw SessionError.sessionClosed }
+            return try await self.inlineImage(ref: ref)
+        }
     }
 
     private func run(_ call: FfiCall) {
