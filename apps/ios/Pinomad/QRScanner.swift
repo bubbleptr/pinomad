@@ -54,15 +54,17 @@ struct ScannerView: View {
                         }
                     }
             } else {
-                ContentUnavailableView(
-                    "这台设备不能扫码", systemImage: "camera",
-                    description: Text("改为粘贴配对链接。"))
+                ContentUnavailableView {
+                    Label("这台设备不能扫码", image: .camera)
+                } description: {
+                    Text("改为粘贴配对链接。")
+                }
             }
         case .notDetermined:
             ProgressView()
         default:
             ContentUnavailableView {
-                Label("需要相机权限", systemImage: "camera")
+                Label("需要相机权限", image: .camera)
             } description: {
                 Text("PiNomad 只用相机扫描宿主的配对二维码和拍照。")
             } actions: {

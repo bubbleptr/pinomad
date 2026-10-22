@@ -39,7 +39,7 @@ struct ConversationsPage: View {
         .overlay {
             if rows.isEmpty, model.snapshot?.organized != nil {
                 if query.isEmpty {
-                    ContentUnavailableView(emptyTitle, systemImage: filter.systemImage)
+                    ContentUnavailableView { Label(emptyTitle, image: filter.image) }
                 } else {
                     ContentUnavailableView.search(text: query)
                 }
@@ -54,7 +54,7 @@ struct ConversationsPage: View {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                Button("新建", systemImage: "square.and.pencil") {
+                Button("新建", image: .squarePen) {
                     // A project's page starts the draft in it; Chats as a Chat.
                     if case .project(let path) = filter { model.draftHome = .project(path: path) }
                     if filter == .chats { model.draftHome = .chat }
@@ -127,16 +127,16 @@ struct ConversationsPage: View {
             .quietSeparator()
             .contextMenu {
                 if model.hostSupports("renameConversation") {
-                    Button("重命名", systemImage: "pencil") {
+                    Button("重命名", image: .pencil) {
                         newTitle = displayName(summary: summary)
                         renameError = nil
                         renaming = summary
                     }
                 }
-                Button("归档", systemImage: "archivebox") { model.archive(conversation: id, true) }
+                Button("归档", image: .archive) { model.archive(conversation: id, true) }
             }
             .swipeActions(edge: .trailing) {
-                Button("归档", systemImage: "archivebox") { model.archive(conversation: id, true) }
+                Button("归档", image: .archive) { model.archive(conversation: id, true) }
                     .tint(.indigo)
             }
         } else {
@@ -192,7 +192,7 @@ struct ConversationRowLabel: View {
             let subagents = taskGroupsOf(root: node).reduce(0) { $0 + $1.tasks.count }
             if subagents > 0 {
                 HStack(spacing: 2) {
-                    Image(systemName: "person.2")
+                    Image(.users)
                     Text("\(subagents)").monospacedDigit()
                 }
                 .font(.caption)
@@ -274,14 +274,14 @@ extension ConversationFilter {
         }
     }
 
-    var systemImage: String {
+    var image: ImageResource {
         switch self {
-        case .all: "tray.full"
-        case .needsAnswer: "bell.badge"
-        case .running: "circle.dotted.circle"
-        case .failed: "exclamationmark.triangle"
-        case .chats: "bubble.left.and.bubble.right"
-        case .project: "folder"
+        case .all: .inbox
+        case .needsAnswer: .bellDot
+        case .running: .circleDashed
+        case .failed: .triangleAlert
+        case .chats: .messagesSquare
+        case .project: .folder
         }
     }
 

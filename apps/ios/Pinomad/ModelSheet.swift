@@ -94,7 +94,7 @@ private struct Row: View {
             }
             Spacer()
             if checked {
-                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                Image(.check).foregroundStyle(Color.accentColor)
             }
         }
         .contentShape(.rect)

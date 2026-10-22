@@ -14,7 +14,7 @@ struct PairingSources: View {
             Button {
                 model.present(.scanner)
             } label: {
-                Label("扫描二维码", systemImage: "qrcode.viewfinder")
+                Label("扫描二维码", image: .scanQrCode)
                     .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
@@ -87,7 +87,7 @@ struct PairingStartView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("账号：\(session.username)", systemImage: "person.crop.circle")
+                    Label("账号：\(session.username)", image: .circleUser)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))
@@ -99,7 +99,7 @@ struct PairingStartView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label("用账号登录", systemImage: "person.crop.circle")
+                    Label("用账号登录", image: .circleUser)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.tactile(.glass))

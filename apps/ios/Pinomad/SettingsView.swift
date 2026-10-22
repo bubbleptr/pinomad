@@ -45,7 +45,7 @@ struct SettingsView: View {
                     model.present(.account)
                 } label: {
                     Label(model.accountRecord.map { "账号：\($0.username)" } ?? "登录账号",
-                          systemImage: "person.crop.circle")
+                          image: .circleUser)
                 }
                 .tint(.primary)
             } header: {
@@ -120,7 +120,7 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if host.hostKey == model.currentHostKey {
-                    Image(systemName: "checkmark")
+                    Image(.check)
                         .foregroundStyle(.blue)
                 }
             }
@@ -131,7 +131,7 @@ struct SettingsView: View {
                 .tint(.red)
         }
         .contextMenu {
-            Button("忘记", systemImage: "trash", role: .destructive) { forgetting = host }
+            Button("忘记", image: .trash2, role: .destructive) { forgetting = host }
         }
     }
 
@@ -292,9 +292,11 @@ struct MachineSettingsView: View {
                 }
                 archivedSection(snapshot.organized.archived)
             } else {
-                ContentUnavailableView(
-                    "没有连着这台机器", systemImage: "bolt.horizontal.circle",
-                    description: Text("连上它之后才能查看它的设置。"))
+                ContentUnavailableView {
+                    Label("没有连着这台机器", image: .unplug)
+                } description: {
+                    Text("连上它之后才能查看它的设置。")
+                }
             }
         }
         .navigationTitle(title)
@@ -407,14 +409,14 @@ struct MachineSettingsView: View {
                             .disabled(!model.connected)
                     }
                     .contextMenu {
-                        Button("吊销", systemImage: "xmark.circle", role: .destructive) { revoking = device }
+                        Button("吊销", image: .circleX, role: .destructive) { revoking = device }
                             .disabled(!model.connected)
                     }
             }
             Button {
                 model.present(.pairingCode)
             } label: {
-                Label("给另一台设备配对", systemImage: "qrcode")
+                Label("给另一台设备配对", image: .qrCode)
             }
             .disabled(!model.connected)
         } header: {

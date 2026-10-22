@@ -208,7 +208,7 @@ struct NewConversationView: View {
                     Button {
                         Task { await model.createConversation() }
                     } label: {
-                        SlotIcon(systemName: "arrow.up")
+                        SlotIcon(.send)
                     }
                     .buttonStyle(PressStyle(haptic: false))
                     .disabled(!canSend)
@@ -277,13 +277,13 @@ struct NewConversationView: View {
 
     private var projectMenu: some View {
         Menu {
-            Button("无项目", systemImage: "bubble.left") { model.draftHome = .chat }
+            Button("无项目", image: .messageCircle) { model.draftHome = .chat }
             if !projects.isEmpty {
                 Section("项目") {
                     ForEach(projects.indices, id: \.self) { index in
                         let project = projects[index]
                         if let path = project.path {
-                            Button(project.name ?? (path as NSString).lastPathComponent, systemImage: "folder") {
+                            Button(project.name ?? (path as NSString).lastPathComponent, image: .folder) {
                                 model.draftHome = .project(path: path)
                             }
                         }
@@ -291,12 +291,12 @@ struct NewConversationView: View {
                 }
             }
             if model.hostSupports("listFolders") {
-                Button("添加项目…", systemImage: "folder.badge.plus") {
+                Button("添加项目…", image: .folderPlus) {
                     model.navPath.append(.addProject)
                 }
             }
         } label: {
-            LocationChip(icon: model.draftHome == .chat ? "bubble.left" : "folder", label: homeLabel)
+            LocationChip(icon: model.draftHome == .chat ? .messageCircle : .folder, label: homeLabel)
         }
         .tint(.secondary)
         .disabled(!model.connected)
@@ -304,11 +304,11 @@ struct NewConversationView: View {
 
     private var checkoutMenu: some View {
         Menu {
-            Button("Git worktree", systemImage: "arrow.triangle.branch") { model.draftCheckout = .worktree }
-            Button("项目目录", systemImage: "desktopcomputer") { model.draftCheckout = .project }
+            Button("Git worktree", image: .gitBranch) { model.draftCheckout = .worktree }
+            Button("项目目录", image: .monitor) { model.draftCheckout = .project }
         } label: {
             LocationChip(
-                icon: model.draftCheckout == .worktree ? "arrow.triangle.branch" : "desktopcomputer",
+                icon: model.draftCheckout == .worktree ? .gitBranch : .monitor,
                 label: model.draftCheckout == .worktree ? "Git worktree" : "项目目录"
             )
         }
@@ -342,7 +342,7 @@ struct NewConversationView: View {
                 }
             }
         } label: {
-            LocationChip(icon: "person.crop.circle",
+            LocationChip(icon: .circleUser,
                          label: selectedAgent.map { "@\($0)" } ?? "Agent")
         }
         .menuOrder(.fixed)
@@ -353,11 +353,11 @@ struct NewConversationView: View {
 
 /// A small capsule naming where the draft will run.
 private struct LocationChip: View {
-    let icon: String
+    let icon: ImageResource
     let label: String
 
     var body: some View {
-        Label(label, systemImage: icon)
+        Label(label, image: icon)
             .font(.caption)
             .lineLimit(1)
             .foregroundStyle(.secondary)

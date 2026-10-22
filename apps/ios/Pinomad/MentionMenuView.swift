@@ -175,7 +175,7 @@ private struct AgentMentionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "person.crop.circle")
+            Image(.circleUser)
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)
@@ -203,7 +203,7 @@ private struct FileMentionRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "doc")
+            Image(.file)
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)

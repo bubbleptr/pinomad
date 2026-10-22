@@ -17,7 +17,7 @@ struct ConversationListView: View {
                 // Platform failures (e.g. the keychain rejecting a pairing
                 // write) are not fatal to the connection, but must be
                 // visible — a toast would lose them.
-                Label(model.lastError, systemImage: "exclamationmark.triangle")
+                Label(model.lastError, image: .triangleAlert)
                     .font(.footnote)
                     .foregroundStyle(.orange)
                     .listRowBackground(Color.clear)
@@ -41,7 +41,7 @@ struct ConversationListView: View {
                             Button {
                                 model.switchHost(host.hostKey)
                             } label: {
-                                Label("未连接，轻点连接", systemImage: "bolt.horizontal.circle")
+                                Label("未连接，轻点连接", image: .unplug)
                                     .foregroundStyle(.secondary)
                             }
                             .listRowBackground(Color.clear)
@@ -81,14 +81,14 @@ struct ConversationListView: View {
                 .accessibilityLabel(model.accountRecord.map { "账号：\($0.username)" } ?? "账号")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("设置", systemImage: "gearshape") {
+                Button("设置", image: .settings) {
                     model.navPath.append(.settings)
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                Button("新建", systemImage: "square.and.pencil") {
+                Button("新建", image: .squarePen) {
                     model.navPath.append(.newConversation)
                 }
                 .disabled(!model.connected)
@@ -122,19 +122,19 @@ struct ConversationListView: View {
                 group.project.path.map { (path: $0, group: group) }
             }
             if !organized.chats.isEmpty {
-                groupRow(.chats, title: "对话", systemImage: "bubble.left.and.bubble.right",
+                groupRow(.chats, title: "对话", image: .messagesSquare,
                          count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
             }
             ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
                 groupRow(.project(entry.path), title: entry.group.project.name ?? entry.path,
-                         systemImage: "folder", count: entry.group.conversations.count,
+                         image: .folder, count: entry.group.conversations.count,
                          endsGroup: !canAdd && index == projects.count - 1)
             }
             if canAdd {
                 Button {
                     model.navPath.append(.addProject)
                 } label: {
-                    Label("添加项目", systemImage: "plus")
+                    Label("添加项目", image: .plus)
                         .foregroundStyle(.secondary)
                 }
                 .disabled(!model.connected)
@@ -173,11 +173,11 @@ struct ConversationListView: View {
     }
 
     private func groupRow(
-        _ filter: ConversationFilter, title: String, systemImage: String, count: Int, endsGroup: Bool
+        _ filter: ConversationFilter, title: String, image: ImageResource, count: Int, endsGroup: Bool
     ) -> some View {
         NavigationLink(value: Route.conversations(filter)) {
             HStack(spacing: 12) {
-                Image(systemName: systemImage)
+                Image(image)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .frame(width: 28)
@@ -215,7 +215,7 @@ private struct MachineHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "desktopcomputer")
+            Image(.monitor)
                 .foregroundStyle(.secondary)
             Text(label)
                 .font(.title3.weight(.semibold))
@@ -269,7 +269,7 @@ private struct StatusTiles: View {
             open(filter)
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: filter.systemImage)
+                Image(filter.image)
                     .font(.title2)
                     .foregroundStyle(filter.tint)
                     .symbolEffect(.pulse, isActive: filter == .running && (count ?? 0) > 0)
@@ -302,14 +302,18 @@ private struct AccountBadge: View {
     let username: String?
 
     var body: some View {
-        Image(systemName: symbol)
+        if let initial {
+            Image(systemName: "\(initial).circle")
+        } else {
+            Image(.circleUser)
+        }
     }
 
-    private var symbol: String {
+    private var initial: String? {
         guard let initial = username?.first?.lowercased(), initial.count == 1,
               let scalar = initial.unicodeScalars.first, scalar.isASCII,
               CharacterSet.alphanumerics.contains(scalar)
-        else { return "person.crop.circle" }
-        return "\(initial).circle"
+        else { return nil }
+        return initial
     }
 }

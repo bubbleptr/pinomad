@@ -90,7 +90,7 @@ private struct FailureView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(.triangleAlert)
                 .font(.system(size: 40))
                 .foregroundStyle(.orange)
             Text(title)
@@ -193,7 +193,7 @@ struct ConnectionBanner: View {
                 }
             case .closed:
                 bar {
-                    Image(systemName: "bolt.horizontal.circle")
+                    Image(.unplug)
                     Text("已断开")
                     Spacer(minLength: 8)
                     Button("重连") { model.retryConnection() }
@@ -229,7 +229,7 @@ struct ToastStack: View {
             ForEach(model.toasts, id: \.id) { notice in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if notice.level == "error" || notice.level == "warning" {
-                        Image(systemName: "exclamationmark.circle.fill")
+                        Image(.circleAlert)
                             .foregroundStyle(notice.level == "error" ? .red : .orange)
                     }
                     Text(notice.message)
