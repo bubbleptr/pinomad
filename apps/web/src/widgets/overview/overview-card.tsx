@@ -20,7 +20,7 @@ import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
 import { DocumentView } from "../../presentation/documents.tsx";
-import { Computer, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
+import { FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
@@ -97,16 +97,19 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
 /**
  * One line: icon, text that truncates, optional trailing content. A button
  * when it leads somewhere. A `null` icon keeps the slot (the text lines up
- * with its iconed siblings); an absent one drops it.
+ * with its iconed siblings); an absent one drops it. `iconLabel` names an
+ * icon that carries meaning the text doesn't repeat.
  */
 function Row({
   icon,
+  iconLabel,
   children,
   end,
   title,
   onClick,
 }: {
   icon?: ReactNode;
+  iconLabel?: string;
   children: ReactNode;
   end?: ReactNode;
   title?: string;
@@ -115,7 +118,10 @@ function Row({
   const content = (
     <>
       {icon === undefined ? null : (
-        <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center text-muted">
+        <span
+          {...(iconLabel === undefined ? { "aria-hidden": true } : { role: "img", "aria-label": iconLabel })}
+          className="flex size-4 shrink-0 items-center justify-center text-muted"
+        >
           {icon}
         </span>
       )}
@@ -149,7 +155,17 @@ function WorkspaceSection({
   onOpenChanges: () => void;
 }) {
   const cwd = agentOf(conversation).cwd;
-  const isChat = view.home?.kind === "chat";
+  const home = view.home;
+  const isChat = home?.kind === "chat";
+  const worktree = view.checkout !== undefined;
+  // A worktree's own folder is named for the conversation, so a project row
+  // names the project; a chat's folder has nothing better to show.
+  const folderName =
+    home?.kind === "project"
+      ? (view.organized.projects.find((entry) => entry.project.path === home.path)?.project.name ?? home.path.split("/").at(-1))
+      : isChat
+        ? "Chat folder"
+        : cwd?.split("/").at(-1);
   const stat = useChangeStat(remote, conversation.conversation.id, busy, view.connection === "connected", !isChat);
   // A 5.11 host reports HEAD's branch with changes() — live, so a worktree
   // that went detached shows nothing instead of the recorded name. Older
@@ -163,15 +179,14 @@ function WorkspaceSection({
       : view.checkout?.branch;
   return (
     <Section title="Workspace">
-      {isChat ? null : view.checkout !== undefined ? (
-        <Row icon={<FolderGitTwo className="size-4" />}>Git worktree</Row>
-      ) : (
-        <Row icon={<Computer className="size-4" />}>Project folder</Row>
-      )}
       {cwd === undefined ? null : (
-        <Row icon={<FolderClosed className="size-4" />} title={cwd}>
+        <Row
+          icon={worktree ? <FolderGitTwo className="size-4" /> : <FolderClosed className="size-4" />}
+          iconLabel={isChat ? undefined : worktree ? "Git worktree" : "Project folder"}
+          title={cwd}
+        >
           <span className="flex items-center gap-3">
-            <span className="shrink-0">Directory</span>
+            <span className="min-w-0 truncate">{folderName}</span>
             {/* A path's tail says where it is: an rtl box clips from the left,
                 and the LRM keeps the leading "/" from flipping to the end. */}
             <span className="min-w-0 flex-1 truncate text-right text-muted [direction:rtl]">{`\u200E${cwd}`}</span>
