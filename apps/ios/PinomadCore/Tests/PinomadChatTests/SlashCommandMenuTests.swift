@@ -97,31 +97,6 @@ private let listing = [
     }
 }
 
-@Suite struct CommandPickInsertionTests {
-    /// Picked into an empty draft: ready for arguments, Send runs it.
-    @Test func anEmptyDraftGetsTheCommand() {
-        #expect(ComposerTrigger.command("compact", into: "")
-            == MentionInsertion(text: "/compact ", cursor: 9))
-        #expect(ComposerTrigger.command("compact", into: " \n")
-            == MentionInsertion(text: "/compact ", cursor: 9))
-    }
-
-    /// The reader's words would become arguments or be lost, so nothing
-    /// is inserted and the menu greys the entry instead.
-    @Test func aDraftWithTextGetsNothing() {
-        #expect(ComposerTrigger.command("compact", into: "fix the bug") == nil)
-    }
-
-    /// The insertion is exactly what the send path recognises as a command.
-    @Test func theInsertionRunsAsTheCommandOnSend() throws {
-        let entry = CommandEntry(name: "compact", description: "", argumentHint: nil,
-                                 source: .builtin, disabled: nil)
-        let insertion = try #require(ComposerTrigger.command("compact", into: ""))
-        #expect(ComposerSubmit(draft: insertion.text + "keep notes", commands: [entry], hasImages: false)
-            == .command(name: "compact", args: "keep notes"))
-    }
-}
-
 @Suite struct ComposerTriggerTests {
     private func insert(_ trigger: String, _ text: String, at location: Int, length: Int = 0) -> MentionInsertion {
         ComposerTrigger.insert(trigger, into: text, selection: NSRange(location: location, length: length))
@@ -148,6 +123,18 @@ private let listing = [
     @Test func aSelectionIsReplaced() {
         #expect(insert("$", "ask this please", at: 4, length: 4)
             == MentionInsertion(text: "ask $ please", cursor: 5))
+    }
+
+    /// Run a Command puts `/` over the whole blank draft: a slash after the
+    /// leftover whitespace would not open the `/` menu.
+    @Test func aSlashOverABlankDraftOpensTheCommandMenu() {
+        let insertion = insert("/", " \n", at: 0, length: 2)
+        #expect(insertion == MentionInsertion(text: "/", cursor: 1))
+        let entry = CommandEntry(name: "compact", description: "", argumentHint: nil,
+                                 source: .builtin, disabled: nil)
+        var menu = SlashCommandMenu()
+        menu.refresh(text: insertion.text, cursor: insertion.cursor, commands: [entry])
+        #expect(menu.isShowing && menu.commands == [entry])
     }
 
     @Test func offsetsAreUTF16() {
