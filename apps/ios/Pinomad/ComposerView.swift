@@ -11,9 +11,10 @@ import SwiftUI
 struct ConversationComposer: View {
     let model: AppModel
     let conversation: ConversationSnapshot
-    /// The named agent the conversation was created with (ADR-0023) —
-    /// fixed, so the model sheet shows it read-only.
-    let role: String?
+    /// The named agent the conversation runs as now, plus whether it can
+    /// still change (ADR-0023, protocol 5.18). Not `conversation.agent`,
+    /// which is the model/thinking config.
+    let agentPick: ConversationAgent?
 
     @State private var showModels = false
     @State private var showPhotos = false
@@ -51,6 +52,24 @@ struct ConversationComposer: View {
     }
 
     private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+
+    /// The model sheet's Agent section: pickable on a 5.18+ host, read-only
+    /// on an older one or a subagent, hidden when there is no agent to name.
+    private var agentSheet: ModelSheetAgent? {
+        guard let agentPick else { return nil }
+        if agentPick.canSwitch {
+            return .pick(rows: agentPick.rows, hint: nil, onSelect: { model.setAgent($0) })
+        }
+        guard let name = agentPick.current else { return nil }
+        return .fixed(name: name, description: roles.first { $0.name == name }?.description)
+    }
+
+    /// The sheet also holds the Agent section: an empty model list alone
+    /// must not keep it shut, or a named agent could not be cleared.
+    private var sheetHasContent: Bool {
+        guard let agentPick else { return !(model.snapshot?.models.isEmpty ?? true) }
+        return agentPick.sheetHasContent(models: model.snapshot?.models ?? [])
+    }
 
     /// A shown conversation lists its own cwd; older hosts have no call,
     /// and a Chat's cwd is never a project, so the host lists nothing.
@@ -142,6 +161,12 @@ struct ConversationComposer: View {
         .padding(.bottom, 8)
         .sensoryFeedback(.impact(weight: .light), trigger: sends)
         .onAppear {
+            #if DEBUG
+            if model.devShowsModelSheet {
+                model.devShowsModelSheet = false
+                showModels = true
+            }
+            #endif
             // Until the reader places the caret, an add entry goes at the end.
             selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
             // Known before the first `/`, so a typed command is recognised.
@@ -178,9 +203,7 @@ struct ConversationComposer: View {
                 selected: ModelPick(
                     model: (model.snapshot?.conversation?.agent ?? conversation.agent).model,
                     level: (model.snapshot?.conversation?.agent ?? conversation.agent).thinkingLevel ?? .off),
-                agent: role.map { name in
-                    .fixed(name: name, description: roles.first { $0.name == name }?.description)
-                },
+                agent: agentSheet,
                 onModel: { model.setModel($0) },
                 onLevel: { model.setThinkingLevel($0) }
             )
@@ -228,8 +251,8 @@ struct ConversationComposer: View {
                 plusMenu
                 ModelCapsule(
                     label: modelText,
-                    prefix: role.map { "@\($0)" },
-                    enabled: connected && !(model.snapshot?.models.isEmpty ?? true)
+                    prefix: agentPick?.current.map { "@\($0)" },
+                    enabled: connected && sheetHasContent
                 ) {
                     focused = false
                     showModels = true

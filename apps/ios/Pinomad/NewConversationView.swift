@@ -47,8 +47,8 @@ struct NewConversationView: View {
     private var agentChoice: ModelSheetAgent? {
         guard showAgentPicker else { return nil }
         return .pick(
-            selected: selectedAgent,
-            roles: agentPickerAvailable ? roles : [],
+            rows: AgentPickRow.rows(selected: selectedAgent,
+                                    roles: agentPickerAvailable ? roles : []),
             hint: sourceHint,
             onSelect: { model.setDraftAgent($0) })
     }

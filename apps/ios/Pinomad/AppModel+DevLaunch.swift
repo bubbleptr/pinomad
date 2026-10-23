@@ -101,6 +101,14 @@ extension AppModel {
             startContextDemo(context)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_AGENT"] {
+            // The conversation model sheet's pickable Agent section on a
+            // 5.18 host: `missing` keeps a since-removed agent selected,
+            // `none` starts without one.
+            phase = .connected
+            startAgentDemo(mode)
+            return true
+        }
         if !injected.isEmpty {
             // No auto-pair: pre-fill the pairing field after the normal
             // launch, exactly as a pasted link would.
@@ -491,6 +499,61 @@ extension AppModel {
             agents: nil, conversation: conversation
         ))
         replyStreams.sync(chat: chat)
+    }
+
+    /// `PINOMAD_DEMO_AGENT`: a 5.18 host with two roles and a top-level
+    /// conversation, so the model sheet's Agent picker can be photographed
+    /// without a live host. `missing` selects a role the host no longer
+    /// offers; `none` has no current agent.
+    private func startAgentDemo(_ mode: String) {
+        navPath = [.conversation(1)]
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let gpt = ModelRef(provider: "openai", modelId: "gpt-5")
+        let models = [
+            ModelSummary(provider: "openai", modelId: "gpt-5", name: "GPT-5",
+                         contextWindow: 200_000,
+                         thinkingLevels: [.off, .low, .medium, .high], images: true),
+            ModelSummary(provider: "anthropic", modelId: "sonnet", name: "Sonnet",
+                         contextWindow: 200_000,
+                         thinkingLevels: [.off, .low, .medium], images: true),
+        ]
+        let roles = [
+            AgentRole(name: "reviewer", description: "Reviews code and tests",
+                      model: "openai/gpt-5", thinkingLevel: .high, prompt: "Review."),
+            AgentRole(name: "planner", description: "Plans the work before coding",
+                      model: "anthropic/sonnet", thinkingLevel: .medium, prompt: "Plan."),
+        ]
+        let current: String? = switch mode {
+        case "missing": "removed"
+        case "none": nil
+        default: "reviewer"
+        }
+        let summary = ConversationSummary(
+            id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+            title: "Review the parser change", status: nil, updatedAt: now,
+            label: nil, role: "reviewer", currentAgent: current, activity: nil
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "Review the parser change before I merge it.", images: []),
+        ]
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: [],
+            agent: AgentState(model: gpt, thinkingLevel: .high, instructions: nil, cwd: nil),
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false,
+            contextUsage: nil, fresh: true, freshEpoch: 1
+        )
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil,
+            host: HostInfo(version: "5.18.0", protocol: ProtocolVersion(major: 5, minor: 18)),
+            hostName: "Demo Mac", settings: nil, devices: [],
+            organized: Organized(chats: [ConversationNode(summary: summary, children: [])],
+                                 projects: [], archived: []),
+            notices: [], models: models, defaults: Defaults(model: gpt, thinkingLevel: .low),
+            agents: AgentRoles(roles: roles, problems: []), conversation: conversation
+        ))
+        replyStreams.sync(chat: chat)
+        devShowsModelSheet = true
     }
 
     /// Grows a live run by one step every two seconds (commands, a thinking

@@ -42,12 +42,17 @@ struct ConversationView: View {
     }
 
     var body: some View {
-        // Read the node once per version: the title, role, retry rule and
+        // Read the node once per version: the title, agent, retry rule and
         // card facts all derive from it.
         let node = self.node
         let title = node.map { displayName(summary: $0.summary) } ?? "Conversation"
-        let subtitle = self.subtitle(role: node?.summary.role.flatMap { $0.isEmpty ? nil : $0 })
         let isSubagent = node?.summary.kind == .subagent
+        let agentPick = node.map {
+            ConversationAgent(summary: $0.summary, isSubagent: isSubagent,
+                              hostMinor: model.hostMinor,
+                              roles: model.snapshot?.agents?.roles ?? [])
+        }
+        let subtitle = self.subtitle(agent: agentPick?.current)
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
@@ -133,7 +138,7 @@ struct ConversationView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
             } else if let conversation {
-                ConversationComposer(model: model, conversation: conversation, role: node?.summary.role.flatMap { $0.isEmpty ? nil : $0 })
+                ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
                     // The agent at work, in the empty strip under the card:
                     // hung from the bar's bottom edge down past the home
                     // indicator; with the keyboard up, the keyboard covers it.
@@ -210,9 +215,9 @@ struct ConversationView: View {
     /// 「@角色 · 项目 · 分支」, each part when known. The branch is the
     /// worktree record's: the live one needs a `changes()` call, which only
     /// the overview makes.
-    private func subtitle(role: String?) -> String? {
+    private func subtitle(agent: String?) -> String? {
         var parts: [String] = []
-        if let role { parts.append("@\(role)") }
+        if let agent { parts.append("@\(agent)") }
         if case .project(let path)? = conversation?.home {
             let project = model.snapshot?.organized.projects.first { $0.project.path == path }?.project
             parts.append(project?.name ?? (path as NSString).lastPathComponent)
