@@ -12,6 +12,7 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { displayName, rootOf } from "@pinomad/client/family.ts";
+import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
 import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
 import { AppleReminder } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
@@ -103,6 +104,10 @@ export function AppFrame({
   // button carries a dot so the activity is not out of sight entirely.
   const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
   const liveActivity = root !== undefined && anyAtWork(root.children);
+  // A subagent's role comes from the delegating call; a top-level conversation
+  // or fork shows the agent it currently runs as.
+  const headerAgent =
+    summary === undefined ? undefined : summary.kind === "subagent" ? summary.role : currentAgentOf(summary);
   const openTasks = (id?: ConversationId): void => {
     if (id !== undefined) return openInPanel(id, "tasks");
     void remote.controller.showSide(undefined);
@@ -163,7 +168,7 @@ export function AppFrame({
             onToggleSidebar={toggleSidebar}
             onOpenNav={() => setNavOpen(true)}
             title={drafting ? draftLabel : displayName(summary)}
-            role={summary?.role}
+            agent={headerAgent}
             parentSummary={parentSummary}
             onBackToParent={openConversation}
             showOverview={conversation !== undefined}
@@ -285,7 +290,7 @@ function FrameHeader({
   onToggleSidebar,
   onOpenNav,
   title,
-  role,
+  agent,
   parentSummary,
   onBackToParent,
   showOverview,
@@ -302,8 +307,8 @@ function FrameHeader({
   onToggleSidebar: () => void;
   onOpenNav: () => void;
   title: string;
-  /** The named agent the shown conversation was created with (ADR-0023). */
-  role?: string;
+  /** The agent the shown conversation runs as; for a subagent, its call-given role. */
+  agent?: string;
   parentSummary: ConversationSummary | undefined;
   onBackToParent: (id: ConversationId) => void;
   showOverview: boolean;
@@ -339,7 +344,7 @@ function FrameHeader({
         {parentSummary === undefined ? (
           <span className="flex items-center gap-1.5">
             <span className="truncate">{title}</span>
-            {role === undefined ? null : <span className="shrink-0 text-muted">@{role}</span>}
+            {agent === undefined ? null : <span className="shrink-0 text-muted">@{agent}</span>}
           </span>
         ) : (
           <span className="flex items-center gap-1">
@@ -354,7 +359,7 @@ function FrameHeader({
               ›
             </span>
             <span className="truncate">{title}</span>
-            {role === undefined ? null : <span className="shrink-0 text-muted">@{role}</span>}
+            {agent === undefined ? null : <span className="shrink-0 text-muted">@{agent}</span>}
           </span>
         )}
       </h1>

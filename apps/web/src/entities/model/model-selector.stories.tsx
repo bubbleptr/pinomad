@@ -72,7 +72,19 @@ export const AgentPicked: Story = {
 
 export const AgentPickedOpen: Story = { ...AgentPicked, play: open };
 
-/** A conversation's role is fixed at create (ADR-0023): shown, not offered. */
+/** A conversation on a 5.18 host: the current agent is picked like a draft's. */
+export const ConversationAgentPick: Story = {
+  args: { agent: { kind: "pick", roles, value: "reviewer", onChange: fn() } },
+  play: open,
+};
+
+/** The conversation's current agent file is gone: still shown as selected, not offered again. */
+export const ConversationAgentMissing: Story = {
+  args: { agent: { kind: "pick", roles, value: "retired", onChange: fn() } },
+  play: open,
+};
+
+/** A pre-5.18 host has no setAgent: the creation agent stays a read-only row. */
 export const FixedRole: Story = {
   args: { agent: { kind: "fixed", name: "reviewer", description: roles[0]!.description } },
   play: open,

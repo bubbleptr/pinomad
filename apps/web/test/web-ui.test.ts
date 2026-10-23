@@ -3486,7 +3486,7 @@ const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
   await dismissPopovers(page);
 };
 
-it("creates the draft with a named agent and shows @name on the conversation and its forks", async () => {
+it("creates the draft with a named agent, switches it, and shows @name on the conversation and its forks", async () => {
   const webOrigin = await startWeb();
   const dir = await tempDir();
   defer(dir.remove);
@@ -3535,14 +3535,26 @@ it("creates the draft with a named agent and shows @name on the conversation and
 
   // The header names the agent next to the title, top-level…
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
-  // …and the capsule keeps it, read-only: the role can't change after create.
+  // …and on a 5.18 host the capsule offers the same Agent pick as a draft,
+  // with the current role selected.
   await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
   await capsule.click();
   const agentSection = page.getByRole("group", { name: "Agent" });
   await agentSection.getByText("reviewer", { exact: true }).waitFor();
-  expect(await agentSection.getByRole("button").count()).toBe(0);
-  await shot(page, "conversation-model-fixed-role");
+  await expect
+    .poll(() => agentSection.getByRole("listitem").filter({ hasText: "reviewer" }).getAttribute("aria-current"))
+    .toBe("true");
+  await shot(page, "conversation-model-agent-pick");
   await dismissPopovers(page);
+
+  // Clearing the current agent leaves the creation role alone in the index…
+  await pickAgent(page, /^No agent/);
+  await expect.poll(() => capsule.textContent()).not.toContain("@reviewer");
+  await expect.poll(() => page.locator("h1").getByText("@reviewer", { exact: true }).count()).toBe(0);
+  // …and picking the role again re-applies its file.
+  await pickAgent(page, /^reviewer/);
+  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
+  await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Add images…", exact: true }).waitFor();

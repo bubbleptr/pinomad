@@ -8,6 +8,7 @@ import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
@@ -105,8 +106,18 @@ export function ConversationComposer({
   ];
   const queue = queueItems(conversation);
   const roles = view.agents?.roles ?? [];
-  // The role the conversation was created with — fixed for its life (ADR-0023).
-  const role = findConversation(view.organized, conversation.conversation.id)?.summary.role;
+  const summary = findConversation(view.organized, conversation.conversation.id)?.summary;
+  // The creation agent is all a pre-5.18 host knows; 5.18 adds currentAgent.
+  const role = summary?.role;
+  const currentAgent = currentAgentOf(summary);
+  // Subagents take their role from the delegating call, so only top-level
+  // conversations and forks may switch it (ADR-0023). Wait for the agents
+  // snapshot: an empty roles list before it would look like a deleted agent.
+  const canSwitchAgent =
+    summary !== undefined
+    && summary.kind !== "subagent"
+    && view.agents !== null
+    && hostSupportsCall(view.host?.protocol.minor ?? 0, "setAgent");
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
@@ -393,9 +404,18 @@ export function ConversationComposer({
               selected={{ model: agent.model, level: agent.thinkingLevel ?? "off" }}
               isDisabled={disconnected}
               agent={
-                role === undefined
-                  ? undefined
-                  : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
+                canSwitchAgent
+                  ? {
+                      kind: "pick",
+                      roles,
+                      value: currentAgent,
+                      onChange: (name) => {
+                        void remote.controller.setAgent(name ?? null).catch(showError);
+                      },
+                    }
+                  : role === undefined
+                    ? undefined
+                    : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
               }
               onModelChange={(model) => void remote.controller.setModel(model)}
               onLevelChange={(level) => void remote.controller.setThinkingLevel(level)}
