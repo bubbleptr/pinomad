@@ -33,10 +33,6 @@ extension AppModel {
         return skillCache.snapshot(scope)
     }
 
-    func skillNames(for scope: SkillScope?) -> [String]? {
-        skills(for: scope)?.map(\.name)
-    }
-
     /// Ask for a scope's listing; the cache merges in-flight asks and skips
     /// a fresh answer. `force` is the reconnect path. Failures are not
     /// cached, so the next focus/keystroke retries.

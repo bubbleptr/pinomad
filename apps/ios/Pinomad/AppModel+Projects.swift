@@ -92,12 +92,15 @@ extension AppModel {
             if case .project = draftHome, draftCheckout == .project { return .project }
             return nil
         }()
+        // The `$` picks bind on the host only from 5.16 (ADR-0028).
+        let payload = chips(for: key).payload(hostMinor: hostMinor)
         creating = true
         defer { creating = false }
         do {
             _ = try await session.invoke(.createConversation(
-                home: draftHome, text: text, checkout: checkout,
-                model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images))
+                home: draftHome, text: payload.text, checkout: checkout,
+                model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images,
+                skills: payload.skills))
         } catch {
             lastError = "Couldn't create conversation: \(describe(error))"
             return
@@ -106,6 +109,7 @@ extension AppModel {
         for _ in 0..<120 {
             if let shown = known.created(shown: snapshot?.conversation?.id) {
                 drafts[key] = nil
+                skillChips[key] = nil
                 trays[key] = nil
                 // The next draft starts from "no agent", as on the web; the
                 // remembered model/level stays.

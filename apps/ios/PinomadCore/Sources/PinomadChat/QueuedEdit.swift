@@ -11,12 +11,17 @@ public struct QueuedEdit: Equatable, Sendable {
         public let id: UInt64
         public let text: String
         public let images: [MessageImage]
+        /// The skills the host expanded (ADR-0028); their `$name` mentions
+        /// come back as chips.
+        public let skills: [String]
 
-        public init(conversationId: UInt64, id: UInt64, text: String, images: [MessageImage]) {
+        public init(conversationId: UInt64, id: UInt64, text: String, images: [MessageImage],
+                    skills: [String] = []) {
             self.conversationId = conversationId
             self.id = id
             self.text = text
             self.images = images
+            self.skills = skills
         }
     }
 
@@ -132,7 +137,8 @@ extension QueuedEdit.Copy {
             conversationId: conversationId,
             id: id,
             text: text,
-            images: resolved
+            images: resolved,
+            skills: skills
         )
     }
 }

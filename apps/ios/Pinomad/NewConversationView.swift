@@ -132,7 +132,10 @@ struct NewConversationView: View {
             selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
             focused = true
         }
-        .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
+        .onChange(of: draft.wrappedValue) { _, _ in
+            model.syncChips(key)
+            refreshMentions()
+        }
         .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
         .onChange(of: model.draftHome) { _, _ in refreshMentions() }
@@ -180,7 +183,8 @@ struct NewConversationView: View {
                 selection: $selection,
                 focused: $focused,
                 placeholder: "Ask Pi to do something…",
-                names: skillEntries?.map(\.name),
+                chips: model.chips(for: key).ranges,
+                expandDeletion: { model.chips(for: key).deletion(expanding: $0) },
                 enabled: model.connected && !model.creating,
                 minLines: 3,
                 maxLines: 8
@@ -269,9 +273,11 @@ struct NewConversationView: View {
         focused = true
     }
 
+    /// A pick is a chip: `$name ` goes in as text and its `$name` binds.
     private func chooseSkill(_ skill: SkillEntry) {
         guard let insertion = mentions.insert(skill, into: draft.wrappedValue) else { return }
         draft.wrappedValue = insertion.text
+        model.bindSkillChip(skill.name, at: insertion.cursor - ("$" + skill.name + " ").utf16.count, in: key)
         selection = NSRange(location: insertion.cursor, length: 0)
         focused = true
     }
