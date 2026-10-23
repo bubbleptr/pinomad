@@ -989,43 +989,6 @@ mark.chat-skill-mention {
   font-size: var(--font-size-sm);
 }
 
-/* —— Prompt suggestions —— */
-
-.prompt-suggestion__items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-2);
-}
-
-.prompt-suggestion__item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-2);
-  min-width: 0;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-background-surface);
-  padding: var(--spacing-2) var(--spacing-3);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-  text-align: start;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-}
-
-.prompt-suggestion__item:hover {
-  background: var(--color-overlay-hover);
-  border-color: var(--color-border-emphasized);
-}
-
-.prompt-suggestion__item-end-icon {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-icon-secondary);
-}
-
 /* —— Chain of thought: rail skin —— */
 
 .chain-of-thought-rail {

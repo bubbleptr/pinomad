@@ -18,17 +18,8 @@ import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuChoice, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
-import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
-import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
+import { ChatAdd, FolderClosed } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
-
-// Pace's four draft suggestions; representative first-touch prompts.
-const SUGGESTED_PROMPTS = [
-  { Icon: ListTree, label: "Explain this repo's architecture" },
-  { Icon: Wrench, label: "Fix the failing test" },
-  { Icon: SquareTerminal, label: "Add a CLI flag with docs" },
-  { Icon: FileDiff, label: "Review my uncommitted changes" },
-] as const;
 
 /** The capsule's red line + tooltip for a draft problem the host would refuse. */
 function problemText(problem: AgentDraftProblem): { label: string; title: string } {
@@ -53,9 +44,9 @@ function problemText(problem: AgentDraftProblem): { label: string; title: string
 }
 
 /**
- * The draft screen: Pace's SessionDraftComposer layout — hero, prompt input
- * with the model · thinking capsule and, under it, where the conversation
- * will run (project, then worktree or project folder) — and suggestion pills.
+ * The draft screen: hero, then the prompt input with the model · thinking
+ * capsule and, in the tray under it, where the conversation will run
+ * (project, then worktree or project folder).
  */
 export function DraftHome({
   view,
@@ -300,26 +291,6 @@ export function DraftHome({
             }
           />
         </div>
-        <ChatPromptSuggestion className="w-full max-w-[35rem]">
-          <ChatPromptSuggestion.Items className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {SUGGESTED_PROMPTS.map(({ Icon, label }) => (
-              <ChatPromptSuggestion.Item
-                key={label}
-                className="items-center justify-start"
-                showEndIcon={false}
-                onPress={() => {
-                  setValue(label);
-                  inputRef.current?.focusAtEnd();
-                }}
-              >
-                <span className="inline-flex min-w-0 items-center gap-2">
-                  <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="truncate">{label}</span>
-                </span>
-              </ChatPromptSuggestion.Item>
-            ))}
-          </ChatPromptSuggestion.Items>
-        </ChatPromptSuggestion>
       </div>
     </section>
   );
