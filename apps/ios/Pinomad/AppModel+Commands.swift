@@ -4,7 +4,7 @@ import PinomadCore
 
 /// Host-declared `/` commands (issue #254, ADR-0027). Listings are cached
 /// per conversation in `PinomadChat`; the app runs the calls. Everything
-/// stays closed offline and on hosts before 5.15, where the `+` menu keeps
+/// stays closed offline and on hosts before 5.17, where the `+` menu keeps
 /// its plain "Compact Conversation" instead.
 extension AppModel {
     /// The conversation's last good listing, or nil while it is unknown —

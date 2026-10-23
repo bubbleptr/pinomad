@@ -67,7 +67,7 @@ struct ConversationComposer: View {
 
     private var skillEntries: [SkillEntry]? { model.skills(for: skillScope) }
 
-    /// The host's `/` commands for this conversation; nil before 5.15,
+    /// The host's `/` commands for this conversation; nil before 5.17,
     /// offline, or until the first answer.
     private var commandEntries: [CommandEntry]? { model.commands(for: conversation.id) }
 
@@ -249,7 +249,7 @@ struct ConversationComposer: View {
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
             ? { presentAfterMenu { showCamera = true } } : nil
-        // A 5.15 host takes `/compact` instead.
+        // A 5.17 host takes `/compact` instead.
         let compact: (() -> Void)? = commands ? nil : { model.compact() }
         // A command starts the message, so it waits for an empty draft.
         let blocked: String? = draft.wrappedValue.allSatisfy(\.isWhitespace)
@@ -470,9 +470,9 @@ struct PlusMenu<Extra: View>: View {
     let mentionFile: (() -> Void)?
     let useSkill: (() -> Void)?
     let mentionAgent: (() -> Void)?
-    /// The host's commands: nil off a conversation or before 5.15.
+    /// The host's commands: nil off a conversation or before 5.17.
     let commands: PlusMenuCommands?
-    /// Only for a host before 5.15; newer hosts list `/compact` in commands.
+    /// Only for a host before 5.17; newer hosts list `/compact` in commands.
     let compact: (() -> Void)?
     /// The menu is about to open — the moment to refresh what it lists.
     let onOpen: (() -> Void)?
