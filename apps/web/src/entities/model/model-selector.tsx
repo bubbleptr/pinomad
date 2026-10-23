@@ -2,27 +2,47 @@
 // (entities/model/model-selector/model-selector-control.tsx, PiGUI commit
 // 15b9084): same capsule trigger and popover layout — a searchable model
 // list and the selected model's thinking levels — without the hover flyout,
-// fast mode, image badge or Settings management.
-import { useState } from "react";
+// fast mode, image badge or Settings management. The named agent (ADR-0023)
+// is part of the same pick (issue #254): a role is a model-level preset —
+// model, thinking level and system prompt — so it lives in this popover too.
+import { useRef, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Popover } from "@astryxdesign/core/Popover";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { ModelRef } from "@earendil-works/pi-durable";
+import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { Check, ChevronDown } from "@/shared/ui/icons";
 
 /**
+ * The popover's Agent section: a draft picks one of the host's roles (or
+ * none); a conversation shows the role it was created with, which can't
+ * change (ADR-0023).
+ */
+export type ModelSelectorAgent =
+  | {
+      readonly kind: "pick";
+      readonly roles: readonly AgentRole[];
+      /** The picked role's name, undefined for "No agent". */
+      readonly value?: string;
+      readonly onChange: (agent: string | undefined) => void;
+    }
+  | { readonly kind: "fixed"; readonly name: string; readonly description?: string };
+
+/**
  * The composer model/thinking capsule: a ghost button showing
  * `<model name> · <Thinking label>` (just the name when the model can't
- * reason) opening a popover with a searchable model list and the selected
+ * reason), prefixed with `@name` when a named agent is set, opening a
+ * popover with the Agent section, a searchable model list and the selected
  * model's thinking levels.
  */
 export function ModelSelector({
   models,
   selected,
   isDisabled = false,
+  agent,
   sourceHint,
   problem,
   onModelChange,
@@ -31,6 +51,8 @@ export function ModelSelector({
   models: readonly ModelSummary[];
   selected: { model?: ModelRef; level: ThinkingLevel };
   isDisabled?: boolean;
+  /** Undefined hides the Agent section (no roles on this host, or a conversation without one). */
+  agent?: ModelSelectorAgent;
   /** Small muted suffix, e.g. which side of the pick is inherited from a named agent. */
   sourceHint?: string;
   /** Why the shown pick can't be sent — rendered in red instead of the label. */
@@ -39,9 +61,11 @@ export function ModelSelector({
   onLevelChange: (level: ThinkingLevel) => void;
 }) {
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const selectedSummary = models.find((each) => sameModel(each, selected.model));
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
   const filtered = filterModels(models, query);
+  const agentName = agent === undefined ? undefined : agent.kind === "pick" ? agent.value : agent.name;
 
   return (
     <Popover
@@ -49,6 +73,12 @@ export function ModelSelector({
       label="Model and Thinking"
       placement="above"
       width={236}
+      // Opening lands in the search box, as before the Agent section took
+      // the top: the popover's own autofocus would pick "No agent" instead.
+      hasAutoFocus={false}
+      onOpenChange={(open) => {
+        if (open) requestAnimationFrame(() => searchRef.current?.focus());
+      }}
       content={
         <div
           className="flex w-full flex-col gap-1 p-1"
@@ -60,10 +90,59 @@ export function ModelSelector({
           onMouseDown={(event: React.MouseEvent) => event.stopPropagation()}
           onPointerDown={(event: React.PointerEvent) => event.stopPropagation()}
         >
+          {agent === undefined ? null : (
+            // Same visible heading + role="group" as the Thinking section.
+            <div aria-label="Agent" role="group">
+              <p className="px-2 pt-1 text-xs text-muted">
+                {agent.kind === "pick" ? "Agent · sets the system prompt" : "Agent · fixed at creation"}
+              </p>
+              {agent.kind === "pick" ? (
+                <List className="max-h-48 overflow-y-auto" density="compact">
+                  <ListItem
+                    description="Default system prompt"
+                    endContent={
+                      agent.value === undefined
+                        ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+                        : undefined
+                    }
+                    isDisabled={isDisabled}
+                    isSelected={agent.value === undefined}
+                    label="No agent"
+                    onClick={() => agent.onChange(undefined)}
+                  />
+                  {agent.roles.map((role) => (
+                    <ListItem
+                      description={role.description}
+                      endContent={
+                        agent.value === role.name
+                          ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+                          : undefined
+                      }
+                      isDisabled={isDisabled}
+                      isSelected={agent.value === role.name}
+                      key={role.name}
+                      label={role.name}
+                      onClick={() => agent.onChange(role.name)}
+                    />
+                  ))}
+                </List>
+              ) : (
+                <List density="compact">
+                  <ListItem
+                    {...(agent.description === undefined ? {} : { description: agent.description })}
+                    endContent={<Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />}
+                    isSelected
+                    label={agent.name}
+                  />
+                </List>
+              )}
+            </div>
+          )}
           <TextInput
             isLabelHidden
             label="Search models"
             placeholder="Search models"
+            ref={searchRef}
             size="sm"
             value={query}
             width="100%"
@@ -122,7 +201,10 @@ export function ModelSelector({
       >
         <span className="flex min-w-0 items-center gap-1.5">
           {problem === undefined ? (
-            <span className="truncate">{modelLabel(models, selected)}</span>
+            <span className="truncate">
+              {agentName === undefined ? "" : `@${agentName} · `}
+              {modelLabel(models, selected)}
+            </span>
           ) : (
             <span className="truncate text-danger">{problem.label}</span>
           )}

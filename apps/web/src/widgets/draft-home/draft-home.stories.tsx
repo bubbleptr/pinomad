@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import { fakeRemote, fakeView, PINOMAD } from "../../test/story-fixtures.tsx";
 import { DraftHome } from "./draft-home.tsx";
 
@@ -39,3 +39,10 @@ export const Disconnected: Story = { args: { connected: false } };
 /** A host without models can't start anything. */
 const noModels = fakeView({ conversation: undefined, models: [], defaults: {}, settings: null });
 export const NoModels: Story = { args: { view: noModels, remote: fakeRemote(noModels) } };
+
+/** The + menu: what can be added, then a second way to pick the project and where to work. */
+export const AddMenu: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));
+  },
+};

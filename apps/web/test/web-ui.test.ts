@@ -50,6 +50,8 @@ const shotDir = process.env.WEB_UI_SHOT_DIR;
 async function shot(page: Page, name: string): Promise<void> {
   if (shotDir === undefined) return;
   await mkdir(shotDir, { recursive: true });
+  // Let popover and menu enter animations finish.
+  await page.waitForTimeout(300);
   await page.screenshot({ path: join(shotDir, `${name}.png`) });
 }
 
@@ -3264,13 +3266,15 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
   await expect.poll(() => page.getByRole("listbox").count()).toBe(0);
   await plain.pressSequentially("x");
 
-  // Hand-written files stream in; the named-agent capsule appears once the
-  // roles snapshot lands — the reliable readiness signal now that the `$`
-  // trigger makes the editable a combobox from the start.
+  // Hand-written files stream in; the model popover's Agent section lists
+  // them once the roles snapshot lands — the reliable readiness signal now
+  // that the `$` trigger makes the editable a combobox from the start.
   await mkdir(join(dir.path, "agents"), { recursive: true });
   await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
-  await page.getByRole("button", { name: "Named agent" }).waitFor();
+  await page.getByTestId("model-thinking-trigger").click();
+  await page.getByRole("group", { name: "Agent" }).getByRole("button", { name: /^reviewer/ }).waitFor();
+  await dismissPopovers(page);
   const editable = page.getByRole("combobox", { name: "Prompt" });
   await editable.click();
 
@@ -3370,6 +3374,13 @@ const dismissPopovers = async (page: Page): Promise<void> => {
   await page.waitForTimeout(100);
 };
 
+/** Picks a named agent (or /^No agent/) from the model popover's Agent section, then closes it. */
+const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
+  await page.getByTestId("model-thinking-trigger").click();
+  await page.getByRole("group", { name: "Agent" }).getByRole("button", { name }).click();
+  await dismissPopovers(page);
+};
+
 it("creates the draft with a named agent and shows @name on the conversation and its forks", async () => {
   const webOrigin = await startWeb();
   const dir = await tempDir();
@@ -3391,13 +3402,17 @@ it("creates the draft with a named agent and shows @name on the conversation and
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // The agent capsule lists the host's roles; picking one shows the inherited pick.
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^reviewer/ }).click();
+  // The model popover lists the host's roles; picking one shows the inherited pick.
   const capsule = page.getByTestId("model-thinking-trigger");
-  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · High");
+  if (shotDir !== undefined) {
+    await capsule.click();
+    await page.getByRole("group", { name: "Agent" }).waitFor();
+    await shot(page, "draft-model-agent-section");
+    await dismissPopovers(page);
+  }
+  await pickAgent(page, /^reviewer/);
+  await expect.poll(() => capsule.textContent()).toContain("@reviewer · Faux Thinker · High");
   await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
-  await dismissPopovers(page);
 
   const composer = page.getByRole("combobox", { name: "Prompt" });
   await composer.fill("check this");
@@ -3415,6 +3430,20 @@ it("creates the draft with a named agent and shows @name on the conversation and
 
   // The header names the agent next to the title, top-level…
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
+  // …and the capsule keeps it, read-only: the role can't change after create.
+  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
+  await capsule.click();
+  const agentSection = page.getByRole("group", { name: "Agent" });
+  await agentSection.getByText("reviewer", { exact: true }).waitFor();
+  expect(await agentSection.getByRole("button").count()).toBe(0);
+  await shot(page, "conversation-model-fixed-role");
+  await dismissPopovers(page);
+  if (shotDir !== undefined) {
+    await page.getByRole("button", { name: "More actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
+    await shot(page, "conversation-plus-menu");
+    await page.keyboard.press("Escape");
+  }
 
   // …and so does a fork, both in the Threads list and on the fork's own header.
   await page.getByRole("button", { name: "Fork", exact: true }).click();
@@ -3452,13 +3481,15 @@ it("sends only the overridden side once an agent draft's pick is changed", async
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^reviewer/ }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^reviewer/);
 
   // Overriding the model keeps the level inherited — the hint narrows to it.
   const capsule = page.getByTestId("model-thinking-trigger");
   await capsule.click();
+  // Opening still lands in the search box, though the Agent section comes first.
+  await expect
+    .poll(() => page.getByRole("textbox", { name: "Search models" }).evaluate((el) => el === document.activeElement))
+    .toBe(true);
   await page.getByRole("button", { name: "Thinker B", exact: false }).click();
   await dismissPopovers(page);
   await expect.poll(() => capsule.textContent()).toContain("level from @reviewer");
@@ -3497,9 +3528,7 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
   const page = await openPage(host, 1280, webOrigin);
   const capsule = page.getByTestId("model-thinking-trigger");
 
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^reviewer/ }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^reviewer/);
   await capsule.click();
   await page.getByRole("button", { name: "Thinker B", exact: false }).click();
   await dismissPopovers(page);
@@ -3507,17 +3536,13 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
 
   // Switching agents drops the override — planner pins nothing, so the
   // capsule falls back to the host default and reads "from @planner" again.
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^planner/ }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^planner/);
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
   await expect.poll(() => capsule.textContent()).toContain("from @planner");
 
   // Clearing the agent returns to the remembered draft pick, not the agent's.
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: "No agent", exact: true }).click();
-  await dismissPopovers(page);
-  await expect.poll(() => page.getByTestId("agent-trigger").textContent()).toContain("No agent");
+  await pickAgent(page, /^No agent/);
+  await expect.poll(() => capsule.textContent()).not.toContain("@planner");
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
   await expect.poll(() => capsule.textContent()).not.toContain("from @");
 
@@ -3526,15 +3551,11 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
   await page.getByRole("button", { name: "Thinker B", exact: false }).click();
   await dismissPopovers(page);
   await expect.poll(() => capsule.textContent()).toContain("Thinker B");
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^reviewer/ }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^reviewer/);
   await capsule.click();
   await page.getByRole("button", { name: "Thinker A", exact: false }).click();
   await dismissPopovers(page);
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: "No agent", exact: true }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^No agent/);
   await expect.poll(() => capsule.textContent()).toContain("Thinker B");
 });
 
@@ -3556,9 +3577,7 @@ it("blocks the draft send while the agent's model is unavailable and unblocks on
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.getByTestId("agent-trigger").click();
-  await page.getByRole("button", { name: /^broken/ }).click();
-  await dismissPopovers(page);
+  await pickAgent(page, /^broken/);
   const capsule = page.getByTestId("model-thinking-trigger");
   await expect.poll(() => capsule.textContent()).toContain("gone/claude-z unavailable");
 
@@ -3635,4 +3654,87 @@ it("keeps the agent candidates when the draft's file listing fails", async () =>
   // The failed request never clears the agent candidate and no Files group appears.
   await expect.poll(async () => menu.getByRole("option").count(), { timeout: 3000 }).toBe(1);
   expect(await menu.getByRole("group", { name: "Files" }).count()).toBe(0);
+});
+
+it("opens the file and skill menus from the + menu, appending the trigger to the draft", async () => {
+  const webOrigin = await startWeb();
+  const dir = await tempDir();
+  defer(dir.remove);
+  await mkdir(join(dir.path, "agents"), { recursive: true });
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
+  const project = await tempDir();
+  defer(project.remove);
+  await writeFile(join(project.path, "README.md"), "# proj\n");
+  await mkdir(join(project.path, ".agents", "skills", "review"), { recursive: true });
+  await writeFile(
+    join(project.path, ".agents", "skills", "review", "SKILL.md"),
+    "---\nname: review\ndescription: Project review steps\n---\n\nReview.\n",
+  );
+  await run("git", ["-C", project.path, "init", "-b", "main"]);
+  await run("git", ["-C", project.path, "add", "-A"]);
+  await run("git", ["-C", project.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path, projects: [project.path] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  const projectName = project.path.split("/").at(-1)!;
+  await page.getByRole("combobox", { name: "Project", exact: true }).click();
+  await page.getByRole("option", { name: projectName, exact: true }).click();
+  const composer = page.getByRole("combobox", { name: "Prompt" });
+  const more = page.getByRole("button", { name: "More actions", exact: true });
+
+  // An empty draft: the file trigger goes in as-is and its menu opens on files.
+  await more.click();
+  await shot(page, "draft-plus-menu");
+  await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).click();
+  const files = page.getByRole("listbox", { name: "Agents and files" });
+  await files.getByRole("group", { name: "Files" }).getByRole("option", { name: /README\.md/ }).waitFor();
+  await shot(page, "plus-file-menu");
+  // Focus is back in the composer, so the keyboard narrows the open menu.
+  await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
+  await page.keyboard.type("READ");
+  await expect.poll(() => files.getByRole("option").count()).toBe(1);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.textContent()).toBe("@./README.md ");
+
+  // A draft that ends in a word gets a separating space so `$` can activate.
+  // The keyboard path: open the menu, jump to the item by its first letter, pick it.
+  await page.keyboard.type("then");
+  await more.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
+  await page.keyboard.type("U");
+  await expect
+    .poll(() => page.getByRole("menuitem", { name: "Use a skill…", exact: true }).evaluate((el) => el === document.activeElement))
+    .toBe(true);
+  await page.keyboard.press("Enter");
+  const skills = page.getByRole("listbox", { name: "Skills" });
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.textContent()).toBe("@./README.md then $review ");
+
+  // After a line break the trigger starts the new line, no space needed.
+  await page.keyboard.press("Shift+Enter");
+  await more.click();
+  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/then \$review \n\$review \s*$/);
+
+  // Other whitespace (a pasted tab) isn't a separator Astryx activates after,
+  // so it still gets the space.
+  await composer.evaluate(() => document.execCommand("insertText", false, "x\t"));
+  await more.click();
+  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await skills.getByRole("option", { name: /review/ }).waitFor();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
+
+  // The menu's project choice is a second entry to the footer picker's state.
+  await more.click();
+  await page.getByRole("menuitem", { name: /^Project/ }).click();
+  await page.getByRole("menuitemradio", { name: projectName, exact: true }).waitFor();
+  await shot(page, "draft-plus-menu-project");
+  await page.getByRole("menuitemradio", { name: "No project", exact: true }).click();
+  await expect.poll(() => page.getByRole("combobox", { name: "Project", exact: true }).textContent()).toContain("No project");
 });

@@ -1,14 +1,15 @@
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
+import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
+import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
@@ -16,8 +17,8 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
+import { ChatAddMenu, ChatAddMenuSection } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
-import { Plus } from "../../shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
 
 /** A queued edit's images as bytes, or undefined when any one cannot load. */
@@ -64,10 +65,9 @@ export function ConversationComposer({
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  const atMentions = useAtMentions(
-    view.agents,
-    inputRef,
-    // A Chat conversation has no project files; like a Chat draft, it offers agents only.
+  // A Chat conversation has no project files; like a Chat draft, it offers
+  // agents only — and its + menu no "Mention a file…".
+  const fileSource: MentionFiles | undefined =
     view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
       ? {
           key: `conversation:${conversation.conversation.id}`,
@@ -77,8 +77,8 @@ export function ConversationComposer({
               query,
             ),
         }
-      : undefined,
-  );
+      : undefined;
+  const atMentions = useAtMentions(view.agents, inputRef, fileSource);
   // `$` skill mentions (issue #143): the conversation's own scope — a Chat
   // conversation still lists the user's skills.
   const skills = useSkillMentions(
@@ -90,6 +90,9 @@ export function ConversationComposer({
   useSkillHighlight(inputRef, value, skills.names);
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const queue = queueItems(conversation);
+  const roles = view.agents?.roles ?? [];
+  // The role the conversation was created with — fixed for its life (ADR-0023).
+  const role = findConversation(view.organized, conversation.conversation.id)?.summary.role;
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
@@ -286,28 +289,32 @@ export function ConversationComposer({
         error={error}
         startActions={
           <>
-            <DropdownMenu
-              button={{
-                label: "More actions",
-                variant: "ghost",
-                size: "sm",
-                isIconOnly: true,
-                icon: <Plus aria-hidden="true" />,
-                isDisabled: disconnected || editLocked,
-              }}
-              items={[
-                {
-                  label: addImages,
-                  isDisabled: disconnected || editLocked || !accepts,
-                  onClick: () => fileInput.current?.click(),
-                },
-                { label: "Compact conversation", isDisabled: disconnected, onClick: () => void remote.controller.compact(undefined) },
-              ]}
-            />
+            <ChatAddMenu isDisabled={disconnected || editLocked}>
+              <ChatAddMenuSection title="Add">
+                <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
+                {fileSource === undefined ? null : (
+                  <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
+                )}
+                {skills.trigger === undefined ? null : (
+                  <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                )}
+                {roles.length === 0 ? null : (
+                  <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                )}
+              </ChatAddMenuSection>
+              <ChatAddMenuSection title="Conversation">
+                <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
+              </ChatAddMenuSection>
+            </ChatAddMenu>
             <ModelSelector
               models={view.models}
               selected={{ model: agent.model, level: agent.thinkingLevel ?? "off" }}
               isDisabled={disconnected}
+              agent={
+                role === undefined
+                  ? undefined
+                  : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
+              }
               onModelChange={(model) => void remote.controller.setModel(model)}
               onLevelChange={(level) => void remote.controller.setThinkingLevel(level)}
             />

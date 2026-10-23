@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
+import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { ModelSelector } from "./model-selector.tsx";
 
@@ -8,6 +9,16 @@ const models: ModelSummary[] = [
   { provider: "openai", modelId: "gpt-b", name: "GPT B", contextWindow: 400_000, thinkingLevels: ["off", "low", "medium"] },
   { provider: "local", modelId: "llama-c", name: "Llama C", contextWindow: 128_000, thinkingLevels: ["off"] },
 ];
+
+const roles: AgentRole[] = [
+  { name: "reviewer", description: "Reads the diff against the repo's ADRs and flags what breaks them.", prompt: "Be thorough." },
+  { name: "planner", description: "Turns a request into an ordered plan before any code changes.", prompt: "Be concise." },
+  { name: "release-notes", description: "Writes user-facing notes from merged PRs.", prompt: "" },
+];
+
+const open = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.click(within(canvasElement).getByTestId("model-thinking-trigger"));
+};
 
 const meta = {
   title: "Entities/Model/ModelSelector",
@@ -46,8 +57,23 @@ export const NoModels: Story = {
   args: { models: [], selected: { level: "off" } },
 };
 
-export const Open: Story = {
-  play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByTestId("model-thinking-trigger"));
-  },
+export const Open: Story = { play: open };
+
+/** A draft on a host with named agents: the Agent section leads the popover. */
+export const AgentPick: Story = {
+  args: { agent: { kind: "pick", roles, value: undefined, onChange: fn() } },
+  play: open,
+};
+
+/** A picked agent prefixes the capsule; the inherited side reads "from @name". */
+export const AgentPicked: Story = {
+  args: { agent: { kind: "pick", roles, value: "reviewer", onChange: fn() }, sourceHint: "from @reviewer" },
+};
+
+export const AgentPickedOpen: Story = { ...AgentPicked, play: open };
+
+/** A conversation's role is fixed at create (ADR-0023): shown, not offered. */
+export const FixedRole: Story = {
+  args: { agent: { kind: "fixed", name: "reviewer", description: roles[0]!.description } },
+  play: open,
 };
