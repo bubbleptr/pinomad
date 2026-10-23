@@ -174,6 +174,7 @@ pub fn retry_json(retry: Option<&RetryRequest>) -> Json {
         Some(r) => obj(&[
             ("text", Some(s(&r.text))),
             ("images", Some(Json::array(r.images.iter().map(image_json).collect()))),
+            ("skills", Some(Json::array(r.skills.iter().map(|n| s(n)).collect()))),
             ("requestId", Some(s(&r.request_id))),
         ]),
     }

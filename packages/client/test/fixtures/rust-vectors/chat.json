@@ -266,77 +266,84 @@
       "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":114,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":115,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-115\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"requestId\":\"retry:run-115\"}"
     },
     {
       "name": "retry-images",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":116,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":117,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-117\"}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"requestId\":\"retry:run-117\"}"
+    },
+    {
+      "name": "retry-skills",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":118,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review do x\",\"timestamp\":0}]},{\"id\":119,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "busy": false,
+      "presentations": "{}",
+      "expect": "{\"text\":\"$review do x\",\"images\":[],\"skills\":[\"review\"],\"requestId\":\"retry:run-119\"}"
     },
     {
       "name": "retry-image-only",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":118,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":119,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":120,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":121,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"requestId\":\"retry:run-119\"}"
+      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"requestId\":\"retry:run-121\"}"
     },
     {
       "name": "retry-empty-prompt",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":120,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":121,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":122,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":123,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-not-newest",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":122,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":123,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":124,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":125,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":124,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":125,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":126,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":127,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-succeeded",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":126,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":127,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":128,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":129,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":128,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":129,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":130,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":130,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":131,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":132,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-130\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"requestId\":\"retry:run-132\"}"
     },
     {
       "name": "retry-reset",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":131,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":132,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":133,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":133,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":134,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":135,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-steer",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":134,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":135,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":136,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":137,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":136,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":137,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":138,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":139,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"steer\",\"images\":[],\"requestId\":\"retry:run-137\"}"
+      "expect": "{\"text\":\"steer\",\"images\":[],\"skills\":[],\"requestId\":\"retry:run-139\"}"
     },
     {
       "name": "retry-second-failure",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":138,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":139,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":140,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":141,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":140,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":141,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":142,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":143,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"requestId\":\"retry:run-141\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"requestId\":\"retry:run-143\"}"
     },
     {
       "name": "retry-images-mixed",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":142,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"timestamp\":0}]},{\"id\":143,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":144,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"timestamp\":0}]},{\"id\":145,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"requestId\":\"retry:run-143\"}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"skills\":[],\"requestId\":\"retry:run-145\"}"
     }
   ],
   "splitSubagentCalls": [
@@ -347,18 +354,18 @@
     },
     {
       "name": "split-settles-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"145-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"145-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"145-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"147-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"147-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"147-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-hands-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"148-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"148-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"148-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"150-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"150-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"150-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-dup-callid",
-      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"151-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"153-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
-      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"151-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"153-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
+      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"153-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"155-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
+      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"153-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"155-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
     }
   ]
 }

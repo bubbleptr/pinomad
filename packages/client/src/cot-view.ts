@@ -580,7 +580,7 @@ export function deriveChat(
 /** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
 export function retryOf(
   entries: readonly ChatEntry[],
-): { text: string; images: readonly ViewImage[]; requestId: string } | undefined {
+): { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string } | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {
@@ -592,7 +592,9 @@ export function retryOf(
     if (entry.kind !== "user" || (entry.text.trim() === "" && entry.images.length === 0)) return undefined;
     // The run id (`run-<first assistant entry id>`) is stable across views, so
     // a second click or another client's retry dedupes on the host.
-    return { text: entry.text, images: entry.images, requestId: `retry:${last.id}` };
+    // The picked skills go back too: without them the host would fall back
+    // to matching every `$name` in the text (ADR-0028).
+    return { text: entry.text, images: entry.images, skills: entry.skills, requestId: `retry:${last.id}` };
   }
   return undefined;
 }
