@@ -65,6 +65,24 @@ describe("followEdit", () => {
     expect(draftMessage(glued)).toEqual({ text: "$review $review ", skills: ["review"] });
   });
 
+  it("drops a deleted pick rather than moving it onto a typed $name outside the edit", () => {
+    // `$review ` typed by hand, then a second `review` picked from the menu.
+    const draft = followEdit(bound("$review $"), "$review $review ", "review");
+    expect(spans(draft)).toEqual(["8:$review"]);
+    // Select the picked copy and delete it: the only pick is gone.
+    const deleted = followEdit(draft, "$review ");
+    expect(deleted.bindings).toEqual([]);
+    expect(draftMessage(deleted)).toEqual({ text: "$review ", skills: [] });
+  });
+
+  it("drops the pick when the typed copy before it is deleted — the diff can't tell them apart", () => {
+    // The accepted cost: deleting the hand-typed first copy leaves the same
+    // text as deleting the pick, and the diff names the second copy, so the
+    // pick unbinds. Under-sending beats sending a skill nobody picked.
+    const draft = bound("$review $review ", [8, "review"]);
+    expect(followEdit(draft, "$review ").bindings).toEqual([]);
+  });
+
   it("follows several bindings through one edit", () => {
     const draft = bound("$a and $b and $c", [0, "a"], [7, "b"], [14, "c"]);
     expect(spans(followEdit(draft, "$a or $b and $c"))).toEqual(["0:$a", "6:$b", "13:$c"]);

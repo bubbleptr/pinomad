@@ -4,8 +4,8 @@
 // sent as `skills` (the host expands those). A hand-typed `$name` is text.
 //
 // Every value change goes through `followEdit`: bindings clear of the edit
-// shift with it, and one the edit cut into survives only where `$name` still
-// reads intact. Ranges are UTF-16 offsets into the composer's value.
+// shift with it, one the edit deleted or replaced is dropped, and one the
+// edit cut into survives only where `$name` still reads intact in place. Ranges are UTF-16 offsets into the composer's value.
 import { skillMentionRanges } from "@pinomad/client/skill-mentions.ts";
 
 export interface SkillBinding {
@@ -48,8 +48,9 @@ function normalized(text: string, bindings: readonly SkillBinding[]): SkillBindi
 
 /**
  * `draft` moved onto `next`, one contiguous edit away from `draft.text`
- * (common prefix and suffix, as iOS diffs). `picked` names the skill a `$`
- * menu pick just inserted: the `$picked` that touches the edit is bound.
+ * (common prefix and suffix, as iOS's `SkillChips.following` diffs).
+ * `picked` names the skill a `$` menu pick just inserted: the `$picked` that
+ * touches the edit is bound.
  */
 export function followEdit(draft: SkillDraft, next: string, picked?: string): SkillDraft {
   const old = draft.text;
@@ -69,16 +70,20 @@ export function followEdit(draft: SkillDraft, next: string, picked?: string): Sk
 
   const bindings: SkillBinding[] = [];
   for (const binding of draft.bindings) {
-    // An insert right at an edge diffs ambiguously, so a touched binding may
-    // read intact either where it was or shifted by the edit.
-    const candidates =
-      binding.end <= prefix
-        ? [binding.start]
-        : binding.start >= oldEditEnd
-          ? [binding.start + delta]
-          : [binding.start, binding.start + delta];
-    const start = candidates.find((at) => reads(next, at, binding.name));
-    if (start !== undefined) bindings.push({ start, end: start + 1 + binding.name.length, name: binding.name });
+    // Wholly before the edit it stays, wholly after it shifts. One the edit's
+    // old span swallows was deleted or replaced: it is dropped, never moved
+    // onto identical text outside the edit. When the same text sits beside
+    // it the diff may name the wrong copy (delete a typed `$review` in front
+    // of a picked one and the pick unbinds) — the accepted cost, since
+    // under-sending beats sending a skill nobody picked. One the edit cuts
+    // into survives only where `$name` still reads in place.
+    let start: number | undefined;
+    if (binding.end <= prefix) start = binding.start;
+    else if (binding.start >= oldEditEnd) start = binding.start + delta;
+    else if (binding.start < prefix || binding.end > oldEditEnd) start = binding.start;
+    if (start !== undefined && reads(next, start, binding.name)) {
+      bindings.push({ start, end: start + 1 + binding.name.length, name: binding.name });
+    }
   }
 
   if (picked !== undefined) {
