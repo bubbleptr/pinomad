@@ -431,6 +431,36 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("gates setAgent on a 5.18 host and sends the name or null", async () => {
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 17 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await remoteOld.controller.setAgent("reviewer");
+      await waitForView(remoteOld, (view) =>
+        view.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.18"),
+        ),
+      );
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "setAgent")).toHaveLength(0);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.setAgent("reviewer");
+      await remote.controller.setAgent(null);
+      const calls = sent.filter((frame) => frame.type === "call" && frame.method === "setAgent");
+      expect(calls.map((frame) => (frame.args as { agent: unknown }).agent)).toEqual(["reviewer", null]);
+      expect(calls.map((frame) => (frame.args as { conversationId: unknown }).conversationId)).toEqual([1, 1]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("forwards bound skills to a 5.16 host and leaves them off for an older one", async () => {
     const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 15 } });
     const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });

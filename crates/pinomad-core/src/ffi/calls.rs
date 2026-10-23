@@ -200,6 +200,10 @@ pub enum FfiCall {
     /// The shown conversation's thinking level.
     SetThinkingLevel { level: ThinkingLevel },
     SetModel { model: ModelRef },
+    /// Switch the shown conversation to a named agent, or clear it with
+    /// `None` (ADR-0023, protocol 5.18). Needs a 5.18 host — an older one
+    /// lands a notice.
+    SetAgent { agent: Option<String> },
     /// Rename a conversation permanently. Request-class: the op rejects
     /// with the host's error. Needs a 5.4 host.
     RenameConversation { id: u64, title: String },
@@ -349,6 +353,7 @@ impl FfiCall {
             FfiCall::SetModel { model } => Call::SetModel {
                 model: model.to_json(),
             },
+            FfiCall::SetAgent { agent } => Call::SetAgent { agent },
             FfiCall::RenameConversation { id, title } => Call::RenameConversation { id, title },
             FfiCall::ListFolders { path } => Call::ListFolders { path },
             FfiCall::CreateConversation {

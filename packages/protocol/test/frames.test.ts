@@ -124,6 +124,20 @@ describe("parseClientFrame", () => {
     }
   });
 
+  it("accepts setAgent with a name or null; rejects malformed ones", () => {
+    const setAgent = (agent: unknown): unknown => ({ type: "call", id: 1, method: "setAgent", args: { conversationId: 7, agent } });
+    expect(kinds(setAgent("reviewer"))).toBe("frame");
+    expect(kinds(setAgent(null))).toBe("frame");
+    for (const agent of [undefined, "", 3, {}, []]) expect(kinds(setAgent(agent))).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setAgent", args: { agent: null } })).toBe("malformed");
+    expect(kinds({ type: "call", id: 1, method: "setAgent", args: { conversationId: 0, agent: null } })).toBe("malformed");
+  });
+
+  it("introduces setAgent at minor 18", () => {
+    expect(hostSupportsCall(17, "setAgent")).toBe(false);
+    expect(hostSupportsCall(18, "setAgent")).toBe(true);
+  });
+
   it("accepts withdrawQueued and steerQueued with a positive integer submissionId", () => {
     for (const method of ["withdrawQueued", "steerQueued"] as const) {
       expect(kinds({ type: "call", id: 1, method, args: { conversationId: 7, submissionId: 3 } })).toBe("frame");

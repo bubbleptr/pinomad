@@ -85,6 +85,18 @@ describe("organize", () => {
     expect(organized.chats.flatMap((node) => node.summary.id)).not.toContain(40);
   });
 
+  it("keeps currentAgent on a 5.18 summary and tolerates pre-5.18 summaries without it", () => {
+    const index: HostIndex = { projects: [], conversations: [chat(10, 1), chat(11, 2)] };
+    const organized = organize(index, [
+      { ...summary(10), role: "reviewer", currentAgent: "planner" },
+      // An older host's summary simply lacks the optional field.
+      summary(11),
+    ]);
+    const withAgent = organized.chats.find((node) => node.summary.id === 10)!.summary;
+    expect(withAgent).toMatchObject({ role: "reviewer", currentAgent: "planner" });
+    expect(organized.chats.find((node) => node.summary.id === 11)!.summary).not.toHaveProperty("currentAgent");
+  });
+
   it("orders nested children by creation", () => {
     const index: HostIndex = { projects: [], conversations: [chat(10, 1)] };
     const organized = organize(index, [summary(10), summary(9, 10), summary(8, 10)]);

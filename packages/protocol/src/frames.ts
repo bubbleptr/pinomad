@@ -89,7 +89,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 17 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 18 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -210,6 +210,13 @@ export interface CallMethods {
   setModel: { args: { conversationId: ConversationId; model: ModelRef }; result: null };
   /** Set the agent's thinking level; rejects when the model doesn't support it. */
   setThinkingLevel: { args: { conversationId: ConversationId; level: ThinkingLevel }; result: null };
+  /**
+   * Switch the conversation to a named agent (5.18, ADR-0023): the role's
+   * prompt and any model/thinking-level pins are re-copied from the current
+   * file; `null` clears the prompt and keeps the current model. Subagents
+   * reject the call — their role is fixed by the delegating call.
+   */
+  setAgent: { args: { conversationId: ConversationId; agent: string | null }; result: null };
   /** A new ownerless conversation that sees this one's entries through `entryId`. */
   fork: {
     args: { conversationId: ConversationId; entryId: string; removeTools?: readonly string[] };
@@ -298,6 +305,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   runCommand: 17,
   setModel: 0,
   setThinkingLevel: 0,
+  setAgent: 18,
   fork: 0,
   answer: 0,
   changes: 0,
@@ -492,6 +500,10 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId();
     case "setThinkingLevel":
       return conversationId() && nonempty(args.level);
+    case "setAgent":
+      // Shape only — whether the name resolves (or the file/model works) is
+      // the host's `ok:false`, not a malformed frame.
+      return conversationId() && (args.agent === null || nonempty(args.agent));
     case "compact":
       return conversationId() && (args.instructions === undefined || typeof args.instructions === "string");
     case "listCommands":

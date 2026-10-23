@@ -133,6 +133,9 @@ pub struct ConversationSummary {
     pub label: Option<String>,
     /// Subagents only: the named agent it ran as (ADR-0023).
     pub role: Option<String>,
+    /// The named agent the conversation currently runs as (ADR-0023, 5.18);
+    /// absent on pre-5.18 hosts and explicit `null` (no agent) alike.
+    pub current_agent: Option<String>,
     /// Running only: the tool call in flight.
     pub activity: Option<SummaryActivity>,
     raw: Json,
@@ -150,6 +153,7 @@ impl ConversationSummary {
             updated_at: raw.get("updatedAt").and_then(Json::as_number),
             label: text(raw.get("label")),
             role: text(raw.get("role")),
+            current_agent: text(raw.get("currentAgent")),
             activity: raw
                 .get("activity")
                 .and_then(|a| {

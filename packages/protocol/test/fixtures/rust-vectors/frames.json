@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 17
+    "minor": 18
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":17},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":18},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":17},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":18},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -195,6 +195,14 @@
       "wire": "{\"type\":\"call\",\"id\":21,\"method\":\"runCommand\",\"args\":{\"conversationId\":2,\"name\":\"compact\"}}"
     },
     {
+      "name": "call-setAgent",
+      "wire": "{\"type\":\"call\",\"id\":22,\"method\":\"setAgent\",\"args\":{\"conversationId\":2,\"agent\":\"reviewer\"}}"
+    },
+    {
+      "name": "call-setAgent-null",
+      "wire": "{\"type\":\"call\",\"id\":23,\"method\":\"setAgent\",\"args\":{\"conversationId\":2,\"agent\":null}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -288,6 +296,10 @@
       {
         "name": "runCommand",
         "since": 17
+      },
+      {
+        "name": "setAgent",
+        "since": 18
       },
       {
         "name": "setModel",
@@ -576,6 +588,18 @@
       "name": "runCommand@16",
       "minor": 16,
       "call": "runCommand",
+      "expect": false
+    },
+    {
+      "name": "setAgent@18",
+      "minor": 18,
+      "call": "setAgent",
+      "expect": true
+    },
+    {
+      "name": "setAgent@17",
+      "minor": 17,
+      "call": "setAgent",
       "expect": false
     },
     {

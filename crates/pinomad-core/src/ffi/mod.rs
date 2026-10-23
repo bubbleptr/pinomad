@@ -56,7 +56,7 @@ struct Inner {
 ///   sees `OperationFailed { op, error }`.
 /// - Command-class calls (everything else: `submit`, `switchConversation`,
 ///   `createConversation`, `archive`, `compact`, `runCommand`, `answer`, `setModel`,
-///   `setThinkingLevel`, `revokeDevice`, `updateSettings`) and the
+///   `setThinkingLevel`, `setAgent`, `revokeDevice`, `updateSettings`) and the
 ///   unqueued `abort` still emit
 ///   `OperationSucceeded { value: Unit }` on failure — the reason lands as
 ///   an entry in `snapshot().notices` with a stable `id`, like a host

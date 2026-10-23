@@ -142,6 +142,15 @@ function framesVector(): VectorFile {
       name: "call-runCommand-no-args",
       wire: wire({ type: "call", id: 21, method: "runCommand", args: { conversationId: 2, name: "compact" } }),
     },
+    // 5.18: switching the conversation's named agent (issue #314).
+    {
+      name: "call-setAgent",
+      wire: wire({ type: "call", id: 22, method: "setAgent", args: { conversationId: 2, agent: "reviewer" } }),
+    },
+    {
+      name: "call-setAgent-null",
+      wire: wire({ type: "call", id: 23, method: "setAgent", args: { conversationId: 2, agent: null } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];

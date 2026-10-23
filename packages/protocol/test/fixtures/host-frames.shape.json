@@ -371,6 +371,7 @@
             "target": "string",
             "tool": "string"
           },
+          "currentAgent": "null",
           "id": "number",
           "kind": "=conversation",
           "status": "string",
@@ -378,6 +379,7 @@
           "updatedAt": "number"
         },
         {
+          "currentAgent": "null",
           "id": "number",
           "kind": "=conversation",
           "status": "string",
@@ -385,6 +387,7 @@
           "updatedAt": "number"
         },
         {
+          "currentAgent": "null",
           "id": "number",
           "kind": "=conversation"
         }
