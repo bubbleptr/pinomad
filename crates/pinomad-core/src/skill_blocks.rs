@@ -1,5 +1,6 @@
 // `stripSkillBlocks` (issue #308, ADR-0028) — the text the user typed, from
-// a `pi.user` message the host may have prefixed with `$name` skill blocks.
+// a `pi.user` message the host may have prefixed with `$name` skill blocks,
+// and the names of the blocks it stripped.
 // The TypeScript reference is `packages/client/src/skill-blocks.ts`; this is
 // the same literal scanner over UTF-16 units, and the shared case table
 // replays here byte-for-byte. A block is
@@ -66,16 +67,29 @@ fn block_end(units: &[u16], at: usize) -> Option<usize> {
     Some(close + CLOSE.len())
 }
 
-/// The user's typed text: `text` past every leading skill block, or `text`
-/// itself when none strips.
-pub fn strip_skill_blocks(units: &[u16]) -> &[u16] {
+/// A `pi.user` message as the user wrote it.
+#[derive(Debug, PartialEq)]
+pub struct UserText<'a> {
+    /// `text` past every leading skill block, or `text` itself when none strips.
+    pub text: &'a [u16],
+    /// The stripped blocks' names, in order — a bubble highlights `$name`
+    /// only for these, a queued edit restores them as chips.
+    pub skills: Vec<String>,
+}
+
+pub fn strip_skill_blocks(units: &[u16]) -> UserText<'_> {
+    let mut skills = Vec::new();
     let mut at = 0;
     loop {
         match block_end(units, at) {
             Some(end) if starts_with(units, end, SEPARATOR) && end + SEPARATOR.len() != units.len() => {
+                // The name is ASCII `[a-z0-9-]+`, from the open tag to its closing quote.
+                let name = &units[at + OPEN.len()..];
+                let len = name.iter().position(|&u| u == QUOTE).unwrap_or(0);
+                skills.push(String::from_utf16_lossy(&name[..len]));
                 at = end + SEPARATOR.len();
             }
-            _ => return &units[at..],
+            _ => return UserText { text: &units[at..], skills },
         }
     }
 }

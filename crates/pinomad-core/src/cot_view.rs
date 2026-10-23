@@ -91,6 +91,11 @@ pub enum ChatEntry {
         id: String,
         text: String,
         images: Vec<MessageImage>,
+        /// The skills the host expanded into this message (ADR-0028): a
+        /// bubble highlights a `$name` in `text` only when its name is here
+        /// — by name, so a plain `$name` beside a picked one lights up too.
+        #[cfg_attr(feature = "ffi", uniffi(default))]
+        skills: Vec<String>,
     },
     Run {
         id: String,
@@ -724,11 +729,14 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
         let kind = entry.get("kind");
         if str_eq(kind, "pi.user") && str_eq(message.and_then(|m| m.get("role")), "user") {
             flush!(false);
+            // The typed text, without the host's skill blocks (ADR-0028).
+            let units = text_of(message.and_then(|m| m.get("content")));
+            let typed = strip_skill_blocks(&units);
             items.push(ChatEntry::User {
                 id,
-                // The typed text, without the host's skill blocks (ADR-0028).
-                text: lossy(strip_skill_blocks(&text_of(message.and_then(|m| m.get("content"))))),
+                text: lossy(typed.text),
                 images: images_of(message.and_then(|m| m.get("content"))),
+                skills: typed.skills,
             });
         } else if str_eq(kind, "pi.compaction") {
             flush!(false);

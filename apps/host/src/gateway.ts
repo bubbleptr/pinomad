@@ -1028,7 +1028,7 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
       : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
   // The typed text, not the skill blocks ahead of it (ADR-0028). An
   // image-only message has no text — no title rather than an empty one.
-  const title = stripSkillBlocks(text).replace(/\s+/g, " ").trim();
+  const title = stripSkillBlocks(text).text.replace(/\s+/g, " ").trim();
   return title === "" ? {} : { title };
 }
 

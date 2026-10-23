@@ -168,7 +168,7 @@ extension ChatEntry {
     /// the transcript's `ForEach`.
     public var entryId: String {
         switch self {
-        case let .user(id, _, _), let .run(id, _, _, _, _), let .compaction(id), let .reset(id):
+        case let .user(id, _, _, _), let .run(id, _, _, _, _), let .compaction(id), let .reset(id):
             id
         }
     }

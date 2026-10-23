@@ -35,6 +35,8 @@ describe("deriveChat", () => {
   it("shows a user message without the skill blocks the host prepended", () => {
     const users = derive("user-skill-blocks").filter((item) => item.kind === "user");
     expect(users.map((item) => item.text)).toEqual(["$review do x", "look $review"]);
+    // The names the host expanded: a bubble highlights `$name` only for these.
+    expect(users.map((item) => item.skills)).toEqual([["review"], ["review"]]);
     expect(users[1]!.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
   });
 

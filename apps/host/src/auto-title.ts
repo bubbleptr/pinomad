@@ -117,7 +117,7 @@ export function attachAutoTitle(
 
       // What the user typed, not the skill blocks the host put ahead of it (ADR-0028).
       const firstText = (
-        stripSkillBlocks(textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "")) ||
+        stripSkillBlocks(textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "")).text ||
         "(images only)"
       ).slice(0, TITLE_INPUT_LIMIT);
       const answer = textOf(last.content).slice(0, TITLE_INPUT_LIMIT);

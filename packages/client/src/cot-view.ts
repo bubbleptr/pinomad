@@ -61,7 +61,19 @@ export type CotView = {
 };
 
 export type ChatEntry =
-  | { kind: "user"; id: string; text: string; images: readonly ViewImage[] }
+  | {
+      kind: "user";
+      id: string;
+      /** What the user typed, without the skill blocks the host prepended (ADR-0028). */
+      text: string;
+      images: readonly ViewImage[];
+      /**
+       * The skills the host expanded into this message. A bubble highlights a
+       * `$name` in `text` only when its name is here — by name, so a plain
+       * `$name` next to a picked one of the same name lights up too.
+       */
+      skills: readonly string[];
+    }
   | {
       kind: "run"; id: string;
       cot: CotView;
@@ -522,8 +534,8 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      // The typed text, without the skill blocks the host prepended (ADR-0028).
-      items.push({ kind: "user", id, text: stripSkillBlocks(textOf(message.content)), images: imagesOf(message.content) });
+      const typed = stripSkillBlocks(textOf(message.content));
+      items.push({ kind: "user", id, text: typed.text, images: imagesOf(message.content), skills: typed.skills });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });

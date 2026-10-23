@@ -138,11 +138,12 @@ pub fn cot_json(cot: &CotView) -> Json {
 
 pub fn chat_entry_json(entry: &ChatEntry) -> Json {
     match entry {
-        ChatEntry::User { id, text, images } => obj(&[
+        ChatEntry::User { id, text, images, skills } => obj(&[
             ("kind", Some(s("user"))),
             ("id", Some(s(id))),
             ("text", Some(s(text))),
             ("images", Some(Json::array(images.iter().map(image_json).collect()))),
+            ("skills", Some(Json::array(skills.iter().map(|name| s(name)).collect()))),
         ]),
         ChatEntry::Run {
             id,
@@ -224,6 +225,7 @@ pub fn queued_input_json(input: &QueuedInput) -> Json {
             "images",
             Some(Json::array(input.images.iter().map(image_json).collect())),
         ),
+        ("skills", Some(Json::array(input.skills.iter().map(|name| s(name)).collect()))),
     ])
 }
 

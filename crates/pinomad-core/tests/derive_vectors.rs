@@ -666,7 +666,13 @@ fn skill_blocks_replay() {
         let name = as_text(field(case, "name"));
         let text = field(case, "text").as_str().expect("text").clone();
         let stripped = pinomad_core::skill_blocks::strip_skill_blocks(text.units());
-        let got = Json::String(U16String(stripped.to_vec()));
+        let mut object = pinomad_core::json::JsonObject::new();
+        object.set(U16String::from_str("text"), Json::String(U16String(stripped.text.to_vec())));
+        object.set(
+            U16String::from_str("skills"),
+            Json::array(stripped.skills.iter().map(|name| Json::from(name.clone())).collect()),
+        );
+        let got = Json::Object(std::sync::Arc::new(object));
         assert_eq!(norm(&got), expect_text(case), "{name}");
     }
 }

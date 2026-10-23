@@ -56,20 +56,33 @@ function blockEnd(text: string, at: number): number {
   return close === -1 ? -1 : close + CLOSE.length;
 }
 
+/** A `pi.user` message as the user wrote it, and the skills the host expanded into it. */
+export interface UserText {
+  readonly text: string;
+  /** The stripped blocks' names, in order — what a bubble highlights and a queued edit restores as chips. */
+  readonly skills: readonly string[];
+}
+
 /**
  * The text the user typed, from a `pi.user` message the host may have
- * prefixed with skill blocks. Strips each well-formed block at the start —
+ * prefixed with skill blocks, plus those blocks' names. Strips each
+ * well-formed block at the start —
  * `<skill name="N" location="L">\nReferences are relative to B.\n\n…\n</skill>`
  * with N in `[a-z0-9-]+`, L non-empty without `"` or a newline, B non-empty,
  * the body ending at the first `\n</skill>` — as long as `\n\n` and a
  * non-empty rest follow it. Anything else, including a block that is not at
- * the very start, is returned unchanged.
+ * the very start, is left in the text.
  */
-export function stripSkillBlocks(text: string): string {
+export function stripSkillBlocks(text: string): UserText {
+  const skills: string[] = [];
   let at = 0;
   for (;;) {
     const end = blockEnd(text, at);
-    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) return text.slice(at);
+    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) {
+      return { text: text.slice(at), skills };
+    }
+    // The name runs from the open tag to its closing quote.
+    skills.push(text.slice(at + OPEN.length, text.indexOf('"', at + OPEN.length)));
     at = end + SEPARATOR.length;
   }
 }

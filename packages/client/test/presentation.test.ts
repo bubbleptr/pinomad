@@ -78,7 +78,7 @@ describe("queueItems", () => {
 describe("queuedInput", () => {
   it("returns the original text and images of a queued steer or follow-up", () => {
     const steer = QUEUED_INPUT_CASES.find((c) => c.name === "steer")!.input;
-    expect(queuedInput(steer.view, steer.id)).toEqual({ text: "focus", images: [] });
+    expect(queuedInput(steer.view, steer.id)).toEqual({ text: "focus", images: [], skills: [] });
 
     const images = QUEUED_INPUT_CASES.find((c) => c.name === "images")!.input;
     expect(queuedInput(images.view, images.id)).toEqual({
@@ -87,6 +87,7 @@ describe("queuedInput", () => {
         { data: "aGk=", mimeType: "image/png" },
         { data: "aGk=", mimeType: "image/png" },
       ],
+      skills: [],
     });
 
     const refs = QUEUED_INPUT_CASES.find((c) => c.name === "images-ref")!.input;
@@ -96,14 +97,17 @@ describe("queuedInput", () => {
         { data: "aGk=", mimeType: "image/png" },
         { ref: "5f2a", mimeType: "image/jpeg" },
       ],
+      skills: [],
     });
   });
 
   it("refills the composer with what the user typed, without the skill blocks", () => {
     const skill = QUEUED_INPUT_CASES.find((c) => c.name === "skill-blocks")!.input;
+    // `skills` lets the composer restore the picked chips.
     expect(queuedInput(skill.view, skill.id)).toEqual({
       text: "$review then x",
       images: [{ data: "aGk=", mimeType: "image/png" }],
+      skills: ["review"],
     });
   });
 

@@ -80,31 +80,31 @@
       "name": "steer",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"focus\"}]}}}",
       "id": 1,
-      "expect": "{\"text\":\"focus\",\"images\":[]}"
+      "expect": "{\"text\":\"focus\",\"images\":[],\"skills\":[]}"
     },
     {
       "name": "followUp",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"then this\"}]}]}}}",
       "id": 1,
-      "expect": "{\"text\":\"then this\",\"images\":[]}"
+      "expect": "{\"text\":\"then this\",\"images\":[],\"skills\":[]}"
     },
     {
       "name": "images",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":4,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
       "id": 4,
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[]}"
     },
     {
       "name": "images-ref",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":6,\"mode\":\"steer\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}]}}}",
       "id": 6,
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"skills\":[]}"
     },
     {
       "name": "skill-blocks",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":3,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review then x\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
       "id": 3,
-      "expect": "{\"text\":\"$review then x\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}"
+      "expect": "{\"text\":\"$review then x\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[\"review\"]}"
     },
     {
       "name": "write",
