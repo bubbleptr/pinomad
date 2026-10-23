@@ -182,7 +182,10 @@ struct NewConversationView: View {
                 text: draft,
                 selection: $selection,
                 focused: $focused,
-                placeholder: "Ask Pi to do something…",
+                // A draft has no `/` commands until it is a conversation.
+                placeholder: ComposerPlaceholder.text(
+                    lead: "Do anything with Pi", agents: !roles.isEmpty, files: mentionScope != nil,
+                    commands: false, skills: skillScope != nil),
                 chips: model.chips(for: key).ranges,
                 expandDeletion: { model.chips(for: key).deletion(expanding: $0) },
                 enabled: model.connected && !model.creating,
