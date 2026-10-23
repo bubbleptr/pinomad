@@ -49,6 +49,22 @@ describe("followEdit", () => {
     expect(followEdit(draft, "").bindings).toEqual([]);
   });
 
+  it("never leaves two bindings on one range when an edit removes one of two picks", () => {
+    // Picked twice, then one `$review ` selected and deleted in one edit.
+    // Deleting the first or the second leaves the same text, so the diff
+    // can't tell which went, and both survivors would read at 0..<7.
+    const draft = bound("$review $review ", [0, "review"], [8, "review"]);
+    expect(spans(followEdit(draft, "$review "))).toEqual(["0:$review"]);
+    expect(followEdit(draft, "$review ").bindings).toEqual([{ start: 0, end: 7, name: "review" }]);
+    // Deleting just one name (its space stays) is unambiguous either way.
+    expect(spans(followEdit(draft, " $review "))).toEqual(["1:$review"]);
+    expect(spans(followEdit(draft, "$review  "))).toEqual(["0:$review"]);
+    // Deleting the space between them keeps both, adjacent; sending splits them.
+    const glued = followEdit(draft, "$review$review ");
+    expect(spans(glued)).toEqual(["0:$review", "7:$review"]);
+    expect(draftMessage(glued)).toEqual({ text: "$review $review ", skills: ["review"] });
+  });
+
   it("follows several bindings through one edit", () => {
     const draft = bound("$a and $b and $c", [0, "a"], [7, "b"], [14, "c"]);
     expect(spans(followEdit(draft, "$a or $b and $c"))).toEqual(["0:$a", "6:$b", "13:$c"]);
@@ -69,6 +85,25 @@ describe("restoreDraft", () => {
 });
 
 describe("draftMessage", () => {
+  it("keeps a binding through a hyphen typed onto it, and sends it apart", () => {
+    const picked = followEdit(bound("$rev"), "$review ", "review");
+    const glued = followEdit(followEdit(picked, "$review"), "$review-now");
+    expect(spans(glued)).toEqual(["0:$review"]);
+    expect(draftMessage(glued)).toEqual({ text: "$review -now", skills: ["review"] });
+  });
+
+  it("ignores overlapping or stale bindings instead of sending garbage", () => {
+    const broken: SkillDraft = {
+      text: "$review x",
+      bindings: [
+        { start: 0, end: 7, name: "review" },
+        { start: 0, end: 7, name: "review" },
+        { start: 3, end: 10, name: "ship" },
+      ],
+    };
+    expect(draftMessage(broken)).toEqual({ text: "$review x", skills: ["review"] });
+  });
+
   it("sends the text as is with the bound names deduplicated in text order", () => {
     const draft = bound("use $b, then $a and $b again", [4, "b"], [13, "a"], [20, "b"]);
     expect(draftMessage(draft)).toEqual({ text: "use $b, then $a and $b again", skills: ["b", "a"] });
@@ -83,6 +118,9 @@ describe("draftMessage", () => {
     expect(draftMessage(bound("$reviewx", [0, "review"])).text).toBe("$review x");
     expect(draftMessage(bound("$review$deploy", [0, "review"])).text).toBe("$review $deploy");
     expect(draftMessage(bound("$review_it", [0, "review"])).text).toBe("$review _it");
+    // A hyphen continues the name's `[a-z0-9-]` run, so it needs the space too.
+    expect(draftMessage(bound("$review-now", [0, "review"])).text).toBe("$review -now");
+    expect(draftMessage(bound("x-$review", [2, "review"])).text).toBe("x- $review");
     // Punctuation after the name doesn't continue it.
     expect(draftMessage(bound("$review, then", [0, "review"])).text).toBe("$review, then");
   });

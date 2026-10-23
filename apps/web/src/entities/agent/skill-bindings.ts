@@ -19,7 +19,7 @@ export interface SkillBinding {
 export interface SkillDraft {
   /** The composer value the binding ranges belong to. */
   readonly text: string;
-  /** Bindings in text order, never overlapping. */
+  /** Bindings in text order, each reading `$name`, never overlapping (`normalized`). */
   readonly bindings: readonly SkillBinding[];
 }
 
@@ -27,6 +27,24 @@ export const emptyDraft: SkillDraft = { text: "", bindings: [] };
 
 const reads = (text: string, start: number, name: string): boolean =>
   start >= 0 && text.startsWith(`$${name}`, start);
+
+/**
+ * The bindings invariant: sorted by start, each reading `$name` in `text`,
+ * none overlapping another (the earlier one wins; an exact duplicate is
+ * dropped). Following an edit can land two bindings on one range — delete
+ * one of `$review $review ` and the diff can't tell which went — so every
+ * result passes through here.
+ */
+function normalized(text: string, bindings: readonly SkillBinding[]): SkillBinding[] {
+  const kept: SkillBinding[] = [];
+  let end = 0;
+  for (const binding of [...bindings].sort((a, b) => a.start - b.start)) {
+    if (binding.start < end || !reads(text, binding.start, binding.name)) continue;
+    kept.push(binding);
+    end = binding.end;
+  }
+  return kept;
+}
 
 /**
  * `draft` moved onto `next`, one contiguous edit away from `draft.text`
@@ -74,12 +92,10 @@ export function followEdit(draft: SkillDraft, next: string, picked?: string): Sk
     if (at !== -1) {
       const pick: SkillBinding = { start: at, end: at + length, name: picked };
       const kept = bindings.filter((b) => b.end <= pick.start || b.start >= pick.end);
-      kept.push(pick);
-      kept.sort((a, b) => a.start - b.start);
-      return { text: next, bindings: kept };
+      return { text: next, bindings: normalized(next, [...kept, pick]) };
     }
   }
-  return { text: next, bindings };
+  return { text: next, bindings: normalized(next, bindings) };
 }
 
 /**
@@ -91,13 +107,17 @@ export function restoreDraft(text: string, skills: readonly string[]): SkillDraf
   if (skills.length === 0) return { text, bindings: [] };
   return {
     text,
+    // Lexical matches never overlap: already normalized.
     bindings: skillMentionRanges(text, skills).map(({ start, end }) => ({ start, end, name: text.slice(start + 1, end) })),
   };
 }
 
 const WHITESPACE = /\p{White_Space}/u;
-// What continues a mention past the name — skillMentionRanges' follow rule.
-const WORD_CHAR = /[\p{Alphabetic}\p{N}_$]/u;
+// What would stop the bubble's matcher from ending the mention at the name:
+// its follow rule (a letter, number, `_` or `$`) plus `-`, which its
+// `[a-z0-9-]+` name run swallows (`$review-now` reads as `review-now`). The
+// leading side needs no such list — any non-whitespace before `$` gets a space.
+const WORD_CHAR = /[\p{Alphabetic}\p{N}_$-]/u;
 
 /**
  * What `submit` / `createConversation` send: the text with each bound `$name`
@@ -111,7 +131,8 @@ export function draftMessage(draft: SkillDraft): { text: string; skills: string[
   const skills: string[] = [];
   let out = "";
   let at = 0;
-  for (const binding of draft.bindings) {
+  // Normalized again so a broken invariant can't duplicate or splice text.
+  for (const binding of normalized(text, draft.bindings)) {
     out += text.slice(at, binding.start);
     if (out !== "" && !WHITESPACE.test(out.at(-1)!)) out += " ";
     out += text.slice(binding.start, binding.end);
