@@ -892,6 +892,10 @@ mark.chat-skill-mention {
 
 .prompt-input__input .astryx-trigger-menu {
   min-width: 0;
+  /* Astryx scrolls the highlighted row into view with block: nearest, which
+     aligns it to the scrollport edge and ignores the list's padding; match
+     the padding so a scrolled row keeps its inset. */
+  scroll-padding-block: var(--spacing-1);
 }
 
 .prompt-input .astryx-chat-composer {
