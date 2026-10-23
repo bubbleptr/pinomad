@@ -707,6 +707,13 @@ class RemoteClient {
         }),
       setThinkingLevel: (level) => this.#command(() => this.#call("setThinkingLevel", { conversationId: conversationId(), level })),
       setModel: (model) => this.#command(() => this.#call("setModel", { conversationId: conversationId(), model })),
+      setAgent: (agent) =>
+        this.#command(() => {
+          if (!hostSupportsCall(this.#hostMinor, "setAgent")) {
+            throw new Error("The host is too old for this (needs protocol 5.18); run `pinomad upgrade` on the host");
+          }
+          return this.#call("setAgent", { conversationId: conversationId(), agent });
+        }),
       toggleTasks: () =>
         this.#command(async () => {
           if (this.#wanted.delete("tasks")) {

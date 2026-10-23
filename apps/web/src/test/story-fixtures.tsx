@@ -320,6 +320,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     abort: fn(async () => {}),
     setThinkingLevel: fn(async () => {}),
     setModel: fn(async () => {}),
+    setAgent: fn(async () => {}),
     toggleTasks: fn(async () => {}),
     switchConversation: fn(async () => {}),
     showSide: fn(async () => {}),

@@ -419,6 +419,10 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
     );
     h.invoke(7, FfiCall::WithdrawQueued { submission_id: 3, target: Some(2) });
     h.invoke(8, FfiCall::SteerQueued { submission_id: 3, target: Some(2) });
+    // 5.18 additions: switching the shown conversation's agent, name and null.
+    h.invoke(9, FfiCall::SwitchConversation { id: 2 });
+    h.invoke(10, FfiCall::SetAgent { agent: Some("reviewer".to_string()) });
+    h.invoke(11, FfiCall::SetAgent { agent: None });
 
     let calls = call_frames(&h);
     let by_name: HashMap<String, Vec<&Json>> = calls.iter().fold(HashMap::new(), |mut acc, frame| {
@@ -436,6 +440,8 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
         ("call-listFiles-conversation", by_name["listFiles"][1]),
         ("call-withdrawQueued", by_name["withdrawQueued"][0]),
         ("call-steerQueued", by_name["steerQueued"][0]),
+        ("call-setAgent", by_name["setAgent"][0]),
+        ("call-setAgent-null", by_name["setAgent"][1]),
     ]
     .into_iter()
     .collect();

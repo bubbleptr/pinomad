@@ -451,6 +451,9 @@ pub struct ConversationSummary {
     pub updated_at: Option<f64>,
     pub label: Option<String>,
     pub role: Option<String>,
+    /// The named agent the conversation currently runs as (5.18); `None` also
+    /// covers an explicit `null` (no agent) and a pre-5.18 host.
+    pub current_agent: Option<String>,
     pub activity: Option<SummaryActivity>,
 }
 
@@ -466,6 +469,7 @@ impl ConversationSummary {
             updated_at: core.updated_at,
             label: core.label,
             role: core.role,
+            current_agent: core.current_agent,
             activity: core.activity,
         }
     }
@@ -501,6 +505,9 @@ impl ConversationSummary {
         }
         if let Some(role) = &self.role {
             set(&mut object, "role", Json::from(role.clone()));
+        }
+        if let Some(current_agent) = &self.current_agent {
+            set(&mut object, "currentAgent", Json::from(current_agent.clone()));
         }
         if let Some(activity) = &self.activity {
             let mut entry = JsonObject::new();

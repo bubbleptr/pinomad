@@ -8,12 +8,12 @@ import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel
 import type { Models } from "@earendil-works/pi-ai/models";
 import {
   AgentDoc,
-  type AgentState,
   type CommitPublication,
   type Conversation,
   type ConversationDocToken,
   type ConversationId,
   type ConversationRecord,
+  configure,
   type Cursor,
   type EntryId,
   type EntryRecord,
@@ -73,6 +73,7 @@ import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
 import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
+import { RoleDoc } from "./role-doc.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
@@ -89,6 +90,7 @@ import {
   createConversation,
   IndexDoc,
   removeProject,
+  setAgent,
 } from "./organization.ts";
 import type { HostIndex, SkillScope } from "@pinomad/protocol/organization.ts";
 
@@ -762,6 +764,9 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       if (typeof subagent?.label === "string" && subagent.label !== "") facts.label = subagent.label;
       if (typeof subagent?.role === "string" && subagent.role !== "") facts.role = subagent.role;
     }
+    // Absent is meaningful: a conversation created before RoleDoc existed
+    // falls back to the index entry; an explicit null is "no agent".
+    facts.agent = roleNameOf(await harness.snapshot(RoleDoc, record.id, context));
     const named = (await harness.snapshot(TitleDoc, record.id, context))?.title;
     if (typeof named === "string" && named !== "") facts.named = named;
     return facts;
@@ -822,6 +827,9 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
           else next.delete(change.record.kind);
           facts.pending = next;
           touched.add(id);
+        } else if (change.record.kind === RoleDoc.definition.kind) {
+          facts.agent = roleNameOf(change.value as { name?: unknown } | null);
+          touched.add(id);
         } else if (change.record.kind === SubagentDoc.definition.kind) {
           const value = change.value as { label?: unknown; role?: unknown } | null;
           facts.label = typeof value?.label === "string" && value.label !== "" ? value.label : undefined;
@@ -863,14 +871,16 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     this.#roles = next;
   }
 
-  /** A summary's role: the subagent's own call-given name, else the top-level index entry's (inherited by forks). */
+  /**
+   * A summary's `role` is the creation agent: the subagent's call-given name,
+   * else the top-level index entry's (inherited by forks). `currentAgent` is
+   * the own RoleDoc, falling back to that role for pre-RoleDoc conversations.
+   */
   #summaryOf(record: ConversationRecord): ConversationSummary {
     const facts = this.#fact(record.id);
-    return summaryOf(
-      record,
-      facts,
-      record.owner === undefined ? topLevelRole(record, this.#records, this.#roles) : facts.role,
-    );
+    if (record.owner !== undefined) return summaryOf(record, facts, facts.role, facts.role);
+    const role = topLevelRole(record, this.#records, this.#roles);
+    return summaryOf(record, facts, role, facts.agent === undefined ? role : facts.agent);
   }
 
   /** Re-derive the touched ids' summaries; publishes #list only on a real difference. */
@@ -944,7 +954,15 @@ type ConversationFacts = {
   label?: string;
   /** The named agent the subagent ran as, if the call gave one. */
   role?: string;
+  /** The own RoleDoc's name: a role, explicit null, or undefined when absent. */
+  agent?: string | null;
 };
+
+/** A RoleDoc snapshot's current name; a shapeless or retired document reads as absent. */
+function roleNameOf(value: { name?: unknown } | null | undefined): string | null | undefined {
+  if (value === null || value === undefined) return undefined;
+  return typeof value.name === "string" ? value.name : value.name === null ? null : undefined;
+}
 
 /** The top-level id → role column of an index value; absent/corrupt entries read as no role. */
 function rolesOf(index: HostIndex | null | undefined): Map<ConversationId, string> {
@@ -975,7 +993,12 @@ function topLevelRole(
   return undefined;
 }
 
-function summaryOf(record: ConversationRecord, facts: ConversationFacts, role?: string): ConversationSummary {
+function summaryOf(
+  record: ConversationRecord,
+  facts: ConversationFacts,
+  role?: string,
+  currentAgent?: string | null,
+): ConversationSummary {
   const parent = record.parent?.conversationId ?? record.owner?.conversationId;
   const status =
     facts.pending.size > 0 ? "needs-answer" : facts.running === true ? "running" : facts.failed === true ? "failed" : undefined;
@@ -1000,6 +1023,7 @@ function summaryOf(record: ConversationRecord, facts: ConversationFacts, role?: 
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
     ...(role === undefined ? {} : { role }),
+    ...(currentAgent === undefined ? {} : { currentAgent }),
     ...(activity === undefined ? {} : { activity }),
   };
 }
@@ -1015,6 +1039,7 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
     && a.updatedAt === b.updatedAt
     && a.label === b.label
     && a.role === b.role
+    && a.currentAgent === b.currentAgent
     && a.activity?.tool === b.activity?.tool
     && a.activity?.target === b.activity?.target
   );
@@ -1616,19 +1641,41 @@ class GatewayClient {
         const { model: ref } = args as CallMethods["setModel"]["args"];
         const model = this.#options.models.getModel(ref.provider, ref.modelId);
         if (model === undefined) throw new Error(`Unknown model: ${ref.provider}/${ref.modelId}`);
-        const thinking: ModelThinkingLevel = (await this.#agent(conversation.id)).thinkingLevel ?? "off";
-        await conversation.configure({ model: ref, thinkingLevel: clampThinkingLevel(model, thinking) }, context);
+        // Read and write in one commit: a snapshot read before the commit could
+        // overwrite a thinking level another call committed meanwhile.
+        await this.#options.harness.commit(async (tx) => {
+          const state = await tx.doc(AgentDoc, conversation.id);
+          const thinking: ModelThinkingLevel = state.thinkingLevel ?? "off";
+          await configure(tx, conversation.id, { model: ref, thinkingLevel: clampThinkingLevel(model, thinking) });
+        }, context);
         return null;
       }
       case "setThinkingLevel": {
         const { level } = args as CallMethods["setThinkingLevel"]["args"];
-        const agent = await this.#agent(conversation.id);
-        const model = agent.model === undefined ? undefined : this.#options.models.getModel(agent.model.provider, agent.model.modelId);
-        if (model === undefined) throw new Error("No model selected");
-        if (!getSupportedThinkingLevels(model).includes(level)) {
-          throw new Error(`Thinking level ${level} is not supported by ${agent.model!.provider}/${agent.model!.modelId}`);
-        }
-        await conversation.configure({ thinkingLevel: level }, context);
+        await this.#options.harness.commit(async (tx) => {
+          const state = await tx.doc(AgentDoc, conversation.id);
+          const model =
+            state.model === undefined
+              ? undefined
+              : this.#options.models.getModel(state.model.provider, state.model.modelId);
+          if (model === undefined) throw new Error("No model selected");
+          if (!getSupportedThinkingLevels(model).includes(level)) {
+            throw new Error(`Thinking level ${level} is not supported by ${state.model!.provider}/${state.model!.modelId}`);
+          }
+          await configure(tx, conversation.id, { thinkingLevel: level });
+        }, context);
+        return null;
+      }
+      case "setAgent": {
+        const { conversationId, agent } = args as CallMethods["setAgent"]["args"];
+        await setAgent(
+          this.#options.harness,
+          { conversationId, agent },
+          this.#options.models,
+          this.#options.modelSummaries,
+          this.#options.agents?.value ?? { roles: [], problems: [] },
+          context,
+        );
         return null;
       }
       case "fork": {
@@ -1660,13 +1707,18 @@ class GatewayClient {
           // Tools are stored by name; the fork's agent drops these from what its parent offered.
           const agent = await conversation.agent(context);
           const remove = agent.tools.filter((tool) => removeTools.includes(tool.name));
-          // No init: the fork inherits the parent's agent — same cwd, the same
-          // execution checkout (ADR-0019 §1).
+          // The fork inherits the parent's agent — same cwd, the same execution
+          // checkout (ADR-0019 §1). Its copied RoleDoc arrives definition-free;
+          // reading it once materializes the inherited name into a valued
+          // publication, so summary projection sees the fork's own name.
           const fork = await conversation.fork(
             at,
             {
               ownership: { kind: "ownerless" },
               ...(remove.length === 0 ? {} : { agent: { tools: { remove } } }),
+              init: async (tx, id) => {
+                await tx.doc(RoleDoc, id);
+              },
             },
             context,
           );
@@ -1799,10 +1851,6 @@ class GatewayClient {
     const [base, branch] = await Promise.all([gitBase(cwd), branchOf(cwd)]);
     if (base === undefined) return { available: false as const, reason: "Not in a git repository", branch };
     return { available: true as const, ...(await changesOf(base.repo, base.base)), branch };
-  }
-
-  async #agent(id: ConversationId): Promise<Readonly<AgentState>> {
-    return (await this.#options.harness.snapshot(AgentDoc, id, context)) ?? {};
   }
 
   async dispose(): Promise<void> {

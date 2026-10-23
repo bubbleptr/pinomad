@@ -62,6 +62,12 @@ export interface ConversationSummary {
    * conversation started with, not a current model match.
    */
   readonly role?: string;
+  /**
+   * The named agent the conversation currently runs as (5.18, ADR-0023): its
+   * own role document, falling back to `role` for conversations created before
+   * that document existed; `null` means none. Absent from pre-5.18 hosts.
+   */
+  readonly currentAgent?: string | null;
   /** Running only: the tool call in flight, e.g. { tool: "read", target: "src/a.ts" }; absent while thinking/writing or idle. */
   readonly activity?: { readonly tool: string; readonly target?: string };
 }
@@ -240,6 +246,13 @@ export interface DurableController {
   /** Set the shown conversation's thinking level; rejects when the model can't take it. */
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setModel(model: ModelRef): Promise<void>;
+  /**
+   * Switch the shown conversation to a named agent, or clear it with `null`
+   * (ADR-0023). The host re-copies the current file and keeps the conversation
+   * runnable; rejects on an unknown/broken role or an unavailable model.
+   * Subagents reject it. Needs a 5.18 host.
+   */
+  setAgent(agent: string | null): Promise<void>;
   toggleTasks(): Promise<void>;
   /** Show and talk to another conversation. */
   switchConversation(id: ConversationId): Promise<void>;

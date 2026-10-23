@@ -1449,6 +1449,43 @@ fn list_commands_is_not_queued_behind_a_hanging_command() {
 }
 
 #[test]
+fn set_agent_needs_a_5_18_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(17.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::SetAgent { agent: Some("reviewer".to_string()) });
+    // Command-class: the refusal is a notice, like setModel on a stale host.
+    assert!(h.notices().iter().any(|notice| {
+        notice
+            .get("message")
+            .and_then(Json::as_str)
+            .map(|message| message.to_string_lossy().contains("needs protocol 5.18"))
+            .unwrap_or(false)
+    }));
+    assert!(h.host.method("setAgent").is_empty());
+}
+
+#[test]
+fn set_agent_encodes_the_name_or_null_on_the_shown_conversation() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 7 });
+    h.invoke(2, Call::SetAgent { agent: Some("reviewer".to_string()) });
+    h.invoke(3, Call::SetAgent { agent: None });
+    let calls = h.host.method("setAgent");
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls[0].get("args").cloned(),
+        Some(obj(&[
+            ("conversationId", Json::Number(7.0)),
+            ("agent", Json::from("reviewer")),
+        ]))
+    );
+    assert_eq!(
+        calls[1].get("args").cloned(),
+        Some(obj(&[("conversationId", Json::Number(7.0)), ("agent", Json::Null)]))
+    );
+}
+
+#[test]
 fn run_command_queues_and_targets_the_shown_conversation_by_default() {
     let mut h = setup();
     h.invoke(1, Call::SwitchConversation { id: 1 });

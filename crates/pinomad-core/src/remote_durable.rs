@@ -86,6 +86,9 @@ pub enum Call {
     Abort { target: Option<u64> },
     SetThinkingLevel { level: String },
     SetModel { model: Json },
+    /// `setAgent` — switch the shown conversation to a named agent, or clear
+    /// it with `None` (ADR-0023, protocol 5.18). Needs a 5.18 host.
+    SetAgent { agent: Option<String> },
     ToggleTasks,
     SwitchConversation { id: u64 },
     ShowSide { id: Option<u64> },
@@ -1158,6 +1161,17 @@ impl RemoteDurable {
                     ("model", model.clone()),
                 ]);
                 steps.push_back(Step::Call { method: "setModel", args });
+            }
+            Call::SetAgent { agent } => {
+                if !host_supports_call(self.host_minor, "setAgent") {
+                    return Err(too_old("5.18"));
+                }
+                let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
+                let args = obj(&[
+                    ("conversationId", Json::Number(conversation as f64)),
+                    ("agent", agent.as_ref().map_or(Json::Null, |name| Json::from(name.clone()))),
+                ]);
+                steps.push_back(Step::Call { method: "setAgent", args });
             }
             Call::ToggleTasks => {
                 steps.push_back(Step::ToggleTasks);

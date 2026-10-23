@@ -8,6 +8,7 @@ import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-
 import type { Models } from "@earendil-works/pi-ai/models";
 import {
   AgentDoc,
+  type AgentChange,
   type ConversationId,
   type ConversationRecord,
   type Cursor,
@@ -15,6 +16,7 @@ import {
   type DocumentReader,
   type Harness,
   type ModelRef,
+  configure,
 } from "@earendil-works/pi-durable";
 import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protocol/organization.ts";
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
@@ -22,6 +24,7 @@ import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { branchSuffix, checkoutAt, gitBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
 import { messageContent } from "./message-content.ts";
+import { RoleDoc } from "./role-doc.ts";
 
 export const IndexDoc = defineDoc<HostIndex>({
   kind: "pinomad.index",
@@ -218,10 +221,13 @@ export async function createConversation(
             home: stored,
             createdAt: Date.now(),
             requestId: input.requestId,
-            // The one durable copy of the role name: summaries for this
+            // The one durable copy of the creation role: summaries for this
             // conversation and its forks read it from here, never the file.
             ...(role === undefined ? {} : { role: role.name }),
           });
+          // The creation agent, explicit null included: currentAgent projects
+          // this document and falls back to the index entry only when absent.
+          (await tx.doc(RoleDoc, id)).name = role?.name ?? null;
           if (repo !== undefined && suffix !== undefined) {
             const path = worktreePath(dataDir, id);
             // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.
@@ -264,6 +270,66 @@ export async function createConversation(
     }
     return error.conversationId;
   }
+}
+
+/**
+ * Switch a conversation to a named agent, or clear it with `null` (ADR-0023,
+ * protocol 5.18). Name resolution shares createConversation's resolver; the
+ * agent doc, the validation and both writes live in one commit, so a rejected
+ * switch changes nothing. Re-selecting a role re-copies the current file.
+ */
+export async function setAgent(
+  harness: Harness,
+  input: { readonly conversationId: ConversationId; readonly agent: string | null },
+  models: Models,
+  /** The models the host advertises — the final model must appear here. */
+  modelSummaries: () => readonly ModelSummary[],
+  /** The current agents snapshot; `input.agent` is resolved against it. */
+  agents: AgentRoles,
+  context: Context,
+): Promise<void> {
+  await harness.commit(async (tx) => {
+    const record = await tx.conversation(input.conversationId);
+    if (record === undefined) throw new Error(`Conversation ${input.conversationId} does not exist`);
+    // A subagent's role is fixed by the call that started it (ADR-0023 §5),
+    // before any name lookup can turn the refusal into something else.
+    if (record.owner !== undefined) throw new Error("Subagent conversations cannot switch agent");
+    // ADR-0023 §7/§8: the same snapshot lookup createConversation uses, so an
+    // unknown or broken role gets the same error and no write is attempted.
+    const role = input.agent === null ? undefined : requireRole(agents, input.agent);
+    // Read the latest config inside the commit: concurrent setModel/
+    // setThinkingLevel writes must not be overwritten by a stale read.
+    const state = await tx.doc(AgentDoc, input.conversationId);
+    let change: AgentChange;
+    if (role === undefined) {
+      // Clearing the agent keeps the model and thinking level as they are.
+      change = { instructions: null };
+    } else {
+      const modelRef = roleModelRef(role) ?? state.model;
+      const listed = modelSummaries().map((model) => `${model.provider}/${model.modelId}`).join(", ");
+      const suffix = listed === "" ? "" : `. Available models: ${listed}`;
+      // No pinned model and no current one: the conversation could never run.
+      if (modelRef === undefined) {
+        throw new Error(`Agent "${role.name}" has no model: the role pins none and the conversation has none${suffix}`);
+      }
+      const model = models.getModel(modelRef.provider, modelRef.modelId);
+      if (
+        model === undefined
+        || !modelSummaries().some((each) => each.provider === modelRef.provider && each.modelId === modelRef.modelId)
+      ) {
+        throw new Error(`Model ${modelRef.provider}/${modelRef.modelId} is not available${suffix}`);
+      }
+      change = {
+        model: modelRef,
+        thinkingLevel: clampThinkingLevel(model, role.thinkingLevel ?? state.thinkingLevel ?? "off"),
+        // The prompt is copied from the file now; an empty prompt clears what
+        // the conversation had (ADR-0023 §7).
+        instructions: role.prompt === "" ? null : role.prompt,
+      };
+    }
+    await configure(tx, input.conversationId, change);
+    (await tx.doc(RoleDoc, input.conversationId)).name = role?.name ?? null;
+  }, context);
 }
 
 export async function archive(harness: Harness, id: ConversationId, archived: boolean, context: Context): Promise<void> {
