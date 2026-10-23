@@ -228,7 +228,9 @@ struct ConversationComposer: View {
                 text: draft,
                 selection: $selection,
                 focused: $focused,
-                placeholder: conversation.busy ? "Add a follow-up…" : "Ask the agent…",
+                placeholder: conversation.busy ? "Add a follow-up…" : ComposerPlaceholder.text(
+                    lead: "Ask", agents: !roles.isEmpty, files: mentionScope != nil,
+                    commands: model.hostSupports("listCommands"), skills: skillScope != nil),
                 chips: model.chips(for: conversation.id).ranges,
                 expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
                 enabled: connected && !editLocked,
