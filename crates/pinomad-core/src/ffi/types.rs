@@ -452,7 +452,9 @@ pub struct ConversationSummary {
     pub label: Option<String>,
     pub role: Option<String>,
     /// The named agent the conversation currently runs as (5.18); `None` also
-    /// covers an explicit `null` (no agent) and a pre-5.18 host.
+    /// covers an explicit `null` (no agent) and a pre-5.18 host. Defaulted so
+    /// existing Swift `ConversationSummary` initializers stay source-compatible.
+    #[uniffi(default = None)]
     pub current_agent: Option<String>,
     pub activity: Option<SummaryActivity>,
 }

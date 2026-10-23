@@ -322,6 +322,25 @@ Updated prompt.
     release(fauxAssistantMessage("child answer"));
     await waitIdle(client, "parent final");
   });
+
+  it("projects currentAgent null for a role-less subagent", async () => {
+    let release!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+    const childGate = new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => (release = resolve));
+    const { host } = await hostWithRoles(
+      {},
+      { extensions: subagents, answers: [delegates({ task: "go" }), () => childGate, "parent final"] },
+    );
+    const client = await connectTo(defer, host);
+    await startChat(client, "delegate");
+    await waitForView(client.view, (view) => view.organized.chats.some((node) => node.children.length > 0));
+
+    const child = client.view.current().organized.chats.flatMap((node) => node.children)[0]!.summary;
+    expect(child).toHaveProperty("currentAgent", null);
+    expect(child.role).toBeUndefined();
+
+    release(fauxAssistantMessage("child answer"));
+    await waitIdle(client, "parent final");
+  });
 });
 
 /** Hold the next snapshot(AgentDoc, id) until released — the old read-before-commit window. */
@@ -490,6 +509,31 @@ describe("currentAgent projection", () => {
     expect(forked).toMatchObject({ ok: true });
     const forkId = Number((forked as { value: { conversationId: number } }).value.conversationId) as ConversationId;
     expect((await summaryOf(client, forkId))?.currentAgent).toBe("reviewer");
+  });
+
+  it("publishes currentAgent null for a pre-RoleDoc conversation with no index role", async () => {
+    const { host } = await hostWithRoles({}, { answers: [LONG_ANSWER, LONG_ANSWER] });
+    const client = await connectTo(defer, host);
+    const raw = await socketTo(host);
+
+    const id = await startChat(client, "first");
+    await waitIdle(client, LONG_ANSWER);
+
+    // Simulate a conversation created before RoleDoc existed, with no role.
+    await host.harness.commit((tx) => tx.retireDoc(RoleDoc, id), context);
+    await waitForView(client.view, (view) => summaryOfNow(view, id)?.currentAgent === null);
+    const own = summaryOfNow(client.view.current(), id)!;
+    expect(own).toHaveProperty("currentAgent", null);
+    expect(own.role).toBeUndefined();
+
+    await client.controller.submit("after retirement", "followUp");
+    await waitIdle(client, LONG_ANSWER);
+    const forked = await call(raw, "fork", { conversationId: id, entryId: await newestEntryId(host, id) });
+    expect(forked).toMatchObject({ ok: true });
+    const forkId = Number((forked as { value: { conversationId: number } }).value.conversationId) as ConversationId;
+    const fork = (await summaryOf(client, forkId))!;
+    expect(fork).toHaveProperty("currentAgent", null);
+    expect(fork.role).toBeUndefined();
   });
 
   it("shows the config at the fork entry, not the agent that produced the answer", async () => {

@@ -875,12 +875,14 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
    * A summary's `role` is the creation agent: the subagent's call-given name,
    * else the top-level index entry's (inherited by forks). `currentAgent` is
    * the own RoleDoc, falling back to that role for pre-RoleDoc conversations.
+   * A 5.18 host always sends it: no name anywhere means `null`, never absent
+   * (absent is how clients recognize a pre-5.18 host).
    */
   #summaryOf(record: ConversationRecord): ConversationSummary {
     const facts = this.#fact(record.id);
-    if (record.owner !== undefined) return summaryOf(record, facts, facts.role, facts.role);
+    if (record.owner !== undefined) return summaryOf(record, facts, facts.role, facts.role ?? null);
     const role = topLevelRole(record, this.#records, this.#roles);
-    return summaryOf(record, facts, role, facts.agent === undefined ? role : facts.agent);
+    return summaryOf(record, facts, role, (facts.agent === undefined ? role : facts.agent) ?? null);
   }
 
   /** Re-derive the touched ids' summaries; publishes #list only on a real difference. */
@@ -996,8 +998,8 @@ function topLevelRole(
 function summaryOf(
   record: ConversationRecord,
   facts: ConversationFacts,
-  role?: string,
-  currentAgent?: string | null,
+  role: string | undefined,
+  currentAgent: string | null,
 ): ConversationSummary {
   const parent = record.parent?.conversationId ?? record.owner?.conversationId;
   const status =
@@ -1023,7 +1025,7 @@ function summaryOf(
     ...(facts.updatedAt === undefined ? {} : { updatedAt: facts.updatedAt }),
     ...(facts.label === undefined ? {} : { label: facts.label }),
     ...(role === undefined ? {} : { role }),
-    ...(currentAgent === undefined ? {} : { currentAgent }),
+    currentAgent,
     ...(activity === undefined ? {} : { activity }),
   };
 }
