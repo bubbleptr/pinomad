@@ -1301,29 +1301,6 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
   expect(firstStep.x).toBeGreaterThanOrEqual(contentBox.x);
 });
 
-it("shows the draft home and fills the composer from a suggestion without creating", async () => {
-  const webOrigin = await startWeb();
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
-  const page = await openPage(host, 1280, webOrigin);
-
-  await page.getByRole("heading", { name: "Build something useful with PiNomad" }).waitFor();
-  await page.getByRole("combobox", { name: "Project", exact: true }).waitFor();
-  for (const label of [
-    "Explain this repo's architecture",
-    "Fix the failing test",
-    "Add a CLI flag with docs",
-    "Review my uncommitted changes",
-  ]) {
-    await page.getByRole("button", { name: label, exact: true }).waitFor();
-  }
-
-  // A suggestion fills the composer and focuses it; nothing is created.
-  await page.getByRole("button", { name: "Fix the failing test", exact: true }).click();
-  expect(await prompt(page).textContent()).toBe("Fix the failing test");
-  expect(await prompt(page).evaluate((el) => document.activeElement === el || el.contains(document.activeElement))).toBe(true);
-  await expect.poll(() => page.getByRole("button", { name: "No chats", exact: true }).count()).toBe(1);
-});
-
 it("creates the draft conversation under the picked project", async () => {
   const webOrigin = await startWeb();
   const project = await tempDir();

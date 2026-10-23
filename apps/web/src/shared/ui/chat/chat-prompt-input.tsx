@@ -238,7 +238,7 @@ type ChatPromptInputOwnProps = {
   triggers?: readonly ChatComposerTrigger[];
   startActions?: ReactNode;
   endActions?: ReactNode;
-  /** One row of chrome under the composer — on a draft, where the conversation will run. */
+  /** A tray of controls tucked under the composer — on a draft, where the conversation will run. */
   footer?: ReactNode;
   error?: string | null;
   onSubmit?: () => void;

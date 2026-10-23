@@ -982,52 +982,44 @@ mark.chat-skill-mention {
   cursor: not-allowed;
 }
 
-/* A stable slot, not a conditional line: the footer keeps one control row of
-   height whatever it holds, so the Session Draft and the Live Session composer
-   are the same size and the handoff never re-flows the column. */
+/* The footer is a tray: a muted layer inset under the card, its top tucked
+   behind the card's bottom corners so it reads as one piece pulled out from
+   underneath. The card paints above it inside the isolated stack. */
+.prompt-input:has(> .prompt-input__footer) {
+  --_prompt-tray-tuck: var(--spacing-6);
+  isolation: isolate;
+}
+
+.prompt-input:has(> .prompt-input__footer) .astryx-chat-composer {
+  position: relative;
+  z-index: 1;
+}
+
 .prompt-input__footer {
   display: flex;
   align-items: center;
   min-height: var(--size-element-sm);
+  /* Cancel the column gap as well as tucking under the card. */
+  margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) var(--spacing-4) 0;
+  padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
+  /* The tuck equals the card's corner radius; the tray's bottom corners match it. */
+  border-radius: 0 0 var(--_prompt-tray-tuck) var(--_prompt-tray-tuck);
+  background: var(--color-background-muted);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
 
-/* —— Prompt suggestions —— */
-
-.prompt-suggestion__items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-2);
-}
-
-.prompt-suggestion__item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-2);
+/* Astryx Selector's wrappers keep min-width: auto, so a long label would
+   push the row past the tray instead of ellipsizing. */
+.prompt-input__footer div {
   min-width: 0;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-background-surface);
-  padding: var(--spacing-2) var(--spacing-3);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-  text-align: start;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
 }
 
-.prompt-suggestion__item:hover {
-  background: var(--color-overlay-hover);
-  border-color: var(--color-border-emphasized);
-}
-
-.prompt-suggestion__item-end-icon {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-icon-secondary);
+/* The tray's pickers recede like its surface: regular weight, secondary
+   text. !important matches Astryx StyleX's :not(#\#) specificity. */
+.prompt-input__footer button {
+  color: var(--color-text-secondary) !important;
+  font-weight: var(--font-weight-normal, 400) !important;
 }
 
 /* —— Chain of thought: rail skin —— */

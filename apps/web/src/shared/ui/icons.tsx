@@ -23,7 +23,6 @@ import {
   CircleIcon,
   CommandIcon,
   CommandLineIcon,
-  ComputerTerminal01Icon,
   ComputerIcon,
   Copy01Icon,
   CrosshairIcon,
@@ -48,7 +47,6 @@ import {
   LaptopPhoneSyncIcon,
   LayoutAlignLeftIcon,
   LinkSquare02Icon,
-  ListTreeIcon,
   Loading03Icon,
   MoreHorizontalIcon,
   PaintBoardIcon,
@@ -67,7 +65,6 @@ import {
   ThumbsUpIcon,
   Tick02Icon,
   UserCircleIcon,
-  WrenchIcon,
 } from "@hugeicons/core-free-icons";
 
 type PaceIconProps = Omit<HugeiconsIconProps, "icon" | "altIcon">;
@@ -138,7 +135,6 @@ export const Devices = iconComponent(LaptopPhoneSyncIcon);
 export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
-export const ListTree = iconComponent(ListTreeIcon);
 export const LoaderCircle = iconComponent(Loading03Icon);
 export const MoreHorizontal = iconComponent(MoreHorizontalIcon);
 export const Palette = iconComponent(PaintBoardIcon);
@@ -152,14 +148,10 @@ export const Settings2 = iconComponent(Settings02Icon);
 export const SidebarLeft = iconComponent(SidebarLeftIcon);
 export const Sparkles = iconComponent(SparklesIcon);
 export const Stop = iconComponent(HugeStopIcon);
-// Lucide SquareTerminal: framed console with a prompt. Hugeicons names
-// that glyph ComputerTerminal01.
-export const SquareTerminal = iconComponent(ComputerTerminal01Icon);
 export const ThumbsDown = iconComponent(ThumbsDownIcon);
 export const ThumbsUp = iconComponent(ThumbsUpIcon);
 export const Trash2 = iconComponent(Delete02Icon);
 export const UserCircle = iconComponent(UserCircleIcon);
-export const Wrench = iconComponent(WrenchIcon);
 
 // Keep the plain bot glyph available for places that need a chat-specific robot icon.
 export const BotMessage = iconComponent(BotIcon);
