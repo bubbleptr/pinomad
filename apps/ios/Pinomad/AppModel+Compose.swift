@@ -136,11 +136,13 @@ extension AppModel {
     }
 
     /// Resend a failed run's prompt. The request id is derived from the run,
-    /// so a double tap or another client's retry is admitted once.
+    /// so a double tap or another client's retry is admitted once. The picked
+    /// skills go back too, or the host would match every `$name` in the text.
     func retry(_ request: RetryRequest, conversation id: UInt64) {
         transcriptPin += 1
         run(.submit(text: request.text, whenBusy: .followUp, target: id,
-                    requestId: request.requestId, images: request.images))
+                    requestId: request.requestId, images: request.images,
+                    skills: request.skills))
     }
 
     func stop(conversation id: UInt64) {
