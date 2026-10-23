@@ -157,6 +157,13 @@ extension AppModel {
         run(.setModel(model: model))
     }
 
+    /// Switch the shown conversation's named agent, or clear it. Like
+    /// `setModel`, a host refusal comes back as a notice; the sheet's
+    /// selection reads the next snapshot, so it never sticks by itself.
+    func setAgent(_ agent: String?) {
+        run(.setAgent(agent: agent))
+    }
+
     func setThinkingLevel(_ level: ThinkingLevel) {
         run(.setThinkingLevel(level: level))
     }

@@ -212,6 +212,9 @@ final class AppModel {
     var pairRetryTask: Task<Void, Never>?
     /// A demo's answer to `changes()` — a demo has no session to ask.
     var devChanges: ConversationChanges?
+    /// The agent demo opens the conversation's model sheet once the
+    /// composer is on screen, so a screenshot can show it without a host.
+    var devShowsModelSheet = false
 
     /// Publish a demo snapshot through the slot the session normally fills;
     /// the setter itself stays file-private.

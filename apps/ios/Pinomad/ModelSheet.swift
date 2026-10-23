@@ -1,13 +1,15 @@
+import PinomadChat
 import PinomadCore
 import SwiftUI
 
 /// The named agent part of the model sheet (ADR-0023). A role is a preset
 /// of model, thinking level and system prompt, so it is picked here.
 enum ModelSheetAgent {
-    /// The draft's choice: No Agent plus the host's roles. `hint` says which
-    /// sides still come from the role.
-    case pick(selected: String?, roles: [AgentRole], hint: String?, onSelect: (String?) -> Void)
-    /// A conversation's role — fixed once it was created.
+    /// No Agent plus the host's roles. `hint` says which sides still come
+    /// from the role. A row the host no longer offers stays checked but is
+    /// shown unavailable and cannot be picked again.
+    case pick(rows: [AgentPickRow], hint: String?, onSelect: (String?) -> Void)
+    /// A conversation on a host that cannot switch (or a subagent): fixed.
     case fixed(name: String, description: String?)
 }
 
@@ -92,20 +94,19 @@ struct ModelSheet: View {
     @ViewBuilder
     private func agentSection(_ agent: ModelSheetAgent) -> some View {
         switch agent {
-        case let .pick(selected, roles, hint, onSelect):
+        case let .pick(rows, hint, onSelect):
             Section {
-                Button {
-                    onSelect(nil)
-                } label: {
-                    Row(title: "No Agent", subtitle: nil, checked: selected == nil)
-                }
-                ForEach(roles, id: \.name) { role in
-                    Button {
-                        onSelect(role.name)
-                    } label: {
-                        Row(title: "@\(role.name)",
-                            subtitle: role.description.isEmpty ? nil : role.description,
-                            checked: selected == role.name)
+                ForEach(rows) { row in
+                    if row.available {
+                        Button {
+                            onSelect(row.name)
+                        } label: {
+                            Row(title: Self.title(row), subtitle: row.detail,
+                                checked: row.selected)
+                        }
+                    } else {
+                        Row(title: Self.title(row), subtitle: "Unavailable on this host",
+                            checked: row.selected, available: false)
                     }
                 }
             } header: {
@@ -125,6 +126,10 @@ struct ModelSheet: View {
         }
     }
 
+    private static func title(_ row: AgentPickRow) -> String {
+        row.name.map { "@\($0)" } ?? "No Agent"
+    }
+
     /// A reasoning model keeps the sheet up for the level pick; anything
     /// else is done.
     private func pick(_ summary: ModelSummary) {
@@ -139,18 +144,21 @@ private struct Row: View {
     let title: String
     let subtitle: String?
     let checked: Bool
+    /// False mutes the row: it is shown but not a button.
+    var available = true
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundStyle(.primary)
+                Text(title).foregroundStyle(available ? Color.primary : Color.secondary)
                 if let subtitle {
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
             if checked {
-                Image(.check).foregroundStyle(Color.accentColor)
+                Image(.check)
+                    .foregroundStyle(available ? Color.accentColor : Color.secondary)
             }
         }
         .contentShape(.rect)
