@@ -2,13 +2,25 @@
 // composer: a disabled command isn't run, text is never a command before the
 // host's list lands, and a pre-5.15 host keeps the old Compact item.
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
-import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
+import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import { fakeRemote, fakeView, PARSER_ID, PINOMAD } from "../../test/story-fixtures.tsx";
 import { ConversationComposer } from "./conversation-composer.tsx";
 
-function setup(options: { listCommands?: () => Promise<CommandListing>; minor?: number } = {}) {
-  const view = fakeView(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } });
+function setup(options: { listCommands?: () => Promise<CommandListing>; minor?: number; summary?: ConversationSummary } = {}) {
+  const base = fakeView(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } });
+  const view = options.summary === undefined
+    ? base
+    : {
+        ...base,
+        organized: {
+          chats: [],
+          projects: [{ project: PINOMAD, conversations: [{ summary: options.summary, children: [] }] }],
+          archived: [],
+        },
+      };
   const remote = fakeRemote(view, options.listCommands === undefined ? {} : { listCommands: vi.fn(options.listCommands) });
   render(<ConversationComposer view={view} remote={remote} conversation={view.conversation!} busy={false} narrow={false} />);
   const editable = document.querySelector<HTMLElement>('[aria-multiline="true"]')!;
@@ -69,5 +81,75 @@ describe("ConversationComposer commands", () => {
     const row = screen.getByRole("menuitem", { name: /^Commands/, hidden: true });
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("Loading…");
+  });
+});
+
+const summary = (overrides: Partial<ConversationSummary> = {}): ConversationSummary => ({
+  id: PARSER_ID,
+  kind: "conversation",
+  title: "Fix the parser's trailing-comma bug",
+  ...overrides,
+});
+
+async function openAgentPopover(): Promise<HTMLElement> {
+  await userEvent.setup().click(screen.getByTestId("model-thinking-trigger"));
+  return screen.getByTestId("model-thinking-popover");
+}
+
+describe("ConversationComposer agent switching", () => {
+  it("calls setAgent with the picked role and shows currentAgent over role", async () => {
+    const { remote } = setup({ summary: summary({ role: "reviewer", currentAgent: "tester" }) });
+    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
+
+    const popover = await openAgentPopover();
+    await userEvent.setup().click(within(popover).getByRole("button", { name: /reviewer/ }));
+    expect(remote.controller.setAgent).toHaveBeenCalledWith("reviewer");
+  });
+
+  it("calls setAgent(null) for No agent", async () => {
+    const { remote } = setup({ summary: summary({ currentAgent: "tester" }) });
+    const popover = await openAgentPopover();
+    await userEvent.setup().click(within(popover).getByRole("button", { name: /No agent/ }));
+    expect(remote.controller.setAgent).toHaveBeenLastCalledWith(null);
+  });
+
+  it("treats a present null currentAgent as no agent, not the creation role", async () => {
+    setup({ summary: summary({ role: "reviewer", currentAgent: null }) });
+    expect(screen.getByTestId("model-thinking-trigger")).not.toHaveTextContent("@");
+
+    const popover = await openAgentPopover();
+    expect(within(popover).getByText("Agent · sets the system prompt")).toBeInTheDocument();
+    const noAgent = within(popover).getByRole("button", { name: /No agent/ }).closest("li")!;
+    expect(noAgent).toHaveAttribute("aria-current", "true");
+  });
+
+  it("keeps a pre-5.18 host read-only", async () => {
+    const { remote } = setup({ minor: 17, summary: summary({ role: "reviewer" }) });
+    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@reviewer");
+
+    const popover = await openAgentPopover();
+    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
+    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(remote.controller.setAgent).not.toHaveBeenCalled();
+  });
+
+  it("keeps a subagent read-only on a 5.18 host", async () => {
+    const { remote } = setup({ summary: summary({ kind: "subagent", role: "tester", currentAgent: "tester" }) });
+    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
+
+    const popover = await openAgentPopover();
+    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
+    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(remote.controller.setAgent).not.toHaveBeenCalled();
+  });
+
+  it("keeps a current agent the host no longer lists selected and unavailable", async () => {
+    setup({ summary: summary({ currentAgent: "deleted" }) });
+    const popover = await openAgentPopover();
+    const row = within(popover).getByText("deleted").closest("li")!;
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveTextContent("No longer available");
+    expect(within(row).queryByRole("button")).toBeNull();
   });
 });

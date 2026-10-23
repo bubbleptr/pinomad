@@ -17,9 +17,9 @@ import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinom
 import { Check, ChevronDown } from "@/shared/ui/icons";
 
 /**
- * The popover's Agent section: a draft picks one of the host's roles (or
- * none); a conversation shows the role it was created with, which can't
- * change (ADR-0023).
+ * The popover's Agent section: a draft or a 5.18 conversation picks one of
+ * the host's roles (or none); before 5.18 a conversation shows the role it
+ * was created with, read-only (ADR-0023).
  */
 export type ModelSelectorAgent =
   | {
@@ -51,7 +51,7 @@ export function ModelSelector({
   models: readonly ModelSummary[];
   selected: { model?: ModelRef; level: ThinkingLevel };
   isDisabled?: boolean;
-  /** Undefined hides the Agent section (no roles on this host, or a conversation without one). */
+  /** Undefined hides the Agent section (nothing to show: no pick, and no fixed creation agent). */
   agent?: ModelSelectorAgent;
   /** Small muted suffix, e.g. which side of the pick is inherited from a named agent. */
   sourceHint?: string;
@@ -66,6 +66,13 @@ export function ModelSelector({
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
   const filtered = filterModels(models, query);
   const agentName = agent === undefined ? undefined : agent.kind === "pick" ? agent.value : agent.name;
+  // A role file can be deleted or broken while a conversation still names it:
+  // keep showing that name as the selected, unavailable row until the user
+  // picks something else.
+  const missingAgent =
+    agent?.kind === "pick" && agent.value !== undefined && !agent.roles.some((role) => role.name === agent.value)
+      ? agent.value
+      : undefined;
 
   return (
     <Popover
@@ -98,6 +105,15 @@ export function ModelSelector({
               </p>
               {agent.kind === "pick" ? (
                 <List className="max-h-48 overflow-y-auto" density="compact">
+                  {missingAgent === undefined ? null : (
+                    <ListItem
+                      description="No longer available"
+                      endContent={<Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />}
+                      isDisabled
+                      isSelected
+                      label={missingAgent}
+                    />
+                  )}
                   <ListItem
                     description="Default system prompt"
                     endContent={

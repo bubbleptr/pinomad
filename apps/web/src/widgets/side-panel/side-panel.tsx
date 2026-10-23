@@ -21,6 +21,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "@pinomad/client/family.ts";
+import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
@@ -202,17 +203,18 @@ function SideRow({
   now: number;
   onOpen: () => void;
 }) {
+  const agent = currentAgentOf(summary);
   return (
     <ListItem
       label={
-        // A fork carries the named agent its top-level was created with;
-        // subagent rows keep their existing look.
-        summary.kind !== "fork" || summary.role === undefined ? (
+        // A fork carries the agent it currently runs as; subagent rows keep
+        // their existing look.
+        summary.kind !== "fork" || agent === undefined ? (
           displayName(summary)
         ) : (
           <span className="inline-flex min-w-0 items-baseline gap-1.5">
             <span className="truncate">{displayName(summary)}</span>
-            <span className="shrink-0 text-xs text-muted">@{summary.role}</span>
+            <span className="shrink-0 text-xs text-muted">@{agent}</span>
           </span>
         )
       }
