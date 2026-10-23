@@ -283,7 +283,6 @@ struct NewConversationView: View {
     }
 
     private var plusMenu: some View {
-        let mentionFile: (() -> Void)? = mentionScope == nil ? nil : { insertTrigger("@./") }
         let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
@@ -296,7 +295,6 @@ struct NewConversationView: View {
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: key, accepts: acceptsImages) },
-            mentionFile: mentionFile,
             useSkill: useSkill,
             mentionAgent: mentionAgent
         )

@@ -248,7 +248,6 @@ struct ConversationComposer: View {
 
     private var plusMenu: some View {
         let commands = model.hostSupports("listCommands")
-        let mentionFile: (() -> Void)? = mentionScope == nil ? nil : { insertTrigger("@./") }
         let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
@@ -271,7 +270,6 @@ struct ConversationComposer: View {
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: conversation.id, accepts: acceptsImages) },
-            mentionFile: mentionFile,
             useSkill: useSkill,
             mentionAgent: mentionAgent,
             commands: listed,
@@ -454,8 +452,8 @@ struct SlotIcon: View {
 }
 
 /// The composer's single entry for everything that can be added to a draft
-/// (issue #254). "Add" holds images and the bare `@./`, `$`, `@` and `/`
-/// triggers that open the matching menu; entries the host or scope can't
+/// (issue #254). "Add" holds images and the bare `$`, `@` and `/`
+/// triggers that open the matching menu (files are reached by typing `@`); entries the host or scope can't
 /// support are hidden, ones unavailable for now are greyed with the reason
 /// in the label.
 struct PlusMenu: View {
@@ -471,7 +469,6 @@ struct PlusMenu: View {
     let camera: (() -> Void)?
     let paste: () -> Void
     /// Each nil when the host or scope can't offer it.
-    let mentionFile: (() -> Void)?
     let useSkill: (() -> Void)?
     let mentionAgent: (() -> Void)?
     /// The host's commands: nil off a conversation or before 5.17.
@@ -490,7 +487,6 @@ struct PlusMenu: View {
         photos: @escaping () -> Void,
         camera: (() -> Void)?,
         paste: @escaping () -> Void,
-        mentionFile: (() -> Void)?,
         useSkill: (() -> Void)?,
         mentionAgent: (() -> Void)?,
         commands: PlusMenuCommands? = nil,
@@ -505,7 +501,6 @@ struct PlusMenu: View {
         self.photos = photos
         self.camera = camera
         self.paste = paste
-        self.mentionFile = mentionFile
         self.useSkill = useSkill
         self.mentionAgent = mentionAgent
         self.commands = commands
@@ -532,9 +527,6 @@ struct PlusMenu: View {
                 // Text triggers need the field, which is off while offline
                 // or locked by an Edit.
                 Group {
-                    if let mentionFile {
-                        Button("Mention a File", image: .file, action: mentionFile)
-                    }
                     if let useSkill {
                         Button("Use a Skill", image: .sparkles, action: useSkill)
                     }
