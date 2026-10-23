@@ -46,11 +46,11 @@ export function ConversationTranscript({
   forkSource?: string;
   /**
    * Resubmits the user message the newest run answered, when that run failed —
-   * its images go back too. The retry carries a requestId derived from the
+   * its images and picked skills go back too. The retry carries a requestId derived from the
    * failed run, so a second click or another client's retry admits once on
    * the host. Absent on read-only transcripts (subagent conversations).
    */
-  onRetry?: (retry: { text: string; images: readonly ViewImage[]; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string }) => Promise<void>;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
 }) {

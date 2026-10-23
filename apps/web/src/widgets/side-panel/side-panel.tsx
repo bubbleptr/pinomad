@@ -275,7 +275,7 @@ function SideTranscript({
   ownOnly?: boolean;
   forkSource?: string;
   /** Forks are talkable and pass one through; read-only details do not. */
-  onRetry?: (retry: { text: string; images: readonly ViewImage[]; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string }) => Promise<void>;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -376,13 +376,14 @@ function ThreadDetail({
           openInPanel={openInPanel}
           ownOnly
           forkSource={displayName(parentSummary)}
-          onRetry={async ({ text, images, requestId }) => {
+          onRetry={async ({ text, images, skills, requestId }) => {
             requestNotificationPermission();
             // Refs go back as refs, never downloaded first.
             await remote.controller.submit(text, "followUp", {
               target: side.id,
               requestId,
               images: images.map(outgoingImage),
+              skills,
             });
           }}
         />
