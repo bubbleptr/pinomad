@@ -370,7 +370,7 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
   await page.getByRole("dialog").getByText("No threads yet").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: /^Commands/ }).waitFor();
+  await page.getByRole("menuitem", { name: /^Run a command/ }).waitFor();
 });
 
 it("replaces a draft pick the restarted host no longer offers", async () => {
@@ -1796,7 +1796,7 @@ it("disables the follow-up and stop controls while disconnected", async () => {
   await expect.poll(() => composer.textContent()).toBe("unsent follow-up");
 });
 
-it("starts the draft with /compact from the + menu's Commands flyout", async () => {
+it("starts the draft with /compact from the + menu's Run a command…", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
@@ -1809,11 +1809,13 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
   await page.getByText("done", { exact: true }).waitFor();
   const id = await followFirst(observer);
 
-  // A 5.15 host lists its commands, so they replace the old Compact item.
+  // A 5.15 host lists its commands, so Run a command… replaces the old Compact
+  // item, in the same flat list as the other entries.
   await more.click();
   expect(await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).count()).toBe(0);
-  await page.getByRole("menuitem", { name: /^Commands/ }).click();
-  const compact = page.getByRole("menuitem", { name: /^\/compact/ });
+  expect(await page.getByRole("group", { name: "Conversation" }).count()).toBe(0);
+  await page.getByRole("menuitem", { name: /^Run a command/ }).click();
+  const compact = page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/compact/ });
   await compact.waitFor();
   await shot(page, "conversation-plus-menu-commands");
   if (shotDir !== undefined) {
@@ -1822,7 +1824,8 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
     await page.emulateMedia({ colorScheme: "light" });
   }
 
-  // Picking only starts the draft — no `/` menu, focus at the end for arguments.
+  // The entry opens the `/` menu, as typing `/` would; picking starts the
+  // draft with focus at the end for arguments.
   await compact.click();
   await expect.poll(() => composer.textContent()).toBe("/compact ");
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
@@ -1836,7 +1839,7 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
   // With a message in the draft the commands are out of reach — it would be lost.
   await composer.pressSequentially("keep this");
   await more.click();
-  const row = page.getByRole("menuitem", { name: /^Commands/ });
+  const row = page.getByRole("menuitem", { name: /^Run a command/ });
   await expect.poll(() => row.getAttribute("aria-disabled")).toBe("true");
   await expect.poll(() => row.textContent()).toContain("Clear the message first");
 });

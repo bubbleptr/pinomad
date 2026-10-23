@@ -15,7 +15,7 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
-import { ChatAddMenu, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
+import { ChatAddMenu } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
@@ -203,19 +203,17 @@ export function DraftHome({
             startActions={
               <>
                 <ChatAddMenu isDisabled={!connected}>
-                  <ChatAddMenuSection title="Add">
-                    <DropdownMenuItem
-                      label={addImages}
-                      isDisabled={!accepts}
-                      onClick={() => fileInput.current?.click()}
-                    />
-                    {skills.trigger === undefined ? null : (
-                      <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
-                    )}
-                    {agentRoles.length === 0 ? null : (
-                      <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
-                    )}
-                  </ChatAddMenuSection>
+                  <DropdownMenuItem
+                    label={addImages}
+                    isDisabled={!accepts}
+                    onClick={() => fileInput.current?.click()}
+                  />
+                  {skills.trigger === undefined ? null : (
+                    <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                  )}
+                  {agentRoles.length === 0 ? null : (
+                    <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                  )}
                 </ChatAddMenu>
                 <ModelSelector
                   models={view.models}

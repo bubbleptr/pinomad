@@ -1,12 +1,11 @@
-// The composer's + menu (issue #254): one entry for everything that can go
-// into a message. Compound DropdownMenu rather than `items` because the
-// conversation's Commands row is a flyout, which the data-driven mode can't
-// express.
+// The composer's + menu (issue #254): one flat list of entries — images, and
+// one per typed trigger (`$` skill, `@` agent, `/` command), each opening the
+// same menu typing the trigger would.
 import type { ReactNode } from "react";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Plus } from "@/shared/ui/icons";
 
-/** The ghost `+` button and its menu; children are sections. */
+/** The ghost `+` button and its menu; children are `DropdownMenuItem`s. */
 export function ChatAddMenu({
   isDisabled = false,
   onOpenChange,
@@ -37,23 +36,3 @@ export function ChatAddMenu({
     </DropdownMenu>
   );
 }
-
-/** Same look as Astryx's data-mode section title; the group carries the name. */
-function SectionTitle({ children }: { children: string }) {
-  return (
-    <div aria-hidden="true" className="select-none px-2 py-1 text-xs text-muted">
-      {children}
-    </div>
-  );
-}
-
-/** A titled group of action rows (`DropdownMenuItem`s). */
-export function ChatAddMenuSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div aria-label={title} role="group">
-      <SectionTitle>{title}</SectionTitle>
-      {children}
-    </div>
-  );
-}
-
