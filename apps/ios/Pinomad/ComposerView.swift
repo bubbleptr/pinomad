@@ -277,9 +277,7 @@ struct ConversationComposer: View {
             commands: listed,
             compact: compact,
             onOpen: { model.requestCommands(for: conversation.id) }
-        ) {
-            EmptyView()
-        }
+        )
     }
 
     private func refreshMentions() {
@@ -459,9 +457,8 @@ struct SlotIcon: View {
 /// (issue #254). "Add" holds images and the bare `@./`, `$`, `@` and `/`
 /// triggers that open the matching menu; entries the host or scope can't
 /// support are hidden, ones unavailable for now are greyed with the reason
-/// in the label. A page can append its own sections (the draft's project
-/// and checkout).
-struct PlusMenu<Extra: View>: View {
+/// in the label.
+struct PlusMenu: View {
     let connected: Bool
     let acceptsImages: Bool
     let modelName: String?
@@ -483,7 +480,6 @@ struct PlusMenu<Extra: View>: View {
     let compact: (() -> Void)?
     /// The menu is about to open — the moment to refresh what it lists.
     let onOpen: (() -> Void)?
-    let extra: Extra
 
     init(
         connected: Bool,
@@ -499,8 +495,7 @@ struct PlusMenu<Extra: View>: View {
         mentionAgent: (() -> Void)?,
         commands: PlusMenuCommands? = nil,
         compact: (() -> Void)? = nil,
-        onOpen: (() -> Void)? = nil,
-        @ViewBuilder extra: () -> Extra
+        onOpen: (() -> Void)? = nil
     ) {
         self.connected = connected
         self.acceptsImages = acceptsImages
@@ -516,7 +511,6 @@ struct PlusMenu<Extra: View>: View {
         self.commands = commands
         self.compact = compact
         self.onOpen = onOpen
-        self.extra = extra()
     }
 
     var body: some View {
@@ -563,7 +557,6 @@ struct PlusMenu<Extra: View>: View {
                 }
                 .disabled(!connected)
             }
-            extra
         } label: {
             Image(.plus)
                 .font(.system(size: 16, weight: .medium))
