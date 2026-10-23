@@ -1,5 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem, DropdownMenuSubMenu } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
@@ -11,11 +11,13 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { useSlashCommands } from "../../entities/command/slash-commands.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
+import { parseCommandInput } from "@pinomad/client/command-input.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuSection } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
@@ -88,7 +90,15 @@ export function ConversationComposer({
     !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
   );
   useSkillHighlight(inputRef, value, skills.names);
-  const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
+  // `/` commands (ADR-0027) need a 5.15 host; an older one keeps the + menu's
+  // Compact conversation and shows no `/` menu.
+  const listsCommands = hostSupportsCall(view.host?.protocol.minor ?? 0, "listCommands");
+  const slash = useSlashCommands(remote, conversation.conversation.id, inputRef, !disconnected && listsCommands, value);
+  const triggers = [
+    ...(atMentions ?? []),
+    ...(skills.trigger === undefined ? [] : [skills.trigger]),
+    ...(slash.trigger === undefined ? [] : [slash.trigger]),
+  ];
   const queue = queueItems(conversation);
   const roles = view.agents?.roles ?? [];
   // The role the conversation was created with — fixed for its life (ADR-0023).
@@ -97,6 +107,19 @@ export function ConversationComposer({
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
   const { images, pending: imagesPending, error, add, restore, remove, clear } = useImageAttachments(accepts);
+  // Why a typed command wasn't run; any edit to the draft clears it.
+  const [commandError, setCommandError] = useState<string | undefined>(undefined);
+  useEffect(() => setCommandError(undefined), [value, images.length]);
+  // Why the + menu's Commands row can't open: a command starts at index 0, so
+  // picking one into a draft with a message would bury or replace it.
+  const commandsUnavailable =
+    slash.commands === undefined
+      ? "Loading…"
+      : slash.commands.length === 0
+        ? "None on this host"
+        : value.trim() !== "" || images.length > 0 || imagesPending
+          ? "Clear the message first"
+          : undefined;
   const fileInput = useRef<HTMLInputElement>(null);
   // No "why" slot on menu items: the reason goes into the label itself.
   const addImages =
@@ -245,6 +268,24 @@ export function ConversationComposer({
   const submit = (whenBusy: "steer" | "followUp"): void => {
     const text = value.trim();
     if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
+    // A command runs at once — never steered or queued, never a message. The
+    // raw draft is parsed (leading whitespace makes it a message), and only
+    // once the host's list has loaded: before that, text is never a command.
+    const command = slash.commands === undefined ? undefined : parseCommandInput(value, slash.commands);
+    if (command !== undefined) {
+      const disabled = slash.commands?.find((each) => each.name === command.name)?.disabled;
+      if (disabled !== undefined) {
+        setCommandError(disabled);
+        return;
+      }
+      if (images.length > 0) {
+        setCommandError("Commands can't include images");
+        return;
+      }
+      void remote.controller.runCommand(command.name, command.args);
+      setValue("");
+      return;
+    }
     requestNotificationPermission();
     const sending = images;
     // Staged images were primed before they became sendable. Queue the send
@@ -280,16 +321,25 @@ export function ConversationComposer({
         placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
-        onFocus={skills.request}
+        onFocus={() => {
+          skills.request();
+          slash.request();
+        }}
         triggers={triggers.length === 0 ? undefined : triggers}
         onStop={busy ? () => void remote.controller.abort() : undefined}
         attachments={attachmentDrawer({ images, pending: imagesPending, onRemove: remove })}
         hasAttachments={images.length > 0}
         onFiles={editLocked ? undefined : add}
-        error={error}
+        error={commandError ?? error}
         startActions={
           <>
-            <ChatAddMenu isDisabled={disconnected || editLocked}>
+            <ChatAddMenu
+              isDisabled={disconnected || editLocked}
+              // Refetch on open so the Commands flyout's list and disabled reasons are current.
+              onOpenChange={(open) => {
+                if (open) slash.request(true);
+              }}
+            >
               <ChatAddMenuSection title="Add">
                 <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
                 {fileSource === undefined ? null : (
@@ -302,8 +352,33 @@ export function ConversationComposer({
                   <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
                 )}
               </ChatAddMenuSection>
+              {/* Commands act on the conversation, not the message — where Compact sat before 5.15. */}
               <ChatAddMenuSection title="Conversation">
-                <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
+                {!listsCommands ? (
+                  <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
+                ) : commandsUnavailable !== undefined ? (
+                  <DropdownMenuSubMenu description={commandsUnavailable} isDisabled label="Commands">
+                    {null}
+                  </DropdownMenuSubMenu>
+                ) : (
+                  // Picking one starts the draft with `/name `, like typing it:
+                  // arguments follow, and Enter runs it through the send path.
+                  <DropdownMenuSubMenu label="Commands">
+                    {(slash.commands ?? []).map((command) => (
+                      <DropdownMenuItem
+                        key={command.name}
+                        description={command.disabled ?? command.description}
+                        isDisabled={command.disabled !== undefined}
+                        label={`/${command.name}`}
+                        onClick={() => {
+                          setValue(`/${command.name} `);
+                          // A frame later: the menu's close hands focus back to its button first.
+                          requestAnimationFrame(() => inputRef.current?.focusAtEnd());
+                        }}
+                      />
+                    ))}
+                  </DropdownMenuSubMenu>
+                )}
               </ChatAddMenuSection>
             </ChatAddMenu>
             <ModelSelector

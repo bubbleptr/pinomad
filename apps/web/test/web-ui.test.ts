@@ -370,7 +370,7 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
   await page.getByRole("dialog").getByText("No threads yet").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
+  await page.getByRole("menuitem", { name: /^Commands/ }).waitFor();
 });
 
 it("replaces a draft pick the restarted host no longer offers", async () => {
@@ -1796,18 +1796,123 @@ it("disables the follow-up and stop controls while disconnected", async () => {
   await expect.poll(() => composer.textContent()).toBe("unsent follow-up");
 });
 
-it("compacts the conversation from the more-actions menu", async () => {
+it("starts the draft with /compact from the + menu's Commands flyout", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  const more = page.getByRole("button", { name: "More actions", exact: true });
 
-  await prompt(page).fill("hello");
-  await prompt(page).press("Enter");
+  await composer.fill("hello");
+  await composer.press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
+  const id = await followFirst(observer);
 
-  await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).click();
+  // A 5.15 host lists its commands, so they replace the old Compact item.
+  await more.click();
+  expect(await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).count()).toBe(0);
+  await page.getByRole("menuitem", { name: /^Commands/ }).click();
+  const compact = page.getByRole("menuitem", { name: /^\/compact/ });
+  await compact.waitFor();
+  await shot(page, "conversation-plus-menu-commands");
+  if (shotDir !== undefined) {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await shot(page, "conversation-plus-menu-commands-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+
+  // Picking only starts the draft — no `/` menu, focus at the end for arguments.
+  await compact.click();
+  await expect.poll(() => composer.textContent()).toBe("/compact ");
+  await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
+  expect(await page.getByRole("listbox").count()).toBe(0);
+  await page.keyboard.type("keep API notes");
+  await page.keyboard.press("Enter");
   await page.locator("[data-toast-id]").getByText("Compaction", { exact: false }).waitFor();
+  await expect.poll(() => composer.textContent()).toBe("");
+  expect(await userContentsOf(host, id)).toEqual(["hello"]);
+
+  // With a message in the draft the commands are out of reach — it would be lost.
+  await composer.pressSequentially("keep this");
+  await more.click();
+  const row = page.getByRole("menuitem", { name: /^Commands/ });
+  await expect.poll(() => row.getAttribute("aria-disabled")).toBe("true");
+  await expect.poll(() => row.textContent()).toContain("Clear the message first");
+});
+
+it("opens the / menu only at the start of the draft and runs /compact without a message", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+  const id = await followFirst(observer);
+  const menu = page.getByRole("listbox", { name: "Commands" });
+
+  // A path in the middle of a message never pops a menu, not even an empty one.
+  await composer.click();
+  await composer.pressSequentially("see /etc/hosts");
+  await page.waitForTimeout(300);
+  expect(await page.getByRole("listbox").count()).toBe(0);
+  await composer.press("ControlOrMeta+a");
+  await composer.press("Delete");
+
+  // At index 0 it opens on the host's commands and narrows by prefix.
+  await composer.pressSequentially("/");
+  await menu.getByRole("option", { name: /\/compact/ }).waitFor();
+  await shot(page, "slash-menu");
+  await composer.pressSequentially("comp");
+  await expect.poll(() => menu.getByRole("option").count()).toBe(1);
+  await composer.press("Enter");
+  await expect.poll(() => composer.textContent()).toBe("/compact ");
+
+  // Sending runs the command at once: a notice, no user message, an empty draft.
+  await composer.pressSequentially("keep API notes");
+  await composer.press("Enter");
+  await page.locator("[data-toast-id]").getByText("Compaction", { exact: false }).waitFor();
+  await expect.poll(() => composer.textContent()).toBe("");
+  expect(await userContentsOf(host, id)).toEqual(["hello"]);
+});
+
+it("sends near-miss commands as messages and refuses a command with images", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done", "x answer", "path answer"] });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("hello");
+  await composer.press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+  const id = await followFirst(observer);
+
+  // Only an exact listed name is a command; the rest are ordinary messages.
+  await composer.click();
+  await composer.pressSequentially("/compactX");
+  await composer.press("Enter");
+  await page.getByText("x answer", { exact: true }).waitFor();
+  await composer.pressSequentially("/usr/bin/x");
+  await composer.press("Enter");
+  await page.getByText("path answer", { exact: true }).waitFor();
+  expect(await userContentsOf(host, id)).toEqual(["hello", "/compactX", "/usr/bin/x"]);
+
+  // A command can't carry images: the draft stays and the composer says why.
+  await composer.pressSequentially("/compact");
+  await page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/compact/ }).waitFor();
+  await composer.press("Enter");
+  await expect.poll(() => composer.textContent()).toBe("/compact ");
+  await pasteImage(page, 40, 40);
+  await staged(page).waitFor();
+  await composer.press("Enter");
+  await expect
+    .poll(async () => (await page.locator('[data-slot="prompt-input"]').getByRole("alert").textContent()) ?? "")
+    .toContain("Commands can't include images");
+  await expect.poll(() => composer.textContent()).toBe("/compact ");
+  await expect.poll(() => staged(page).count()).toBe(1);
+  expect(await page.locator("[data-toast-id]").getByText("Compaction", { exact: false }).count()).toBe(0);
 });
 
 it("offers Steer, Edit, and Withdraw on a queued follow-up and withdraws it", async () => {
@@ -3440,7 +3545,7 @@ it("creates the draft with a named agent and shows @name on the conversation and
   await dismissPopovers(page);
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).waitFor();
+    await page.getByRole("menuitem", { name: "Add images…", exact: true }).waitFor();
     await shot(page, "conversation-plus-menu");
     await page.keyboard.press("Escape");
   }

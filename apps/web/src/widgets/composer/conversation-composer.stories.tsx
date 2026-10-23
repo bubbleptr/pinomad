@@ -42,3 +42,33 @@ export const AddMenu: Story = {
 
 /** A conversation created with a named agent: `@tester` leads the model capsule, read-only. */
 export const WithRole: Story = { args: { conversation: subagentConversation() } };
+
+/** A leading `/` opens the host's commands. */
+export const CommandMenu: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("combobox", { name: "Prompt" }));
+    await userEvent.keyboard("/");
+  },
+};
+
+/** A pre-5.15 host lists no commands: the + menu keeps Compact conversation. */
+const olderHost = fakeView({ host: { version: "0.8.0", protocol: { major: 5, minor: 14 } } });
+export const OlderHostAddMenu: Story = {
+  args: { view: olderHost, remote: fakeRemote(olderHost), conversation: olderHost.conversation! },
+  play: AddMenu.play,
+};
+
+/** A command the host lists as temporarily unavailable shows greyed with its reason. */
+export const CommandMenuWithDisabled: Story = {
+  args: {
+    remote: fakeRemote(view, {
+      listCommands: async () => ({
+        commands: [
+          { name: "compact", description: "Summarize older context to free up space", argumentHint: "[instructions]", source: "builtin" },
+          { name: "handoff", description: "Write a handoff for a fresh conversation", source: "plugin", disabled: "Not while a run is in flight" },
+        ],
+      }),
+    }),
+  },
+  play: CommandMenu.play,
+};
