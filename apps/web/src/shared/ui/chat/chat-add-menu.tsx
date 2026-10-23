@@ -1,9 +1,9 @@
 // The composer's + menu (issue #254): one entry for everything that can go
-// into a message or the conversation it starts. Compound DropdownMenu rather
-// than `items` because the draft's project and checkout pickers are
-// single-choice rows (menuitemradio), which the data-driven mode can't express.
+// into a message. Compound DropdownMenu rather than `items` because the
+// conversation's Commands row is a flyout, which the data-driven mode can't
+// express.
 import type { ReactNode } from "react";
-import { DropdownMenu, DropdownMenuRadioGroup, DropdownMenuSubMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Plus } from "@/shared/ui/icons";
 
 /** The ghost `+` button and its menu; children are sections. */
@@ -57,29 +57,3 @@ export function ChatAddMenuSection({ title, children }: { title: string; childre
   );
 }
 
-/**
- * A single choice as one row — `label` over the current `valueLabel` — whose
- * flyout holds the options (`DropdownMenuRadioItem`s). A flyout, not inline
- * radios: the menu caps at 300px, and a project list grows with the host.
- */
-export function ChatAddMenuChoice({
-  label,
-  value,
-  valueLabel,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  valueLabel: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <DropdownMenuSubMenu description={valueLabel} label={label}>
-      <DropdownMenuRadioGroup label={label} value={value} onChange={onChange}>
-        {children}
-      </DropdownMenuRadioGroup>
-    </DropdownMenuSubMenu>
-  );
-}

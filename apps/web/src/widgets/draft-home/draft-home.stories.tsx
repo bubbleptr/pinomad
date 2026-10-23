@@ -40,7 +40,7 @@ export const Disconnected: Story = { args: { connected: false } };
 const noModels = fakeView({ conversation: undefined, models: [], defaults: {}, settings: null });
 export const NoModels: Story = { args: { view: noModels, remote: fakeRemote(noModels) } };
 
-/** The + menu: what can be added, then a second way to pick the project and where to work. */
+/** The + menu: what can be added. Where the conversation runs stays in the footer. */
 export const AddMenu: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));

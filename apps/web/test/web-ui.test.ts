@@ -3837,14 +3837,6 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
   await expect.poll(async () => (await paintedSkills(composer)).length).toBe(3);
-
-  // The menu's project choice is a second entry to the footer picker's state.
-  await more.click();
-  await page.getByRole("menuitem", { name: /^Project/ }).click();
-  await page.getByRole("menuitemradio", { name: projectName, exact: true }).waitFor();
-  await shot(page, "draft-plus-menu-project");
-  await page.getByRole("menuitemradio", { name: "No project", exact: true }).click();
-  await expect.poll(() => page.getByRole("combobox", { name: "Project", exact: true }).textContent()).toContain("No project");
 });
 
 /** A user skill the faux host lists in every scope (ADR-0028's expansion reads its body). */

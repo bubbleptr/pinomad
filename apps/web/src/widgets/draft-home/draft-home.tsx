@@ -1,4 +1,4 @@
-import { DropdownMenuItem, DropdownMenuRadioItem } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -15,7 +15,7 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
-import { ChatAddMenu, ChatAddMenuChoice, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
+import { ChatAddMenu, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
@@ -218,35 +218,6 @@ export function DraftHome({
                     {agentRoles.length === 0 ? null : (
                       <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
                     )}
-                  </ChatAddMenuSection>
-                  {/* A second entry to the footer's pickers, bound to the same state. */}
-                  <ChatAddMenuSection title="Conversation">
-                    <ChatAddMenuChoice
-                      label="Project"
-                      value={draft.kind === "chat" ? "chat" : draft.path}
-                      valueLabel={
-                        draft.kind === "chat"
-                          ? "No project"
-                          : (view.organized.projects.find((entry) => entry.project.path === draft.path)?.project.name ?? draft.path)
-                      }
-                      onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
-                    >
-                      <DropdownMenuRadioItem value="chat" label="No project" />
-                      {view.organized.projects.map((entry) => (
-                        <DropdownMenuRadioItem key={entry.project.path} value={entry.project.path} label={entry.project.name} />
-                      ))}
-                    </ChatAddMenuChoice>
-                    {draft.kind === "project" ? (
-                      <ChatAddMenuChoice
-                        label="Where to work"
-                        value={checkoutMode}
-                        valueLabel={checkoutMode === "worktree" ? "Git worktree" : "Project folder"}
-                        onChange={(picked) => setCheckoutMode(picked === "worktree" ? "worktree" : "local")}
-                      >
-                        <DropdownMenuRadioItem value="worktree" label="Git worktree" />
-                        <DropdownMenuRadioItem value="local" label="Project folder" />
-                      </ChatAddMenuChoice>
-                    ) : null}
                   </ChatAddMenuSection>
                 </ChatAddMenu>
                 <ModelSelector
