@@ -514,6 +514,15 @@ class RemoteClient {
     });
   }
 
+  /**
+   * The `skills` arg for a host that takes it (5.16, ADR-0028). An older host
+   * never gets the list: the `$name` text still goes out, and the host
+   * matches it (or not) the way it always did — nothing to refuse.
+   */
+  #boundSkills(skills: readonly string[] | undefined): { skills?: readonly string[] } {
+    return skills === undefined || !hostSupportsFeature(this.#hostMinor, "boundSkills") ? {} : { skills };
+  }
+
   #notice(level: Notice["level"], message: string): void {
     if (this.#state === undefined) return;
     this.#update({ notices: [...this.#state.notices, { id: this.#nextNotice++, level, message }].slice(-20) });
@@ -614,6 +623,7 @@ class RemoteClient {
             ...(options?.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
             ...(options?.agent === undefined ? {} : { agent: options.agent }),
             ...(images.length === 0 ? {} : { images }),
+            ...this.#boundSkills(options?.skills),
           });
           await this.#switch(conversationId);
         }),
@@ -641,6 +651,7 @@ class RemoteClient {
             whenBusy,
             requestId: options?.requestId ?? newRequestId(),
             ...(images.length === 0 ? {} : { images }),
+            ...this.#boundSkills(options?.skills),
           });
         }),
       compact: (instructions) =>

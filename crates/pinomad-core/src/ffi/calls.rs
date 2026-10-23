@@ -189,6 +189,11 @@ pub enum FfiCall {
         target: Option<u64>,
         request_id: Option<String>,
         images: Vec<MessageImage>,
+        /// The `$` menu picks, deduplicated, in mention order (ADR-0028);
+        /// sent to a 5.16 host only. `None` (the default) leaves an older
+        /// composer's `$name` text to the host's own matching.
+        #[uniffi(default)]
+        skills: Option<Vec<String>>,
     },
     /// Show and talk to another conversation.
     SwitchConversation { id: u64 },
@@ -218,6 +223,11 @@ pub enum FfiCall {
         agent: Option<String>,
         /// Up to 4 attached images; needs a 5.5 host.
         images: Vec<MessageImage>,
+        /// The `$` menu picks, deduplicated, in mention order (ADR-0028);
+        /// sent to a 5.16 host only. `None` (the default) leaves an older
+        /// composer's `$name` text to the host's own matching.
+        #[uniffi(default)]
+        skills: Option<Vec<String>>,
     },
     Compact { instructions: Option<String> },
     /// Answer a pending `pinomad.question` request on `target` (the shown
@@ -310,12 +320,14 @@ impl FfiCall {
                 target,
                 request_id,
                 images,
+                skills,
             } => Call::Submit {
                 text,
                 when_busy: when_busy.as_str().to_string(),
                 target,
                 request_id,
                 images: images_json(&images),
+                skills,
             },
             FfiCall::SwitchConversation { id } => Call::SwitchConversation { id },
             FfiCall::SetThinkingLevel { level } => Call::SetThinkingLevel {
@@ -334,6 +346,7 @@ impl FfiCall {
                 thinking_level,
                 agent,
                 images,
+                skills,
             } => Call::CreateConversation {
                 home: home.to_json(),
                 text,
@@ -342,6 +355,7 @@ impl FfiCall {
                 thinking_level: thinking_level.map(|l| l.as_str().to_string()),
                 agent,
                 images: images_json(&images),
+                skills,
             },
             FfiCall::Compact { instructions } => Call::Compact { instructions },
             FfiCall::Answer {

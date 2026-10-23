@@ -304,6 +304,7 @@ fn a_failed_command_call_reports_success_and_a_notice() {
             target: None,
             request_id: None,
             images: vec![],
+            skills: None,
         },
     );
     // Command-class failures still succeed — no conversation is shown, so
@@ -368,6 +369,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
                 mime_type: "image/png".to_string(),
                 ref_: None,
             }],
+            skills: None,
         },
     );
     h.invoke(
@@ -383,6 +385,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             thinking_level: Some(ThinkingLevel::High),
             agent: None,
             images: vec![],
+            skills: None,
         },
     );
     h.invoke(3, FfiCall::SetPushToken { token: None });
@@ -397,6 +400,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             thinking_level: None,
             agent: Some("reviewer".to_string()),
             images: vec![],
+            skills: None,
         },
     );
     h.invoke(
@@ -479,6 +483,7 @@ fn ffi_sends_image_refs_and_keeps_bytes_inline() {
                     ref_: Some("ignored".to_string()),
                 },
             ],
+            skills: None,
         },
     );
     let frames = call_frames(&h);
@@ -1405,4 +1410,26 @@ fn account_pairing_link_and_host_matching() {
     // Nothing stored: unpaired.
     let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host], vec![]);
     assert_eq!(matches[0].status, AccountHostStatus::Unpaired);
+}
+
+#[test]
+fn ffi_forwards_bound_skills() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::SwitchConversation { id: 1 });
+    h.invoke(
+        2,
+        FfiCall::Submit {
+            text: "$review x".to_string(),
+            when_busy: SubmitMode::FollowUp,
+            target: None,
+            request_id: None,
+            images: vec![],
+            skills: Some(vec!["review".to_string()]),
+        },
+    );
+    let frames = call_frames(&h);
+    assert_eq!(
+        frames[0].get("args").and_then(|args| args.get("skills")).cloned(),
+        Some(Json::array(vec![Json::from("review")]))
+    );
 }

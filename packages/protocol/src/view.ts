@@ -183,6 +183,12 @@ export interface DurableController {
        * (`agentConversations` in FEATURE_SINCE).
        */
       agent?: string;
+      /**
+       * The `$` menu picks to expand, deduplicated, in mention order
+       * (ADR-0028). Sent to a 5.16 host (`boundSkills`); an older host never
+       * sees it and matches `$name` in the text itself, or not at all.
+       */
+      skills?: readonly string[];
     },
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
@@ -194,12 +200,17 @@ export interface DurableController {
    * to the main shown conversation. `requestId` is an idempotency key: the
    * host admits one submission per key and conversation; defaults to a fresh
    * one. `images` attaches up to 4 images; needs a 5.5 host, a `{ ref }`
-   * entry needs 5.15.
+   * entry needs 5.15. `skills`: as for `createConversation`.
    */
   submit(
     text: string,
     whenBusy: "steer" | "followUp",
-    options?: { target?: ConversationId; requestId?: string; images?: readonly OutgoingImage[] },
+    options?: {
+      target?: ConversationId;
+      requestId?: string;
+      images?: readonly OutgoingImage[];
+      skills?: readonly string[];
+    },
   ): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */

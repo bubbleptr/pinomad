@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 15
+    "minor": 16
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":15},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":16},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":15},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":16},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -137,6 +137,14 @@
     {
       "name": "call-submit-ref",
       "wire": "{\"type\":\"call\",\"id\":19,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"again\",\"whenBusy\":\"followUp\",\"requestId\":\"req-ref\",\"images\":[{\"ref\":\"abc123\"}]}}"
+    },
+    {
+      "name": "call-submit-skills",
+      "wire": "{\"type\":\"call\",\"id\":20,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"$review then $deploy\",\"whenBusy\":\"followUp\",\"requestId\":\"req-s\",\"skills\":[\"review\",\"deploy\"]}}"
+    },
+    {
+      "name": "call-createConversation-skills",
+      "wire": "{\"type\":\"call\",\"id\":21,\"method\":\"createConversation\",\"args\":{\"home\":{\"kind\":\"chat\"},\"text\":\"plain\",\"requestId\":\"r\",\"skills\":[]}}"
     },
     {
       "name": "call-createConversation",
@@ -340,6 +348,10 @@
       {
         "name": "apnsPush",
         "since": 9
+      },
+      {
+        "name": "boundSkills",
+        "since": 16
       },
       {
         "name": "hostName",
@@ -634,6 +646,18 @@
       "name": "apnsPush@8",
       "minor": 8,
       "feature": "apnsPush",
+      "expect": false
+    },
+    {
+      "name": "boundSkills@16",
+      "minor": 16,
+      "feature": "boundSkills",
+      "expect": true
+    },
+    {
+      "name": "boundSkills@15",
+      "minor": 15,
+      "feature": "boundSkills",
       "expect": false
     },
     {

@@ -88,7 +88,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 15 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 16 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -133,6 +133,13 @@ export interface CallMethods {
        * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
        */
       images?: readonly OutgoingImage[];
+      /**
+       * The skills the user picked from the `$` menu, deduplicated, in mention
+       * order (5.16, ADR-0028; `boundSkills` in FEATURE_SINCE). The host
+       * expands exactly these into the message — `[]` expands nothing; absent
+       * (an older client) falls back to matching `$name` in the text.
+       */
+      skills?: readonly string[];
     };
     result: { conversationId: ConversationId };
   };
@@ -151,6 +158,13 @@ export interface CallMethods {
        * `{ ref }` entries need a 5.15 host (`imageRefs` in FEATURE_SINCE).
        */
       images?: readonly OutgoingImage[];
+      /**
+       * The skills the user picked from the `$` menu, deduplicated, in mention
+       * order (5.16, ADR-0028; `boundSkills` in FEATURE_SINCE). The host
+       * expands exactly these into the message — `[]` expands nothing; absent
+       * (an older client) falls back to matching `$name` in the text.
+       */
+      skills?: readonly string[];
     };
     result: { submissionId: number };
   };
@@ -300,6 +314,8 @@ export const FEATURE_SINCE = {
   hostName: 12,
   /** `submit`/`createConversation` images may be `{ ref }` (15); an older host calls them malformed and 4400s. */
   imageRefs: 15,
+  /** `submit`/`createConversation` carry `skills`, the `$` picks to expand (16); an older host ignores the field. */
+  boundSkills: 16,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -439,6 +455,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
             ? typeof image.data === "string" && typeof image.mimeType === "string"
             : nonempty(image.ref)),
       ));
+  // Shape only — whether a name is a skill in scope is the host's check (a notice).
+  const skills = (): boolean => args.skills === undefined || (Array.isArray(args.skills) && args.skills.every(nonempty));
   // Shape only — name/description/model rules are the host's check (agentRoleProblem).
   const role = (): boolean =>
     record(args.role)
@@ -451,7 +469,7 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
-        && nonempty(args.requestId) && images()
+        && nonempty(args.requestId) && images() && skills()
       );
     case "withdrawQueued":
     case "steerQueued":
@@ -492,7 +510,7 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return (
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
         && typeof args.text === "string" && (nonempty(args.text) || (Array.isArray(args.images) && args.images.length > 0))
-        && nonempty(args.requestId) && images()
+        && nonempty(args.requestId) && images() && skills()
         && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
         && (args.model === undefined || (record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId)))
         && (args.thinkingLevel === undefined || nonempty(args.thinkingLevel))

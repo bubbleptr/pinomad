@@ -51,6 +51,10 @@ pub enum Call {
         /// a 5.10 host — gated before send, never silently dropped.
         agent: Option<String>,
         images: Vec<Json>,
+        /// The `$` menu picks, deduplicated, in mention order (ADR-0028):
+        /// sent to a 5.16 host — `Some(vec![])` expands nothing, `None`
+        /// leaves the host matching `$name` in the text.
+        skills: Option<Vec<String>>,
     },
     Archive { id: u64, archived: bool },
     Submit {
@@ -59,6 +63,10 @@ pub enum Call {
         target: Option<u64>,
         request_id: Option<String>,
         images: Vec<Json>,
+        /// The `$` menu picks, deduplicated, in mention order (ADR-0028):
+        /// sent to a 5.16 host — `Some(vec![])` expands nothing, `None`
+        /// leaves the host matching `$name` in the text.
+        skills: Option<Vec<String>>,
     },
     /// Take a queued input back out of the inbox (5.14). `sent` means it
     /// already reached the transcript. Request-class: the caller owns the
@@ -519,6 +527,17 @@ impl RemoteDurable {
 
     /// `#send` — a text frame through the live connection (queues inside a
     /// secure connection that is still handshaking, like the reference).
+    /// The `skills` arg for a host that takes it (5.16, ADR-0028). An older
+    /// host never gets the list: the `$name` text still goes out and the
+    /// host matches it (or not) as it always did — nothing to refuse.
+    fn set_bound_skills(&self, args: &mut JsonObject, skills: &Option<Vec<String>>) {
+        if let Some(skills) = skills {
+            if host_supports_feature(self.host_minor, HostFeature::BoundSkills) {
+                set(args, "skills", Json::array(skills.iter().map(|name| Json::from(name.clone())).collect()));
+            }
+        }
+    }
+
     fn send(&mut self, frame: ClientFrame) {
         let text = encode_client_frame(&frame);
         if let Some(conn) = self.conn.as_mut() {
@@ -995,7 +1014,7 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "renameConversation", args });
             }
-            Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images } => {
+            Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images, skills } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
                 }
@@ -1028,6 +1047,7 @@ impl RemoteDurable {
                 if !images.is_empty() {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
+                self.set_bound_skills(&mut args, skills);
                 steps.push_back(Step::Call { method: "createConversation", args: Json::Object(Arc::new(args)) });
                 steps.push_back(Step::Show { target: ShowTarget::FromResult, slot: Slot::Main });
             }
@@ -1040,7 +1060,7 @@ impl RemoteDurable {
                 steps.push_back(Step::UnshowCurrentIf { id: *id, archived: *archived });
                 steps.push_back(Step::UnsideIfArchived { id: *id, archived: *archived });
             }
-            Call::Submit { text, when_busy, target, request_id, images } => {
+            Call::Submit { text, when_busy, target, request_id, images, skills } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
                 }
@@ -1057,6 +1077,7 @@ impl RemoteDurable {
                 if !images.is_empty() {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
+                self.set_bound_skills(&mut args, skills);
                 steps.push_back(Step::Call { method: "submit", args: Json::Object(Arc::new(args)) });
             }
             Call::WithdrawQueued { submission_id, target } => {
