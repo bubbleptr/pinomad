@@ -8,7 +8,8 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checkout/checkout-strategy-picker.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
-import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -71,7 +72,9 @@ export function DraftHome({
   onCreated: () => void;
   connected: boolean;
 }) {
-  const [value, setValue] = useState("");
+  // A plain string plus the `$` picks bound in it (ADR-0028).
+  const skillDraft = useSkillDraft();
+  const { value, setValue } = skillDraft;
   // createConversation keeps the text and resolves after the view switches
   // (a failure still resolves, as a notice). The ref guards synchronously —
   // setState hasn't flushed by the time a second Enter's keydown runs.
@@ -116,8 +119,9 @@ export function DraftHome({
       : { kind: "chat" },
     inputRef,
     connected && minor !== undefined && hostSupportsCall(minor, "listSkills"),
+    skillDraft.pick,
   );
-  useSkillHighlight(inputRef, value, skills.names);
+  useSkillHighlight(inputRef, skillDraft.draft);
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const problem = resolution?.problem;
   // An inherited side reads "from @name" — the side the user overrode drops it.
@@ -157,7 +161,9 @@ export function DraftHome({
             triggers={triggers.length === 0 ? undefined : triggers}
             status={submitting ? "submitted" : "ready"}
             onSubmit={() => {
-              const text = value.trim();
+              // Only the picked skills go out as `skills` (ADR-0028).
+              const message = draftMessage(skillDraft.draft);
+              const text = message.text.trim();
               if ((text === "" && images.length === 0) || pending || submittingRef.current || problem !== undefined) return;
               requestNotificationPermission();
               // The shown conversation changes only when the create landed.
@@ -176,6 +182,7 @@ export function DraftHome({
                     ? { ...(pick.model === undefined ? {} : { model: pick.model }), thinkingLevel: pick.level }
                     : resolution.send),
                   ...(sending.length === 0 ? {} : { images: sending }),
+                  skills: message.skills,
                 })
                 .then(() => {
                   const now = remote.view.current().conversation?.conversation.id;

@@ -9,14 +9,13 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { hostSupportsCall, type CallMethods } from "@pinomad/protocol/frames.ts";
+import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { outgoingImage } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
-import { useSkillNames } from "./entities/agent/skill-mentions.tsx";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -538,13 +537,6 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
     (id: ConversationId) => findConversation(view.organized, id)?.summary,
     [view.organized],
   );
-  // The shown conversation's skill names — sent user bubbles paint their
-  // `$name` mentions against the same listing the composer offers (issue #143).
-  const skillNames = useSkillNames(
-    remote,
-    conversation === undefined ? undefined : { kind: "conversation", conversationId: conversation.conversation.id },
-    view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
-  );
   const startDraft = (home: Home): void => {
     setDraft(home);
     setDrafting(true);
@@ -639,17 +631,17 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
               onFork={setForkTarget}
               forksAt={forksAtForShown}
               summaryOf={summaryOf}
-              skillNames={skillNames}
               // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
               onRetry={
                 shownSummary?.kind === "subagent"
                   ? undefined
-                  : async ({ text, images, requestId }) => {
+                  : async ({ text, images, skills, requestId }) => {
                       requestNotificationPermission();
                       // Refs go back as refs (outgoingImage), never downloaded first.
                       await remote.controller.submit(text, "followUp", {
                         requestId,
                         images: images.map(outgoingImage),
+                        skills,
                       });
                     }
               }

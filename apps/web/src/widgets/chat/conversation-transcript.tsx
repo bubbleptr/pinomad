@@ -25,7 +25,6 @@ export function ConversationTranscript({
   forkSource,
   onRetry,
   docs,
-  skillNames,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -47,15 +46,13 @@ export function ConversationTranscript({
   forkSource?: string;
   /**
    * Resubmits the user message the newest run answered, when that run failed —
-   * its images go back too. The retry carries a requestId derived from the
+   * its images and picked skills go back too. The retry carries a requestId derived from the
    * failed run, so a second click or another client's retry admits once on
    * the host. Absent on read-only transcripts (subagent conversations).
    */
-  onRetry?: (retry: { text: string; images: readonly ViewImage[]; requestId: string }) => Promise<void>;
+  onRetry?: (retry: { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string }) => Promise<void>;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
-  /** This conversation's `$`-mentionable skill names (issue #143) — user bubbles paint matches. */
-  skillNames?: readonly string[];
 }) {
   const busy = isBusy(conversation);
   const view = useMemo(
@@ -95,7 +92,6 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
-            skillNames={skillNames}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={
               onRetry !== undefined && connected && retry !== undefined && index === items.length - 1

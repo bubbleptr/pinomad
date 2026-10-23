@@ -99,7 +99,6 @@ export const UserMessage: Story = {
       images: [{ data: PNG, mimeType: "image/png" }],
       skills: ["review"],
     },
-    skillNames: ["review"],
   },
 };
 

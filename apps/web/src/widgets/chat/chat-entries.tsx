@@ -38,7 +38,6 @@ export function ChatEntryView({
   summaryOf,
   onRetry,
   todo,
-  skillNames,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -55,8 +54,6 @@ export function ChatEntryView({
   onRetry?: () => Promise<void>;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
-  /** `$`-mentionable skill names for this conversation — user text paints matches (issue #143). */
-  skillNames?: readonly string[];
 }) {
   switch (entry.kind) {
     case "user":
@@ -68,7 +65,7 @@ export function ChatEntryView({
               <>
                 <ChatMessage.Bubble>
                   <ChatMessage.Content>
-                    <SkillMentionText text={entry.text} names={skillNames} />
+                    <SkillMentionText text={entry.text} names={entry.skills} />
                   </ChatMessage.Content>
                 </ChatMessage.Bubble>
                 <ChatMessageActions className="shrink-0">

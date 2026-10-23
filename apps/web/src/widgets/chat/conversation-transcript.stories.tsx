@@ -30,7 +30,6 @@ const meta = {
     onFork: fn(),
     summaryOf,
     docs: fakeView().docs,
-    skillNames: ["review"],
     onRetry: fn(async () => {}),
   },
 } satisfies Meta<typeof ConversationTranscript>;
