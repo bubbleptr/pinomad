@@ -112,6 +112,7 @@ fn feature_of(name: &str) -> HostFeature {
         "liveBranch" => HostFeature::LiveBranch,
         "hostName" => HostFeature::HostName,
         "imageRefs" => HostFeature::ImageRefs,
+        "boundSkills" => HostFeature::BoundSkills,
         other => panic!("unknown feature {other}"),
     }
 }

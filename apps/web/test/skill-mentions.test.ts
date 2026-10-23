@@ -1,7 +1,8 @@
 // The `$` skill-mention surface end to end (issue #143): the menu groups a
 // scope's Project/User skills, `$name ` inserts as plain text, known names
 // paint through the CSS Custom Highlight API while unmatched `$` stays plain,
-// and the sent bubble marks the mention.
+// and the sent bubble marks the mention and shows only the typed text even
+// though the host expanded the skill into the stored message (issue #308).
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -112,6 +113,10 @@ it("offers $name skills grouped by source, highlights them, and marks the sent b
   expect(await mark.textContent()).toBe("$review");
   // The unknown name stays plain text in the bubble.
   await expect.poll(async () => mark.count()).toBe(1);
+  // The host expanded `$review` into the stored message (ADR-0028); the
+  // bubble still shows exactly what was typed.
+  const bubble = page.locator('[data-slot="chat-message-user"] [data-slot="chat-message-bubble"]');
+  expect((await bubble.textContent())?.trim()).toBe("$review then $nope");
   await shot(page, "04-bubble-mark");
 
   // Dark theme reads the same tokens — one extra shot for the PR.

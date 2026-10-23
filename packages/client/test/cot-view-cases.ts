@@ -4,6 +4,7 @@
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { block } from "./skill-blocks-cases.ts";
 
 let nextId = 1;
 export const entry = (kind: string, message?: unknown): EntryRecord =>
@@ -217,6 +218,18 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
   },
   {
+    // A `$review` message as the host stores it (ADR-0028): the bubble shows
+    // only what the user typed; the images still follow as their own blocks.
+    name: "user-skill-blocks",
+    view: view([
+      user(`${block("review", "Review steps.")}\n\n$review do x`),
+      assistant([text("reviewed")]),
+      user([text(`${block("review", "Review steps.")}\n\nlook $review`), image("aGk=", "image/png")]),
+      assistant([text("seen")]),
+    ]),
+    busy: false,
+  },
+  {
     name: "boundaries",
     view: view([
       user("one"),
@@ -425,6 +438,8 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
 export const RETRY_CASES: DeriveChatCase[] = [
   { name: "retry-simple", view: view([user("go"), failed()]), busy: false },
   { name: "retry-images", view: view([user([text("look"), image("aGk=", "image/png")]), failed()]), busy: false },
+  // A retry resends the picked skills too (ADR-0028), not just the typed text.
+  { name: "retry-skills", view: view([user(`${block("review", "Review steps.")}\n\n$review do x`), failed()]), busy: false },
   { name: "retry-image-only", view: view([user([image("aGk=", "image/png")]), failed()]), busy: false },
   { name: "retry-empty-prompt", view: view([user(""), failed()]), busy: false },
   { name: "retry-not-newest", view: view([user("go"), failed(), user("again"), assistant([text("recovered")])]), busy: false },

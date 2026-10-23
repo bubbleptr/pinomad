@@ -41,13 +41,6 @@ export interface ContextOptions {
   ) => Promise<ContextResolution | undefined>;
 }
 
-// The fixed `$`-mention rules (issue #143): always rendered, next to the
-// skills they reference — the model resolves `$name` against the prompt's
-// skills list, reads the file itself, and never gets a name expanded or a
-// match invented from elsewhere.
-const SKILL_MENTION_RULES =
-  "In a user message, `$name` outside code blocks, inline code, and quoted text refers to one of the skills listed above — the user is explicitly asking you to use that skill: read its file with the read tool before doing anything else. A `$name` inside code or quotations is not a request, and neither is one the user is only discussing or telling you not to use. Resolve names only against the skills listed above; do not go looking for same-named files elsewhere. If reading a skill's file fails, tell the user instead of guessing what the skill would have said.";
-
 // ADR-0019: a fork shares its parent's working directory; isolation is the
 // agent's choice, made explicit here because nothing else enforces it.
 const FORK_SHARED_DIR =
@@ -125,10 +118,13 @@ export function createContext(options: ContextOptions): BuiltinExtension {
             const cwd = input.agent.cwd;
             if (cwd === undefined) return undefined;
             // The same loader listSkills uses (issue #143): project entry
-            // first — on a name collision the project's skill wins.
+            // first — on a name collision the project's skill wins. A `$name`
+            // the user typed arrives already expanded (ADR-0028); this list
+            // is for the model's own picks, so formatSkillsForPrompt drops
+            // `disable-model-invocation` skills.
             const skills = scopedSkills(cwd, agentsHome).map((scoped) => scoped.skill);
             const text = formatSkillsForPrompt(skills, "read");
-            return [text, SKILL_MENTION_RULES].filter((part) => part !== "").join("\n");
+            return text === "" ? undefined : text;
           },
           { tag: false },
         ),

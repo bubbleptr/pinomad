@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 15 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 16 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -192,6 +192,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::LiveBranch => 11,
         HostFeature::HostName => 12,
         HostFeature::ImageRefs => 15,
+        HostFeature::BoundSkills => 16,
     };
     host_minor >= since
 }
@@ -218,6 +219,10 @@ pub enum HostFeature {
     /// host answers with the type it recorded; an older host would call the
     /// form malformed and 4400 the connection.
     ImageRefs,
+    /// `submit`/`createConversation` carry `skills`, the `$` picks the host
+    /// expands (16, ADR-0028) — an older host ignores the field, so the
+    /// core leaves it off instead of refusing the call.
+    BoundSkills,
 }
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.

@@ -312,7 +312,7 @@ struct ConversationView: View {
         todo: TodoLine?
     ) -> some View {
         switch entry {
-        case let .user(_, text, images):
+        case let .user(_, text, images, _):
             UserRow(text: text, images: images, skillNames: skillNames).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,

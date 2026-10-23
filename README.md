@@ -74,7 +74,7 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
 | MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |
 | Images | Paste, drop, or pick up to 4 images per message in the Web/desktop composer — resized to JPEG before sending |
-| AGENTS.md and skills | Reads `AGENTS.md` / `CLAUDE.md` and skills from `~/.agents` and the project, on every request |
+| AGENTS.md and skills | Reads `AGENTS.md` / `CLAUDE.md` and skills from `~/.agents` and the project, on every request; a `$name` mention sends that skill's full text with the message |
 
 Details and the MCP config reference: [Usage](docs/usage.md).
 

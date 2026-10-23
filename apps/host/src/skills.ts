@@ -1,8 +1,9 @@
-// `listSkills` (issue #143): the `$`-mentionable skills a scope's system
-// prompt carries. One loader feeds both call sites — the prompt section and
-// the gateway call — so the menu can never offer a name the model would not
-// see. Read-only: answers from the filesystem or git, never materializes
-// checkouts, never writes durable state.
+// `listSkills` (issue #143): the `$`-mentionable skills of a scope. One
+// loader feeds every call site — the prompt section, the gateway call, and
+// `$name` expansion (ADR-0028) — so the menu never offers a name the host
+// would not expand. `disable-model-invocation` skills list and expand; only
+// the prompt section leaves them out. Read-only: answers from the filesystem
+// or git, never materializes checkouts, never writes durable state.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
@@ -95,9 +96,10 @@ function projectSkills(dirs: readonly string[], agentsHome: string): ScopedSkill
 }
 
 /**
- * Merge entry lists project-first, dedupe by name, then drop
- * `disable-model-invocation` entries. The order matters: a disabled project
- * skill must still shadow the user's same-named one (issue #143).
+ * Merge entry lists project-first and dedupe by name. A
+ * `disable-model-invocation` skill stays in: it still shadows the user's
+ * same-named one (issue #143), the user can still `$`-mention it, and the
+ * prompt's `formatSkillsForPrompt` drops it on its own (ADR-0028).
  */
 export function mergeSkills(entries: readonly (readonly ScopedSkill[])[]): ScopedSkill[] {
   const seen = new Set<string>();
@@ -109,7 +111,7 @@ export function mergeSkills(entries: readonly (readonly ScopedSkill[])[]): Scope
       merged.push(scoped);
     }
   }
-  return merged.filter((scoped) => !scoped.skill.disableModelInvocation);
+  return merged;
 }
 
 /**
@@ -147,6 +149,15 @@ async function committedSkillFiles(gitRoot: string, layers: readonly string[]): 
   return new Set(stdout.split("\0").filter((path) => path !== ""));
 }
 
+/** One `$`-mentionable skill of a scope: the wire listing's fields plus where its file is. */
+export interface ListedSkill {
+  readonly name: string;
+  readonly description: string;
+  readonly source: "project" | "user";
+  readonly filePath: string;
+  readonly baseDir: string;
+}
+
 /**
  * One scope's listing: every project layer merged over the user entry — for
  * `head` keeping only project skills whose file is committed at HEAD (a
@@ -158,7 +169,7 @@ export async function enumerateSkills(
   root: string | undefined,
   mode: RootMode,
   agentsHome: string,
-): Promise<SkillListing> {
+): Promise<readonly ListedSkill[]> {
   let project: ScopedSkill[] = [];
   if (root !== undefined) {
     const layers = projectSkillLayers(root);
@@ -174,11 +185,15 @@ export async function enumerateSkills(
     }
   }
   const merged = mergeSkills([project, entrySkills(join(agentsHome, "skills"), "user", agentsHome)]);
-  return {
-    skills: merged
-      .filter((scoped) => invocableSkillName(scoped.skill.name))
-      .map((scoped) => ({ name: scoped.skill.name, description: scoped.skill.description, source: scoped.source })),
-  };
+  return merged
+    .filter((scoped) => invocableSkillName(scoped.skill.name))
+    .map(({ skill, source }) => ({
+      name: skill.name,
+      description: skill.description,
+      source,
+      filePath: skill.filePath,
+      baseDir: skill.baseDir,
+    }));
 }
 
 // The composer's typing burst shares one scan per scope; the cache only
@@ -187,7 +202,7 @@ const CACHE_TTL_MS = 3_000;
 const MAX_CACHED_SCOPES = 64;
 
 /** The scope listing a resolved `(root, mode)` yields; `root: undefined` reads the user entry alone (a Chat draft). */
-export type SkillLister = (root: string | undefined, mode: RootMode) => Promise<SkillListing>;
+export type SkillLister = (root: string | undefined, mode: RootMode) => Promise<readonly ListedSkill[]>;
 
 /**
  * Share scans across callers: concurrent requests for the same root+mode ride
@@ -196,14 +211,14 @@ export type SkillLister = (root: string | undefined, mode: RootMode) => Promise<
  * a bounded `.agents/skills` scan plus at most one small `git ls-tree`.
  */
 export function createSkillLister(
-  enumerate: (root: string | undefined, mode: RootMode) => Promise<SkillListing>,
+  enumerate: SkillLister,
   options: { readonly now?: () => number; readonly ttlMs?: number; readonly maxCached?: number } = {},
 ): SkillLister {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? CACHE_TTL_MS;
   const maxCached = options.maxCached ?? MAX_CACHED_SCOPES;
-  const cache = new Map<string, { value: SkillListing; expiresAt: number }>();
-  const inflight = new Map<string, Promise<SkillListing>>();
+  const cache = new Map<string, { value: readonly ListedSkill[]; expiresAt: number }>();
+  const inflight = new Map<string, Promise<readonly ListedSkill[]>>();
   return (root, mode) => {
     // A conversation cwd or a project path is never "" — the empty root is
     // the Chat draft's user-only listing.
@@ -235,19 +250,21 @@ export function createSkillLister(
 }
 
 /**
- * The `listSkills` call: resolve the scope to a `(root, mode)` and list it.
+ * A scope's skills with their files: resolve the scope to a `(root, mode)`
+ * and list it — what the `listSkills` call answers and `$name` expansion
+ * looks names up in.
  * A conversation's root is its persisted AgentState cwd — a Chat's is under
  * `<dataDir>/chats`, so its project entry is empty and only user skills list.
  * A missing cwd is a business error: never ensureWorktree, never fall back to
  * the project directory (same rule as listFiles, issue #138). A worktree
  * still being checked out is waited for, never listed half-written.
  */
-export async function listSkills(
+export async function scopeSkills(
   harness: Harness,
   lister: SkillLister,
   scope: SkillScope,
   context: Context,
-): Promise<SkillListing> {
+): Promise<readonly ListedSkill[]> {
   if (scope.kind === "chat") return lister(undefined, "live");
   let root: string;
   let mode: RootMode = "live";
@@ -277,4 +294,15 @@ export async function listSkills(
     mode = scope.checkout === "worktree" ? "head" : "live";
   }
   return lister(root, mode);
+}
+
+/** The `listSkills` call: the scope's skills without their file paths. */
+export async function listSkills(
+  harness: Harness,
+  lister: SkillLister,
+  scope: SkillScope,
+  context: Context,
+): Promise<SkillListing> {
+  const skills = await scopeSkills(harness, lister, scope, context);
+  return { skills: skills.map(({ name, description, source }) => ({ name, description, source })) };
 }

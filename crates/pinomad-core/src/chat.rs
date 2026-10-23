@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use crate::json::{js_strict_eq, same_value_zero, JsKey, Json};
+use crate::skill_blocks::strip_skill_blocks;
 use crate::text;
 use crate::tool_item::MessageImage;
 use crate::u16str::U16String;
@@ -66,9 +67,17 @@ fn live_of(view: &Json) -> Option<&Json> {
     not_null(view.get("docs").and_then(|docs| docs.get("pi.live")))
 }
 
-fn text_of(content: Option<&Json>) -> String {
+/// What the user typed in a queued input — its text blocks joined, without
+/// the skill blocks the host prepended (ADR-0028) — and those blocks' names.
+fn typed_text_of(content: Option<&Json>) -> (String, Vec<String>) {
+    let units = text_of(content);
+    let typed = strip_skill_blocks(&units);
+    (String::from_utf16_lossy(typed.text), typed.skills)
+}
+
+fn text_of(content: Option<&Json>) -> Vec<u16> {
     match content {
-        Some(Json::String(s)) => s.to_string_lossy(),
+        Some(Json::String(s)) => s.units().to_vec(),
         Some(Json::Array(items)) => {
             let mut out = Vec::new();
             for block in items.iter() {
@@ -80,9 +89,9 @@ fn text_of(content: Option<&Json>) -> String {
                     }
                 }
             }
-            U16String(out).to_string_lossy()
+            out
         }
-        _ => String::new(),
+        _ => Vec::new(),
     }
 }
 
@@ -203,7 +212,7 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
                         text: if write {
                             format!("<{}>", js_text(item.get("entry").and_then(|e| e.get("kind"))))
                         } else {
-                            text_of(item.get("content"))
+                            typed_text_of(item.get("content")).0
                         },
                         image_count: if write { 0 } else { image_count_of(item.get("content")) },
                     }
@@ -216,8 +225,13 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QueuedInput {
+    /// What the user typed, without the skill blocks the host prepended (ADR-0028).
     pub text: String,
     pub images: Vec<MessageImage>,
+    /// The skills the host expanded — the chips an edit restores, sent back
+    /// as `skills` on the resubmit.
+    #[cfg_attr(feature = "ffi", uniffi(default))]
+    pub skills: Vec<String>,
 }
 
 /// The content of a queued steer/follow-up, or None for a write or an
@@ -230,9 +244,11 @@ pub fn queued_input(view: &Json, id: u64) -> Option<QueuedInput> {
     if !str_eq(item.get("mode"), "steer") && !str_eq(item.get("mode"), "followUp") {
         return None;
     }
+    let (text, skills) = typed_text_of(item.get("content"));
     Some(QueuedInput {
-        text: text_of(item.get("content")),
+        text,
         images: images_of(item.get("content")),
+        skills,
     })
 }
 

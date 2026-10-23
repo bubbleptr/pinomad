@@ -81,6 +81,15 @@ function framesVector(): VectorFile {
       name: "call-submit-ref",
       wire: wire({ type: "call", id: 19, method: "submit", args: { conversationId: 2, text: "again", whenBusy: "followUp", requestId: "req-ref", images: [{ ref: "abc123" }] } }),
     },
+    // 5.16: the `$` picks ride submit and createConversation (ADR-0028).
+    {
+      name: "call-submit-skills",
+      wire: wire({ type: "call", id: 20, method: "submit", args: { conversationId: 2, text: "$review then $deploy", whenBusy: "followUp", requestId: "req-s", skills: ["review", "deploy"] } }),
+    },
+    {
+      name: "call-createConversation-skills",
+      wire: wire({ type: "call", id: 21, method: "createConversation", args: { home: { kind: "chat" }, text: "plain", requestId: "r", skills: [] } }),
+    },
     {
       name: "call-createConversation",
       wire: wire({ type: "call", id: 8, method: "createConversation", args: { home: { kind: "project", path: "/home/u/app" }, text: "go", requestId: "r", checkout: "worktree", model: { provider: "p", modelId: "m" }, thinkingLevel: "high" } }),

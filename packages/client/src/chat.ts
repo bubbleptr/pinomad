@@ -13,6 +13,7 @@ import type {
   UsageState,
 } from "@earendil-works/pi-durable";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
+import { stripSkillBlocks } from "./skill-blocks.ts";
 
 type Block = {
   readonly type: string;
@@ -76,15 +77,19 @@ export function queueItems(view: ConversationView): QueueItem[] {
   return inbox.items.map((item) => ({
     id: item.id as unknown as number,
     mode: item.mode,
-    text: item.mode === "write" ? `<${String(item.entry.kind)}>` : textOf(item.content as Message["content"]),
+    // The typed text, not the skill blocks the host prepended (ADR-0028).
+    text: item.mode === "write" ? `<${String(item.entry.kind)}>` : stripSkillBlocks(textOf(item.content as Message["content"])).text,
     imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Message["content"]),
   }));
 }
 
 /** A queued input's original content, for an Edit affordance that withdraws then refills the composer. */
 export interface QueuedInput {
+  /** What the user typed, without the skill blocks the host prepended (ADR-0028). */
   readonly text: string;
   readonly images: ViewImage[];
+  /** The skills the host expanded — the chips an edit restores, sent back as `skills`. */
+  readonly skills: readonly string[];
 }
 
 /** The content of a queued steer/follow-up, or undefined for a write or an unknown id. */
@@ -92,7 +97,8 @@ export function queuedInput(view: ConversationView, id: number): QueuedInput | u
   const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
   const item = inbox.items.find((candidate) => (candidate.id as unknown as number) === id);
   if (item === undefined || (item.mode !== "steer" && item.mode !== "followUp")) return undefined;
-  return { text: textOf(item.content as Message["content"]), images: imagesOf(item.content as Message["content"]) };
+  const typed = stripSkillBlocks(textOf(item.content as Message["content"]));
+  return { text: typed.text, images: imagesOf(item.content as Message["content"]), skills: typed.skills };
 }
 
 export interface TaskRow {

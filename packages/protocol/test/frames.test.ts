@@ -237,6 +237,22 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, text: "hi", images: [{ data: "AA==" }] } })).toBe("malformed");
   });
 
+  it("accepts bound skill names on submit and createConversation (5.16), rejects malformed ones", () => {
+    const submit = (skills: unknown) =>
+      kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "$review x", whenBusy: "followUp", requestId: "r", skills } });
+    const create = (skills: unknown) =>
+      kinds({ type: "call", id: 1, method: "createConversation", args: { home: { kind: "chat" }, text: "$review x", requestId: "r", skills } });
+    for (const call of [submit, create]) {
+      expect(call(["review", "deploy"])).toBe("frame");
+      // An empty list is meaningful: nothing was picked, expand nothing.
+      expect(call([])).toBe("frame");
+      expect(call(undefined)).toBe("frame");
+      expect(call("review")).toBe("malformed");
+      expect(call([""])).toBe("malformed");
+      expect(call([4])).toBe("malformed");
+    }
+  });
+
   it("accepts image refs on submit (5.15); a ref is only a name", () => {
     const submit = (images: unknown) =>
       kinds({ type: "call", id: 1, method: "submit", args: { conversationId: 1, text: "hi", whenBusy: "followUp", requestId: "r", images } });

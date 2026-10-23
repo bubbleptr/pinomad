@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use crate::json::{js_strict_eq, JsKey, Json};
 use crate::presentation::{classify, ClassifiedDoc};
+use crate::skill_blocks::strip_skill_blocks;
 use crate::text;
 use crate::tool_diff_stat::stat_from_details;
 use crate::tool_item::{DiffStat, MessageImage, PinomadToolDetail, ToolItem, ToolPartState};
@@ -90,6 +91,11 @@ pub enum ChatEntry {
         id: String,
         text: String,
         images: Vec<MessageImage>,
+        /// The skills the host expanded into this message (ADR-0028): a
+        /// bubble highlights a `$name` in `text` only when its name is here
+        /// — by name, so a plain `$name` beside a picked one lights up too.
+        #[cfg_attr(feature = "ffi", uniffi(default))]
+        skills: Vec<String>,
     },
     Run {
         id: String,
@@ -723,10 +729,14 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
         let kind = entry.get("kind");
         if str_eq(kind, "pi.user") && str_eq(message.and_then(|m| m.get("role")), "user") {
             flush!(false);
+            // The typed text, without the host's skill blocks (ADR-0028).
+            let units = text_of(message.and_then(|m| m.get("content")));
+            let typed = strip_skill_blocks(&units);
             items.push(ChatEntry::User {
                 id,
-                text: lossy(&text_of(message.and_then(|m| m.get("content")))),
+                text: lossy(typed.text),
                 images: images_of(message.and_then(|m| m.get("content"))),
+                skills: typed.skills,
             });
         } else if str_eq(kind, "pi.compaction") {
             flush!(false);
@@ -800,6 +810,7 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
 pub struct RetryRequest {
     pub text: String,
     pub images: Vec<MessageImage>,
+    pub skills: Vec<String>,
     pub request_id: String,
 }
 
@@ -814,12 +825,14 @@ pub fn retry_of(entries: &[ChatEntry]) -> Option<RetryRequest> {
             // A compaction between the prompt and the run doesn't break the
             // reach back; a reset or another run does.
             ChatEntry::Compaction { .. } => continue,
-            ChatEntry::User { text, images, .. } if !(text::is_blank_str(text) && images.is_empty()) => {
+            ChatEntry::User { text, images, skills, .. } if !(text::is_blank_str(text) && images.is_empty()) => {
                 // The run id is stable across views, so a second click or
-                // another client's retry dedupes on the host.
+                // another client's retry dedupes on the host. The picked
+                // skills go back too (ADR-0028).
                 return Some(RetryRequest {
                     text: text.clone(),
                     images: images.clone(),
+                    skills: skills.clone(),
                     request_id: format!("retry:{run_id}"),
                 });
             }

@@ -8,6 +8,7 @@
 import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
+import { stripSkillBlocks } from "./skill-blocks.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
 
@@ -60,7 +61,19 @@ export type CotView = {
 };
 
 export type ChatEntry =
-  | { kind: "user"; id: string; text: string; images: readonly ViewImage[] }
+  | {
+      kind: "user";
+      id: string;
+      /** What the user typed, without the skill blocks the host prepended (ADR-0028). */
+      text: string;
+      images: readonly ViewImage[];
+      /**
+       * The skills the host expanded into this message. A bubble highlights a
+       * `$name` in `text` only when its name is here — by name, so a plain
+       * `$name` next to a picked one of the same name lights up too.
+       */
+      skills: readonly string[];
+    }
   | {
       kind: "run"; id: string;
       cot: CotView;
@@ -521,7 +534,8 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      items.push({ kind: "user", id, text: textOf(message.content), images: imagesOf(message.content) });
+      const typed = stripSkillBlocks(textOf(message.content));
+      items.push({ kind: "user", id, text: typed.text, images: imagesOf(message.content), skills: typed.skills });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });
@@ -566,7 +580,7 @@ export function deriveChat(
 /** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
 export function retryOf(
   entries: readonly ChatEntry[],
-): { text: string; images: readonly ViewImage[]; requestId: string } | undefined {
+): { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string } | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {
@@ -578,7 +592,9 @@ export function retryOf(
     if (entry.kind !== "user" || (entry.text.trim() === "" && entry.images.length === 0)) return undefined;
     // The run id (`run-<first assistant entry id>`) is stable across views, so
     // a second click or another client's retry dedupes on the host.
-    return { text: entry.text, images: entry.images, requestId: `retry:${last.id}` };
+    // The picked skills go back too: without them the host would fall back
+    // to matching every `$name` in the text (ADR-0028).
+    return { text: entry.text, images: entry.images, skills: entry.skills, requestId: `retry:${last.id}` };
   }
   return undefined;
 }

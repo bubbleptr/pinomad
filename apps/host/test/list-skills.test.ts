@@ -15,7 +15,7 @@ import type { CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
 import type { SkillListing } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
-import { createSkillLister, scopedSkills } from "../src/skills.ts";
+import { createSkillLister, scopedSkills, type ListedSkill } from "../src/skills.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { connectTo, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
@@ -166,9 +166,10 @@ describe("listSkills", () => {
     expect(scopedSkills(project, agentsHome.path).map((scoped) => scoped.skill.name)).toEqual(["local"]);
   });
 
-  it("keeps a project's disabled skill shadowing the user's, and drops both", async () => {
-    // Dedupe before the disabled filter: without that order the project's
-    // disabled `deploy` would expose the user's same-named one (issue #143).
+  it("lists a project's disabled skill, still shadowing the user's same-named one", async () => {
+    // `disable-model-invocation` only keeps a skill out of the prompt; the
+    // user can still `$`-mention it (ADR-0028). The project's disabled
+    // `deploy` still hides the user's one (issue #143).
     const project = await tempDir();
     defer(project.remove);
     const agentsHome = await tempDir();
@@ -181,7 +182,10 @@ describe("listSkills", () => {
     const raw = await socketTo(host);
 
     const listing = skillsOf(await call(raw, "listSkills", { scope: { kind: "project", path: project.path, checkout: "project" } }));
-    expect(namesOf(listing)).toEqual(["review"]);
+    expect(listing.skills).toEqual([
+      { name: "deploy", description: "Project deploy steps", source: "project" },
+      { name: "review", description: "User review steps", source: "user" },
+    ]);
   });
 
   it("drops names the composer cannot type, but the shared loader still carries them", async () => {
@@ -431,9 +435,9 @@ describe("createSkillLister", () => {
 
   it("merges concurrent scans of the same scope and caches them briefly", async () => {
     const clock = manual();
-    const gate = deferred<SkillListing>();
+    const gate = deferred<readonly ListedSkill[]>();
     const scans: string[] = [];
-    const enumerate = async (root: string | undefined): Promise<SkillListing> => {
+    const enumerate = async (root: string | undefined): Promise<readonly ListedSkill[]> => {
       scans.push(root ?? "none");
       return await gate.promise;
     };
@@ -443,17 +447,17 @@ describe("createSkillLister", () => {
     const b = list("/root", "live");
     await Promise.resolve();
     expect(scans).toEqual(["/root"]); // one scan for both callers
-    gate.resolve({ skills: [] });
-    expect(await a).toEqual({ skills: [] });
-    expect(await b).toEqual({ skills: [] });
+    gate.resolve([]);
+    expect(await a).toEqual([]);
+    expect(await b).toEqual([]);
 
     // Within the TTL the cache answers — no second scan.
-    expect(await list("/root", "live")).toEqual({ skills: [] });
+    expect(await list("/root", "live")).toEqual([]);
     expect(scans).toEqual(["/root"]);
     clock.advance(3100);
     const reopened = createSkillLister(async (root) => {
       scans.push(`again:${root}`);
-      return { skills: [] };
+      return [];
     }, { now: clock.now, ttlMs: 3000 });
     await reopened("/root", "live");
     expect(scans).toEqual(["/root", "again:/root"]);
@@ -462,14 +466,14 @@ describe("createSkillLister", () => {
   it("does not cache a failed scan", async () => {
     const clock = manual();
     let n = 0;
-    const enumerate = async (): Promise<SkillListing> => {
+    const enumerate = async (): Promise<readonly ListedSkill[]> => {
       n += 1;
       if (n === 1) throw new Error("boom");
-      return { skills: [] };
+      return [];
     };
     const list = createSkillLister(enumerate, { now: clock.now });
     await expect(list("/r", "live")).rejects.toThrow("boom");
-    expect(await list("/r", "live")).toEqual({ skills: [] });
+    expect(await list("/r", "live")).toEqual([]);
     expect(n).toBe(2);
   });
 });

@@ -32,6 +32,14 @@ describe("deriveChat todo stamp", () => {
 });
 
 describe("deriveChat", () => {
+  it("shows a user message without the skill blocks the host prepended", () => {
+    const users = derive("user-skill-blocks").filter((item) => item.kind === "user");
+    expect(users.map((item) => item.text)).toEqual(["$review do x", "look $review"]);
+    // The names the host expanded: a bubble highlights `$name` only for these.
+    expect(users.map((item) => item.skills)).toEqual([["review"], ["review"]]);
+    expect(users[1]!.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+  });
+
   it("groups consecutive calls, thinking, interim text and answer into a run", () => {
     const entries = derive("settled-run");
     const kinds = entries.map((item) => item.kind);
@@ -245,11 +253,11 @@ describe("deriveChat", () => {
 
 describe("retryOf", () => {
   it("returns the user message a failed run answered", () => {
-    expect(retryOf(derive("retry-simple"))).toEqual({ text: "go", images: [], requestId: `retry:${runs(derive("retry-simple")).at(-1)!.id}` });
+    expect(retryOf(derive("retry-simple"))).toEqual({ text: "go", images: [], skills: [], requestId: `retry:${runs(derive("retry-simple")).at(-1)!.id}` });
   });
 
   it("reuses the user's images", () => {
-    expect(retryOf(derive("retry-images"))).toEqual({ text: "look", images: [{ data: "aGk=", mimeType: "image/png" }], requestId: expect.any(String) });
+    expect(retryOf(derive("retry-images"))).toEqual({ text: "look", images: [{ data: "aGk=", mimeType: "image/png" }], skills: [], requestId: expect.any(String) });
   });
 
   it("reuses ref images as refs", () => {
@@ -259,12 +267,17 @@ describe("retryOf", () => {
         { data: "aGk=", mimeType: "image/png" },
         { ref: "5f2a", mimeType: "image/jpeg" },
       ],
+      skills: [],
       requestId: expect.any(String),
     });
   });
 
+  it("resends the picked skills with the typed text", () => {
+    expect(retryOf(derive("retry-skills"))).toEqual({ text: "$review do x", images: [], skills: ["review"], requestId: expect.any(String) });
+  });
+
   it("treats an image-only prompt as retryable", () => {
-    expect(retryOf(derive("retry-image-only"))).toEqual({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }], requestId: expect.any(String) });
+    expect(retryOf(derive("retry-image-only"))).toEqual({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }], skills: [], requestId: expect.any(String) });
   });
 
   it("returns undefined for an empty prompt with no images", () => {
@@ -280,7 +293,7 @@ describe("retryOf", () => {
   });
 
   it("walks back over a compaction to the prompt", () => {
-    expect(retryOf(derive("retry-compaction"))).toEqual({ text: "go", images: [], requestId: expect.any(String) });
+    expect(retryOf(derive("retry-compaction"))).toEqual({ text: "go", images: [], skills: [], requestId: expect.any(String) });
   });
 
   it("does not walk back over a reset", () => {
@@ -288,12 +301,12 @@ describe("retryOf", () => {
   });
 
   it("reaches the latest prompt, not the first", () => {
-    expect(retryOf(derive("retry-steer"))).toEqual({ text: "steer", images: [], requestId: expect.any(String) });
+    expect(retryOf(derive("retry-steer"))).toEqual({ text: "steer", images: [], skills: [], requestId: expect.any(String) });
   });
 
   it("binds the request id to the failed run", () => {
     const entries = derive("retry-second-failure");
-    expect(retryOf(entries)).toEqual({ text: "go", images: [], requestId: `retry:${entries.at(-1)!.id}` });
+    expect(retryOf(entries)).toEqual({ text: "go", images: [], skills: [], requestId: `retry:${entries.at(-1)!.id}` });
   });
 });
 

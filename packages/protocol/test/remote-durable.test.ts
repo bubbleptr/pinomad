@@ -431,6 +431,43 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("forwards bound skills to a 5.16 host and leaves them off for an older one", async () => {
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 15 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await remoteOld.controller.submit("$review x", "followUp", { skills: ["review"] });
+      await remoteOld.controller.createConversation({ kind: "chat" }, "$review x", { skills: ["review"] });
+      const calls = old.sent.filter(
+        (frame) => frame.type === "call" && (frame.method === "submit" || frame.method === "createConversation"),
+      );
+      // The `$name` text still reaches the host; an older host just never sees the list.
+      expect(calls).toHaveLength(2);
+      for (const call of calls) expect("skills" in (call.args as object)).toBe(false);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 16 } });
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.submit("$review then $deploy", "followUp", { skills: ["review", "deploy"] });
+      await remote.controller.submit("nothing picked", "followUp", { skills: [] });
+      await remote.controller.submit("legacy", "followUp");
+      await remote.controller.createConversation({ kind: "chat" }, "$review x", { skills: ["review"] });
+      const submits = sent.filter((frame) => frame.type === "call" && frame.method === "submit");
+      expect((submits[0]!.args as { skills: unknown }).skills).toEqual(["review", "deploy"]);
+      // An empty list goes out as is: it tells the host not to scan the text.
+      expect((submits[1]!.args as { skills: unknown }).skills).toEqual([]);
+      expect("skills" in (submits[2]!.args as object)).toBe(false);
+      const create = sent.find((frame) => frame.type === "call" && frame.method === "createConversation")!;
+      expect((create.args as { skills: unknown }).skills).toEqual(["review"]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("gates image refs on a 5.15 host for submit and createConversation", async () => {
     const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
     const reference = { ref: "abc123" };

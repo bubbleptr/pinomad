@@ -105,6 +105,6 @@ describe("lastTodoWriteMs", () => {
   });
 
   it("is absent when no run wrote the list", () => {
-    expect(lastTodoWriteMs([run("a"), { kind: "user", id: "u", text: "hi", images: [] }])).toBeUndefined();
+    expect(lastTodoWriteMs([run("a"), { kind: "user", id: "u", text: "hi", images: [], skills: [] }])).toBeUndefined();
   });
 });
