@@ -18,17 +18,24 @@ extension AppModel {
         guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty,
               tray.preparing == 0, let session else { return }
         let images = tray.images
+        let chips = chips(for: id)
+        let payload = chips.payload(hostMinor: hostMinor)
         drafts[id] = ""
+        skillChips[id] = nil
         trays[id] = nil
         transcriptPin += 1
         Task { [weak self] in
             do {
                 _ = try await session.invoke(
-                    .submit(text: text, whenBusy: mode, target: id, requestId: nil, images: images))
+                    .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
+                            images: images, skills: payload.skills))
             } catch {
                 guard let self else { return }
                 // Don't clobber anything typed or attached meanwhile.
-                if (self.drafts[id] ?? "").isEmpty { self.drafts[id] = text }
+                if (self.drafts[id] ?? "").isEmpty {
+                    self.drafts[id] = text
+                    self.skillChips[id] = chips
+                }
                 if self.trays[id]?.isEmpty ?? true {
                     var restored = AttachmentTray()
                     if let claim = restored.reserve(images.count, accepts: true) {
@@ -81,6 +88,29 @@ extension AppModel {
             return
         }
         attach(conversation: id, accepts: accepts, sources: [{ @Sendable in data }])
+    }
+
+    var hostMinor: UInt32 { snapshot?.host?.protocol.minor ?? 0 }
+
+    /// The draft's bound skills, moved onto its current text: any change
+    /// since they were stored (typing, a menu insertion, a clear) shifts
+    /// or unbinds them.
+    func chips(for id: UInt64) -> SkillChips {
+        (skillChips[id] ?? SkillChips()).following(drafts[id] ?? "")
+    }
+
+    /// Store the chips against the current text — called on every draft
+    /// change, so each step is one edit to follow.
+    func syncChips(_ id: UInt64) {
+        let chips = chips(for: id)
+        if skillChips[id] != chips { skillChips[id] = chips }
+    }
+
+    /// A `$` menu pick: bind the `$name` now in the draft at `location`.
+    func bindSkillChip(_ name: String, at location: Int, in id: UInt64) {
+        var chips = chips(for: id)
+        chips.bind(name, at: location)
+        skillChips[id] = chips
     }
 
     func removeImage(conversation id: UInt64, at index: Int) {
@@ -219,7 +249,8 @@ extension AppModel {
               let input = session.queuedInput(submissionId: item.id)
         else { return }
         let copy = QueuedEdit.Copy(
-            conversationId: id, id: item.id, text: input.text, images: input.images)
+            conversationId: id, id: item.id, text: input.text, images: input.images,
+            skills: input.skills)
         // Refs are valid only while the row is still in the subscribed view;
         // resolve every image before withdrawing, or the copy could not be
         // resent after the row leaves the inbox (ADR-0027 §5).
@@ -324,6 +355,7 @@ extension AppModel {
 
     private func putBack(_ copy: QueuedEdit.Copy) {
         drafts[copy.conversationId] = copy.text
+        skillChips[copy.conversationId] = .restored(text: copy.text, skills: copy.skills)
         var tray = trays[copy.conversationId] ?? AttachmentTray()
         tray.restore(copy.images)
         trays[copy.conversationId] = tray

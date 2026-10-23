@@ -88,6 +88,9 @@ final class AppModel {
     /// Unsent composer text per conversation — kept across navigation,
     /// dropped with the session (a new host has other conversations).
     var drafts: [UInt64: String] = [:]
+    /// The `$` menu picks bound in each draft (ADR-0028), read through
+    /// `chips(for:)`, which follows them onto the draft's current text.
+    var skillChips: [UInt64: SkillChips] = [:]
     /// The new-conversation draft's home, checkout and model pick. Its text
     /// and images live in `drafts` / `trays` under `draftKey`.
     var draftHome: NewConversationHome = .chat
@@ -453,6 +456,7 @@ final class AppModel {
             skillCache.reset()
             commandCache.reset()
             drafts = [:]
+            skillChips = [:]
             questionDrafts = [:]
             trays = [:]
             queuedEdit.reset()

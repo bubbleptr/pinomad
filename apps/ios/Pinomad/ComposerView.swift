@@ -147,7 +147,10 @@ struct ConversationComposer: View {
             // Known before the first `/`, so a typed command is recognised.
             model.requestCommands(for: conversation.id)
         }
-        .onChange(of: draft.wrappedValue) { _, _ in refreshMentions() }
+        .onChange(of: draft.wrappedValue) { _, _ in
+            model.syncChips(conversation.id)
+            refreshMentions()
+        }
         .onChange(of: selection) { _, _ in refreshMentions() }
         .onChange(of: roles) { _, _ in refreshMentions() }
         .onChange(of: model.hostSupports("listFiles")) { _, _ in refreshMentions() }
@@ -203,7 +206,8 @@ struct ConversationComposer: View {
                 selection: $selection,
                 focused: $focused,
                 placeholder: conversation.busy ? "Add a follow-up…" : "Ask the agent…",
-                names: skillEntries?.map(\.name),
+                chips: model.chips(for: conversation.id).ranges,
+                expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
                 enabled: connected && !editLocked,
                 minLines: 1,
                 maxLines: 6
@@ -305,9 +309,12 @@ struct ConversationComposer: View {
         focused = true
     }
 
+    /// A pick is a chip: `$name ` goes in as text and its `$name` binds.
     private func chooseSkill(_ skill: SkillEntry) {
         guard let insertion = mentions.insert(skill, into: draft.wrappedValue) else { return }
         apply(insertion)
+        model.bindSkillChip(skill.name, at: insertion.cursor - ("$" + skill.name + " ").utf16.count,
+                            in: conversation.id)
     }
 
     private func chooseCommand(_ command: CommandEntry) {

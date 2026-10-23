@@ -51,7 +51,6 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
-        let skillNames = self.skillNames
         Group {
             if let conversation {
                 if autoScroll {
@@ -63,7 +62,7 @@ struct ConversationView: View {
                             LazyVStack(alignment: .leading, spacing: 24) {
                                 Color.clear.frame(height: 1).id("top")
                                 entries(conversation, subagentSummaries: subagentSummaries,
-                                        skillNames: skillNames, isSubagent: isSubagent)
+                                        isSubagent: isSubagent)
                                 Color.clear.frame(height: 1).id("bottom")
                             }
                             .padding(.horizontal, 16)
@@ -96,7 +95,7 @@ struct ConversationView: View {
                         onBottomChange: { transcriptAtBottom = $0 }
                     ) {
                         entries(conversation, subagentSummaries: subagentSummaries,
-                                skillNames: skillNames, isSubagent: isSubagent)
+                                isSubagent: isSubagent)
                     }
                 }
             } else {
@@ -181,10 +180,6 @@ struct ConversationView: View {
         }
         .task {
             model.openConversation(conversationId)
-            model.requestSkills(for: skillScope)
-        }
-        .onChange(of: model.connected) { _, connected in
-            if connected { model.requestSkills(for: skillScope, force: true) }
         }
     }
 
@@ -211,13 +206,6 @@ struct ConversationView: View {
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
 
-    /// The bubble's skill names come from the conversation's own scope, not
-    /// from whether a particular message used the menu.
-    private var skillScope: SkillScope? {
-        model.conversationSkillScope(conversationId)
-    }
-
-    private var skillNames: [String]? { model.skillNames(for: skillScope) }
 
     /// 「@角色 · 项目 · 分支」, each part when known. The branch is the
     /// worktree record's: the live one needs a `changes()` call, which only
@@ -285,7 +273,6 @@ struct ConversationView: View {
     private func entries(
         _ conversation: ConversationSnapshot,
         subagentSummaries: [UInt64: SubagentCardSummary],
-        skillNames: [String]?,
         isSubagent: Bool
     ) -> some View {
         // A subagent's run belongs to the delegating task; retryOf only
@@ -298,7 +285,7 @@ struct ConversationView: View {
         let todo = Self.todoLine(conversation)
         ForEach(conversation.chat, id: \.entryId) { entry in
             row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
-                subagentSummaries: subagentSummaries, skillNames: skillNames,
+                subagentSummaries: subagentSummaries,
                 todo: entry.entryId == latestRun ? todo : nil)
         }
     }
@@ -308,12 +295,12 @@ struct ConversationView: View {
         _ entry: ChatEntry,
         retry: RetryRequest?,
         subagentSummaries: [UInt64: SubagentCardSummary],
-        skillNames: [String]?,
         todo: TodoLine?
     ) -> some View {
         switch entry {
-        case let .user(_, text, images, _):
-            UserRow(text: text, images: images, skillNames: skillNames).equatable()
+        case let .user(_, text, images, skills):
+            // Only the skills the host expanded light up (ADR-0028).
+            UserRow(text: text, images: images, skills: skills).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
@@ -367,12 +354,14 @@ private extension View {
 }
 
 /// What the user sent: the bubble, then any attached images. The kit's
-/// UserMessageView carries the attributed text so known skill names paint
-/// blue (issue #143); the bubble styling stays in one place.
+/// UserMessageView carries the attributed text so the `$name` mentions of
+/// the skills the host expanded paint blue (ADR-0028); the bubble styling
+/// stays in one place.
 private struct UserRow: View, Equatable {
     let text: String
     let images: [MessageImage]
-    let skillNames: [String]?
+    /// The skills the host expanded into this message.
+    let skills: [String]
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -392,8 +381,7 @@ private struct UserRow: View, Equatable {
     /// UTF-16 ranges to attributed ranges and colors them system blue.
     private var attributedText: AttributedString {
         var value = AttributedString(text)
-        guard let skillNames, !skillNames.isEmpty else { return value }
-        for range in SkillMentionHighlight.ranges(in: text, names: skillNames) {
+        for range in SkillMentionHighlight.ranges(in: text, names: skills) {
             guard let stringRange = Range(range, in: text),
                   let lower = AttributedString.Index(stringRange.lowerBound, within: value),
                   let upper = AttributedString.Index(stringRange.upperBound, within: value)
@@ -404,7 +392,7 @@ private struct UserRow: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.text == rhs.text && lhs.images == rhs.images && lhs.skillNames == rhs.skillNames
+        lhs.text == rhs.text && lhs.images == rhs.images && lhs.skills == rhs.skills
     }
 }
 

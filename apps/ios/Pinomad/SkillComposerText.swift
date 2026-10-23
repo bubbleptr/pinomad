@@ -2,19 +2,23 @@ import PinomadChat
 import SwiftUI
 import UIKit
 
-/// The composer's text field with `$name` mentions painted blue. SwiftUI's
-/// TextField takes only plain text; its attributed TextEditor owns the rich
-/// text and offers no in-place recolor, so painting through the binding can
-/// reset the selection or an IME composition. A UIKit text view lets us
-/// recolor the existing text storage while the draft stays a plain String.
-/// The blue is the only mark: no chip, underline or background (issue
-/// #143's visual decision).
+/// The composer's text field with the `$` menu's picks drawn as chips
+/// (ADR-0028). The draft stays a plain String; a chip is a range over its
+/// `$name` (`SkillChips`), painted blue on a tinted background. A
+/// hand-typed `$name` is plain text — the chip is the only "this will fire"
+/// mark. Backspace into a chip deletes all of it; typing inside one unbinds
+/// it (the model side follows the text). SwiftUI's TextEditor offers no
+/// in-place recolor, so painting through the binding could reset the
+/// selection or an IME composition; a UIKit text view recolors its storage.
 struct SkillComposerText: View {
     @Binding var text: String
     @Binding var selection: NSRange
     @Binding var focused: Bool
     let placeholder: String
-    let names: [String]?
+    /// The bound chips' ranges in `text`.
+    let chips: [NSRange]
+    /// A deletion widened to whole chips.
+    let expandDeletion: (NSRange) -> NSRange
     let enabled: Bool
     let minLines: Int
     let maxLines: Int
@@ -30,7 +34,8 @@ struct SkillComposerText: View {
                 selection: $selection,
                 focused: $focused,
                 placeholder: placeholder,
-                names: names,
+                chips: chips,
+                expandDeletion: expandDeletion,
                 enabled: enabled,
                 minLines: minLines,
                 maxLines: maxLines
@@ -50,7 +55,10 @@ private struct ComposerTextView: UIViewRepresentable {
     @Binding var selection: NSRange
     @Binding var focused: Bool
     let placeholder: String
-    let names: [String]?
+    /// The bound chips' ranges in `text`.
+    let chips: [NSRange]
+    /// A deletion widened to whole chips.
+    let expandDeletion: (NSRange) -> NSRange
     let enabled: Bool
     let minLines: Int
     let maxLines: Int
@@ -76,7 +84,7 @@ private struct ComposerTextView: UIViewRepresentable {
         // applied; otherwise the first paint points past an empty buffer.
         view.text = text
         view.selectedRange = clamped(selection, length: (text as NSString).length)
-        context.coordinator.apply(to: view, text: text, names: names)
+        context.coordinator.apply(to: view, text: text, chips: chips)
         return view
     }
 
@@ -94,7 +102,7 @@ private struct ComposerTextView: UIViewRepresentable {
             view.selectedRange = clamped(selection, length: length)
         }
 
-        context.coordinator.apply(to: view, text: text, names: names)
+        context.coordinator.apply(to: view, text: text, chips: chips)
         view.updateScrolling()
         view.invalidateIntrinsicContentSize()
 
@@ -131,7 +139,7 @@ private struct ComposerTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextView
         private var appliedText: String?
-        private var appliedNames: [String]?
+        private var appliedChips: [NSRange]?
         private var appliedPointSize: CGFloat?
 
         init(_ parent: ComposerTextView) {
@@ -142,7 +150,21 @@ private struct ComposerTextView: UIViewRepresentable {
             let text = textView.text ?? ""
             if parent.text != text { parent.text = text }
             if parent.selection != textView.selectedRange { parent.selection = textView.selectedRange }
-            apply(to: textView, text: text, names: parent.names)
+            apply(to: textView, text: text, chips: parent.chips)
+        }
+
+        /// Backspace (or any deletion) that reaches into a chip takes the
+        /// whole chip; the rest of the edit goes through as usual.
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
+                      replacementText text: String) -> Bool {
+            guard text.isEmpty, range.length > 0, textView.markedTextRange == nil else { return true }
+            let expanded = parent.expandDeletion(range)
+            guard expanded != range,
+                  NSMaxRange(expanded) <= textView.textStorage.length else { return true }
+            textView.textStorage.replaceCharacters(in: expanded, with: "")
+            textView.selectedRange = NSRange(location: expanded.location, length: 0)
+            textViewDidChange(textView)
+            return false
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -163,7 +185,7 @@ private struct ComposerTextView: UIViewRepresentable {
         /// Recolor the existing storage, never the text itself — so the
         /// selection, undo stack and IME composition survive. While an IME
         /// has marked text, leave it alone; the next change applies it.
-        func apply(to textView: UITextView, text: String, names: [String]?) {
+        func apply(to textView: UITextView, text: String, chips: [NSRange]) {
             guard textView.markedTextRange == nil else { return }
             // UIKit can still hold the previous storage while SwiftUI is
             // applying a restored draft. Painting by the bound length would
@@ -172,7 +194,7 @@ private struct ComposerTextView: UIViewRepresentable {
             let length = textView.textStorage.length
             guard length == (text as NSString).length else { return }
             let pointSize = UIFont.preferredFont(forTextStyle: .body).pointSize
-            if appliedText == text, appliedNames == names, appliedPointSize == pointSize {
+            if appliedText == text, appliedChips == chips, appliedPointSize == pointSize {
                 return
             }
 
@@ -181,18 +203,17 @@ private struct ComposerTextView: UIViewRepresentable {
                 textView.textStorage.beginEditing()
                 textView.textStorage.setAttributes(
                     attributes, range: NSRange(location: 0, length: length))
-                if let names, !names.isEmpty {
-                    for range in SkillMentionHighlight.ranges(
-                        in: text, names: names, limit: length) {
-                        textView.textStorage.addAttribute(
-                            .foregroundColor, value: UIColor.systemBlue, range: range)
-                    }
+                for range in chips where NSMaxRange(range) <= length {
+                    textView.textStorage.addAttributes([
+                        .foregroundColor: UIColor.systemBlue,
+                        .backgroundColor: UIColor.systemBlue.withAlphaComponent(0.14),
+                    ], range: range)
                 }
                 textView.textStorage.endEditing()
             }
             textView.typingAttributes = attributes
             appliedText = text
-            appliedNames = names
+            appliedChips = chips
             appliedPointSize = pointSize
         }
 
