@@ -19,7 +19,7 @@ agent 用 read / write / edit / bash 工具，执行前不需要审批；拿不�
 - AGENTS.md：`~/.agents/AGENTS.md`，以及从根目录到 cwd 沿途的 AGENTS.md / CLAUDE.md；
 - Skills：从 cwd 往上每一层的 `.agents/skills`，直到 git 根（不在 git 仓库里时只看 cwd），以及 `~/.agents/skills`；同名时离 cwd 越近的越优先，所有项目层都压过用户目录。标了 `disable-model-invocation: true` 的 skill 不进这个列表，模型不会自己挑它。
 
-在消息里输入 `$` 可以从菜单里选 skill，输入框会高亮认得的 `$name`。发送时宿主把每个被提及的 skill 的全文（去掉 frontmatter）放在消息前面交给模型，所以明确调用不依赖模型自己去读；`disable-model-invocation` 的 skill 也能这样调用。界面上的消息、排队消息和对话标题只显示你输入的文字。skill 文件读不出来时这一条照原文发出，并提示错误（ADR-0028）。
+在消息里输入 `$` 可以从菜单里选 skill。发送时宿主把调用的 skill 的全文（去掉 frontmatter）放在消息前面交给模型，所以明确调用不依赖模型自己去读；`disable-model-invocation` 的 skill 也能这样调用。客户端告诉宿主选中了哪些（协议 5.16），只有这些会展开；不告诉的旧客户端，宿主按文本里的 `$name` 匹配。界面上的消息、排队消息和对话标题只显示你输入的文字。skill 不在当前项目里、或者文件读不出来时，这一个不展开，并提示（ADR-0028）。
 
 具名 Agent（ADR-0023）是宿主级的可复用角色配置：每个具名 Agent 一个 Markdown 文件，放在 `<数据目录>/agents/<名字>.md`（默认 `~/.pinomad/agents/`，跟着 `--data-dir` / `PINOMAD_DATA_DIR` 走），文件是 YAML frontmatter 加提示词正文：
 

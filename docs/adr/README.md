@@ -36,7 +36,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个 |
 | [0021](0021-host-settings-in-data-dir.md) | 宿主设置存在数据目录的 `settings.json`，不写 pi 的设置、不进 Durable；凭据暂时仍共用 pi 的 `auth.json` |
 | [0023](0023-agent-roles.md) | 具名 Agent 是数据目录 `agents/` 下的 Markdown 文件，只有宿主级、客户端可编辑；子代理、`@` 提及、顶层对话都能用；子代理上锁定模型，顶层对话只定初始值；用时抄一份，出错不回落 |
-| [0028](0028-host-expands-explicit-skill-mentions.md) | 用户用 `$name` 明确调用 skill 时，宿主按 pi 的 `/skill:` 格式把全文拼在 `pi.user` 消息前面，客户端显示时剥掉；`disable-model-invocation` 只从提示词列表里去掉 |
+| [0028](0028-host-expands-explicit-skill-mentions.md) | 只有从 `$` 菜单选中的 skill 算调用（`submit` / `createConversation` 的 `skills`，5.16；旧客户端按文本匹配），宿主按 pi 的 `/skill:` 格式把全文拼在 `pi.user` 消息前面，客户端显示时剥掉并给出展开了哪些；`disable-model-invocation` 只从提示词列表里去掉 |
 
 ## 远程与运维
 
@@ -77,5 +77,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0024 §10：替换验收清单"放在 roadmap" | 计划改在 GitHub Issues 后，清单在 #133（iOS 原生替换 milestone） |
 | 0024 §5：每次交付整份快照还是只交付变化 | 由 0027 补充图片部分：线上按内容引用传，字节按需取；文字部分仍按实测决定 |
 | 0014 §2：复制来的组件尽量原样保留，便于对照 Pace 同步 | 由 0026 修订：思维链组件改成运行过程收成一行，和 Pace 分叉 |
-| 0006 §4：Skills 只进系统提示词；#143 的 `$name` 靠提示词规则让模型自己读 | 由 0028 补充：用户 `$name` 明确调用时宿主把全文展开进消息，提示词规则删掉；`disable-model-invocation` 只从提示词列表去掉 |
+| 0006 §4：Skills 只进系统提示词；#143 的 `$name` 靠提示词规则让模型自己读 | 由 0028 补充：从 `$` 菜单选中的 skill 由宿主把全文展开进消息，提示词规则删掉；`disable-model-invocation` 只从提示词列表去掉 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
