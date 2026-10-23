@@ -99,6 +99,43 @@ private func picked(_ text: String, _ names: [String]) -> SkillChips {
     }
 }
 
+@Suite struct SkillChipsReviewFixTests {
+    /// Two picks of the same skill, then the first one and its space are
+    /// selected and deleted. The diff can't tell which `$review ` went;
+    /// either way one binding is left — never two on the same range,
+    /// which made `payload` build a reversed range and crash.
+    @Test func deletingOneOfTwoIdenticalPicksLeavesOneBinding() {
+        let chips = picked("$review $review ", ["review", "review"]).following("$review ")
+        #expect(chips.ranges == [NSRange(location: 0, length: 7)])
+        let payload = chips.payload(hostMinor: 16)
+        #expect(payload.text == "$review ")
+        #expect(payload.skills == ["review"])
+    }
+
+    /// A deletion that swallows a chip drops it even when the same text
+    /// sits next to it.
+    @Test func aDeletionCoveringAChipDropsIt() {
+        let chips = picked("x $review $review", ["review", "review"]).following("x $review")
+        #expect(chips.ranges == [NSRange(location: 2, length: 7)])
+    }
+
+    /// The matcher reads `[a-z0-9-]+`, so a hyphen glued to the name would
+    /// make the bubble miss it.
+    @Test func aHyphenAfterAChipGetsASpace() {
+        let chips = picked("ask $review", ["review"]).following("ask $review-now")
+        #expect(chips.payload(hostMinor: 16).text == "ask $review -now")
+    }
+
+    /// Undo puts the deleted name back as the previous text: its binding
+    /// comes back with it.
+    @Test func undoingAChipDeletionRebindsIt() {
+        let chips = picked("ask $review now", ["review"])
+        let deleted = chips.following("ask  now")
+        #expect(deleted.ranges.isEmpty)
+        #expect(deleted.following("ask $review now").ranges == [NSRange(location: 4, length: 7)])
+    }
+}
+
 @Suite struct SkillChipsRestoreTests {
     /// A queued message's Edit gives back text plus the names the host
     /// expanded; those mentions become chips again, others stay text.

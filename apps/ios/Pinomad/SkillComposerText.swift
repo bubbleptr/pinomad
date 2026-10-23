@@ -154,16 +154,21 @@ private struct ComposerTextView: UIViewRepresentable {
         }
 
         /// Backspace (or any deletion) that reaches into a chip takes the
-        /// whole chip; the rest of the edit goes through as usual.
+        /// whole chip; the rest of the edit goes through as usual. The wider
+        /// deletion goes through `replace(_:withText:)`, the field's own
+        /// editing path, so it lands on the undo stack; that call asks this
+        /// method again with the already-whole range, which passes.
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
                       replacementText text: String) -> Bool {
             guard text.isEmpty, range.length > 0, textView.markedTextRange == nil else { return true }
             let expanded = parent.expandDeletion(range)
             guard expanded != range,
-                  NSMaxRange(expanded) <= textView.textStorage.length else { return true }
-            textView.textStorage.replaceCharacters(in: expanded, with: "")
-            textView.selectedRange = NSRange(location: expanded.location, length: 0)
-            textViewDidChange(textView)
+                  NSMaxRange(expanded) <= textView.textStorage.length,
+                  let start = textView.position(from: textView.beginningOfDocument, offset: expanded.location),
+                  let end = textView.position(from: start, offset: expanded.length),
+                  let whole = textView.textRange(from: start, to: end)
+            else { return true }
+            textView.replace(whole, withText: "")
             return false
         }
 
