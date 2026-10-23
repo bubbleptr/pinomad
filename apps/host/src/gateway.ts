@@ -61,7 +61,7 @@ import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./chec
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
-import { expandSkillMentions } from "./skill-expansion.ts";
+import { expandSkills, mentionedSkillNames } from "./skill-expansion.ts";
 import { stripSkillBlocks } from "@pinomad/client/skill-blocks.ts";
 import { createSkillLister, enumerateSkills, listSkills, scopeSkills, type ListedSkill, type SkillLister } from "./skills.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
@@ -1399,7 +1399,7 @@ class GatewayClient {
         // would turn an accepted submit into "no longer available".
         const images = this.#attached(input.images);
         const conversation = await this.#conversation(input.conversationId);
-        const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id });
+        const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id }, input.skills);
         // A pending question never blocks the composer (ADR-0011 §4): mark it
         // dismissed so its wait task finishes, then steer regardless.
         const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
@@ -1429,6 +1429,7 @@ class GatewayClient {
           create.home.kind === "chat"
             ? { kind: "chat" }
             : { kind: "project", path: create.home.path, checkout: create.checkout ?? "worktree" },
+          create.skills,
         );
         const conversationId = await createConversation(
           this.#options.harness,
@@ -1699,14 +1700,16 @@ class GatewayClient {
   }
 
   /**
-   * `text` as the model reads it: every `$`-mentioned skill of `scope` in
-   * front, in pi's `/skill:` format (ADR-0028). It never fails the send — a
-   * scope that cannot be listed, or a skill file that cannot be read, leaves
-   * the text (or that skill) as typed, with a notice.
+   * `text` as the model reads it: the invoked skills of `scope` in front, in
+   * pi's `/skill:` format (ADR-0028). `bound` is what a 5.16 client picked
+   * from the `$` menu — exactly those expand, in that order, and `[]` means
+   * none; without it (an older client) the text's `$name` mentions decide.
+   * It never fails the send — an unlisted scope, a name not in scope, or an
+   * unreadable file leaves the text (or that skill) as typed, with a notice.
    */
-  async #expandSkills(text: string, scope: SkillScope): Promise<string> {
-    // Most messages have no `$` at all; they skip the listing.
-    if (!text.includes("$")) return text;
+  async #expandSkills(text: string, scope: SkillScope, bound: readonly string[] | undefined): Promise<string> {
+    // Nothing picked, or (for an older client) no `$` at all: skip the listing.
+    if (bound === undefined ? !text.includes("$") : bound.length === 0) return text;
     let skills: readonly ListedSkill[];
     try {
       skills = await scopeSkills(this.#options.harness, this.#skills, scope, context);
@@ -1718,7 +1721,11 @@ class GatewayClient {
       });
       return text;
     }
-    const expanded = await expandSkillMentions(text, skills);
+    const names = bound ?? mentionedSkillNames(text, skills.map((skill) => skill.name));
+    const expanded = await expandSkills(text, names, skills);
+    for (const name of expanded.missing) {
+      void this.send({ type: "notice", level: "warning", message: `Skill "${name}" is not available here; sent without it` });
+    }
     for (const failure of expanded.failures) {
       void this.send({
         type: "notice",

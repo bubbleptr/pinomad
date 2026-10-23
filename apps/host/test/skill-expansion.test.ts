@@ -7,11 +7,12 @@ import { fauxAssistantMessage, type FauxResponseFactory } from "@earendil-works/
 import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import { createContext } from "../src/extensions/context.ts";
-import { expandSkillMentions } from "../src/skill-expansion.ts";
-import { connectTo, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { expandSkills, mentionedSkillNames } from "../src/skill-expansion.ts";
+import { connectTo, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -32,6 +33,12 @@ const block = (name: string, skillDir: string, body: string): string =>
 /** The stored text of the shown conversation's user messages, oldest first. */
 const userTexts = (client: RemoteDurable): string[] =>
   transcript(client.view.current().conversation!).flatMap((line) => (line.role === "user" ? [line.text] : []));
+
+/** Create a Chat with `text` and show it — with `skills`, as a 5.16 client binds them. */
+async function startChat(client: RemoteDurable, text: string, options: { skills?: readonly string[] } = {}): Promise<ConversationId> {
+  await client.controller.createConversation({ kind: "chat" }, text, options);
+  return client.view.current().conversation!.conversation.id;
+}
 
 /** Resolve once the shown conversation holds `count` user messages and is idle. */
 const settledAfter = (client: RemoteDurable, count: number) =>
@@ -55,7 +62,61 @@ async function userSkillsHost(answers = 4) {
   return { host, client, review, deploy };
 }
 
-describe("skill expansion", () => {
+describe("bound skills (5.16)", () => {
+  it("expands exactly the bound skills, in their order, wherever `$name` sits", async () => {
+    const { client, review, deploy } = await userSkillsHost();
+    // Quotes and code no longer matter: the client bound these names.
+    await startChat(client, "check `$review` and \"$deploy\"", { skills: ["deploy", "review"] });
+    await settledAfter(client, 1);
+    expect(userTexts(client)).toEqual([
+      `${block("deploy", deploy, "Deploy steps.")}\n\n${block("review", review, "Review the diff.\n\nThen report.")}\n\ncheck \`$review\` and "$deploy"`,
+    ]);
+  });
+
+  it("leaves a hand-typed `$name` alone when it was not bound", async () => {
+    const { client, deploy } = await userSkillsHost();
+    await startChat(client, "$deploy after $review", { skills: ["deploy"] });
+    await settledAfter(client, 1);
+    expect(userTexts(client)).toEqual([`${block("deploy", deploy, "Deploy steps.")}\n\n$deploy after $review`]);
+  });
+
+  it("expands nothing for an empty list, even when the text matches", async () => {
+    const { client } = await userSkillsHost();
+    const id = await startChat(client, "$review now", { skills: [] });
+    await settledAfter(client, 1);
+    await client.controller.submit("$deploy too", "followUp", { target: id, skills: [] });
+    await settledAfter(client, 2);
+    expect(userTexts(client)).toEqual(["$review now", "$deploy too"]);
+  });
+
+  it("skips a bound name the scope does not have, with a notice", async () => {
+    const { client, review } = await userSkillsHost();
+    const id = await startChat(client, "hi");
+    await settledAfter(client, 1);
+    await client.controller.submit("$ghost and $review", "followUp", { target: id, skills: ["ghost", "review", "review"] });
+    await settledAfter(client, 2);
+    expect(userTexts(client)[1]).toBe(`${block("review", review, "Review the diff.\n\nThen report.")}\n\n$ghost and $review`);
+    await waitForView(client.view, (view) =>
+      view.notices.some((notice) => notice.level === "warning" && notice.message.includes('"ghost"')),
+    );
+  });
+
+  it("expands bound skills when creating a project conversation", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const agentsHome = await tempDir();
+    defer(agentsHome.remove);
+    const local = await writeSkill(join(await realpath(project.path), ".agents", "skills"), "review", "Project review.");
+    const host = await startFauxHost(defer, { projects: [project.path], agentsHome: agentsHome.path, answers: ["ok"] });
+    const client = await connectTo(defer, host);
+
+    await client.controller.createConversation({ kind: "project", path: project.path }, "`$review` it", { skills: ["review"] });
+    await settledAfter(client, 1);
+    expect(userTexts(client)).toEqual([`${block("review", local, "Project review.")}\n\n\`$review\` it`]);
+  });
+});
+
+describe("lexical fallback for clients that send no skills", () => {
   it("expands `$review` in a new conversation to pi's block, then the typed text verbatim", async () => {
     const { client, review } = await userSkillsHost();
     await startChat(client, "$review do x");
@@ -184,24 +245,32 @@ describe("host readers of user text", () => {
   });
 });
 
-describe("expandSkillMentions", () => {
-  it("reports each unreadable skill and keeps the readable ones", async () => {
+describe("expandSkills", () => {
+  it("expands names in the given order, reporting missing names and unreadable files", async () => {
     const dir = await tempDir();
     defer(dir.remove);
     const review = await writeSkill(dir.path, "review", "Review.");
+    const deploy = await writeSkill(dir.path, "deploy", "Deploy.");
     const gone = join(dir.path, "gone");
-    const result = await expandSkillMentions("$gone then $review", [
+    const result = await expandSkills("$gone then $review", ["review", "ghost", "gone", "deploy", "review"], [
       { name: "review", filePath: join(review, "SKILL.md"), baseDir: review },
+      { name: "deploy", filePath: join(deploy, "SKILL.md"), baseDir: deploy },
       { name: "gone", filePath: join(gone, "SKILL.md"), baseDir: gone },
     ]);
-    expect(result.text).toBe(`${block("review", review, "Review.")}\n\n$gone then $review`);
+    expect(result.text).toBe(`${block("review", review, "Review.")}\n\n${block("deploy", deploy, "Deploy.")}\n\n$gone then $review`);
+    expect(result.missing).toEqual(["ghost"]);
     expect(result.failures).toEqual([{ name: "gone", filePath: join(gone, "SKILL.md"), message: expect.stringContaining("ENOENT") }]);
   });
 
-  it("returns the text itself when nothing is mentioned", async () => {
-    expect(await expandSkillMentions("no mention", [{ name: "review", filePath: "/x/SKILL.md", baseDir: "/x" }])).toEqual({
-      text: "no mention",
+  it("returns the text itself when there is nothing to expand", async () => {
+    expect(await expandSkills("$review", [], [{ name: "review", filePath: "/x/SKILL.md", baseDir: "/x" }])).toEqual({
+      text: "$review",
+      missing: [],
       failures: [],
     });
+  });
+
+  it("finds distinct `$name` mentions in first-mention order for the fallback", () => {
+    expect(mentionedSkillNames("$deploy, $review, $deploy and pre$ship", ["review", "deploy", "ship"])).toEqual(["deploy", "review"]);
   });
 });
