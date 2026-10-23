@@ -16,7 +16,8 @@ export function CheckoutStrategyPicker({
   isDisabled?: boolean;
 }) {
   return (
-    <div className="max-w-full" data-testid="checkout-strategy-picker">
+    // Two short fixed labels: beside a long project name, the name truncates instead.
+    <div className="max-w-full shrink-0" data-testid="checkout-strategy-picker">
       <Selector
         isLabelHidden
         label="Where to work"

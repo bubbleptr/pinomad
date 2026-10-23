@@ -259,7 +259,7 @@ export function DraftHome({
               </>
             }
             footer={
-              <span className="flex w-full min-w-0 items-center gap-2">
+              <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <Selector
                   isLabelHidden
                   label="Project"

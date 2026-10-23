@@ -2,7 +2,7 @@ import { Button } from "@astryxdesign/core/Button";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { fn } from "storybook/test";
-import { Plus } from "@/shared/ui/icons.tsx";
+import { FolderClosed, FolderGitTwo, Plus } from "@/shared/ui/icons.tsx";
 import { ChatPromptInput } from "./chat-prompt-input.tsx";
 
 const meta = {
@@ -59,7 +59,13 @@ export const WithActionsAndFooter: Story = {
     startActions: (
       <Button label="More actions" variant="ghost" size="sm" isIconOnly icon={<Plus aria-hidden="true" />} />
     ),
-    footer: <span className="text-xs text-muted">Runs in ~/code/opensource/pinomad on main</span>,
+    // The draft's tray: where the conversation will run.
+    footer: (
+      <span className="flex items-center gap-2">
+        <Button label="pinomad" variant="ghost" size="sm" icon={<FolderClosed aria-hidden="true" />} />
+        <Button label="Git worktree" variant="ghost" size="sm" icon={<FolderGitTwo aria-hidden="true" />} />
+      </span>
+    ),
   },
 };
 
