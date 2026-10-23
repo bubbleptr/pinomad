@@ -1,5 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenuItem, DropdownMenuSubMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
@@ -21,7 +21,7 @@ import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
 import { parseCommandInput } from "@pinomad/client/command-input.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
-import { ChatAddMenu, ChatAddMenuSection } from "../../shared/ui/chat/chat-add-menu.tsx";
+import { ChatAddMenu } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
 import { QueuedList } from "./queued-list.tsx";
@@ -72,8 +72,8 @@ export function ConversationComposer({
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  // A Chat conversation has no project files; like a Chat draft, it offers
-  // agents only — and its + menu no "Mention a file…".
+  // A Chat conversation has no project files; like a Chat draft, its `@`
+  // offers agents only.
   const fileSource: MentionFiles | undefined =
     view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
       ? {
@@ -126,8 +126,8 @@ export function ConversationComposer({
   // Why a typed command wasn't run; any edit to the draft clears it.
   const [commandError, setCommandError] = useState<string | undefined>(undefined);
   useEffect(() => setCommandError(undefined), [value, images.length]);
-  // Why the + menu's Commands row can't open: a command starts at index 0, so
-  // picking one into a draft with a message would bury or replace it.
+  // Why the + menu's Run a command… can't open: a command starts at index 0,
+  // so picking one into a draft with a message would bury or replace it.
   const commandsUnavailable =
     slash.commands === undefined
       ? "Loading…"
@@ -363,51 +363,29 @@ export function ConversationComposer({
           <>
             <ChatAddMenu
               isDisabled={disconnected || editLocked}
-              // Refetch on open so the Commands flyout's list and disabled reasons are current.
+              // Refetch on open so Run a command…'s disabled reason is current.
               onOpenChange={(open) => {
                 if (open) slash.request(true);
               }}
             >
-              <ChatAddMenuSection title="Add">
-                <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
-                {fileSource === undefined ? null : (
-                  <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
-                )}
-                {skills.trigger === undefined ? null : (
-                  <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
-                )}
-                {roles.length === 0 ? null : (
-                  <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
-                )}
-              </ChatAddMenuSection>
-              {/* Commands act on the conversation, not the message — where Compact sat before 5.15. */}
-              <ChatAddMenuSection title="Conversation">
-                {!listsCommands ? (
-                  <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
-                ) : commandsUnavailable !== undefined ? (
-                  <DropdownMenuSubMenu description={commandsUnavailable} isDisabled label="Commands">
-                    {null}
-                  </DropdownMenuSubMenu>
-                ) : (
-                  // Picking one starts the draft with `/name `, like typing it:
-                  // arguments follow, and Enter runs it through the send path.
-                  <DropdownMenuSubMenu label="Commands">
-                    {(slash.commands ?? []).map((command) => (
-                      <DropdownMenuItem
-                        key={command.name}
-                        description={command.disabled ?? command.description}
-                        isDisabled={command.disabled !== undefined}
-                        label={`/${command.name}`}
-                        onClick={() => {
-                          setValue(`/${command.name} `);
-                          // A frame later: the menu's close hands focus back to its button first.
-                          requestAnimationFrame(() => inputRef.current?.focusAtEnd());
-                        }}
-                      />
-                    ))}
-                  </DropdownMenuSubMenu>
-                )}
-              </ChatAddMenuSection>
+              <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
+              {skills.trigger === undefined ? null : (
+                <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+              )}
+              {roles.length === 0 ? null : (
+                <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+              )}
+              {!listsCommands ? (
+                <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
+              ) : (
+                // Opens the `/` menu, as typing `/` at the start would.
+                <DropdownMenuItem
+                  label="Run a command…"
+                  description={commandsUnavailable}
+                  isDisabled={commandsUnavailable !== undefined}
+                  onClick={() => inputRef.current?.openTrigger("/")}
+                />
+              )}
             </ChatAddMenu>
             <ModelSelector
               models={view.models}

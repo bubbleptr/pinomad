@@ -35,7 +35,7 @@ export type ChatPromptInputHandle = {
    */
   editable(): HTMLElement | null;
   /**
-   * Append a trigger (`@`, `@./`, `$`) at the end of the draft and open its
+   * Append a trigger (`@`, `$`) at the end of the draft and open its
    * menu, as if typed there: a separating space goes first when the draft
    * ends in a word, since Astryx only activates a trigger at the start or
    * after whitespace.

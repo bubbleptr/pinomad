@@ -370,7 +370,7 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
   await page.getByRole("dialog").getByText("No threads yet").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: /^Commands/ }).waitFor();
+  await page.getByRole("menuitem", { name: /^Run a command/ }).waitFor();
 });
 
 it("replaces a draft pick the restarted host no longer offers", async () => {
@@ -1773,7 +1773,7 @@ it("disables the follow-up and stop controls while disconnected", async () => {
   await expect.poll(() => composer.textContent()).toBe("unsent follow-up");
 });
 
-it("starts the draft with /compact from the + menu's Commands flyout", async () => {
+it("starts the draft with /compact from the + menu's Run a command…", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
@@ -1786,11 +1786,13 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
   await page.getByText("done", { exact: true }).waitFor();
   const id = await followFirst(observer);
 
-  // A 5.15 host lists its commands, so they replace the old Compact item.
+  // A 5.15 host lists its commands, so Run a command… replaces the old Compact
+  // item, in the same flat list as the other entries.
   await more.click();
   expect(await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).count()).toBe(0);
-  await page.getByRole("menuitem", { name: /^Commands/ }).click();
-  const compact = page.getByRole("menuitem", { name: /^\/compact/ });
+  expect(await page.getByRole("group", { name: "Conversation" }).count()).toBe(0);
+  await page.getByRole("menuitem", { name: /^Run a command/ }).click();
+  const compact = page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/compact/ });
   await compact.waitFor();
   await shot(page, "conversation-plus-menu-commands");
   if (shotDir !== undefined) {
@@ -1799,7 +1801,8 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
     await page.emulateMedia({ colorScheme: "light" });
   }
 
-  // Picking only starts the draft — no `/` menu, focus at the end for arguments.
+  // The entry opens the `/` menu, as typing `/` would; picking starts the
+  // draft with focus at the end for arguments.
   await compact.click();
   await expect.poll(() => composer.textContent()).toBe("/compact ");
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
@@ -1813,7 +1816,7 @@ it("starts the draft with /compact from the + menu's Commands flyout", async () 
   // With a message in the draft the commands are out of reach — it would be lost.
   await composer.pressSequentially("keep this");
   await more.click();
-  const row = page.getByRole("menuitem", { name: /^Commands/ });
+  const row = page.getByRole("menuitem", { name: /^Run a command/ });
   await expect.poll(() => row.getAttribute("aria-disabled")).toBe("true");
   await expect.poll(() => row.textContent()).toContain("Clear the message first");
 });
@@ -3750,7 +3753,7 @@ it("keeps the agent candidates when the draft's file listing fails", async () =>
   expect(await menu.getByRole("group", { name: "Files" }).count()).toBe(0);
 });
 
-it("opens the file and skill menus from the + menu, appending the trigger to the draft", async () => {
+it("opens the agent and skill menus from the + menu, appending the trigger to the draft", async () => {
   const webOrigin = await startWeb();
   const dir = await tempDir();
   defer(dir.remove);
@@ -3776,19 +3779,22 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   const composer = page.getByRole("combobox", { name: "Prompt" });
   const more = page.getByRole("button", { name: "More actions", exact: true });
 
-  // An empty draft: the file trigger goes in as-is and its menu opens on files.
+  // An empty draft: the agent trigger goes in as-is and its menu opens. Files
+  // have no + entry; typing `@` reaches them.
   await more.click();
   await shot(page, "draft-plus-menu");
-  await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).click();
-  const files = page.getByRole("listbox", { name: "Agents and files" });
-  await files.getByRole("group", { name: "Files" }).getByRole("option", { name: /README\.md/ }).waitFor();
-  await shot(page, "plus-file-menu");
+  const mentionAgent = page.getByRole("menuitem", { name: "Mention an agent…", exact: true });
+  await mentionAgent.waitFor();
+  expect(await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).count()).toBe(0);
+  await mentionAgent.click();
+  const mentions = page.getByRole("listbox", { name: "Agents and files" });
+  await mentions.getByRole("group", { name: "Agents" }).getByRole("option", { name: /reviewer/ }).waitFor();
   // Focus is back in the composer, so the keyboard narrows the open menu.
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
-  await page.keyboard.type("READ");
-  await expect.poll(() => files.getByRole("option").count()).toBe(1);
+  await page.keyboard.type("revi");
+  await expect.poll(() => mentions.getByRole("option").count()).toBe(1);
   await page.keyboard.press("Enter");
-  await expect.poll(async () => composer.textContent()).toBe("@./README.md ");
+  await expect.poll(async () => composer.textContent()).toBe("@reviewer ");
 
   // A draft that ends in a word gets a separating space so `$` can activate.
   // The keyboard path: open the menu, jump to the item by its first letter, pick it.
@@ -3805,9 +3811,9 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
   await page.keyboard.press("Enter");
-  await expect.poll(async () => composer.textContent()).toBe("@./README.md then $review ");
+  await expect.poll(async () => composer.textContent()).toBe("@reviewer then $review ");
   // The pick is bound, so it's painted.
-  await expect.poll(() => paintedSkills(composer)).toEqual(["18:$review"]);
+  await expect.poll(() => paintedSkills(composer)).toEqual(["15:$review"]);
 
   // After a line break the trigger starts the new line, no space needed.
   await page.keyboard.press("Shift+Enter");
@@ -3826,14 +3832,6 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
   await expect.poll(async () => (await paintedSkills(composer)).length).toBe(3);
-
-  // The menu's project choice is a second entry to the footer picker's state.
-  await more.click();
-  await page.getByRole("menuitem", { name: /^Project/ }).click();
-  await page.getByRole("menuitemradio", { name: projectName, exact: true }).waitFor();
-  await shot(page, "draft-plus-menu-project");
-  await page.getByRole("menuitemradio", { name: "No project", exact: true }).click();
-  await expect.poll(() => page.getByRole("combobox", { name: "Project", exact: true }).textContent()).toContain("No project");
 });
 
 /** A user skill the faux host lists in every scope (ADR-0028's expansion reads its body). */

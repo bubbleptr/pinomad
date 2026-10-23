@@ -1,4 +1,4 @@
-import { DropdownMenuItem, DropdownMenuRadioItem } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -15,7 +15,7 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
-import { ChatAddMenu, ChatAddMenuChoice, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
+import { ChatAddMenu } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
 import { ChatAdd, FolderClosed } from "@/shared/ui/icons";
@@ -88,7 +88,7 @@ export function DraftHome({
     minor !== undefined
     && hostSupportsFeature(minor, "agentConversations")
     && (agentRoles.length > 0 || agent !== undefined);
-  // The project's file listing, which also decides whether "Mention a file…" is offered.
+  // The project's file listing for `@` completion.
   const fileSource: MentionFiles | undefined =
     draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
       ? {
@@ -200,51 +200,17 @@ export function DraftHome({
             startActions={
               <>
                 <ChatAddMenu isDisabled={!connected}>
-                  <ChatAddMenuSection title="Add">
-                    <DropdownMenuItem
-                      label={addImages}
-                      isDisabled={!accepts}
-                      onClick={() => fileInput.current?.click()}
-                    />
-                    {fileSource === undefined ? null : (
-                      <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
-                    )}
-                    {skills.trigger === undefined ? null : (
-                      <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
-                    )}
-                    {agentRoles.length === 0 ? null : (
-                      <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
-                    )}
-                  </ChatAddMenuSection>
-                  {/* A second entry to the footer's pickers, bound to the same state. */}
-                  <ChatAddMenuSection title="Conversation">
-                    <ChatAddMenuChoice
-                      label="Project"
-                      value={draft.kind === "chat" ? "chat" : draft.path}
-                      valueLabel={
-                        draft.kind === "chat"
-                          ? "No project"
-                          : (view.organized.projects.find((entry) => entry.project.path === draft.path)?.project.name ?? draft.path)
-                      }
-                      onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
-                    >
-                      <DropdownMenuRadioItem value="chat" label="No project" />
-                      {view.organized.projects.map((entry) => (
-                        <DropdownMenuRadioItem key={entry.project.path} value={entry.project.path} label={entry.project.name} />
-                      ))}
-                    </ChatAddMenuChoice>
-                    {draft.kind === "project" ? (
-                      <ChatAddMenuChoice
-                        label="Where to work"
-                        value={checkoutMode}
-                        valueLabel={checkoutMode === "worktree" ? "Git worktree" : "Project folder"}
-                        onChange={(picked) => setCheckoutMode(picked === "worktree" ? "worktree" : "local")}
-                      >
-                        <DropdownMenuRadioItem value="worktree" label="Git worktree" />
-                        <DropdownMenuRadioItem value="local" label="Project folder" />
-                      </ChatAddMenuChoice>
-                    ) : null}
-                  </ChatAddMenuSection>
+                  <DropdownMenuItem
+                    label={addImages}
+                    isDisabled={!accepts}
+                    onClick={() => fileInput.current?.click()}
+                  />
+                  {skills.trigger === undefined ? null : (
+                    <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                  )}
+                  {agentRoles.length === 0 ? null : (
+                    <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                  )}
                 </ChatAddMenu>
                 <ModelSelector
                   models={view.models}
