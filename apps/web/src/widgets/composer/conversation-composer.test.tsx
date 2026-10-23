@@ -59,7 +59,7 @@ describe("ConversationComposer commands", () => {
   it("keeps Compact conversation and asks for no commands on a pre-5.15 host", async () => {
     const { remote } = setup({ minor: 14 });
     await act(async () => {});
-    expect(screen.getByRole("menuitem", { name: "Compact conversation", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /^Run a command/, hidden: true })).toBeNull();
     expect(remote.controller.listCommands).not.toHaveBeenCalled();
   });
@@ -68,7 +68,7 @@ describe("ConversationComposer commands", () => {
     setup();
     await act(async () => {});
     expect(screen.getByRole("menuitem", { name: /^Run a command/, hidden: true })).not.toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("menuitem", { name: "Compact conversation", hidden: true })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeNull();
   });
 
   it("shows Run a command… disabled while the list loads", async () => {

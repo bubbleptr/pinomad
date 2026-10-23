@@ -1,4 +1,3 @@
-import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -15,10 +14,10 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
-import { ChatAddMenu } from "@/shared/ui/chat/chat-add-menu";
+import { ChatAddMenu, ChatAddMenuItem } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
-import { ChatAdd, FolderClosed } from "@/shared/ui/icons";
+import { Bot, ChatAdd, FolderClosed, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
 /** The capsule's red line + tooltip for a draft problem the host would refuse. */
@@ -127,11 +126,8 @@ export function DraftHome({
           : resolution.levelFrom !== "override"
             ? `level from @${agent}`
             : undefined;
-  // No "why" slot on menu items: the reason goes into the label itself.
-  const addImages =
-    accepts || !connected
-      ? "Add images…"
-      : `Add images… (${model?.name ?? pick.model?.modelId ?? "This model"} can't see images)`;
+  const imagesUnavailable =
+    accepts || !connected ? undefined : `${model?.name ?? pick.model?.modelId ?? "This model"} can't see images`;
 
   return (
     <section
@@ -200,16 +196,28 @@ export function DraftHome({
             startActions={
               <>
                 <ChatAddMenu isDisabled={!connected}>
-                  <DropdownMenuItem
-                    label={addImages}
+                  <ChatAddMenuItem
+                    icon={ImageIcon}
+                    label="Add images…"
+                    hint={imagesUnavailable ?? "Or paste or drop"}
                     isDisabled={!accepts}
                     onClick={() => fileInput.current?.click()}
                   />
                   {skills.trigger === undefined ? null : (
-                    <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                    <ChatAddMenuItem
+                      icon={Sparkles}
+                      label="Use a skill…"
+                      hint="Or type $"
+                      onClick={() => inputRef.current?.openTrigger("$")}
+                    />
                   )}
                   {agentRoles.length === 0 ? null : (
-                    <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                    <ChatAddMenuItem
+                      icon={Bot}
+                      label="Mention an agent…"
+                      hint="Or type @"
+                      onClick={() => inputRef.current?.openTrigger("@")}
+                    />
                   )}
                 </ChatAddMenu>
                 <ModelSelector

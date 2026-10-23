@@ -1789,7 +1789,7 @@ it("starts the draft with /compact from the + menu's Run a command…", async ()
   // A 5.15 host lists its commands, so Run a command… replaces the old Compact
   // item, in the same flat list as the other entries.
   await more.click();
-  expect(await page.getByRole("menuitem", { name: "Compact conversation", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("menuitem", { name: /^Compact conversation/ }).count()).toBe(0);
   expect(await page.getByRole("group", { name: "Conversation" }).count()).toBe(0);
   await page.getByRole("menuitem", { name: /^Run a command/ }).click();
   const compact = page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/compact/ });
@@ -3537,7 +3537,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Add images…", exact: true }).waitFor();
+    await page.getByRole("menuitem", { name: /^Add images…/ }).waitFor();
     await shot(page, "conversation-plus-menu");
     await page.keyboard.press("Escape");
   }
@@ -3783,7 +3783,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // have no + entry; typing `@` reaches them.
   await more.click();
   await shot(page, "draft-plus-menu");
-  const mentionAgent = page.getByRole("menuitem", { name: "Mention an agent…", exact: true });
+  const mentionAgent = page.getByRole("menuitem", { name: /^Mention an agent…/ });
   await mentionAgent.waitFor();
   expect(await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).count()).toBe(0);
   await mentionAgent.click();
@@ -3804,7 +3804,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
   await page.keyboard.type("U");
   await expect
-    .poll(() => page.getByRole("menuitem", { name: "Use a skill…", exact: true }).evaluate((el) => el === document.activeElement))
+    .poll(() => page.getByRole("menuitem", { name: /^Use a skill…/ }).evaluate((el) => el === document.activeElement))
     .toBe(true);
   await page.keyboard.press("Enter");
   const skills = page.getByRole("listbox", { name: "Skills" });
@@ -3818,7 +3818,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // After a line break the trigger starts the new line, no space needed.
   await page.keyboard.press("Shift+Enter");
   await more.click();
-  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Use a skill…/ }).click();
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/then \$review \n\$review \s*$/);
@@ -3827,7 +3827,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // so it still gets the space.
   await composer.evaluate(() => document.execCommand("insertText", false, "x\t"));
   await more.click();
-  await page.getByRole("menuitem", { name: "Use a skill…", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Use a skill…/ }).click();
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);

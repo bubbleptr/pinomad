@@ -2,10 +2,10 @@
 // one per typed trigger (`$` skill, `@` agent, `/` command), each opening the
 // same menu typing the trigger would.
 import type { ReactNode } from "react";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Plus } from "@/shared/ui/icons";
 
-/** The ghost `+` button and its menu; children are `DropdownMenuItem`s. */
+/** The ghost `+` button and its menu; children are `ChatAddMenuItem`s. */
 export function ChatAddMenu({
   isDisabled = false,
   onOpenChange,
@@ -26,7 +26,7 @@ export function ChatAddMenu({
         isDisabled,
       }}
       hasChevron={false}
-      menuWidth={240}
+      menuWidth={288}
       onOpenChange={onOpenChange}
       // Up, like the model popover: below a draft's composer the menu runs
       // off short screens; the layer still flips when there's no room.
@@ -34,5 +34,37 @@ export function ChatAddMenu({
     >
       {children}
     </DropdownMenu>
+  );
+}
+
+/**
+ * One + menu row on a single line: icon, label, and a muted hint at the end —
+ * the other way in (`Or type $`), or why the row is disabled.
+ */
+export function ChatAddMenuItem({
+  icon: Icon,
+  label,
+  hint,
+  isDisabled,
+  onClick,
+}: {
+  icon: typeof Plus;
+  label: string;
+  hint?: string;
+  isDisabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <DropdownMenuItem
+      icon={<Icon aria-hidden="true" className="size-4 text-muted" />}
+      label={
+        <span className="flex min-w-0 items-baseline gap-3">
+          <span className="shrink-0">{label}</span>
+          {hint === undefined ? null : <span className="ml-auto min-w-0 truncate text-xs text-muted">{hint}</span>}
+        </span>
+      }
+      isDisabled={isDisabled}
+      onClick={onClick}
+    />
   );
 }
