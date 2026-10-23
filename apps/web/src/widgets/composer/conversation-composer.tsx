@@ -70,8 +70,8 @@ export function ConversationComposer({
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  // A Chat conversation has no project files; like a Chat draft, it offers
-  // agents only — and its + menu no "Mention a file…".
+  // A Chat conversation has no project files; like a Chat draft, its `@`
+  // offers agents only.
   const fileSource: MentionFiles | undefined =
     view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
       ? {
@@ -349,9 +349,6 @@ export function ConversationComposer({
             >
               <ChatAddMenuSection title="Add">
                 <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
-                {fileSource === undefined ? null : (
-                  <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
-                )}
                 {skills.trigger === undefined ? null : (
                   <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
                 )}

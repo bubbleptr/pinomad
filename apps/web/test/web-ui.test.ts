@@ -3761,7 +3761,7 @@ it("keeps the agent candidates when the draft's file listing fails", async () =>
   expect(await menu.getByRole("group", { name: "Files" }).count()).toBe(0);
 });
 
-it("opens the file and skill menus from the + menu, appending the trigger to the draft", async () => {
+it("opens the agent and skill menus from the + menu, appending the trigger to the draft", async () => {
   const webOrigin = await startWeb();
   const dir = await tempDir();
   defer(dir.remove);
@@ -3787,19 +3787,22 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   const composer = page.getByRole("combobox", { name: "Prompt" });
   const more = page.getByRole("button", { name: "More actions", exact: true });
 
-  // An empty draft: the file trigger goes in as-is and its menu opens on files.
+  // An empty draft: the agent trigger goes in as-is and its menu opens. Files
+  // have no + entry; typing `@` reaches them.
   await more.click();
   await shot(page, "draft-plus-menu");
-  await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).click();
-  const files = page.getByRole("listbox", { name: "Agents and files" });
-  await files.getByRole("group", { name: "Files" }).getByRole("option", { name: /README\.md/ }).waitFor();
-  await shot(page, "plus-file-menu");
+  const mentionAgent = page.getByRole("menuitem", { name: "Mention an agent…", exact: true });
+  await mentionAgent.waitFor();
+  expect(await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).count()).toBe(0);
+  await mentionAgent.click();
+  const mentions = page.getByRole("listbox", { name: "Agents and files" });
+  await mentions.getByRole("group", { name: "Agents" }).getByRole("option", { name: /reviewer/ }).waitFor();
   // Focus is back in the composer, so the keyboard narrows the open menu.
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
-  await page.keyboard.type("READ");
-  await expect.poll(() => files.getByRole("option").count()).toBe(1);
+  await page.keyboard.type("revi");
+  await expect.poll(() => mentions.getByRole("option").count()).toBe(1);
   await page.keyboard.press("Enter");
-  await expect.poll(async () => composer.textContent()).toBe("@./README.md ");
+  await expect.poll(async () => composer.textContent()).toBe("@reviewer ");
 
   // A draft that ends in a word gets a separating space so `$` can activate.
   // The keyboard path: open the menu, jump to the item by its first letter, pick it.
@@ -3816,9 +3819,9 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
   await page.keyboard.press("Enter");
-  await expect.poll(async () => composer.textContent()).toBe("@./README.md then $review ");
+  await expect.poll(async () => composer.textContent()).toBe("@reviewer then $review ");
   // The pick is bound, so it's painted.
-  await expect.poll(() => paintedSkills(composer)).toEqual(["18:$review"]);
+  await expect.poll(() => paintedSkills(composer)).toEqual(["15:$review"]);
 
   // After a line break the trigger starts the new line, no space needed.
   await page.keyboard.press("Shift+Enter");

@@ -96,7 +96,7 @@ export function DraftHome({
     minor !== undefined
     && hostSupportsFeature(minor, "agentConversations")
     && (agentRoles.length > 0 || agent !== undefined);
-  // The project's file listing, which also decides whether "Mention a file…" is offered.
+  // The project's file listing for `@` completion.
   const fileSource: MentionFiles | undefined =
     draft.kind === "project" && minor !== undefined && hostSupportsCall(minor, "listFiles")
       ? {
@@ -209,9 +209,6 @@ export function DraftHome({
                       isDisabled={!accepts}
                       onClick={() => fileInput.current?.click()}
                     />
-                    {fileSource === undefined ? null : (
-                      <DropdownMenuItem label="Mention a file…" onClick={() => inputRef.current?.openTrigger("@./")} />
-                    )}
                     {skills.trigger === undefined ? null : (
                       <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
                     )}
