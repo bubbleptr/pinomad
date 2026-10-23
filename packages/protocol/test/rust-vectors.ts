@@ -129,6 +129,19 @@ function framesVector(): VectorFile {
       name: "call-steerQueued",
       wire: wire({ type: "call", id: 18, method: "steerQueued", args: { conversationId: 2, submissionId: 3 } }),
     },
+    // 5.17: host-declared slash commands (issue #254).
+    {
+      name: "call-listCommands",
+      wire: wire({ type: "call", id: 19, method: "listCommands", args: { conversationId: 2 } }),
+    },
+    {
+      name: "call-runCommand",
+      wire: wire({ type: "call", id: 20, method: "runCommand", args: { conversationId: 2, name: "compact", args: "keep API notes" } }),
+    },
+    {
+      name: "call-runCommand-no-args",
+      wire: wire({ type: "call", id: 21, method: "runCommand", args: { conversationId: 2, name: "compact" } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];

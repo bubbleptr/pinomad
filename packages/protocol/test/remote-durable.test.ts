@@ -1033,6 +1033,87 @@ describe("RemoteDurable minor-version gating", () => {
     }
   });
 
+  it("listCommands on a 5.16 host rejects locally with the upgrade message", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 16 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.listCommands(id(7))).rejects.toThrow("needs protocol 5.17");
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "listCommands")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("listCommands is not queued behind a hanging command", async () => {
+    const listing = { commands: [{ name: "compact", description: "Summarize", argumentHint: "[instructions]", source: "builtin" }] };
+    const { transport, sent, holdCall } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "listCommands" ? { ok: true, value: listing } : undefined,
+    );
+    holdCall("archive");
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      const hanging = remote.controller.archive(id(1), true);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await remote.controller.listCommands(id(7))).toEqual(listing);
+      const calls = sent.filter((frame) => frame.type === "call");
+      expect(calls.map((frame) => [frame.method, frame.args])).toEqual([
+        ["archive", { conversationId: 1, archived: true }],
+        ["listCommands", { conversationId: 7 }],
+      ]);
+      remote.close();
+      await hanging;
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("runCommand queues behind earlier commands and targets the shown conversation by default", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      void remote.controller.submit("first", "followUp");
+      await remote.controller.runCommand("compact", "keep API notes");
+      await remote.controller.runCommand("compact", undefined, id(2));
+      const calls = sent.flatMap((frame) => (frame.type === "call" ? [frame] : []));
+      expect(calls.map((frame) => frame.method)).toEqual(["submit", "runCommand", "runCommand"]);
+      expect(calls.slice(1).map((frame) => frame.args)).toEqual([
+        { conversationId: 1, name: "compact", args: "keep API notes" },
+        { conversationId: 2, name: "compact" },
+      ]);
+      expect(remote.view.current().notices).toEqual([]);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("runCommand turns a host failure into a notice", async () => {
+    const { transport } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "runCommand" ? { ok: false, error: "Unknown command: /nope" } : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.runCommand("nope");
+      await waitForView(remote, (view) => view.notices.some((notice) => notice.message === "Unknown command: /nope"));
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("runCommand on a 5.16 host notices and skips the call", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 16 } });
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.runCommand("compact");
+      await waitForView(remote, (view) => view.notices.some((notice) => notice.message.includes("needs protocol 5.17")));
+      expect(sent.some((frame) => frame.type === "call" && frame.method === "runCommand")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("listSkills on a 5.12 host rejects locally with the upgrade message", async () => {
     const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 12 } });
     const remote = await connectRemoteDurable({ transport });

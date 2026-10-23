@@ -99,6 +99,31 @@ describe("parseClientFrame", () => {
     expect(hostSupportsCall(13, "listSkills")).toBe(true);
   });
 
+  it("accepts listCommands and runCommand; rejects malformed ones", () => {
+    const list = (args: unknown): unknown => ({ type: "call", id: 1, method: "listCommands", args });
+    expect(kinds(list({ conversationId: 7 }))).toBe("frame");
+    expect(kinds(list({}))).toBe("malformed");
+    expect(kinds(list({ conversationId: 0 }))).toBe("malformed");
+    expect(kinds(list({ conversationId: "7" }))).toBe("malformed");
+
+    const run = (args: unknown): unknown => ({ type: "call", id: 1, method: "runCommand", args });
+    expect(kinds(run({ conversationId: 7, name: "compact" }))).toBe("frame");
+    expect(kinds(run({ conversationId: 7, name: "compact", args: "keep API notes" }))).toBe("frame");
+    // An unknown name is the host's `ok:false`, not a malformed frame.
+    expect(kinds(run({ conversationId: 7, name: "nope" }))).toBe("frame");
+    expect(kinds(run({ conversationId: 7, name: "" }))).toBe("malformed");
+    expect(kinds(run({ conversationId: 7 }))).toBe("malformed");
+    expect(kinds(run({ conversationId: 7, name: "compact", args: 3 }))).toBe("malformed");
+    expect(kinds(run({ name: "compact" }))).toBe("malformed");
+  });
+
+  it("introduces listCommands and runCommand at minor 17", () => {
+    for (const method of ["listCommands", "runCommand"] as const) {
+      expect(hostSupportsCall(16, method)).toBe(false);
+      expect(hostSupportsCall(17, method)).toBe(true);
+    }
+  });
+
   it("accepts withdrawQueued and steerQueued with a positive integer submissionId", () => {
     for (const method of ["withdrawQueued", "steerQueued"] as const) {
       expect(kinds({ type: "call", id: 1, method, args: { conversationId: 7, submissionId: 3 } })).toBe("frame");

@@ -316,6 +316,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     withdrawQueued: fn(async () => "withdrawn" as const),
     steerQueued: fn(async () => "steered" as const),
     compact: fn(async () => {}),
+    runCommand: fn(async () => {}),
     abort: fn(async () => {}),
     setThinkingLevel: fn(async () => {}),
     setModel: fn(async () => {}),
@@ -331,6 +332,11 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
       skills: [
         { name: "review", description: "Review a diff against repo standards", source: "project" as const },
         { name: "ship", description: "Commit, open a PR, and merge", source: "user" as const },
+      ],
+    })),
+    listCommands: fn(async () => ({
+      commands: [
+        { name: "compact", description: "Summarize older context to free up space", argumentHint: "[instructions]", source: "builtin" as const },
       ],
     })),
     createPairing: fn(async () => ({ url: `pinomad://pair#${key("P")}`, expiresAt: Date.now() + 5 * MINUTE })),

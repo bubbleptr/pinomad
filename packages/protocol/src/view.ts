@@ -6,6 +6,7 @@ import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph 
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
+import type { CommandListing } from "./commands.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { CallMethods, ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
@@ -213,6 +214,13 @@ export interface DurableController {
     },
   ): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
+  /**
+   * Run the host-declared command `name` (listed by `listCommands`) on
+   * `target`, the main shown conversation by default; `args` is the text
+   * after the name. Queued behind earlier commands like `compact`; failures,
+   * an unknown name or a pre-5.17 host included, surface as notices.
+   */
+  runCommand(name: string, args?: string, target?: ConversationId): Promise<void>;
   /** Abort `target`'s run (the main shown conversation's by default). */
   abort(target?: ConversationId): Promise<void>;
   /**
@@ -261,6 +269,12 @@ export interface DurableController {
    * that never queues behind commands; rejects when the host predates 5.15.
    */
   image(ref: string): Promise<MessageImage>;
+  /**
+   * The slash commands the host declares for `conversationId` (ADR-0029). A
+   * read-only request that never queues behind commands. Needs a 5.17 host —
+   * an older one rejects, and the client offers no command list of its own.
+   */
+  listCommands(conversationId: ConversationId): Promise<CommandListing>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */
