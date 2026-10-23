@@ -41,7 +41,7 @@ struct NewConversationView: View {
     /// downgrade keeps the section with only "No Agent" — otherwise there is
     /// no way back to a plain draft.
     private var showAgentPicker: Bool {
-        selectedAgent != nil || (agentPickerAvailable && !roles.isEmpty)
+        model.draftAgent.offersAgents(hostSupportsAgents: agentPickerAvailable, roles: roles)
     }
 
     private var agentChoice: ModelSheetAgent? {
@@ -154,6 +154,7 @@ struct NewConversationView: View {
                 models: model.snapshot?.models ?? [],
                 selected: pick,
                 agent: agentChoice,
+                locked: model.creating,
                 onModel: { model.setDraftModel($0) },
                 onLevel: { model.setDraftLevel($0) }
             )
@@ -198,7 +199,13 @@ struct NewConversationView: View {
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
                     prefix: selectedAgent.map { "@\($0)" },
-                    enabled: model.connected && !(model.snapshot?.models.isEmpty ?? true),
+                    // The sheet is the only way to the agent, so roles or a
+                    // stale pick open it even without models. Locked while
+                    // creating: the create already took the pick.
+                    enabled: model.connected && !model.creating
+                        && model.draftAgent.sheetHasContent(
+                            models: model.snapshot?.models ?? [],
+                            hostSupportsAgents: agentPickerAvailable, roles: roles),
                     problem: problemText?.label
                 ) {
                     focused = false

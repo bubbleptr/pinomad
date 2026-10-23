@@ -21,6 +21,9 @@ struct ModelSheet: View {
     let selected: ModelPick
     /// Nil hides the Agent section.
     var agent: ModelSheetAgent? = nil
+    /// The draft's create is in flight and already took the agent, model
+    /// and level: a pick now would be dropped when the draft resets.
+    var locked = false
     let onModel: (ModelRef) -> Void
     let onLevel: (ThinkingLevel) -> Void
 
@@ -67,7 +70,7 @@ struct ModelSheet: View {
                 }
             }
             .tint(.primary)
-            .disabled(!connected)
+            .disabled(!connected || locked)
             .searchable(text: $query, prompt: "Search models")
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
