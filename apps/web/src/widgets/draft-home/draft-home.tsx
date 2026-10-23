@@ -17,6 +17,7 @@ import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts"
 import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuChoice, ChatAddMenuSection } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
+import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
 import { ChatPromptSuggestion } from "@/shared/ui/chat/chat-prompt-suggestion";
 import { ChatAdd, FileDiff, FolderClosed, ListTree, SquareTerminal, Wrench } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
@@ -195,7 +196,12 @@ export function DraftHome({
             }}
             isDisabled={!connected}
             submitDisabled={problem !== undefined}
-            placeholder="Do anything with Pi"
+            placeholder={composerPlaceholder("Do anything with Pi", {
+              agents: agentRoles.length > 0,
+              files: fileSource !== undefined,
+              commands: false,
+              skills: skills.trigger !== undefined,
+            })}
             attachments={attachmentDrawer({ images, pending, onRemove: remove })}
             hasAttachments={images.length > 0}
             onFiles={add}

@@ -22,6 +22,7 @@ import { parseCommandInput } from "@pinomad/client/command-input.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuSection } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
 import { QueuedList } from "./queued-list.tsx";
 
 /** A queued edit's images as bytes, or undefined when any one cannot load. */
@@ -325,7 +326,16 @@ export function ConversationComposer({
         inputRef={inputRef}
         status={busy ? "streaming" : "ready"}
         isDisabled={disconnected || editLocked}
-        placeholder={busy ? "Steer the running turn…" : "Ask the agent…"}
+        placeholder={
+          busy
+            ? "Steer the running turn…"
+            : composerPlaceholder("Ask", {
+                agents: roles.length > 0,
+                files: fileSource !== undefined,
+                commands: listsCommands,
+                skills: skills.trigger !== undefined,
+              })
+        }
         onValueChange={setValue}
         onSubmit={() => submit("steer")}
         onFocus={() => {
