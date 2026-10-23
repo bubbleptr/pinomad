@@ -13,14 +13,44 @@ public enum SendSlot: Equatable, Sendable {
     /// Offline calls still report success (the reason only becomes a
     /// notice), so a disconnected send would silently eat the draft —
     /// nothing is live until the connection is back. Images alone are a
-    /// message; images still being prepared hold the send (not Stop).
-    public init(draft: String, connected: Bool, busy: Bool, hasImages: Bool = false, preparing: Bool = false) {
+    /// message; images still being prepared hold the send (not Stop). A
+    /// `command` runs at once, so it never offers steering.
+    public init(draft: String, connected: Bool, busy: Bool, hasImages: Bool = false,
+                preparing: Bool = false, command: Bool = false) {
         if draft.allSatisfy(\.isWhitespace) && !hasImages && !preparing {
             self = busy ? .stop(enabled: connected) : .hidden
         } else if draft.allSatisfy(\.isWhitespace) && !hasImages && busy {
             self = .stop(enabled: connected)
         } else {
-            self = .send(enabled: connected && !preparing, canSteer: busy)
+            self = .send(enabled: connected && !preparing, canSteer: busy && !command)
+        }
+    }
+}
+
+/// What sending the conversation draft does (ADR-0027): run a host command,
+/// send a message, or hold it with a reason. Recognition is the core's
+/// `parseCommandInput` over every listed name — a disabled command is still
+/// a command, so it is held rather than leaking to the model as text.
+public enum ComposerSubmit: Equatable, Sendable {
+    case message
+    case command(name: String, args: String?)
+    case blocked(reason: String)
+
+    /// `commands` nil (unknown listing, an old host, the draft page) means
+    /// nothing is a command.
+    public init(draft: String, commands: [CommandEntry]?, hasImages: Bool) {
+        guard let commands,
+              let input = parseCommandInput(text: draft, names: commands.map(\.name))
+        else {
+            self = .message
+            return
+        }
+        if let reason = commands.first(where: { $0.name == input.name })?.disabled {
+            self = .blocked(reason: "/\(input.name) isn't available: \(reason)")
+        } else if hasImages {
+            self = .blocked(reason: "Commands can't include images. Remove them to run /\(input.name).")
+        } else {
+            self = .command(name: input.name, args: input.args)
         }
     }
 }

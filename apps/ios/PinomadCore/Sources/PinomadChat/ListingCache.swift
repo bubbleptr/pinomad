@@ -1,26 +1,27 @@
 import Foundation
 import PinomadCore
 
-/// The per-scope `listSkills` cache behind the `$` menu, composer highlight
-/// and sent bubbles (issue #143). It is the same shape as the Web cache:
-/// one entry per scope, concurrent asks share one flight, an answer is
+/// A per-key listing cache: `listSkills` per scope behind the `$` menu,
+/// composer highlight and sent bubbles (issue #143), and `listCommands` per
+/// conversation behind the `/` menu (#254). It is the same shape as the Web
+/// cache: one entry per key, concurrent asks share one flight, an answer is
 /// trusted for a few seconds, a failure is never cached, and the last good
 /// answer stays visible while a refresh is in flight.
 ///
 /// Plain value state with an injected clock: the app owns the request and
 /// hands answers back, so the rules stay deterministic to test.
-public struct SkillListCache: Equatable, Sendable {
+public struct ListingCache<Key: Hashable & Sendable, Item: Equatable & Sendable>: Equatable, Sendable {
     /// How long an answer is trusted before the next ask refetches it.
-    public static let defaultTTL: TimeInterval = 5
+    public static var defaultTTL: TimeInterval { 5 }
 
     /// One flight the caller should run. The generation makes late answers
     /// from an older request (or an older host session) harmless.
     public struct Request: Equatable, Sendable {
-        public let scope: SkillScope
+        public let key: Key
         public let generation: UInt64
 
-        public init(scope: SkillScope, generation: UInt64) {
-            self.scope = scope
+        public init(key: Key, generation: UInt64) {
+            self.key = key
             self.generation = generation
         }
     }
@@ -28,59 +29,59 @@ public struct SkillListCache: Equatable, Sendable {
     private struct Entry: Equatable {
         /// Nil until the first successful answer. An empty array is a known
         /// empty listing.
-        var skills: [SkillEntry]?
+        var items: [Item]?
         var at: TimeInterval = 0
         var inflight: UInt64?
     }
 
     private let ttl: TimeInterval
-    private var entries: [SkillScope: Entry] = [:]
+    private var entries: [Key: Entry] = [:]
     private var generation: UInt64 = 0
 
-    public init(ttl: TimeInterval = SkillListCache.defaultTTL) {
+    public init(ttl: TimeInterval = ListingCache.defaultTTL) {
         self.ttl = ttl
     }
 
-    /// The scope's last good listing, or nil while it is unknown.
-    public func snapshot(_ scope: SkillScope) -> [SkillEntry]? {
-        entries[scope]?.skills
+    /// The key's last good listing, or nil while it is unknown.
+    public func snapshot(_ key: Key) -> [Item]? {
+        entries[key]?.items
     }
 
-    /// Returns the scope to fetch, or nil when an in-flight request already
+    /// Returns the key to fetch, or nil when an in-flight request already
     /// covers it or the current answer is still fresh. `force` bypasses the
     /// TTL (the refresh a reconnect performs) but never starts a second
-    /// flight for the same scope.
+    /// flight for the same key.
     public mutating func request(
-        _ scope: SkillScope,
+        _ key: Key,
         now: TimeInterval,
         force: Bool = false
     ) -> Request? {
-        if let entry = entries[scope] {
+        if let entry = entries[key] {
             if entry.inflight != nil { return nil }
-            if !force, entry.skills != nil, now - entry.at < ttl { return nil }
+            if !force, entry.items != nil, now - entry.at < ttl { return nil }
         }
         generation &+= 1
-        var entry = entries[scope] ?? Entry()
+        var entry = entries[key] ?? Entry()
         entry.inflight = generation
-        entries[scope] = entry
-        return Request(scope: scope, generation: generation)
+        entries[key] = entry
+        return Request(key: key, generation: generation)
     }
 
     /// A successful answer. A late answer from a superseded request (a
     /// failure/retry, a scope switch, a host session that reset the cache)
     /// is dropped.
-    public mutating func receive(_ request: Request, skills: [SkillEntry], now: TimeInterval) {
-        guard entries[request.scope]?.inflight == request.generation else { return }
-        entries[request.scope] = Entry(skills: skills, at: now, inflight: nil)
+    public mutating func receive(_ request: Request, items: [Item], now: TimeInterval) {
+        guard entries[request.key]?.inflight == request.generation else { return }
+        entries[request.key] = Entry(items: items, at: now, inflight: nil)
     }
 
     /// A failed request is not an answer: keep whatever was known, clear the
     /// flight so the next ask retries.
     public mutating func fail(_ request: Request) {
-        guard var entry = entries[request.scope],
+        guard var entry = entries[request.key],
               entry.inflight == request.generation else { return }
         entry.inflight = nil
-        entries[request.scope] = entry
+        entries[request.key] = entry
     }
 
     /// A new host identity never inherits the previous host's listings; a
@@ -90,3 +91,6 @@ public struct SkillListCache: Equatable, Sendable {
         entries.removeAll()
     }
 }
+
+public typealias SkillListCache = ListingCache<SkillScope, SkillEntry>
+public typealias CommandListCache = ListingCache<UInt64, CommandEntry>

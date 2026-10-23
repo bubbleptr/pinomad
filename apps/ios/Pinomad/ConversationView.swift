@@ -46,7 +46,7 @@ struct ConversationView: View {
         // card facts all derive from it.
         let node = self.node
         let title = node.map { displayName(summary: $0.summary) } ?? "Conversation"
-        let subtitle = self.subtitle(role: node?.summary.role)
+        let subtitle = self.subtitle(role: node?.summary.role.flatMap { $0.isEmpty ? nil : $0 })
         let isSubagent = node?.summary.kind == .subagent
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
@@ -134,7 +134,7 @@ struct ConversationView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
             } else if let conversation {
-                ConversationComposer(model: model, conversation: conversation)
+                ConversationComposer(model: model, conversation: conversation, role: node?.summary.role.flatMap { $0.isEmpty ? nil : $0 })
                     // The agent at work, in the empty strip under the card:
                     // hung from the bar's bottom edge down past the home
                     // indicator; with the keyboard up, the keyboard covers it.

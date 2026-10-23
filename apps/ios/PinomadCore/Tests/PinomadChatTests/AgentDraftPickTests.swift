@@ -115,3 +115,30 @@ private func emptyOverrides() -> AgentDraftOverride {
         #expect(state.remembered == remembered)
     }
 }
+
+/// The model sheet is the only way to pick or clear a draft's agent, so it
+/// must open whenever there is something to choose there — models or the
+/// Agent section — even with an empty model list.
+@Suite struct AgentDraftSheetTests {
+    @Test func rolesOfferTheAgentSection() {
+        let state = AgentDraftPick()
+        #expect(state.offersAgents(hostSupportsAgents: true, roles: agents.roles))
+        #expect(!state.offersAgents(hostSupportsAgents: false, roles: agents.roles))
+        #expect(!state.offersAgents(hostSupportsAgents: true, roles: []))
+    }
+
+    /// A pick that outlived its roles (or a host downgrade) keeps the
+    /// section so "No Agent" can clear it.
+    @Test func aStalePickKeepsTheSectionToClearIt() {
+        let state = AgentDraftPick(agent: "reviewer")
+        #expect(state.offersAgents(hostSupportsAgents: false, roles: []))
+    }
+
+    @Test func theSheetOpensWithoutModelsWhenAnAgentCanBeChanged() {
+        let stale = AgentDraftPick(agent: "reviewer")
+        #expect(stale.sheetHasContent(models: [], hostSupportsAgents: true, roles: []))
+        #expect(AgentDraftPick().sheetHasContent(models: [], hostSupportsAgents: true, roles: agents.roles))
+        #expect(!AgentDraftPick().sheetHasContent(models: [], hostSupportsAgents: true, roles: []))
+        #expect(AgentDraftPick().sheetHasContent(models: models, hostSupportsAgents: false, roles: []))
+    }
+}

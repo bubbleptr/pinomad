@@ -49,6 +49,7 @@ square
 square-check
 square-diff
 square-pen
+square-slash
 trash-2
 triangle-alert
 undo-2

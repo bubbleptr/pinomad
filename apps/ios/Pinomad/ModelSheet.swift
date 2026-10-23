@@ -1,6 +1,16 @@
 import PinomadCore
 import SwiftUI
 
+/// The named agent part of the model sheet (ADR-0023). A role is a preset
+/// of model, thinking level and system prompt, so it is picked here.
+enum ModelSheetAgent {
+    /// The draft's choice: No Agent plus the host's roles. `hint` says which
+    /// sides still come from the role.
+    case pick(selected: String?, roles: [AgentRole], hint: String?, onSelect: (String?) -> Void)
+    /// A conversation's role — fixed once it was created.
+    case fixed(name: String, description: String?)
+}
+
 /// Pick a model and thinking level. Used for the shown conversation (the
 /// callbacks call the host; the selection reads back from the snapshot, so
 /// a refused change doesn't stick) and for the new-conversation draft (the
@@ -9,6 +19,11 @@ struct ModelSheet: View {
     let model: AppModel
     let models: [ModelSummary]
     let selected: ModelPick
+    /// Nil hides the Agent section.
+    var agent: ModelSheetAgent? = nil
+    /// The draft's create is in flight and already took the agent, model
+    /// and level: a pick now would be dropped when the draft resets.
+    var locked = false
     let onModel: (ModelRef) -> Void
     let onLevel: (ThinkingLevel) -> Void
 
@@ -25,6 +40,9 @@ struct ModelSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if let agent, query.isEmpty {
+                    agentSection(agent)
+                }
                 if levels.count > 1, query.isEmpty {
                     Section("Thinking Level") {
                         let current = clampLevel(levels: levels, want: selected.level)
@@ -52,7 +70,7 @@ struct ModelSheet: View {
                 }
             }
             .tint(.primary)
-            .disabled(!connected)
+            .disabled(!connected || locked)
             .searchable(text: $query, prompt: "Search models")
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +85,44 @@ struct ModelSheet: View {
         .onAppear { model.sheetShowsToasts = true }
         .onDisappear { model.sheetShowsToasts = false }
         .presentationDetents([.medium, .large])
+    }
+
+    /// Picking a role keeps the sheet up: its model and level rows move to
+    /// the preset, which the reader may still override.
+    @ViewBuilder
+    private func agentSection(_ agent: ModelSheetAgent) -> some View {
+        switch agent {
+        case let .pick(selected, roles, hint, onSelect):
+            Section {
+                Button {
+                    onSelect(nil)
+                } label: {
+                    Row(title: "No Agent", subtitle: nil, checked: selected == nil)
+                }
+                ForEach(roles, id: \.name) { role in
+                    Button {
+                        onSelect(role.name)
+                    } label: {
+                        Row(title: "@\(role.name)",
+                            subtitle: role.description.isEmpty ? nil : role.description,
+                            checked: selected == role.name)
+                    }
+                }
+            } header: {
+                Text("Agent")
+            } footer: {
+                if let hint { Text(hint) }
+            }
+        case let .fixed(name, description):
+            Section {
+                Row(title: "@\(name)", subtitle: description.flatMap { $0.isEmpty ? nil : $0 },
+                    checked: false)
+            } header: {
+                Text("Agent")
+            } footer: {
+                Text("Set when the conversation was created.")
+            }
+        }
     }
 
     /// A reasoning model keeps the sheet up for the level pick; anything

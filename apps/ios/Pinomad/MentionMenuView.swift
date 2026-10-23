@@ -2,30 +2,45 @@ import PinomadChat
 import PinomadCore
 import SwiftUI
 
-/// Owns the composer's @ and $ menus across body updates: the caret, the
-/// pure menu states, and the debounced file query. One per composer so
+/// Owns the composer's @, $ and / menus across body updates: the caret,
+/// the pure menu states, and the debounced file query. One per composer so
 /// switching pages or hosts drops whatever was in flight.
 @MainActor @Observable
 final class MentionCoordinator {
     var menu = MentionMenu()
     var skillMenu = SkillMenu()
+    var commandMenu = SlashCommandMenu()
     private var task: Task<Void, Never>?
 
-    /// Recompute both triggers from the draft and caret. A $ token wins the
-    /// caret (the tokens can't overlap); otherwise the @ menu refreshes and
-    /// a new file query replaces the old debounce.
+    /// Recompute every trigger from the draft and caret. A `/` first token
+    /// wins, then a $ token (the tokens can't overlap); otherwise the @ menu
+    /// refreshes and a new file query replaces the old debounce. `commands`
+    /// is nil where there are none (the draft page, an old host).
     func refresh(
         text: String,
         caret: Int?,
         roles: [AgentRole],
         fileScope: FileScope?,
         skills: [SkillEntry]?,
+        commands: [CommandEntry]? = nil,
         load: @escaping @MainActor (FileScope, String) async throws -> (files: [String], truncated: Bool)
     ) {
         guard let caret else {
             close()
             return
         }
+        var commandMenu = self.commandMenu
+        commandMenu.refresh(text: text, cursor: caret, commands: commands)
+        if commands != nil, commandMenu.token != nil {
+            self.commandMenu = commandMenu
+            task?.cancel()
+            task = nil
+            menu.dismiss()
+            skillMenu.dismiss()
+            return
+        }
+        commandMenu.dismiss()
+        self.commandMenu = commandMenu
         var skillMenu = self.skillMenu
         skillMenu.refresh(text: text, cursor: caret, skills: skills)
         self.skillMenu = skillMenu
@@ -60,6 +75,7 @@ final class MentionCoordinator {
         task = nil
         menu.dismiss()
         skillMenu.dismiss()
+        commandMenu.dismiss()
     }
 
     /// Replace the token with plain text and hand back the new draft plus
@@ -67,6 +83,13 @@ final class MentionCoordinator {
     func insert(_ choice: MentionChoice, into text: String) -> MentionInsertion? {
         guard let token = menu.token else { return nil }
         let insertion = token.replacing(in: text, with: choice.insertion)
+        close()
+        return insertion
+    }
+
+    /// A picked command replaces the first token with `/name `.
+    func insert(_ command: CommandEntry, into text: String) -> MentionInsertion? {
+        guard let insertion = commandMenu.insertion(for: command, in: text) else { return nil }
         close()
         return insertion
     }
