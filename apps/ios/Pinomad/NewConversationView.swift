@@ -286,7 +286,6 @@ struct NewConversationView: View {
     }
 
     private var plusMenu: some View {
-        let mentionFile: (() -> Void)? = mentionScope == nil ? nil : { insertTrigger("@./") }
         let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
@@ -299,15 +298,9 @@ struct NewConversationView: View {
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: key, accepts: acceptsImages) },
-            mentionFile: mentionFile,
             useSkill: useSkill,
             mentionAgent: mentionAgent
-        ) {
-            homeSection
-            if case .project = model.draftHome {
-                checkoutSection
-            }
-        }
+        )
     }
 
     /// An add entry's trigger at the caret; focusing opens its menu.
@@ -365,51 +358,6 @@ struct NewConversationView: View {
             )
         }
         .tint(.secondary)
-        .disabled(!model.connected)
-    }
-
-    /// The `+` menu's copy of the footer's project choice; both bind the
-    /// same draft state. Toggles supply the checkmark.
-    @ViewBuilder
-    private var homeSection: some View {
-        Section("Project") {
-            Toggle(isOn: Binding(
-                get: { model.draftHome == .chat },
-                set: { if $0 { model.draftHome = .chat } }
-            )) {
-                Label("No Project", image: .messageCircle)
-            }
-            ForEach(projects.indices, id: \.self) { index in
-                let project = projects[index]
-                if let path = project.path {
-                    Toggle(isOn: Binding(
-                        get: { model.draftHome == .project(path: path) },
-                        set: { if $0 { model.draftHome = .project(path: path) } }
-                    )) {
-                        Label(project.name ?? (path as NSString).lastPathComponent, image: .folder)
-                    }
-                }
-            }
-        }
-        .disabled(!model.connected)
-    }
-
-    @ViewBuilder
-    private var checkoutSection: some View {
-        Section("Checkout") {
-            Toggle(isOn: Binding(
-                get: { model.draftCheckout == .worktree },
-                set: { if $0 { model.draftCheckout = .worktree } }
-            )) {
-                Label("Git Worktree", image: .gitBranch)
-            }
-            Toggle(isOn: Binding(
-                get: { model.draftCheckout == .project },
-                set: { if $0 { model.draftCheckout = .project } }
-            )) {
-                Label("Project Folder", image: .monitor)
-            }
-        }
         .disabled(!model.connected)
     }
 }

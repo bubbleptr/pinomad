@@ -273,20 +273,23 @@ struct ConversationComposer: View {
 
     private var plusMenu: some View {
         let commands = model.hostSupports("listCommands")
-        let mentionFile: (() -> Void)? = mentionScope == nil ? nil : { insertTrigger("@./") }
         let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
             ? { presentAfterMenu { showCamera = true } } : nil
-        // A 5.17 host takes `/compact` instead.
+        // Before 5.17 there is no `/` menu, only Compact.
         let compact: (() -> Void)? = commands ? nil : { model.compact() }
-        // A command starts the message, so it waits for an empty draft.
-        let blocked: String? = draft.wrappedValue.allSatisfy(\.isWhitespace)
-            ? nil : "Clear the message first"
-        let listed: PlusMenuCommands? = !commands ? nil
-            : commandEntries.map { entries in
-                .listed(entries, blocked: blocked, pick: { pickCommand($0) })
-            } ?? .loading
+        // A command starts the message, so `/` replaces a blank draft.
+        let runCommand: (() -> Void)? = !commands ? nil : {
+            insertTrigger("/", selection: NSRange(location: 0, length: draft.wrappedValue.utf16.count))
+        }
+        let runCommandBlocked: String? = switch commandEntries {
+        case nil: "Loading…"
+        case let entries? where entries.isEmpty: "None on this host"
+        case _ where !draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.isEmpty:
+            "Clear the message first"
+        default: nil
+        }
         return PlusMenu(
             connected: connected,
             acceptsImages: acceptsImages,
@@ -296,15 +299,13 @@ struct ConversationComposer: View {
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: conversation.id, accepts: acceptsImages) },
-            mentionFile: mentionFile,
             useSkill: useSkill,
             mentionAgent: mentionAgent,
-            commands: listed,
+            runCommand: runCommand,
+            runCommandBlocked: runCommandBlocked,
             compact: compact,
             onOpen: { model.requestCommands(for: conversation.id) }
-        ) {
-            EmptyView()
-        }
+        )
     }
 
     private func refreshMentions() {
@@ -347,15 +348,10 @@ struct ConversationComposer: View {
         apply(insertion)
     }
 
-    /// An add entry's trigger at the caret; focusing opens its menu.
-    private func insertTrigger(_ trigger: String) {
-        apply(ComposerTrigger.insert(trigger, into: draft.wrappedValue, selection: selection))
-    }
-
-    /// `/name ` into the empty draft, caret at the end; Send runs it.
-    private func pickCommand(_ command: CommandEntry) {
-        guard let insertion = ComposerTrigger.command(command.name, into: draft.wrappedValue) else { return }
-        apply(insertion)
+    /// An add entry's trigger over `selection` (the caret by default);
+    /// focusing opens its menu.
+    private func insertTrigger(_ trigger: String, selection: NSRange? = nil) {
+        apply(ComposerTrigger.insert(trigger, into: draft.wrappedValue, selection: selection ?? self.selection))
     }
 
     private func apply(_ insertion: MentionInsertion) {
@@ -481,12 +477,11 @@ struct SlotIcon: View {
 }
 
 /// The composer's single entry for everything that can be added to a draft
-/// (issue #254). "Add" holds images and the bare `@./`, `$`, `@` and `/`
-/// triggers that open the matching menu; entries the host or scope can't
-/// support are hidden, ones unavailable for now are greyed with the reason
-/// in the label. A page can append its own sections (the draft's project
-/// and checkout).
-struct PlusMenu<Extra: View>: View {
+/// (issue #254), one flat list: images, then the bare `$`, `@` and `/`
+/// triggers that open the matching menu (files are reached by typing `@`).
+/// Entries the host or scope can't support are hidden, ones unavailable for
+/// now are greyed with the reason in the label.
+struct PlusMenu: View {
     let connected: Bool
     let acceptsImages: Bool
     let modelName: String?
@@ -499,16 +494,16 @@ struct PlusMenu<Extra: View>: View {
     let camera: (() -> Void)?
     let paste: () -> Void
     /// Each nil when the host or scope can't offer it.
-    let mentionFile: (() -> Void)?
     let useSkill: (() -> Void)?
     let mentionAgent: (() -> Void)?
-    /// The host's commands: nil off a conversation or before 5.17.
-    let commands: PlusMenuCommands?
-    /// Only for a host before 5.17; newer hosts list `/compact` in commands.
+    /// Opens the `/` menu: nil off a conversation or before 5.17.
+    let runCommand: (() -> Void)?
+    /// Why Run a Command is greyed right now.
+    let runCommandBlocked: String?
+    /// Only for a host before 5.17; newer hosts list `/compact` in the `/` menu.
     let compact: (() -> Void)?
     /// The menu is about to open — the moment to refresh what it lists.
     let onOpen: (() -> Void)?
-    let extra: Extra
 
     init(
         connected: Bool,
@@ -519,13 +514,12 @@ struct PlusMenu<Extra: View>: View {
         photos: @escaping () -> Void,
         camera: (() -> Void)?,
         paste: @escaping () -> Void,
-        mentionFile: (() -> Void)?,
         useSkill: (() -> Void)?,
         mentionAgent: (() -> Void)?,
-        commands: PlusMenuCommands? = nil,
+        runCommand: (() -> Void)? = nil,
+        runCommandBlocked: String? = nil,
         compact: (() -> Void)? = nil,
-        onOpen: (() -> Void)? = nil,
-        @ViewBuilder extra: () -> Extra
+        onOpen: (() -> Void)? = nil
     ) {
         self.connected = connected
         self.acceptsImages = acceptsImages
@@ -535,60 +529,54 @@ struct PlusMenu<Extra: View>: View {
         self.photos = photos
         self.camera = camera
         self.paste = paste
-        self.mentionFile = mentionFile
         self.useSkill = useSkill
         self.mentionAgent = mentionAgent
-        self.commands = commands
+        self.runCommand = runCommand
+        self.runCommandBlocked = runCommandBlocked
         self.compact = compact
         self.onOpen = onOpen
-        self.extra = extra()
     }
 
     var body: some View {
         Menu {
-            Section("Add") {
-                if acceptsImages {
-                    Group {
-                        Button("Photo Library", image: .images, action: photos)
-                        if let camera {
-                            Button("Take Photo", image: .camera, action: camera)
-                        }
-                        Button("Paste Image", image: .clipboardPaste, action: paste)
-                    }
-                    .disabled(!canAddImages || locked)
-                } else {
-                    Button("Add Images (\(modelName ?? "this model") doesn't accept images)", image: .image) {}
-                        .disabled(true)
-                }
-                // Text triggers need the field, which is off while offline
-                // or locked by an Edit.
+            if acceptsImages {
                 Group {
-                    if let mentionFile {
-                        Button("Mention a File", image: .file, action: mentionFile)
+                    Button("Photo Library", image: .images, action: photos)
+                    if let camera {
+                        Button("Take Photo", image: .camera, action: camera)
                     }
-                    if let useSkill {
-                        Button("Use a Skill", image: .sparkles, action: useSkill)
-                    }
-                    if let mentionAgent {
-                        Button("Mention an Agent", image: .userRound, action: mentionAgent)
-                    }
+                    Button("Paste Image", image: .clipboardPaste, action: paste)
                 }
-                .disabled(!connected || locked)
+                .disabled(!canAddImages || locked)
+            } else {
+                Button("Add Images (\(modelName ?? "this model") doesn't accept images)", image: .image) {}
+                    .disabled(true)
             }
-            // Commands act on the conversation rather than adding to the
-            // draft, so they sit with the old Compact entry, not under Add.
-            if commands != nil || compact != nil {
-                Section("Conversation") {
-                    if let commands {
-                        commandsMenu(commands)
-                    }
-                    if let compact {
-                        Button("Compact Conversation", image: .foldVertical, action: compact)
-                    }
+            // Text triggers need the field, which is off while offline or
+            // locked by an Edit.
+            Group {
+                if let useSkill {
+                    Button("Use a Skill", image: .sparkles, action: useSkill)
                 }
-                .disabled(!connected)
+                if let mentionAgent {
+                    Button("Mention an Agent", image: .userRound, action: mentionAgent)
+                }
+                if let runCommand {
+                    Button(action: runCommand) {
+                        Text("Run a Command")
+                        if let runCommandBlocked {
+                            Text(runCommandBlocked)
+                        }
+                        Image(.squareSlash)
+                    }
+                    .disabled(runCommandBlocked != nil)
+                }
             }
-            extra
+            .disabled(!connected || locked)
+            if let compact {
+                Button("Compact Conversation", image: .foldVertical, action: compact)
+                    .disabled(!connected)
+            }
         } label: {
             Image(.plus)
                 .font(.system(size: 16, weight: .medium))
@@ -604,48 +592,6 @@ struct PlusMenu<Extra: View>: View {
         // fires as it opens without taking the tap from the menu.
         .simultaneousGesture(TapGesture().onEnded { onOpen?() })
     }
-
-    /// A picked command goes into the empty draft as `/name ` for optional
-    /// arguments, and Send runs it. With text in the draft every entry is
-    /// greyed with `blocked` as the subtitle.
-    @ViewBuilder
-    private func commandsMenu(_ commands: PlusMenuCommands) -> some View {
-        switch commands {
-        case .loading:
-            Button {} label: {
-                Text("Commands")
-                Text("Loading…")
-                Image(.squareSlash)
-            }
-            .disabled(true)
-        case let .listed(entries, blocked, pick):
-            Menu {
-                ForEach(entries, id: \.name) { command in
-                    Button {
-                        pick(command)
-                    } label: {
-                        Text("/\(command.name)")
-                        if let reason = command.disabled ?? blocked {
-                            Text(reason)
-                        } else if !command.description.isEmpty {
-                            Text(command.description)
-                        }
-                    }
-                    .disabled(command.disabled != nil || blocked != nil)
-                }
-            } label: {
-                Label("Commands", image: .squareSlash)
-            }
-            .disabled(entries.isEmpty)
-        }
-    }
-}
-
-/// The `+` menu's Commands entry: still loading, or the host's listing,
-/// why picking is held right now (text in the draft), and what a pick does.
-enum PlusMenuCommands {
-    case loading
-    case listed([CommandEntry], blocked: String?, pick: (CommandEntry) -> Void)
 }
 
 /// Staged images (tap to view, × to drop), a spinner per image still being
