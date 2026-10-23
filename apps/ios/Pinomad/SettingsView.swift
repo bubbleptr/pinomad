@@ -155,53 +155,33 @@ struct SettingsView: View {
         .disabled(!live)
     }
 
-    /// The switch for the host on screen. The preference is per host; the
-    /// registration itself needs that host connected and at least 5.9.
+    /// The app-level switch. Only the connected host can register or clear
+    /// now; the others catch up on their next connection.
     @ViewBuilder
     private var pushSection: some View {
         Section {
-            if let hostKey = model.currentHostKey {
-                pushControls(hostKey)
-            } else {
-                Text("Connect to a host to set up notifications.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            pushControls
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Notifications carry only the conversation title and the event (\"Waiting for your answer\", \"Finished\", \"Failed\"); titles pass through the server and Apple. Saved separately for each host.")
+            Text("Notifications carry only the conversation title and the event (\"Waiting for your answer\", \"Finished\", \"Failed\"); titles pass through the server and Apple.")
         }
     }
 
     @ViewBuilder
-    private func pushControls(_ hostKey: String) -> some View {
-        Toggle(isOn: Binding(
-            get: { model.pushEnabled(for: hostKey) },
-            set: { model.setPushEnabled($0, for: hostKey) }
-        )) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Push notifications")
-                if let name = model.currentHostLabel {
-                    Text(name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .disabled(!model.pushAvailable(for: hostKey))
+    private var pushControls: some View {
+        Toggle("Push notifications", isOn: Binding(
+            get: { model.pushEnabled },
+            set: { model.setPushEnabled($0) }
+        ))
 
-        if model.snapshot != nil && !model.hostSupports(.apnsPush) {
+        if model.connected && !model.hostSupports(.apnsPush) {
             Text("Update the host to 5.9 or later to get notifications.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-        } else if !model.connected {
-            Text("Registers once the host is connected. Turning it on now takes effect on the next connection.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
 
-        if model.pushEnabled(for: hostKey) {
+        if model.pushEnabled {
             if model.push.isDenied {
                 Text("Notification permission is denied, so notifications won't arrive.")
                     .font(.footnote)

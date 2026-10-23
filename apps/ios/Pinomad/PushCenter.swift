@@ -18,6 +18,9 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     /// relaunch can register before APNs answers again.
     private(set) var deviceToken: String?
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
+    /// The app-level switch: while on, every host this device connects to
+    /// registers it, not just the one on screen.
+    private(set) var isEnabled: Bool
     /// Why APNs registration failed, if it did.
     private(set) var registrationError: String?
     /// The connected host whose banner is suppressed. `nil` while the app
@@ -32,13 +35,31 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
 
     private let defaults = UserDefaults.standard
     private let tokenKey = "push.apnsToken"
-    private let enabledPrefix = "push.enabled."
+    private let enabledKey = "push.enabled"
+    private let legacyEnabledPrefix = "push.enabled."
     private let registeredPrefix = "push.registered."
     private let logger = Logger(subsystem: "build.kieran.pinomad", category: "push")
 
     private override init() {
+        isEnabled = false
         super.init()
         deviceToken = defaults.string(forKey: tokenKey)
+        migrateEnabledFlag()
+        isEnabled = defaults.bool(forKey: enabledKey)
+    }
+
+    /// Fold the old per-host switches into the app-level flag once. Any host
+    /// that had push on keeps it on for every host; the old keys then go away.
+    private func migrateEnabledFlag() {
+        let legacyKeys = defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(legacyEnabledPrefix) }
+        guard !legacyKeys.isEmpty else { return }
+        if legacyKeys.contains(where: { defaults.bool(forKey: $0) }) {
+            defaults.set(true, forKey: enabledKey)
+        }
+        for key in legacyKeys {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// The environment the signed entitlement was built with. The Info.plist
@@ -58,12 +79,9 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         }
     }
 
-    func isEnabled(for hostKey: String) -> Bool {
-        defaults.bool(forKey: enabledPrefix + hostKey)
-    }
-
-    func setEnabled(_ enabled: Bool, for hostKey: String) {
-        defaults.set(enabled, forKey: enabledPrefix + hostKey)
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        defaults.set(enabled, forKey: enabledKey)
     }
 
     /// Whether this device may still be registered with the host. Turning
@@ -77,10 +95,9 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         defaults.set(registered, forKey: registeredPrefix + hostKey)
     }
 
-    /// A forgotten host must not keep any state that would re-register if it
-    /// were paired again.
+    /// Drop only this host's registration evidence; the app-level switch and
+    /// the other hosts' flags stay.
     func forget(_ hostKey: String) {
-        defaults.removeObject(forKey: enabledPrefix + hostKey)
         defaults.removeObject(forKey: registeredPrefix + hostKey)
     }
 
@@ -89,7 +106,7 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         await refreshAuthorization()
     }
 
-    /// First time the reader turns a switch on.
+    /// First time the reader turns the switch on.
     func requestAuthorization() async {
         do {
             let granted = try await UNUserNotificationCenter.current()
@@ -106,7 +123,7 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Ask Apple again after returning from Settings, or when a switch is
+    /// Ask Apple again after returning from Settings, or when the switch is
     /// turned on after permission was already decided.
     func refreshAuthorization() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()

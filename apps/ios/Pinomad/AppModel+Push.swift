@@ -4,23 +4,16 @@ import PinomadCore
 /// The push switch and tapped notifications. The decisions themselves live
 /// in `PinomadCore.Push`; this is the thin session/UI assembly.
 extension AppModel {
-    func pushEnabled(for hostKey: String) -> Bool {
-        push.isEnabled(for: hostKey)
+    /// The app-level switch; every connected host follows it.
+    var pushEnabled: Bool {
+        push.isEnabled
     }
 
-    /// A known 5.8-or-older host cannot take the APNs object form. While
-    /// disconnected the version is unknown, so the local switch still works
-    /// and the next connection decides what to send.
-    func pushAvailable(for hostKey: String) -> Bool {
-        guard hostKey == currentHostKey, snapshot != nil else { return true }
-        return hostSupports(.apnsPush)
-    }
-
-    /// The reader flipped a switch: keep the preference per host, ask for
-    /// permission the first time it is turned on, and register/clear now if
-    /// this host is connected.
-    func setPushEnabled(_ enabled: Bool, for hostKey: String) {
-        push.setEnabled(enabled, for: hostKey)
+    /// The reader flipped the switch: ask for permission the first time it is
+    /// turned on, then register or clear the connected host. Other hosts
+    /// catch up on their next connection.
+    func setPushEnabled(_ enabled: Bool) {
+        push.setEnabled(enabled)
         pushError = nil
         if enabled {
             Task { [weak self] in
@@ -69,8 +62,10 @@ extension AppModel {
     }
 
     /// Register or clear this device for the current host at one of the
-    /// occasions ADR-0025 §9 lists. A failed request leaves its reason by
-    /// the switch and is tried again at the next occasion.
+    /// occasions ADR-0025 §9 lists. The switch is app-wide, so the same
+    /// value applies to every host; only the connected one can act on it now.
+    /// A failed request leaves its reason by the switch and is tried again
+    /// at the next occasion.
     func syncPushToken() {
         if pushSyncInFlight {
             pushSyncPending = true
@@ -83,7 +78,7 @@ extension AppModel {
         else { return }
 
         let action = pushRegistrationAction(
-            enabled: push.isEnabled(for: host.hostKey),
+            enabled: push.isEnabled,
             mayHaveRegistration: push.mayHaveRegistration(for: host.hostKey),
             hostMinor: hostMinor,
             deviceToken: push.deviceToken,
