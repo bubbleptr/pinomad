@@ -12,7 +12,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import { outgoingImage, type ViewImage } from "@pinomad/protocol/images.ts";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
@@ -26,7 +26,8 @@ import { PendingQuestions } from "../../presentation/question.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
-import { useSkillHighlight, useSkillMentions, useSkillNames } from "../../entities/agent/skill-mentions.tsx";
+import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
@@ -276,20 +277,11 @@ function SideTranscript({
   /** Forks are talkable and pass one through; read-only details do not. */
   onRetry?: (retry: { text: string; images: readonly ViewImage[]; requestId: string }) => Promise<void>;
 }) {
-  // The bubbles highlight `$name` against the side conversation's own scope —
-  // a fork shares its family's cwd, a subagent its own (issue #143). The hook
-  // runs unconditionally, ahead of the conversation-less early return.
-  const skillNames = useSkillNames(
-    remote,
-    { kind: "conversation", conversationId: side.id },
-    view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
-  );
   if (side.conversation === undefined) return null;
   return (
     <ConversationTranscript
       conversation={side.conversation}
       docs={side.docs}
-      skillNames={skillNames}
       toolPresentations={view.toolPresentations}
       connected={view.connection === "connected"}
       // Fork depth is one: a fork's transcript never offers Fork.
@@ -327,7 +319,9 @@ function ThreadDetail({
 }) {
   const conversation: ConversationView | undefined = side.conversation;
   const busy = conversation !== undefined && isBusy(conversation);
-  const [draft, setDraft] = useState("");
+  // A plain string plus the `$` picks bound in it (ADR-0028).
+  const skillDraft = useSkillDraft();
+  const { value: draft, setValue: setDraft } = skillDraft;
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
   const atMentions = useAtMentions(
     view.agents,
@@ -350,14 +344,17 @@ function ThreadDetail({
     { kind: "conversation", conversationId: side.id },
     inputRef,
     view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
+    skillDraft.pick,
   );
-  useSkillHighlight(inputRef, draft, skills.names);
+  useSkillHighlight(inputRef, skillDraft.draft);
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const submit = (): void => {
-    const text = draft.trim();
+    // Only the picked skills go out as `skills` (ADR-0028).
+    const message = draftMessage(skillDraft.draft);
+    const text = message.text.trim();
     if (text === "") return;
     requestNotificationPermission();
-    void remote.controller.submit(text, "followUp", { target: side.id });
+    void remote.controller.submit(text, "followUp", { target: side.id, skills: message.skills });
     setDraft("");
   };
   const parentSummary =

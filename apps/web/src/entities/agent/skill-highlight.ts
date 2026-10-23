@@ -1,9 +1,10 @@
-// The composer's `$name` highlights (issue #143): CSS Custom Highlight API —
-// ranges over the contentEditable's text nodes painted via `::highlight`,
-// so the DOM Astryx owns is never mutated. One registry entry holds every
-// editable's ranges; each caller swaps only its own. Browsers without the
-// API simply show no highlight.
-import { skillMentionRanges } from "@pinomad/client/skill-mentions.ts";
+// The composer's bound `$name` highlights (issues #143, #308): CSS Custom
+// Highlight API — ranges over the contentEditable's text nodes painted via
+// `::highlight`, so the DOM Astryx owns is never mutated. Only the ranges a
+// `$` menu pick bound are painted (skill-bindings.ts); a typed `$name` stays
+// plain. One registry entry holds every editable's ranges; each caller swaps
+// only its own. Browsers without the API simply show no highlight.
+import type { MentionRange } from "@pinomad/client/skill-mentions.ts";
 
 /** The HighlightRegistry name — `chat.css` paints `::highlight(pinomad-skill-mention)`. */
 export const SKILL_HIGHLIGHT_NAME = "pinomad-skill-mention";
@@ -60,9 +61,8 @@ function textSegments(root: HTMLElement): TextSegment[] {
   return segments;
 }
 
-/** The DOM Ranges for `text`'s mention ranges inside `editable`. */
-export function mentionDomRanges(editable: HTMLElement, text: string, names: readonly string[]): Range[] {
-  const mentions = skillMentionRanges(text, names);
+/** The DOM Ranges for the value's `mentions` (UTF-16 offsets) inside `editable`. */
+export function mentionDomRanges(editable: HTMLElement, mentions: readonly MentionRange[]): Range[] {
   if (mentions.length === 0) return [];
   const segments = textSegments(editable);
   const ranges: Range[] = [];
@@ -79,16 +79,12 @@ export function mentionDomRanges(editable: HTMLElement, text: string, names: rea
 }
 
 /**
- * Paint `text`'s `$name` mentions inside `editable`; returns the cleanup
+ * Paint the value's `mentions` inside `editable`; returns the cleanup
  * removing exactly these ranges from the shared registry entry.
  */
-export function applySkillHighlights(
-  editable: HTMLElement,
-  text: string,
-  names: readonly string[],
-): () => void {
+export function applySkillHighlights(editable: HTMLElement, mentions: readonly MentionRange[]): () => void {
   if (!supported()) return () => {};
-  const ranges = mentionDomRanges(editable, text, names);
+  const ranges = mentionDomRanges(editable, mentions);
   if (ranges.length === 0) return () => {};
   const highlight = sharedHighlight();
   for (const range of ranges) highlight.add(range);

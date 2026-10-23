@@ -17,7 +17,7 @@ type Story = StoryObj<typeof meta>;
 
 export const WithMentions: Story = {};
 
-/** Before the scope's skill listing lands nothing is highlighted. */
-export const ListingPending: Story = {
-  args: { names: undefined },
+/** A message that bound no skills: a typed `$review` stays plain text. */
+export const NoBoundSkills: Story = {
+  args: { names: [] },
 };

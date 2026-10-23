@@ -1,13 +1,15 @@
-// The `$` skill-mention menu and highlights (issue #143). Astryx activates a
-// trigger at a text node's start or after a literal space/newline; the typed
-// text stays `$name` — plain text like the `@` mentions, never a token.
+// The `$` skill menu (issue #143), the composer's bound-skill draft and
+// highlight (#308, ADR-0028), and the bubbles' mention marks. Astryx
+// activates a trigger at a text node's start or after a literal
+// space/newline. A pick inserts `$name ` as plain text, never a token, and
+// binds that range (skill-bindings.ts); only bound names are sent as
+// `skills` and painted. A hand-typed `$name` stays plain, unpainted text.
 //
 // One cache per host connection (`skillCacheFor`) keys listings by scope, so
-// the menu, the composer highlight, and the message bubbles share a
-// `listSkills` answer. A scope's listing is requested on mount/focus/`$`
-// search and on reconnect; stale-but-known listings stay on screen while a
+// every composer in a scope shares a `listSkills` answer. A scope's listing
+// is requested on mount/focus/`$` search and on reconnect; stale-but-known listings stay on screen while a
 // refetch is in flight — the menu never flashes empty between answers.
-import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
 import type { SearchSource } from "@astryxdesign/core/Typeahead";
 import type { SkillScope } from "@pinomad/protocol/organization.ts";
@@ -17,6 +19,7 @@ import { Sparkles } from "@/shared/ui/icons";
 import type { ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { useCachedListing } from "@/shared/listing-cache";
 import { applySkillHighlights } from "./skill-highlight.ts";
+import { emptyDraft, followEdit, restoreDraft, type SkillDraft } from "./skill-bindings.ts";
 import { SkillMentionCache, skillScopeKey, type ListedSkill } from "./skill-list.ts";
 
 // The connection owns the cache: remote identity is the host, so the key's
@@ -45,19 +48,6 @@ export function useSkillList(
 ): { readonly skills: readonly ListedSkill[] | undefined; readonly request: () => void } {
   const { items, request } = useCachedListing(skillCacheFor(remote), scope, enabled);
   return { skills: items, request };
-}
-
-/**
- * The scope's skill names for the sent-message bubbles — undefined until the
- * first listing lands or while the feature is off.
- */
-export function useSkillNames(
-  remote: RemoteDurable,
-  scope: SkillScope | undefined,
-  enabled: boolean,
-): readonly string[] | undefined {
-  const { skills } = useSkillList(remote, scope, enabled);
-  return useMemo(() => skills?.map((skill) => skill.name), [skills]);
 }
 
 interface SkillAux {
@@ -90,18 +80,19 @@ export function skillItems(skills: readonly ListedSkill[], query: string): ChatC
 }
 
 /**
- * The composer's `$` trigger plus everything else the mention surface needs:
- * the scope's names for highlighting, and `request` for a focus refresh.
- * Undefined trigger = no menu (a disconnected or pre-5.13 host).
+ * The composer's `$` trigger and `request` for a focus refresh. A pick
+ * inserts `$name ` and reports the name to `onPick` (`SkillDraftState.pick`)
+ * so the draft binds it. Undefined trigger = no menu (a disconnected or
+ * pre-5.13 host).
  */
 export function useSkillMentions(
   remote: RemoteDurable,
   scope: SkillScope | undefined,
   inputRef: RefObject<ChatPromptInputHandle | null>,
   enabled: boolean,
+  onPick: (name: string) => void,
 ): {
   readonly trigger: ChatComposerTrigger | undefined;
-  readonly names: readonly string[] | undefined;
   readonly request: () => void;
 } {
   const cache = skillCacheFor(remote);
@@ -116,7 +107,8 @@ export function useSkillMentions(
   skillsRef.current = skills;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
-  const names = useMemo(() => skills?.map((skill) => skill.name), [skills]);
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   const trigger = useMemo<ChatComposerTrigger | undefined>(() => {
     if (!enabled || scope === undefined) return undefined;
     const searchSource: SearchSource = {
@@ -149,37 +141,72 @@ export function useSkillMentions(
           </span>
         );
       },
-      // Plain text, not a token: the host never parses the mention, and the
-      // message must survive being copied into an ordinary prompt.
-      onSelect: (item) => `$${item.label} `,
+      // Plain text, not a token (#143): the message must survive being copied
+      // into an ordinary prompt. The pick binds it (ADR-0028).
+      onSelect: (item) => {
+        onPickRef.current(item.label);
+        return `$${item.label} `;
+      },
     };
     // A new scope or a landed listing rebuilds the trigger so Astryx's next
     // search reads the fresh list.
   }, [enabled, cache, key, skills]);
-  return { trigger, names, request };
+  return { trigger, request };
+}
+
+export interface SkillDraftState {
+  /** The composer value — a plain string. */
+  readonly value: string;
+  /** The value with its bound `$name` ranges. */
+  readonly draft: SkillDraft;
+  /** Every value change, typed or programmatic: the bindings follow it. */
+  readonly setValue: (next: string) => void;
+  /** A `$` menu pick: the value change it causes binds `$name`. */
+  readonly pick: (name: string) => void;
+  /** Refill the composer: `text`, with its mentions of `skills` bound. */
+  readonly restore: (text: string, skills: readonly string[]) => void;
+}
+
+/** The composer's draft: a plain string plus the skills picked into it. */
+export function useSkillDraft(): SkillDraftState {
+  const [draft, setDraft] = useState<SkillDraft>(emptyDraft);
+  // Astryx calls onSelect, then emits the value with the inserted text.
+  const picked = useRef<string | undefined>(undefined);
+  const setValue = useCallback((next: string) => {
+    const name = picked.current;
+    picked.current = undefined;
+    setDraft((current) => followEdit(current, next, name));
+  }, []);
+  const pick = useCallback((name: string) => {
+    picked.current = name;
+  }, []);
+  const restore = useCallback((text: string, skills: readonly string[]) => {
+    picked.current = undefined;
+    setDraft(restoreDraft(text, skills));
+  }, []);
+  return { value: draft.text, draft, setValue, pick, restore };
 }
 
 /**
- * Paint `text`'s `$name` mentions inside the composer's editable via the CSS
- * Custom Highlight API — ranges over the contentEditable's own text nodes,
- * the DOM never touched.
+ * Paint the draft's bound `$name` ranges inside the composer's editable via
+ * the CSS Custom Highlight API — ranges over the contentEditable's own text
+ * nodes, the DOM never touched.
  */
-export function useSkillHighlight(
-  inputRef: RefObject<ChatPromptInputHandle | null>,
-  text: string,
-  names: readonly string[] | undefined,
-): void {
+export function useSkillHighlight(inputRef: RefObject<ChatPromptInputHandle | null>, draft: SkillDraft): void {
   useEffect(() => {
     const editable = inputRef.current?.editable();
-    if (editable === undefined || editable === null || names === undefined || names.length === 0) return;
-    return applySkillHighlights(editable, text, names);
-  }, [inputRef, text, names]);
+    if (editable === undefined || editable === null || draft.bindings.length === 0) return;
+    return applySkillHighlights(editable, draft.bindings);
+  }, [inputRef, draft]);
 }
 
-/** A sent message's text with its `$name` mentions wrapped in highlight marks. */
-export function SkillMentionText({ text, names }: { text: string; names: readonly string[] | undefined }): ReactNode {
+/**
+ * A sent message's text with the `$name` mentions of the skills the host
+ * expanded into it (the chat item's `skills`) wrapped in highlight marks.
+ */
+export function SkillMentionText({ text, names }: { text: string; names: readonly string[] }): ReactNode {
   const ranges = useMemo(
-    () => (names === undefined || names.length === 0 ? [] : skillMentionRanges(text, names)),
+    () => (names.length === 0 ? [] : skillMentionRanges(text, names)),
     [text, names],
   );
   if (ranges.length === 0) return <>{text}</>;

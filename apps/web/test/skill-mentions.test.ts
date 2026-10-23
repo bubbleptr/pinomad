@@ -1,8 +1,9 @@
-// The `$` skill-mention surface end to end (issue #143): the menu groups a
-// scope's Project/User skills, `$name ` inserts as plain text, known names
-// paint through the CSS Custom Highlight API while unmatched `$` stays plain,
-// and the sent bubble marks the mention and shows only the typed text even
-// though the host expanded the skill into the stored message (issue #308).
+// The `$` skill-mention surface end to end (issue #143, #308): the menu groups
+// a scope's Project/User skills, a pick inserts `$name ` as plain text and
+// binds it (painted through the CSS Custom Highlight API) while a typed
+// `$name` stays plain and unpainted, and the sent bubble marks only the
+// picked mention and shows only the typed text though the host expanded the
+// skill into the stored message (ADR-0028).
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -55,7 +56,7 @@ async function shot(page: import("@playwright/test").Page, name: string): Promis
   await page.screenshot({ path: join(shotDir, `${name}.png`), fullPage: false });
 }
 
-it("offers $name skills grouped by source, highlights them, and marks the sent bubble", async () => {
+it("offers $name skills grouped by source, binds and paints a pick, and marks the sent bubble", async () => {
   const webOrigin = await startWeb();
   const dir = await tempDir();
   defer(dir.remove);
@@ -94,29 +95,31 @@ it("offers $name skills grouped by source, highlights them, and marks the sent b
   await menu.getByRole("option", { name: /deploy/ }).waitFor();
   await shot(page, "01-menu-groups");
 
-  // Narrowing filters the list; Enter inserts `$name ` as plain text.
+  // Narrowing filters the list; Enter inserts `$name ` as plain text, bound.
   await editable.pressSequentially("rev");
   await expect.poll(async () => menu.getByRole("option").count()).toBe(1);
   await editable.press("Enter");
   await expect.poll(async () => editable.textContent()).toBe("$review ");
   await expect.poll(() => highlightCount(page)).toBe(1);
-  await shot(page, "02-matched-highlight");
+  await shot(page, "02-picked-highlight");
 
-  // An unknown name paints nothing; the known one keeps its highlight.
-  await editable.pressSequentially("then $nope");
+  // A typed `$deploy` — a known name — stays plain and unpainted: it binds nothing.
+  await page.keyboard.type("then $deploy");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => editable.textContent()).toBe("$review then $deploy");
   await expect.poll(() => highlightCount(page)).toBe(1);
-  await shot(page, "03-unmatched-plain");
+  await shot(page, "03-typed-plain");
 
   await editable.press("Enter");
   const mark = page.locator("mark.chat-skill-mention");
   await mark.waitFor();
   expect(await mark.textContent()).toBe("$review");
-  // The unknown name stays plain text in the bubble.
+  // Only the expanded skill is marked; the typed `$deploy` stays plain.
   await expect.poll(async () => mark.count()).toBe(1);
   // The host expanded `$review` into the stored message (ADR-0028); the
   // bubble still shows exactly what was typed.
   const bubble = page.locator('[data-slot="chat-message-user"] [data-slot="chat-message-bubble"]');
-  expect((await bubble.textContent())?.trim()).toBe("$review then $nope");
+  expect((await bubble.textContent())?.trim()).toBe("$review then $deploy");
   await shot(page, "04-bubble-mark");
 
   // Dark theme reads the same tokens — one extra shot for the PR.

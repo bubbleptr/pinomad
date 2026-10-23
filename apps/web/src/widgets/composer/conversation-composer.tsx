@@ -10,7 +10,8 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
-import { useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
+import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { useSlashCommands } from "../../entities/command/slash-commands.tsx";
 import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
@@ -54,7 +55,9 @@ export function ConversationComposer({
   busy: boolean;
   narrow: boolean;
 }) {
-  const [value, setValue] = useState("");
+  // A plain string plus the `$` picks bound in it (ADR-0028).
+  const skillDraft = useSkillDraft();
+  const { value, setValue } = skillDraft;
   const [focusAfterEdit, setFocusAfterEdit] = useState(0);
   const [awaitingEdit, setAwaitingEdit] = useState(false);
   // The render-time value can lag the controller: #lost rejects in-flight calls
@@ -88,8 +91,9 @@ export function ConversationComposer({
     { kind: "conversation", conversationId: conversation.conversation.id },
     inputRef,
     !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
+    skillDraft.pick,
   );
-  useSkillHighlight(inputRef, value, skills.names);
+  useSkillHighlight(inputRef, skillDraft.draft);
   // `/` commands (ADR-0027) need a 5.15 host; an older one keeps the + menu's
   // Compact conversation and shows no `/` menu.
   const listsCommands = hostSupportsCall(view.host?.protocol.minor ?? 0, "listCommands");
@@ -211,7 +215,8 @@ export function ConversationComposer({
       // retry needs no refs (which may have left the host's live view since).
       copy.input = { ...copy.input, images: resolved };
       if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
-        setValue(copy.input.text);
+        // The skills it expanded come back bound.
+        skillDraft.restore(copy.input.text, copy.input.skills);
         restore(resolved);
         editCopy.current = null;
         setAwaitingEdit(false);
@@ -266,12 +271,14 @@ export function ConversationComposer({
   }, [focusAfterEdit]);
 
   const submit = (whenBusy: "steer" | "followUp"): void => {
-    const text = value.trim();
+    // Only the picked skills go out as `skills` (ADR-0028).
+    const message = draftMessage(skillDraft.draft);
+    const text = message.text.trim();
     if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
     // A command runs at once — never steered or queued, never a message. The
     // raw draft is parsed (leading whitespace makes it a message), and only
     // once the host's list has loaded: before that, text is never a command.
-    const command = slash.commands === undefined ? undefined : parseCommandInput(value, slash.commands);
+    const command = slash.commands === undefined ? undefined : parseCommandInput(message.text, slash.commands);
     if (command !== undefined) {
       const disabled = slash.commands?.find((each) => each.name === command.name)?.disabled;
       if (disabled !== undefined) {
@@ -291,7 +298,7 @@ export function ConversationComposer({
     // Staged images were primed before they became sendable. Queue the send
     // synchronously: an await here could let a conversation switch or a later
     // message overtake it inside the controller's ordered command queue.
-    void remote.controller.submit(text, whenBusy, { images: sending });
+    void remote.controller.submit(text, whenBusy, { images: sending, skills: message.skills });
     setValue("");
     clear();
   };

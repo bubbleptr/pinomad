@@ -3817,6 +3817,8 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await expect.poll(() => composer.evaluate((el) => el === document.activeElement)).toBe(true);
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.textContent()).toBe("@./README.md then $review ");
+  // The pick is bound, so it's painted.
+  await expect.poll(() => paintedSkills(composer)).toEqual(["18:$review"]);
 
   // After a line break the trigger starts the new line, no space needed.
   await page.keyboard.press("Shift+Enter");
@@ -3834,6 +3836,7 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
+  await expect.poll(async () => (await paintedSkills(composer)).length).toBe(3);
 
   // The menu's project choice is a second entry to the footer picker's state.
   await more.click();
@@ -3842,4 +3845,134 @@ it("opens the file and skill menus from the + menu, appending the trigger to the
   await shot(page, "draft-plus-menu-project");
   await page.getByRole("menuitemradio", { name: "No project", exact: true }).click();
   await expect.poll(() => page.getByRole("combobox", { name: "Project", exact: true }).textContent()).toContain("No project");
+});
+
+/** A user skill the faux host lists in every scope (ADR-0028's expansion reads its body). */
+async function userSkill(name: string, body: string): Promise<string> {
+  const home = await tempDir();
+  defer(home.remove);
+  await mkdir(join(home.path, "skills", name), { recursive: true });
+  await writeFile(join(home.path, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${body}\n---\n\n${body}.\n`);
+  return home.path;
+}
+
+/**
+ * The composer's painted `$name` ranges (the bound picks, CSS Custom Highlight
+ * API) as `offset:text`, the offset into the composer's text.
+ */
+async function paintedSkills(composer: Locator): Promise<string[]> {
+  return composer.evaluate((root) => {
+    const highlight = CSS.highlights.get("pinomad-skill-mention");
+    if (highlight === undefined) return [];
+    return [...(highlight as unknown as Set<Range>)]
+      .filter((range) => root.contains(range.startContainer))
+      .map((range) => {
+        const before = document.createRange();
+        before.selectNodeContents(root);
+        before.setEnd(range.startContainer, range.startOffset);
+        return `${before.toString().length}:${range.toString()}`;
+      })
+      .sort((a, b) => parseInt(a) - parseInt(b));
+  });
+}
+
+it("expands only the $skill picked from the menu, not a typed one", async () => {
+  const webOrigin = await startWeb();
+  const agentsHome = await userSkill("review", "Review steps");
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    agentsHome,
+    answers: ["first", "second", "third"],
+  });
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+
+  // A pick mid-sentence is bound and painted; a hand-typed `$review` in quotes stays plain.
+  await composer.click();
+  await composer.pressSequentially("please $rev");
+  const menu = page.getByRole("listbox", { name: "Skills" });
+  await menu.getByRole("option", { name: /review/ }).waitFor();
+  await composer.press("Enter");
+  await expect.poll(() => paintedSkills(composer)).toEqual(["7:$review"]);
+  await page.keyboard.type('the auth module, not "$review"');
+  await expect.poll(() => composer.textContent()).toBe('please $review the auth module, not "$review"');
+  await expect.poll(() => paintedSkills(composer)).toEqual(["7:$review"]);
+  await shot(page, "composer-skill-bound");
+  if (shotDir !== undefined) {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await shot(page, "composer-skill-bound-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await composer.press("Enter");
+  await page.getByText("first", { exact: true }).waitFor();
+  const id = await followFirst(observer);
+
+  // The host expanded the one pick, in front of the text as typed.
+  const [stored] = (await userContentsOf(host, id)) as string[];
+  expect(stored!.match(/<skill name="review"/g)).toHaveLength(1);
+  expect(stored!.endsWith('please $review the auth module, not "$review"')).toBe(true);
+  // The bubble marks only the picked mention.
+  const marks = page.locator("mark.chat-skill-mention");
+  await expect.poll(() => marks.count()).toBe(1);
+  expect(await page.getByText("<skill", { exact: false }).count()).toBe(0);
+
+  // An unquoted typed `$review` stays unpainted next to a later pick: the
+  // paint follows the bindings, not the text.
+  await composer.pressSequentially("now $review again $rev");
+  await menu.getByRole("option", { name: /review/ }).waitFor();
+  await composer.press("Enter");
+  await expect.poll(() => composer.textContent()).toBe("now $review again $review ");
+  await expect.poll(() => paintedSkills(composer)).toEqual(["18:$review"]);
+  await composer.press("Enter");
+  await page.getByText("second", { exact: true }).waitFor();
+  const second = ((await userContentsOf(host, id)) as string[])[1]!;
+  expect(second.match(/<skill name="review"/g)).toHaveLength(1);
+  expect(second.endsWith("now $review again $review")).toBe(true);
+  // (The bubble marks by name, so both `$review`s in that one read as picked.)
+
+  // With no pick nothing is expanded — the host gets `skills: []`, never a
+  // fallback to matching the text.
+  await composer.pressSequentially("plain $review");
+  await page.keyboard.press("Escape");
+  await composer.press("Enter");
+  await page.getByText("third", { exact: true }).waitFor();
+  const contents = (await userContentsOf(host, id)) as string[];
+  expect(contents[2]).toBe("plain $review");
+  await expect.poll(() => marks.count()).toBe(3);
+});
+
+it("restores a queued message's bound skill on Edit", async () => {
+  const webOrigin = await startWeb();
+  const agentsHome = await userSkill("review", "Review steps");
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    agentsHome,
+    answers: [gatedAnswer(gate.promise), "done"],
+  });
+  defer(gate.resolve);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  await composer.click();
+  await composer.pressSequentially("check $rev");
+  await page.getByRole("listbox", { name: "Skills" }).getByRole("option", { name: /review/ }).waitFor();
+  await composer.press("Enter");
+  await expect.poll(() => paintedSkills(composer)).toEqual(["6:$review"]);
+  await page.keyboard.type("later");
+  await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+  const row = page.getByTestId("chat-queued-message").filter({ hasText: "later" });
+  await row.waitFor();
+  // The preview shows the typed text, not the expanded skill.
+  await expect.poll(() => row.textContent()).toContain("check $review later");
+
+  await row.getByRole("button", { name: "Edit queued message", exact: true }).click();
+  await row.waitFor({ state: "detached" });
+  await expect.poll(() => composer.textContent()).toBe("check $review later");
+  await expect.poll(() => paintedSkills(composer)).toEqual(["6:$review"]);
+  gate.resolve();
 });

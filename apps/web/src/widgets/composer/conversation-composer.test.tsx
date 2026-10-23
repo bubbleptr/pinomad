@@ -45,7 +45,7 @@ describe("ConversationComposer commands", () => {
     type("/compact");
     fireEvent.keyDown(editable, { key: "Enter" });
     expect(remote.controller.runCommand).not.toHaveBeenCalled();
-    expect(remote.controller.submit).toHaveBeenCalledWith("/compact", "steer", { images: [] });
+    expect(remote.controller.submit).toHaveBeenCalledWith("/compact", "steer", { images: [], skills: [] });
   });
 
   it("keeps Compact conversation and asks for no commands on a pre-5.15 host", async () => {
