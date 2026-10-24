@@ -113,7 +113,7 @@ private let copy = QueuedEdit.Copy(
         var withdrew = false
 
         do {
-            let resolved = try await refCopy.resolvingImages { _ in
+            let resolved = try await refCopy.resolvingImages { _, _ in
                 throw ResolutionFailure.missing
             }
             _ = edit.begin(resolved)
@@ -130,7 +130,7 @@ private let copy = QueuedEdit.Copy(
         #expect(refCopy.images.first?.ref == "missing-ref")
     }
 
-    @Test func resolvingReplacesEveryRefWithItsBytes() async throws {
+    @Test func resolvingRequestsOnlyOriginalBytes() async throws {
         let refCopy = QueuedEdit.Copy(
             conversationId: 7,
             id: 42,
@@ -140,9 +140,10 @@ private let copy = QueuedEdit.Copy(
                 MessageImage(data: "already", mimeType: "image/png"),
             ]
         )
-        let resolved = try await refCopy.resolvingImages { ref in
+        let resolved = try await refCopy.resolvingImages { ref, variant in
             #expect(ref == "one")
-            return CachedImage(data: "bytes", mimeType: "image/png")
+            #expect(variant == .original)
+            return CachedImage(data: "bytes", mimeType: "image/png", variant: variant)
         }
         #expect(resolved.images.map(\.data) == ["bytes", "already"])
         #expect(resolved.images.allSatisfy { $0.ref == nil })

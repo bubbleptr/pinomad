@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import PinomadChat
+import PinomadCore
 
 private enum TestFailure: Error {
     case boom
@@ -53,15 +54,40 @@ private actor FlakyLoader {
     }
 }
 
-private func image(bytes: Int, seed: UInt8 = 0) -> CachedImage {
+private func image(
+    bytes: Int,
+    seed: UInt8 = 0,
+    variant: ImageVariant = .original
+) -> CachedImage {
     CachedImage(
         data: Data((0..<bytes).map { seed &+ UInt8($0 % 251) }).base64EncodedString(),
-        mimeType: "image/png"
+        mimeType: "image/png",
+        variant: variant
     )
 }
 
 private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent("pinomad-image-store-\(UUID().uuidString)")
+}
+
+private actor DerivedFallbackLoader {
+    let original: CachedImage
+    private let gate: LoadGate?
+    private(set) var variants: [ImageVariant] = []
+
+    init(original: CachedImage, gate: LoadGate? = nil) {
+        self.original = original
+        self.gate = gate
+    }
+
+    func load(_ variant: ImageVariant) async throws -> CachedImage {
+        variants.append(variant)
+        if variant != .original {
+            if let gate { await gate.begin() }
+            throw TestFailure.boom
+        }
+        return original
+    }
 }
 
 @Suite struct ImageStoreTests {
@@ -73,13 +99,13 @@ private func temporaryDirectory() -> URL {
         let image = image(bytes: 32)
 
         let first = Task {
-            try await store.load(ref: "same-ref") { _ in
+            try await store.load(ref: "same-ref") { _, _ in
                 await gate.begin()
                 return image
             }
         }
         let second = Task {
-            try await store.load(ref: "same-ref") { _ in
+            try await store.load(ref: "same-ref") { _, _ in
                 await gate.begin()
                 return image
             }
@@ -103,7 +129,7 @@ private func temporaryDirectory() -> URL {
 
         let tasks = (0..<6).map { index in
             Task {
-                try await store.load(ref: "ref-\(index)") { _ in
+                try await store.load(ref: "ref-\(index)") { _, _ in
                     await gate.begin()
                     return image
                 }
@@ -151,13 +177,13 @@ private func temporaryDirectory() -> URL {
         let image = image(bytes: 24)
 
         do {
-            _ = try await store.load(ref: "retry-me") { _ in try await loader.load(image) }
+            _ = try await store.load(ref: "retry-me") { _, _ in try await loader.load(image) }
             Issue.record("the first load must fail")
         } catch TestFailure.boom {
             // expected
         }
 
-        let loaded = try await store.load(ref: "retry-me") { _ in try await loader.load(image) }
+        let loaded = try await store.load(ref: "retry-me") { _, _ in try await loader.load(image) }
         #expect(loaded == image)
         #expect(await loader.calls == 2)
     }
@@ -172,7 +198,7 @@ private func temporaryDirectory() -> URL {
         let ref = try #require(await first.prefill(image))
 
         let second = ImageStore(directory: directory, limits: .init(memoryBytes: 0, diskBytes: 1_000_000, maxInFlight: 4))
-        let loaded = try await second.load(ref: ref) { _ in
+        let loaded = try await second.load(ref: ref) { _, _ in
             Issue.record("a relaunch must read the disk tier")
             throw TestFailure.boom
         }
@@ -188,10 +214,150 @@ private func temporaryDirectory() -> URL {
         let image = image(bytes: 12, seed: 9)
         let ref = try #require(await store.prefill(image))
 
-        let loaded = try await store.load(ref: ref) { _ in
+        let loaded = try await store.load(ref: ref) { _, _ in
             Issue.record("prefilled bytes must not hit the host")
             throw TestFailure.boom
         }
         #expect(loaded == image)
+    }
+
+    @Test func variantsHaveIndependentInFlightRequestsAndMemoryEntries() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 4096, diskBytes: 0, maxInFlight: 4))
+        let gate = LoadGate()
+        let thumbnail = image(bytes: 24, seed: 1, variant: .thumbnail)
+        let original = image(bytes: 32, seed: 2)
+
+        let derived = Task {
+            try await store.load(ref: "same-ref", variant: .thumbnail) { _, _ in
+                await gate.begin()
+                return thumbnail
+            }
+        }
+        await gate.waitForStarted(1)
+        let full = Task {
+            try await store.load(ref: "same-ref", variant: .original) { _, _ in
+                await gate.begin()
+                return original
+            }
+        }
+        while await store.debugLoadAttempts < 2 { await Task.yield() }
+        await gate.openGate()
+
+        #expect(try await derived.value == thumbnail)
+        #expect(try await full.value == original)
+        #expect(await gate.started == 2)
+        #expect(await store.cached(ref: "same-ref", variant: .thumbnail) == thumbnail)
+        #expect(await store.cached(ref: "same-ref", variant: .original) == original)
+    }
+
+    @Test func anOriginalInFlightRequestServesDerivedDisplay() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 4096, diskBytes: 0, maxInFlight: 4))
+        let gate = LoadGate()
+        let original = image(bytes: 32, seed: 3)
+
+        let full = Task {
+            try await store.load(ref: "same-ref", variant: .original) { _, _ in
+                await gate.begin()
+                return original
+            }
+        }
+        await gate.waitForStarted(1)
+        let derived = Task {
+            try await store.load(ref: "same-ref", variant: .thumbnail) { _, _ in
+                Issue.record("a derived display must join the original request")
+                return image(bytes: 12, seed: 4, variant: .thumbnail)
+            }
+        }
+        while await store.debugLoadAttempts < 2 { await Task.yield() }
+        await gate.openGate()
+
+        #expect(try await full.value == original)
+        #expect(try await derived.value == original)
+        #expect(await gate.started == 1)
+    }
+
+    @Test func diskCacheKeepsVariantsSeparateAcrossStoreInstances() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let thumbnail = image(bytes: 24, seed: 5, variant: .thumbnail)
+        let original = image(bytes: 32, seed: 6)
+        let first = ImageStore(directory: directory, limits: .init(memoryBytes: 0, diskBytes: 1_000_000, maxInFlight: 4))
+
+        #expect(try await first.load(ref: "same-ref", variant: .thumbnail, using: { _, _ in thumbnail }) == thumbnail)
+        #expect(try await first.load(ref: "same-ref", variant: .original, using: { _, _ in original }) == original)
+
+        let second = ImageStore(directory: directory, limits: .init(memoryBytes: 0, diskBytes: 1_000_000, maxInFlight: 4))
+        let loadedThumbnail = try await second.load(ref: "same-ref", variant: .thumbnail) { _, _ in
+            Issue.record("the thumbnail must survive in the disk tier")
+            throw TestFailure.boom
+        }
+        let loadedOriginal = try await second.load(ref: "same-ref", variant: .original) { _, _ in
+            Issue.record("the original must survive in the disk tier")
+            throw TestFailure.boom
+        }
+        #expect(loadedThumbnail == thumbnail)
+        #expect(loadedOriginal == original)
+    }
+
+    @Test func aDerivedFailureFallsBackToOriginal() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 4096, diskBytes: 1_000_000, maxInFlight: 4))
+        let loader = DerivedFallbackLoader(original: image(bytes: 32, seed: 8))
+
+        let loaded = try await store.load(ref: "same-ref", variant: .thumbnail) { _, variant in
+            try await loader.load(variant)
+        }
+        #expect(loaded == loader.original)
+        #expect(await loader.variants == [.thumbnail, .original])
+        #expect(await store.cached(ref: "same-ref", variant: .original) == loader.original)
+    }
+
+    @Test func waitersOnADerivedFailureAlsoFallBackToOriginal() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 4096, diskBytes: 1_000_000, maxInFlight: 4))
+        let gate = LoadGate()
+        let loader = DerivedFallbackLoader(original: image(bytes: 32, seed: 9), gate: gate)
+
+        let first = Task {
+            try await store.load(ref: "same-ref", variant: .thumbnail) { _, variant in
+                try await loader.load(variant)
+            }
+        }
+        await gate.waitForStarted(1)
+        let second = Task {
+            try await store.load(ref: "same-ref", variant: .thumbnail) { _, variant in
+                try await loader.load(variant)
+            }
+        }
+        while await store.debugLoadAttempts < 2 { await Task.yield() }
+        await gate.openGate()
+
+        #expect(try await first.value == loader.original)
+        #expect(try await second.value == loader.original)
+        #expect(await loader.variants == [.thumbnail, .original])
+    }
+
+    @Test func aFallbackIsCachedAsItsActualVariant() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 4096, diskBytes: 1_000_000, maxInFlight: 4))
+        let original = image(bytes: 32, seed: 7)
+
+        let loaded = try await store.load(ref: "same-ref", variant: .thumbnail) { _, _ in original }
+        #expect(loaded == original)
+        #expect(await store.cached(ref: "same-ref", variant: .thumbnail) == nil)
+        #expect(await store.cached(ref: "same-ref", variant: .original) == original)
+
+        let preview = try await store.load(ref: "same-ref", variant: .preview) { _, _ in
+            Issue.record("a cached original must serve derived display")
+            throw TestFailure.boom
+        }
+        #expect(preview == original)
     }
 }

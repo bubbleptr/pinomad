@@ -285,8 +285,8 @@ extension AppModel {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let resolved = try await copy.resolvingImages { ref in
-                    try await self.cachedImage(ref: ref)
+                let resolved = try await copy.resolvingImages { ref, variant in
+                    try await self.cachedImage(ref: ref, variant: variant)
                 }
                 // A host switch drops the prepared copy; never begin a
                 // withdraw on the replaced session after the fetch lands.
@@ -390,30 +390,36 @@ extension AppModel {
         queuedEditFocus[copy.conversationId, default: 0] += 1
     }
 
-    /// One ref's bytes, from disk/memory or the host. The cache coalesces
-    /// concurrent requests and retries failures; the session's ordered loop
-    /// only carries the read-only `image` call.
-    func cachedImage(ref: String) async throws -> CachedImage {
+    /// One ref and variant's bytes, from disk/memory or the host. The cache
+    /// coalesces concurrent requests and retries failures; the session's
+    /// ordered loop only carries the read-only `image` call.
+    func cachedImage(ref: String, variant: ImageVariant = .original) async throws -> CachedImage {
         guard let session else { throw SessionError.sessionClosed }
-        return try await images.load(ref: ref) { ref in
-            let result = try await session.invoke(.image(ref: ref))
+        return try await images.load(ref: ref, variant: variant) { ref, variant in
+            let result = try await session.invoke(.image(ref: ref, variant: variant))
             guard case .image(let image) = result else {
                 throw SessionError.operationFailed("The host's reply wasn't an image.")
             }
-            return CachedImage(data: image.data, mimeType: image.mimeType)
+            return CachedImage(data: image.data, mimeType: image.mimeType, variant: image.variant)
         }
     }
 
     /// What AgentChatKit asks for when a ref image scrolls into view.
-    func inlineImage(ref: String) async throws -> ToolImage {
-        let image = try await cachedImage(ref: ref)
+    func inlineImage(ref: String, variant: ImageVariant) async throws -> ToolImage {
+        let image = try await cachedImage(ref: ref, variant: variant)
         return ToolImage(data: image.data, mimeType: image.mimeType, ref: ref)
     }
 
     var inlineImageLoader: InlineImageLoader {
-        InlineImageLoader { [weak self] ref in
+        InlineImageLoader { [weak self] ref, purpose in
             guard let self else { throw SessionError.sessionClosed }
-            return try await self.inlineImage(ref: ref)
+            let variant: ImageVariant
+            switch purpose {
+            case .userMessage: variant = .thumbnail
+            case .toolResult: variant = .preview
+            case .viewer: variant = .original
+            }
+            return try await self.inlineImage(ref: ref, variant: variant)
         }
     }
 

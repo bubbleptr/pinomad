@@ -23,11 +23,18 @@ public struct InlineImage: View {
     }
 
     let image: ToolImage
+    let purpose: InlineImagePurpose
     let maxWidth: CGFloat
     let maxHeight: CGFloat
 
-    public init(_ image: ToolImage, maxWidth: CGFloat = 320, maxHeight: CGFloat = 240) {
+    public init(
+        _ image: ToolImage,
+        purpose: InlineImagePurpose,
+        maxWidth: CGFloat = 320,
+        maxHeight: CGFloat = 240
+    ) {
         self.image = image
+        self.purpose = purpose
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
     }
@@ -69,10 +76,14 @@ public struct InlineImage: View {
         }
         // Key the task on the short ref, never on inline base64: a 6MB
         // attachment would otherwise be copied into a task id on every body.
-        .task(id: ref.map { "\($0):\(epoch)" }) {
+        .task(id: ref.map { "\($0):\(purpose.rawValue):\(epoch)" }) {
             await fetchIfNeeded()
         }
         .onChange(of: ref) {
+            fetched = nil
+            failed = false
+        }
+        .onChange(of: purpose) {
             fetched = nil
             failed = false
         }
@@ -95,7 +106,7 @@ public struct InlineImage: View {
                 .clipShape(.rect(cornerRadius: 10))
             if let action {
                 framed
-                    .onTapGesture { action.open(image) }
+                    .onTapGesture { action.open(self.image) }
                     .accessibilityAddTraits(.isButton)
             } else {
                 framed
@@ -142,7 +153,7 @@ public struct InlineImage: View {
             return
         }
         do {
-            let image = try await loader.image(for: ref)
+            let image = try await loader.image(for: ref, purpose: purpose)
             guard !image.data.isEmpty else {
                 failed = true
                 return
@@ -191,18 +202,24 @@ public struct InlineImageAction {
     }
 }
 
+public enum InlineImagePurpose: String, Sendable {
+    case userMessage
+    case toolResult
+    case viewer
+}
+
 /// Fetches the bytes a ref names. The app injects the implementation (its
 /// cache and `image` call), so AgentChatKit stays independent of PinomadCore.
 public struct InlineImageLoader: Sendable {
-    public typealias Load = @Sendable (String) async throws -> ToolImage
+    public typealias Load = @Sendable (String, InlineImagePurpose) async throws -> ToolImage
     private let load: Load
 
     public init(_ load: @escaping Load) {
         self.load = load
     }
 
-    public func image(for ref: String) async throws -> ToolImage {
-        try await load(ref)
+    public func image(for ref: String, purpose: InlineImagePurpose) async throws -> ToolImage {
+        try await load(ref, purpose)
     }
 }
 

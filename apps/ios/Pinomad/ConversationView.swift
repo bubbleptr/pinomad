@@ -378,6 +378,7 @@ private struct UserRow: View, Equatable {
             ForEach(Array(images.enumerated()), id: \.offset) { _, image in
                 InlineImage(
                     ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref),
+                    purpose: .userMessage,
                     maxWidth: 240,
                     maxHeight: 200
                 )

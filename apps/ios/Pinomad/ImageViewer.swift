@@ -12,6 +12,7 @@ struct ImageViewer: View {
     @Environment(\.inlineImageEpoch) private var epoch
     @State private var fetched: ToolImage?
     @State private var failed = false
+    @State private var attempt = 0
     @State private var scale: CGFloat = 1
     @State private var settledScale: CGFloat = 1
     @State private var drag: CGSize = .zero
@@ -19,10 +20,14 @@ struct ImageViewer: View {
     @State private var settledDrag: CGSize = .zero
 
     private var displayed: ToolImage? {
-        if !image.data.isEmpty {
-            return ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref)
-        }
-        return fetched
+        if let fetched { return fetched }
+        guard !image.data.isEmpty else { return nil }
+        return ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref)
+    }
+
+    private var ref: String? {
+        guard let ref = image.ref, !ref.isEmpty else { return nil }
+        return ref
     }
 
     private func recentre() {
@@ -71,17 +76,24 @@ struct ImageViewer: View {
                             }
                     )
             } else if failed {
-                Image(.triangleAlert)
-                    .font(.largeTitle)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityLabel("Couldn't load image")
+                VStack(spacing: 12) {
+                    Image(.triangleAlert)
+                        .font(.largeTitle)
+                        .foregroundStyle(.tertiary)
+                    Text("Couldn't load image")
+                    if ref != nil {
+                        Button("Try again") { attempt += 1 }
+                            .buttonStyle(.bordered)
+                    }
+                }
+                .accessibilityLabel("Couldn't load image")
             } else {
                 ProgressView()
                     .tint(.white)
                     .accessibilityLabel("Loading image")
             }
         }
-        .task(id: image.data.isEmpty ? image.ref.map { "\($0):\(epoch)" } : nil) {
+        .task(id: ref.map { "\($0):\(epoch):\(attempt)" }) {
             await fetchIfNeeded()
         }
         .contentShape(.rect)
@@ -99,7 +111,7 @@ struct ImageViewer: View {
     }
 
     private func fetchIfNeeded() async {
-        guard image.data.isEmpty, let ref = image.ref, !ref.isEmpty else {
+        guard let ref else {
             if image.data.isEmpty { failed = true }
             return
         }
@@ -109,7 +121,7 @@ struct ImageViewer: View {
             return
         }
         do {
-            let loaded = try await loader.image(for: ref)
+            let loaded = try await loader.image(for: ref, purpose: .viewer)
             fetched = loaded
             failed = false
         } catch {
