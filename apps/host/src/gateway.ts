@@ -44,7 +44,7 @@ import {
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
 } from "@pinomad/protocol/frames.ts";
-import type { HostAuth } from "@pinomad/protocol/auth.ts";
+import type { HostAuth, HostProviders } from "@pinomad/protocol/auth.ts";
 import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
@@ -208,11 +208,11 @@ export interface GatewayOptions {
   /** MCP server status source; absent → the `mcp` stream snapshots `null` (ADR-0012 §8). */
   readonly mcp?: HostValue<McpStatus>;
   /**
-   * Live `models`/`auth` sources and the `logout` call. Absent (faux mode,
-   * tests) → `models` snapshots `modelSummaries()` once, `auth` snapshots an
-   * empty login list, and `logout` fails.
+   * Live `models`/`auth`/`providers` sources and the provider calls (ADR-0031).
+   * Absent (faux mode, tests) → `models` snapshots `modelSummaries()` once,
+   * `auth` and `providers` snapshot empty lists, and the calls fail.
    */
-  readonly modelAuth?: Pick<ModelAuth, "models" | "auth" | "logout">;
+  readonly modelAuth?: Omit<ModelAuth, "close">;
   /** Conversation documents offered as `doc:<kind>:<conversationId>` streams. */
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
@@ -1154,6 +1154,12 @@ class GatewayClient {
   readonly #skills: SkillLister;
   readonly #imageVariants: ImageVariants;
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
+  #providerCalls(): Omit<ModelAuth, "close"> {
+    const modelAuth = this.#options.modelAuth;
+    if (modelAuth === undefined) throw new Error("Provider setup is not available on this host");
+    return modelAuth;
+  }
+
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
@@ -1169,6 +1175,7 @@ class GatewayClient {
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
       models: options.modelAuth?.models ?? constantValue(options.modelSummaries()),
       auth: options.modelAuth?.auth ?? constantValue<HostAuth>({ logins: [] }),
+      providers: options.modelAuth?.providers ?? constantValue<HostProviders>({ providers: [], logins: [] }),
       settings: options.settings,
       agents: options.agents ?? constantValue<AgentRoles>({ roles: [], problems: [] }),
     };
@@ -1562,6 +1569,31 @@ class GatewayClient {
         if (modelAuth === undefined) throw new Error("Logging out is not available on this host");
         await modelAuth.logout((args as CallMethods["logout"]["args"]).providerId);
         return null;
+      }
+      case "beginLogin": {
+        const { providerId, method } = args as CallMethods["beginLogin"]["args"];
+        return { loginId: this.#providerCalls().beginLogin(providerId, method) };
+      }
+      case "answerLogin": {
+        const { loginId, promptId, value } = args as CallMethods["answerLogin"]["args"];
+        this.#providerCalls().answerLogin(loginId, promptId, value);
+        return null;
+      }
+      case "cancelLogin": {
+        this.#providerCalls().cancelLogin((args as CallMethods["cancelLogin"]["args"]).loginId);
+        return null;
+      }
+      case "saveCustomProvider": {
+        const { provider, apiKey } = args as CallMethods["saveCustomProvider"]["args"];
+        await this.#providerCalls().saveCustomProvider(provider, apiKey);
+        return null;
+      }
+      case "removeCustomProvider": {
+        await this.#providerCalls().removeCustomProvider((args as CallMethods["removeCustomProvider"]["args"]).providerId);
+        return null;
+      }
+      case "listEndpointModels": {
+        return { models: await this.#providerCalls().listEndpointModels(args as CallMethods["listEndpointModels"]["args"]) };
       }
       case "updateSettings": {
         await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);

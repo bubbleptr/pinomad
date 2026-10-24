@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 20 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 21 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -53,6 +53,7 @@ pub const HOST_STREAMS: &[(&str, u32)] = &[
     ("auth", 1),
     ("settings", 2),
     ("agents", 6),
+    ("providers", 21),
 ];
 
 /// The host streams a host of the given minor version knows, in declaration
@@ -94,6 +95,12 @@ pub enum CallMethod {
     CreatePairing,
     RevokeDevice,
     Logout,
+    BeginLogin,
+    AnswerLogin,
+    CancelLogin,
+    SaveCustomProvider,
+    RemoveCustomProvider,
+    ListEndpointModels,
     UpdateSettings,
     CreateAgent,
     UpdateAgent,
@@ -133,6 +140,12 @@ impl CallMethod {
             "createPairing" => Self::CreatePairing,
             "revokeDevice" => Self::RevokeDevice,
             "logout" => Self::Logout,
+            "beginLogin" => Self::BeginLogin,
+            "answerLogin" => Self::AnswerLogin,
+            "cancelLogin" => Self::CancelLogin,
+            "saveCustomProvider" => Self::SaveCustomProvider,
+            "removeCustomProvider" => Self::RemoveCustomProvider,
+            "listEndpointModels" => Self::ListEndpointModels,
             "updateSettings" => Self::UpdateSettings,
             "createAgent" => Self::CreateAgent,
             "updateAgent" => Self::UpdateAgent,
@@ -180,6 +193,12 @@ impl CallMethod {
             Self::ListCommands | Self::RunCommand => 17,
             Self::SetAgent => 18,
             Self::BeginAttachment | Self::AppendAttachment => 19,
+            Self::BeginLogin
+            | Self::AnswerLogin
+            | Self::CancelLogin
+            | Self::SaveCustomProvider
+            | Self::RemoveCustomProvider
+            | Self::ListEndpointModels => 21,
         }
     }
 }
