@@ -64,17 +64,18 @@ enum ConversationFilter: Hashable {
 /// or endpoint is saved. Each stack that can hold those pages sets it on
 /// its own path.
 struct PopToProvidersAction: Equatable {
+    /// Which stack's path this pops; a stack's path never changes identity,
+    /// so neither does its action — dependents needn't refresh on updates.
+    let stack: String
     let pop: @MainActor () -> Void
 
     @MainActor func callAsFunction() { pop() }
 
-    /// A stack sets it once and its path never changes identity, so every
-    /// value is the same action — dependents needn't refresh on updates.
-    static func == (_: Self, _: Self) -> Bool { true }
+    static func == (a: Self, b: Self) -> Bool { a.stack == b.stack }
 }
 
 extension EnvironmentValues {
-    @Entry var popToProviders = PopToProvidersAction {}
+    @Entry var popToProviders = PopToProvidersAction(stack: "none") {}
 }
 
 extension [Route] {

@@ -39,8 +39,7 @@ struct CustomEndpointView: View {
             name, editing: providerId != nil, providers: all, submitted: submitted)
         Form {
             Section {
-                TextField("Ollama on studio", text: $name)
-                    .textInputAutocapitalization(.words)
+                TextField("Name", text: $name, prompt: Text(verbatim: "Ollama on studio"))
             } header: {
                 Text("Name")
             } footer: {
@@ -53,7 +52,8 @@ struct CustomEndpointView: View {
                         Text(api.label).tag(api)
                     }
                 }
-                TextField("http://localhost:11434/v1", text: $baseUrl)
+                // Verbatim: a string-literal prompt renders the URL as a link.
+                TextField("Base URL", text: $baseUrl, prompt: Text(verbatim: "http://localhost:11434/v1"))
                     .keyboardType(.URL)
                     .textContentType(.URL)
                     .textInputAutocapitalization(.never)
@@ -75,11 +75,22 @@ struct CustomEndpointView: View {
             }
 
             Section {
-                TextField("One model ID per line", text: $models, axis: .vertical)
-                    .lineLimit(3...8)
+                // A text editor: Return in a vertical text field ends editing.
+                TextEditor(text: $models)
                     .font(.body.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .frame(minHeight: 88)
+                    .overlay(alignment: .topLeading) {
+                        if models.isEmpty {
+                            Text("One model ID per line")
+                                .font(.body.monospaced())
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 Button {
                     Task { await fetchModels() }
                 } label: {
@@ -123,25 +134,26 @@ struct CustomEndpointView: View {
                 if let saveError { InlineError(message: saveError) }
             }
 
-            if let providerId {
+            if providerId != nil {
                 Section {
                     Button("Remove endpoint…", role: .destructive) { confirmingRemove = true }
+                        .confirmationDialog("Remove this endpoint?", isPresented: $confirmingRemove, titleVisibility: .visible) {
+                            Button("Remove endpoint", role: .destructive) {
+                                guard let id = providerId else { return }
+                                Task {
+                                    do {
+                                        try await model.removeCustomProvider(id)
+                                        popToProviders()
+                                    } catch {
+                                        removeError = model.describe(error)
+                                    }
+                                }
+                            }
+                        } message: {
+                            Text("Its models disappear from the model picker, and conversations using them stop.")
+                        }
                 } footer: {
                     if let removeError { InlineError(message: removeError) }
-                }
-                .confirmationDialog("Remove this endpoint?", isPresented: $confirmingRemove, titleVisibility: .visible) {
-                    Button("Remove endpoint", role: .destructive) {
-                        Task {
-                            do {
-                                try await model.removeCustomProvider(providerId)
-                                popToProviders()
-                            } catch {
-                                removeError = model.describe(error)
-                            }
-                        }
-                    }
-                } message: {
-                    Text("Its models disappear from the model picker, and conversations using them stop.")
                 }
             }
         }

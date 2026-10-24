@@ -25,7 +25,7 @@ struct RootView: View {
             // Connected, the home page has no title: its machine groups say where you are.
             .navigationTitle(model.phase == .connected ? "" : "PiNomad")
         }
-        .environment(\.popToProviders, PopToProvidersAction { model.navPath.popToProviders() })
+        .environment(\.popToProviders, PopToProvidersAction(stack: "root") { model.navPath.popToProviders() })
         .overlay(alignment: .top) {
             if !model.sheetShowsToasts { ToastStack(model: model) }
         }

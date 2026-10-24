@@ -248,7 +248,7 @@ struct SettingsSheet: View {
                     }
                 }
         }
-        .environment(\.popToProviders, PopToProvidersAction { path.popToProviders() })
+        .environment(\.popToProviders, PopToProvidersAction(stack: "settings") { path.popToProviders() })
     }
 }
 

@@ -20,7 +20,17 @@ struct ProviderPageView: View {
     @Environment(\.popToProviders) private var popToProviders
     @State private var login: LoginMethod?
     @State private var tracker = LoginTracker()
-    @State private var opened = false
+
+    init(model: AppModel, providerId: String, method: LoginMethod?) {
+        self.model = model
+        self.providerId = providerId
+        self.method = method
+        // Decided before the first frame, so the connection never flashes
+        // under a page opened for a login.
+        let provider = model.providers?.providers.first { $0.id == providerId }
+        let initial = method ?? (provider.map { $0.isConnected ? nil : $0.defaultMethod } ?? nil)
+        _login = State(initialValue: initial)
+    }
 
     private var provider: ProviderInfo? {
         model.providers?.providers.first { $0.id == providerId }
@@ -53,11 +63,6 @@ struct ProviderPageView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            guard !opened, let provider else { return }
-            opened = true
-            login = method ?? (provider.isConnected ? nil : provider.defaultMethod)
-        }
         // On the page root: a row in a lazy container disappears on scroll.
         .onDisappear(perform: abandon)
         .onChange(of: model.providers?.logins, initial: true) { _, logins in
@@ -135,6 +140,19 @@ private struct ConnectionActions: View {
                         .buttonStyle(.tactile(.borderedProminent))
                     Button(isKey ? "Remove key…" : "Log out…", role: .destructive) { confirming = true }
                         .buttonStyle(.tactile(.bordered))
+                        .confirmationDialog(
+                            provider.stored?.kind == .apiKey ? "Remove the key?" : "Log out of \(provider.name)?",
+                            isPresented: $confirming, titleVisibility: .visible
+                        ) {
+                            Button(provider.stored?.kind == .apiKey ? "Remove key" : "Log out", role: .destructive) {
+                                model.logout(provider: provider.id)
+                                onRemoved()
+                            }
+                        } message: {
+                            Text(provider.stored?.kind == .apiKey
+                                 ? "Removes the key from this host. Conversations using \(provider.name) models stop until you add another."
+                                 : "Signs this host out of \(provider.name). Conversations using its models stop until you sign in again.")
+                        }
                 }
                 if let other = otherMethod(stored.kind) {
                     Button(other == .apiKey ? "Use an API key instead" : provider.useOAuthLabel) { onLogin(other) }
@@ -155,19 +173,6 @@ private struct ConnectionActions: View {
             }
         }
         .disabled(!connected)
-        .confirmationDialog(
-            provider.stored?.kind == .apiKey ? "Remove the key?" : "Log out of \(provider.name)?",
-            isPresented: $confirming, titleVisibility: .visible
-        ) {
-            Button(provider.stored?.kind == .apiKey ? "Remove key" : "Log out", role: .destructive) {
-                model.logout(provider: provider.id)
-                onRemoved()
-            }
-        } message: {
-            Text(provider.stored?.kind == .apiKey
-                 ? "Removes the key from this host. Conversations using \(provider.name) models stop until you add another."
-                 : "Signs this host out of \(provider.name). Conversations using its models stop until you sign in again.")
-        }
     }
 
     private func otherMethod(_ kind: LoginMethod) -> LoginMethod? {
