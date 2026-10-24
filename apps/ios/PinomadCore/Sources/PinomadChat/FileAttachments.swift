@@ -354,16 +354,6 @@ public func attachmentPercent(received: Int, size: Int) -> Int {
     return min(100, Int((Double(received) / Double(size) * 100).rounded()))
 }
 
-/// Host notices that mean the referenced files can't be used (the submit
-/// is command-class, so these arrive as notices rather than a failed call).
-public enum AttachmentNotice {
-    /// Every submit-path attachment failure is relevant: expired/missing
-    /// files, a host too old for the field, the 10-file cap, or no store.
-    public static func isRejection(_ message: String) -> Bool {
-        message.range(of: "(?i)attachment", options: .regularExpression) != nil
-    }
-}
-
 extension RetryRequest {
     /// The ids a failed run's retry resends (issue #321). Core already
     /// stripped the attachment block from the text, so dropping these would

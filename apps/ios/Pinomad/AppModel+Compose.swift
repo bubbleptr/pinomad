@@ -29,8 +29,6 @@ extension AppModel {
         let attachments = files.ids
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
-        let noticesBefore = attachments.isEmpty
-            ? 0 : (session.currentNotices()?.map(\.id).max() ?? 0)
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
@@ -41,19 +39,6 @@ extension AppModel {
                 _ = try await session.invoke(
                     .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
                             images: images, skills: payload.skills, attachments: attachments))
-                guard let self, self.session === session, !attachments.isEmpty else { return }
-                // Command-class failures resolve normally; their notice is
-                // already in the core view. Associate it with this send by
-                // reading the notices now, not on a later snapshot.
-                let rejection = (session.currentNotices() ?? []).first {
-                    $0.id > noticesBefore && $0.level == "error"
-                        && AttachmentNotice.isRejection($0.message)
-                }
-                if let rejection {
-                    self.restoreRejectedSend(
-                        conversation: id, text: text, images: images, chips: chips,
-                        files: files, message: rejection.message)
-                }
             } catch {
                 guard let self else { return }
                 // Don't clobber anything typed or attached meanwhile.
@@ -74,34 +59,6 @@ extension AppModel {
                 self.lastError = "Couldn't send: \(self.describe(error))"
             }
         }
-    }
-
-    /// Put an optimistically cleared draft back after the host refused one
-    /// of its attachment ids. The refused ids are dropped so Retry starts a
-    /// fresh upload; the sources stay attached to the chips.
-    private func restoreRejectedSend(
-        conversation id: UInt64, text: String, images: [MessageImage],
-        chips: SkillChips, files: FileAttachmentTray, message: String
-    ) {
-        guard (drafts[id] ?? "").isEmpty, trays[id]?.isEmpty ?? true,
-              fileTrays[id] == nil else { return }
-        drafts[id] = text
-        skillChips[id] = chips
-        if !images.isEmpty {
-            var tray = AttachmentTray()
-            if let claim = tray.reserve(images.count, accepts: true) {
-                tray.fulfil(claim, with: images)
-            }
-            trays[id] = tray
-        }
-        if !files.isEmpty {
-            var restored = files
-            for entryId in restored.entries.map(\.id) {
-                restored.fail(id: entryId, error: message, gone: true)
-            }
-            fileTrays[id] = restored
-        }
-        lastError = message
     }
 
     /// Stage images for a conversation: slots are claimed now, the bytes
