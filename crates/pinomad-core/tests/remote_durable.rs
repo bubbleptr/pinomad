@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
-use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, PROTOCOL};
+use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, ImageVariant, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::{
     Call, Command, Event, ForkShow, ReadyOutcome, RemoteDurable, RemoteDurableOptions,
@@ -1501,7 +1501,7 @@ fn list_files_is_not_queued_behind_a_hanging_command() {
 fn image_needs_a_5_15_host() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(14.0))]);
     let mut h = Harness::new(host);
-    h.invoke(1, Call::Image { ref_: "abc123".to_string() });
+    h.invoke(1, Call::Image { ref_: "abc123".to_string(), variant: ImageVariant::Original });
     assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.15")));
     assert!(h.host.method("image").is_empty());
 }
@@ -1520,7 +1520,7 @@ fn image_is_direct_and_resolves_its_bytes() {
     h.host.hung_methods.insert("archive".to_string());
     h.invoke(1, Call::Archive { id: 1, archived: true });
     h.invoke(2, Call::RenameConversation { id: 1, title: "x".to_string() });
-    h.invoke(3, Call::Image { ref_: "abc123".to_string() });
+    h.invoke(3, Call::Image { ref_: "abc123".to_string(), variant: ImageVariant::Original });
     assert_eq!(h.host.method("archive").len(), 1);
     // Same read-only, unqueued shape as listFiles: a hung command must not
     // block fetching an image the screen already needs.
@@ -1537,6 +1537,42 @@ fn image_is_direct_and_resolves_its_bytes() {
             ("mimeType", Json::from("image/png")),
         ])))),
     );
+}
+
+#[test]
+fn image_derived_requests_send_their_variant_on_5_20() {
+    for (variant, wire) in [
+        (ImageVariant::Thumbnail, "thumbnail"),
+        (ImageVariant::Preview, "preview"),
+    ] {
+        let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(20.0))]);
+        let mut h = Harness::new(host);
+        h.invoke(1, Call::Image { ref_: "abc123".to_string(), variant });
+        assert_eq!(
+            h.host.method("image")[0].get("args").cloned(),
+            Some(obj(&[("ref", Json::from("abc123")), ("variant", Json::from(wire))])),
+        );
+        assert!(matches!(h.ops.get(&1), Some(Ok(_))));
+    }
+}
+
+#[test]
+fn image_derived_requests_degrade_to_original_before_5_20() {
+    for variant in [
+        ImageVariant::Thumbnail,
+        ImageVariant::Preview,
+    ] {
+        let original = obj(&[("data", Json::from("AA==")), ("mimeType", Json::from("image/png"))]);
+        let mut host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(19.0))]);
+        host.call_results.insert("image".to_string(), original.clone());
+        let mut h = Harness::new(host);
+        h.invoke(1, Call::Image { ref_: "abc123".to_string(), variant });
+        assert_eq!(
+            h.host.method("image")[0].get("args").cloned(),
+            Some(obj(&[("ref", Json::from("abc123"))])),
+        );
+        assert_eq!(h.ops.get(&1), Some(&Ok(Some(original))));
+    }
 }
 
 #[test]

@@ -106,6 +106,10 @@ _Avoid_: 思维链、轨迹、步骤列表
 _Avoid_: 文件引用、上传文件、图片附件
 _Avoid_: 斜杠提示词、快捷指令、宏
 
+**图片规格（Image Variant）**:
+同一图片内容的展示形式：original（原图）、thumbnail（缩略图）或 preview（预览图）。`ref` 标识原图，响应里的 `variant` 标识实际返回的规格。
+_Avoid_: 图片版本、图片格式
+
 ### 设置
 
 **宿主设置（Host Settings）**:

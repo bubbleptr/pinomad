@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::ffi::types::{ApnsPushToken, MessageImage, ModelRef, QuestionAnswer, ThinkingLevel};
+use crate::ffi::types::{ApnsPushToken, ImageVariant, MessageImage, ModelRef, QuestionAnswer, ThinkingLevel};
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
 use crate::remote_durable::Call;
@@ -309,6 +309,8 @@ pub enum FfiCall {
     Image {
         #[uniffi(name = "ref")]
         ref_: String,
+        #[uniffi(default = None)]
+        variant: Option<ImageVariant>,
     },
     /// The slash commands the host declares for `conversation_id` (ADR-0029)
     /// — there is no client-side fallback list. Request-class, sent outside
@@ -437,7 +439,7 @@ impl FfiCall {
             FfiCall::ListSkills { scope } => Call::ListSkills {
                 scope: scope.to_json(),
             },
-            FfiCall::Image { ref_ } => Call::Image { ref_ },
+            FfiCall::Image { ref_, variant } => Call::Image { ref_, variant: variant.unwrap_or_default() },
             FfiCall::ListCommands { conversation_id } => Call::ListCommands { conversation_id },
             FfiCall::BeginAttachment { name, size } => Call::BeginAttachment { name, size },
             FfiCall::AppendAttachment { attachment_id, offset, data } => {

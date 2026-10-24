@@ -864,6 +864,41 @@ describe("RemoteDurable image refs", () => {
       remote.close();
     }
   });
+
+  it("requests derived variants on 5.20 and degrades them to original on older hosts", async () => {
+    const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
+    const answer = (frame: Extract<ClientFrame, { type: "call" }>) => {
+      if (frame.method !== "image") return undefined;
+      const variant = (frame.args as { variant?: string }).variant;
+      return { ok: true as const, value: variant === undefined ? bytes : { ...bytes, variant } };
+    };
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 20 } }, answer);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.image("abc")).resolves.toEqual(bytes);
+      await expect(remote.controller.image("abc", "thumbnail")).resolves.toEqual({ ...bytes, variant: "thumbnail" });
+      await expect(remote.controller.image("abc", "preview")).resolves.toEqual({ ...bytes, variant: "preview" });
+      const calls = sent.filter((frame) => frame.type === "call" && frame.method === "image");
+      expect(calls.map((frame) => frame.args)).toEqual([
+        { ref: "abc" },
+        { ref: "abc", variant: "thumbnail" },
+        { ref: "abc", variant: "preview" },
+      ]);
+    } finally {
+      remote.close();
+    }
+
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 19 } }, answer);
+    const remoteOld = await connectRemoteDurable({ transport: old.transport });
+    try {
+      await expect(remoteOld.controller.image("abc", "preview")).resolves.toEqual(bytes);
+      expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "image").map((frame) => frame.args)).toEqual([
+        { ref: "abc" },
+      ]);
+    } finally {
+      remoteOld.close();
+    }
+  });
 });
 
 describe("RemoteDurable minor-version gating", () => {

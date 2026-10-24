@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use pinomad_core::ffi::{
     device_public_key, parse_command_input, CallResult, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
-    DeviceEntry, DeviceSource, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, MessageImage, ModelRef,
+    DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
     SteerOutcome, StoredHost, SubmitMode, ThinkingLevel, WithdrawOutcome,
 };
@@ -832,14 +832,14 @@ fn image_resolves_bytes_and_is_gated_on_5_15() {
         ]),
     );
     let mut h = Harness::boot(host, "req-1");
-    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string(), variant: None });
     assert_eq!(
         h.ops.get(&1),
         Some(&Ok(CallResult::Image {
-            image: MessageImage {
+            image: FetchedImage {
                 data: "AA==".to_string(),
                 mime_type: "image/png".to_string(),
-                ref_: None,
+                variant: ImageVariant::Original,
             },
         })),
     );
@@ -854,17 +854,106 @@ fn image_resolves_bytes_and_is_gated_on_5_15() {
     let mut bad = ScriptedHost::new();
     bad.call_results.insert("image".to_string(), obj(&[("data", Json::from("AA=="))]));
     let mut h = Harness::boot(bad, "req-1");
-    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string(), variant: None });
     assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("malformed image result")));
 
     let mut old = ScriptedHost::new();
     old.minor = 14.0;
     let mut h = Harness::boot(old, "req-1");
-    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string() });
+    h.invoke(1, FfiCall::Image { ref_: "abc123".to_string(), variant: None });
     assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.15")));
     assert!(call_frames(&h).iter().all(|f| {
         f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()) != Some("image".to_string())
     }));
+}
+
+#[test]
+fn image_returns_the_actual_variant_from_the_host() {
+    for (requested, request_wire, returned, expected) in [
+        (
+            ImageVariant::Thumbnail,
+            "thumbnail",
+            "thumbnail",
+            ImageVariant::Thumbnail,
+        ),
+        (
+            ImageVariant::Preview,
+            "preview",
+            "preview",
+            ImageVariant::Preview,
+        ),
+        (
+            ImageVariant::Thumbnail,
+            "thumbnail",
+            "original",
+            ImageVariant::Original,
+        ),
+    ] {
+        let mut host = ScriptedHost::new();
+        host.minor = 20.0;
+        host.call_results.insert(
+            "image".to_string(),
+            obj(&[
+                ("data", Json::from("AA==")),
+                ("mimeType", Json::from("image/png")),
+                ("variant", Json::from(returned)),
+            ]),
+        );
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::Image { ref_: "abc123".to_string(), variant: Some(requested) });
+        assert_eq!(
+            h.ops.get(&1),
+            Some(&Ok(CallResult::Image {
+                image: FetchedImage {
+                    data: "AA==".to_string(),
+                    mime_type: "image/png".to_string(),
+                    variant: expected,
+                },
+            })),
+        );
+        let call = call_frames(&h).into_iter().find(|f| {
+            f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "image").unwrap_or(false)
+        });
+        assert_eq!(
+            call.and_then(|f| f.get("args").cloned()),
+            Some(obj(&[("ref", Json::from("abc123")), ("variant", Json::from(request_wire))])),
+        );
+    }
+}
+
+#[test]
+fn image_derived_request_on_an_old_host_returns_original() {
+    let mut host = ScriptedHost::new();
+    host.minor = 19.0;
+    host.call_results.insert(
+        "image".to_string(),
+        obj(&[("data", Json::from("AA==")), ("mimeType", Json::from("image/png"))]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::Image {
+            ref_: "abc123".to_string(),
+            variant: Some(ImageVariant::Preview),
+        },
+    );
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::Image {
+            image: FetchedImage {
+                data: "AA==".to_string(),
+                mime_type: "image/png".to_string(),
+                variant: ImageVariant::Original,
+            },
+        })),
+    );
+    let call = call_frames(&h).into_iter().find(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "image").unwrap_or(false)
+    });
+    assert_eq!(
+        call.and_then(|f| f.get("args").cloned()),
+        Some(obj(&[("ref", Json::from("abc123"))])),
+    );
 }
 
 #[test]

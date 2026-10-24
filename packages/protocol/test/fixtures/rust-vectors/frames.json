@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 19
+    "minor": 20
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":19},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":20},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":19},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":20},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -422,6 +422,10 @@
         "since": 5
       },
       {
+        "name": "imageVariants",
+        "since": 20
+      },
+      {
         "name": "liveBranch",
         "since": 11
       }
@@ -822,6 +826,18 @@
       "name": "images@4",
       "minor": 4,
       "feature": "images",
+      "expect": false
+    },
+    {
+      "name": "imageVariants@20",
+      "minor": 20,
+      "feature": "imageVariants",
+      "expect": true
+    },
+    {
+      "name": "imageVariants@19",
+      "minor": 19,
+      "feature": "imageVariants",
       "expect": false
     },
     {

@@ -69,7 +69,9 @@ import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem, type MessageImage, type OutgoingImage } from "@pinomad/protocol/images.ts";
 import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import type { AttachmentStore } from "./attachments.ts";
+import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { ImageRefs } from "./image-refs.ts";
+import { ImageVariants } from "./image-variants.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import { type HostSettingsStore, settingsDefaults } from "./host-settings.ts";
@@ -186,6 +188,8 @@ export interface GatewayOptions {
   readonly harness: Harness;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
+  /** Optional processor for on-demand image variants; absent returns original. */
+  readonly images?: ImageProcessor;
   readonly session: SessionInfo;
   readonly token: string;
   readonly port: number;
@@ -258,6 +262,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // Same for `listSkills` — concurrent clients' scope queries ride one scan
   // (issue #143). The skills dirs it reads are the prompt's own.
   const skillLister = createSkillLister((root, mode) => enumerateSkills(root, mode, options.agentsHome));
+  const imageVariants = new ImageVariants(options.images);
   const detachAutoTitle =
     options.autoTitle === false
       ? undefined
@@ -300,7 +305,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     if (joined?.source === "account") {
       broadcast("info", `New device "${joined.name}" joined through your account`);
     }
-    const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, {
+    const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, imageVariants, {
       devicePublicKey,
       closed: (self) => {
         clients.delete(self);
@@ -1147,16 +1152,18 @@ class GatewayClient {
   readonly #files: FileLister;
   /** The gateway-wide skills lister — concurrent clients' scope queries ride one scan. */
   readonly #skills: SkillLister;
+  readonly #imageVariants: ImageVariants;
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   #disposed = false;
 
-  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, skills: SkillLister, hooks: ClientHooks) {
+  constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, skills: SkillLister, imageVariants: ImageVariants, hooks: ClientHooks) {
     this.#connection = connection;
     this.#options = options;
     this.#files = files;
     this.#skills = skills;
+    this.#imageVariants = imageVariants;
     this.#hostValues = {
       conversations,
       mcp: options.mcp ?? constantValue<McpStatus | null>(null),
@@ -1589,9 +1596,13 @@ class GatewayClient {
         return listSkills(this.#options.harness, this.#skills, input.scope, context);
       }
       case "image": {
-        const image = this.#shownImage((args as CallMethods["image"]["args"]).ref);
+        const input = args as CallMethods["image"]["args"];
+        const image = this.#shownImage(input.ref);
         if (image === undefined) throw new Error("Unknown image");
-        return image;
+        if (input.variant === undefined) return image;
+        const derived = await this.#imageVariants.get(input.ref, input.variant, image);
+        if (this.#shownImage(input.ref) === undefined) throw new Error("Unknown image");
+        return derived;
       }
       case "beginAttachment": {
         const input = args as CallMethods["beginAttachment"]["args"];

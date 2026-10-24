@@ -17,7 +17,7 @@ pub use crate::cot_view::{
     ChatEntry, CotAnswer, CotPhase, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents,
 };
 pub use crate::folder_path::FolderCrumb;
-pub use crate::frames::{ApnsEnvironment, ApnsPushToken, HostFeature, ProtocolVersion};
+pub use crate::frames::{ApnsEnvironment, ApnsPushToken, HostFeature, ImageVariant, ProtocolVersion};
 pub use crate::model::{AgentDraft, AgentDraftProblem, AgentDraftSource, ModelPick, ModelRef, ThinkingLevel};
 pub use crate::organization::{
     ConversationStatus, HomeKind, SummaryActivity, SummaryKind,
@@ -141,9 +141,8 @@ pub enum CallResult {
     /// `listSkills` — the `$`-mentionable skills in the scope, project entry
     /// first.
     Skills { skills: Vec<SkillEntry> },
-    /// `image` — the decoded bytes a ref named (5.15, ADR-0027). The ref is
-    /// cleared: the bytes are what the caller asked for.
-    Image { image: MessageImage },
+    /// `image` — the decoded bytes and the variant the host actually returned.
+    Image { image: FetchedImage },
     /// `listCommands` — the host-declared slash commands, in menu order.
     Commands { commands: Vec<CommandEntry> },
     /// `beginAttachment` — the host-generated id the chunks append to.
@@ -220,10 +219,16 @@ pub(crate) fn pairing_of(value: Option<&Json>) -> Result<(String, f64), String> 
     Ok((url, expires_at))
 }
 
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct FetchedImage {
+    pub data: String,
+    pub mime_type: String,
+    pub variant: ImageVariant,
+}
+
 /// `image`'s typed result — strict like `changes_of`: a ref lookup without
-/// usable bytes is a host-contract violation, and the caller may cache what
-/// comes back under the ref it asked for.
-pub(crate) fn image_of(value: Option<&Json>) -> Result<MessageImage, String> {
+/// usable bytes is a host-contract violation. A missing variant means original.
+pub(crate) fn image_of(value: Option<&Json>) -> Result<FetchedImage, String> {
     let value = value
         .filter(|v| v.is_object())
         .ok_or_else(|| "malformed image result".to_string())?;
@@ -239,7 +244,14 @@ pub(crate) fn image_of(value: Option<&Json>) -> Result<MessageImage, String> {
         .filter(|mime| !mime.is_empty())
         .map(|mime| mime.to_string_lossy())
         .ok_or_else(|| "malformed image result: mimeType".to_string())?;
-    Ok(MessageImage { data, mime_type, ref_: None })
+    let variant = match value.get("variant") {
+        None => ImageVariant::Original,
+        Some(variant) => variant
+            .as_str()
+            .and_then(|variant| ImageVariant::from_str(&variant.to_string_lossy()))
+            .ok_or_else(|| "malformed image result: variant".to_string())?,
+    };
+    Ok(FetchedImage { data, mime_type, variant })
 }
 
 /// `listFiles`'s typed result — strict like `changes_of`: a malformed shape

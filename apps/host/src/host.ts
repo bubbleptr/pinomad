@@ -4,6 +4,7 @@ import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
+import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, ensureIndex, IndexDoc } from "./organization.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
@@ -33,6 +34,8 @@ export interface OpenHostOptions {
   readonly agentsHome: string;
   readonly models: Models;
   readonly modelSummaries: () => readonly ModelSummary[];
+  /** Shared with read-tool resizing; absent makes derived image requests return original. */
+  readonly images?: ImageProcessor;
   /**
    * Built-in extensions installed before the Harness opens; their docs reach the gateway.
    * The function form is resolved once before MCP starts, and `harness()`
@@ -260,6 +263,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       harness,
       models: options.models,
       modelSummaries: options.modelSummaries,
+      ...(options.images === undefined ? {} : { images: options.images }),
       session: { id: basename(options.dataDir), directory: options.dataDir },
       dataDir: options.dataDir,
       attachments,
