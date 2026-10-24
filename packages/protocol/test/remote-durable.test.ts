@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame, type StreamName } from "../src/frames.ts";
-import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
+import { connectRemoteDurable, DisconnectedError, type RemoteDurable } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { ConversationDefaults, DurableView } from "../src/view.ts";
 
@@ -1321,3 +1321,36 @@ describe("RemoteDurable minor-version gating", () => {
     }
   });
 });
+
+describe("calls cut off by a disconnect", () => {
+  // A client tells "the host never answered" apart from "the host said no":
+  // only the first can leave work running on the host that it never heard of.
+  it("rejects a call pending at the disconnect with DisconnectedError, and a refused one without it", async () => {
+    const { transport, sent, disconnect, holdCall } = fakeTransport([{}], undefined, (frame) =>
+      frame.method === "cancelLogin" ? { ok: false, error: "No login login-9" } : undefined,
+    );
+    holdCall("beginLogin");
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      const refused = remote.controller.cancelLogin("login-9");
+      await expect(refused).rejects.toThrow("No login login-9");
+      await expect(refused).rejects.not.toBeInstanceOf(DisconnectedError);
+
+      const begun = remote.controller.beginLogin("openai", "api_key");
+      await waitForSent(sent, "beginLogin");
+      disconnect();
+      await expect(begun).rejects.toBeInstanceOf(DisconnectedError);
+      await expect(begun).rejects.toThrow("Disconnected from host");
+    } finally {
+      remote.close();
+    }
+  });
+});
+
+async function waitForSent(sent: readonly ClientFrame[], method: string): Promise<void> {
+  for (let tries = 0; tries < 100; tries++) {
+    if (sent.some((frame) => frame.type === "call" && frame.method === method)) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`${method} was never sent`);
+}

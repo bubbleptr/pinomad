@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { LoginFlow, ProviderInfo } from "@pinomad/protocol/auth.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { DisconnectedError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ProvidersSection } from "./providers-section.tsx";
 
@@ -93,9 +93,9 @@ describe("ProvidersSection logins", () => {
   });
 
   it("picks up the login the host began when the begin result was lost to a disconnect", async () => {
-    const { controller, user, show, openKeyLogin } = setup({ begin: async () => Promise.reject(new Error("Connection lost")) });
+    const { controller, user, show, openKeyLogin } = setup({ begin: async () => Promise.reject(new DisconnectedError()) });
     await openKeyLogin();
-    await screen.findByText("Connection lost");
+    await screen.findByText("Disconnected from host");
 
     // After the reconnect the host's snapshot still lists the login it began.
     show([flow({ prompt: { id: 7, type: "secret", message: "Enter OpenAI API key" } })]);
@@ -107,6 +107,22 @@ describe("ProvidersSection logins", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(controller.cancelLogin).toHaveBeenCalledWith("login-1");
     expect(controller.beginLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves another device's login alone when the host refuses the start", async () => {
+    const { controller, user, show, openKeyLogin } = setup({
+      begin: async () => Promise.reject(new Error("A login for OpenAI is already in progress")),
+    });
+    await openKeyLogin();
+    await screen.findByText("A login for OpenAI is already in progress");
+
+    // Another device's login for the same provider is running on the host.
+    show([flow({ id: "login-other", prompt: { id: 3, type: "secret", message: "Enter OpenAI API key" } })]);
+    await screen.findByRole("button", { name: "Try again" });
+    expect(screen.queryByLabelText(/Enter OpenAI API key/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(controller.cancelLogin).not.toHaveBeenCalled();
   });
 
   it("cancels a running login it started when the page is left", async () => {

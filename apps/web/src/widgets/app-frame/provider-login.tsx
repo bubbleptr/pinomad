@@ -8,7 +8,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { LoginEvent, LoginFlow, LoginMethod, LoginPrompt } from "@pinomad/protocol/auth.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { DisconnectedError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Check, Copy, LinkExternal } from "../../shared/ui/icons.tsx";
 
 const iconSize: CSSProperties = { width: "var(--spacing-4)", height: "var(--spacing-4)" };
@@ -52,7 +52,8 @@ export function LoginPanel({
 }) {
   const [loginId, setLoginId] = useState<string>();
   const [starting, setStarting] = useState(false);
-  const [attempted, setAttempted] = useState(false);
+  // The start was cut off by a disconnect, so the host may have begun it.
+  const [cutOff, setCutOff] = useState(false);
   const [startError, setStartError] = useState<string>();
   const flow = loginId === undefined ? undefined : logins.find((entry) => entry.id === loginId);
 
@@ -66,7 +67,7 @@ export function LoginPanel({
   const start = (): void => {
     const mine = ++generation.current;
     setStarting(true);
-    setAttempted(true);
+    setCutOff(false);
     setStartError(undefined);
     remote.controller.beginLogin(providerId, method).then(
       (id) => {
@@ -80,6 +81,7 @@ export function LoginPanel({
       },
       (reason: unknown) => {
         if (mine !== generation.current) return;
+        setCutOff(reason instanceof DisconnectedError);
         setStartError(messageOf(reason));
         setStarting(false);
       },
@@ -107,10 +109,11 @@ export function LoginPanel({
   }, []);
 
   // A begin whose result never arrived (the connection dropped after the host
-  // started the login) leaves the flow running with no id here; once no start
-  // is in flight, take over the provider's running flow from the stream.
+  // started the login) leaves the flow running with no id here, so take over
+  // the provider's running flow from the stream. Not after the host refused
+  // the start: a flow it lists then is another device's login.
   const orphan =
-    attempted && !starting && loginId === undefined
+    cutOff && !starting && loginId === undefined
       ? logins.find((entry) => entry.providerId === providerId && entry.method === method && entry.state === "running")
       : undefined;
   useEffect(() => {
