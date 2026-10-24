@@ -197,6 +197,41 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "logout", args: {} })).toBe("malformed");
   });
 
+  it("introduces the providers stream and the provider calls at minor 21", () => {
+    expect(hostStreams(20)).not.toContain("providers");
+    expect(hostStreams(21)).toContain("providers");
+    const methods = ["beginLogin", "answerLogin", "cancelLogin", "saveCustomProvider", "removeCustomProvider", "listEndpointModels"] as const;
+    for (const method of methods) {
+      expect(hostSupportsCall(20, method)).toBe(false);
+      expect(hostSupportsCall(21, method)).toBe(true);
+    }
+  });
+
+  it("accepts login calls; rejects unknown methods and non-integer prompt ids", () => {
+    const call = (method: string, args: unknown) => kinds({ type: "call", id: 1, method, args });
+    expect(call("beginLogin", { providerId: "anthropic", method: "oauth" })).toBe("frame");
+    expect(call("beginLogin", { providerId: "anthropic", method: "api_key" })).toBe("frame");
+    expect(call("beginLogin", { providerId: "anthropic", method: "password" })).toBe("malformed");
+    expect(call("answerLogin", { loginId: "l1", promptId: 2, value: "" })).toBe("frame");
+    expect(call("answerLogin", { loginId: "l1", promptId: 2.5, value: "x" })).toBe("malformed");
+    expect(call("answerLogin", { loginId: "l1", promptId: "2", value: "x" })).toBe("malformed");
+    expect(call("cancelLogin", { loginId: "" })).toBe("malformed");
+  });
+
+  it("accepts custom endpoint calls; an unknown API format or a non-string key is malformed", () => {
+    const call = (method: string, args: unknown) => kinds({ type: "call", id: 1, method, args });
+    const provider = { id: "ollama", name: "Ollama", api: "openai-completions", baseUrl: "http://studio:11434/v1", models: ["qwen3"] };
+    expect(call("saveCustomProvider", { provider })).toBe("frame");
+    expect(call("saveCustomProvider", { provider, apiKey: null })).toBe("frame");
+    expect(call("saveCustomProvider", { provider, apiKey: "sk-1" })).toBe("frame");
+    expect(call("saveCustomProvider", { provider, apiKey: 1 })).toBe("malformed");
+    expect(call("saveCustomProvider", { provider: { ...provider, api: "bedrock-converse-stream" } })).toBe("malformed");
+    expect(call("saveCustomProvider", { provider: { ...provider, models: [1] } })).toBe("malformed");
+    expect(call("removeCustomProvider", { providerId: "ollama" })).toBe("frame");
+    expect(call("listEndpointModels", { api: "anthropic-messages", baseUrl: "https://x/v1" })).toBe("frame");
+    expect(call("listEndpointModels", { api: "anthropic-messages", baseUrl: "https://x/v1", providerId: "" })).toBe("malformed");
+  });
+
   it("accepts updateSettings patches; rejects unknown keys and bad values", () => {
     const call = (patch: unknown): unknown => ({ type: "call", id: 1, method: "updateSettings", args: { patch } });
     expect(kinds(call({}))).toBe("frame");

@@ -12,6 +12,7 @@ const SNAPSHOTS: Record<string, unknown> = {
   mcp: null,
   models: [],
   auth: { logins: [] },
+  providers: { providers: [], logins: [] },
   settings: { defaultModel: null, defaultThinkingLevel: null, steeringMode: "one-at-a-time", followUpMode: "one-at-a-time", custom: [] },
   agents: { roles: [], problems: [] },
 };
