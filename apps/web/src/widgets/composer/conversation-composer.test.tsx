@@ -1,15 +1,20 @@
 // Send-time command handling (issue #254, ADR-0027) in the conversation
 // composer: a disabled command isn't run, text is never a command before the
 // host's list lands, and a pre-5.15 host keeps the old Compact item.
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
-import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, DurableController } from "@pinomad/protocol/view.ts";
 import { fakeRemote, fakeView, PARSER_ID, PINOMAD } from "../../test/story-fixtures.tsx";
 import { ConversationComposer } from "./conversation-composer.tsx";
 
-function setup(options: { listCommands?: () => Promise<CommandListing>; minor?: number; summary?: ConversationSummary } = {}) {
+function setup(options: {
+  listCommands?: () => Promise<CommandListing>;
+  minor?: number;
+  summary?: ConversationSummary;
+  controller?: Partial<DurableController>;
+} = {}) {
   const base = fakeView(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } });
   const view = options.summary === undefined
     ? base
@@ -21,7 +26,10 @@ function setup(options: { listCommands?: () => Promise<CommandListing>; minor?: 
           archived: [],
         },
       };
-  const remote = fakeRemote(view, options.listCommands === undefined ? {} : { listCommands: vi.fn(options.listCommands) });
+  const remote = fakeRemote(view, {
+    ...(options.listCommands === undefined ? {} : { listCommands: vi.fn(options.listCommands) }),
+    ...options.controller,
+  });
   render(<ConversationComposer view={view} remote={remote} conversation={view.conversation!} busy={false} narrow={false} />);
   const editable = document.querySelector<HTMLElement>('[aria-multiline="true"]')!;
   const type = (text: string): void => {
@@ -77,6 +85,62 @@ describe("ConversationComposer commands", () => {
     const row = screen.getByRole("menuitem", { name: /^Run a command/, hidden: true });
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("Loading…");
+  });
+
+  it("offers Attach files… only on a 5.19 host", async () => {
+    setup();
+    await act(async () => {});
+    expect(screen.getByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeInTheDocument();
+  });
+
+  it("hides Attach files… on a pre-5.19 host", async () => {
+    setup({ minor: 18 });
+    await act(async () => {});
+    expect(screen.queryByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeNull();
+  });
+});
+
+describe("ConversationComposer attachment uploads", () => {
+  it("blocks Enter and Send until every file is uploaded, then sends their ids", async () => {
+    let finish!: (value: { received: number; complete: boolean }) => void;
+    const appendAttachment = vi.fn(
+      () =>
+        new Promise<{ received: number; complete: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { remote, editable, type } = setup({
+      controller: {
+        beginAttachment: vi.fn(async () => "A".repeat(22)),
+        appendAttachment,
+      },
+    });
+    const picker = document.querySelector<HTMLInputElement>('input[type="file"]:not([accept])')!;
+    fireEvent.change(picker, {
+      target: { files: [new File(["hello"], "notes.txt", { type: "text/plain" })] },
+    });
+    await waitFor(() => expect(appendAttachment).toHaveBeenCalled());
+    expect(screen.getByText("Uploading files…")).toBeInTheDocument();
+
+    type("look");
+    fireEvent.keyDown(editable, { key: "Enter" });
+    expect(remote.controller.submit).not.toHaveBeenCalled();
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeDisabled();
+    fireEvent.click(send);
+    expect(remote.controller.submit).not.toHaveBeenCalled();
+
+    await act(async () => finish({ received: 5, complete: true }));
+    await waitFor(() =>
+      expect(screen.getByTestId("file-attachment-chip").getAttribute("data-status")).toBe("done"),
+    );
+    expect(send).not.toBeDisabled();
+    fireEvent.keyDown(editable, { key: "Enter" });
+    expect(remote.controller.submit).toHaveBeenCalledWith("look", "steer", {
+      images: [],
+      skills: [],
+      attachments: ["A".repeat(22)],
+    });
   });
 });
 

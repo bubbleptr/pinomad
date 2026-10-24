@@ -12,8 +12,9 @@ import type {
   TaskId,
   UsageState,
 } from "@earendil-works/pi-durable";
+import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
-import { stripSkillBlocks } from "./skill-blocks.ts";
+import { stripUserBlocks } from "./skill-blocks.ts";
 
 type Block = {
   readonly type: string;
@@ -22,20 +23,14 @@ type Block = {
   readonly mimeType?: string;
   readonly ref?: string;
 };
-type Message = { readonly role: string; readonly content: string | readonly Block[] };
-
-function textOf(content: Message["content"]): string {
-  if (typeof content === "string") return content;
-  return content.flatMap((block) => (block.type === "text" && block.text !== undefined ? [block.text] : [])).join("");
-}
-
-function imageCountOf(content: Message["content"]): number {
+type Content = string | readonly Block[];
+function imageCountOf(content: Content): number {
   if (typeof content === "string" || !Array.isArray(content)) return 0;
   return content.filter((block) => block.type === "image").length;
 }
 
 /** The image blocks of a queued input, in either wire form (ADR-0027); bytes win when both are present. */
-function imagesOf(content: Message["content"]): ViewImage[] {
+function imagesOf(content: Content): ViewImage[] {
   if (typeof content === "string" || !Array.isArray(content)) return [];
   return content.flatMap((block): ViewImage[] => {
     if (block.type !== "image" || block.mimeType === undefined) return [];
@@ -70,17 +65,23 @@ export interface QueueItem {
   readonly text: string;
   /** Image blocks attached to the queued input; 0 on "write" items. */
   readonly imageCount: number;
+  /** Host-stored file attachments on the queued input; 0 on "write" items. */
+  readonly attachmentCount: number;
 }
 
 export function queueItems(view: ConversationView): QueueItem[] {
   const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
-  return inbox.items.map((item) => ({
-    id: item.id as unknown as number,
-    mode: item.mode,
-    // The typed text, not the skill blocks the host prepended (ADR-0028).
-    text: item.mode === "write" ? `<${String(item.entry.kind)}>` : stripSkillBlocks(textOf(item.content as Message["content"])).text,
-    imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Message["content"]),
-  }));
+  return inbox.items.map((item) => {
+    const typed = item.mode === "write" ? undefined : stripUserBlocks(item.content as string | readonly Block[]);
+    return {
+      id: item.id as unknown as number,
+      mode: item.mode,
+      // The typed text, not the blocks the host wrote around it (ADR-0028, #321).
+      text: item.mode === "write" ? `<${String(item.entry.kind)}>` : typed!.text,
+      imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Content),
+      attachmentCount: typed?.attachments.length ?? 0,
+    };
+  });
 }
 
 /** A queued input's original content, for an Edit affordance that withdraws then refills the composer. */
@@ -90,6 +91,8 @@ export interface QueuedInput {
   readonly images: ViewImage[];
   /** The skills the host expanded — the chips an edit restores, sent back as `skills`. */
   readonly skills: readonly string[];
+  /** The host-stored files on this queued input, restored as chips on edit. */
+  readonly attachments: readonly UserAttachment[];
 }
 
 /** The content of a queued steer/follow-up, or undefined for a write or an unknown id. */
@@ -97,8 +100,13 @@ export function queuedInput(view: ConversationView, id: number): QueuedInput | u
   const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
   const item = inbox.items.find((candidate) => (candidate.id as unknown as number) === id);
   if (item === undefined || (item.mode !== "steer" && item.mode !== "followUp")) return undefined;
-  const typed = stripSkillBlocks(textOf(item.content as Message["content"]));
-  return { text: typed.text, images: imagesOf(item.content as Message["content"]), skills: typed.skills };
+  const typed = stripUserBlocks(item.content as string | readonly Block[]);
+  return {
+    text: typed.text,
+    images: imagesOf(item.content as Content),
+    skills: typed.skills,
+    attachments: typed.attachments,
+  };
 }
 
 export interface TaskRow {

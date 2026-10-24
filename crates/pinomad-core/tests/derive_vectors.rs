@@ -657,20 +657,41 @@ expect_text(case), "{name}");
     );
 }
 
-/// The typed text under the host's `$name` skill blocks (issue #308) — the
-/// display text the reference computed.
+/// The typed text under both host-written block kinds (issues #308, #321):
+/// display text, stripped skills, and the attachments the host appended. The
+/// attachments block counts only when a whole content text block is the v1
+/// block, never when it is only a substring of a string or text block.
 #[test]
-fn skill_blocks_replay() {
+fn user_blocks_replay() {
     let file = load("skill-blocks");
-    for case in cases(&file, "stripSkillBlocks") {
+    for case in cases(&file, "stripUserBlocks") {
         let name = as_text(field(case, "name"));
-        let text = field(case, "text").as_str().expect("text").clone();
-        let stripped = pinomad_core::skill_blocks::strip_skill_blocks(text.units());
+        let content = Json::parse(&as_text(field(case, "content"))).unwrap();
+        let stripped = pinomad_core::skill_blocks::strip_user_blocks(Some(&content));
         let mut object = pinomad_core::json::JsonObject::new();
-        object.set(U16String::from_str("text"), Json::String(U16String(stripped.text.to_vec())));
+        object.set(
+            U16String::from_str("text"),
+            Json::String(U16String(stripped.text.clone())),
+        );
         object.set(
             U16String::from_str("skills"),
             Json::array(stripped.skills.iter().map(|name| Json::from(name.clone())).collect()),
+        );
+        object.set(
+            U16String::from_str("attachments"),
+            Json::array(
+                stripped
+                    .attachments
+                    .iter()
+                    .map(|file| {
+                        let mut object = pinomad_core::json::JsonObject::new();
+                        object.set(U16String::from_str("id"), Json::from(file.id.clone()));
+                        object.set(U16String::from_str("name"), Json::from(file.name.clone()));
+                        object.set(U16String::from_str("size"), Json::Number(file.size as f64));
+                        Json::Object(std::sync::Arc::new(object))
+                    })
+                    .collect(),
+            ),
         );
         let got = Json::Object(std::sync::Arc::new(object));
         assert_eq!(norm(&got), expect_text(case), "{name}");

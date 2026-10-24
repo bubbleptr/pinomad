@@ -49,28 +49,48 @@ describe("statusText", () => {
 describe("queueItems", () => {
   it("lists queued inputs with their mode", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "steer-followup")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "focus", imageCount: 0 },
-      { id: 2, mode: "followUp", text: "then this", imageCount: 0 },
+      { id: 1, mode: "steer", text: "focus", imageCount: 0, attachmentCount: 0 },
+      { id: 2, mode: "followUp", text: "then this", imageCount: 0, attachmentCount: 0 },
     ]);
   });
 
   it("counts the image blocks a queued input carries", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "images")!.input)).toEqual([
-      { id: 1, mode: "followUp", text: "look", imageCount: 2 },
-      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0 },
+      { id: 1, mode: "followUp", text: "look", imageCount: 2, attachmentCount: 0 },
+      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0, attachmentCount: 0 },
     ]);
   });
 
   it("counts ref images too", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "images-ref")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "look", imageCount: 2 },
+      { id: 1, mode: "steer", text: "look", imageCount: 2, attachmentCount: 0 },
     ]);
   });
 
   it("previews what the user typed, not the skill blocks the host prepended", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "skill-blocks")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "$review now", imageCount: 0 },
-      { id: 2, mode: "followUp", text: "look $review", imageCount: 1 },
+      { id: 1, mode: "steer", text: "$review now", imageCount: 0, attachmentCount: 0 },
+      { id: 2, mode: "followUp", text: "look $review", imageCount: 1, attachmentCount: 0 },
+    ]);
+  });
+
+  it("keeps a string or mixed-text block as text, never as an attachment", () => {
+    const items = queueItems(QUEUE_CASES.find((c) => c.name === "attachment-block-string")!.input);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ text: expect.stringContaining("<attachments v=\"1\">"), attachmentCount: 0 });
+    expect(items[1]).toMatchObject({ text: expect.stringContaining("before <attachments"), attachmentCount: 0 });
+
+    const single = QUEUED_INPUT_CASES.find((c) => c.name === "attachment-block-string")!.input;
+    expect(queuedInput(single.view, single.id)).toMatchObject({
+      text: expect.stringContaining("<attachments v=\"1\">"),
+      attachments: [],
+    });
+  });
+
+  it("counts attachments and leaves their block out of the preview", () => {
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "attachments")!.input)).toEqual([
+      { id: 1, mode: "steer", text: "look", imageCount: 1, attachmentCount: 1 },
+      { id: 2, mode: "followUp", text: "", imageCount: 0, attachmentCount: 1 },
     ]);
   });
 });
@@ -78,7 +98,7 @@ describe("queueItems", () => {
 describe("queuedInput", () => {
   it("returns the original text and images of a queued steer or follow-up", () => {
     const steer = QUEUED_INPUT_CASES.find((c) => c.name === "steer")!.input;
-    expect(queuedInput(steer.view, steer.id)).toEqual({ text: "focus", images: [], skills: [] });
+    expect(queuedInput(steer.view, steer.id)).toEqual({ text: "focus", images: [], skills: [], attachments: [] });
 
     const images = QUEUED_INPUT_CASES.find((c) => c.name === "images")!.input;
     expect(queuedInput(images.view, images.id)).toEqual({
@@ -88,6 +108,7 @@ describe("queuedInput", () => {
         { data: "aGk=", mimeType: "image/png" },
       ],
       skills: [],
+      attachments: [],
     });
 
     const refs = QUEUED_INPUT_CASES.find((c) => c.name === "images-ref")!.input;
@@ -98,6 +119,7 @@ describe("queuedInput", () => {
         { ref: "5f2a", mimeType: "image/jpeg" },
       ],
       skills: [],
+      attachments: [],
     });
   });
 
@@ -108,6 +130,17 @@ describe("queuedInput", () => {
       text: "$review then x",
       images: [{ data: "aGk=", mimeType: "image/png" }],
       skills: ["review"],
+      attachments: [],
+    });
+  });
+
+  it("restores the attachment ids an edit sends back", () => {
+    const attachments = QUEUED_INPUT_CASES.find((c) => c.name === "attachments")!.input;
+    expect(queuedInput(attachments.view, attachments.id)).toEqual({
+      text: "look",
+      images: [{ data: "aGk=", mimeType: "image/png" }],
+      skills: [],
+      attachments: [{ id: "A".repeat(22), name: "notes.txt", size: 5 }],
     });
   });
 

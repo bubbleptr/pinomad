@@ -1,4 +1,4 @@
-// Shared inputs for `stripSkillBlocks` (issue #308, ADR-0028): the leading
+// Shared inputs for `stripUserBlocks` (issue #308, ADR-0028): the leading
 // skill blocks the host prepends to a `$name` message, and the near misses
 // that must stay untouched. skill-blocks.test.ts pins the expected results;
 // rust-vectors.ts serializes the same table for the Rust replay.

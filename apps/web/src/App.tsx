@@ -635,13 +635,14 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
               onRetry={
                 shownSummary?.kind === "subagent"
                   ? undefined
-                  : async ({ text, images, skills, requestId }) => {
+                  : async ({ text, images, skills, attachments, requestId }) => {
                       requestNotificationPermission();
                       // Refs go back as refs (outgoingImage), never downloaded first.
                       await remote.controller.submit(text, "followUp", {
                         requestId,
                         images: images.map(outgoingImage),
                         skills,
+                        ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
                       });
                     }
               }

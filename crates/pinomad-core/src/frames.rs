@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 18 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 19 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -104,6 +104,8 @@ pub enum CallMethod {
     Image,
     ListCommands,
     RunCommand,
+    BeginAttachment,
+    AppendAttachment,
 }
 
 impl CallMethod {
@@ -141,6 +143,8 @@ impl CallMethod {
             "image" => Self::Image,
             "listCommands" => Self::ListCommands,
             "runCommand" => Self::RunCommand,
+            "beginAttachment" => Self::BeginAttachment,
+            "appendAttachment" => Self::AppendAttachment,
             _ => return None,
         })
     }
@@ -175,6 +179,7 @@ impl CallMethod {
             Self::Image => 15,
             Self::ListCommands | Self::RunCommand => 17,
             Self::SetAgent => 18,
+            Self::BeginAttachment | Self::AppendAttachment => 19,
         }
     }
 }
@@ -201,6 +206,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::HostName => 12,
         HostFeature::ImageRefs => 15,
         HostFeature::BoundSkills => 16,
+        HostFeature::Attachments => 19,
     };
     host_minor >= since
 }
@@ -231,6 +237,9 @@ pub enum HostFeature {
     /// expands (16, ADR-0028) — an older host ignores the field, so the
     /// core leaves it off instead of refusing the call.
     BoundSkills,
+    /// `submit`/`createConversation` carry `attachments` (19, issue #321) —
+    /// an older host calls the field malformed and 4400s the connection.
+    Attachments,
 }
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.

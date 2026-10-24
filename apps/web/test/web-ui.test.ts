@@ -21,6 +21,7 @@ import { openHost, type OpenedHost } from "@pinomad/host/src/host.ts";
 import { constantValue, Published } from "@pinomad/host/src/host-value.ts";
 import type { ModelAuth } from "@pinomad/host/src/model-auth.ts";
 import { connectTo, followFirst, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
+import { parseAttachmentBlock } from "@pinomad/protocol/attachments.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -197,6 +198,17 @@ async function dropImages(page: Page, count: number): Promise<void> {
       .querySelector('[data-slot="prompt-input"]')!
       .dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
   }, count);
+}
+
+/** Drop one non-image file on the composer, through the same staged path as a picker. */
+async function dropFile(page: Page, name: string, body: string): Promise<void> {
+  await page.evaluate(([fileName, text]) => {
+    const data = new DataTransfer();
+    data.items.add(new File([text], fileName, { type: "text/plain" }));
+    document
+      .querySelector('[data-slot="prompt-input"]')!
+      .dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  }, [name, body] as const);
 }
 
 /** The staged-attachment row the composer drawer shows. */
@@ -978,6 +990,39 @@ it("sends a pasted image with a message and shows it in the transcript", async (
   await transcript.getByRole("button", { name: /Image 1/ }).click();
   await page.getByRole("dialog").waitFor();
   await page.keyboard.press("Escape");
+});
+
+it("uploads a dropped file, waits for it, and shows it in the bubble", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first", "second"] });
+  const page = await openPage(host, 1280, webOrigin);
+
+  await prompt(page).fill("hi");
+  await prompt(page).press("Enter");
+  await page.getByText("first", { exact: true }).waitFor();
+
+  await dropFile(page, "notes.txt", "hello from the client");
+  const chip = page.getByTestId("file-attachment-chip");
+  await chip.waitFor();
+  // The chip shows upload progress and settles once the host has every byte.
+  await expect.poll(async () => chip.getAttribute("data-status")).toBe("done");
+  expect(await chip.textContent()).toContain("notes.txt");
+
+  await prompt(page).fill("see the file");
+  await prompt(page).press("Enter");
+  const bubble = page.getByTestId("message-attachments");
+  await bubble.waitFor();
+  expect(await bubble.textContent()).toContain("notes.txt");
+  await page.getByText("second", { exact: true }).waitFor();
+  expect(await page.getByTestId("file-attachment-chip").count()).toBe(0);
+
+  const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
+  const contents = await userContentsOf(host, record.id);
+  const blocks = contents[1] as { type: string; text: string }[];
+  expect(blocks[0]).toEqual({ type: "text", text: "see the file" });
+  expect(parseAttachmentBlock(blocks[1]!.text)).toEqual([
+    { id: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/), name: "notes.txt", size: 21 },
+  ]);
 });
 
 it("keeps at most four dropped images and lets one be removed", async () => {

@@ -3,7 +3,7 @@
 // way pi-coding-agent expands `/skill:name`. A 5.16 client names the skills
 // the user picked from the `$` menu; an older client's text is matched with
 // the composer's lexical rule (`skillMentionRanges`) instead. Clients strip
-// the blocks back off for display (`stripSkillBlocks`).
+// the blocks back off for display (`stripUserBlocks`).
 import { readFile } from "node:fs/promises";
 import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
 import { withSkillBlocks, type SkillBlock } from "@pinomad/client/skill-blocks.ts";

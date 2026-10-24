@@ -1,0 +1,90 @@
+/* File attachment chips (issue #321): the same density as the image
+   thumbnails beside them, built from theme tokens so light/dark both follow. */
+.file-chip {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 16rem;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.25rem 0.5rem;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.file-chip[data-status="failed"] {
+  border-color: var(--danger);
+}
+
+.file-chip__icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.file-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip__size {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.file-chip[data-status="failed"] .file-chip__size {
+  color: var(--danger);
+}
+
+.file-chip__action {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: var(--muted);
+}
+
+.file-chip__action:hover,
+.file-chip__action:focus-visible {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.file-chip__action svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.file-chip__bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--surface-muted);
+}
+
+.file-chip__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-chip__bar > span {
+    transition: none;
+  }
+}

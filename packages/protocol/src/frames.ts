@@ -89,7 +89,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 18 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 19 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -146,6 +146,12 @@ export interface CallMethods {
        * (an older client) falls back to matching `$name` in the text.
        */
       skills?: readonly string[];
+      /**
+       * Host-stored attachments to reference (5.19, issue #321), at most
+       * MAX_ATTACHMENTS_PER_MESSAGE. Needs a 5.19 host; an older host would
+       * call the field malformed and 4400 the connection.
+       */
+      attachments?: readonly string[];
     };
     result: { conversationId: ConversationId };
   };
@@ -171,8 +177,31 @@ export interface CallMethods {
        * (an older client) falls back to matching `$name` in the text.
        */
       skills?: readonly string[];
+      /**
+       * Host-stored attachments to reference (5.19, issue #321), at most
+       * MAX_ATTACHMENTS_PER_MESSAGE. Needs a 5.19 host; an older host would
+       * call the field malformed and 4400 the connection.
+       */
+      attachments?: readonly string[];
     };
     result: { submissionId: number };
+  };
+  /**
+   * Start a file upload (5.19, issue #321) and get the host-generated id.
+   * Unbound and unqueued like `listFiles`, so a draft may upload before its
+   * first message exists. `size` is the decoded byte count.
+   */
+  beginAttachment: { args: { name: string; size: number }; result: { attachmentId: string } };
+  /**
+   * Append one base64 chunk (decoded at most 512 KiB) at `offset` (5.19).
+   * Serialized per attachment host-side; `received` is the file's current
+   * length, so a retry after a lost reply resends from there. A complete or
+   * used attachment answers `{ received: size, complete: true }` regardless
+   * of `offset`.
+   */
+  appendAttachment: {
+    args: { attachmentId: string; offset: number; data: string };
+    result: { received: number; complete: boolean };
   };
   /**
    * The bytes behind an image ref (5.15, ADR-0027). Answers only refs this
@@ -318,6 +347,8 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   deleteAgent: 6,
   setPushToken: 7,
   image: 15,
+  beginAttachment: 19,
+  appendAttachment: 19,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -338,6 +369,8 @@ export const FEATURE_SINCE = {
   imageRefs: 15,
   /** `submit`/`createConversation` carry `skills`, the `$` picks to expand (16); an older host ignores the field. */
   boundSkills: 16,
+  /** `submit`/`createConversation` carry `attachments`, host-stored ids (19); an older host 4400s the field. */
+  attachments: 19,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -479,6 +512,9 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       ));
   // Shape only — whether a name is a skill in scope is the host's check (a notice).
   const skills = (): boolean => args.skills === undefined || (Array.isArray(args.skills) && args.skills.every(nonempty));
+  // Shape only — count, existence and state are the host's check.
+  const attachments = (): boolean =>
+    args.attachments === undefined || (Array.isArray(args.attachments) && args.attachments.every(nonempty));
   // Shape only — name/description/model rules are the host's check (agentRoleProblem).
   const role = (): boolean =>
     record(args.role)
@@ -491,7 +527,7 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
-        && nonempty(args.requestId) && images() && skills()
+        && nonempty(args.requestId) && images() && skills() && attachments()
       );
     case "withdrawQueued":
     case "steerQueued":
@@ -531,6 +567,14 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId();
     case "image":
       return nonempty(args.ref);
+    case "beginAttachment":
+      return nonempty(args.name) && typeof args.size === "number" && Number.isSafeInteger(args.size) && args.size >= 0;
+    case "appendAttachment":
+      return (
+        nonempty(args.attachmentId)
+        && typeof args.offset === "number" && Number.isSafeInteger(args.offset) && args.offset >= 0
+        && typeof args.data === "string"
+      );
     case "addProject":
     case "removeProject":
       return nonempty(args.path);
@@ -540,8 +584,11 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "createConversation":
       return (
         record(args.home) && (args.home.kind === "chat" || (args.home.kind === "project" && nonempty(args.home.path)))
-        && typeof args.text === "string" && (nonempty(args.text) || (Array.isArray(args.images) && args.images.length > 0))
-        && nonempty(args.requestId) && images() && skills()
+        && typeof args.text === "string"
+        && (nonempty(args.text)
+          || (Array.isArray(args.images) && args.images.length > 0)
+          || (Array.isArray(args.attachments) && args.attachments.length > 0))
+        && nonempty(args.requestId) && images() && skills() && attachments()
         && (args.checkout === undefined || args.checkout === "worktree" || args.checkout === "project")
         && (args.model === undefined || (record(args.model) && nonempty(args.model.provider) && nonempty(args.model.modelId)))
         && (args.thinkingLevel === undefined || nonempty(args.thinkingLevel))

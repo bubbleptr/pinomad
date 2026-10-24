@@ -151,6 +151,19 @@ function framesVector(): VectorFile {
       name: "call-setAgent-null",
       wire: wire({ type: "call", id: 23, method: "setAgent", args: { conversationId: 2, agent: null } }),
     },
+    // 5.19: file attachments (issue #321).
+    {
+      name: "call-beginAttachment",
+      wire: wire({ type: "call", id: 24, method: "beginAttachment", args: { name: "notes.txt", size: 5 } }),
+    },
+    {
+      name: "call-appendAttachment",
+      wire: wire({ type: "call", id: 25, method: "appendAttachment", args: { attachmentId: "A".repeat(22), offset: 0, data: "aGVsbG8=" } }),
+    },
+    {
+      name: "call-submit-attachments",
+      wire: wire({ type: "call", id: 26, method: "submit", args: { conversationId: 2, text: "look", whenBusy: "followUp", requestId: "r", attachments: ["A".repeat(22)] } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];

@@ -380,6 +380,68 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "ping", extra: 1 })).toBe("unknownType");
   });
 
+  it("accepts attachment upload calls; rejects malformed shapes", () => {
+    const begin = (args: unknown): unknown => ({ type: "call", id: 1, method: "beginAttachment", args });
+    expect(kinds(begin({ name: "a.txt", size: 0 }))).toBe("frame");
+    expect(kinds(begin({ name: "a.txt", size: 10 * 1024 * 1024 }))).toBe("frame");
+    expect(kinds(begin({ name: "", size: 1 }))).toBe("malformed");
+    expect(kinds(begin({ name: "a.txt", size: -1 }))).toBe("malformed");
+    expect(kinds(begin({ name: "a.txt", size: 1.5 }))).toBe("malformed");
+    expect(kinds(begin({ name: "a.txt", size: "5" }))).toBe("malformed");
+
+    const append = (args: unknown): unknown => ({ type: "call", id: 1, method: "appendAttachment", args });
+    expect(kinds(append({ attachmentId: "A".repeat(22), offset: 0, data: "" }))).toBe("frame");
+    expect(kinds(append({ attachmentId: "A".repeat(22), offset: 3, data: "YWJj" }))).toBe("frame");
+    expect(kinds(append({ attachmentId: "", offset: 0, data: "" }))).toBe("malformed");
+    expect(kinds(append({ attachmentId: "A".repeat(22), offset: -1, data: "" }))).toBe("malformed");
+    expect(kinds(append({ attachmentId: "A".repeat(22), offset: 0, data: 3 }))).toBe("malformed");
+  });
+
+  it("accepts attachments on submit and createConversation", () => {
+    const id = "A".repeat(22);
+    expect(
+      kinds({
+        type: "call",
+        id: 1,
+        method: "submit",
+        args: { conversationId: 7, text: "look", whenBusy: "steer", requestId: "r", attachments: [id] },
+      }),
+    ).toBe("frame");
+    expect(
+      kinds({
+        type: "call",
+        id: 1,
+        method: "submit",
+        args: { conversationId: 7, text: "look", whenBusy: "steer", requestId: "r", attachments: [3] },
+      }),
+    ).toBe("malformed");
+    expect(
+      kinds({
+        type: "call",
+        id: 1,
+        method: "createConversation",
+        args: { home: { kind: "chat" }, text: "", requestId: "r", attachments: [id] },
+      }),
+    ).toBe("frame");
+    expect(
+      kinds({
+        type: "call",
+        id: 1,
+        method: "createConversation",
+        args: { home: { kind: "chat" }, text: "", requestId: "r", attachments: [""] },
+      }),
+    ).toBe("malformed");
+  });
+
+  it("introduces attachments at minor 19", () => {
+    expect(hostSupportsCall(18, "beginAttachment")).toBe(false);
+    expect(hostSupportsCall(19, "beginAttachment")).toBe(true);
+    expect(hostSupportsCall(18, "appendAttachment")).toBe(false);
+    expect(hostSupportsCall(19, "appendAttachment")).toBe(true);
+    expect(hostSupportsFeature(18, "attachments")).toBe(false);
+    expect(hostSupportsFeature(19, "attachments")).toBe(true);
+  });
+
   it("rejects non-objects and frames without a string type", () => {
     expect(kinds(null)).toBe("malformed");
     expect(kinds("subscribe")).toBe("malformed");

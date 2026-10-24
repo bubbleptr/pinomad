@@ -7,6 +7,7 @@ use pinomad_core::chat::{AgentState, QueueItem, QueuedInput, TaskRow, UsageRow};
 use pinomad_core::cot_view::{ChatEntry, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::presentation::ClassifiedDoc;
+use pinomad_core::skill_blocks::UserAttachment;
 use pinomad_core::tool_item::{DiffStat, MessageImage, PinomadToolDetail, ToolItem};
 use pinomad_core::u16str::U16String;
 
@@ -41,6 +42,14 @@ fn image_json(image: &MessageImage) -> Json {
             ("mimeType", Some(s(&image.mime_type))),
         ]),
     }
+}
+
+fn attachment_json(file: &UserAttachment) -> Json {
+    obj(&[
+        ("id", Some(s(&file.id))),
+        ("name", Some(s(&file.name))),
+        ("size", Some(num(file.size as f64))),
+    ])
 }
 
 fn diff_stat_json(stat: &DiffStat) -> Json {
@@ -138,12 +147,16 @@ pub fn cot_json(cot: &CotView) -> Json {
 
 pub fn chat_entry_json(entry: &ChatEntry) -> Json {
     match entry {
-        ChatEntry::User { id, text, images, skills } => obj(&[
+        ChatEntry::User { id, text, images, skills, attachments } => obj(&[
             ("kind", Some(s("user"))),
             ("id", Some(s(id))),
             ("text", Some(s(text))),
             ("images", Some(Json::array(images.iter().map(image_json).collect()))),
             ("skills", Some(Json::array(skills.iter().map(|name| s(name)).collect()))),
+            (
+                "attachments",
+                Some(Json::array(attachments.iter().map(attachment_json).collect())),
+            ),
         ]),
         ChatEntry::Run {
             id,
@@ -175,6 +188,10 @@ pub fn retry_json(retry: Option<&RetryRequest>) -> Json {
             ("text", Some(s(&r.text))),
             ("images", Some(Json::array(r.images.iter().map(image_json).collect()))),
             ("skills", Some(Json::array(r.skills.iter().map(|n| s(n)).collect()))),
+            (
+                "attachments",
+                Some(Json::array(r.attachments.iter().map(attachment_json).collect())),
+            ),
             ("requestId", Some(s(&r.request_id))),
         ]),
     }
@@ -213,6 +230,7 @@ pub fn queue_items_json(items: &[QueueItem]) -> Json {
                     ("mode", Some(s(item.mode.as_str()))),
                     ("text", Some(s(&item.text))),
                     ("imageCount", Some(num(item.image_count as f64))),
+                    ("attachmentCount", Some(num(item.attachment_count as f64))),
                 ])
             })
             .collect(),
@@ -227,6 +245,10 @@ pub fn queued_input_json(input: &QueuedInput) -> Json {
             Some(Json::array(input.images.iter().map(image_json).collect())),
         ),
         ("skills", Some(Json::array(input.skills.iter().map(|name| s(name)).collect()))),
+        (
+            "attachments",
+            Some(Json::array(input.attachments.iter().map(attachment_json).collect())),
+        ),
     ])
 }
 

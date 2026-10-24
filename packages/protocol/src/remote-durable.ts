@@ -1,5 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
+import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.ts";
 import type { OutgoingImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
@@ -609,6 +610,13 @@ class RemoteClient {
           if (needsImageRefs(images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
             throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
           }
+          const attachments = options?.attachments ?? [];
+          if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw new Error(`At most ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`);
+          }
+          if (attachments.length > 0 && !hostSupportsFeature(this.#hostMinor, "attachments")) {
+            throw new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host");
+          }
           // A pre-5.10 host would silently ignore `agent` and create an
           // unassigned conversation — fail instead (ADR-0023 §8).
           if (options?.agent !== undefined && !hostSupportsFeature(this.#hostMinor, "agentConversations")) {
@@ -624,6 +632,7 @@ class RemoteClient {
             ...(options?.agent === undefined ? {} : { agent: options.agent }),
             ...(images.length === 0 ? {} : { images }),
             ...this.#boundSkills(options?.skills),
+            ...(attachments.length === 0 ? {} : { attachments }),
           });
           await this.#switch(conversationId);
         }),
@@ -645,6 +654,13 @@ class RemoteClient {
           if (needsImageRefs(images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
             throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
           }
+          const attachments = options?.attachments ?? [];
+          if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw new Error(`At most ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`);
+          }
+          if (attachments.length > 0 && !hostSupportsFeature(this.#hostMinor, "attachments")) {
+            throw new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host");
+          }
           return this.#call("submit", {
             conversationId: options?.target ?? conversationId(),
             text,
@@ -652,6 +668,7 @@ class RemoteClient {
             requestId: options?.requestId ?? newRequestId(),
             ...(images.length === 0 ? {} : { images }),
             ...this.#boundSkills(options?.skills),
+            ...(attachments.length === 0 ? {} : { attachments }),
           });
         }),
       compact: (instructions) =>
@@ -751,6 +768,20 @@ class RemoteClient {
           return Promise.reject(new Error("The host is too old for this (needs protocol 5.10); run `pinomad upgrade` on the host"));
         }
         return this.#call("listFiles", { scope, query });
+      },
+      // Unqueued like listFiles (issue #321): upload chunks run beside the
+      // command queue, so a send/abort is never stuck behind a large frame.
+      beginAttachment: (name, size) => {
+        if (!hostSupportsCall(this.#hostMinor, "beginAttachment")) {
+          return Promise.reject(new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host"));
+        }
+        return this.#call("beginAttachment", { name, size }).then(({ attachmentId }) => attachmentId);
+      },
+      appendAttachment: (attachmentId, offset, data) => {
+        if (!hostSupportsCall(this.#hostMinor, "appendAttachment")) {
+          return Promise.reject(new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host"));
+        }
+        return this.#call("appendAttachment", { attachmentId, offset, data });
       },
       // Same unqueued shape as listFiles: fetching image bytes is read-only
       // and must not wait behind a hanging command (ADR-0027).

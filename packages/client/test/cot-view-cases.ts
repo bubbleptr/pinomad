@@ -3,7 +3,9 @@
 // no copies. Entry ids come from a module counter so every case is stable.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
+import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
+import { attached } from "./attachment-blocks-cases.ts";
 import { block } from "./skill-blocks-cases.ts";
 
 let nextId = 1;
@@ -230,6 +232,52 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
   },
   {
+    // A string message ending in a valid block has no block boundary, so it is
+    // still regular text.
+    name: "user-string-attachment-block",
+    view: view([user(attachmentBlock([attached()])), assistant([text("seen")])]),
+    busy: false,
+  },
+  {
+    name: "user-text-block-embedded-attachment",
+    view: view([
+      user([text(`before ${attachmentBlock([attached()])} after`)]),
+      assistant([text("seen")]),
+    ]),
+    busy: false,
+  },
+  {
+    // The host appends an attachments block as its own text block (#321); the
+    // bubble shows the typed text and chips, never the raw block.
+    name: "user-attachments",
+    view: view([
+      user([text("look"), text(attachmentBlock([attached({ name: 'a&b<c>d"e.txt' })])), image("aGk=", "image/png")]),
+      assistant([text("seen")]),
+      user([text(attachmentBlock([attached({ name: "only.txt" })])), image("aGk=", "image/png")]),
+      assistant([text("again")]),
+    ]),
+    busy: false,
+  },
+  {
+    // A tool result that happens to contain the exact block is data, not a
+    // host block: textOf stays generic and the output stays visible.
+    name: "tool-result-attachment-block",
+    view: view([
+      user("go"),
+      assistant([call("c1", "read", { path: "notes.txt" })], "toolUse"),
+      entry("pi.tool-result", {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "read",
+        content: [text(attachmentBlock([attached()]))],
+        isError: false,
+        timestamp: 0,
+      }),
+      assistant([text("done")]),
+    ]),
+    busy: false,
+  },
+  {
     name: "boundaries",
     view: view([
       user("one"),
@@ -441,6 +489,11 @@ export const RETRY_CASES: DeriveChatCase[] = [
   // A retry resends the picked skills too (ADR-0028), not just the typed text.
   { name: "retry-skills", view: view([user(`${block("review", "Review steps.")}\n\n$review do x`), failed()]), busy: false },
   { name: "retry-image-only", view: view([user([image("aGk=", "image/png")]), failed()]), busy: false },
+  {
+    name: "retry-attachments",
+    view: view([user([text("look"), text(attachmentBlock([attached()]))]), failed()]),
+    busy: false,
+  },
   { name: "retry-empty-prompt", view: view([user(""), failed()]), busy: false },
   { name: "retry-not-newest", view: view([user("go"), failed(), user("again"), assistant([text("recovered")])]), busy: false },
   { name: "retry-succeeded", view: view([user("go"), assistant([text("done")])]), busy: false },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripSkillBlocks, withSkillBlocks } from "../src/skill-blocks.ts";
+import { stripUserBlocks, withSkillBlocks } from "../src/skill-blocks.ts";
 import { SKILL_BLOCK_CASES, block } from "./skill-blocks-cases.ts";
 
 // The expected display text and stripped skill names per case — kept here
@@ -26,9 +26,9 @@ const EXPECTED: Record<string, { text: string; skills: string[] }> = {
   unicode: { text: "用 $review 😀", skills: ["review"] },
 };
 
-describe("stripSkillBlocks", () => {
+describe("stripUserBlocks on string content", () => {
   it.each(SKILL_BLOCK_CASES)("$name", ({ name, text }) => {
-    expect(stripSkillBlocks(text)).toEqual(EXPECTED[name]);
+    expect(stripUserBlocks(text)).toEqual({ ...EXPECTED[name], attachments: [] });
   });
 
   it("covers every case in the shared table", () => {
@@ -49,10 +49,14 @@ describe("withSkillBlocks", () => {
     expect(withSkillBlocks([], "$review do x")).toBe("$review do x");
   });
 
-  it("round-trips through stripSkillBlocks", () => {
+  it("round-trips through stripUserBlocks", () => {
     const deploy = { name: "deploy", location: "/s/deploy/SKILL.md", baseDir: "/s/deploy", body: "" };
     for (const text of ["$review", "$deploy then $review\n", "  $review  "]) {
-      expect(stripSkillBlocks(withSkillBlocks([deploy, review], text))).toEqual({ text, skills: ["deploy", "review"] });
+      expect(stripUserBlocks(withSkillBlocks([deploy, review], text))).toEqual({
+        text,
+        skills: ["deploy", "review"],
+        attachments: [],
+      });
     }
   });
 });

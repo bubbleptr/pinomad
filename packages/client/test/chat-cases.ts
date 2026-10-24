@@ -2,6 +2,8 @@
 // these and rust-vectors.ts serializes them for the Rust replay — one table,
 // no copies.
 import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
+import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
+import { attached } from "./attachment-blocks-cases.ts";
 import { block } from "./skill-blocks-cases.ts";
 
 export const text = (value: string) => ({ type: "text", text: value });
@@ -88,6 +90,24 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
       },
     ]),
   },
+  {
+    name: "attachment-block-string",
+    input: chatView([], {}, [
+      { id: 1, mode: "steer", content: attachmentBlock([attached()]) },
+      { id: 2, mode: "followUp", content: [text(`before ${attachmentBlock([attached()])} after`)] },
+    ]),
+  },
+  {
+    name: "attachments",
+    input: chatView([], {}, [
+      {
+        id: 1,
+        mode: "steer",
+        content: [text("look"), text(attachmentBlock([attached({ name: 'a&b<c>d"e.txt' })])), { type: "image", data: "aGk=", mimeType: "image/png" }],
+      },
+      { id: 2, mode: "followUp", content: [text(attachmentBlock([attached({ name: "only.txt" })]))] },
+    ]),
+  },
   { name: "empty", input: chatView() },
 ];
 
@@ -156,6 +176,27 @@ export const QUEUED_INPUT_CASES: NamedCase<QueuedInputCase>[] = [
         },
       ]),
       id: 3,
+    },
+  },
+  {
+    name: "attachment-block-string",
+    input: {
+      view: chatView([], {}, [{ id: 7, mode: "steer", content: attachmentBlock([attached()]) }]),
+      id: 7,
+    },
+  },
+  {
+    name: "attachments",
+    input: {
+      view: chatView([], {}, [
+        {
+          id: 5,
+          mode: "followUp",
+          content: [text("look"), text(attachmentBlock([attached()])), { type: "image", data: "aGk=", mimeType: "image/png" }],
+        },
+        { id: 6, mode: "steer", content: [text(attachmentBlock([attached({ name: "only.txt" })]))] },
+      ]),
+      id: 5,
     },
   },
   {

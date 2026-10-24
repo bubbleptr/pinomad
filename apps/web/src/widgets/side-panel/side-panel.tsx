@@ -14,6 +14,7 @@ import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { useRef, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
+import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import { outgoingImage, type ViewImage } from "@pinomad/protocol/images.ts";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
@@ -277,7 +278,13 @@ function SideTranscript({
   ownOnly?: boolean;
   forkSource?: string;
   /** Forks are talkable and pass one through; read-only details do not. */
-  onRetry?: (retry: { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string }) => Promise<void>;
+  onRetry?: (retry: {
+    text: string;
+    images: readonly ViewImage[];
+    skills: readonly string[];
+    attachments: readonly UserAttachment[];
+    requestId: string;
+  }) => Promise<void>;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -378,7 +385,7 @@ function ThreadDetail({
           openInPanel={openInPanel}
           ownOnly
           forkSource={displayName(parentSummary)}
-          onRetry={async ({ text, images, skills, requestId }) => {
+          onRetry={async ({ text, images, skills, attachments, requestId }) => {
             requestNotificationPermission();
             // Refs go back as refs, never downloaded first.
             await remote.controller.submit(text, "followUp", {
@@ -386,6 +393,7 @@ function ThreadDetail({
               requestId,
               images: images.map(outgoingImage),
               skills,
+              ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
             });
           }}
         />

@@ -498,6 +498,54 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("gates attachments on a 5.19 host and sends ids on submit/create", async () => {
+    const attachment = "A".repeat(22);
+    const old = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 18 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remoteOld.controller.switchConversation(id(1));
+      await expect(remoteOld.controller.beginAttachment("a.txt", 5)).rejects.toThrow("needs protocol 5.19");
+      await remoteOld.controller.submit("look", "followUp", { attachments: [attachment] });
+      await waitForView(remoteOld, (view) =>
+        view.notices.some(
+          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.19"),
+        ),
+      );
+      await remoteOld.controller.createConversation({ kind: "chat" }, "look", { attachments: [attachment] });
+      expect(
+        old.sent.some(
+          (frame) =>
+            frame.type === "call"
+            && ["beginAttachment", "appendAttachment", "submit", "createConversation"].includes(frame.method),
+        ),
+      ).toBe(false);
+    } finally {
+      remoteOld.close();
+    }
+
+    const { transport, sent } = fakeTransport([{}], undefined, (frame) =>
+      frame.method === "beginAttachment"
+        ? { ok: true, value: { attachmentId: attachment } }
+        : frame.method === "appendAttachment"
+          ? { ok: true, value: { received: 5, complete: true } }
+          : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      expect(await remote.controller.beginAttachment("a.txt", 5)).toBe(attachment);
+      expect(await remote.controller.appendAttachment(attachment, 0, "aGVsbG8=")).toEqual({ received: 5, complete: true });
+      await remote.controller.submit("look", "followUp", { attachments: [attachment] });
+      await remote.controller.createConversation({ kind: "chat" }, "look", { attachments: [attachment] });
+      const submit = sent.find((frame) => frame.type === "call" && frame.method === "submit")!;
+      expect((submit.args as { attachments: unknown }).attachments).toEqual([attachment]);
+      const create = sent.find((frame) => frame.type === "call" && frame.method === "createConversation")!;
+      expect((create.args as { attachments: unknown }).attachments).toEqual([attachment]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("gates image refs on a 5.15 host for submit and createConversation", async () => {
     const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
     const reference = { ref: "abc123" };

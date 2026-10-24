@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 18
+    "minor": 19
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":18},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":19},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":18},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":19},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -203,6 +203,18 @@
       "wire": "{\"type\":\"call\",\"id\":23,\"method\":\"setAgent\",\"args\":{\"conversationId\":2,\"agent\":null}}"
     },
     {
+      "name": "call-beginAttachment",
+      "wire": "{\"type\":\"call\",\"id\":24,\"method\":\"beginAttachment\",\"args\":{\"name\":\"notes.txt\",\"size\":5}}"
+    },
+    {
+      "name": "call-appendAttachment",
+      "wire": "{\"type\":\"call\",\"id\":25,\"method\":\"appendAttachment\",\"args\":{\"attachmentId\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"offset\":0,\"data\":\"aGVsbG8=\"}}"
+    },
+    {
+      "name": "call-submit-attachments",
+      "wire": "{\"type\":\"call\",\"id\":26,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"look\",\"whenBusy\":\"followUp\",\"requestId\":\"r\",\"attachments\":[\"AAAAAAAAAAAAAAAAAAAAAA\"]}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -226,8 +238,16 @@
         "since": 0
       },
       {
+        "name": "appendAttachment",
+        "since": 19
+      },
+      {
         "name": "archive",
         "since": 0
+      },
+      {
+        "name": "beginAttachment",
+        "since": 19
       },
       {
         "name": "changes",
@@ -382,6 +402,10 @@
         "since": 9
       },
       {
+        "name": "attachments",
+        "since": 19
+      },
+      {
         "name": "boundSkills",
         "since": 16
       },
@@ -423,10 +447,34 @@
       "expect": true
     },
     {
+      "name": "appendAttachment@19",
+      "minor": 19,
+      "call": "appendAttachment",
+      "expect": true
+    },
+    {
+      "name": "appendAttachment@18",
+      "minor": 18,
+      "call": "appendAttachment",
+      "expect": false
+    },
+    {
       "name": "archive@0",
       "minor": 0,
       "call": "archive",
       "expect": true
+    },
+    {
+      "name": "beginAttachment@19",
+      "minor": 19,
+      "call": "beginAttachment",
+      "expect": true
+    },
+    {
+      "name": "beginAttachment@18",
+      "minor": 18,
+      "call": "beginAttachment",
+      "expect": false
     },
     {
       "name": "changes@0",
@@ -714,6 +762,18 @@
       "name": "apnsPush@8",
       "minor": 8,
       "feature": "apnsPush",
+      "expect": false
+    },
+    {
+      "name": "attachments@19",
+      "minor": 19,
+      "feature": "attachments",
+      "expect": true
+    },
+    {
+      "name": "attachments@18",
+      "minor": 18,
+      "feature": "attachments",
       "expect": false
     },
     {

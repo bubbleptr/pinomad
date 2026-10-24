@@ -6,9 +6,10 @@
 // pi.live doc) instead of Pace's session runtime model.
 
 import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
+import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
-import { stripSkillBlocks } from "./skill-blocks.ts";
+import { stripUserBlocks } from "./skill-blocks.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
 
@@ -64,9 +65,11 @@ export type ChatEntry =
   | {
       kind: "user";
       id: string;
-      /** What the user typed, without the skill blocks the host prepended (ADR-0028). */
+      /** What the user typed, without the blocks the host wrote around it (ADR-0028, #321). */
       text: string;
       images: readonly ViewImage[];
+      /** Files the user attached, as the host recorded them. */
+      attachments: readonly UserAttachment[];
       /**
        * The skills the host expanded into this message. A bubble highlights a
        * `$name` in `text` only when its name is here — by name, so a plain
@@ -534,8 +537,15 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      const typed = stripSkillBlocks(textOf(message.content));
-      items.push({ kind: "user", id, text: typed.text, images: imagesOf(message.content), skills: typed.skills });
+      const typed = stripUserBlocks(message.content);
+      items.push({
+        kind: "user",
+        id,
+        text: typed.text,
+        images: imagesOf(message.content),
+        skills: typed.skills,
+        attachments: typed.attachments,
+      });
     } else if (entry.kind === "pi.compaction") {
       flush(false);
       items.push({ kind: "compaction", id });
@@ -580,7 +590,13 @@ export function deriveChat(
 /** The tail failure's retry: the user text the failed run answered, keyed to that run so repeated retries admit once. */
 export function retryOf(
   entries: readonly ChatEntry[],
-): { text: string; images: readonly ViewImage[]; skills: readonly string[]; requestId: string } | undefined {
+): {
+  text: string;
+  images: readonly ViewImage[];
+  skills: readonly string[];
+  attachments: readonly UserAttachment[];
+  requestId: string;
+} | undefined {
   const last = entries[entries.length - 1];
   if (last?.kind !== "run" || last.failure === undefined) return undefined;
   for (let i = entries.length - 2; i >= 0; i--) {
@@ -588,13 +604,22 @@ export function retryOf(
     // A compaction between the prompt and the run doesn't break the reach
     // back; a reset or another run does.
     if (entry.kind === "compaction") continue;
-    // An image-only prompt has no text but is still worth resending.
-    if (entry.kind !== "user" || (entry.text.trim() === "" && entry.images.length === 0)) return undefined;
+    // An attachment-only or image-only prompt has no text but is still worth resending.
+    if (
+      entry.kind !== "user"
+      || (entry.text.trim() === "" && entry.images.length === 0 && entry.attachments.length === 0)
+    ) return undefined;
     // The run id (`run-<first assistant entry id>`) is stable across views, so
     // a second click or another client's retry dedupes on the host.
     // The picked skills go back too: without them the host would fall back
     // to matching every `$name` in the text (ADR-0028).
-    return { text: entry.text, images: entry.images, skills: entry.skills, requestId: `retry:${last.id}` };
+    return {
+      text: entry.text,
+      images: entry.images,
+      skills: entry.skills,
+      attachments: entry.attachments,
+      requestId: `retry:${last.id}`,
+    };
   }
   return undefined;
 }

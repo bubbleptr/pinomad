@@ -57,6 +57,23 @@ describe("cleanTitle", () => {
 });
 
 describe("auto-title", () => {
+  it("keeps an attachments block out of the title prompt", async () => {
+    let titlePrompt = "";
+    const capture: FauxResponseFactory = (context) => {
+      titlePrompt = JSON.stringify(context.messages);
+      return fauxAssistantMessage("Captured title");
+    };
+    const host = await startFauxHost(defer, { autoTitle: true, answers: ["done", capture] });
+    const client = await connectTo(defer, host);
+    const attachment = await client.controller.beginAttachment("notes.txt", 5);
+    await client.controller.appendAttachment(attachment, 0, "aGVsbG8=");
+    await client.controller.createConversation({ kind: "chat" }, "look at the notes", { attachments: [attachment] });
+    const id = client.view.current().conversation!.conversation.id;
+    await waitForView(client.view, (view) => summaryOf(view, id)?.title === "Captured title");
+    expect(titlePrompt).toContain("look at the notes");
+    expect(titlePrompt).not.toContain("<attachments");
+  });
+
   it("titles a conversation after its first successful run, and never again", async () => {
     const host = await startFauxHost(defer, { autoTitle: true, answers: ["done", "Fix login bug", "second answer"] });
     const client = await connectTo(defer, host);

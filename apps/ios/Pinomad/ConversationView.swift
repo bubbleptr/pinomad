@@ -303,7 +303,7 @@ struct ConversationView: View {
         todo: TodoLine?
     ) -> some View {
         switch entry {
-        case let .user(_, text, images, skills):
+        case let .user(_, text, images, skills, _):
             // Only the skills the host expanded light up (ADR-0028).
             UserRow(text: text, images: images, skills: skills).equatable()
         case let .run(id, cot, _, interrupted, failure):
