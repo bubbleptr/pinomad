@@ -38,7 +38,7 @@ extension AppModel {
         let room = tray.room
         let selected = Array(urls.prefix(room))
         let overflow = urls.count > room
-        let hostKey = currentHostKey
+        let generation = sessionGeneration
         let read = beginFileRead(key)
         Task { [weak self] in
             let picked = await Task.detached(priority: .userInitiated) {
@@ -46,7 +46,7 @@ extension AppModel {
             }.value
             guard let self else { return }
             defer { self.finishFileRead(key, token: read) }
-            guard self.currentHostKey == hostKey else { return }
+            guard self.sessionGeneration == generation else { return }
             var tray = self.fileTrays[key] ?? FileAttachmentTray()
             var sources: [FileAttachmentSource] = []
             var problem: String? = overflow

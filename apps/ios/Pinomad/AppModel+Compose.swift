@@ -45,7 +45,8 @@ extension AppModel {
                 // already in the core view. Associate it with this send by
                 // reading the notices now, not on a later snapshot.
                 let rejection = (session.currentNotices() ?? []).first {
-                    $0.id > noticesBefore && AttachmentNotice.isRejection($0.message)
+                    $0.id > noticesBefore && $0.level == "error"
+                        && AttachmentNotice.isRejection($0.message)
                 }
                 if let rejection {
                     self.restoreRejectedSend(
