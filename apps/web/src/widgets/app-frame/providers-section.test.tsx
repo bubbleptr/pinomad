@@ -34,14 +34,17 @@ const flow = (overrides: Partial<LoginFlow>): LoginFlow => ({
   ...overrides,
 });
 
-function setup({ strict = false } = {}) {
+function setup({ strict = false, begin }: { strict?: boolean; begin?: () => Promise<string> } = {}) {
   // The host runs one login per provider; a second begin is refused while the first runs.
   let begun = 0;
   const controller = {
-    beginLogin: vi.fn(async () => {
-      if (++begun > 1) throw new Error("A login for OpenAI is already in progress");
-      return "login-1";
-    }),
+    beginLogin: vi.fn(
+      begin ??
+        (async () => {
+          if (++begun > 1) throw new Error("A login for OpenAI is already in progress");
+          return "login-1";
+        }),
+    ),
     answerLogin: vi.fn(async () => {}),
     cancelLogin: vi.fn(async () => {}),
     logout: vi.fn(async () => {}),
@@ -87,6 +90,23 @@ describe("ProvidersSection logins", () => {
     expect(await screen.findByLabelText(/Enter OpenAI API key/)).toBeInTheDocument();
     expect(controller.beginLogin).toHaveBeenCalledTimes(1);
     expect(controller.cancelLogin).not.toHaveBeenCalled();
+  });
+
+  it("picks up the login the host began when the begin result was lost to a disconnect", async () => {
+    const { controller, user, show, openKeyLogin } = setup({ begin: async () => Promise.reject(new Error("Connection lost")) });
+    await openKeyLogin();
+    await screen.findByText("Connection lost");
+
+    // After the reconnect the host's snapshot still lists the login it began.
+    show([flow({ prompt: { id: 7, type: "secret", message: "Enter OpenAI API key" } })]);
+    await user.type(await screen.findByLabelText(/Enter OpenAI API key/), "sk-test");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(controller.answerLogin).toHaveBeenLastCalledWith("login-1", 7, "sk-test");
+
+    // It is this page's login now: leaving cancels it.
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(controller.cancelLogin).toHaveBeenCalledWith("login-1");
+    expect(controller.beginLogin).toHaveBeenCalledTimes(1);
   });
 
   it("cancels a running login it started when the page is left", async () => {

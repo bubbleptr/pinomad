@@ -52,6 +52,7 @@ export function LoginPanel({
 }) {
   const [loginId, setLoginId] = useState<string>();
   const [starting, setStarting] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const [startError, setStartError] = useState<string>();
   const flow = loginId === undefined ? undefined : logins.find((entry) => entry.id === loginId);
 
@@ -65,6 +66,7 @@ export function LoginPanel({
   const start = (): void => {
     const mine = ++generation.current;
     setStarting(true);
+    setAttempted(true);
     setStartError(undefined);
     remote.controller.beginLogin(providerId, method).then(
       (id) => {
@@ -103,6 +105,20 @@ export function LoginPanel({
     };
     // Mount/unmount only: the page keys this panel by provider and method.
   }, []);
+
+  // A begin whose result never arrived (the connection dropped after the host
+  // started the login) leaves the flow running with no id here; once no start
+  // is in flight, take over the provider's running flow from the stream.
+  const orphan =
+    attempted && !starting && loginId === undefined
+      ? logins.find((entry) => entry.providerId === providerId && entry.method === method && entry.state === "running")
+      : undefined;
+  useEffect(() => {
+    if (orphan === undefined) return;
+    running.current = orphan.id;
+    setLoginId(orphan.id);
+    setStartError(undefined);
+  }, [orphan?.id]);
 
   // The host drops an ended flow after a while; if this page missed the end
   // (say, across a reconnect), a flow that was listed and is gone has ended.

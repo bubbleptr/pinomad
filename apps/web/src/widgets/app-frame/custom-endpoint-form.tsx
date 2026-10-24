@@ -4,7 +4,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { CUSTOM_PROVIDER_APIS, type CustomProviderApi, type ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { InlineError } from "./provider-login.tsx";
@@ -95,9 +95,22 @@ export function CustomEndpointForm({
             ? `“${id}” is already a provider on this host; choose another name`
             : undefined;
 
+  // An answer is for the endpoint as it was asked about: dropped if the
+  // format, URL or key changed meanwhile, if a newer fetch went out, or if
+  // the models were edited by hand while it was on its way.
+  const current = useRef({ api, baseUrl, apiKey, models });
+  current.current = { api, baseUrl, apiKey, models };
+  const fetches = useRef(0);
+
   const fetchModels = async (): Promise<void> => {
     setUrlTouched(true);
     if (urlProblem !== undefined) return;
+    const mine = ++fetches.current;
+    const asked = current.current;
+    const stillAsked = (): boolean => {
+      const now = current.current;
+      return mine === fetches.current && now.api === asked.api && now.baseUrl === asked.baseUrl && now.apiKey === asked.apiKey;
+    };
     setFetching(true);
     setFetchProblem(undefined);
     try {
@@ -107,12 +120,13 @@ export function CustomEndpointForm({
         ...(apiKey === "" ? {} : { apiKey }),
         ...(existing === undefined ? {} : { providerId: existing.id }),
       });
+      if (!stillAsked()) return;
       if (listed.length === 0) setFetchProblem("The endpoint listed no models. Enter model IDs by hand.");
-      else setModels(listed.join("\n"));
+      else if (current.current.models === asked.models) setModels(listed.join("\n"));
     } catch (reason) {
-      setFetchProblem(`${messageOf(reason)} Enter model IDs by hand.`);
+      if (stillAsked()) setFetchProblem(`${messageOf(reason)} Enter model IDs by hand.`);
     } finally {
-      setFetching(false);
+      if (mine === fetches.current) setFetching(false);
     }
   };
 
