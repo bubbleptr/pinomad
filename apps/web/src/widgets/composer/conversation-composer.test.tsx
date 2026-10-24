@@ -78,6 +78,18 @@ describe("ConversationComposer commands", () => {
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("Loading…");
   });
+
+  it("offers Attach files… only on a 5.19 host", async () => {
+    setup();
+    await act(async () => {});
+    expect(screen.getByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeInTheDocument();
+  });
+
+  it("hides Attach files… on a pre-5.19 host", async () => {
+    setup({ minor: 18 });
+    await act(async () => {});
+    expect(screen.queryByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeNull();
+  });
 });
 
 const summary = (overrides: Partial<ConversationSummary> = {}): ConversationSummary => ({

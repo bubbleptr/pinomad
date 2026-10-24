@@ -41,7 +41,7 @@ import {
   thinkingLevelLabels,
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
-import { stripSkillBlocks } from "../src/skill-blocks.ts";
+import { stripSkillBlocks, stripUserBlocks } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { parseCommandInput } from "../src/command-input.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
@@ -111,6 +111,7 @@ import {
 } from "./misc-cases.ts";
 import { PATCH_CASES } from "./patch-cases.ts";
 import { SKILL_BLOCK_CASES } from "./skill-blocks-cases.ts";
+import { USER_BLOCK_CASES } from "./attachment-blocks-cases.ts";
 import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
 import { COMMAND_INPUT_CASES } from "./command-input-cases.ts";
 import {
@@ -512,6 +513,11 @@ function skillBlocksVector(): VectorFile {
       name: c.name,
       text: c.text,
       expect: expect(wire(stripSkillBlocks(c.text))),
+    })),
+    stripUserBlocks: USER_BLOCK_CASES.map((c) => ({
+      name: c.name,
+      text: c.text,
+      expect: expect(wire(stripUserBlocks(c.text))),
     })),
   });
 }

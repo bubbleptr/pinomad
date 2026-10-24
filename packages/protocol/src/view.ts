@@ -196,6 +196,12 @@ export interface DurableController {
        * sees it and matches `$name` in the text itself, or not at all.
        */
       skills?: readonly string[];
+      /**
+       * Host-stored attachment ids to reference (5.19, issue #321). Sent only
+       * to a 5.19 host (`attachments` in FEATURE_SINCE); an older host calls
+       * the field malformed.
+       */
+      attachments?: readonly string[];
     },
   ): Promise<void>;
   /** Hide or restore a top-level conversation in the index. */
@@ -217,6 +223,8 @@ export interface DurableController {
       requestId?: string;
       images?: readonly OutgoingImage[];
       skills?: readonly string[];
+      /** Host-stored attachment ids to reference (5.19, issue #321). */
+      attachments?: readonly string[];
     },
   ): Promise<void>;
   compact(instructions: string | undefined): Promise<void>;
@@ -282,6 +290,21 @@ export interface DurableController {
    * that never queues behind commands; rejects when the host predates 5.15.
    */
   image(ref: string): Promise<MessageImage>;
+  /**
+   * Start a host-side file upload (5.19, issue #321) and get its id. Unqueued:
+   * uploads run beside commands and never block them. Needs a 5.19 host.
+   */
+  beginAttachment(name: string, size: number): Promise<string>;
+  /**
+   * Append one base64 chunk to an upload (5.19). Unqueued and serialized per
+   * attachment host-side; resolves with the bytes the host now has (which may
+   * be more than the caller sent after a lost reply).
+   */
+  appendAttachment(
+    attachmentId: string,
+    offset: number,
+    data: string,
+  ): Promise<{ received: number; complete: boolean }>;
   /**
    * The slash commands the host declares for `conversationId` (ADR-0029). A
    * read-only request that never queues behind commands. Needs a 5.17 host —

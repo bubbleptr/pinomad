@@ -2,7 +2,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
-import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
+import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -13,7 +13,10 @@ import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-men
 import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { useSlashCommands } from "../../entities/command/slash-commands.tsx";
-import { attachmentDrawer, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { splitFiles } from "../../entities/attachment/file-attachments.ts";
+import { FileAttachmentChip } from "../../entities/attachment/file-attachments.tsx";
+import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
+import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
@@ -23,7 +26,7 @@ import { summaryOf } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuItem } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
-import { ArchiveArrowDown, Bot, CommandLine, ImageIcon, Sparkles } from "@/shared/ui/icons";
+import { ArchiveArrowDown, Bot, CommandLine, FileIcon, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
 
 /** A queued edit's images as bytes, or undefined when any one cannot load. */
@@ -123,9 +126,22 @@ export function ConversationComposer({
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
   const { images, pending: imagesPending, error, add, restore, remove, clear } = useImageAttachments(accepts);
+  const attachmentsEnabled =
+    hostSupportsFeature(view.host?.protocol.minor ?? 0, "attachments")
+    && hostSupportsCall(view.host?.protocol.minor ?? 0, "beginAttachment");
+  const files = useFileAttachments(remote, attachmentsEnabled);
+  const attachInput = useRef<HTMLInputElement>(null);
+  const [waitingForFiles, setWaitingForFiles] = useState(false);
+  const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
+  const addFiles = (incoming: File[]): void => {
+    const { images: pickedImages, others } = splitFiles(incoming);
+    setFileSubmitError(undefined);
+    if (pickedImages.length > 0) add(pickedImages);
+    if (others.length > 0) files.add(others);
+  };
   // Why a typed command wasn't run; any edit to the draft clears it.
   const [commandError, setCommandError] = useState<string | undefined>(undefined);
-  useEffect(() => setCommandError(undefined), [value, images.length]);
+  useEffect(() => setCommandError(undefined), [value, images.length, files.entries.length]);
   // Why the + menu's Run a command… can't open: a command starts at index 0,
   // so picking one into a draft with a message would bury or replace it.
   const commandsUnavailable =
@@ -133,7 +149,7 @@ export function ConversationComposer({
       ? "Loading…"
       : slash.commands.length === 0
         ? "None on this host"
-        : value.trim() !== "" || images.length > 0 || imagesPending
+        : value.trim() !== "" || images.length > 0 || files.entries.length > 0 || imagesPending || files.uploading
           ? "Clear the message first"
           : undefined;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -160,7 +176,7 @@ export function ConversationComposer({
   const editInFlight = pendingActions.some((action) => action.kind === "edit");
   // Restoring a withdrawn row overwrites the composer, so the draft must be
   // empty first; while one Edit is in flight no other row may start one.
-  const composerOccupied = value.trim() !== "" || images.length > 0 || imagesPending;
+  const composerOccupied = value.trim() !== "" || images.length > 0 || files.entries.length > 0 || imagesPending;
   const editDisabled = composerOccupied || editInFlight || awaitingEdit;
   const editTooltip = composerOccupied ? "Clear the composer to edit" : undefined;
   // While Edit is in flight, or its withdraw outcome is unknown after an
@@ -227,6 +243,7 @@ export function ConversationComposer({
         // The skills it expanded come back bound.
         skillDraft.restore(copy.input.text, copy.input.skills);
         restore(resolved);
+        files.restore(copy.input.attachments);
         editCopy.current = null;
         setAwaitingEdit(false);
         setFocusAfterEdit((count) => count + 1);
@@ -279,11 +296,13 @@ export function ConversationComposer({
     if (focusAfterEdit > 0) inputRef.current?.focusAtEnd();
   }, [focusAfterEdit]);
 
-  const submit = (whenBusy: "steer" | "followUp"): void => {
+  const submit = async (whenBusy: "steer" | "followUp"): Promise<void> => {
     // Only the picked skills go out as `skills` (ADR-0028).
     const message = draftMessage(skillDraft.draft);
     const text = message.text.trim();
-    if (editLocked || (text === "" && images.length === 0) || imagesPending) return;
+    if (editLocked || waitingForFiles || (text === "" && images.length === 0 && files.entries.length === 0) || imagesPending) {
+      return;
+    }
     // A command runs at once — never steered or queued, never a message. The
     // raw draft is parsed (leading whitespace makes it a message), and only
     // once the host's list has loaded: before that, text is never a command.
@@ -298,23 +317,51 @@ export function ConversationComposer({
         setCommandError("Commands can't include images");
         return;
       }
+      if (files.entries.length > 0) {
+        setCommandError("Commands can't include files");
+        return;
+      }
       void remote.controller.runCommand(command.name, command.args);
       setValue("");
       return;
     }
     requestNotificationPermission();
+    if (files.failed) {
+      setFileSubmitError("Some files failed to upload — retry or remove them");
+      return;
+    }
+    // A send waits for in-flight uploads and never includes a partial file.
+    if (files.uploading) {
+      setWaitingForFiles(true);
+      setFileSubmitError(undefined);
+      await files.waitForUploads();
+      setWaitingForFiles(false);
+      if (files.failed) {
+        setFileSubmitError("Some files failed to upload — retry or remove them");
+        return;
+      }
+    }
     const sending = images;
+    const attachments = files.ids();
     // Staged images were primed before they became sendable. Queue the send
     // synchronously: an await here could let a conversation switch or a later
     // message overtake it inside the controller's ordered command queue.
-    void remote.controller.submit(text, whenBusy, { images: sending, skills: message.skills });
+    void remote.controller.submit(text, whenBusy, {
+      images: sending,
+      skills: message.skills,
+      ...(attachments.length === 0 ? {} : { attachments }),
+    });
     setValue("");
     clear();
+    files.clear();
+    setFileSubmitError(undefined);
   };
 
   return (
     <>
-      {status === "" ? null : <Text type="supporting">{status}</Text>}
+      {status === "" && !files.uploading && !waitingForFiles ? null : (
+        <Text type="supporting">{files.uploading || waitingForFiles ? "Uploading files…" : status}</Text>
+      )}
       <QueuedList
         items={queue}
         canAct={canAct}
@@ -329,6 +376,7 @@ export function ConversationComposer({
         onWithdraw={(item) => void withdraw(item)}
       />
       <ImageFileInput inputRef={fileInput} onFiles={editLocked ? () => {} : add} />
+      <FilePickerInput inputRef={attachInput} onFiles={editLocked ? () => {} : addFiles} />
       <ChatPromptInput
         value={value}
         inputRef={inputRef}
@@ -345,17 +393,38 @@ export function ConversationComposer({
               })
         }
         onValueChange={setValue}
-        onSubmit={() => submit("steer")}
+        onSubmit={() => void submit("steer")}
         onFocus={() => {
           skills.request();
           slash.request();
         }}
         triggers={triggers.length === 0 ? undefined : triggers}
         onStop={busy ? () => void remote.controller.abort() : undefined}
-        attachments={attachmentDrawer({ images, pending: imagesPending, onRemove: remove })}
-        hasAttachments={images.length > 0}
-        onFiles={editLocked ? undefined : add}
-        error={commandError ?? error}
+        attachments={attachmentDrawer({
+          images,
+          pending: imagesPending,
+          onRemove: remove,
+          ...(files.entries.length === 0
+            ? {}
+            : {
+                files: (
+                  <>
+                    {files.entries.map((entry) => (
+                      <FileAttachmentChip
+                        key={entry.key}
+                        entry={entry}
+                        onRetry={files.retry}
+                        onRemove={files.remove}
+                      />
+                    ))}
+                  </>
+                ),
+              }),
+        })}
+        hasAttachments={images.length > 0 || files.entries.length > 0}
+        onFiles={editLocked ? undefined : addFiles}
+        error={commandError ?? error ?? files.error ?? fileSubmitError}
+        submitDisabled={waitingForFiles}
         startActions={
           <>
             <ChatAddMenu
@@ -372,6 +441,14 @@ export function ConversationComposer({
                 isDisabled={!accepts}
                 onClick={() => fileInput.current?.click()}
               />
+              {attachmentsEnabled ? (
+                <ChatAddMenuItem
+                  icon={FileIcon}
+                  label="Attach files…"
+                  hint="Up to 10 · 10 MB each"
+                  onClick={() => attachInput.current?.click()}
+                />
+              ) : null}
               {skills.trigger === undefined ? null : (
                 <ChatAddMenuItem icon={Sparkles} label="Use a skill…" hint="Or type $" onClick={() => inputRef.current?.openTrigger("$")} />
               )}
@@ -420,14 +497,14 @@ export function ConversationComposer({
           </>
         }
         endActions={
-          busy && (value.trim() !== "" || images.length > 0) ? (
+          busy && (value.trim() !== "" || images.length > 0 || files.entries.length > 0) ? (
             <Button
               label="Follow-up"
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
-              isDisabled={disconnected || imagesPending || editLocked}
-              onClick={() => submit("followUp")}
+              isDisabled={disconnected || imagesPending || editLocked || waitingForFiles}
+              onClick={() => void submit("followUp")}
             />
           ) : null
         }

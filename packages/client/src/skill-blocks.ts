@@ -1,10 +1,13 @@
-// Skill blocks (issue #308, ADR-0028): when a user message `$`-mentions a
-// skill, the host prepends the skill's full text in pi-coding-agent's
-// `/skill:name` format — one block per distinct skill, then the user's text
-// verbatim — and stores the whole thing as the `pi.user` message the model
-// reads. Clients show only what the user typed, so the writer and its exact
-// inverse live together here. The parser is a literal scanner, no regex, so
-// the Rust core's `skill_blocks.rs` mirrors it step for step.
+// Skill blocks (issue #308, ADR-0028) and attachment blocks (issue #321):
+// the host writes more into a `pi.user` message than the user typed. Clients
+// show only the typed text, so the writer and its exact inverse live together
+// here. The parser is a literal scanner, no regex, so the Rust core's
+// `skill_blocks.rs` mirrors it step for step.
+import {
+  ATTACHMENTS_OPEN,
+  parseAttachmentBlock,
+  type UserAttachment,
+} from "@pinomad/protocol/attachments.ts";
 
 /** One skill as the host expands it. */
 export interface SkillBlock {
@@ -56,33 +59,48 @@ function blockEnd(text: string, at: number): number {
   return close === -1 ? -1 : close + CLOSE.length;
 }
 
-/** A `pi.user` message as the user wrote it, and the skills the host expanded into it. */
+/** A `pi.user` message as the user wrote it, and what the host wrote around it. */
 export interface UserText {
   readonly text: string;
   /** The stripped blocks' names, in order — what a bubble highlights and a queued edit restores as chips. */
   readonly skills: readonly string[];
+  /** The attachments the host appended, in the order it recorded them. */
+  readonly attachments: readonly UserAttachment[];
 }
 
 /**
  * The text the user typed, from a `pi.user` message the host may have
- * prefixed with skill blocks, plus those blocks' names. Strips each
- * well-formed block at the start —
+ * prefixed with skill blocks and appended an attachments block to, plus those
+ * blocks' contents. Strips each well-formed skill block at the start —
  * `<skill name="N" location="L">\nReferences are relative to B.\n\n…\n</skill>`
  * with N in `[a-z0-9-]+`, L non-empty without `"` or a newline, B non-empty,
  * the body ending at the first `\n</skill>` — as long as `\n\n` and a
- * non-empty rest follow it. Anything else, including a block that is not at
- * the very start, is left in the text.
+ * non-empty rest follow it. Then strips one exact v1 attachment block from the
+ * end. Anything else, including a block that is not at those positions, is
+ * left in the text.
  */
-export function stripSkillBlocks(text: string): UserText {
+export function stripUserBlocks(text: string): UserText {
   const skills: string[] = [];
   let at = 0;
   for (;;) {
     const end = blockEnd(text, at);
-    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) {
-      return { text: text.slice(at), skills };
-    }
+    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) break;
     // The name runs from the open tag to its closing quote.
     skills.push(text.slice(at + OPEN.length, text.indexOf('"', at + OPEN.length)));
     at = end + SEPARATOR.length;
   }
+  let from = at;
+  for (;;) {
+    const start = text.indexOf(ATTACHMENTS_OPEN, from);
+    if (start === -1) return { text: text.slice(at), skills, attachments: [] };
+    const attachments = parseAttachmentBlock(text.slice(start));
+    if (attachments !== undefined) return { text: text.slice(at, start), skills, attachments };
+    from = start + ATTACHMENTS_OPEN.length;
+  }
+}
+
+/** The skill-only view the original callers use; attachments are dropped from `text` too. */
+export function stripSkillBlocks(text: string): Pick<UserText, "text" | "skills"> {
+  const { text: typed, skills } = stripUserBlocks(text);
+  return { text: typed, skills };
 }

@@ -98,6 +98,7 @@ export const UserMessage: Story = {
       text: "$review the parser change — trailing commas still break lists",
       images: [{ data: PNG, mimeType: "image/png" }],
       skills: ["review"],
+      attachments: [{ id: "A".repeat(22), name: "parser.log", size: 12_345 }],
     },
   },
 };

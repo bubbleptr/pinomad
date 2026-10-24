@@ -123,6 +123,8 @@ export async function createConversation(
     readonly thinkingLevel?: ModelThinkingLevel;
     /** Attached images; validated by the caller (imageProblem). */
     readonly images?: readonly MessageImage[];
+    /** The v1 attachments text block; validated and marked used by the caller. */
+    readonly attachmentText?: string;
     /** A named agent to create the conversation with (ADR-0023): its prompt is copied in, its model/level are defaults the args override. */
     readonly agent?: string;
   },
@@ -146,7 +148,7 @@ export async function createConversation(
     const existing = await harness.conversation(prior.id, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }
@@ -252,7 +254,7 @@ export async function createConversation(
     );
     if (home.kind === "chat") await mkdir(join(dataDir, "chats", String(conversation.id)), { recursive: true });
     await conversation.submit(
-      { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
+      { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
       context,
     );
     return conversation.id;
@@ -264,7 +266,7 @@ export async function createConversation(
     const existing = await harness.conversation(error.conversationId, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: messageContent(input.text, input.images), whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }

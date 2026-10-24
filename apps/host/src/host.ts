@@ -22,6 +22,7 @@ import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway } from "./gateway.ts";
+import { AttachmentStore } from "./attachments.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -154,9 +155,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let harness: Harness | undefined;
   let mcp: McpBridge | undefined;
   let agentRoles: AgentRoleStore | undefined;
+  let attachments: AttachmentStore | undefined;
   let extensions: readonly BuiltinExtension[] = [];
   try {
     const token = await hostToken(options.dataDir);
+    attachments = new AttachmentStore({ dir: join(options.dataDir, "attachments") });
+    await attachments.open();
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
     const registry = createRegistry();
@@ -258,6 +262,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       modelSummaries: options.modelSummaries,
       session: { id: basename(options.dataDir), directory: options.dataDir },
       dataDir: options.dataDir,
+      attachments,
       agentsHome: options.agentsHome,
       settings: hostSettings,
       token,
@@ -342,6 +347,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await opened.close(context);
             // MCP servers go down with the host (stdio children get the spec shutdown).
             await mcp?.close();
+            attachments?.close();
             agentRoles?.close();
             // Process-wide extension resources (the codemode sandbox pool).
             for (const each of extensions) await each.close?.();
@@ -356,6 +362,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     };
   } catch (error) {
     options.modelAuth?.close();
+    attachments?.close();
     agentRoles?.close();
     for (const each of extensions) await each.close?.().catch(() => {});
     await mcp?.close().catch(() => {});

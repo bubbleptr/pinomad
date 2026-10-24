@@ -9,7 +9,7 @@ import type { Context } from "@earendil-works/chord";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { Context as ModelContext } from "@earendil-works/pi-ai";
 import type { ConversationId, Cursor, EntryRecord, Harness } from "@earendil-works/pi-durable";
-import { stripSkillBlocks } from "@pinomad/client/skill-blocks.ts";
+import { stripUserBlocks } from "@pinomad/client/skill-blocks.ts";
 import type { HostSettingsStore } from "./host-settings.ts";
 import { TitleDoc } from "./title-doc.ts";
 
@@ -115,10 +115,10 @@ export function attachAutoTitle(
       const model = ref === null ? undefined : deps.models.getModel(ref.provider, ref.modelId);
       if (model === undefined) return;
 
-      // What the user typed, not the skill blocks the host put ahead of it (ADR-0028).
+      // What the user typed, not the blocks the host wrote around it (ADR-0028, #321).
       const firstText = (
-        stripSkillBlocks(textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "")).text ||
-        "(images only)"
+        stripUserBlocks(textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "")).text ||
+        "(images or files only)"
       ).slice(0, TITLE_INPUT_LIMIT);
       const answer = textOf(last.content).slice(0, TITLE_INPUT_LIMIT);
       const request: ModelContext = {

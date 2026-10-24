@@ -95,5 +95,47 @@
       "text": "<skill name=\"review\" location=\"/家/skills/review/SKILL.md\">\nReferences are relative to /家/skills/review.\n\n审查步骤 😀\n</skill>\n\n用 $review 😀",
       "expect": "{\"text\":\"用 $review 😀\",\"skills\":[\"review\"]}"
     }
+  ],
+  "stripUserBlocks": [
+    {
+      "name": "attachments-only",
+      "text": "<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n</attachments>",
+      "expect": "{\"text\":\"\",\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"notes.txt\",\"size\":5}]}"
+    },
+    {
+      "name": "text-then-attachments",
+      "text": "look at these<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n</attachments>",
+      "expect": "{\"text\":\"look at these\",\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"notes.txt\",\"size\":5}]}"
+    },
+    {
+      "name": "skills-then-text-then-attachments",
+      "text": "<skill name=\"review\" location=\"/s/SKILL.md\">\nReferences are relative to /s.\n\nSteps.\n</skill>\n\n$review<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"a&amp;b&lt;c&gt;d&quot;e\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n</attachments>",
+      "expect": "{\"text\":\"$review\",\"skills\":[\"review\"],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"a&b<c>d\\\"e\",\"size\":5}]}"
+    },
+    {
+      "name": "two-files",
+      "text": "two files<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n<file id=\"BBBBBBBBBBBBBBBBBBBBBB\" name=\"second.txt\" path=\"/data/BBBBBBBBBBBBBBBBBBBBBB/second.txt\" size=\"0\"/>\n</attachments>",
+      "expect": "{\"text\":\"two files\",\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"notes.txt\",\"size\":5},{\"id\":\"BBBBBBBBBBBBBBBBBBBBBB\",\"name\":\"second.txt\",\"size\":0}]}"
+    },
+    {
+      "name": "block-not-at-end",
+      "text": "<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n</attachments>and typed text",
+      "expect": "{\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>and typed text\",\"skills\":[],\"attachments\":[]}"
+    },
+    {
+      "name": "malformed-size",
+      "text": "<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"05\"/>\n</attachments>",
+      "expect": "{\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\\\" size=\\\"05\\\"/>\\n</attachments>\",\"skills\":[],\"attachments\":[]}"
+    },
+    {
+      "name": "missing-close",
+      "text": "<attachments v=\"1\">\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\n<file id=\"AAAAAAAAAAAAAAAAAAAAAA\" name=\"notes.txt\" path=\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\" size=\"5\"/>\n",
+      "expect": "{\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/notes.txt\\\" size=\\\"5\\\"/>\\n\",\"skills\":[],\"attachments\":[]}"
+    },
+    {
+      "name": "empty",
+      "text": "",
+      "expect": "{\"text\":\"\",\"skills\":[],\"attachments\":[]}"
+    }
   ]
 }

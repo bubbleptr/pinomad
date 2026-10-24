@@ -38,6 +38,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0023](0023-agent-roles.md) | 具名 Agent 是数据目录 `agents/` 下的 Markdown 文件，只有宿主级、客户端可编辑；子代理、`@` 提及、顶层对话都能用；子代理上锁定模型，顶层对话只定初始值；用时抄一份，出错不回落 |
 | [0028](0028-host-expands-explicit-skill-mentions.md) | 只有从 `$` 菜单选中的 skill 算调用（`submit` / `createConversation` 的 `skills`，5.16；旧客户端按文本匹配），宿主按 pi 的 `/skill:` 格式把全文拼在 `pi.user` 消息前面，客户端显示时剥掉并给出展开了哪些；`disable-model-invocation` 只从提示词列表里去掉 |
 | [0029](0029-host-declared-slash-commands.md) | 斜杠命令由宿主声明（协议 5.17 `listCommands` / `runCommand`），客户端不写死命令表；只在消息开头识别 `/<已列出的名字>`；第一期只有内置 `/compact` |
+| [0030](0030-attach-files.md) | 输入框的 Attach files 把客户端本机文件分块上传到宿主 `attachments/`，发送时只传宿主生成的 id（5.19）；`used` 永久保留，清理与 submit 共用锁；模型看到转义后的 v1 `<attachments>` 块，客户端只在用户条目和排队输入里剥离 |
 
 ## 远程与运维
 

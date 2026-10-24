@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use crate::json::{js_strict_eq, same_value_zero, JsKey, Json};
-use crate::skill_blocks::strip_skill_blocks;
+use crate::skill_blocks::{strip_user_blocks, UserAttachment};
 use crate::text;
 use crate::tool_item::MessageImage;
 use crate::u16str::U16String;
@@ -68,11 +68,11 @@ fn live_of(view: &Json) -> Option<&Json> {
 }
 
 /// What the user typed in a queued input — its text blocks joined, without
-/// the skill blocks the host prepended (ADR-0028) — and those blocks' names.
-fn typed_text_of(content: Option<&Json>) -> (String, Vec<String>) {
+/// the blocks the host wrote around it (ADR-0028, #321).
+fn typed_text_of(content: Option<&Json>) -> (String, Vec<String>, Vec<UserAttachment>) {
     let units = text_of(content);
-    let typed = strip_skill_blocks(&units);
-    (String::from_utf16_lossy(typed.text), typed.skills)
+    let typed = strip_user_blocks(&units);
+    (String::from_utf16_lossy(typed.text), typed.skills, typed.attachments)
 }
 
 fn text_of(content: Option<&Json>) -> Vec<u16> {
@@ -194,6 +194,9 @@ pub struct QueueItem {
     pub text: String,
     /// Image blocks attached to the queued input; 0 on "write" items.
     pub image_count: u64,
+    /// Host-stored file attachments on the queued input; 0 on "write" items.
+    #[cfg_attr(feature = "ffi", uniffi(default))]
+    pub attachment_count: u64,
 }
 
 /// `queueItems(view)` — the queued inputs with their mode.
@@ -206,15 +209,16 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
                 .iter()
                 .map(|item| {
                     let write = str_eq(item.get("mode"), "write");
+                    let typed = if write { None } else { Some(typed_text_of(item.get("content"))) };
                     QueueItem {
                         id: crate::json::num_key(item.get("id")).unwrap_or(u64::MAX),
                         mode: QueueMode::from_json(item.get("mode")),
-                        text: if write {
-                            format!("<{}>", js_text(item.get("entry").and_then(|e| e.get("kind"))))
-                        } else {
-                            typed_text_of(item.get("content")).0
+                        text: match &typed {
+                            Some((text, _, _)) => text.clone(),
+                            None => format!("<{}>", js_text(item.get("entry").and_then(|e| e.get("kind")))),
                         },
                         image_count: if write { 0 } else { image_count_of(item.get("content")) },
+                        attachment_count: typed.as_ref().map_or(0, |(_, _, files)| files.len() as u64),
                     }
                 })
                 .collect()
@@ -232,6 +236,9 @@ pub struct QueuedInput {
     /// as `skills` on the resubmit.
     #[cfg_attr(feature = "ffi", uniffi(default))]
     pub skills: Vec<String>,
+    /// The host-stored files on this queued input, restored as chips on edit.
+    #[cfg_attr(feature = "ffi", uniffi(default))]
+    pub attachments: Vec<UserAttachment>,
 }
 
 /// The content of a queued steer/follow-up, or None for a write or an
@@ -244,11 +251,12 @@ pub fn queued_input(view: &Json, id: u64) -> Option<QueuedInput> {
     if !str_eq(item.get("mode"), "steer") && !str_eq(item.get("mode"), "followUp") {
         return None;
     }
-    let (text, skills) = typed_text_of(item.get("content"));
+    let (text, skills, attachments) = typed_text_of(item.get("content"));
     Some(QueuedInput {
         text,
         images: images_of(item.get("content")),
         skills,
+        attachments,
     })
 }
 

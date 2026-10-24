@@ -62,11 +62,13 @@ import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
 import { expandSkills, mentionedSkillNames } from "./skill-expansion.ts";
-import { stripSkillBlocks } from "@pinomad/client/skill-blocks.ts";
+import { stripUserBlocks } from "@pinomad/client/skill-blocks.ts";
 import { createSkillLister, enumerateSkills, listSkills, scopeSkills, type ListedSkill, type SkillLister } from "./skills.ts";
 import { listCommands, runCommand } from "./commands.ts";
 import { constantValue, type HostValue } from "./host-value.ts";
 import { imageProblem, type MessageImage, type OutgoingImage } from "@pinomad/protocol/images.ts";
+import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
+import type { AttachmentStore } from "./attachments.ts";
 import { ImageRefs } from "./image-refs.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
@@ -191,6 +193,8 @@ export interface GatewayOptions {
   readonly browserOrigins?: readonly string[];
   /** Chat checkouts live under `<dataDir>/chats`. */
   readonly dataDir: string;
+  /** Host-stored file uploads (issue #321); absent → the new calls fail. */
+  readonly attachments?: AttachmentStore;
   /** The user-skills entry (`<agentsHome>/skills`) — the same dir the context extension's prompts read (ADR-0006). */
   readonly agentsHome: string;
   /** Host settings store (ADR-0021): backs the `settings` stream, `hello.defaults`, `updateSettings`, and new-conversation defaults. */
@@ -1054,9 +1058,10 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
     typeof message.content === "string"
       ? message.content
       : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
-  // The typed text, not the skill blocks ahead of it (ADR-0028). An
-  // image-only message has no text — no title rather than an empty one.
-  const title = stripSkillBlocks(text).text.replace(/\s+/g, " ").trim();
+  // The typed text, not the blocks the host writes around it (ADR-0028,
+  // #321). An attachment-only message has no text — no title rather than an
+  // empty one.
+  const title = stripUserBlocks(text).text.replace(/\s+/g, " ").trim();
   return title === "" ? {} : { title };
 }
 
@@ -1378,6 +1383,19 @@ class GatewayClient {
     return undefined;
   }
 
+  #attachmentStore(): AttachmentStore {
+    const store = this.#options.attachments;
+    if (store === undefined) throw new Error("Attachments are not available on this host");
+    return store;
+  }
+
+  /** Mark a message's attachments used and render the model's v1 block. */
+  async #attachmentText(ids: readonly string[] | undefined): Promise<string | undefined> {
+    if (ids === undefined || ids.length === 0) return undefined;
+    const files = await this.#attachmentStore().use(ids);
+    return files === undefined ? undefined : attachmentBlock(files);
+  }
+
   /** Attached images with refs swapped back for their bytes, then checked like freshly sent ones. */
   #attached(images: readonly OutgoingImage[] | undefined): MessageImage[] | undefined {
     const resolved = images?.map((image, index) => {
@@ -1437,12 +1455,21 @@ class GatewayClient {
         // would turn an accepted submit into "no longer available".
         const images = this.#attached(input.images);
         const conversation = await this.#conversation(input.conversationId);
+        // Mark attachments used before the message write (issue #321); the
+        // store's lock is the same one cleanup sweeps under, so a used file
+        // can never be deleted between these two steps.
+        const attachments = await this.#attachmentText(input.attachments);
         const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id }, input.skills);
         // A pending question never blocks the composer (ADR-0011 §4): mark it
         // dismissed so its wait task finishes, then steer regardless.
         const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
         const submission = await conversation.submit(
-          { type: "input", content: messageContent(text, images), whenBusy: dismissed ? "steer" : input.whenBusy, requestId: input.requestId },
+          {
+            type: "input",
+            content: messageContent(text, images, attachments),
+            whenBusy: dismissed ? "steer" : input.whenBusy,
+            requestId: input.requestId,
+          },
           context,
         );
         void submission.wait(context).then(
@@ -1459,6 +1486,7 @@ class GatewayClient {
         const create = args as CallMethods["createConversation"]["args"];
         // Same rule as submit: resolve before createConversation's first await.
         const images = this.#attached(create.images);
+        const attachments = await this.#attachmentText(create.attachments);
         // The conversation does not exist yet: expand against the scope the
         // draft's `$` menu listed (a worktree draft reads the project's
         // committed skills in place — its checkout is created later).
@@ -1477,6 +1505,7 @@ class GatewayClient {
             text,
             requestId: create.requestId,
             ...(images === undefined ? {} : { images }),
+            ...(attachments === undefined ? {} : { attachmentText: attachments }),
             ...(create.checkout === undefined ? {} : { checkout: create.checkout }),
             ...(create.model === undefined ? {} : { model: create.model }),
             ...(create.thinkingLevel === undefined ? {} : { thinkingLevel: create.thinkingLevel }),
@@ -1567,6 +1596,16 @@ class GatewayClient {
         const image = this.#shownImage((args as CallMethods["image"]["args"]).ref);
         if (image === undefined) throw new Error("Unknown image");
         return image;
+      }
+      case "beginAttachment": {
+        const input = args as CallMethods["beginAttachment"]["args"];
+        const store = this.#attachmentStore();
+        return { attachmentId: await store.begin(input.name, input.size) };
+      }
+      case "appendAttachment": {
+        const input = args as CallMethods["appendAttachment"]["args"];
+        const store = this.#attachmentStore();
+        return await store.append(input.attachmentId, input.offset, input.data);
       }
     }
     const conversation = await this.#conversation((args as { conversationId: ConversationId }).conversationId);

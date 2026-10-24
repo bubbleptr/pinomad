@@ -40,8 +40,12 @@ export function QueuedList({
 }) {
   if (items.length === 0) return null;
   const bodyOf = (item: QueueItem): string => {
-    if (item.imageCount === 0) return item.text;
-    const suffix = `${item.imageCount} ${item.imageCount === 1 ? "image" : "images"}`;
+    const parts = [
+      ...(item.imageCount === 0 ? [] : [`${item.imageCount} ${item.imageCount === 1 ? "image" : "images"}`]),
+      ...(item.attachmentCount === 0 ? [] : [`${item.attachmentCount} ${item.attachmentCount === 1 ? "file" : "files"}`]),
+    ];
+    if (parts.length === 0) return item.text;
+    const suffix = parts.join(" · ");
     return item.text === "" ? suffix : `${item.text} · ${suffix}`;
   };
   return (

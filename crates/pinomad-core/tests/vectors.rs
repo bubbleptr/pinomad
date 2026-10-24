@@ -113,6 +113,7 @@ fn feature_of(name: &str) -> HostFeature {
         "hostName" => HostFeature::HostName,
         "imageRefs" => HostFeature::ImageRefs,
         "boundSkills" => HostFeature::BoundSkills,
+        "attachments" => HostFeature::Attachments,
         other => panic!("unknown feature {other}"),
     }
 }

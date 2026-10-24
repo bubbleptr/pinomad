@@ -677,6 +677,42 @@ fn skill_blocks_replay() {
     }
 }
 
+/// The typed text under both host-written block kinds (issues #308, #321):
+/// display text, stripped skills, and the attachments the host appended.
+#[test]
+fn user_blocks_replay() {
+    let file = load("skill-blocks");
+    for case in cases(&file, "stripUserBlocks") {
+        let name = as_text(field(case, "name"));
+        let text = field(case, "text").as_str().expect("text").clone();
+        let stripped = pinomad_core::skill_blocks::strip_user_blocks(text.units());
+        let mut object = pinomad_core::json::JsonObject::new();
+        object.set(U16String::from_str("text"), Json::String(U16String(stripped.text.to_vec())));
+        object.set(
+            U16String::from_str("skills"),
+            Json::array(stripped.skills.iter().map(|name| Json::from(name.clone())).collect()),
+        );
+        object.set(
+            U16String::from_str("attachments"),
+            Json::array(
+                stripped
+                    .attachments
+                    .iter()
+                    .map(|file| {
+                        let mut object = pinomad_core::json::JsonObject::new();
+                        object.set(U16String::from_str("id"), Json::from(file.id.clone()));
+                        object.set(U16String::from_str("name"), Json::from(file.name.clone()));
+                        object.set(U16String::from_str("size"), Json::Number(file.size as f64));
+                        Json::Object(std::sync::Arc::new(object))
+                    })
+                    .collect(),
+            ),
+        );
+        let got = Json::Object(std::sync::Arc::new(object));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
 /// `$name` mention ranges (issue #143) — the UTF-16 half-open offsets the
 /// reference computed.
 #[test]
