@@ -74,6 +74,19 @@ describe("queueItems", () => {
     ]);
   });
 
+  it("keeps a string or mixed-text block as text, never as an attachment", () => {
+    const items = queueItems(QUEUE_CASES.find((c) => c.name === "attachment-block-string")!.input);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ text: expect.stringContaining("<attachments v=\"1\">"), attachmentCount: 0 });
+    expect(items[1]).toMatchObject({ text: expect.stringContaining("before <attachments"), attachmentCount: 0 });
+
+    const single = QUEUED_INPUT_CASES.find((c) => c.name === "attachment-block-string")!.input;
+    expect(queuedInput(single.view, single.id)).toMatchObject({
+      text: expect.stringContaining("<attachments v=\"1\">"),
+      attachments: [],
+    });
+  });
+
   it("counts attachments and leaves their block out of the preview", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "attachments")!.input)).toEqual([
       { id: 1, mode: "steer", text: "look", imageCount: 1, attachmentCount: 1 },

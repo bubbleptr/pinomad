@@ -34,8 +34,10 @@ appendAttachment: {
 
 ```
 <dataDir>/attachments/<attachmentId>/meta.json
-<dataDir>/attachments/<attachmentId>/<磁盘文件名>
+<dataDir>/attachments/<attachmentId>/file/<磁盘文件名>
 ```
+
+数据文件单独放在 `file/` 下，宿主自己的 `meta.json`（以及写 meta 用的临时文件）留在 `<id>/` 下；这样用户上传一个叫 `meta.json` 的文件也不会和宿主的 meta 冲突，不需要保留名特例。
 
 `meta.json` 是 v1：
 
@@ -86,7 +88,7 @@ The user attached these files. They are read-only originals on this machine: rea
 ### 5. 客户端推导
 
 - **不改通用的 `textOf`**：它同时用于工具结果，工具读到一个恰好含附件块的文件时不能从界面消失。
-- 只在用户条目（`pi.user`）和排队输入（inbox item）的推导里识别附件块，和 `stripSkillBlocks` 放在同一处、一次解析同时得到文本、skills、附件。识别按 v1 的精确形状，身份只从 `id` 取，不从 path 反推；解析出 `{ id, name, size }[]`。
+- 只在用户条目（`pi.user`）和排队输入（inbox item）的推导里识别附件块，和 skill 块解析放在同一处（`stripUserBlocks`）、一次解析同时得到文本、skills、附件。附件只认**独立的 content text 块**：整个块恰好是 v1 形状才解析，字符串内容或夹着其他文字的 text 块一律当普通文本。身份只从 `id` 取，不从 path 反推；解析出 `{ id, name, size }[]`。
 - 用户条目和 `QueuedInput` 都带 `attachments`；排队预览带 `attachmentCount`；编辑排队消息时把附件 id 还原回输入框，重试失败运行时原样重发。
 - 识别出来的附件只用于显示，不当作引用授权或文件存在的证明。
 - 宿主侧读用户文本的地方（自动起名、摘要首条消息回退）同样跳过附件块。

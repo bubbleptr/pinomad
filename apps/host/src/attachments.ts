@@ -1,10 +1,12 @@
 // Host-side storage for file attachments (issue #321, protocol 5.19).
 //
 // Layout: <dataDir>/attachments/<attachmentId>/meta.json plus the sanitized
-// file. The process-wide lock is enough: the data-dir lock guarantees one
-// host process per directory. Every state transition, the budget check, submit
-// references and the cleanup sweep run through it, so cleanup can never delete
-// a file between its `used` mark and the message write.
+// file under <attachmentId>/file/. Keeping data files in their own directory
+// means a file named meta.json can never collide with the host's meta. The
+// process-wide lock is enough: the data-dir lock guarantees one host process
+// per directory. Every state transition, the budget check, submit references
+// and the cleanup sweep run through it, so cleanup can never delete a file
+// between its `used` mark and the message write.
 import { randomBytes } from "node:crypto";
 import {
   chmod,
@@ -35,6 +37,7 @@ import {
 } from "@pinomad/protocol/attachments.ts";
 
 const META = "meta.json";
+const DATA = "file";
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FILE_NAME_BYTES = 200;
 
@@ -117,6 +120,8 @@ export class AttachmentStore {
   readonly #cleanupIntervalMs: number;
   /** One promise chain: every meta read/write and directory removal runs here. */
   #lock: Promise<unknown> = Promise.resolve();
+  /** Unused (uploading/complete) ids and sizes; `used` never enters it. */
+  readonly #pending = new Map<string, number>();
   #timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: AttachmentStoreOptions) {
@@ -135,6 +140,9 @@ export class AttachmentStore {
   /** Create the root, sweep once, then sweep every six hours until close(). */
   async open(): Promise<void> {
     await mkdir(this.#root, { recursive: true });
+    // One disk scan builds the budget index; the sweep then drops expired
+    // entries from both disk and the index.
+    await this.#rebuildPending();
     await this.sweep();
     this.#timer = setInterval(() => void this.sweep().catch(() => {}), this.#cleanupIntervalMs);
     this.#timer.unref();
@@ -159,7 +167,7 @@ export class AttachmentStore {
   }
 
   #dataPath(meta: StoredMeta): string {
-    return join(this.#directory(meta.id), meta.fileName);
+    return join(this.#directory(meta.id), DATA, meta.fileName);
   }
 
   async #readMeta(id: string): Promise<StoredMeta | undefined> {
@@ -179,18 +187,20 @@ export class AttachmentStore {
     await rename(temporary, join(directory, META));
   }
 
-  /** Counted and summed under the lock: only uploads still awaiting a message. */
-  async #pending(): Promise<{ count: number; bytes: number }> {
-    let count = 0;
-    let bytes = 0;
-    for (const entry of await readdir(this.#root, { withFileTypes: true })) {
+  /** Rebuild the in-memory budget index from the directory once, after a restart. */
+  async #rebuildPending(): Promise<void> {
+    this.#pending.clear();
+    let entries;
+    try {
+      entries = await readdir(this.#root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const meta = await this.#readMeta(entry.name);
-      if (meta === undefined || meta.state === "used") continue;
-      count += 1;
-      bytes += meta.size;
+      if (meta !== undefined && meta.state !== "used") this.#pending.set(meta.id, meta.size);
     }
-    return { count, bytes };
   }
 
   /** Start an upload; resolves with the host-generated id. */
@@ -198,11 +208,12 @@ export class AttachmentStore {
     return this.#run(async () => {
       const problem = attachmentBeginProblem(name, size);
       if (problem !== undefined) throw new Error(problem);
-      const pending = await this.#pending();
-      if (pending.count + 1 > this.#pendingLimit) {
+      let pendingBytes = 0;
+      for (const bytes of this.#pending.values()) pendingBytes += bytes;
+      if (this.#pending.size + 1 > this.#pendingLimit) {
         throw new Error(`Too many pending attachments (${this.#pendingLimit} at most); try again after unused uploads expire`);
       }
-      if (pending.bytes + size > this.#pendingBytesLimit) {
+      if (pendingBytes + size > this.#pendingBytesLimit) {
         throw new Error(`Pending attachments exceed the ${this.#pendingBytesLimit / (1024 * 1024)} MB budget; try again after unused uploads expire`);
       }
       const id = randomBytes(16).toString("base64url");
@@ -218,7 +229,7 @@ export class AttachmentStore {
         expiresAt: this.#now() + this.#ttlMs,
       };
       try {
-        await mkdir(directory, { recursive: true });
+        await mkdir(join(directory, DATA), { recursive: true });
         await writeFile(this.#dataPath(meta), new Uint8Array(0), { mode: 0o600 });
         if (size === 0) await chmod(this.#dataPath(meta), 0o444);
         await this.#writeMeta(meta);
@@ -226,6 +237,7 @@ export class AttachmentStore {
         await rm(directory, { recursive: true, force: true }).catch(() => {});
         throw error;
       }
+      this.#pending.set(id, size);
       return id;
     });
   }
@@ -304,8 +316,12 @@ export class AttachmentStore {
         checked.push({ meta, path });
       }
       for (const { meta } of checked) {
-        if (meta.state === "used") continue;
+        if (meta.state === "used") {
+          this.#pending.delete(meta.id);
+          continue;
+        }
         await this.#writeMeta({ ...meta, state: "used" });
+        this.#pending.delete(meta.id);
       }
       return checked.map(({ meta, path }) => ({ id: meta.id, name: meta.name, path, size: meta.size }));
     });
@@ -331,12 +347,19 @@ export class AttachmentStore {
         const directory = this.#directory(entry.name);
         const meta = await this.#readMeta(entry.name);
         if (meta !== undefined) {
-          if (meta.state === "used") continue;
-          if (meta.expiresAt > now) continue;
+          if (meta.state === "used") {
+            this.#pending.delete(meta.id);
+            continue;
+          }
+          if (meta.expiresAt > now) {
+            this.#pending.set(meta.id, meta.size);
+            continue;
+          }
         } else {
           // No trustworthy meta means no trustworthy expiry; the directory's
           // creation time is the only timestamp left. Valid metas always use
           // their own expiresAt (never the directory's mtime).
+          this.#pending.delete(entry.name);
           try {
             if (now - (await stat(directory)).mtimeMs <= this.#ttlMs) continue;
           } catch {
@@ -345,6 +368,7 @@ export class AttachmentStore {
         }
         try {
           await rm(directory, { recursive: true, force: true });
+          this.#pending.delete(entry.name);
           removed += 1;
         } catch {
           // A transient permission/ENOENT problem is retried next sweep.

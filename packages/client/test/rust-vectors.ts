@@ -41,7 +41,7 @@ import {
   thinkingLevelLabels,
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
-import { stripSkillBlocks, stripUserBlocks } from "../src/skill-blocks.ts";
+import { stripUserBlocks, type UserContent } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { parseCommandInput } from "../src/command-input.ts";
 import { classifyProviderFailure } from "../src/provider-failure.ts";
@@ -508,16 +508,17 @@ function patchVector(): VectorFile {
 }
 
 function skillBlocksVector(): VectorFile {
+  // Skill cases are string content (a string never carries attachments); the
+  // attachment cases exercise whole-block parsing.
+  const cases: { name: string; content: UserContent }[] = [
+    ...SKILL_BLOCK_CASES.map((c) => ({ name: c.name, content: c.text })),
+    ...USER_BLOCK_CASES.map((c) => ({ name: c.name, content: c.content })),
+  ];
   return write("skill-blocks", {
-    stripSkillBlocks: SKILL_BLOCK_CASES.map((c) => ({
+    stripUserBlocks: cases.map((c) => ({
       name: c.name,
-      text: c.text,
-      expect: expect(wire(stripSkillBlocks(c.text))),
-    })),
-    stripUserBlocks: USER_BLOCK_CASES.map((c) => ({
-      name: c.name,
-      text: c.text,
-      expect: expect(wire(stripUserBlocks(c.text))),
+      content: wire(c.content),
+      expect: expect(wire(stripUserBlocks(c.content))),
     })),
   });
 }

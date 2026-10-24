@@ -116,9 +116,11 @@ export function attachAutoTitle(
       if (model === undefined) return;
 
       // What the user typed, not the blocks the host wrote around it (ADR-0028, #321).
+      const firstMessage = first.model?.[0] as
+        | { content?: string | readonly { type?: string; text?: string }[] }
+        | undefined;
       const firstText = (
-        stripUserBlocks(textOf(first.model?.[0] !== undefined ? (first.model[0] as { content?: unknown }).content : "")).text ||
-        "(images or files only)"
+        stripUserBlocks(firstMessage?.content ?? "").text || "(images or files only)"
       ).slice(0, TITLE_INPUT_LIMIT);
       const answer = textOf(last.content).slice(0, TITLE_INPUT_LIMIT);
       const request: ModelContext = {

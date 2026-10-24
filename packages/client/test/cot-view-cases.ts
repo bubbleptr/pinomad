@@ -232,6 +232,21 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
   },
   {
+    // A string message ending in a valid block has no block boundary, so it is
+    // still regular text.
+    name: "user-string-attachment-block",
+    view: view([user(attachmentBlock([attached()])), assistant([text("seen")])]),
+    busy: false,
+  },
+  {
+    name: "user-text-block-embedded-attachment",
+    view: view([
+      user([text(`before ${attachmentBlock([attached()])} after`)]),
+      assistant([text("seen")]),
+    ]),
+    busy: false,
+  },
+  {
     // The host appends an attachments block as its own text block (#321); the
     // bubble shows the typed text and chips, never the raw block.
     name: "user-attachments",

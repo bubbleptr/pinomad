@@ -91,6 +91,13 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
     ]),
   },
   {
+    name: "attachment-block-string",
+    input: chatView([], {}, [
+      { id: 1, mode: "steer", content: attachmentBlock([attached()]) },
+      { id: 2, mode: "followUp", content: [text(`before ${attachmentBlock([attached()])} after`)] },
+    ]),
+  },
+  {
     name: "attachments",
     input: chatView([], {}, [
       {
@@ -169,6 +176,13 @@ export const QUEUED_INPUT_CASES: NamedCase<QueuedInputCase>[] = [
         },
       ]),
       id: 3,
+    },
+  },
+  {
+    name: "attachment-block-string",
+    input: {
+      view: chatView([], {}, [{ id: 7, mode: "steer", content: attachmentBlock([attached()]) }]),
+      id: 7,
     },
   },
   {

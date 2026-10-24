@@ -1,10 +1,14 @@
 // Skill blocks (issue #308, ADR-0028) and attachment blocks (issue #321):
 // the host writes more into a `pi.user` message than the user typed. Clients
 // show only the typed text, so the writer and its exact inverse live together
-// here. The parser is a literal scanner, no regex, so the Rust core's
+// here. The skill parser is a literal scanner, no regex, so the Rust core's
 // `skill_blocks.rs` mirrors it step for step.
+//
+// Attachments are identified by content-block boundaries, never by searching
+// joined text: only a whole text block that is exactly the v1 block becomes
+// attachments. A string message (or a text block with prose around the block)
+// is always regular text.
 import {
-  ATTACHMENTS_OPEN,
   parseAttachmentBlock,
   type UserAttachment,
 } from "@pinomad/protocol/attachments.ts";
@@ -68,39 +72,53 @@ export interface UserText {
   readonly attachments: readonly UserAttachment[];
 }
 
-/**
- * The text the user typed, from a `pi.user` message the host may have
- * prefixed with skill blocks and appended an attachments block to, plus those
- * blocks' contents. Strips each well-formed skill block at the start —
- * `<skill name="N" location="L">\nReferences are relative to B.\n\n…\n</skill>`
- * with N in `[a-z0-9-]+`, L non-empty without `"` or a newline, B non-empty,
- * the body ending at the first `\n</skill>` — as long as `\n\n` and a
- * non-empty rest follow it. Then strips one exact v1 attachment block from the
- * end. Anything else, including a block that is not at those positions, is
- * left in the text.
- */
-export function stripUserBlocks(text: string): UserText {
+/** A content block as the derivation needs it; other fields ride along untouched. */
+export interface UserContentBlock {
+  readonly type?: string;
+  readonly text?: string;
+}
+
+export type UserContent = string | readonly UserContentBlock[];
+
+/** The typed text past every leading skill block, and their names. */
+function stripSkillPrefix(text: string): { text: string; skills: string[] } {
   const skills: string[] = [];
   let at = 0;
   for (;;) {
     const end = blockEnd(text, at);
-    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) break;
+    if (end === -1 || !text.startsWith(SEPARATOR, end) || end + SEPARATOR.length === text.length) {
+      return { text: text.slice(at), skills };
+    }
     // The name runs from the open tag to its closing quote.
     skills.push(text.slice(at + OPEN.length, text.indexOf('"', at + OPEN.length)));
     at = end + SEPARATOR.length;
   }
-  let from = at;
-  for (;;) {
-    const start = text.indexOf(ATTACHMENTS_OPEN, from);
-    if (start === -1) return { text: text.slice(at), skills, attachments: [] };
-    const attachments = parseAttachmentBlock(text.slice(start));
-    if (attachments !== undefined) return { text: text.slice(at, start), skills, attachments };
-    from = start + ATTACHMENTS_OPEN.length;
-  }
 }
 
-/** The skill-only view the original callers use; attachments are dropped from `text` too. */
-export function stripSkillBlocks(text: string): Pick<UserText, "text" | "skills"> {
-  const { text: typed, skills } = stripUserBlocks(text);
-  return { text: typed, skills };
+/**
+ * The text the user typed, from a `pi.user` message the host may have
+ * prefixed with skill blocks and appended an attachments block to, plus those
+ * blocks' contents.
+ *
+ * One pass over the content: a text block that is exactly a v1 attachments
+ * block is consumed as attachments; every other text block joins into the
+ * typed text, which is then stripped of leading skill blocks. A string
+ * message never carries attachments. Tool results must call their own text
+ * extraction, not this function.
+ */
+export function stripUserBlocks(content: UserContent): UserText {
+  const attachments: UserAttachment[] = [];
+  let joined = "";
+  if (typeof content === "string") {
+    joined = content;
+  } else {
+    for (const block of content) {
+      if (block.type !== "text" || typeof block.text !== "string") continue;
+      const files = parseAttachmentBlock(block.text);
+      if (files !== undefined) attachments.push(...files);
+      else joined += block.text;
+    }
+  }
+  const typed = stripSkillPrefix(joined);
+  return { text: typed.text, skills: typed.skills, attachments };
 }

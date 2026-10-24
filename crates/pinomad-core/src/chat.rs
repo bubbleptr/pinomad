@@ -70,29 +70,12 @@ fn live_of(view: &Json) -> Option<&Json> {
 /// What the user typed in a queued input — its text blocks joined, without
 /// the blocks the host wrote around it (ADR-0028, #321).
 fn typed_text_of(content: Option<&Json>) -> (String, Vec<String>, Vec<UserAttachment>) {
-    let units = text_of(content);
-    let typed = strip_user_blocks(&units);
-    (String::from_utf16_lossy(typed.text), typed.skills, typed.attachments)
-}
-
-fn text_of(content: Option<&Json>) -> Vec<u16> {
-    match content {
-        Some(Json::String(s)) => s.units().to_vec(),
-        Some(Json::Array(items)) => {
-            let mut out = Vec::new();
-            for block in items.iter() {
-                if str_eq(block.get("type"), "text") {
-                    if let Some(text) = block.get("text") {
-                        if !matches!(text, Json::Null) {
-                            out.extend_from_slice(&U16String::js_string(text).0);
-                        }
-                    }
-                }
-            }
-            out
-        }
-        _ => Vec::new(),
-    }
+    let typed = strip_user_blocks(content);
+    (
+        String::from_utf16_lossy(&typed.text),
+        typed.skills,
+        typed.attachments,
+    )
 }
 
 fn image_count_of(content: Option<&Json>) -> u64 {

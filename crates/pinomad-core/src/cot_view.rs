@@ -733,11 +733,10 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
         if str_eq(kind, "pi.user") && str_eq(message.and_then(|m| m.get("role")), "user") {
             flush!(false);
             // The typed text, without the host's blocks (ADR-0028, #321).
-            let units = text_of(message.and_then(|m| m.get("content")));
-            let typed = strip_user_blocks(&units);
+            let typed = strip_user_blocks(message.and_then(|m| m.get("content")));
             items.push(ChatEntry::User {
                 id,
-                text: lossy(typed.text),
+                text: lossy(&typed.text),
                 images: images_of(message.and_then(|m| m.get("content"))),
                 skills: typed.skills,
                 attachments: typed.attachments,

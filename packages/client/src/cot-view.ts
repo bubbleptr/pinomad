@@ -537,7 +537,7 @@ export function deriveChat(
     const id = String(entry.id);
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
-      const typed = stripUserBlocks(textOf(message.content));
+      const typed = stripUserBlocks(message.content);
       items.push({
         kind: "user",
         id,

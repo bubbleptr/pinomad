@@ -180,6 +180,16 @@ describe("deriveChat", () => {
     expect(users[1]).toMatchObject({ text: "", images: [{ data: "aGk=", mimeType: "image/png" }] });
   });
 
+  it("does not treat string or mixed-text blocks as attachments", () => {
+    for (const name of ["user-string-attachment-block", "user-text-block-embedded-attachment"]) {
+      const user = derive(name).find((item) => item.kind === "user")!;
+      expect(user.kind).toBe("user");
+      if (user.kind !== "user") continue;
+      expect(user.attachments).toEqual([]);
+      expect(user.text).toContain("<attachments v=\"1\">");
+    }
+  });
+
   it("strips the host's attachments block into chips and keeps tool output raw", () => {
     const users = derive("user-attachments").filter((item) => item.kind === "user");
     expect(users[0]).toMatchObject({

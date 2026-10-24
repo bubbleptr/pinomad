@@ -62,11 +62,35 @@ describe("AttachmentStore", () => {
     expect(await store.append(id, 99, "!!!")).toEqual({ received: 0, complete: true });
   });
 
+  it("keeps a file named meta.json under file/ and still completes begin → append → use", async () => {
+    const { store, dir } = await openStore();
+
+    const empty = await store.begin("meta.json", 0);
+    const emptyFiles = await store.use([empty]);
+    expect(emptyFiles?.[0]?.path).toBe(join(dir, "attachments", empty, "file", "meta.json"));
+    expect((await stat(join(dir, "attachments", empty, "file", "meta.json"))).size).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, "attachments", empty, "meta.json"), "utf8"))).toMatchObject({
+      state: "used",
+      fileName: "meta.json",
+    });
+
+    const filled = await store.begin("meta.json", 5);
+    expect(await store.append(filled, 0, b64("hello"))).toEqual({ received: 5, complete: true });
+    const files = await store.use([filled]);
+    expect(files?.[0]).toMatchObject({ name: "meta.json", size: 5 });
+    expect(await readFile(join(dir, "attachments", filled, "file", "meta.json"), "utf8")).toBe("hello");
+    expect(JSON.parse(await readFile(join(dir, "attachments", filled, "meta.json"), "utf8"))).toMatchObject({
+      state: "used",
+      fileName: "meta.json",
+      size: 5,
+    });
+  });
+
   it("uploads chunks, marks complete 0444, and ignores offset after completion", async () => {
     const { store, dir } = await openStore();
     const id = await store.begin("hello.txt", 5);
     expect(await store.append(id, 0, b64("hello"))).toEqual({ received: 5, complete: true });
-    const path = join(dir, "attachments", id, "hello.txt");
+    const path = join(dir, "attachments", id, "file", "hello.txt");
     expect(await readFile(path, "utf8")).toBe("hello");
     expect((await stat(path)).mode & 0o777).toBe(0o444);
     expect(await store.append(id, 0, b64("hello"))).toEqual({ received: 5, complete: true });
@@ -77,7 +101,7 @@ describe("AttachmentStore", () => {
     const { store, dir } = await openStore();
     const id = await store.begin("six.txt", 6);
     expect(await store.append(id, 3, b64("def"))).toEqual({ received: 0, complete: false });
-    expect(await readFile(join(dir, "attachments", id, "six.txt"), "utf8")).toBe("");
+    expect(await readFile(join(dir, "attachments", id, "file", "six.txt"), "utf8")).toBe("");
     expect(await store.append(id, 0, b64("abc"))).toEqual({ received: 3, complete: false });
     // The reply to the first append was "lost": the client retries the same chunk.
     expect(await store.append(id, 0, b64("abc"))).toEqual({ received: 3, complete: false });
@@ -99,11 +123,11 @@ describe("AttachmentStore", () => {
   it("recovers a full file whose completion meta write was lost", async () => {
     const { store, dir } = await openStore();
     const id = await store.begin("five.txt", 5);
-    await writeFile(join(dir, "attachments", id, "five.txt"), "hello");
+    await writeFile(join(dir, "attachments", id, "file", "five.txt"), "hello");
     expect(await store.append(id, 0, b64("hello"))).toEqual({ received: 5, complete: true });
     const meta = JSON.parse(await readFile(join(dir, "attachments", id, "meta.json"), "utf8"));
     expect(meta.state).toBe("complete");
-    expect((await stat(join(dir, "attachments", id, "five.txt"))).mode & 0o777).toBe(0o444);
+    expect((await stat(join(dir, "attachments", id, "file", "five.txt"))).mode & 0o777).toBe(0o444);
   });
 
   it("recovers an upload after a host restart", async () => {
@@ -143,6 +167,19 @@ describe("AttachmentStore", () => {
     await expect(bytes.store.begin("five", 5)).rejects.toThrow(/MB budget/);
   });
 
+  it("rebuilds the pending budget from disk after a restart", async () => {
+    const first = await openStore({ pendingLimit: 2 });
+    const used = await first.store.begin("used", 0);
+    await first.store.use([used]);
+    const pending = await first.store.begin("pending", 0);
+    first.store.close();
+
+    const second = await openStore({ dir: join(first.dir, "attachments"), pendingLimit: 2 });
+    const third = await second.store.begin("third", 0);
+    await expect(second.store.begin("fourth", 0)).rejects.toThrow(/Too many pending/);
+    await second.store.use([pending, third]);
+  });
+
   it("validates every id, state, and regular file before marking any used", async () => {
     const { store, dir } = await openStore();
     const uploading = await store.begin("up.txt", 5);
@@ -151,15 +188,15 @@ describe("AttachmentStore", () => {
 
     const complete = await store.begin("done.txt", 5);
     await store.append(complete, 0, b64("hello"));
-    await chmod(join(dir, "attachments", complete, "done.txt"), 0o644);
-    await truncate(join(dir, "attachments", complete, "done.txt"), 4);
+    await chmod(join(dir, "attachments", complete, "file", "done.txt"), 0o644);
+    await truncate(join(dir, "attachments", complete, "file", "done.txt"), 4);
     await expect(store.use([complete])).rejects.toThrow(/unavailable/);
 
     const linked = await store.begin("link.txt", 0);
     const target = join(dir, "elsewhere.txt");
     await writeFile(target, "hello");
-    await rm(join(dir, "attachments", linked, "link.txt"));
-    await symlink(target, join(dir, "attachments", linked, "link.txt"));
+    await rm(join(dir, "attachments", linked, "file", "link.txt"));
+    await symlink(target, join(dir, "attachments", linked, "file", "link.txt"));
     await expect(store.use([linked])).rejects.toThrow(/unavailable/);
 
     const tooMany = Array.from({ length: MAX_ATTACHMENTS_PER_MESSAGE + 1 }, () => complete);

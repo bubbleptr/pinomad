@@ -1054,14 +1054,10 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
 function titleOf(entry: EntryRecord | undefined): { title?: string } {
   const message = entry?.model?.[0];
   if (message?.role !== "user") return {};
-  const text =
-    typeof message.content === "string"
-      ? message.content
-      : message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ");
   // The typed text, not the blocks the host writes around it (ADR-0028,
-  // #321). An attachment-only message has no text — no title rather than an
-  // empty one.
-  const title = stripUserBlocks(text).text.replace(/\s+/g, " ").trim();
+  // #321). Only a whole attachments text block is skipped; an attachment-only
+  // message has no text — no title rather than an empty one.
+  const title = stripUserBlocks(message.content).text.replace(/\s+/g, " ").trim();
   return title === "" ? {} : { title };
 }
 

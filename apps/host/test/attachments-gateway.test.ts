@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
-import { parseAttachmentBlock, xmlAttribute } from "@pinomad/protocol/attachments.ts";
+import { attachmentBlock, parseAttachmentBlock, xmlAttribute } from "@pinomad/protocol/attachments.ts";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
@@ -85,6 +85,26 @@ describe("gateway attachments", () => {
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "third");
     expect(userContents(client.view.current().conversation!)[1]).toMatchObject({ type: "text" });
     expect(chat).toBe(client.view.current().conversation!.conversation.id);
+  });
+
+  it("derives the fallback title from text blocks only", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen", "again"] });
+    const client = await connectTo(defer, host);
+    const id = await upload(client, "notes.txt", "hello");
+    await client.controller.createConversation({ kind: "chat" }, "look at the notes", { attachments: [id] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const titled = client.view.current().conversation!.conversation.id;
+    expect(client.view.current().organized.chats.find((chat) => chat.summary.id === titled)?.summary.title).toBe(
+      "look at the notes",
+    );
+
+    // A string that happens to be a valid block is regular text: the host only
+    // skips a whole attachment text block, not a substring.
+    const block = attachmentBlock([{ id: "A".repeat(22), name: "pasted.txt", path: "/tmp/pasted.txt", size: 1 }]);
+    await client.controller.createConversation({ kind: "chat" }, block);
+    await waitForView(client.view, (view) => view.organized.chats.some((chat) => chat.summary.title?.includes("<attachments")));
+    const stringTitle = client.view.current().organized.chats.find((chat) => chat.summary.title?.includes("<attachments"));
+    expect(stringTitle?.summary.title).toBe(block.replace(/\s+/g, " ").trim());
   });
 
   it("leaves an attachment-only first message untitled until text arrives", async () => {

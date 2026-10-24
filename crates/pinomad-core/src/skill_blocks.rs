@@ -9,8 +9,12 @@
 // the body ending at the first `\n</skill>`; each strips only when `\n\n` and
 // a non-empty rest follow it, and only from the very start of the text.
 // The attachments block is the exact v1 shape written by
-// `packages/protocol/src/attachments.ts`, stripped only when it is a whole
-// block at the end.
+// `packages/protocol/src/attachments.ts`; it is recognized only when a whole
+// content text block is that block. A string message, or a text block with
+// prose around the block, stays text.
+
+use crate::json::Json;
+use crate::u16str::U16String;
 
 const OPEN: &str = "<skill name=\"";
 const LOCATION: &str = "\" location=\"";
@@ -20,7 +24,6 @@ const SEPARATOR: &str = "\n\n";
 
 const ATTACHMENTS_OPEN: &str = "<attachments v=\"1\">";
 const ATTACHMENTS_INSTRUCTION: &str = "The user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.";
-const ATTACHMENTS_CLOSE: &str = "</attachments>";
 const ATTACHMENTS_END: &str = "\n</attachments>";
 const FILE_OPEN: &str = "<file id=\"";
 const FILE_NAME: &str = "\" name=\"";
@@ -87,16 +90,6 @@ fn block_end(units: &[u16], at: usize) -> Option<usize> {
     Some(close + CLOSE.len())
 }
 
-/// A `pi.user` message as the user wrote it.
-#[derive(Debug, PartialEq)]
-pub struct UserText<'a> {
-    /// `text` past every leading skill block, or `text` itself when none strips.
-    pub text: &'a [u16],
-    /// The stripped blocks' names, in order — a bubble highlights `$name`
-    /// only for these, a queued edit restores them as chips.
-    pub skills: Vec<String>,
-}
-
 /// One file of an attachments block, as the host recorded it.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -108,10 +101,17 @@ pub struct UserAttachment {
 
 /// A `pi.user` message as the user wrote it, plus both kinds of host blocks.
 #[derive(Debug, PartialEq)]
-pub struct UserBlocks<'a> {
-    pub text: &'a [u16],
+pub struct UserBlocks {
+    pub text: Vec<u16>,
     pub skills: Vec<String>,
     pub attachments: Vec<UserAttachment>,
+}
+
+/// `String(value) === literal` for a JSON string field.
+fn str_eq(value: Option<&Json>, literal: &str) -> bool {
+    value
+        .and_then(Json::as_str)
+        .is_some_and(|s| s.units() == U16String::from_str(literal).units())
 }
 
 /// `text.startsWith(marker, at)`, then the value up to the next quote; `at`
@@ -286,7 +286,8 @@ fn parse_attachment_block(units: &[u16]) -> Option<Vec<UserAttachment>> {
     Some(files)
 }
 
-pub fn strip_user_blocks(units: &[u16]) -> UserBlocks<'_> {
+/// The typed text past every leading skill block, and their names.
+fn strip_skill_prefix(units: &[u16]) -> (&[u16], Vec<String>) {
     let mut skills = Vec::new();
     let mut at = 0;
     loop {
@@ -303,30 +304,38 @@ pub fn strip_user_blocks(units: &[u16]) -> UserBlocks<'_> {
             _ => break,
         }
     }
-    let mut from = at;
-    loop {
-        let Some(start) = index_of(units, from, ATTACHMENTS_OPEN) else {
-            return UserBlocks {
-                text: &units[at..],
-                skills,
-                attachments: Vec::new(),
-            };
-        };
-        if let Some(attachments) = parse_attachment_block(&units[start..]) {
-            return UserBlocks {
-                text: &units[at..start],
-                skills,
-                attachments,
-            };
-        }
-        from = start + ATTACHMENTS_OPEN.len();
-    }
+    (&units[at..], skills)
 }
 
-pub fn strip_skill_blocks(units: &[u16]) -> UserText<'_> {
-    let blocks = strip_user_blocks(units);
-    UserText {
-        text: blocks.text,
-        skills: blocks.skills,
+/// The typed text, skills, and attachments of a `pi.user` content value.
+/// Attachments come only from a whole text block that is exactly the v1
+/// block; a string or a mixed text block is regular text.
+pub fn strip_user_blocks(content: Option<&Json>) -> UserBlocks {
+    let mut joined: Vec<u16> = Vec::new();
+    let mut attachments = Vec::new();
+    match content {
+        Some(Json::String(text)) => joined.extend_from_slice(text.units()),
+        Some(Json::Array(items)) => {
+            for block in items.iter() {
+                if !str_eq(block.get("type"), "text") {
+                    continue;
+                }
+                let Some(text) = block.get("text").and_then(Json::as_str) else {
+                    continue;
+                };
+                if let Some(files) = parse_attachment_block(text.units()) {
+                    attachments.extend(files);
+                } else {
+                    joined.extend_from_slice(text.units());
+                }
+            }
+        }
+        _ => {}
+    }
+    let (text, skills) = strip_skill_prefix(&joined);
+    UserBlocks {
+        text: text.to_vec(),
+        skills,
+        attachments,
     }
 }
