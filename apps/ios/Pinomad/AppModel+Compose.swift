@@ -263,6 +263,7 @@ extension AppModel {
         let files = fileTrays[id] ?? FileAttachmentTray()
         return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !tray.images.isEmpty || tray.preparing > 0 || !files.isEmpty
+            || filePreparing(id)
     }
 
     /// Withdraw a queued row without editing it. `sent` means it reached the

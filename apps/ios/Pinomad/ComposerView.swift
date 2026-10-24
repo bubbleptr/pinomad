@@ -29,7 +29,7 @@ struct ConversationComposer: View {
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
     private var fileTray: FileAttachmentTray { model.fileTray(for: conversation.id) }
     private var filesPreparing: Bool { model.filePreparing(conversation.id) }
-    private var filesBeingRead: Int { model.fileReads[conversation.id] ?? 0 }
+    private var filesBeingRead: Int { model.fileReads[conversation.id]?.count ?? 0 }
 
     private var currentModel: ModelSummary? {
         summaryOf(models: model.snapshot?.models ?? [], model: conversation.agent.model)

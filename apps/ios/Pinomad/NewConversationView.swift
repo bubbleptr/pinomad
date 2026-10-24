@@ -21,7 +21,7 @@ struct NewConversationView: View {
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
     private var fileTray: FileAttachmentTray { model.fileTray(for: key) }
     private var filesPreparing: Bool { model.filePreparing(key) }
-    private var filesBeingRead: Int { model.fileReads[key] ?? 0 }
+    private var filesBeingRead: Int { model.fileReads[key]?.count ?? 0 }
     private var pick: ModelPick { model.effectiveDraftPick }
     private var resolution: AgentDraft? { model.draftResolution }
     private var currentModel: ModelSummary? { summaryOf(models: model.snapshot?.models ?? [], model: pick.model) }
