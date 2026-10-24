@@ -26,7 +26,7 @@ import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
-import type { HostAuth } from "@pinomad/protocol/auth.ts";
+import type { HostAuth, HostProviders, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
@@ -318,8 +318,8 @@ it("opens Settings on Providers and shows host details under About", async () =>
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  // Providers is the default section — the empty-logins state shows right away.
-  await dialog.getByText("No stored logins. Log in with the Pi CLI on the host.").waitFor();
+  // Providers is the default section — with nothing connected it offers the ways to add one.
+  await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
 
   await dialog.getByRole("button", { name: "About", exact: true }).click();
   await dialog.getByText("Data directory", { exact: true }).waitFor();
@@ -330,17 +330,35 @@ it("opens Settings on Providers and shows host details under About", async () =>
 it("logs a stored login out from the Providers section", async () => {
   const webOrigin = await startWeb();
   // A fake ModelAuth: the real auth.json round trip lives in model-auth.test.ts;
-  // here the auth stream just needs a login to remove through the real gateway call.
+  // here the providers stream just needs a login to remove through the real gateway call.
+  const anthropic: ProviderInfo = {
+    id: "anthropic",
+    name: "Anthropic",
+    apiKey: { name: "Anthropic API key" },
+    stored: { kind: "api_key", subscription: false },
+  };
   const auth = new Published<HostAuth>(
     { logins: [{ providerId: "anthropic", name: "Anthropic", kind: "api_key", subscription: false }] },
     (a, b) => a.logins === b.logins,
   );
+  const providers = new Published<HostProviders>({ providers: [anthropic], logins: [] }, (a, b) => a === b);
+  const unused = (): never => {
+    throw new Error("not used by this test");
+  };
   const modelAuth: ModelAuth = {
     models: constantValue([]),
     auth,
+    providers,
     async logout(providerId: string) {
       auth.set({ logins: auth.value.logins.filter((login) => login.providerId !== providerId) });
+      providers.set({ providers: [{ id: anthropic.id, name: anthropic.name, apiKey: anthropic.apiKey }], logins: [] });
     },
+    beginLogin: unused,
+    answerLogin: unused,
+    cancelLogin: unused,
+    saveCustomProvider: unused,
+    removeCustomProvider: unused,
+    listEndpointModels: unused,
     close() {},
   };
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], modelAuth });
@@ -348,13 +366,12 @@ it("logs a stored login out from the Providers section", async () => {
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByText("1 provider logged in").waitFor();
-  await dialog.getByRole("button", { name: "Anthropic actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Log out…", exact: true }).click();
-  // The menu only arms the card's confirmation; signing out is the second step.
-  await dialog.getByText("This also signs the Pi CLI on the host out of Anthropic.").waitFor();
-  await dialog.getByRole("button", { name: "Log out", exact: true }).click();
-  await dialog.getByText("No stored logins. Log in with the Pi CLI on the host.").waitFor();
+  await dialog.getByRole("list", { name: "Connected" }).getByText("Anthropic", { exact: true }).click();
+  await dialog.getByRole("button", { name: "Remove key…", exact: true }).click();
+  // The first button only arms the confirmation; removing is the second step.
+  await dialog.getByText("Removes the key from this host.", { exact: false }).waitFor();
+  await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
+  await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
 });
 
 it("keeps the chat usable on a phone with navigation and the side panel still reachable", async () => {
