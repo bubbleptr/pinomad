@@ -29,7 +29,8 @@ extension AppModel {
         let attachments = files.ids
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
-        let noticesBefore = session.currentNotices()?.map(\.id).max() ?? 0
+        let noticesBefore = attachments.isEmpty
+            ? 0 : (session.currentNotices()?.map(\.id).max() ?? 0)
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
@@ -40,7 +41,7 @@ extension AppModel {
                 _ = try await session.invoke(
                     .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
                             images: images, skills: payload.skills, attachments: attachments))
-                guard let self, self.session === session else { return }
+                guard let self, self.session === session, !attachments.isEmpty else { return }
                 // Command-class failures resolve normally; their notice is
                 // already in the core view. Associate it with this send by
                 // reading the notices now, not on a later snapshot.
