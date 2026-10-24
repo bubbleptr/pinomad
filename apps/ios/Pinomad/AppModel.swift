@@ -102,6 +102,9 @@ final class AppModel {
     var creating = false
     /// Staged images per conversation, beside its draft text.
     var trays: [UInt64: AttachmentTray] = [:]
+    /// Host-stored file uploads per conversation (issue #321). Kept beside
+    /// the images so a switch mid-upload neither loses nor redirects one.
+    var fileTrays: [UInt64: FileAttachmentTray] = [:]
     /// The queued-input Edit flow: the copy read before withdrawing, its
     /// request phase, and the composer lock. Memory only; a host switch
     /// drops it (an unresolved copy is retried after a same-host reconnect).
@@ -212,6 +215,10 @@ final class AppModel {
     var pairRetryTask: Task<Void, Never>?
     /// A demo's answer to `changes()` — a demo has no session to ask.
     var devChanges: ConversationChanges?
+    /// A file to attach after pairing, and whether to create the draft once
+    /// it finishes uploading — the simulator end-to-end seam.
+    var pendingAttachFile: String?
+    var pendingAttachSend = false
     /// The agent demo opens the conversation's model sheet once the
     /// composer is on screen, so a screenshot can show it without a host.
     var devShowsModelSheet = false
@@ -462,6 +469,7 @@ final class AppModel {
             skillChips = [:]
             questionDrafts = [:]
             trays = [:]
+            fileTrays = [:]
             queuedEdit.reset()
             queuedEditPreparing.removeAll()
             queuePending.removeAll()
@@ -512,6 +520,7 @@ final class AppModel {
             push.currentConnectedHostKey = sessionHost?.hostKey
             #if DEBUG
             consumeDevOpenRequest()
+            consumeDevAttachRequest()
             #endif
             if let id = reopenAfterReady {
                 reopenAfterReady = nil

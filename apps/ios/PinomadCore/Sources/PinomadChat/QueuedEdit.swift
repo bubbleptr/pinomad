@@ -14,15 +14,22 @@ public struct QueuedEdit: Equatable, Sendable {
         /// The skills the host expanded (ADR-0028); their `$name` mentions
         /// come back as chips.
         public let skills: [String]
+        /// Host-stored files on the queued input (issue #321). They go back
+        /// on the resend as ids; re-uploading would duplicate the bytes.
+        public let attachments: [UserAttachment]
 
         public init(conversationId: UInt64, id: UInt64, text: String, images: [MessageImage],
-                    skills: [String] = []) {
+                    skills: [String] = [], attachments: [UserAttachment] = []) {
             self.conversationId = conversationId
             self.id = id
             self.text = text
             self.images = images
             self.skills = skills
+            self.attachments = attachments
         }
+
+        /// What `submit` references on the resend.
+        public var attachmentIds: [String] { attachments.map(\.id) }
     }
 
     public enum Phase: Equatable, Sendable {
@@ -138,7 +145,8 @@ extension QueuedEdit.Copy {
             id: id,
             text: text,
             images: resolved,
-            skills: skills
+            skills: skills,
+            attachments: attachments
         )
     }
 }

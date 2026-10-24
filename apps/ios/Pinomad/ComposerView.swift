@@ -19,6 +19,7 @@ struct ConversationComposer: View {
     @State private var showModels = false
     @State private var showPhotos = false
     @State private var showCamera = false
+    @State private var showFiles = false
     @State private var mentions = MentionCoordinator()
     @State private var selection = NSRange()
     @State private var focused = false
@@ -26,6 +27,7 @@ struct ConversationComposer: View {
     @State private var sends = 0
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
+    private var fileTray: FileAttachmentTray { model.fileTray(for: conversation.id) }
 
     private var currentModel: ModelSummary? {
         summaryOf(models: model.snapshot?.models ?? [], model: conversation.agent.model)
@@ -93,7 +95,7 @@ struct ConversationComposer: View {
     /// What tapping send does with the current draft.
     private var submit: ComposerSubmit {
         ComposerSubmit(draft: draft.wrappedValue, commands: commandEntries,
-                       hasImages: !tray.images.isEmpty)
+                       hasImages: !tray.images.isEmpty, hasFiles: !fileTray.isEmpty)
     }
 
     private var commandBlocked: String? {
@@ -210,17 +212,27 @@ struct ConversationComposer: View {
         }
         .imageSources(model: model, key: conversation.id, accepts: acceptsImages,
                       showPhotos: $showPhotos, showCamera: $showCamera)
+        .fileAttachmentImporter(model: model, key: conversation.id, isPresented: $showFiles)
     }
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !tray.isEmpty || tray.error != nil || imagesBlocked || commandBlocked != nil {
+            if let status = fileTray.statusText {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !tray.isEmpty || !fileTray.isEmpty || tray.error != nil
+                || fileTray.error != nil || imagesBlocked || commandBlocked != nil {
                 AttachmentStrip(
                     tray: tray,
+                    files: fileTray,
                     note: imagesBlocked
                         ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send."
-                        : commandBlocked ?? tray.error,
-                    remove: { model.removeImage(conversation: conversation.id, at: $0) },
+                        : commandBlocked ?? fileTray.error ?? tray.error,
+                    removeImage: { model.removeImage(conversation: conversation.id, at: $0) },
+                    removeFile: { model.removeFile(conversation: conversation.id, id: $0) },
+                    retryFile: { model.retryFile(conversation: conversation.id, id: $0) },
                     view: { model.viewing = $0 }
                 )
             }
@@ -286,7 +298,7 @@ struct ConversationComposer: View {
         let runCommandBlocked: String? = switch commandEntries {
         case nil: "Loading…"
         case let entries? where entries.isEmpty: "None on this host"
-        case _ where !draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.isEmpty:
+        case _ where !draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.isEmpty || !fileTray.isEmpty:
             "Clear the message first"
         default: nil
         }
@@ -296,6 +308,8 @@ struct ConversationComposer: View {
             modelName: currentModel?.name ?? currentModel?.modelId,
             canAddImages: tray.freeSlots > 0,
             locked: editLocked,
+            attachFiles: model.hostSupports(.attachments)
+                ? { presentAfterMenu { showFiles = true } } : nil,
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: conversation.id, accepts: acceptsImages) },
@@ -388,6 +402,7 @@ struct ConversationComposer: View {
         switch SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy,
                         hasImages: !tray.images.isEmpty,
                         preparing: tray.preparing > 0 || imagesBlocked || commandBlocked != nil,
+                        hasFiles: !fileTray.isEmpty, filesBlocked: !fileTray.canSend,
                         command: submit != .message) {
         case .hidden:
             EmptyView()
@@ -489,6 +504,8 @@ struct PlusMenu: View {
     /// An Edit is resolving: every add entry waits for it so a late refill
     /// cannot mix with a new pick.
     let locked: Bool
+    /// Nil before 5.19: the entry is hidden, not greyed.
+    let attachFiles: (() -> Void)?
     let photos: () -> Void
     /// Nil where there is no camera (the simulator).
     let camera: (() -> Void)?
@@ -511,6 +528,7 @@ struct PlusMenu: View {
         modelName: String?,
         canAddImages: Bool,
         locked: Bool = false,
+        attachFiles: (() -> Void)? = nil,
         photos: @escaping () -> Void,
         camera: (() -> Void)?,
         paste: @escaping () -> Void,
@@ -526,6 +544,7 @@ struct PlusMenu: View {
         self.modelName = modelName
         self.canAddImages = canAddImages
         self.locked = locked
+        self.attachFiles = attachFiles
         self.photos = photos
         self.camera = camera
         self.paste = paste
@@ -551,6 +570,10 @@ struct PlusMenu: View {
             } else {
                 Button("Add Images (\(modelName ?? "this model") doesn't accept images)", image: .image) {}
                     .disabled(true)
+            }
+            if let attachFiles {
+                Button("Attach files…", image: .file, action: attachFiles)
+                    .disabled(!connected || locked)
             }
             // Text triggers need the field, which is off while offline or
             // locked by an Edit.
@@ -594,17 +617,20 @@ struct PlusMenu: View {
     }
 }
 
-/// Staged images (tap to view, × to drop), a spinner per image still being
-/// prepared, and the last attach problem.
+/// Staged images and files (tap an image to view, × to drop), a spinner per
+/// image still being prepared, and the last attach problem.
 struct AttachmentStrip: View {
     let tray: AttachmentTray
+    let files: FileAttachmentTray
     let note: String?
-    let remove: (Int) -> Void
+    let removeImage: (Int) -> Void
+    let removeFile: (String) -> Void
+    let retryFile: (String) -> Void
     let view: (MessageImage) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !tray.isEmpty {
+            if !tray.isEmpty || !files.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(Array(tray.images.enumerated()), id: \.offset) { index, image in
@@ -612,7 +638,7 @@ struct AttachmentStrip: View {
                                 .onTapGesture { view(image) }
                                 .overlay(alignment: .topTrailing) {
                                     Button {
-                                        remove(index)
+                                        removeImage(index)
                                     } label: {
                                         Image(.x)
                                             .font(.system(size: 10, weight: .bold))
@@ -624,6 +650,13 @@ struct AttachmentStrip: View {
                                     .offset(x: 5, y: -5)
                                     .accessibilityLabel("Remove image \(index + 1)")
                                 }
+                        }
+                        ForEach(files.entries) { entry in
+                            FileAttachmentChip(
+                                entry: entry,
+                                retry: { retryFile(entry.id) },
+                                remove: { removeFile(entry.id) }
+                            )
                         }
                         ForEach(0..<tray.preparing, id: \.self) { _ in
                             ProgressView()
@@ -798,6 +831,11 @@ private struct QueueList: View {
                 .lineLimit(1)
             if item.imageCount > 0 {
                 Text("· \(item.imageCount) image\(item.imageCount == 1 ? "" : "s")")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if item.attachmentCount > 0 {
+                Text("· \(item.attachmentCount) file\(item.attachmentCount == 1 ? "" : "s")")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

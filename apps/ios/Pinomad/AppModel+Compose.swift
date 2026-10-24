@@ -15,20 +15,23 @@ extension AppModel {
     func send(conversation id: UInt64, mode: SubmitMode) {
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
-        guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty,
-              tray.preparing == 0, let session else { return }
+        let files = fileTrays[id] ?? FileAttachmentTray()
+        guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
+              tray.preparing == 0, files.canSend, let session else { return }
         let images = tray.images
+        let attachments = files.ids
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
+        fileTrays[id] = nil
         transcriptPin += 1
         Task { [weak self] in
             do {
                 _ = try await session.invoke(
                     .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
-                            images: images, skills: payload.skills))
+                            images: images, skills: payload.skills, attachments: attachments))
             } catch {
                 guard let self else { return }
                 // Don't clobber anything typed or attached meanwhile.
@@ -43,7 +46,10 @@ extension AppModel {
                     }
                     self.trays[id] = restored
                 }
-                self.lastError = "Couldn't send: \(error.localizedDescription)"
+                if self.fileTrays[id] == nil, !files.isEmpty {
+                    self.fileTrays[id] = files
+                }
+                self.lastError = "Couldn't send: \(self.describe(error))"
             }
         }
     }
@@ -140,9 +146,11 @@ extension AppModel {
     /// skills go back too, or the host would match every `$name` in the text.
     func retry(_ request: RetryRequest, conversation id: UInt64) {
         transcriptPin += 1
+        // The host stripped the attachment block from the text; resend the
+        // ids core kept or the retry silently becomes text-only (#321).
         run(.submit(text: request.text, whenBusy: .followUp, target: id,
                     requestId: request.requestId, images: request.images,
-                    skills: request.skills))
+                    skills: request.skills, attachments: request.attachmentIds))
     }
 
     func stop(conversation id: UInt64) {
@@ -204,8 +212,9 @@ extension AppModel {
         guard queuedEdit.canBegin, queuedEditPreparing.isEmpty else { return true }
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
+        let files = fileTrays[id] ?? FileAttachmentTray()
         return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !tray.images.isEmpty || tray.preparing > 0
+            || !tray.images.isEmpty || tray.preparing > 0 || !files.isEmpty
     }
 
     /// Withdraw a queued row without editing it. `sent` means it reached the
@@ -259,7 +268,7 @@ extension AppModel {
         else { return }
         let copy = QueuedEdit.Copy(
             conversationId: id, id: item.id, text: input.text, images: input.images,
-            skills: input.skills)
+            skills: input.skills, attachments: input.attachments)
         // Refs are valid only while the row is still in the subscribed view;
         // resolve every image before withdrawing, or the copy could not be
         // resent after the row leaves the inbox (ADR-0027 §5).
@@ -368,6 +377,7 @@ extension AppModel {
         var tray = trays[copy.conversationId] ?? AttachmentTray()
         tray.restore(copy.images)
         trays[copy.conversationId] = tray
+        restoreFiles(conversation: copy.conversationId, attachments: copy.attachments)
         transcriptPin += 1
         queuedEditFocus[copy.conversationId, default: 0] += 1
     }
