@@ -541,7 +541,15 @@ final class AppModel {
                 }
                 trays[key] = tray
             }
-            if !pending.files.isEmpty { fileTrays[key] = pending.files }
+            if !pending.files.isEmpty {
+                // The host refused these ids; keep the chips (and their
+                // sources) retryable instead of sending the same dead ids.
+                var files = pending.files
+                for id in files.entries.map(\.id) {
+                    files.fail(id: id, error: rejection.message, gone: true)
+                }
+                fileTrays[key] = files
+            }
             lastError = rejection.message
         }
     }
