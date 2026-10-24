@@ -157,6 +157,10 @@ pub enum CallResult {
     WithdrawQueued { outcome: WithdrawOutcome },
     /// `steerQueued` — `unavailable` means it settled before the promotion.
     SteerQueued { outcome: SteerOutcome },
+    /// `beginLogin` — the flow to follow in `snapshot().providers.logins`.
+    LoginStarted { login_id: String },
+    /// `listEndpointModels` — the model ids the endpoint listed.
+    EndpointModels { models: Vec<String> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]

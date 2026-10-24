@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use crate::ffi::types::{ApnsPushToken, ImageVariant, MessageImage, ModelRef, QuestionAnswer, ThinkingLevel};
+use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput, LoginMethod};
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
 use crate::remote_durable::Call;
@@ -175,8 +176,9 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 /// Every call the mobile UI can make, as typed data. `OperationFailed`
 /// only ever answers the Request-class variants (`AddProject`,
 /// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
-/// `CreatePairing`, `WithdrawQueued`, `SteerQueued`) and the out-of-queue
-/// `ListFiles`, `ListSkills`, and `Image`; the rest fail into a view notice
+/// `CreatePairing`, `WithdrawQueued`, `SteerQueued`, and the provider calls
+/// `BeginLogin` … `RemoveCustomProvider`) and the out-of-queue `ListFiles`,
+/// `ListSkills`, `Image` and `ListEndpointModels`; the rest fail into a view notice
 /// while reporting `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
@@ -324,6 +326,34 @@ pub enum FfiCall {
     /// Append one base64 chunk at `offset` (5.19); the host answers the
     /// bytes it actually holds so a retry resumes instead of guessing.
     AppendAttachment { attachment_id: String, offset: u64, data: String },
+    /// Remove a provider's stored credential on the host. Command-class: a
+    /// failure lands in `snapshot().notices`. Needs a 5.1 host.
+    Logout { provider_id: String },
+    /// Start a login (ADR-0031); its prompts and outcome arrive in
+    /// `snapshot().providers.logins`. Request-class: rejects when the
+    /// provider lacks `method` or already has a login running. Resolves
+    /// `CallResult::LoginStarted`. Needs a 5.21 host, like the calls below.
+    BeginLogin { provider_id: String, method: LoginMethod },
+    /// Answer a running login's current prompt; a stale `prompt_id` is
+    /// rejected, never applied to a later prompt. Request-class.
+    AnswerLogin { login_id: String, prompt_id: u64, value: String },
+    /// Abort a running login; ended or unknown ids are a no-op. Request-class.
+    CancelLogin { login_id: String },
+    /// Add or replace a custom endpoint. Request-class.
+    SaveCustomProvider { provider: CustomProviderInput, api_key: ApiKeyChange },
+    /// Remove a custom endpoint and its stored key. Request-class.
+    RemoveCustomProvider { provider_id: String },
+    /// The models an endpoint serves, asked from the host (it may be the only
+    /// machine that reaches it). `provider_id` reuses that custom endpoint's
+    /// stored key when `api_key` is absent. Request-class, outside the command
+    /// queue like `listFiles` — the host waits on the endpoint. Resolves
+    /// `CallResult::EndpointModels`.
+    ListEndpointModels {
+        api: CustomProviderApi,
+        base_url: String,
+        api_key: Option<String>,
+        provider_id: Option<String>,
+    },
 }
 
 impl FfiCall {
@@ -343,6 +373,8 @@ impl FfiCall {
             FfiCall::AppendAttachment { .. } => Some(ResultKind::AppendAttachment),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
+            FfiCall::BeginLogin { .. } => Some(ResultKind::LoginStarted),
+            FfiCall::ListEndpointModels { .. } => Some(ResultKind::EndpointModels),
             _ => None,
         }
     }
@@ -445,6 +477,26 @@ impl FfiCall {
             FfiCall::AppendAttachment { attachment_id, offset, data } => {
                 Call::AppendAttachment { attachment_id, offset, data }
             }
+            FfiCall::Logout { provider_id } => Call::Logout { provider_id },
+            FfiCall::BeginLogin { provider_id, method } => Call::BeginLogin {
+                provider_id,
+                method: method.into_core(),
+            },
+            FfiCall::AnswerLogin { login_id, prompt_id, value } => {
+                Call::AnswerLogin { login_id, prompt_id, value }
+            }
+            FfiCall::CancelLogin { login_id } => Call::CancelLogin { login_id },
+            FfiCall::SaveCustomProvider { provider, api_key } => Call::SaveCustomProvider {
+                provider: provider.to_json(),
+                api_key: api_key.into_core(),
+            },
+            FfiCall::RemoveCustomProvider { provider_id } => Call::RemoveCustomProvider { provider_id },
+            FfiCall::ListEndpointModels { api, base_url, api_key, provider_id } => Call::ListEndpointModels {
+                api: api.into_core(),
+                base_url,
+                api_key,
+                provider_id,
+            },
         }
     }
 }
