@@ -6,7 +6,7 @@
     <title>PiNomad — 崩溃重启也不丢进度的 coding agent</title>
     <meta
       name="description"
-      content="PiNomad 是基于 Pi Durable 的自托管 coding agent。每次模型调用和工具调用都存检查点，崩溃或重启后从停下的地方接着跑；Mac App、Web 和 iPhone App 连的是同一批运行中的任务。"
+      content="PiNomad 是基于 Pi Durable 的自托管 coding agent，跑在你自己的机器上。每一步模型和工具调用都会存下检查点，崩溃或重启后从断处接着跑；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。"
     />
     <link rel="canonical" href="https://pinomad.si/zh/" />
     <link rel="alternate" hreflang="en" href="https://pinomad.si/" />
@@ -25,17 +25,17 @@
     <meta property="og:title" content="PiNomad — 崩溃重启也不丢进度的 coding agent" />
     <meta
       property="og:description"
-      content="跑在你自己的机器上，每次模型调用和工具调用都存检查点；Mac App、Web 和 iPhone App 连的是同一批运行中的任务。"
+      content="跑在你自己的机器上，每一步模型和工具调用都存检查点；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。"
     />
     <meta property="og:image" content="https://pinomad.si/og-image.jpg" />
     <meta property="og:image:width" content="1920" />
     <meta property="og:image:height" content="1200" />
-    <meta property="og:image:alt" content="PiNomad Web 客户端里的一个任务：侧栏是各个对话，agent 正在思考和调用工具" />
+    <meta property="og:image:alt" content="PiNomad Web 客户端运行画面：左侧是对话列表，右侧 agent 正在思考并调用工具" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="PiNomad — 崩溃重启也不丢进度的 coding agent" />
     <meta
       name="twitter:description"
-      content="跑在你自己的机器上，每次模型调用和工具调用都存检查点；Mac App、Web 和 iPhone App 连的是同一批运行中的任务。"
+      content="跑在你自己的机器上，每一步模型和工具调用都存检查点；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。"
     />
     <meta name="twitter:image" content="https://pinomad.si/og-image.jpg" />
 
@@ -51,8 +51,8 @@
           <span>PiNomad</span>
         </a>
         <nav class="nav-sections" aria-label="页面章节">
-          <a href="#anywhere">哪块屏幕都行</a>
-          <a href="#durable">崩溃恢复</a>
+          <a href="#anywhere">多端接力</a>
+          <a href="#durable">断点续跑</a>
           <a href="#features">功能</a>
           <a href="#clients">客户端</a>
           <a href="#quick-start">快速上手</a>
@@ -74,8 +74,8 @@
         <div class="wrap">
           <h1 id="hero-title"><span class="nowrap">崩溃重启也不丢进度的</span> <span class="nowrap">coding agent</span></h1>
           <p class="lead">
-            PiNomad 跑在你自己的机器上，用那台机器的 shell 和代码仓库，每次模型调用和工具调用都存检查点。宿主崩溃或重启后，任务从停下的地方接着跑。Mac
-            App、Web 和 iPhone App 连的是同一批运行中的任务。
+            PiNomad 跑在你自己的机器上，直接调用本机的 shell 和代码。每一步模型和工具调用都会存下检查点，就算进程挂了或机器重启，也能从断处接着跑。Mac
+            App、Web 和 iPhone App 连向同一个宿主，任务在哪都能随时接手。
           </p>
           <div class="actions">
             <a class="button" href="#quick-start">开始使用</a>
@@ -106,7 +106,7 @@
               sizes="(min-width: 72rem) 68rem, 100vw"
               width="2400"
               height="1500"
-              alt="运行中的 PiNomad Web 客户端：侧栏是各个对话；agent 已经回答过一轮，正在按追问改测试、跑测试"
+              alt="PiNomad Web 客户端运行画面：左侧是对话列表，agent 答完上一轮后，正顺着追问改测试、跑测试"
               fetchpriority="high"
             />
           </figure>
@@ -116,19 +116,19 @@
       <section class="section" id="anywhere" aria-labelledby="anywhere-title">
         <div class="wrap split split-phone">
           <div class="section-head">
-            <p class="eyebrow">哪块屏幕都行</p>
+            <p class="eyebrow">多端接力</p>
             <h2 id="anywhere-title">离开电脑也能接着管</h2>
             <p class="section-lead">
-              在电脑前开个任务，出门用手机看进度、插话调整方向。设备扫一次性二维码配对，和宿主之间走端到端加密的通道。
+              在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。新设备扫一次性二维码就能完成配对，和宿主之间全程走端到端加密的安全通道。
             </p>
             <ul class="chips">
               <li class="chip"><strong>直连</strong>：局域网或 tailnet</li>
-              <li class="chip"><strong>中继</strong>：只看得到密文</li>
+              <li class="chip"><strong>中继</strong>：只转发密文</li>
             </ul>
           </div>
           <figure class="shot shot-phone">
             <!-- include skeleton-phone.html -->
-            <figcaption class="shot-label">截图待补：iPhone 上的同一个任务。</figcaption>
+            <figcaption class="shot-label">截图待补：在 iPhone 上接着看同一个任务。</figcaption>
           </figure>
         </div>
       </section>
@@ -136,10 +136,10 @@
       <section class="section" id="durable" aria-labelledby="durable-title">
         <div class="wrap">
           <div class="section-head">
-            <p class="eyebrow">崩溃恢复</p>
-            <h2 id="durable-title">崩溃、重启都不丢进度</h2>
+            <p class="eyebrow">断点续跑</p>
+            <h2 id="durable-title">步步存检查点，重启不用从头来</h2>
             <p class="section-lead">
-              Pi Durable 在每次模型调用和工具调用完成后存检查点。重启后从最后一个检查点接着跑，只有当时没跑完的那一步要重做。
+              每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。
             </p>
           </div>
           <div class="panel" data-durable>
@@ -147,10 +147,10 @@
               <!-- include durable.svg -->
             </div>
             <p class="visually-hidden">
-              一个任务画成一条由模型调用和工具调用组成的路线，每完成一步插一面旗。宿主在两步之间崩溃，重启后从最后一面旗接着跑，只有做到一半的那一步要重做。
+              示意图：一条任务路线串联起多次模型调用和工具调用，每完成一步就插一面旗。宿主在两步中途崩溃，重启后直接从上一面旗恢复，只重做中断的那一步。
             </p>
             <div class="diagram-controls">
-              <button class="button button-small" type="button" data-durable-button hidden>开始一个任务</button>
+              <button class="button button-small" type="button" data-durable-button hidden>开始运行</button>
               <p class="diagram-status" data-durable-status aria-live="polite"></p>
             </div>
           </div>
@@ -162,13 +162,13 @@
           <div class="section-head">
             <p class="eyebrow">功能</p>
             <h2 id="features-title">agent 能做什么</h2>
-            <p class="section-lead">工具和 pi 一样是 read、bash、edit、write 四个，另外还有：</p>
+            <p class="section-lead">除了和 pi 一样的 read、bash、edit、write 四个基础工具，还支持：</p>
           </div>
           <div class="feature-rows">
             <div class="feature-row split">
               <div>
-                <h3>每个对话一个 worktree</h3>
-                <p>Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到。</p>
+                <h3>每个对话独立一个 worktree</h3>
+                <p>在 Git 项目里，每个对话都在独立的 worktree 和分支上改代码，多个任务并行互不干扰，也不会动到你手头正在改的目录。</p>
               </div>
               <figure class="shot shot-crop">
                 <img
@@ -177,7 +177,7 @@
                   sizes="(min-width: 56rem) 35rem, 100vw"
                   width="1120"
                   height="840"
-                  alt="侧栏是 slugkit 项目下的各个对话。打开的这个读过、写过、改过文件并跑了测试，输入框下面一行显示它在自己的 Git worktree 里，分支是 pinomad/ 开头的"
+                  alt="左侧是 slugkit 项目下的多条对话。当前对话已经完成读写文件和跑测试，输入框底部显示它运行在独立的 Git worktree 和 pinomad/ 分支上"
                   loading="lazy"
                   decoding="async"
                 />
@@ -186,7 +186,7 @@
             <div class="feature-row split">
               <div>
                 <h3>提问代替审批</h3>
-                <p>工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题。</p>
+                <p>调工具不弹确认框，不用一路点允许。遇到需要你拿主意的地方，agent 会列 1–4 道选择题让你拍板。</p>
               </div>
               <figure class="shot shot-crop">
                 <img
@@ -195,7 +195,7 @@
                   sizes="(min-width: 56rem) 35rem, 100vw"
                   width="1120"
                   height="840"
-                  alt="agent 提出的选择题卡片：命令叫 slugkit 还是 slug；标题只从参数读，还是也从标准输入读；每题都可以自己填答案"
+                  alt="agent 发出的提问卡片：询问命令该叫 slugkit 还是 slug、是否支持从标准输入读取标题，每道题除了现成选项也可以自己填答案"
                   loading="lazy"
                   decoding="async"
                 />
@@ -205,8 +205,8 @@
               <div>
                 <h3>子代理和具名 Agent</h3>
                 <p>
-                  把能独立完成的任务交给并行执行的子代理，或者用 <code>@名字</code>
-                  派给一个具名 Agent，还可以给它固定模型和思考等级。
+                  独立的活可以拆给多个子代理并行去跑；也可以配置带专属提示词、模型和思考等级的具名
+                  Agent，用 <code>@名字</code> 直接点名派活。
                 </p>
               </div>
               <figure class="shot shot-crop">
@@ -216,7 +216,7 @@
                   sizes="(min-width: 56rem) 35rem, 100vw"
                   width="1120"
                   height="840"
-                  alt="一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突"
+                  alt="同一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突"
                   loading="lazy"
                   decoding="async"
                 />
@@ -229,23 +229,23 @@
             <dl class="more-list">
               <div>
                 <dt>Fork</dt>
-                <dd>从某条消息分出去，两条线各自往下聊。</dd>
+                <dd>从任意一条消息分出新对话，继承此前上下文，两条线各自往下聊。</dd>
               </div>
               <div>
                 <dt>codemode</dt>
-                <dd>模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文。</dd>
+                <dd>模型写 JavaScript 在 QuickJS 沙箱里组合调用其他工具，只把最终输出放进上下文。</dd>
               </div>
               <div>
                 <dt>MCP</dt>
-                <dd>在 <code>~/.agents/mcp.json</code> 里配置 server，格式就是常见的 <code>mcpServers</code>。</dd>
+                <dd>在 <code>~/.agents/mcp.json</code> 里按通用的 <code>mcpServers</code> 格式配好就能用。</dd>
               </div>
               <div>
                 <dt>图片</dt>
-                <dd>Web / 桌面端输入框可粘贴、拖入或选图，一条消息最多 4 张。</dd>
+                <dd>Web 和桌面端输入框支持直接粘贴、拖入或选图，单条消息最多附带 4 张。</dd>
               </div>
               <div>
                 <dt>AGENTS.md 和 skills</dt>
-                <dd>每次请求都会读 <code>~/.agents</code> 和项目里的 <code>AGENTS.md</code> / <code>CLAUDE.md</code> 与 skills。</dd>
+                <dd>每次请求都会读取 <code>~/.agents</code> 和项目目录下的 <code>AGENTS.md</code>、<code>CLAUDE.md</code> 与 skills。</dd>
               </div>
             </dl>
           </div>
@@ -262,26 +262,26 @@
             <li class="client">
               <h3>Web</h3>
               <p>
-                打开 <a href="https://app.pinomad.si">app.pinomad.si</a>，或者用宿主自己提供的
-                Web 客户端（<code>pinomad link</code>）。现代浏览器都能用。
+                直接打开 <a href="https://app.pinomad.si">app.pinomad.si</a>，或运行
+                <code>pinomad link</code> 打开宿主自带的 Web 客户端，现代浏览器即开即用。
               </p>
             </li>
             <li class="client">
               <h3>macOS</h3>
               <p>
-                <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a>
-                上签名过的 DMG，会自动更新。
+                在 <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a>
+                下载已签名的 DMG 安装包，支持自动更新。
               </p>
               <span class="tag">Apple 芯片</span>
             </li>
             <li class="client">
               <h3>iOS</h3>
-              <p>扫一次性二维码和宿主配对。</p>
-              <span class="tag">目前只在 TestFlight 内部测试</span>
+              <p>扫一下宿主生成的一次性二维码即可完成配对。</p>
+              <span class="tag">目前仅限 TestFlight 内测</span>
             </li>
             <li class="client">
               <h3>Linux、Windows</h3>
-              <p>用 Web 客户端。</p>
+              <p>直接使用 Web 客户端。</p>
             </li>
           </ul>
         </div>
@@ -294,11 +294,11 @@
             <h2 id="quick-start-title">三条命令跑起来</h2>
             <p class="section-lead">宿主需要 Node 25+，支持 macOS 和 Linux。</p>
             <p class="note">
-              <code>pinomad host</code> 用你在 pi 里配好的模型和认证（<code>~/.pi/agent</code>）。还没配过
-              pi？<code>pinomad host --faux "hi"</code> 会用一个脚本化的假模型跑起来，可以先点点看。
+              <code>pinomad host</code> 会直接复用你在 pi（<code>~/.pi/agent</code>）里配好的模型和认证。还没配过
+              pi？可以先跑 <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
             </p>
             <p class="note">
-              还在早期。Pi Durable 本身也是实验性的；宿主和客户端的协议主版本号必须一致。
+              项目还在早期，底层的 Pi Durable 也处于实验阶段；升级时请保持宿主和客户端的协议主版本号一致。
             </p>
           </div>
           <div class="code-card">
@@ -308,15 +308,15 @@
               <span class="visually-hidden" role="status" data-copy-status></span>
             </div>
             <pre><code id="quick-start-code">npm i -g pinomad
-pinomad host   <span class="comment"># 用你在 pi 里配好的模型和认证</span>
-pinomad link   <span class="comment"># 另开一个终端：打印 Web 客户端的链接</span></code></pre>
+pinomad host   <span class="comment"># 复用 pi 里配好的模型和认证</span>
+pinomad link   <span class="comment"># 另开一个终端，打印 Web 客户端链接</span></code></pre>
           </div>
         </div>
       </section>
 
       <section class="closing" aria-labelledby="closing-title">
         <div class="wrap">
-          <h2 id="closing-title">开个任务，然后走开。</h2>
+          <h2 id="closing-title">派好活，放手让它跑。</h2>
           <p class="lead">免费开源。跑在你自己的机器上，用你自己的模型账号。</p>
           <div class="actions">
             <a class="button" href="#quick-start">开始使用</a>
@@ -325,7 +325,7 @@ pinomad link   <span class="comment"># 另开一个终端：打印 Web 客户端
               在 GitHub 上 Star
             </a>
           </div>
-          <p class="star-note">觉得 PiNomad 有用的话，点个 star 能让更多人看到它。</p>
+          <p class="star-note">如果 PiNomad 对你有用，点颗 Star 能帮更多人发现它。</p>
         </div>
       </section>
     </main>
@@ -334,7 +334,7 @@ pinomad link   <span class="comment"># 另开一个终端：打印 Web 客户端
       <div class="wrap">
         <p class="footer-sign">
           <img src="@brand/favicon.svg" alt="" width="20" height="20" />
-          PiNomad 以 Apache-2.0 许可证开源。
+          PiNomad 基于 Apache-2.0 许可证开源。
         </p>
         <nav aria-label="页脚">
           <ul>
