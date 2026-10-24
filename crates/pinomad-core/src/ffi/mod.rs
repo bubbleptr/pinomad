@@ -6,6 +6,7 @@ mod account;
 mod calls;
 mod functions;
 mod hosts;
+mod providers;
 mod snapshot;
 mod types;
 
@@ -13,6 +14,7 @@ pub use account::*;
 pub use calls::*;
 pub use functions::*;
 pub use hosts::*;
+pub use providers::*;
 pub use snapshot::*;
 pub use types::*;
 
@@ -37,6 +39,8 @@ pub(crate) enum ResultKind {
     AppendAttachment,
     WithdrawQueued,
     SteerQueued,
+    LoginStarted,
+    EndpointModels,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -54,11 +58,12 @@ struct Inner {
 ///
 /// Failure contract, following the reference `RemoteDurable` exactly:
 /// - Request-class calls (`addProject`, `listFolders`, `renameConversation`,
-///   `setPushToken`, `changes`, `createPairing`) reject the op: the platform
-///   sees `OperationFailed { op, error }`.
+///   `setPushToken`, `changes`, `createPairing`, and the provider calls
+///   `beginLogin` … `listEndpointModels`) reject the op: the platform sees
+///   `OperationFailed { op, error }`.
 /// - Command-class calls (everything else: `submit`, `switchConversation`,
 ///   `createConversation`, `archive`, `compact`, `runCommand`, `answer`, `setModel`,
-///   `setThinkingLevel`, `setAgent`, `revokeDevice`, `updateSettings`) and the
+///   `setThinkingLevel`, `setAgent`, `revokeDevice`, `logout`, `updateSettings`) and the
 ///   unqueued `abort` still emit
 ///   `OperationSucceeded { value: Unit }` on failure — the reason lands as
 ///   an entry in `snapshot().notices` with a stable `id`, like a host
@@ -182,6 +187,20 @@ impl PinomadClient {
                             Ok(outcome) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::SteerQueued { outcome },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::LoginStarted) => match login_started_of(value.as_ref()) {
+                            Ok(login_id) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::LoginStarted { login_id },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::EndpointModels) => match endpoint_models_of(value.as_ref()) {
+                            Ok(models) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::EndpointModels { models },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

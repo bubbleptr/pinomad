@@ -233,9 +233,10 @@ struct SettingsSheet: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
+    @State private var path: [Route] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             SettingsView(model: model)
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Route.self) { route in
@@ -247,6 +248,7 @@ struct SettingsSheet: View {
                     }
                 }
         }
+        .environment(\.popToProviders, PopToProvidersAction(stack: "settings") { path.popToProviders() })
     }
 }
 
@@ -266,6 +268,7 @@ struct MachineSettingsView: View {
                 if snapshot.settings != nil && model.hostSupports(.hostName) {
                     hostNameSection(snapshot)
                 }
+                providersSection(snapshot.providers)
                 devicesSection(snapshot.devices)
                 if let settings = snapshot.settings, model.hostSupports(.acceptAccountDevices) {
                     accountDevicesSection(settings)
@@ -364,6 +367,25 @@ struct MachineSettingsView: View {
             }
         } footer: {
             Text("Without a custom name, the machine's hostname is used.")
+        }
+    }
+
+    /// Where the host gets its models from (ADR-0031): logins and custom
+    /// endpoints, kept on the host and shared by every paired device.
+    private func providersSection(_ providers: HostProviders?) -> some View {
+        Section {
+            NavigationLink(value: Route.providers(hostKey)) {
+                LabeledContent {
+                    if let providers {
+                        let count = providers.providers.filter(\.isConnected).count
+                        Text(count == 0 ? "None" : "\(count) connected")
+                    }
+                } label: {
+                    Label("Providers", image: .keyRound)
+                }
+            }
+        } footer: {
+            Text("Subscriptions, API keys and custom endpoints this host reaches models through.")
         }
     }
 

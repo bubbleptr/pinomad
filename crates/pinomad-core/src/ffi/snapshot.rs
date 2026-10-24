@@ -4,6 +4,7 @@
 
 use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
+use crate::ffi::providers::{providers_of, HostProviders};
 use crate::ffi::types::*;
 use crate::json::Json;
 use crate::model::ModelRef;
@@ -51,6 +52,10 @@ pub struct ClientSnapshot {
     pub agents: Option<AgentRoles>,
     /// The shown conversation and everything its screen reads.
     pub conversation: Option<ConversationSnapshot>,
+    /// Every provider and the logins in progress (ADR-0031) — `None` before
+    /// the `providers` stream's snapshot or when the host predates it (5.21).
+    #[uniffi(default = None)]
+    pub providers: Option<HostProviders>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -393,5 +398,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         defaults: defaults_of(&view),
         agents: agents_of(&view),
         conversation: conversation_of(&view, fresh, fresh_epoch),
+        providers: providers_of(&view),
     })
 }

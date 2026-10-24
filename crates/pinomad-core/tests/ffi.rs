@@ -8,7 +8,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use pinomad_core::ffi::{
-    device_public_key, parse_command_input, CallResult, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
+    device_public_key, parse_command_input, ApiKeyChange, CallResult, CustomProvider, CustomProviderApi, CustomProviderInput, HostProviders,
+    LoginEvent, LoginInput, LoginLink, LoginMethod, LoginOption, LoginPrompt, LoginState, ProviderInfo, ProviderOAuth, StoredCredential, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
     DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
     SteerOutcome, StoredHost, SubmitMode, ThinkingLevel, WithdrawOutcome,
@@ -1891,5 +1892,440 @@ fn ffi_forwards_bound_skills() {
     assert_eq!(
         frames[0].get("args").and_then(|args| args.get("skills")).cloned(),
         Some(Json::array(vec![Json::from("review")]))
+    );
+}
+
+// ─── Providers (5.21, ADR-0031) ─────────────────────────────────────────────
+
+fn method_args(h: &Harness, method: &str) -> Vec<Json> {
+    call_frames(h)
+        .into_iter()
+        .filter(|f| f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == method).unwrap_or(false))
+        .map(|f| f.get("args").cloned().unwrap_or(Json::Null))
+        .collect()
+}
+
+fn ollama_input() -> CustomProviderInput {
+    CustomProviderInput {
+        id: "ollama-studio".to_string(),
+        name: "Ollama on studio".to_string(),
+        api: CustomProviderApi::OpenaiCompletions,
+        base_url: "http://studio:11434/v1".to_string(),
+        models: vec!["llama3".to_string(), "qwen3".to_string()],
+    }
+}
+
+#[test]
+fn provider_calls_lower_to_the_wire_args() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert("beginLogin".to_string(), obj(&[("loginId", Json::from("login-1"))]));
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::BeginLogin { provider_id: "groq".to_string(), method: LoginMethod::ApiKey });
+    h.invoke(2, FfiCall::AnswerLogin { login_id: "login-1".to_string(), prompt_id: 2, value: "gsk".to_string() });
+    h.invoke(3, FfiCall::CancelLogin { login_id: "login-1".to_string() });
+    h.invoke(4, FfiCall::SaveCustomProvider { provider: ollama_input(), api_key: ApiKeyChange::Keep });
+    h.invoke(5, FfiCall::SaveCustomProvider { provider: ollama_input(), api_key: ApiKeyChange::Remove });
+    h.invoke(6, FfiCall::SaveCustomProvider { provider: ollama_input(), api_key: ApiKeyChange::Set { key: "k".to_string() } });
+    h.invoke(7, FfiCall::RemoveCustomProvider { provider_id: "ollama-studio".to_string() });
+    h.invoke(
+        8,
+        FfiCall::ListEndpointModels {
+            api: CustomProviderApi::AnthropicMessages,
+            base_url: "https://gw.example/v1".to_string(),
+            api_key: Some("k".to_string()),
+            provider_id: None,
+        },
+    );
+    h.invoke(9, FfiCall::Logout { provider_id: "groq".to_string() });
+
+    assert_eq!(
+        method_args(&h, "beginLogin"),
+        vec![obj(&[("providerId", Json::from("groq")), ("method", Json::from("api_key"))])]
+    );
+    assert_eq!(
+        method_args(&h, "answerLogin"),
+        vec![obj(&[("loginId", Json::from("login-1")), ("promptId", Json::from(2.0)), ("value", Json::from("gsk"))])]
+    );
+    assert_eq!(method_args(&h, "cancelLogin"), vec![obj(&[("loginId", Json::from("login-1"))])]);
+    let provider = obj(&[
+        ("id", Json::from("ollama-studio")),
+        ("name", Json::from("Ollama on studio")),
+        ("api", Json::from("openai-completions")),
+        ("baseUrl", Json::from("http://studio:11434/v1")),
+        ("models", Json::array(vec![Json::from("llama3"), Json::from("qwen3")])),
+    ]);
+    assert_eq!(
+        method_args(&h, "saveCustomProvider"),
+        vec![
+            obj(&[("provider", provider.clone())]),
+            obj(&[("provider", provider.clone()), ("apiKey", Json::Null)]),
+            obj(&[("provider", provider), ("apiKey", Json::from("k"))]),
+        ]
+    );
+    assert_eq!(method_args(&h, "removeCustomProvider"), vec![obj(&[("providerId", Json::from("ollama-studio"))])]);
+    assert_eq!(
+        method_args(&h, "listEndpointModels"),
+        vec![obj(&[
+            ("api", Json::from("anthropic-messages")),
+            ("baseUrl", Json::from("https://gw.example/v1")),
+            ("apiKey", Json::from("k")),
+        ])]
+    );
+    assert_eq!(method_args(&h, "logout"), vec![obj(&[("providerId", Json::from("groq"))])]);
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::LoginStarted { login_id: "login-1".to_string() })));
+    for op in [2, 3, 4, 5, 6, 7, 9] {
+        assert_eq!(h.ops.get(&op), Some(&Ok(CallResult::Unit)), "op {op}");
+    }
+}
+
+#[test]
+fn list_endpoint_models_resolves_a_typed_result() {
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "listEndpointModels".to_string(),
+        obj(&[("models", Json::array(vec![Json::from("llama3"), Json::from("qwen3")]))]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::ListEndpointModels {
+            api: CustomProviderApi::OpenaiCompletions,
+            base_url: "http://localhost:11434/v1".to_string(),
+            api_key: None,
+            provider_id: Some("ollama".to_string()),
+        },
+    );
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::EndpointModels { models: vec!["llama3".to_string(), "qwen3".to_string()] }))
+    );
+}
+
+#[test]
+fn provider_results_malformed_or_refused_fail_the_op() {
+    let list = || FfiCall::ListEndpointModels {
+        api: CustomProviderApi::OpenaiCompletions,
+        base_url: "http://localhost:11434/v1".to_string(),
+        api_key: None,
+        provider_id: None,
+    };
+    let begin = || FfiCall::BeginLogin { provider_id: "groq".to_string(), method: LoginMethod::ApiKey };
+    for (index, (method, value, call)) in [
+        ("beginLogin", obj(&[]), begin()),
+        ("beginLogin", obj(&[("loginId", Json::from(""))]), begin()),
+        ("beginLogin", obj(&[("loginId", Json::from(1.0))]), begin()),
+        ("listEndpointModels", obj(&[]), list()),
+        ("listEndpointModels", obj(&[("models", Json::array(vec![Json::from(1.0)]))]), list()),
+        ("listEndpointModels", Json::Null, list()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert(method.to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, call);
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains(&format!("malformed {method} result")), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    // The host's `ok:false` reaches the caller, which shows it inline.
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("answerLogin".to_string(), "That prompt was already answered".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::AnswerLogin { login_id: "l".to_string(), prompt_id: 1, value: "v".to_string() });
+    assert_eq!(h.ops.get(&1), Some(&Err("That prompt was already answered".to_string())));
+}
+
+#[test]
+fn provider_calls_need_a_5_21_host() {
+    let mut host = ScriptedHost::new();
+    host.minor = 20.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::BeginLogin { provider_id: "groq".to_string(), method: LoginMethod::Oauth });
+    h.invoke(2, FfiCall::AnswerLogin { login_id: "l".to_string(), prompt_id: 1, value: "v".to_string() });
+    h.invoke(3, FfiCall::CancelLogin { login_id: "l".to_string() });
+    h.invoke(4, FfiCall::SaveCustomProvider { provider: ollama_input(), api_key: ApiKeyChange::Keep });
+    h.invoke(5, FfiCall::RemoveCustomProvider { provider_id: "x".to_string() });
+    h.invoke(
+        6,
+        FfiCall::ListEndpointModels {
+            api: CustomProviderApi::OpenaiCompletions,
+            base_url: "http://x/v1".to_string(),
+            api_key: None,
+            provider_id: None,
+        },
+    );
+    for op in 1..=6 {
+        match h.ops.get(&op) {
+            Some(Err(error)) => assert!(error.contains("5.21"), "op {op}: {error}"),
+            other => panic!("op {op}: expected a 5.21 refusal, got {other:?}"),
+        }
+    }
+    assert!(call_frames(&h).is_empty());
+    // A 5.20 host has no providers stream: the snapshot says so with None.
+    assert_eq!(h.client.snapshot().unwrap().providers, None);
+}
+
+#[test]
+fn snapshot_providers_decodes_providers_and_a_login_flow() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "providers".to_string(),
+        obj(&[
+            (
+                "providers",
+                Json::array(vec![
+                    obj(&[
+                        ("id", Json::from("anthropic")),
+                        ("name", Json::from("Anthropic")),
+                        (
+                            "oauth",
+                            obj(&[
+                                ("name", Json::from("Anthropic (Claude Pro/Max)")),
+                                ("subscription", Json::Bool(true)),
+                                ("loginLabel", Json::from("Sign in with Claude")),
+                            ]),
+                        ),
+                        ("apiKey", obj(&[("name", Json::from("Anthropic"))])),
+                        ("stored", obj(&[("kind", Json::from("oauth")), ("subscription", Json::Bool(true))])),
+                    ]),
+                    obj(&[
+                        ("id", Json::from("google")),
+                        ("name", Json::from("Google")),
+                        ("apiKey", obj(&[("name", Json::from("Google Gemini"))])),
+                        ("ambient", Json::from("GEMINI_API_KEY")),
+                    ]),
+                    obj(&[
+                        ("id", Json::from("ollama-studio")),
+                        ("name", Json::from("Ollama on studio")),
+                        ("apiKey", obj(&[("name", Json::from("Ollama on studio"))])),
+                        (
+                            "custom",
+                            obj(&[
+                                ("api", Json::from("openai-completions")),
+                                ("baseUrl", Json::from("http://studio:11434/v1")),
+                                ("models", Json::array(vec![Json::from("llama3")])),
+                            ]),
+                        ),
+                    ]),
+                ]),
+            ),
+            (
+                "logins",
+                Json::array(vec![
+                    obj(&[
+                        ("id", Json::from("login-1")),
+                        ("providerId", Json::from("github-copilot")),
+                        ("method", Json::from("oauth")),
+                        (
+                            "events",
+                            Json::array(vec![
+                                obj(&[
+                                    ("type", Json::from("info")),
+                                    ("message", Json::from("Use your GitHub account")),
+                                    ("links", Json::array(vec![obj(&[("url", Json::from("https://github.com"))])])),
+                                ]),
+                                obj(&[
+                                    ("type", Json::from("auth_url")),
+                                    ("url", Json::from("https://example.test/auth")),
+                                    ("instructions", Json::from("Approve access")),
+                                ]),
+                                obj(&[
+                                    ("type", Json::from("device_code")),
+                                    ("userCode", Json::from("ABCD-1234")),
+                                    ("verificationUri", Json::from("https://github.com/login/device")),
+                                    ("expiresAt", Json::from(1700000000000.0)),
+                                ]),
+                                obj(&[("type", Json::from("progress")), ("message", Json::from("Waiting…"))]),
+                                // A newer pi's event this client can't show is skipped.
+                                obj(&[("type", Json::from("confetti"))]),
+                            ]),
+                        ),
+                        (
+                            "prompt",
+                            obj(&[
+                                ("id", Json::from(4.0)),
+                                ("type", Json::from("select")),
+                                ("message", Json::from("Choose a host:")),
+                                (
+                                    "options",
+                                    Json::array(vec![
+                                        obj(&[("id", Json::from("com")), ("label", Json::from("github.com"))]),
+                                        obj(&[
+                                            ("id", Json::from("ghe")),
+                                            ("label", Json::from("Enterprise")),
+                                            ("description", Json::from("Your own domain")),
+                                        ]),
+                                    ]),
+                                ),
+                            ]),
+                        ),
+                        ("state", Json::from("running")),
+                    ]),
+                    obj(&[
+                        ("id", Json::from("login-2")),
+                        ("providerId", Json::from("groq")),
+                        ("method", Json::from("api_key")),
+                        ("events", Json::array(vec![])),
+                        ("state", Json::from("failed")),
+                        ("error", Json::from("Invalid key")),
+                    ]),
+                    obj(&[
+                        ("id", Json::from("login-3")),
+                        ("providerId", Json::from("future")),
+                        ("method", Json::from("api_key")),
+                        ("events", Json::array(vec![])),
+                        // A prompt kind this client doesn't know reads as none.
+                        ("prompt", obj(&[("id", Json::from(1.0)), ("type", Json::from("qr")), ("message", Json::from("Scan"))])),
+                        ("state", Json::from("running")),
+                    ]),
+                ]),
+            ),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    let providers = h.client.snapshot().unwrap().providers.expect("providers arrived");
+
+    assert_eq!(
+        providers.providers,
+        vec![
+            ProviderInfo {
+                id: "anthropic".to_string(),
+                name: "Anthropic".to_string(),
+                oauth: Some(ProviderOAuth {
+                    name: "Anthropic (Claude Pro/Max)".to_string(),
+                    subscription: true,
+                    login_label: Some("Sign in with Claude".to_string()),
+                }),
+                api_key: Some("Anthropic".to_string()),
+                stored: Some(StoredCredential { kind: LoginMethod::Oauth, subscription: true }),
+                ambient: None,
+                custom: None,
+            },
+            ProviderInfo {
+                id: "google".to_string(),
+                name: "Google".to_string(),
+                oauth: None,
+                api_key: Some("Google Gemini".to_string()),
+                stored: None,
+                ambient: Some("GEMINI_API_KEY".to_string()),
+                custom: None,
+            },
+            ProviderInfo {
+                id: "ollama-studio".to_string(),
+                name: "Ollama on studio".to_string(),
+                oauth: None,
+                api_key: Some("Ollama on studio".to_string()),
+                stored: None,
+                ambient: None,
+                custom: Some(CustomProvider {
+                    api: CustomProviderApi::OpenaiCompletions,
+                    base_url: "http://studio:11434/v1".to_string(),
+                    models: vec!["llama3".to_string()],
+                }),
+            },
+        ]
+    );
+
+    assert_eq!(providers.logins.len(), 3);
+    let running = &providers.logins[0];
+    assert_eq!(running.provider_id, "github-copilot");
+    assert_eq!(running.method, LoginMethod::Oauth);
+    assert_eq!(running.state, LoginState::Running);
+    assert_eq!(
+        running.events,
+        vec![
+            LoginEvent::Info {
+                message: "Use your GitHub account".to_string(),
+                links: vec![LoginLink { url: "https://github.com".to_string(), label: None }],
+            },
+            LoginEvent::AuthUrl {
+                url: "https://example.test/auth".to_string(),
+                instructions: Some("Approve access".to_string()),
+            },
+            LoginEvent::DeviceCode {
+                user_code: "ABCD-1234".to_string(),
+                verification_uri: "https://github.com/login/device".to_string(),
+                expires_at: Some(1700000000000.0),
+            },
+            LoginEvent::Progress { message: "Waiting…".to_string() },
+        ]
+    );
+    assert_eq!(
+        running.prompt,
+        Some(LoginPrompt {
+            id: 4,
+            message: "Choose a host:".to_string(),
+            input: LoginInput::Select {
+                options: vec![
+                    LoginOption { id: "com".to_string(), label: "github.com".to_string(), description: None },
+                    LoginOption {
+                        id: "ghe".to_string(),
+                        label: "Enterprise".to_string(),
+                        description: Some("Your own domain".to_string()),
+                    },
+                ],
+            },
+        })
+    );
+    assert_eq!(running.error, None);
+
+    let failed = &providers.logins[1];
+    assert_eq!(failed.state, LoginState::Failed);
+    assert_eq!(failed.error.as_deref(), Some("Invalid key"));
+    assert_eq!(failed.prompt, None);
+
+    assert_eq!(providers.logins[2].prompt, None);
+    assert_eq!(providers.logins[2].state, LoginState::Running);
+}
+
+#[test]
+fn snapshot_providers_follows_stream_updates() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "providers".to_string(),
+        obj(&[("providers", Json::array(vec![])), ("logins", Json::array(vec![]))]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().providers,
+        Some(HostProviders { providers: vec![], logins: vec![] })
+    );
+    // A secret prompt arrives with the next push; the snapshot follows.
+    let conn = h.host.conn;
+    let value = obj(&[
+        ("providers", Json::array(vec![])),
+        (
+            "logins",
+            Json::array(vec![obj(&[
+                ("id", Json::from("login-1")),
+                ("providerId", Json::from("groq")),
+                ("method", Json::from("api_key")),
+                ("events", Json::array(vec![])),
+                (
+                    "prompt",
+                    obj(&[
+                        ("id", Json::from(1.0)),
+                        ("type", Json::from("secret")),
+                        ("message", Json::from("API key:")),
+                        ("placeholder", Json::from("gsk_…")),
+                    ]),
+                ),
+                ("state", Json::from("running")),
+            ])]),
+        ),
+    ]);
+    let frame = obj(&[("type", Json::from("snapshot")), ("stream", Json::from("providers")), ("value", value)]);
+    h.handle(FfiEvent::SocketData { conn, bytes: frame.to_json().into_bytes() });
+    let logins = h.client.snapshot().unwrap().providers.unwrap().logins;
+    assert_eq!(
+        logins[0].prompt,
+        Some(LoginPrompt {
+            id: 1,
+            message: "API key:".to_string(),
+            input: LoginInput::Secret { placeholder: Some("gsk_…".to_string()) },
+        })
     );
 }
