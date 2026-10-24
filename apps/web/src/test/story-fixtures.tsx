@@ -8,6 +8,7 @@ import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
+import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -215,6 +216,151 @@ export const MODELS: readonly ModelSummary[] = [
 
 const key = (fill: string) => fill.repeat(43);
 
+// --- Providers -------------------------------------------------------------------
+
+const keyed = (id: string, name: string): ProviderInfo => ({ id, name, apiKey: { name: `${name} API key` } });
+
+/**
+ * pi-ai 1.2.0's catalog as the 5.21 `providers` stream sends it: built-ins by
+ * name, then custom endpoints. Connected: Anthropic by subscription, OpenAI
+ * and Cloudflare AI Gateway by key, Google only through the host's
+ * environment, plus two custom endpoints.
+ */
+export const PROVIDERS: readonly ProviderInfo[] = [
+  { id: "amazon-bedrock", name: "Amazon Bedrock", apiKey: { name: "AWS credentials or bearer token" } },
+  keyed("ant-ling", "Ant Ling"),
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    oauth: { name: "Anthropic (Claude Pro/Max)", subscription: true },
+    apiKey: { name: "Anthropic API key" },
+    stored: { kind: "oauth", subscription: true },
+  },
+  keyed("azure", "Azure"),
+  keyed("baseten", "Baseten"),
+  keyed("cerebras", "Cerebras"),
+  { ...keyed("cloudflare-ai-gateway", "Cloudflare AI Gateway"), stored: { kind: "api_key", subscription: false } },
+  keyed("cloudflare-workers-ai", "Cloudflare Workers AI"),
+  keyed("deepseek", "DeepSeek"),
+  keyed("fireworks", "Fireworks"),
+  { id: "github-copilot", name: "GitHub Copilot", oauth: { name: "GitHub Copilot", subscription: true }, apiKey: { name: "GitHub Copilot" } },
+  { ...keyed("google", "Google"), ambient: "GEMINI_API_KEY" },
+  { id: "google-vertex", name: "Google Vertex AI", apiKey: { name: "Google Cloud credentials" } },
+  keyed("groq", "Groq"),
+  keyed("huggingface", "Hugging Face"),
+  {
+    id: "kimi-coding",
+    name: "Kimi For Coding",
+    oauth: { name: "Kimi Code (subscription)", subscription: true, loginLabel: "Sign in with Kimi Code" },
+    apiKey: { name: "Kimi For Coding API key" },
+  },
+  {
+    id: "meta",
+    name: "Meta",
+    oauth: { name: "Meta (Muse subscription)", subscription: true, loginLabel: "Sign in with Meta" },
+    apiKey: { name: "Meta API key" },
+  },
+  keyed("minimax", "MiniMax"),
+  keyed("minimax-cn", "MiniMax CN"),
+  keyed("mistral", "Mistral"),
+  keyed("moonshotai", "Moonshot AI"),
+  keyed("moonshotai-cn", "Moonshot AI CN"),
+  keyed("nvidia", "NVIDIA"),
+  {
+    id: "openai",
+    name: "OpenAI",
+    oauth: { name: "OpenAI (ChatGPT subscription)", subscription: true, loginLabel: "Sign in with ChatGPT" },
+    apiKey: { name: "OpenAI API key" },
+    stored: { kind: "api_key", subscription: false },
+  },
+  { id: "openai-codex", name: "OpenAI Codex (legacy)", oauth: { name: "OpenAI (ChatGPT Plus/Pro)", subscription: true } },
+  keyed("opencode-go", "OpenCode Go"),
+  keyed("opencode", "OpenCode Zen"),
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    oauth: { name: "OpenRouter OAuth", subscription: false, loginLabel: "Sign in with OpenRouter" },
+    apiKey: { name: "OpenRouter API key" },
+  },
+  keyed("qwen-token-plan", "Qwen Token Plan"),
+  keyed("qwen-token-plan-cn", "Qwen Token Plan CN"),
+  keyed("qwen-token-plan-individual", "Qwen Token Plan Individual"),
+  { id: "radius", name: "Radius", oauth: { name: "Radius", subscription: false }, apiKey: { name: "Radius API key" } },
+  keyed("together", "Together"),
+  keyed("typesafe", "TypeSafe"),
+  keyed("vercel-ai-gateway", "Vercel AI Gateway"),
+  {
+    id: "xai",
+    name: "xAI",
+    oauth: { name: "xAI (Grok/X subscription)", subscription: true, loginLabel: "Sign in with SuperGrok or X Premium" },
+    apiKey: { name: "xAI API key" },
+  },
+  keyed("xiaomi", "Xiaomi"),
+  keyed("xiaomi-token-plan-ams", "Xiaomi Token Plan AMS"),
+  keyed("xiaomi-token-plan-cn", "Xiaomi Token Plan CN"),
+  keyed("xiaomi-token-plan-sgp", "Xiaomi Token Plan SGP"),
+  keyed("zai", "Z.AI"),
+  keyed("zai-coding-cn", "Z.AI Coding CN"),
+  {
+    id: "company-llm-gateway-eu",
+    name: "Company LLM gateway (EU region, shared team quota)",
+    apiKey: { name: "API key" },
+    stored: { kind: "api_key", subscription: false },
+    custom: {
+      api: "anthropic-messages",
+      baseUrl: "https://llm-gateway.internal.example-company.com/anthropic/v1",
+      models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+    },
+  },
+  {
+    id: "ollama-on-studio",
+    name: "Ollama on studio",
+    apiKey: { name: "API key" },
+    custom: {
+      api: "openai-completions",
+      baseUrl: "http://studio.local:11434/v1",
+      models: ["qwen3-coder:30b-a3b-q4_K_M", "gpt-oss:120b", "gpt-oss:20b", "deepseek-r1:70b-llama-distill-q4_K_M", "devstral:24b"],
+    },
+  },
+];
+
+/** GitHub Copilot's device-code sign-in, waiting for the user to approve. */
+export const DEVICE_CODE_LOGIN: LoginFlow = {
+  id: "login-copilot",
+  providerId: "github-copilot",
+  method: "oauth",
+  events: [{ type: "device_code", userCode: "WDJB-MJHT", verificationUri: "https://github.com/login/device", expiresAt: now + 15 * MINUTE }],
+  state: "running",
+};
+
+/** Anthropic's browser sign-in, waiting for the pasted code. */
+export const PASTE_CODE_LOGIN: LoginFlow = {
+  id: "login-anthropic",
+  providerId: "anthropic",
+  method: "oauth",
+  events: [
+    {
+      type: "auth_url",
+      url: "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code",
+      instructions: "Complete login in your browser, then copy the code Anthropic shows and paste it here.",
+    },
+  ],
+  prompt: { id: 2, type: "manual_code", message: "Paste the code Anthropic shows after you sign in:", placeholder: "code#state" },
+  state: "running",
+};
+
+/** Cloudflare Workers AI's key login; pi asks for the account ID next. */
+export const KEY_LOGIN: LoginFlow = {
+  id: "login-cloudflare",
+  providerId: "cloudflare-workers-ai",
+  method: "api_key",
+  events: [],
+  prompt: { id: 1, type: "secret", message: "Enter Cloudflare API key" },
+  state: "running",
+};
+
+export const HOST_PROVIDERS: HostProviders = { providers: PROVIDERS, logins: [DEVICE_CODE_LOGIN, PASTE_CODE_LOGIN, KEY_LOGIN] };
+
 /** This client's device key; the Devices section marks the matching entry as "This device". */
 export const SELF: KeyPair = { publicKey: new Uint8Array(32).fill(7), privateKey: new Uint8Array(32).fill(9) };
 const SELF_PUBLIC = toBase64Url(SELF.publicKey);
@@ -276,6 +422,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
         { providerId: "openai", name: "OpenAI", kind: "api_key", subscription: false },
       ],
     },
+    providers: HOST_PROVIDERS,
     settings: {
       defaultModel: MODEL,
       defaultThinkingLevel: "high",
@@ -348,6 +495,17 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     createPairing: fn(async () => ({ url: `pinomad://pair#${key("P")}`, expiresAt: Date.now() + 5 * MINUTE })),
     revokeDevice: fn(async () => {}),
     logout: fn(async () => {}),
+    // Resolves to the flow the view already lists for this provider, so a
+    // story can show a login in progress without a live stream.
+    beginLogin: fn(
+      async (providerId: string, method: LoginMethod) =>
+        view.providers?.logins.find((flow) => flow.providerId === providerId && flow.method === method)?.id ?? "login-new",
+    ),
+    answerLogin: fn(async () => {}),
+    cancelLogin: fn(async () => {}),
+    saveCustomProvider: fn(async () => {}),
+    removeCustomProvider: fn(async () => {}),
+    listEndpointModels: fn(async () => ["llama-4-maverick-17b-128e-instruct", "gpt-oss-120b", "qwen3-235b-a22b-instruct-2507"]),
     updateSettings: fn(async () => {}),
     createAgent: fn(async () => {}),
     updateAgent: fn(async () => {}),

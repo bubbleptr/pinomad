@@ -68,7 +68,15 @@ stdio server 写 `command`（可选 `args`、`env`、`cwd`——相对的 cwd �
 
 `exposure: "direct"` 时它的截图工具结果图片直接显示在工具卡片上；默认 `codemode` 暴露下脚本也可以 `image()` 把拿到的图片放进输出。
 
-宿主设置在侧栏底部的 Settings 对话框里（ADR-0021），按宿主名分组的那几节：新建对话的默认模型和思考等级、busy 时 steer / follow-up 消息排队后的投递方式、已存储的登录（可以登出），以及只读的 MCP 配置和宿主数据目录。运行中排队的消息显示在输入框上方，可以 Steer（改成 steer、等下一个可用边界）、Edit（撤回并放回输入框，输入框已有内容时不可用）或 Withdraw（撤回）。设置写在宿主数据目录的 `settings.json`（默认 `~/.pinomad/settings.json`），文件里只保存改过的键；没设过的回落到 pi 的 `~/.pi/agent/settings.json`，再回落到内置默认。任一设备改了，所有在线设备立刻看到新值。同一个对话框最上面的 "This device" 一组属于客户端自己：Hosts 里管理配对过的宿主（切换、忘记、粘贴配对链接配新宿主），桌面端还有 Updates。侧栏底部的电脑图标点开是各宿主的名字和连接状态（呼吸的绿点是已连接，灰点是没连上），点另一台就切过去。宿主运行时只有宿主自己写这个文件——要手动编辑请在宿主停止后进行。登录凭据仍共用 pi 的 `~/.pi/agent/auth.json`，登录用 Pi CLI 完成；在这里登出会同时把本机的 Pi CLI 登出。
+宿主设置在侧栏底部的 Settings 对话框里（ADR-0021），按宿主名分组的那几节：新建对话的默认模型和思考等级、busy 时 steer / follow-up 消息排队后的投递方式、模型 Provider（见下），以及只读的 MCP 配置和宿主数据目录。运行中排队的消息显示在输入框上方，可以 Steer（改成 steer、等下一个可用边界）、Edit（撤回并放回输入框，输入框已有内容时不可用）或 Withdraw（撤回）。设置写在宿主数据目录的 `settings.json`（默认 `~/.pinomad/settings.json`），文件里只保存改过的键；没设过的回落到内置默认。任一设备改了，所有在线设备立刻看到新值。同一个对话框最上面的 "This device" 一组属于客户端自己：Hosts 里管理配对过的宿主（切换、忘记、粘贴配对链接配新宿主），桌面端还有 Updates。侧栏底部的电脑图标点开是各宿主的名字和连接状态（呼吸的绿点是已连接，灰点是没连上），点另一台就切过去。宿主运行时只有宿主自己写这个文件——要手动编辑请在宿主停止后进行。宿主不读 pi 的任何配置（ADR-0031）。
+
+Settings → Providers 管理宿主能用哪些模型，任何一台已配对设备都能操作，所有设备共用同一份：
+
+- **Subscription**：用已经在付费的订阅登录（Claude Pro/Max、ChatGPT Plus/Pro、GitHub Copilot、SuperGrok / X Premium、Kimi Code、Meta Muse），OpenRouter 等账号登录也在这里。有的会给一个链接，在任意设备的浏览器里批准后把页面给出的 code 贴回来；有的显示一个设备码，到 provider 的网站输入。
+- **API key**：pi 支持的 provider 都在这里，Cloudflare、Vertex、Bedrock 这类要多填几项的会在同一个表单里一步步问。
+- **Custom endpoint**：自己的 OpenAI / Anthropic / Gemini 兼容服务（Ollama、LM Studio、vLLM、网关）。填 base URL 和模型 id，"Fetch from /models" 由宿主去问 endpoint 有哪些模型。
+
+一个 provider 只存一份凭据，换登录方式会替换掉原来的。凭据存在数据目录的 `auth.json`，自定义 endpoint 存在 `models.json`（pi 的 models.json 格式，可以在宿主停止时手改）。宿主环境变量里的 key（例如 `GEMINI_API_KEY`）照样生效，在列表里标为来自环境变量。从旧版本升级不会带上 `~/.pi/agent` 里的登录，要在这里重新登录。代理、重试、压缩这些 pi 的 harness 设置写在 `settings.json` 的 `"pi"` 键下，格式同 pi 的 settings.json，只能手改，宿主启动时读。
 
 ## iOS 账号
 

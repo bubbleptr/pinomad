@@ -111,6 +111,29 @@ pub enum Call {
     CreatePairing,
     RevokeDevice { public_key: String },
     Logout { provider_id: String },
+    /// `beginLogin` — start a login (5.21, ADR-0031); its prompts and
+    /// outcome arrive in the `providers` stream's `logins`. Request-class,
+    /// like the provider calls below: the caller shows the host's error.
+    /// The result is the host's `{ loginId }`.
+    BeginLogin { provider_id: String, method: LoginMethod },
+    /// `answerLogin` — answer a running login's current prompt (5.21).
+    AnswerLogin { login_id: String, prompt_id: u64, value: String },
+    /// `cancelLogin` — abort a running login (5.21).
+    CancelLogin { login_id: String },
+    /// `saveCustomProvider` — add or replace a custom endpoint (5.21);
+    /// `provider` is a `CustomProviderInput`.
+    SaveCustomProvider { provider: Json, api_key: ApiKeyChange },
+    /// `removeCustomProvider` — remove a custom endpoint and its key (5.21).
+    RemoveCustomProvider { provider_id: String },
+    /// `listEndpointModels` — the models an endpoint serves, asked from the
+    /// host (5.21). Unqueued like `listCommands`: the host waits on a remote
+    /// endpoint. The result is the host's `{ models }`.
+    ListEndpointModels {
+        api: CustomProviderApi,
+        base_url: String,
+        api_key: Option<String>,
+        provider_id: Option<String>,
+    },
     UpdateSettings { patch: Json },
     CreateAgent { role: Json },
     UpdateAgent { role: Json },
@@ -177,6 +200,52 @@ fn set_attachments(args: &mut JsonObject, attachments: &[String]) {
 pub enum ForkShow {
     Main,
     Side,
+}
+
+/// `LoginMethod` (auth.ts) — how a login is done.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LoginMethod {
+    Oauth,
+    ApiKey,
+}
+
+impl LoginMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LoginMethod::Oauth => "oauth",
+            LoginMethod::ApiKey => "api_key",
+        }
+    }
+}
+
+/// `CustomProviderApi` (auth.ts) — the wire formats a custom endpoint may
+/// speak. Typed because the host 4400s a call whose `api` it doesn't know.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CustomProviderApi {
+    OpenaiCompletions,
+    OpenaiResponses,
+    AnthropicMessages,
+    GoogleGenerativeAi,
+}
+
+impl CustomProviderApi {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CustomProviderApi::OpenaiCompletions => "openai-completions",
+            CustomProviderApi::OpenaiResponses => "openai-responses",
+            CustomProviderApi::AnthropicMessages => "anthropic-messages",
+            CustomProviderApi::GoogleGenerativeAi => "google-generative-ai",
+        }
+    }
+}
+
+/// `saveCustomProvider`'s `apiKey`: absent keeps the stored key, `null`
+/// removes it, a string stores it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ApiKeyChange {
+    Keep,
+    Remove,
+    Set(String),
 }
 
 /// Everything the platform layer feeds in. `conn` ids come from
@@ -984,14 +1053,20 @@ impl RemoteDurable {
             | Call::DeleteAgent { .. }
             | Call::SetPushToken { .. }
             | Call::WithdrawQueued { .. }
-            | Call::SteerQueued { .. } => OpKind::Request,
+            | Call::SteerQueued { .. }
+            | Call::BeginLogin { .. }
+            | Call::AnswerLogin { .. }
+            | Call::CancelLogin { .. }
+            | Call::SaveCustomProvider { .. }
+            | Call::RemoveCustomProvider { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
             Call::ListFiles { .. }
             | Call::ListSkills { .. }
             | Call::Image { .. }
             | Call::ListCommands { .. }
             | Call::BeginAttachment { .. }
-            | Call::AppendAttachment { .. } => OpKind::Direct,
+            | Call::AppendAttachment { .. }
+            | Call::ListEndpointModels { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1276,6 +1351,69 @@ impl RemoteDurable {
                 }
                 let args = obj(&[("providerId", Json::from(provider_id.clone()))]);
                 steps.push_back(Step::Call { method: "logout", args });
+            }
+            Call::BeginLogin { provider_id, method } => {
+                if !host_supports_call(self.host_minor, "beginLogin") {
+                    return Err(too_old("5.21"));
+                }
+                let args = obj(&[
+                    ("providerId", Json::from(provider_id.clone())),
+                    ("method", Json::from(method.as_str())),
+                ]);
+                steps.push_back(Step::Call { method: "beginLogin", args });
+            }
+            Call::AnswerLogin { login_id, prompt_id, value } => {
+                if !host_supports_call(self.host_minor, "answerLogin") {
+                    return Err(too_old("5.21"));
+                }
+                let args = obj(&[
+                    ("loginId", Json::from(login_id.clone())),
+                    ("promptId", Json::Number(*prompt_id as f64)),
+                    ("value", Json::from(value.clone())),
+                ]);
+                steps.push_back(Step::Call { method: "answerLogin", args });
+            }
+            Call::CancelLogin { login_id } => {
+                if !host_supports_call(self.host_minor, "cancelLogin") {
+                    return Err(too_old("5.21"));
+                }
+                let args = obj(&[("loginId", Json::from(login_id.clone()))]);
+                steps.push_back(Step::Call { method: "cancelLogin", args });
+            }
+            Call::SaveCustomProvider { provider, api_key } => {
+                if !host_supports_call(self.host_minor, "saveCustomProvider") {
+                    return Err(too_old("5.21"));
+                }
+                let mut args = JsonObject::new();
+                set(&mut args, "provider", provider.clone());
+                match api_key {
+                    ApiKeyChange::Keep => {}
+                    ApiKeyChange::Remove => set(&mut args, "apiKey", Json::Null),
+                    ApiKeyChange::Set(key) => set(&mut args, "apiKey", Json::from(key.clone())),
+                }
+                steps.push_back(Step::Call { method: "saveCustomProvider", args: Json::Object(Arc::new(args)) });
+            }
+            Call::RemoveCustomProvider { provider_id } => {
+                if !host_supports_call(self.host_minor, "removeCustomProvider") {
+                    return Err(too_old("5.21"));
+                }
+                let args = obj(&[("providerId", Json::from(provider_id.clone()))]);
+                steps.push_back(Step::Call { method: "removeCustomProvider", args });
+            }
+            Call::ListEndpointModels { api, base_url, api_key, provider_id } => {
+                if !host_supports_call(self.host_minor, "listEndpointModels") {
+                    return Err(too_old("5.21"));
+                }
+                let mut args = JsonObject::new();
+                set(&mut args, "api", Json::from(api.as_str()));
+                set(&mut args, "baseUrl", Json::from(base_url.clone()));
+                if let Some(key) = api_key {
+                    set(&mut args, "apiKey", Json::from(key.clone()));
+                }
+                if let Some(provider_id) = provider_id {
+                    set(&mut args, "providerId", Json::from(provider_id.clone()));
+                }
+                steps.push_back(Step::Call { method: "listEndpointModels", args: Json::Object(Arc::new(args)) });
             }
             Call::UpdateSettings { patch } => {
                 if !host_supports_call(self.host_minor, "updateSettings") {
@@ -1817,6 +1955,7 @@ impl RemoteDurable {
         let models = self.values.get(&key("models")).cloned().unwrap_or_else(|| self.hello_models.clone());
         let mcp = self.values.get(&key("mcp")).cloned().unwrap_or(Json::Null);
         let auth = self.values.get(&key("auth")).cloned().unwrap_or(Json::Null);
+        let providers = self.values.get(&key("providers")).cloned().unwrap_or(Json::Null);
         let settings = self.values.get(&key("settings")).cloned().unwrap_or(Json::Null);
         let agents = self.values.get(&key("agents")).cloned().unwrap_or(Json::Null);
         let defaults = self.effective_defaults();
@@ -1831,6 +1970,7 @@ impl RemoteDurable {
         self.set_field("devices", devices);
         self.set_field("mcp", mcp);
         self.set_field("auth", auth);
+        self.set_field("providers", providers);
         self.set_field("settings", settings);
         self.set_field("agents", agents);
         self.set_field("defaults", defaults);
@@ -1870,6 +2010,7 @@ impl RemoteDurable {
         set(&mut state, "devices", Json::array(vec![]));
         set(&mut state, "mcp", Json::Null);
         set(&mut state, "auth", Json::Null);
+        set(&mut state, "providers", Json::Null);
         set(&mut state, "settings", Json::Null);
         set(&mut state, "agents", Json::Null);
         set(&mut state, "host", self.host_info());

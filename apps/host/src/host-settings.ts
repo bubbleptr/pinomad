@@ -1,6 +1,6 @@
 // PiNomad-owned host settings (ADR-0021 §1-3): <dataDir>/settings.json holds only
-// the keys a device set; every other key falls back to pi's settings, then the
-// built-ins. The effective value rides the `settings` stream and `updateSettings`
+// the keys a device set; every other key falls back to pi's built-in defaults
+// (ADR-0031: pi's own settings.json is never read). The effective value rides the `settings` stream and `updateSettings`
 // writes through here — still no watch, but `pinomad join --name` writes the file
 // too (issue #212), so each update re-reads it and merges over the latest
 // contents instead of the open-time snapshot.

@@ -1,7 +1,7 @@
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
-import type { HostAuth } from "./auth.ts";
+import { isCustomProviderApi, type CustomProviderApi, type CustomProviderInput, type HostAuth, type HostProviders, type LoginMethod } from "./auth.ts";
 import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
@@ -34,6 +34,8 @@ export interface HostStreamValues {
   mcp: McpStatus | null;
   models: readonly ModelSummary[];
   auth: HostAuth;
+  /** Every provider, its login methods and credential state, and logins in progress (5.21, ADR-0031). */
+  providers: HostProviders;
   settings: HostSettings;
   /** Named agents (ADR-0023): `roles` and the `problems` of files that didn't parse. */
   agents: AgentRoles;
@@ -42,7 +44,7 @@ export interface HostStreamValues {
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6 } satisfies Record<
+export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6, providers: 21 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -89,7 +91,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 20 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 21 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -273,8 +275,34 @@ export interface CallMethods {
   createPairing: { args: Record<string, never>; result: { url: string; expiresAt: number } };
   /** Forget a paired device and drop its live connections. */
   revokeDevice: { args: { publicKey: string }; result: null };
-  /** Remove a provider's stored credential; also logs the Pi CLI on this machine out (ADR-0021 §5). */
+  /** Remove a provider's stored credential (ADR-0031: the host's own `auth.json`, not pi's). */
   logout: { args: { providerId: string }; result: null };
+  /**
+   * Start logging in to a provider (5.21, ADR-0031). The flow shows up in the
+   * `providers` stream's `logins`, where its prompts and events arrive;
+   * rejects when the provider lacks `method` or already has a login running.
+   */
+  beginLogin: { args: { providerId: string; method: LoginMethod }; result: { loginId: string } };
+  /** Answer a running login's current prompt; a stale `promptId` is rejected, never applied to a later prompt. */
+  answerLogin: { args: { loginId: string; promptId: number; value: string }; result: null };
+  /** Abort a running login; ended or unknown ids are a no-op. */
+  cancelLogin: { args: { loginId: string }; result: null };
+  /**
+   * Add or replace a custom endpoint (5.21). `apiKey` stores a key, `null`
+   * removes the stored one, absent keeps it.
+   */
+  saveCustomProvider: { args: { provider: CustomProviderInput; apiKey?: string | null }; result: null };
+  /** Remove a custom endpoint and its stored key. */
+  removeCustomProvider: { args: { providerId: string }; result: null };
+  /**
+   * Ask an endpoint which models it serves, from the host — the endpoint may
+   * be reachable only there. `providerId` reuses that custom endpoint's stored
+   * key when `apiKey` is absent.
+   */
+  listEndpointModels: {
+    args: { api: CustomProviderApi; baseUrl: string; apiKey?: string; providerId?: string };
+    result: { models: readonly string[] };
+  };
   /** Patch the host's settings (ADR-0021); each key set lands in PiNomad's settings.json, each `null` resets to fallback. */
   updateSettings: { args: { patch: HostSettingsPatch }; result: null };
   /** Create `<name>.md` under the host's agents dir; fails when it already exists. */
@@ -341,6 +369,12 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   createPairing: 0,
   revokeDevice: 0,
   logout: 1,
+  beginLogin: 21,
+  answerLogin: 21,
+  cancelLogin: 21,
+  saveCustomProvider: 21,
+  removeCustomProvider: 21,
+  listEndpointModels: 21,
   updateSettings: 2,
   createAgent: 6,
   updateAgent: 6,
@@ -633,7 +667,31 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "revokeDevice":
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
     case "logout":
+    case "removeCustomProvider":
       return nonempty(args.providerId);
+    case "beginLogin":
+      return nonempty(args.providerId) && (args.method === "oauth" || args.method === "api_key");
+    case "answerLogin":
+      return (
+        nonempty(args.loginId) && typeof args.promptId === "number" && Number.isSafeInteger(args.promptId)
+        && typeof args.value === "string"
+      );
+    case "cancelLogin":
+      return nonempty(args.loginId);
+    case "saveCustomProvider":
+      // Shape only — id rules, URL syntax and name clashes are the host's `ok:false`.
+      return (
+        record(args.provider) && nonempty(args.provider.id) && typeof args.provider.name === "string"
+        && isCustomProviderApi(args.provider.api) && typeof args.provider.baseUrl === "string"
+        && Array.isArray(args.provider.models) && args.provider.models.every((model) => typeof model === "string")
+        && (args.apiKey === undefined || args.apiKey === null || typeof args.apiKey === "string")
+      );
+    case "listEndpointModels":
+      return (
+        isCustomProviderApi(args.api) && typeof args.baseUrl === "string"
+        && (args.apiKey === undefined || typeof args.apiKey === "string")
+        && (args.providerId === undefined || nonempty(args.providerId))
+      );
     case "createAgent":
     case "updateAgent":
       return role();

@@ -72,6 +72,18 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * A call that was still waiting for its result when the connection dropped.
+ * The host may have acted on it anyway — unlike a call the host refused —
+ * so a client can look for its effect in the streams after reconnecting.
+ */
+export class DisconnectedError extends Error {
+  constructor() {
+    super("Disconnected from host");
+    this.name = "DisconnectedError";
+  }
+}
+
+/**
  * The host's hello announced a major this client does not speak (ADR-0018).
  * Before the first view the ready promise rejects with it; after, the view's
  * connection goes "outdated" and no calls are sent — a host-served page
@@ -182,7 +194,7 @@ class RemoteClient {
   #lost(connection: FrameConnection, code: number, reason: string | undefined): void {
     if (this.#connection !== connection) return;
     this.#connection = undefined;
-    for (const pending of this.#pending.values()) pending.reject(new Error("Disconnected from host"));
+    for (const pending of this.#pending.values()) pending.reject(new DisconnectedError());
     this.#pending.clear();
     if (this.#state === undefined) {
       this.#closed = true;
@@ -356,6 +368,7 @@ class RemoteClient {
         devices: [],
         mcp: null,
         auth: null,
+        providers: null,
         settings: null,
         agents: null,
         host: this.#hostInfo(),
@@ -497,6 +510,7 @@ class RemoteClient {
       devices,
       mcp: this.#host("mcp") ?? null,
       auth: this.#host("auth") ?? null,
+      providers: this.#host("providers") ?? null,
       settings: this.#host("settings") ?? null,
       agents: this.#host("agents") ?? null,
       defaults: this.#effectiveDefaults(this.#helloDefaults),
@@ -527,6 +541,13 @@ class RemoteClient {
   #notice(level: Notice["level"], message: string): void {
     if (this.#state === undefined) return;
     this.#update({ notices: [...this.#state.notices, { id: this.#nextNotice++, level, message }].slice(-20) });
+  }
+
+  /** The provider calls all arrived together in 5.21 (ADR-0031). */
+  #requireProviders(): void {
+    if (!hostSupportsCall(this.#hostMinor, "beginLogin")) {
+      throw new Error("The host is too old for this (needs protocol 5.21); run `pinomad upgrade` on the host");
+    }
   }
 
   #call<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
@@ -818,6 +839,36 @@ class RemoteClient {
           }
           return this.#call("logout", { providerId });
         }),
+      beginLogin: (providerId, method) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          return (await this.#call("beginLogin", { providerId, method })).loginId;
+        }),
+      answerLogin: (loginId, promptId, value) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("answerLogin", { loginId, promptId, value });
+        }),
+      cancelLogin: (loginId) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("cancelLogin", { loginId });
+        }),
+      saveCustomProvider: (provider, apiKey) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("saveCustomProvider", apiKey === undefined ? { provider } : { provider, apiKey });
+        }),
+      removeCustomProvider: (providerId) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("removeCustomProvider", { providerId });
+        }),
+      // Unqueued like listCommands: the host waits on a remote endpoint.
+      listEndpointModels: async (input) => {
+        this.#requireProviders();
+        return (await this.#call("listEndpointModels", input)).models;
+      },
       updateSettings: (patch) =>
         this.#command(() => {
           if (!hostSupportsCall(this.#hostMinor, "updateSettings")) {

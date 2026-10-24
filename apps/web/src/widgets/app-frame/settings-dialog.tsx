@@ -15,7 +15,6 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
-import type { StoredLogin } from "@pinomad/protocol/auth.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -32,6 +31,7 @@ import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Comp
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostsSection } from "./hosts.tsx";
+import { ProvidersSection } from "./providers-section.tsx";
 import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
@@ -59,8 +59,8 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
 /**
  * Settings in two groups. "This device" belongs to the client — the paired
  * hosts and, on the desktop, its updates — and works while disconnected.
- * The host group is the connected host's settings and stored logins
- * (ADR-0021): everything shown comes from the `settings` / `auth` / `mcp` /
+ * The host group is the connected host's settings and providers
+ * (ADR-0021, 0031): everything shown comes from the `settings` / `providers` / `mcp` /
  * devices streams, so a change another device makes appears here the moment
  * the host pushes it. A left section nav on wide screens, an iOS-style
  * drill-in under 640px; the open section is the only local state.
@@ -256,12 +256,12 @@ function sectionBody(
         title: "Providers",
         supporting: (
           <Text as="p" type="supporting">
-            Logins are stored on the host in Pi's <code>auth.json</code>. Log in with the Pi CLI on the
-            host — logging out here signs the Pi CLI out too. Every device connected to this host sees
-            the same logins.
+            Credentials are stored on the host in{" "}
+            <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/auth.json</span> and
+            shared by every paired device.
           </Text>
         ),
-        body: <ProvidersSection view={view} remote={remote} connected={connected} />,
+        body: <ProvidersSection view={view} remote={remote} />,
       };
     case "models":
       return {
@@ -308,28 +308,6 @@ function sectionBody(
     case "about":
       return { title: "About", body: <AboutSection view={view} remote={remote} connected={connected} /> };
   }
-}
-
-function ProvidersSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
-  const auth = view.auth;
-  if (auth === null) {
-    return <Banner status="warning" title="This host is too old for logins" description="Run `pinomad upgrade` on the host." />;
-  }
-  const logins = auth.logins;
-  return (
-    <VStack gap={3}>
-      {logins.length === 0 ? (
-        <Text as="p" type="supporting">No stored logins. Log in with the Pi CLI on the host.</Text>
-      ) : (
-        <>
-          <Text as="p" type="supporting">{`${logins.length} provider${logins.length === 1 ? "" : "s"} logged in`}</Text>
-          {logins.map((login) => (
-            <LoginCard key={login.providerId} login={login} connected={connected} remote={remote} />
-          ))}
-        </>
-      )}
-    </VStack>
-  );
 }
 
 function ModelsSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
@@ -757,62 +735,6 @@ function AgentProblemCard({
           {error}
         </Text>
       )}
-    </Card>
-  );
-}
-
-const loginStatusLine = (login: StoredLogin): string =>
-  login.subscription ? "Subscription connected" : login.kind === "api_key" ? "API key configured" : "OAuth connected";
-
-/**
- * The "…" menu arms an inline confirmation inside the card: signing out here
- * also ends the Pi CLI's session on the host, so it needs a second step.
- */
-function LoginCard({
-  login,
-  connected,
-  remote,
-}: {
-  login: StoredLogin;
-  connected: boolean;
-  remote: RemoteDurable;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <Card padding={4}>
-      <HStack gap={3} vAlign="start">
-        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
-          <Heading level={3}>{login.name}</Heading>
-          <Text as="p" type="supporting">{loginStatusLine(login)}</Text>
-        </VStack>
-        {confirming ? null : (
-          <HStack gap={1} vAlign="center">
-            <MoreMenu
-              icon={<MoreHorizontal aria-hidden="true" />}
-              label={`${login.name} actions`}
-              size="sm"
-              variant="ghost"
-              isDisabled={!connected}
-              items={[{ label: "Log out…", onClick: () => setConfirming(true) }]}
-            />
-          </HStack>
-        )}
-      </HStack>
-      {confirming ? (
-        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <Text as="p" type="supporting">{`This also signs the Pi CLI on the host out of ${login.name}.`}</Text>
-          <HStack gap={2} vAlign="center">
-            <Button
-              label="Log out"
-              variant="destructive"
-              size="sm"
-              isDisabled={!connected}
-              onClick={() => void remote.controller.logout(login.providerId)}
-            />
-            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
-          </HStack>
-        </VStack>
-      ) : null}
     </Card>
   );
 }

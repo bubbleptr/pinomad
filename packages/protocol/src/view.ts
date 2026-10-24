@@ -5,7 +5,7 @@
 import type { ConversationId, ConversationView, JsonObject, ModelRef, TaskGraph } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentRole, AgentRoles } from "./agents.ts";
-import type { HostAuth } from "./auth.ts";
+import type { CustomProviderApi, CustomProviderInput, HostAuth, HostProviders, LoginMethod } from "./auth.ts";
 import type { CommandListing } from "./commands.ts";
 import type { DeviceEntry } from "./devices.ts";
 import type { CallMethods, ProtocolVersion, PushToken } from "./frames.ts";
@@ -143,6 +143,8 @@ export interface DurableView {
   readonly mcp: McpStatus | null;
   /** Stored-credential logins on the host; `null` before its snapshot or when the host predates the `auth` stream (5.1). */
   readonly auth: HostAuth | null;
+  /** Every provider and the logins in progress (ADR-0031); `null` before its snapshot or when the host predates the `providers` stream (5.21). */
+  readonly providers: HostProviders | null;
   /** Effective host settings (ADR-0021); `null` before its snapshot or when the host predates the `settings` stream (5.2). */
   readonly settings: HostSettings | null;
   /** Named agents on the host (ADR-0023); `null` before its snapshot or when the host predates the `agents` stream (5.6). */
@@ -315,8 +317,27 @@ export interface DurableController {
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */
   revokeDevice(publicKey: string): Promise<void>;
-  /** Remove a provider's stored credential on the host; this also logs the Pi CLI on that machine out (ADR-0021 §5). Needs a 5.1 host. */
+  /** Remove a provider's stored credential on the host. Needs a 5.1 host. */
   logout(providerId: string): Promise<void>;
+  /**
+   * Start a login (ADR-0031); its prompts and outcome arrive in
+   * `providers.logins`. Rejects with the host's error — the caller shows it.
+   * Needs a 5.21 host, as do the calls below.
+   */
+  beginLogin(providerId: string, method: LoginMethod): Promise<string>;
+  /** Answer a login's current prompt; rejects when the prompt has moved on. */
+  answerLogin(loginId: string, promptId: number, value: string): Promise<void>;
+  cancelLogin(loginId: string): Promise<void>;
+  /** Add or replace a custom endpoint; `apiKey` `null` removes the stored key, absent keeps it. */
+  saveCustomProvider(provider: CustomProviderInput, apiKey?: string | null): Promise<void>;
+  removeCustomProvider(providerId: string): Promise<void>;
+  /** The models an endpoint serves, asked from the host. Unqueued: it can take seconds. */
+  listEndpointModels(input: {
+    api: CustomProviderApi;
+    baseUrl: string;
+    apiKey?: string;
+    providerId?: string;
+  }): Promise<readonly string[]>;
   /** Patch the host's settings; each `null` resets that key to the pi/built-in fallback. Needs a 5.2 host. */
   updateSettings(patch: HostSettingsPatch): Promise<void>;
   /** Create a named agent on the host; rejects when `<name>.md` already exists. Needs a 5.6 host. */
