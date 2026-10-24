@@ -172,7 +172,6 @@ public struct FileAttachmentTray: Equatable, Sendable {
 
     public private(set) var entries: [Entry] = []
     public private(set) var error: String?
-    private var nextKey = 1
 
     public init() {}
 
@@ -220,14 +219,16 @@ public struct FileAttachmentTray: Equatable, Sendable {
             kept.append(source)
         }
         error = problem
+        // The chip id is unique for the life of the app, not a per-tray
+        // counter: a callback from an upload whose tray was cleared must not
+        // be able to land on a new chip that reused the old key.
         let added = kept.map { source in
             Entry(
-                id: "file-\(nextKey)", name: source.name, size: source.size,
+                id: UUID().uuidString, name: source.name, size: source.size,
                 attachmentId: nil, received: 0, status: .uploading, error: nil,
                 source: source
             )
         }
-        nextKey += added.count
         entries += added
         return added
     }
@@ -279,13 +280,11 @@ public struct FileAttachmentTray: Equatable, Sendable {
     public mutating func restore(_ files: [UserAttachment]) {
         let kept = Array(files.prefix(AttachmentLimits.maxPerMessage))
         entries = kept.map { file in
-            let entry = Entry(
-                id: "file-\(nextKey)", name: file.name, size: Int(file.size),
+            Entry(
+                id: UUID().uuidString, name: file.name, size: Int(file.size),
                 attachmentId: file.id, received: Int(file.size), status: .done,
                 error: nil, source: nil
             )
-            nextKey += 1
-            return entry
         }
         error = files.count > AttachmentLimits.maxPerMessage
             ? "At most \(AttachmentLimits.maxPerMessage) files per message"

@@ -167,6 +167,28 @@ private actor UploadSpy {
         #expect(oversized.error == "huge.bin: Attachment is larger than 10 MB")
     }
 
+    /// A batch must never share one chip id: uploads look entries up by id,
+    /// so duplicates would drive only the first file and leave the rest
+    /// uploading forever.
+    @Test func everyPickedFileGetsItsOwnChipId() {
+        var tray = FileAttachmentTray()
+        let added = tray.add([
+            source(1, name: "a.txt"), source(2, name: "b.txt"), source(3, name: "c.txt"),
+        ])
+        #expect(added.count == 3)
+        #expect(Set(added.map(\.id)).count == 3)
+    }
+
+    /// A cleared tray's old upload callbacks must not match a new chip, even
+    /// when the new tray starts its own numbering.
+    @Test func chipKeysAreNotReusedAfterAClear() throws {
+        var tray = FileAttachmentTray()
+        let old = try #require(tray.add([source(1)])[0])
+        tray.clear()
+        let new = try #require(tray.add([source(1)])[0])
+        #expect(old.id != new.id)
+    }
+
     @Test func chipsTrackProgressFailureRetryAndRemoval() throws {
         var tray = FileAttachmentTray()
         let added = tray.add([source(5, name: "a.txt")])
