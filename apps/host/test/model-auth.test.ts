@@ -203,6 +203,24 @@ describe("openModelAuth", () => {
     expect(seen[1]!.authorization).toBe("Bearer sk-stored");
   });
 
+  it("asks an Anthropic endpoint at /v1/models, since its base URL is the root the SDK adds /v1 to", async () => {
+    const seen: { url?: string; key?: string | string[] }[] = [];
+    const server = createServer((request, response) => {
+      seen.push({ url: request.url, key: request.headers["x-api-key"] });
+      if (request.url !== "/v1/models") return void response.writeHead(404).end();
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "claude-opus-5-5", type: "model" }], has_more: false }));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const { modelAuth } = await fixture();
+
+    expect(await modelAuth.listEndpointModels({ api: "anthropic-messages", baseUrl, apiKey: "sk-ant" })).toEqual(["claude-opus-5-5"]);
+    expect(seen).toEqual([{ url: "/v1/models", key: "sk-ant" }]);
+  });
+
   it("logout drops the credential from auth.json and republishes", async () => {
     const { authPath, modelAuth } = await fixture({ auth: ANTHROPIC_KEY });
     expect(modelAuth.auth.value.logins.map((login) => login.providerId)).toEqual(["anthropic"]);
