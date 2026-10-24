@@ -255,6 +255,8 @@ private actor UploadSpy {
         #expect(AttachmentNotice.isRejection("Attachment 3 is unavailable; attach it again"))
         #expect(AttachmentNotice.isRejection("Attachment not found or expired; attach it again"))
         #expect(AttachmentNotice.isRejection("Attachments are not available on this host"))
+        #expect(AttachmentNotice.isRejection("The host is too old for attachments (needs protocol 5.19)"))
+        #expect(AttachmentNotice.isRejection("At most 10 attachments per message"))
         #expect(!AttachmentNotice.isRejection("network down"))
     }
 

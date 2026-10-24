@@ -357,11 +357,10 @@ public func attachmentPercent(received: Int, size: Int) -> Int {
 /// Host notices that mean the referenced files can't be used (the submit
 /// is command-class, so these arrive as notices rather than a failed call).
 public enum AttachmentNotice {
+    /// Every submit-path attachment failure is relevant: expired/missing
+    /// files, a host too old for the field, the 10-file cap, or no store.
     public static func isRejection(_ message: String) -> Bool {
-        message.range(
-            of: "(?i)attachment.*(expired|unavailable|not found|still uploading|not available)",
-            options: .regularExpression
-        ) != nil
+        message.range(of: "(?i)attachment", options: .regularExpression) != nil
     }
 }
 
