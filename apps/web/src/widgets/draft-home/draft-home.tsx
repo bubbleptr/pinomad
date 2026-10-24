@@ -1,4 +1,5 @@
 import { Selector } from "@astryxdesign/core/Selector";
+import { Text } from "@astryxdesign/core/Text";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -89,7 +90,6 @@ export function DraftHome({
     && hostSupportsCall(minor, "beginAttachment");
   const files = useFileAttachments(remote, attachmentsEnabled);
   const attachInput = useRef<HTMLInputElement>(null);
-  const [waitingForFiles, setWaitingForFiles] = useState(false);
   const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
   const addFiles = (incoming: File[]): void => {
     const { images: pickedImages, others } = splitFiles(incoming);
@@ -159,6 +159,7 @@ export function DraftHome({
         <div className="flex w-full flex-col gap-3">
           <ImageFileInput inputRef={fileInput} onFiles={add} />
           <FilePickerInput inputRef={attachInput} onFiles={addFiles} />
+          {files.uploading ? <Text type="supporting">Uploading files…</Text> : null}
           <ChatPromptInput
             value={value}
             inputRef={inputRef}
@@ -172,36 +173,23 @@ export function DraftHome({
               const text = message.text.trim();
               if (
                 (text === "" && images.length === 0 && files.entries.length === 0)
+                || files.uploading
+                || files.failed
                 || pending
                 || submittingRef.current
-                || waitingForFiles
                 || problem !== undefined
               ) return;
               requestNotificationPermission();
               // The shown conversation changes only when the create landed.
               const shown = remote.view.current().conversation?.conversation.id;
               const sending = images;
+              const attachments = files.ids();
               submittingRef.current = true;
               setSubmitting(true);
-              void (async () => {
-                if (files.failed) {
-                  setFileSubmitError("Some files failed to upload — retry or remove them");
-                  return;
-                }
-                if (files.uploading) {
-                  setWaitingForFiles(true);
-                  setFileSubmitError(undefined);
-                  await files.waitForUploads();
-                  setWaitingForFiles(false);
-                  if (files.failed) {
-                    setFileSubmitError("Some files failed to upload — retry or remove them");
-                    return;
-                  }
-                }
-                const attachments = files.ids();
-                // Staged images were primed before they became sendable, so this
-                // enters the queue in click order.
-                await remote.controller.createConversation(draft, text, {
+              // No await before the call: the draft's files are all done, and
+              // click order reaches the controller's command queue intact.
+              void remote.controller
+                .createConversation(draft, text, {
                   ...(draft.kind === "project" && checkoutMode === "local" ? { checkout: "project" as const } : {}),
                   // With a named agent only the overrides go — inherited model
                   // and level resolve host-side from the role at create.
@@ -211,16 +199,18 @@ export function DraftHome({
                   ...(sending.length === 0 ? {} : { images: sending }),
                   skills: message.skills,
                   ...(attachments.length === 0 ? {} : { attachments }),
+                })
+                .then(() => {
+                  const now = remote.view.current().conversation?.conversation.id;
+                  if (now !== undefined && now !== shown) onCreated();
+                })
+                .finally(() => {
+                  submittingRef.current = false;
+                  setSubmitting(false);
                 });
-                const now = remote.view.current().conversation?.conversation.id;
-                if (now !== undefined && now !== shown) onCreated();
-              })().finally(() => {
-                submittingRef.current = false;
-                setSubmitting(false);
-              });
             }}
             isDisabled={!connected}
-            submitDisabled={problem !== undefined || waitingForFiles}
+            submitDisabled={problem !== undefined || files.uploading || files.failed}
             placeholder={composerPlaceholder("Do anything with Pi", {
               agents: agentRoles.length > 0,
               files: fileSource !== undefined,

@@ -51,9 +51,8 @@ describe("useFileAttachments", () => {
     await waitFor(() => expect(result.current.uploading).toBe(true));
     expect(result.current.ids()).toEqual([]);
 
-    const waiting = result.current.waitForUploads();
     await act(async () => finish({ received: 5, complete: true }));
-    await waiting;
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe("done"));
     expect(result.current.uploading).toBe(false);
     expect(result.current.ids()).toEqual(["A".repeat(22)]);
     expect(result.current.entries[0]).toMatchObject({ status: "done", received: 5 });

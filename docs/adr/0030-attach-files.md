@@ -99,7 +99,7 @@ The user attached these files. They are read-only originals on this machine: rea
 - 入口 `+` → Attach files…（Web / 桌面端 `<input type=file multiple>`；拖放、粘贴非图片文件走同一条路）。
 - 选中的文件是图片 MIME 时走现有图片附件（ADR-0027，4 张 / 5 MB），其余走附件上传。
 - 选中后立即上传，输入框上方和图片同一行显示文件 chip：文件名、大小、进度、失败可重试、可移除。
-- 有附件还在上传时，发送等它们传完（按钮显示等待状态），不带未完成的附件发出。
+- 有附件还在上传时，发送按钮禁用并显示 Uploading files…，Enter 也不发送；传完后用户再点发送，不带未完成的附件发出。发送路径上不再有 await，切换对话或输入新内容不会改变这次发送的目标或清掉新草稿。
 - 发出去的气泡里显示文件 chip（名字 + 大小），不预览。
 
 ## 考虑过的方案
@@ -118,4 +118,4 @@ The user attached these files. They are read-only originals on this machine: rea
 - 旧客户端能连 5.19 宿主，但看不到附件块；气泡里会显示原始 `<attachments>` 文本。
 - 压缩后的模型上下文可能不保留全部附件；对话记录里的块仍完整，客户端仍显示 chip。
 - 照片仍走原来的图片路径，所以一条消息里图片和文件可以并存：文本、附件块、图片块。
-- 新增 upload 状态机（进度、失败重试、发送等待）和两套解析器（TS / Rust），都要随协议和推导的对照向量维护。
+- 新增 upload 状态机（进度、失败重试、上传中禁用发送）和两套解析器（TS / Rust），都要随协议和推导的对照向量维护。

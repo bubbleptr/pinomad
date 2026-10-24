@@ -36,8 +36,6 @@ export interface FileAttachments {
   /** Replace the chips with ids an edit or retry brings back. */
   restore(files: readonly UserAttachment[]): void;
   clear(): void;
-  /** Resolves when nothing is uploading any more (done or failed). */
-  waitForUploads(): Promise<void>;
   /** Ids of every finished chip, in order — what submit sends. */
   ids(): string[];
 }
@@ -46,16 +44,11 @@ export function useFileAttachments(remote: RemoteDurable, enabled: boolean): Fil
   const [entries, setEntries] = useState<readonly FileAttachmentEntry[]>([]);
   const entriesRef = useRef<readonly FileAttachmentEntry[]>(entries);
   const nextKey = useRef(1);
-  const waiters = useRef(new Set<() => void>());
   const [error, setError] = useState<string | null>(null);
 
   const replace = (next: readonly FileAttachmentEntry[]): void => {
     entriesRef.current = next;
     setEntries(next);
-    if (!next.some((entry) => entry.status === "uploading")) {
-      for (const wake of waiters.current) wake();
-      waiters.current.clear();
-    }
   };
 
   const patch = (key: string, changes: Partial<FileAttachmentEntry>): void => {
@@ -165,11 +158,6 @@ export function useFileAttachments(remote: RemoteDurable, enabled: boolean): Fil
     setError(null);
   };
 
-  const waitForUploads = (): Promise<void> => {
-    if (!entriesRef.current.some((entry) => entry.status === "uploading")) return Promise.resolve();
-    return new Promise((resolve) => waiters.current.add(resolve));
-  };
-
   return {
     entries,
     get uploading() {
@@ -184,7 +172,6 @@ export function useFileAttachments(remote: RemoteDurable, enabled: boolean): Fil
     remove,
     restore,
     clear,
-    waitForUploads,
     ids: () => entriesRef.current.flatMap((entry) => (entry.status === "done" && entry.attachmentId !== undefined ? [entry.attachmentId] : [])),
   };
 }

@@ -131,7 +131,6 @@ export function ConversationComposer({
     && hostSupportsCall(view.host?.protocol.minor ?? 0, "beginAttachment");
   const files = useFileAttachments(remote, attachmentsEnabled);
   const attachInput = useRef<HTMLInputElement>(null);
-  const [waitingForFiles, setWaitingForFiles] = useState(false);
   const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
   const addFiles = (incoming: File[]): void => {
     const { images: pickedImages, others } = splitFiles(incoming);
@@ -296,11 +295,18 @@ export function ConversationComposer({
     if (focusAfterEdit > 0) inputRef.current?.focusAtEnd();
   }, [focusAfterEdit]);
 
-  const submit = async (whenBusy: "steer" | "followUp"): Promise<void> => {
+  const submit = (whenBusy: "steer" | "followUp"): void => {
     // Only the picked skills go out as `skills` (ADR-0028).
     const message = draftMessage(skillDraft.draft);
     const text = message.text.trim();
-    if (editLocked || waitingForFiles || (text === "" && images.length === 0 && files.entries.length === 0) || imagesPending) {
+    // No await on this path: a conversation switch or new input can never
+    // overtake the send, and a file still uploading simply blocks it.
+    if (
+      editLocked
+      || files.uploading
+      || (text === "" && images.length === 0 && files.entries.length === 0)
+      || imagesPending
+    ) {
       return;
     }
     // A command runs at once — never steered or queued, never a message. The
@@ -330,22 +336,10 @@ export function ConversationComposer({
       setFileSubmitError("Some files failed to upload — retry or remove them");
       return;
     }
-    // A send waits for in-flight uploads and never includes a partial file.
-    if (files.uploading) {
-      setWaitingForFiles(true);
-      setFileSubmitError(undefined);
-      await files.waitForUploads();
-      setWaitingForFiles(false);
-      if (files.failed) {
-        setFileSubmitError("Some files failed to upload — retry or remove them");
-        return;
-      }
-    }
     const sending = images;
     const attachments = files.ids();
-    // Staged images were primed before they became sendable. Queue the send
-    // synchronously: an await here could let a conversation switch or a later
-    // message overtake it inside the controller's ordered command queue.
+    // Staged images were primed before they became sendable, so this enters
+    // the controller's ordered queue in click order with no intervening await.
     void remote.controller.submit(text, whenBusy, {
       images: sending,
       skills: message.skills,
@@ -359,8 +353,8 @@ export function ConversationComposer({
 
   return (
     <>
-      {status === "" && !files.uploading && !waitingForFiles ? null : (
-        <Text type="supporting">{files.uploading || waitingForFiles ? "Uploading files…" : status}</Text>
+      {status === "" && !files.uploading ? null : (
+        <Text type="supporting">{files.uploading ? "Uploading files…" : status}</Text>
       )}
       <QueuedList
         items={queue}
@@ -393,7 +387,7 @@ export function ConversationComposer({
               })
         }
         onValueChange={setValue}
-        onSubmit={() => void submit("steer")}
+        onSubmit={() => submit("steer")}
         onFocus={() => {
           skills.request();
           slash.request();
@@ -424,7 +418,7 @@ export function ConversationComposer({
         hasAttachments={images.length > 0 || files.entries.length > 0}
         onFiles={editLocked ? undefined : addFiles}
         error={commandError ?? error ?? files.error ?? fileSubmitError}
-        submitDisabled={waitingForFiles}
+        submitDisabled={files.uploading || files.failed}
         startActions={
           <>
             <ChatAddMenu
@@ -503,8 +497,8 @@ export function ConversationComposer({
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
-              isDisabled={disconnected || imagesPending || editLocked || waitingForFiles}
-              onClick={() => void submit("followUp")}
+              isDisabled={disconnected || imagesPending || editLocked || files.uploading || files.failed}
+              onClick={() => submit("followUp")}
             />
           ) : null
         }
