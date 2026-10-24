@@ -17,7 +17,7 @@ extension AppModel {
         let tray = trays[id] ?? AttachmentTray()
         var files = fileTrays[id] ?? FileAttachmentTray()
         guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
-              tray.preparing == 0, files.canSend, let session else { return }
+              tray.preparing == 0, files.canSend, !filePreparing(id), let session else { return }
         // Past the host's 24 h TTL the id may already be gone; drop it and
         // keep the source so Retry re-uploads instead of losing the draft.
         if files.expire() {
@@ -30,6 +30,10 @@ extension AppModel {
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
         let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
+        // Only the newest send may claim a rejection notice: host notices
+        // carry no request id, so an older successful send must not be
+        // restored by another conversation's failure.
+        pendingAttachmentSends.removeAll()
         if !attachments.isEmpty {
             // Command-class submit failures only land as notices. Keep the
             // cleared content briefly so a rejected attachment can put it

@@ -116,6 +116,9 @@ final class AppModel {
     /// Host-stored file uploads per conversation (issue #321). Kept beside
     /// the images so a switch mid-upload neither loses nor redirects one.
     var fileTrays: [UInt64: FileAttachmentTray] = [:]
+    /// Picks still being read off the main actor. A send waits for these,
+    /// exactly like an upload in progress.
+    var fileReads: [UInt64: Int] = [:]
     /// Sends with attachments whose cleared draft may still need restoring.
     var pendingAttachmentSends: [UInt64: PendingAttachmentSend] = [:]
     /// The queued-input Edit flow: the copy read before withdrawing, its
@@ -469,6 +472,7 @@ final class AppModel {
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
         pendingAttachmentSends = [:]
+        fileReads = [:]
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()

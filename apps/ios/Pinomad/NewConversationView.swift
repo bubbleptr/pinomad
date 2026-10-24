@@ -20,6 +20,8 @@ struct NewConversationView: View {
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
     private var fileTray: FileAttachmentTray { model.fileTray(for: key) }
+    private var filesPreparing: Bool { model.filePreparing(key) }
+    private var filesBeingRead: Int { model.fileReads[key] ?? 0 }
     private var pick: ModelPick { model.effectiveDraftPick }
     private var resolution: AgentDraft? { model.draftResolution }
     private var currentModel: ModelSummary? { summaryOf(models: model.snapshot?.models ?? [], model: pick.model) }
@@ -107,7 +109,7 @@ struct NewConversationView: View {
 
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
-            && fileTray.canSend
+            && fileTray.canSend && !filesPreparing
             && resolution?.problem == nil
             && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !fileTray.isEmpty)
     }
@@ -172,16 +174,21 @@ struct NewConversationView: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let status = fileTray.statusText {
+            if filesPreparing {
+                Text("Uploading files…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if let status = fileTray.statusText {
                 Text(status)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            if !tray.isEmpty || !fileTray.isEmpty || tray.error != nil
+            if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
                 || fileTray.error != nil || imagesBlocked {
                 AttachmentStrip(
                     tray: tray,
                     files: fileTray,
+                    preparingFiles: filesBeingRead,
                     note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : fileTray.error ?? tray.error,
                     // The create already took these; a change now would be
                     // lost when the draft clears.

@@ -39,11 +39,14 @@ extension AppModel {
         let selected = Array(urls.prefix(room))
         let overflow = urls.count > room
         let hostKey = currentHostKey
+        beginFileRead(key)
         Task { [weak self] in
             let picked = await Task.detached(priority: .userInitiated) {
                 selected.map { Self.readPickedFile($0) }
             }.value
-            guard let self, self.currentHostKey == hostKey else { return }
+            guard let self else { return }
+            defer { self.finishFileRead(key) }
+            guard self.currentHostKey == hostKey else { return }
             var tray = self.fileTrays[key] ?? FileAttachmentTray()
             var sources: [FileAttachmentSource] = []
             var problem: String? = overflow
@@ -86,6 +89,24 @@ extension AppModel {
 
     func fileTray(for key: UInt64) -> FileAttachmentTray {
         fileTrays[key] ?? FileAttachmentTray()
+    }
+
+    /// A pick is still being read off the main actor; a send waits for it.
+    func filePreparing(_ key: UInt64) -> Bool {
+        (fileReads[key] ?? 0) > 0
+    }
+
+    private func beginFileRead(_ key: UInt64) {
+        fileReads[key, default: 0] += 1
+    }
+
+    private func finishFileRead(_ key: UInt64) {
+        guard let count = fileReads[key] else { return }
+        if count <= 1 {
+            fileReads[key] = nil
+        } else {
+            fileReads[key] = count - 1
+        }
     }
 
     func retryFile(conversation key: UInt64, id: String) {

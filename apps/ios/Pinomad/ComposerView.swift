@@ -28,6 +28,8 @@ struct ConversationComposer: View {
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
     private var fileTray: FileAttachmentTray { model.fileTray(for: conversation.id) }
+    private var filesPreparing: Bool { model.filePreparing(conversation.id) }
+    private var filesBeingRead: Int { model.fileReads[conversation.id] ?? 0 }
 
     private var currentModel: ModelSummary? {
         summaryOf(models: model.snapshot?.models ?? [], model: conversation.agent.model)
@@ -95,7 +97,8 @@ struct ConversationComposer: View {
     /// What tapping send does with the current draft.
     private var submit: ComposerSubmit {
         ComposerSubmit(draft: draft.wrappedValue, commands: commandEntries,
-                       hasImages: !tray.images.isEmpty, hasFiles: !fileTray.isEmpty)
+                       hasImages: !tray.images.isEmpty,
+                       hasFiles: !fileTray.isEmpty || filesPreparing)
     }
 
     private var commandBlocked: String? {
@@ -217,16 +220,21 @@ struct ConversationComposer: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let status = fileTray.statusText {
+            if filesPreparing {
+                Text("Uploading files…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if let status = fileTray.statusText {
                 Text(status)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            if !tray.isEmpty || !fileTray.isEmpty || tray.error != nil
+            if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
                 || fileTray.error != nil || imagesBlocked || commandBlocked != nil {
                 AttachmentStrip(
                     tray: tray,
                     files: fileTray,
+                    preparingFiles: filesBeingRead,
                     note: imagesBlocked
                         ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send."
                         : commandBlocked ?? fileTray.error ?? tray.error,
@@ -298,7 +306,8 @@ struct ConversationComposer: View {
         let runCommandBlocked: String? = switch commandEntries {
         case nil: "Loading…"
         case let entries? where entries.isEmpty: "None on this host"
-        case _ where !draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.isEmpty || !fileTray.isEmpty:
+        case _ where !draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.isEmpty
+            || !fileTray.isEmpty || filesPreparing:
             "Clear the message first"
         default: nil
         }
@@ -402,7 +411,8 @@ struct ConversationComposer: View {
         switch SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy,
                         hasImages: !tray.images.isEmpty,
                         preparing: tray.preparing > 0 || imagesBlocked || commandBlocked != nil,
-                        hasFiles: !fileTray.isEmpty, filesBlocked: !fileTray.canSend,
+                        hasFiles: !fileTray.isEmpty || filesPreparing,
+                        filesBlocked: !fileTray.canSend || filesPreparing,
                         command: submit != .message) {
         case .hidden:
             EmptyView()
@@ -622,6 +632,8 @@ struct PlusMenu: View {
 struct AttachmentStrip: View {
     let tray: AttachmentTray
     let files: FileAttachmentTray
+    /// Picks still being read; shown as spinner chips, like image prep.
+    let preparingFiles: Int
     let note: String?
     let removeImage: (Int) -> Void
     let removeFile: (String) -> Void
@@ -630,7 +642,7 @@ struct AttachmentStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !tray.isEmpty || !files.isEmpty {
+            if !tray.isEmpty || !files.isEmpty || preparingFiles > 0 {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(Array(tray.images.enumerated()), id: \.offset) { index, image in
@@ -658,7 +670,7 @@ struct AttachmentStrip: View {
                                 remove: { removeFile(entry.id) }
                             )
                         }
-                        ForEach(0..<tray.preparing, id: \.self) { _ in
+                        ForEach(0..<(tray.preparing + preparingFiles), id: \.self) { _ in
                             ProgressView()
                                 .frame(width: 56, height: 56)
                                 .background(.fill.tertiary, in: .rect(cornerRadius: 10))
