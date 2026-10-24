@@ -18,7 +18,6 @@ import {
   Cancel01Icon,
   ChatAddIcon,
   CheckmarkCircle02Icon,
-  ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
   CommandIcon,
@@ -100,7 +99,6 @@ export const Box = iconComponent(BoxIcon);
 export const Cancel = iconComponent(Cancel01Icon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const ChatBubble = iconComponent(BubbleChatIcon);
-export const ChevronDown = iconComponent(ChevronDownIcon);
 export const ChevronRight = iconComponent(ChevronRightIcon);
 export const Check = iconComponent(Tick02Icon);
 export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
