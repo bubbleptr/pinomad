@@ -72,6 +72,18 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * A call that was still waiting for its result when the connection dropped.
+ * The host may have acted on it anyway — unlike a call the host refused —
+ * so a client can look for its effect in the streams after reconnecting.
+ */
+export class DisconnectedError extends Error {
+  constructor() {
+    super("Disconnected from host");
+    this.name = "DisconnectedError";
+  }
+}
+
+/**
  * The host's hello announced a major this client does not speak (ADR-0018).
  * Before the first view the ready promise rejects with it; after, the view's
  * connection goes "outdated" and no calls are sent — a host-served page
@@ -182,7 +194,7 @@ class RemoteClient {
   #lost(connection: FrameConnection, code: number, reason: string | undefined): void {
     if (this.#connection !== connection) return;
     this.#connection = undefined;
-    for (const pending of this.#pending.values()) pending.reject(new Error("Disconnected from host"));
+    for (const pending of this.#pending.values()) pending.reject(new DisconnectedError());
     this.#pending.clear();
     if (this.#state === undefined) {
       this.#closed = true;
