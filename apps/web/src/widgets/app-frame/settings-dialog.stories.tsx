@@ -56,7 +56,9 @@ export const Updates: Story = {
 /** Disconnected, the host group has nothing live, so the dialog lands on this device's hosts. */
 export const Disconnected: Story = { args: { view: fakeView({ connection: "reconnecting" }) } };
 
-/** A pre-5.2 host has no settings or auth streams. */
+/** A pre-5.1 host has no settings, auth or providers streams. */
 export const OlderHost: Story = {
-  args: { view: fakeView({ settings: null, auth: null, agents: null, mcp: null, host: { protocol: { major: 5, minor: 1 } } }) },
+  args: {
+    view: fakeView({ settings: null, auth: null, providers: null, agents: null, mcp: null, host: { protocol: { major: 5, minor: 0 } } }),
+  },
 };

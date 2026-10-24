@@ -1,0 +1,26 @@
+/* A provider logo on a card-colored tile; monochrome SVGs inherit the text color. */
+.provider-logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--provider-logo-size, 32px);
+  block-size: var(--provider-logo-size, 32px);
+  border-radius: calc(var(--provider-logo-size, 32px) * 0.25);
+  background: var(--color-background-card);
+  box-shadow: 0 0 0 1px var(--color-border) inset;
+  color: var(--color-text-primary);
+}
+
+.provider-logo svg {
+  inline-size: 62%;
+  block-size: 62%;
+}
+
+.provider-logo[data-initials] {
+  background: var(--color-background-muted);
+  color: var(--color-text-secondary);
+  font-size: calc(var(--provider-logo-size, 32px) * 0.38);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
