@@ -10,7 +10,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
-import { outgoingImage } from "@pinomad/protocol/images.ts";
+import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -518,7 +518,10 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
-  const imageLoad = useMemo(() => (ref: string) => remote.controller.image(ref), [remote]);
+  const imageLoad = useMemo(
+    () => (ref: string, variant: ImageVariant = "original") => remote.controller.image(ref, variant),
+    [remote],
+  );
   const imageRetryKey = useImageRetryKey(view);
   // Fork depth is one (ADR-0019 §2): inside a fork or a subagent's conversation
   // no run offers the Fork action. An unknown summary — the shown conversation

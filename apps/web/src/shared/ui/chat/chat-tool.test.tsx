@@ -144,11 +144,17 @@ describe("ChatTool", () => {
     expect(screen.getAllByText(/ENOENT: file not found/).length).toBeGreaterThan(0);
   });
 
-  it("loads a tool result ref through the image source and shows its bytes", async () => {
+  it("loads a tool preview and swaps in original when its lightbox opens", async () => {
     const user = userEvent.setup();
-    const bytes = { data: "aGVsbG8=", mimeType: "image/png" as const };
+    const preview = { data: "cHJldmlldw==", mimeType: "image/png" as const, variant: "preview" as const };
+    const original = { data: "b3JpZ2luYWw=", mimeType: "image/png" as const };
+    const calls: { ref: string; variant?: string }[] = [];
+    const load = async (ref: string, variant?: "original" | "thumbnail" | "preview") => {
+      calls.push({ ref, variant });
+      return variant === undefined ? original : preview;
+    };
     const { container } = render(
-      <ImageSourceProvider load={async () => bytes}>
+      <ImageSourceProvider load={load}>
         <ChatTool
           argsText='{"path":"shot.png"}'
           images={[{ ref: "abc123", mimeType: "image/png" }]}
@@ -161,8 +167,56 @@ describe("ChatTool", () => {
 
     await user.click(screen.getByRole("button", { name: /read/ }));
     await waitFor(() => {
-      expect(container.querySelector('img[src="data:image/png;base64,aGVsbG8="]')).not.toBeNull();
+      expect(container.querySelector('img[src="data:image/png;base64,cHJldmlldw=="]')).not.toBeNull();
     });
+    expect(calls).toEqual([{ ref: "abc123", variant: "preview" }]);
+
+    await user.click(screen.getByRole("button", { name: "View image" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.querySelector('img[src="data:image/png;base64,b3JpZ2luYWw="]')).not.toBeNull();
+    });
+    expect(calls).toEqual([
+      { ref: "abc123", variant: "preview" },
+      { ref: "abc123", variant: undefined },
+    ]);
+    expect(document.querySelector('img[src=""]')).toBeNull();
+  });
+
+  it("reports an original failure and retries it in the lightbox", async () => {
+    const user = userEvent.setup();
+    const preview = { data: "cHJldmlldw==", mimeType: "image/png" as const, variant: "preview" as const };
+    const original = { data: "b3JpZ2luYWw=", mimeType: "image/png" as const };
+    let originalAttempts = 0;
+    const load = async (_ref: string, variant?: "original" | "thumbnail" | "preview") => {
+      if (variant !== undefined) return preview;
+      originalAttempts += 1;
+      if (originalAttempts === 1) throw new Error("host offline");
+      return original;
+    };
+    const { container } = render(
+      <ImageSourceProvider load={load}>
+        <ChatTool
+          argsText='{"path":"shot.png"}'
+          images={[{ ref: "lightbox-retry", mimeType: "image/png" }]}
+          output="read shot.png"
+          state="output-available"
+          toolName="read"
+        />
+      </ImageSourceProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /read/ }));
+    await user.click(await screen.findByRole("button", { name: "View image" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load the original image");
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.querySelector('img[src="data:image/png;base64,b3JpZ2luYWw="]')).not.toBeNull();
+    });
+    expect(originalAttempts).toBe(2);
+    expect(container.querySelector('img[src="data:image/png;base64,cHJldmlldw=="]')).not.toBeNull();
   });
 
   // PiNomad: coverage for the `detail` deviation — a custom pane replaces the

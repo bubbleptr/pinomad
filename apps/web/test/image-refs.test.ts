@@ -82,7 +82,7 @@ async function userContentsOf(host: OpenedHost, id: ConversationId): Promise<unk
     .reverse();
 }
 
-type Frame = { type?: string; stream?: string; method?: string; args?: { ref?: string } };
+type Frame = { type?: string; stream?: string; method?: string; args?: { ref?: string; variant?: string } };
 
 function recordFrame(raw: unknown): Frame | undefined {
   try {
@@ -97,12 +97,14 @@ it("serves conversation images by ref, fetches on demand, and survives a reload"
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const snapshots: string[] = [];
   const conversationFrames: string[] = [];
-  const refCalls: string[] = [];
+  const refCalls: { ref: string; variant?: string }[] = [];
   const page = await openPage(host, webOrigin, async (page) => {
     page.on("websocket", (socket) => {
       socket.on("framesent", ({ payload }) => {
         const frame = recordFrame(payload);
-        if (frame?.type === "call" && frame.method === "image" && frame.args?.ref !== undefined) refCalls.push(frame.args.ref);
+        if (frame?.type === "call" && frame.method === "image" && frame.args?.ref !== undefined) {
+          refCalls.push({ ref: frame.args.ref, variant: frame.args.variant });
+        }
       });
       socket.on("framereceived", ({ payload }) => {
         const frame = recordFrame(payload);
@@ -150,6 +152,7 @@ it("serves conversation images by ref, fetches on demand, and survives a reload"
   await transcript.getByRole("button", { name: /Image 1/ }).waitFor();
   await expect.poll(async () => (await transcript.getByRole("img", { name: "Image 1" }).getAttribute("src"))?.startsWith("data:image/jpeg;base64,")).toBe(true);
   expect(refCalls.length).toBeGreaterThan(0);
+  expect(refCalls.every((call) => call.variant === "thumbnail")).toBe(true);
   expect(snapshots.some((snapshot) => snapshot.includes('"ref"'))).toBe(true);
   expect(snapshots.some((snapshot) => snapshot.includes(data!))).toBe(false);
 });

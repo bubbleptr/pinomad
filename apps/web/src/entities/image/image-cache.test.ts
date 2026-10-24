@@ -52,6 +52,28 @@ describe("ImageCache", () => {
     expect(cache.peek("f")).toEqual(image("f"));
   });
 
+  it("separates requested variants and caches the variant actually returned", async () => {
+    const cache = new ImageCache();
+    const original = image("original");
+    const thumbnail = { ...image("thumb"), variant: "thumbnail" as const };
+    const loader = async (ref: string, variant?: "original" | "thumbnail" | "preview") => {
+      calls.push({ ref, variant });
+      return variant === undefined ? original : thumbnail;
+    };
+    const calls: { ref: string; variant?: string }[] = [];
+
+    await cache.load("ref", loader, "thumbnail");
+    await cache.load("ref", loader);
+    expect(calls).toHaveLength(2);
+    expect(cache.peek("ref", "thumbnail")).toEqual(thumbnail);
+    expect(cache.peek("ref")).toEqual(original);
+
+    const fallback = new ImageCache();
+    await fallback.load("ref", async () => original, "preview");
+    expect(fallback.peek("ref")).toEqual(original);
+    expect(fallback.peek("ref", "preview")).toEqual(original);
+  });
+
   it("evicts least-recently-used bytes by base64 length", () => {
     const cache = new ImageCache(120);
     const a = image("a".repeat(60));

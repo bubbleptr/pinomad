@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ChatTool, ChatToolGroup, type ChatToolItem } from "./chat-tool.tsx";
+import { moss, sky } from "@/entities/image/image-fixtures";
+import { ImageSourceProvider } from "@/entities/image/image-source";
+import { ChatTool, ChatToolDetail, ChatToolGroup, type ChatToolItem } from "./chat-tool.tsx";
 
 const meta = {
   title: "Shared/Chat/ChatTool",
@@ -40,6 +42,23 @@ export const EditWithDiffStat: Story = {
     diffStat: { additions: 12, deletions: 3 },
     durationMs: 120,
   },
+};
+
+export const ResultImage: Story = {
+  render: () => (
+    <ImageSourceProvider load={async (_ref, variant) => variant === undefined ? sky : { ...moss, variant: "preview" }}>
+      <ChatToolDetail
+        tool={{
+          toolCallId: "call-image",
+          toolName: "read",
+          state: "output-available",
+          argsText: '{"path":"shot.png"}',
+          output: "read shot.png",
+          images: [{ ref: "story-tool-result-image", mimeType: "image/png" }],
+        }}
+      />
+    </ImageSourceProvider>
+  ),
 };
 
 const groupTools: ChatToolItem[] = [
