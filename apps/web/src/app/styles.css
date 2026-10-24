@@ -685,6 +685,31 @@ html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-s
   --pigui-overview-width: 15rem;
 }
 
+/* The card is a grey tray of small section cards. The tray carries the
+   outer shadow: a ring standing in for a border, a tight contact layer and a
+   soft ambient one. The section cards keep only the ring and contact layer,
+   so the tray's padding never clips a soft shadow and the nesting stays
+   shallow. Dark mode keeps the solid border as the ring and drops the black
+   layers, which vanish on the dark surfaces. Declared on the card, not
+   :root: --color-border only exists inside the theme scope. */
+.pigui-overview {
+  --pigui-overview-gap: 0.375rem;
+  --pigui-overview-elevation:
+    0 0 0 1px light-dark(rgb(0 0 0 / 6%), var(--color-border)),
+    0 1px 2px light-dark(rgb(0 0 0 / 4%), transparent),
+    0 4px 12px -2px light-dark(rgb(0 0 0 / 6%), transparent);
+  --pigui-overview-card-elevation:
+    0 0 0 1px light-dark(rgb(0 0 0 / 6%), var(--color-border)),
+    0 1px 2px light-dark(rgb(0 0 0 / 4%), transparent);
+}
+
+/* Expanding a section fades its rows in; collapsing is instant. */
+@keyframes pigui-overview-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
 .pigui-overview-clearance {
   padding-inline-end: max(
     0px,

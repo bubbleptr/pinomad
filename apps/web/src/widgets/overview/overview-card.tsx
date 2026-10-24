@@ -6,7 +6,7 @@
 // Changes dialog, the side panel's Tasks tab. It replaces the side panel's
 // Live tab.
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
@@ -20,7 +20,7 @@ import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
 import { DocumentView } from "../../presentation/documents.tsx";
-import { FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
+import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
@@ -85,11 +85,58 @@ function useChangeStat(
 
 const count = (value: number): string => value.toLocaleString("en-US");
 
-function Section({ title, children }: { title?: string; children: ReactNode }) {
+type SectionKey = "workspace" | "usage" | "subagents" | "sources";
+
+const COLLAPSED_KEY = "pinomad.overview.collapsed";
+
+function readCollapsed(): Partial<Record<SectionKey, boolean>> {
+  try {
+    return JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) ?? "{}") as Partial<Record<SectionKey, boolean>>;
+  } catch {
+    return {};
+  }
+}
+
+const CARD = "flex shrink-0 flex-col gap-0.5 rounded-[var(--radius-element)] bg-[var(--color-background-popover)] px-2.5 shadow-[var(--pigui-overview-card-elevation)]";
+
+/**
+ * One section card. A titled one folds its rows away under its header — the
+ * whole row is the button — and the header then carries `summary`, so a
+ * folded section still says how it's doing. Which sections are folded
+ * survives reloads. Only the chevron turns: the rows show and hide at once,
+ * so the cards below never animate layout, and they fade in only after a
+ * toggle, never when the card opens.
+ */
+function Section({ section, title, summary, children }: { section: SectionKey; title: string; summary?: ReactNode; children: ReactNode }) {
+  const [collapsed, setCollapsed] = useState(() => readCollapsed()[section] === true);
+  const [toggled, setToggled] = useState(false);
+  const body = useId();
+  const toggle = () => {
+    window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify({ ...readCollapsed(), [section]: !collapsed }));
+    setCollapsed(!collapsed);
+    setToggled(true);
+  };
   return (
-    <section className="flex flex-col gap-0.5 border-b border-border px-3 py-2.5 last:border-b-0">
-      {title === undefined ? null : <h2 className="pb-1 text-xs font-medium text-muted">{title}</h2>}
-      {children}
+    <section className={`${CARD} pt-1 ${collapsed ? "pb-1" : "pb-1.5"}`}>
+      <h2 className="-mx-1.5">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={body}
+          className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground focus-visible:bg-surface-hover"
+          onClick={toggle}
+        >
+          <span className="shrink-0">{title}</span>
+          <span className="min-w-0 flex-1 truncate text-end font-normal tabular-nums">{collapsed ? summary : null}</span>
+          <ChevronRight
+            aria-hidden
+            className={`size-3.5 shrink-0 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-out ${collapsed ? "" : "rotate-90"}`}
+          />
+        </button>
+      </h2>
+      <div id={body} hidden={collapsed} className={`flex flex-col gap-0.5 ${toggled ? "motion-safe:animate-[pigui-overview-reveal_150ms_ease-out]" : ""}`}>
+        {children}
+      </div>
     </section>
   );
 }
@@ -178,7 +225,11 @@ function WorkspaceSection({
         : undefined
       : view.checkout?.branch;
   return (
-    <Section title="Workspace">
+    <Section
+      section="workspace"
+      title="Workspace"
+      summary={isChat || stat.kind === "unavailable" ? branch : <ChangeFigure stat={stat} />}
+    >
       {cwd === undefined ? null : (
         <Row
           icon={worktree ? <FolderGitTwo className="size-4" /> : <FolderClosed className="size-4" />}
@@ -199,29 +250,32 @@ function WorkspaceSection({
   );
 }
 
+/** The checkout's +N −M, or why there isn't one yet. */
+function ChangeFigure({ stat }: { stat: Exclude<ChangeStat, { kind: "unavailable" }> }) {
+  return stat.kind === "loading" ? (
+    <span className="text-muted">…</span>
+  ) : stat.kind === "failed" ? (
+    <span className="text-muted">—</span>
+  ) : stat.files === 0 ? (
+    <span className="text-muted">None</span>
+  ) : stat.additions === 0 && stat.deletions === 0 ? (
+    // Binary edits, renames and mode changes touch files without text lines.
+    <span className="text-muted">
+      {stat.files} file{stat.files === 1 ? "" : "s"}
+    </span>
+  ) : (
+    // A truncated patch undercounts: "+" marks the numbers as a floor.
+    <span aria-label={`${count(stat.additions)} added, ${count(stat.deletions)} removed${stat.truncated ? " at least" : ""}`}>
+      <span className="text-success">+{count(stat.additions)}{stat.truncated ? "+" : ""}</span>{" "}
+      <span className="text-danger">−{count(stat.deletions)}{stat.truncated ? "+" : ""}</span>
+    </span>
+  );
+}
+
 function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) {
   if (stat.kind === "unavailable") return null;
-  const end =
-    stat.kind === "loading" ? (
-      <span className="text-muted">…</span>
-    ) : stat.kind === "failed" ? (
-      <span className="text-muted">—</span>
-    ) : stat.files === 0 ? (
-      <span className="text-muted">None</span>
-    ) : stat.additions === 0 && stat.deletions === 0 ? (
-      // Binary edits, renames and mode changes touch files without text lines.
-      <span className="text-muted">
-        {stat.files} file{stat.files === 1 ? "" : "s"}
-      </span>
-    ) : (
-      // A truncated patch undercounts: "+" marks the numbers as a floor.
-      <span aria-label={`${count(stat.additions)} added, ${count(stat.deletions)} removed${stat.truncated ? " at least" : ""}`}>
-        <span className="text-success">+{count(stat.additions)}{stat.truncated ? "+" : ""}</span>{" "}
-        <span className="text-danger">−{count(stat.deletions)}{stat.truncated ? "+" : ""}</span>
-      </span>
-    );
   return (
-    <Row icon={<FileDiff className="size-4" />} end={end} onClick={onOpen}>
+    <Row icon={<FileDiff className="size-4" />} end={<ChangeFigure stat={stat} />} onClick={onOpen}>
       Changes
     </Row>
   );
@@ -230,10 +284,12 @@ function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) 
 /** How full the context window is, against the shown model, and what the conversation has spent. */
 function UsageSection({ view, conversation }: { view: DurableView; conversation: NonNullable<DurableView["conversation"]> }) {
   const model = summaryOf(view.models, agentOf(conversation).model);
+  const usage = contextUsage(conversation, model?.contextWindow);
   const spent = usageRows(conversation).reduce((sum, row) => sum + row.cost, 0);
+  const percent = usage === undefined ? "—" : `${Math.round((usage.used / usage.window) * 100)}%`;
   return (
-    <Section title="Usage">
-      <Row end={<ContextMeter usage={contextUsage(conversation, model?.contextWindow)} />}>Context</Row>
+    <Section section="usage" title="Usage" summary={spent > 0 ? `${percent} · ${formatCost(spent)}` : percent}>
+      <Row end={<ContextMeter usage={usage} />}>Context</Row>
       {spent > 0 ? <Row end={<span className="text-muted">{formatCost(spent)}</span>}>Spent</Row> : null}
     </Section>
   );
@@ -263,7 +319,7 @@ function SubagentsSection({
     failed > 0 ? `${failed} failed` : undefined,
   ].filter((part) => part !== undefined);
   return (
-    <Section title="Subagents">
+    <Section section="subagents" title="Subagents" summary={active.length > 0 ? `${active.length} running` : summary.join(" · ")}>
       {active.slice(0, ACTIVE_ROWS).map((task) => (
         <Row
           key={task.id}
@@ -299,8 +355,22 @@ const MCP_VARIANT = { connecting: "warning", connected: "success", failed: "erro
 function SourcesSection({ view }: { view: DurableView }) {
   const mcp = view.mcp;
   if (mcp === null || (mcp.servers.length === 0 && mcp.errors.length === 0)) return null;
+  const problems = mcp.servers.filter((server) => server.state === "failed").length + mcp.errors.length;
+  const connected = mcp.servers.filter((server) => server.state === "connected").length;
   return (
-    <Section title="Sources">
+    <Section
+      section="sources"
+      title="Sources"
+      summary={
+        problems > 0 ? (
+          <span className="text-danger">
+            {problems} problem{problems === 1 ? "" : "s"}
+          </span>
+        ) : (
+          `${connected} connected`
+        )
+      }
+    >
       {mcp.servers.map((server) => (
         <Row
           key={server.name}
@@ -340,9 +410,9 @@ function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteD
   return (
     <>
       {docs.map((doc) => (
-        <Section key={doc.kind}>
+        <section key={doc.kind} className={`${CARD} py-2`}>
           <DocumentView doc={doc} remote={remote} connected={view.connection === "connected"} />
-        </Section>
+        </section>
       ))}
     </>
   );
@@ -372,7 +442,9 @@ export function OverviewCard({
   return (
     <aside
       aria-label="Overview"
-      className={`absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col overflow-y-auto rounded-xl border border-border bg-[var(--color-background-popover)] shadow-[var(--shadow-med)]`}
+      // A grey tray of section cards; its radius is the cards' plus its
+      // padding, so the corners stay concentric.
+      className={`pigui-overview absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col gap-[var(--pigui-overview-gap)] overflow-y-auto rounded-[calc(var(--radius-element)+var(--pigui-overview-gap))] bg-[var(--color-background-muted)] p-[var(--pigui-overview-gap)] shadow-[var(--pigui-overview-elevation)]`}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();
