@@ -1,7 +1,9 @@
 // jsdom: the overview card's Workspace branch row — a 5.11 host's
-// changes() answer owns it, an older host's checkout record does.
+// changes() answer owns it, an older host's checkout record does — and
+// sections that fold away but keep their status.
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
@@ -9,7 +11,7 @@ import { OverviewCard } from "./overview-card.tsx";
 
 type ChangesResult = CallMethods["changes"]["result"];
 
-function renderCard(minor: number, result: ChangesResult, checkoutBranch?: string) {
+function renderCard(minor: number, result: ChangesResult, checkoutBranch?: string, overrides: Partial<DurableView> = {}) {
   const changes = vi.fn(async () => result);
   const remote = { controller: { changes } } as unknown as RemoteDurable;
   const conversation = {
@@ -29,8 +31,9 @@ function renderCard(minor: number, result: ChangesResult, checkoutBranch?: strin
     organized: { chats: [], projects: [], archived: [] },
     docs: [],
     mcp: null,
+    ...overrides,
   } as unknown as DurableView;
-  render(
+  const { unmount } = render(
     <OverviewCard
       view={view}
       remote={remote}
@@ -42,14 +45,14 @@ function renderCard(minor: number, result: ChangesResult, checkoutBranch?: strin
       onClose={() => {}}
     />,
   );
-  return changes;
+  return { changes, unmount };
 }
 
 describe("OverviewCard workspace branch", () => {
   it("shows the branch changes() returns on a 5.11 host, even with no diff", async () => {
     // Unavailable still carries the branch (an unborn branch has no diff) —
     // and the Changes row hiding must not take the branch row with it.
-    const changes = renderCard(
+    const { changes } = renderCard(
       11,
       { available: false, reason: "Not in a git repository", branch: "main" },
       "pinomad/1-dead",
@@ -72,5 +75,44 @@ describe("OverviewCard workspace branch", () => {
   it("falls back to the recorded checkout branch on a pre-5.11 host", async () => {
     renderCard(10, { available: false, reason: "Not in a git repository" }, "pinomad/1-dead");
     expect(await screen.findByText("pinomad/1-dead")).toBeInTheDocument();
+  });
+});
+
+describe("OverviewCard collapsible sections", () => {
+  afterEach(() => window.localStorage.clear());
+
+  const mcp = {
+    configPath: "/home/.pi/mcp.json",
+    errors: [],
+    servers: [
+      { name: "github", state: "connected", tools: 24 },
+      { name: "linear", state: "failed", error: "401 Unauthorized", tools: 0 },
+    ],
+  } as DurableView["mcp"];
+  const withSources = () =>
+    renderCard(11, { available: false, reason: "Not in a git repository" }, undefined, { mcp });
+
+  it("folds a section's rows away but keeps its status in the header", async () => {
+    withSources();
+    const header = screen.getByRole("button", { name: /^Sources/ });
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("linear")).toBeVisible();
+
+    await userEvent.click(header);
+
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("linear")).not.toBeVisible();
+    // Collapsing must not hide that something is broken.
+    expect(header).toHaveTextContent("1 problem");
+  });
+
+  it("remembers a collapsed section the next time the card opens", async () => {
+    const first = withSources();
+    await userEvent.click(screen.getByRole("button", { name: /^Sources/ }));
+    first.unmount();
+
+    withSources();
+    expect(screen.getByRole("button", { name: /^Sources/ })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("linear")).not.toBeVisible();
   });
 });
