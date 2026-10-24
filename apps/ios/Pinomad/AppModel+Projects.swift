@@ -62,11 +62,16 @@ extension AppModel {
         let key = Self.draftKey
         let text = drafts[key] ?? ""
         let tray = trays[key] ?? AttachmentTray()
-        let files = fileTrays[key] ?? FileAttachmentTray()
+        var files = fileTrays[key] ?? FileAttachmentTray()
         guard !creating, let session,
               !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
               tray.preparing == 0, files.canSend
         else { return }
+        if files.expire() {
+            fileTrays[key] = files
+            lastError = "Attachment expired; attach it again"
+            return
+        }
         guard let organized = snapshot?.organized else { return }
         let known = KnownConversations(organized)
         let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0

@@ -230,6 +230,33 @@ private actor UploadSpy {
         #expect(tray.entry(entry.id)?.received == 0)
     }
 
+    /// A draft kept past the host TTL must not send a stale id: the chip
+    /// drops it and stays retryable instead of losing the message.
+    @Test func aDoneChipOlderThanTheHostTtlBecomesRetryable() throws {
+        var tray = FileAttachmentTray()
+        let old = Date(timeIntervalSinceNow: -AttachmentLimits.lifetime - 60)
+        let entry = try #require(tray.add([source(5)], now: old).first)
+        tray.finish(id: entry.id, attachmentId: String(repeating: "A", count: 22), received: 5)
+        let expired = tray.expire()
+        #expect(expired)
+        #expect(tray.entry(entry.id)?.status == .failed)
+        #expect(tray.entry(entry.id)?.attachmentId == nil)
+        #expect(tray.entry(entry.id)?.received == 0)
+        #expect(tray.entry(entry.id)?.error == "Attachment expired; attach it again")
+        #expect(!tray.canSend)
+        tray.retry(id: entry.id)
+        #expect(tray.uploading)
+    }
+
+    @Test func attachmentRejectionNoticesMatchTheHostsWords() {
+        #expect(AttachmentNotice.isRejection("Attachment 1 has expired; attach it again"))
+        #expect(AttachmentNotice.isRejection("Attachment 2 is still uploading"))
+        #expect(AttachmentNotice.isRejection("Attachment 3 is unavailable; attach it again"))
+        #expect(AttachmentNotice.isRejection("Attachment not found or expired; attach it again"))
+        #expect(AttachmentNotice.isRejection("Attachments are not available on this host"))
+        #expect(!AttachmentNotice.isRejection("network down"))
+    }
+
     @Test func aQueuedEditRestoresFinishedIdsWithoutBytes() {
         var tray = FileAttachmentTray()
         tray.restore([

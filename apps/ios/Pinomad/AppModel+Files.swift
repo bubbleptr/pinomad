@@ -10,13 +10,15 @@ import UniformTypeIdentifiers
 extension AppModel {
     /// Why a picked URL could not become a source. `image` is not an error:
     /// it tells the caller to point at the existing image entry instead.
-    private enum PickedFileFailure: Error {
+    private enum PickedFileFailure: Error, Sendable {
         case image
         case message(String)
     }
 
-    /// Read the picked files and start their uploads. At most the free chip
-    /// slots are read, so a large selection never loads bytes it can't keep.
+    /// Read the picked files off the main thread and start their uploads. At
+    /// most the free chip slots are read, so a large selection never loads
+    /// bytes it can't keep; the security scope is opened and released inside
+    /// the read, before the upload starts.
     func attachFiles(conversation key: UInt64, urls: [URL]) {
         guard hostSupports(.attachments) else {
             reportFileProblem(
@@ -25,36 +27,48 @@ extension AppModel {
             )
             return
         }
-        var tray = fileTrays[key] ?? FileAttachmentTray()
+        let tray = fileTrays[key] ?? FileAttachmentTray()
         guard tray.room > 0 else {
-            tray.report("At most \(AttachmentLimits.maxPerMessage) files per message")
-            fileTrays[key] = tray
+            reportFileProblem(
+                conversation: key,
+                "At most \(AttachmentLimits.maxPerMessage) files per message"
+            )
             return
         }
-        var sources: [FileAttachmentSource] = []
-        var problem: String?
-        var sawImage = false
-        for url in urls.prefix(tray.room) {
-            switch readPickedFile(url) {
-            case let .success(source):
-                sources.append(source)
-            case .failure(.image):
-                sawImage = true
-            case let .failure(.message(message)):
-                problem = message
+        let room = tray.room
+        let selected = Array(urls.prefix(room))
+        let overflow = urls.count > room
+        let hostKey = currentHostKey
+        Task { [weak self] in
+            let picked = await Task.detached(priority: .userInitiated) {
+                selected.map { Self.readPickedFile($0) }
+            }.value
+            guard let self, self.currentHostKey == hostKey else { return }
+            var tray = self.fileTrays[key] ?? FileAttachmentTray()
+            var sources: [FileAttachmentSource] = []
+            var problem: String? = overflow
+                ? "At most \(AttachmentLimits.maxPerMessage) files per message"
+                : nil
+            var sawImage = false
+            for result in picked {
+                switch result {
+                case let .success(source):
+                    sources.append(source)
+                case .failure(.image):
+                    sawImage = true
+                case let .failure(.message(message)):
+                    problem = message
+                }
             }
-        }
-        if urls.count > tray.room {
-            problem = "At most \(AttachmentLimits.maxPerMessage) files per message"
-        }
-        if sawImage {
-            problem = problem ?? "Images are attached from Add images…"
-        }
-        let added = tray.add(sources)
-        if let problem { tray.report(problem) }
-        fileTrays[key] = tray
-        for entry in added {
-            startFileUpload(conversation: key, id: entry.id)
+            if sawImage {
+                problem = problem ?? "Images are attached from Add images…"
+            }
+            let added = tray.add(sources)
+            if let problem { tray.report(problem) }
+            self.fileTrays[key] = tray
+            for entry in added {
+                self.startFileUpload(conversation: key, id: entry.id)
+            }
         }
     }
 
@@ -136,10 +150,12 @@ extension AppModel {
                         data: data
                     )
                 )
-                guard case let .appendAttachment(received, complete) = result else {
+                guard case let .appendAttachment(received, complete) = result,
+                      let bytes = Int(exactly: received)
+                else {
                     throw FileAttachmentError.badReply
                 }
-                return AttachmentAppend(received: Int(received), complete: complete)
+                return AttachmentAppend(received: bytes, complete: complete)
             }
         )
         do {
@@ -176,7 +192,9 @@ extension AppModel {
 
     /// Read one URL under its security scope and copy the bytes out before
     /// the scope closes — an upload never depends on a picker's access lease.
-    private func readPickedFile(_ url: URL) -> Result<FileAttachmentSource, PickedFileFailure> {
+    private nonisolated static func readPickedFile(
+        _ url: URL
+    ) -> Result<FileAttachmentSource, PickedFileFailure> {
         let scoped = url.startAccessingSecurityScopedResource()
         defer {
             if scoped { url.stopAccessingSecurityScopedResource() }

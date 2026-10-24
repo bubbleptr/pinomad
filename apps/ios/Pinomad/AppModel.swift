@@ -19,6 +19,17 @@ final class AppModel {
         case failed(ConnectFailure)
     }
 
+    /// What an optimistic send cleared, kept briefly so a command-class
+    /// refusal (attachments come back as notices) can restore it.
+    struct PendingAttachmentSend {
+        let text: String
+        let images: [MessageImage]
+        let chips: SkillChips
+        let files: FileAttachmentTray
+        let noticesBefore: UInt64
+        let expiresAt: Date
+    }
+
     /// What the root presents as a sheet — one slot, so a deep link or a
     /// scan arriving while another sheet is up waits for it to close
     /// instead of being dropped by SwiftUI.
@@ -105,6 +116,8 @@ final class AppModel {
     /// Host-stored file uploads per conversation (issue #321). Kept beside
     /// the images so a switch mid-upload neither loses nor redirects one.
     var fileTrays: [UInt64: FileAttachmentTray] = [:]
+    /// Sends with attachments whose cleared draft may still need restoring.
+    var pendingAttachmentSends: [UInt64: PendingAttachmentSend] = [:]
     /// The queued-input Edit flow: the copy read before withdrawing, its
     /// request phase, and the composer lock. Memory only; a host switch
     /// drops it (an unresolved copy is retried after a same-host reconnect).
@@ -455,6 +468,7 @@ final class AppModel {
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
+        pendingAttachmentSends = [:]
         replyStreams.sync(chat: nil)
         toasts = []
         noticeFeed = NoticeFeed()
@@ -470,6 +484,7 @@ final class AppModel {
             questionDrafts = [:]
             trays = [:]
             fileTrays = [:]
+            pendingAttachmentSends = [:]
             queuedEdit.reset()
             queuedEditPreparing.removeAll()
             queuePending.removeAll()
@@ -497,6 +512,38 @@ final class AppModel {
         connectAttempt = attempt
         attempt.start()
         armConnectWatchdog()
+    }
+
+    /// A submit with attachments is command-class, so a refused reference
+    /// (expired / missing / still uploading at the host) only arrives as a
+    /// notice. Put the cleared draft back unless the reader moved on.
+    private func restoreRejectedAttachmentSend(after notices: [Notice]) {
+        guard !pendingAttachmentSends.isEmpty else { return }
+        let now = Date.now
+        for key in Array(pendingAttachmentSends.keys) {
+            guard let pending = pendingAttachmentSends[key] else { continue }
+            if now >= pending.expiresAt {
+                pendingAttachmentSends[key] = nil
+                continue
+            }
+            guard let rejection = notices.first(where: {
+                $0.id > pending.noticesBefore && AttachmentNotice.isRejection($0.message)
+            }) else { continue }
+            pendingAttachmentSends[key] = nil
+            guard (drafts[key] ?? "").isEmpty, trays[key]?.isEmpty ?? true,
+                  fileTrays[key] == nil else { continue }
+            drafts[key] = pending.text
+            skillChips[key] = pending.chips
+            if !pending.images.isEmpty {
+                var tray = AttachmentTray()
+                if let claim = tray.reserve(pending.images.count, accepts: true) {
+                    tray.fulfil(claim, with: pending.images)
+                }
+                trays[key] = tray
+            }
+            if !pending.files.isEmpty { fileTrays[key] = pending.files }
+            lastError = rejection.message
+        }
     }
 
     private func apply(_ update: SessionUpdate) {
@@ -556,9 +603,11 @@ final class AppModel {
             if let hostKey = sessionHost?.hostKey {
                 cacheHostName(snapshot.hostName, for: hostKey)
             }
+            let freshNotices = noticeFeed.fresh(snapshot.notices)
+            restoreRejectedAttachmentSend(after: freshNotices)
             // A failure page explains itself; the core's notice for the
             // same thing (e.g. the 4401) would only repeat it in English.
-            for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
+            for notice in freshNotices where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
             if connectedNow && !lastSnapshotConnected { syncPushToken() }

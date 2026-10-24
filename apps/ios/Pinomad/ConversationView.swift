@@ -373,7 +373,7 @@ private struct UserRow: View, Equatable {
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(Array(attachments.enumerated()), id: \.offset) { _, file in
-                SentFileChip(name: file.name, size: Int(file.size))
+                SentFileChip(name: file.name, size: Int(clamping: file.size))
             }
             ForEach(Array(images.enumerated()), id: \.offset) { _, image in
                 InlineImage(

@@ -11,6 +11,8 @@ public enum AttachmentLimits {
     public static let maxPerMessage = 10
     /// Decoded bytes per `appendAttachment` call.
     public static let chunkBytes = 512 * 1024
+    /// Unused uploads expire this long after `beginAttachment` (ADR-0030 §1).
+    public static let lifetime: TimeInterval = 24 * 60 * 60
 }
 
 public enum FileAttachmentError: Error, Equatable, LocalizedError {
@@ -159,6 +161,9 @@ public struct FileAttachmentTray: Equatable, Sendable {
         public internal(set) var received: Int
         public internal(set) var status: Status
         public internal(set) var error: String?
+        /// When the upload began; nil on a restored queued edit whose bytes
+        /// already live on the host and never age out with this tray.
+        public let createdAt: Date?
         /// Nil on a restored queued edit: the bytes already live on the host.
         public let source: FileAttachmentSource?
 
@@ -166,7 +171,7 @@ public struct FileAttachmentTray: Equatable, Sendable {
             lhs.id == rhs.id && lhs.name == rhs.name && lhs.size == rhs.size
                 && lhs.attachmentId == rhs.attachmentId && lhs.received == rhs.received
                 && lhs.status == rhs.status && lhs.error == rhs.error
-                && lhs.source === rhs.source
+                && lhs.createdAt == rhs.createdAt && lhs.source === rhs.source
         }
     }
 
@@ -194,7 +199,7 @@ public struct FileAttachmentTray: Equatable, Sendable {
     /// Pre-check a pick, append what fits, and return only the new entries
     /// so the caller can start their uploads.
     @discardableResult
-    public mutating func add(_ sources: [FileAttachmentSource]) -> [Entry] {
+    public mutating func add(_ sources: [FileAttachmentSource], now: Date = .now) -> [Entry] {
         guard room > 0 else {
             error = "At most \(AttachmentLimits.maxPerMessage) files per message"
             return []
@@ -226,7 +231,7 @@ public struct FileAttachmentTray: Equatable, Sendable {
             Entry(
                 id: UUID().uuidString, name: source.name, size: source.size,
                 attachmentId: nil, received: 0, status: .uploading, error: nil,
-                source: source
+                createdAt: now, source: source
             )
         }
         entries += added
@@ -237,6 +242,26 @@ public struct FileAttachmentTray: Equatable, Sendable {
     public mutating func assigned(id: String, attachmentId: String) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].attachmentId = attachmentId
+    }
+
+    /// A `done` chip older than the host's TTL can no longer be sent: the
+    /// host may have cleaned the upload. Drop the id (the source stays) so
+    /// Retry starts a fresh upload, and say why.
+    @discardableResult
+    public mutating func expire(now: Date = .now) -> Bool {
+        var expired = false
+        for index in entries.indices {
+            guard entries[index].status == .done, let created = entries[index].createdAt,
+                  now.timeIntervalSince(created) >= AttachmentLimits.lifetime
+            else { continue }
+            entries[index].status = .failed
+            entries[index].attachmentId = nil
+            entries[index].received = 0
+            entries[index].error = "Attachment expired; attach it again"
+            expired = true
+        }
+        if expired { error = "Attachment expired; attach it again" }
+        return expired
     }
 
     public mutating func progress(id: String, received: Int, complete: Bool) {
@@ -281,9 +306,9 @@ public struct FileAttachmentTray: Equatable, Sendable {
         let kept = Array(files.prefix(AttachmentLimits.maxPerMessage))
         entries = kept.map { file in
             Entry(
-                id: UUID().uuidString, name: file.name, size: Int(file.size),
-                attachmentId: file.id, received: Int(file.size), status: .done,
-                error: nil, source: nil
+                id: UUID().uuidString, name: file.name, size: Int(clamping: file.size),
+                attachmentId: file.id, received: Int(clamping: file.size), status: .done,
+                error: nil, createdAt: nil, source: nil
             )
         }
         error = files.count > AttachmentLimits.maxPerMessage
@@ -324,6 +349,17 @@ public func formatFileSize(_ bytes: Int) -> String {
 public func attachmentPercent(received: Int, size: Int) -> Int {
     guard size > 0 else { return 100 }
     return min(100, Int((Double(received) / Double(size) * 100).rounded()))
+}
+
+/// Host notices that mean the referenced files can't be used (the submit
+/// is command-class, so these arrive as notices rather than a failed call).
+public enum AttachmentNotice {
+    public static func isRejection(_ message: String) -> Bool {
+        message.range(
+            of: "(?i)attachment.*(expired|unavailable|not found|still uploading|not available)",
+            options: .regularExpression
+        ) != nil
+    }
 }
 
 extension RetryRequest {

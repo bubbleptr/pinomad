@@ -15,13 +15,30 @@ extension AppModel {
     func send(conversation id: UInt64, mode: SubmitMode) {
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
-        let files = fileTrays[id] ?? FileAttachmentTray()
+        var files = fileTrays[id] ?? FileAttachmentTray()
         guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
               tray.preparing == 0, files.canSend, let session else { return }
+        // Past the host's 24 h TTL the id may already be gone; drop it and
+        // keep the source so Retry re-uploads instead of losing the draft.
+        if files.expire() {
+            fileTrays[id] = files
+            lastError = "Attachment expired; attach it again"
+            return
+        }
         let images = tray.images
         let attachments = files.ids
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
+        let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
+        if !attachments.isEmpty {
+            // Command-class submit failures only land as notices. Keep the
+            // cleared content briefly so a rejected attachment can put it
+            // back instead of losing the whole draft.
+            pendingAttachmentSends[id] = PendingAttachmentSend(
+                text: text, images: images, chips: chips, files: files,
+                noticesBefore: noticesBefore, expiresAt: .now.addingTimeInterval(60)
+            )
+        }
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
@@ -34,6 +51,7 @@ extension AppModel {
                             images: images, skills: payload.skills, attachments: attachments))
             } catch {
                 guard let self else { return }
+                self.pendingAttachmentSends[id] = nil
                 // Don't clobber anything typed or attached meanwhile.
                 if (self.drafts[id] ?? "").isEmpty {
                     self.drafts[id] = text
