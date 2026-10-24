@@ -129,6 +129,35 @@ private func flow(
     }
 }
 
+/// Every Providers page is opened for one host (#343 review): another
+/// host's providers never show on it, so nothing on it reaches that host.
+@Suite struct ProvidersPageTests {
+    private let groq = HostProviders(providers: [provider("groq")], logins: [])
+
+    @Test func aPageForAnotherHostShowsNoProviders() {
+        #expect(providersPage(openedFor: "a", currentHost: "b", hasSnapshot: true, providers: groq, supportsLogins: true)
+            == .otherHost)
+        #expect(providersPage(openedFor: "a", currentHost: nil, hasSnapshot: false, providers: nil, supportsLogins: false)
+            == .otherHost)
+        // The right host, but its session isn't up yet.
+        #expect(providersPage(openedFor: "a", currentHost: "a", hasSnapshot: false, providers: nil, supportsLogins: false)
+            == .otherHost)
+    }
+
+    @Test func thePagesOwnHostShowsItsProviders() {
+        #expect(providersPage(openedFor: "a", currentHost: "a", hasSnapshot: true, providers: groq, supportsLogins: true)
+            == .ready(groq))
+    }
+
+    /// A 5.21 host sends the stream right after connecting; an older one never will.
+    @Test func noStreamYetIsLoadingOrAnUpgrade() {
+        #expect(providersPage(openedFor: "a", currentHost: "a", hasSnapshot: true, providers: nil, supportsLogins: true)
+            == .loading)
+        #expect(providersPage(openedFor: "a", currentHost: "a", hasSnapshot: true, providers: nil, supportsLogins: false)
+            == .needsUpgrade)
+    }
+}
+
 @Suite struct LoginTrackerTests {
     @Test func successEndsTheLoginOnce() {
         var tracker = LoginTracker()
@@ -164,7 +193,7 @@ private func flow(
         #expect(r7 == nil)
         let r8 = tracker.started("l1", token: token)
         #expect(!r8)
-        let stale = tracker.failed(token, logins: [])
+        let stale = tracker.failed(token, error: SessionError.connectionLost, logins: [])
         #expect(!stale)
     }
 
@@ -227,7 +256,7 @@ private func flow(
         let r21 = tracker.observe([flow("l1", .running)])
         #expect(r21 == nil)
         #expect(tracker.loginId == nil)
-        let r22 = tracker.failed(token, logins: [flow("l1", .running)])
+        let r22 = tracker.failed(token, error: SessionError.connectionLost, logins: [flow("l1", .running)])
         #expect(r22)
         #expect(tracker.loginId == "l1")
         // Ours now: leaving cancels it.
@@ -237,7 +266,8 @@ private func flow(
 
     @Test func aLostStartAdoptsAFlowListedAfterTheFailure() {
         var tracker = LoginTracker()
-        _ = tracker.failed(tracker.begin(provider: "groq", method: .apiKey), logins: [])
+        let token = tracker.begin(provider: "groq", method: .apiKey)
+        _ = tracker.failed(token, error: SessionError.connectionLost, logins: [])
         #expect(tracker.loginId == nil)
         // Another provider's, another method's, or an ended flow is not it.
         let r24 = tracker.observe([
@@ -257,9 +287,26 @@ private func flow(
         _ = tracker.started("l1", token: tracker.begin(provider: "groq", method: .apiKey))
         _ = tracker.observe([flow("l1", .failed)])
         let token = tracker.begin(provider: "groq", method: .apiKey)
-        let r27 = tracker.failed(token, logins: [flow("l1", .failed), flow("l2", .running)])
+        let r27 = tracker.failed(
+            token, error: SessionError.connectionLost, logins: [flow("l1", .failed), flow("l2", .running)])
         #expect(r27)
         #expect(tracker.loginId == "l2")
+    }
+
+    /// The host refusing the start (another device's login is running) is
+    /// no lost answer: that login isn't this page's to follow or cancel.
+    @Test func aRefusedStartAdoptsNothing() {
+        var tracker = LoginTracker()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
+        let refusal = SessionError.operationFailed("A login for Groq is already in progress")
+        let r30 = tracker.failed(token, error: refusal, logins: [flow("l1", .running)])
+        #expect(r30)
+        #expect(tracker.loginId == nil)
+        let r31 = tracker.observe([flow("l1", .running)])
+        #expect(r31 == nil)
+        #expect(tracker.loginId == nil)
+        let r32 = tracker.leave()
+        #expect(r32 == nil)
     }
 
     /// A page that left adopts nothing: no one would be there to cancel it.
@@ -267,7 +314,7 @@ private func flow(
         var tracker = LoginTracker()
         let token = tracker.begin(provider: "groq", method: .apiKey)
         _ = tracker.leave()
-        let r28 = tracker.failed(token, logins: [flow("l1", .running)])
+        let r28 = tracker.failed(token, error: SessionError.connectionLost, logins: [flow("l1", .running)])
         #expect(!r28)
         let r29 = tracker.observe([flow("l1", .running)])
         #expect(r29 == nil)

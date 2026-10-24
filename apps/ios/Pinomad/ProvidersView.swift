@@ -11,31 +11,47 @@ struct ProvidersView: View {
     let hostKey: String
 
     var body: some View {
-        Group {
-            if hostKey != model.currentHostKey || model.snapshot == nil {
-                ContentUnavailableView {
-                    Label("Not connected to this host", image: .cloudOff)
-                } description: {
-                    Text("Connect to it to see its providers.")
-                }
-            } else if let providers = model.providers {
-                ProvidersHomeList(home: ProvidersHome(providers.providers), connected: model.connected)
-            } else if model.hostSupports("beginLogin") {
-                // A 5.21 host sends the snapshot right after connecting.
-                ProgressView()
-            } else {
-                ContentUnavailableView {
-                    Label("Update the host", image: .triangleAlert)
-                } description: {
-                    Text("Run `pinomad upgrade` on the host to add providers here.")
-                }
-            }
+        ProvidersGate(model: model, hostKey: hostKey) { providers in
+            ProvidersHomeList(hostKey: hostKey, home: ProvidersHome(providers.providers), connected: model.connected)
         }
         .navigationTitle("Providers")
     }
 }
 
+/// A Providers page's content while the host it was opened for is the
+/// connected one; otherwise what stands in for it (`providersPage`).
+struct ProvidersGate<Content: View>: View {
+    let model: AppModel
+    let hostKey: String
+    @ViewBuilder let content: (HostProviders) -> Content
+
+    var body: some View {
+        let page = providersPage(
+            openedFor: hostKey, currentHost: model.currentHostKey, hasSnapshot: model.snapshot != nil,
+            providers: model.providers, supportsLogins: model.hostSupports("beginLogin"))
+        switch page {
+        case .otherHost:
+            ContentUnavailableView {
+                Label("Not connected to this host", image: .cloudOff)
+            } description: {
+                Text("Connect to it to see its providers.")
+            }
+        case .loading:
+            ProgressView()
+        case .needsUpgrade:
+            ContentUnavailableView {
+                Label("Update the host", image: .triangleAlert)
+            } description: {
+                Text("Run `pinomad upgrade` on the host to add providers here.")
+            }
+        case .ready(let providers):
+            content(providers)
+        }
+    }
+}
+
 private struct ProvidersHomeList: View {
+    let hostKey: String
     let home: ProvidersHome
     let connected: Bool
 
@@ -45,7 +61,8 @@ private struct ProvidersHomeList: View {
                 Section("Connected") {
                     ForEach(home.connected, id: \.id) { provider in
                         NavigationLink(value: provider.custom == nil
-                                       ? Route.provider(provider.id, nil) : Route.customEndpoint(provider.id)) {
+                                       ? Route.provider(host: hostKey, id: provider.id, method: nil)
+                                       : Route.customEndpoint(host: hostKey, id: provider.id)) {
                             ProviderRow(provider: provider)
                         }
                     }
@@ -57,19 +74,19 @@ private struct ProvidersHomeList: View {
                     detail: "Use a plan you already pay for.",
                     foot: home.subscriptionFoot,
                     logos: home.subscriptions.map { ($0.id, $0.name) },
-                    route: .providerSubscriptions)
+                    route: .providerSubscriptions(hostKey))
                 PathRow(
                     title: "API key",
                     detail: "Pay per token with a key from the provider.",
                     foot: "\(home.keyed.count) providers",
                     logos: home.keyLogos.map { ($0.id, $0.name) },
-                    route: .providerKeys)
+                    route: .providerKeys(hostKey))
                 PathRow(
                     title: "Custom endpoint",
                     detail: "Your own server or gateway.",
                     foot: "Ollama, LM Studio, vLLM, any OpenAI- or Anthropic-compatible URL",
                     logos: [("ollama", "Ollama"), ("lmstudio", "LM Studio")],
-                    route: .customEndpoint(nil))
+                    route: .customEndpoint(host: hostKey, id: nil))
             } header: {
                 Text(home.connected.isEmpty ? "Connect a model provider" : "Add another")
             } footer: {
@@ -133,12 +150,13 @@ struct ProviderGridView: View {
     enum Kind { case subscription, apiKey }
 
     let model: AppModel
+    let hostKey: String
+    let all: [ProviderInfo]
     let kind: Kind
 
     @State private var query = ""
 
     var body: some View {
-        let all = model.providers?.providers ?? []
         let shown = kind == .subscription ? subscriptionProviders(all) : keyProviders(all, matching: query)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -171,7 +189,7 @@ struct ProviderGridView: View {
         let caption: String? = kind == .subscription
             ? (provider.oauth?.subscription == true ? provider.planCaption : "Account sign-in")
             : nil
-        return NavigationLink(value: Route.provider(provider.id, method)) {
+        return NavigationLink(value: Route.provider(host: hostKey, id: provider.id, method: method)) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top) {
                     ProviderLogo(id: provider.id, name: provider.name, size: 36)

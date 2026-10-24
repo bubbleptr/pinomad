@@ -16,14 +16,16 @@ enum Route: Hashable {
     case machine(String)
     /// That machine's providers: what's connected, and ways to add one.
     case providers(String)
+    // The pages under Providers carry the host they were opened for and act
+    // on it only while it is the connected one (`providersPage`).
     /// Providers to sign in to with a subscription or account.
-    case providerSubscriptions
+    case providerSubscriptions(String)
     /// Providers that take an API key.
-    case providerKeys
+    case providerKeys(String)
     /// One provider: its connection, or a login by the method given.
-    case provider(String, LoginMethod?)
+    case provider(host: String, id: String, method: LoginMethod?)
     /// Add a custom endpoint, or edit the one with this id.
-    case customEndpoint(String?)
+    case customEndpoint(host: String, id: String?)
 }
 
 /// The page for a route. The root stack and the settings sheet's own stack
@@ -41,10 +43,22 @@ struct RouteDestination: View {
         case .settings: SettingsView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
         case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
-        case .providerSubscriptions: ProviderGridView(model: model, kind: .subscription)
-        case .providerKeys: ProviderGridView(model: model, kind: .apiKey)
-        case .provider(let id, let method): ProviderPageView(model: model, providerId: id, method: method)
-        case .customEndpoint(let id): CustomEndpointView(model: model, providerId: id)
+        case .providerSubscriptions(let hostKey):
+            ProvidersGate(model: model, hostKey: hostKey) { providers in
+                ProviderGridView(model: model, hostKey: hostKey, all: providers.providers, kind: .subscription)
+            }
+        case .providerKeys(let hostKey):
+            ProvidersGate(model: model, hostKey: hostKey) { providers in
+                ProviderGridView(model: model, hostKey: hostKey, all: providers.providers, kind: .apiKey)
+            }
+        case .provider(let hostKey, let id, let method):
+            ProvidersGate(model: model, hostKey: hostKey) { _ in
+                ProviderPageView(model: model, hostKey: hostKey, providerId: id, method: method)
+            }
+        case .customEndpoint(let hostKey, let id):
+            ProvidersGate(model: model, hostKey: hostKey) { _ in
+                CustomEndpointView(model: model, hostKey: hostKey, providerId: id)
+            }
         }
     }
 }

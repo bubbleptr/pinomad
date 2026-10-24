@@ -12,6 +12,7 @@ import UIKit
 /// to the Providers list.
 struct ProviderPageView: View {
     let model: AppModel
+    let hostKey: String
     let providerId: String
     /// The login the page was opened for; nil opens on the connection.
     let method: LoginMethod?
@@ -21,8 +22,9 @@ struct ProviderPageView: View {
     @State private var login: LoginMethod?
     @State private var tracker = LoginTracker()
 
-    init(model: AppModel, providerId: String, method: LoginMethod?) {
+    init(model: AppModel, hostKey: String, providerId: String, method: LoginMethod?) {
         self.model = model
+        self.hostKey = hostKey
         self.providerId = providerId
         self.method = method
         // Decided before the first frame, so the connection never flashes
@@ -47,12 +49,12 @@ struct ProviderPageView: View {
                                 Text(note).font(.subheadline).foregroundStyle(.secondary)
                             }
                             LoginPanel(
-                                model: model, provider: provider, method: login, tracker: $tracker,
-                                onCancel: leaveLogin)
+                                model: model, hostKey: hostKey, provider: provider, method: login,
+                                tracker: $tracker, onCancel: leaveLogin)
                                 .id(login)
                         }
                     } else {
-                        ConnectionActions(model: model, provider: provider, onLogin: startLogin) {
+                        ConnectionActions(model: model, hostKey: hostKey, provider: provider, onLogin: startLogin) {
                             popToProviders()
                         }
                     }
@@ -113,7 +115,7 @@ struct ProviderPageView: View {
     }
 
     private func abandon() {
-        if let id = tracker.leave() { model.abandonLogin(id) }
+        if let id = tracker.leave() { model.abandonLogin(id, on: hostKey) }
     }
 }
 
@@ -121,6 +123,7 @@ struct ProviderPageView: View {
 /// environment, so it has no log out here.
 private struct ConnectionActions: View {
     let model: AppModel
+    let hostKey: String
     let provider: ProviderInfo
     let onLogin: (LoginMethod) -> Void
     let onRemoved: () -> Void
@@ -145,7 +148,7 @@ private struct ConnectionActions: View {
                             isPresented: $confirming, titleVisibility: .visible
                         ) {
                             Button(provider.stored?.kind == .apiKey ? "Remove key" : "Log out", role: .destructive) {
-                                model.logout(provider: provider.id)
+                                model.logout(provider: provider.id, on: hostKey)
                                 onRemoved()
                             }
                         } message: {
@@ -193,6 +196,7 @@ private struct ConnectionActions: View {
 /// to press sign in; an API key login starts on arrival.
 private struct LoginPanel: View {
     let model: AppModel
+    let hostKey: String
     let provider: ProviderInfo
     let method: LoginMethod
     @Binding var tracker: LoginTracker
@@ -266,7 +270,7 @@ private struct LoginPanel: View {
                     prompt: prompt, connected: connected, cancelError: cancelError, onCancel: cancel
                 ) { value in
                     do {
-                        try await model.answerLogin(flow.id, prompt: prompt.id, value: value)
+                        try await model.answerLogin(flow.id, prompt: prompt.id, value: value, on: hostKey)
                         return nil
                     } catch {
                         return model.describe(error)
@@ -292,16 +296,16 @@ private struct LoginPanel: View {
         startError = nil
         Task {
             do {
-                let id = try await model.beginLogin(provider: provider.id, method: method)
+                let id = try await model.beginLogin(provider: provider.id, method: method, on: hostKey)
                 if tracker.started(id, token: token) {
                     starting = false
                 } else {
                     // The page left (or a newer start won) while this one was in flight.
-                    model.abandonLogin(id)
+                    model.abandonLogin(id, on: hostKey)
                 }
             } catch {
                 // A start lost to a disconnect may have adopted the host's flow.
-                guard tracker.failed(token, logins: model.providers?.logins ?? []) else { return }
+                guard tracker.failed(token, error: error, logins: model.providers?.logins ?? []) else { return }
                 if tracker.loginId == nil { startError = model.describe(error) }
                 starting = false
             }
@@ -313,7 +317,7 @@ private struct LoginPanel: View {
         cancelError = nil
         Task {
             do {
-                try await model.cancelLogin(id)
+                try await model.cancelLogin(id, on: hostKey)
                 onCancel()
             } catch {
                 tracker.cancelFailed(id)

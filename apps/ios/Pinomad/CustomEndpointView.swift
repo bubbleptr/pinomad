@@ -7,6 +7,7 @@ import SwiftUI
 /// an empty field keeps what is stored.
 struct CustomEndpointView: View {
     let model: AppModel
+    let hostKey: String
     /// The endpoint being edited; nil adds one.
     let providerId: String?
 
@@ -142,7 +143,7 @@ struct CustomEndpointView: View {
                                 guard let id = providerId else { return }
                                 Task {
                                     do {
-                                        try await model.removeCustomProvider(id)
+                                        try await model.removeCustomProvider(id, on: hostKey)
                                         popToProviders()
                                     } catch {
                                         removeError = model.describe(error)
@@ -192,7 +193,7 @@ struct CustomEndpointView: View {
         do {
             let listed = try await model.listEndpointModels(
                 api: api, baseUrl: baseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
-                apiKey: apiKey.isEmpty ? nil : apiKey, providerId: providerId)
+                apiKey: apiKey.isEmpty ? nil : apiKey, providerId: providerId, on: hostKey)
             guard asked.answers(fetchForm) else { return }
             if listed.isEmpty {
                 fetchProblem = "The endpoint listed no models. Enter model IDs by hand."
@@ -220,7 +221,7 @@ struct CustomEndpointView: View {
             id: providerId ?? customEndpointId(trimmed), name: trimmed, api: api,
             baseUrl: baseUrl.trimmingCharacters(in: .whitespacesAndNewlines), models: modelList)
         do {
-            try await model.saveCustomProvider(input, apiKey: apiKey.isEmpty ? .keep : .set(key: apiKey))
+            try await model.saveCustomProvider(input, apiKey: apiKey.isEmpty ? .keep : .set(key: apiKey), on: hostKey)
             popToProviders()
         } catch {
             saveError = model.describe(error)
