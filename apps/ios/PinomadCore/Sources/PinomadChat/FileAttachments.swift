@@ -163,7 +163,7 @@ public struct FileAttachmentTray: Equatable, Sendable {
         public internal(set) var error: String?
         /// When the upload began; nil on a restored queued edit whose bytes
         /// already live on the host and never age out with this tray.
-        public let createdAt: Date?
+        public internal(set) var createdAt: Date?
         /// Nil on a restored queued edit: the bytes already live on the host.
         public let source: FileAttachmentSource?
 
@@ -290,10 +290,13 @@ public struct FileAttachmentTray: Equatable, Sendable {
         }
     }
 
-    public mutating func retry(id: String) {
+    public mutating func retry(id: String, now: Date = .now) {
         guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].source != nil else { return }
         entries[index].status = .uploading
         entries[index].error = nil
+        // A fresh host upload restarts the TTL; a resumed one keeps the
+        // original begin time so the client's expiry still tracks the host.
+        if entries[index].attachmentId == nil { entries[index].createdAt = now }
     }
 
     public mutating func remove(id: String) {

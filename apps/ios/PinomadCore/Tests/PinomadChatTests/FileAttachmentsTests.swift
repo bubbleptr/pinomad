@@ -244,8 +244,9 @@ private actor UploadSpy {
         #expect(tray.entry(entry.id)?.received == 0)
         #expect(tray.entry(entry.id)?.error == "Attachment expired; attach it again")
         #expect(!tray.canSend)
-        tray.retry(id: entry.id)
+        tray.retry(id: entry.id, now: .now)
         #expect(tray.uploading)
+        #expect((tray.entry(entry.id)?.createdAt ?? old) > old)
     }
 
     @Test func attachmentRejectionNoticesMatchTheHostsWords() {
