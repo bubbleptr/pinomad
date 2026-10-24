@@ -146,6 +146,11 @@ pub enum CallResult {
     Image { image: MessageImage },
     /// `listCommands` — the host-declared slash commands, in menu order.
     Commands { commands: Vec<CommandEntry> },
+    /// `beginAttachment` — the host-generated id the chunks append to.
+    BeginAttachment { attachment_id: String },
+    /// `appendAttachment` — bytes the host holds and whether the upload
+    /// reached its promised size.
+    AppendAttachment { received: u64, complete: bool },
     /// `createPairing` — the one-time offer another device scans; `url`
     /// carries the host key and secret, `expires_at` is epoch ms.
     Pairing { url: String, expires_at: f64 },
@@ -310,6 +315,39 @@ pub(crate) fn skills_of(value: Option<&Json>) -> Result<Vec<SkillEntry>, String>
             Ok(SkillEntry { name, description, source })
         })
         .collect()
+}
+
+/// `beginAttachment`'s typed result — strict like the other typed
+/// results; an upload without a usable id cannot be resumed.
+pub(crate) fn begin_attachment_of(value: Option<&Json>) -> Result<String, String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed beginAttachment result".to_string())?;
+    value
+        .get("attachmentId")
+        .and_then(Json::as_str)
+        .filter(|id| !id.is_empty())
+        .map(|id| id.to_string_lossy())
+        .ok_or_else(|| "malformed beginAttachment result: attachmentId".to_string())
+}
+
+/// `appendAttachment`'s typed result: `received` is a non-negative byte
+/// count, `complete` a real boolean.
+pub(crate) fn append_attachment_of(value: Option<&Json>) -> Result<(u64, bool), String> {
+    let value = value
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "malformed appendAttachment result".to_string())?;
+    let received = match value.get("received").and_then(Json::as_number) {
+        Some(number) if number >= 0.0 && number.fract() == 0.0 && number <= u64::MAX as f64 => {
+            number as u64
+        }
+        _ => return Err("malformed appendAttachment result: received".to_string()),
+    };
+    let complete = match value.get("complete") {
+        Some(Json::Bool(complete)) => *complete,
+        _ => return Err("malformed appendAttachment result: complete".to_string()),
+    };
+    Ok((received, complete))
 }
 
 /// A `listCommands` entry (ADR-0029): what a `/` menu shows and
