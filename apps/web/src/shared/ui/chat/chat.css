@@ -1034,6 +1034,14 @@ mark.chat-skill-mention {
   font-weight: var(--font-weight-normal, 400) !important;
 }
 
+/* Pills like the model selector above them. Inside the card Astryx rounds
+   buttons to the card radius minus its padding (16px, a pill at 28px tall);
+   the tray sits outside the card, so its Selectors fall back to
+   --radius-element. */
+.prompt-input__footer .astryx-selector {
+  border-radius: var(--radius-full) !important;
+}
+
 /* —— Chain of thought: rail skin —— */
 
 .chain-of-thought-rail {

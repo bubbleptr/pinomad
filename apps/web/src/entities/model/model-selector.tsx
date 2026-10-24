@@ -7,6 +7,7 @@
 // model, thinking level and system prompt — so it lives in this popover too.
 import { useRef, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
+import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Popover } from "@astryxdesign/core/Popover";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -14,7 +15,7 @@ import type { ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
-import { Check, ChevronDown } from "@/shared/ui/icons";
+import { Check } from "@/shared/ui/icons";
 
 /**
  * The popover's Agent section: a draft or a 5.18 conversation picks one of
@@ -227,7 +228,8 @@ export function ModelSelector({
           {sourceHint === undefined || problem !== undefined ? null : (
             <span className="shrink-0 truncate text-xs text-muted">{sourceHint}</span>
           )}
-          <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
+          {/* Astryx's own glyph, so it matches the draft tray's Selector chevrons. */}
+          <Icon icon="chevronDown" size="sm" color="inherit" />
         </span>
       </Button>
     </Popover>
