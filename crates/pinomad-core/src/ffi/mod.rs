@@ -33,6 +33,8 @@ pub(crate) enum ResultKind {
     Skills,
     Image,
     Commands,
+    BeginAttachment,
+    AppendAttachment,
     WithdrawQueued,
     SteerQueued,
 }
@@ -145,6 +147,20 @@ impl PinomadClient {
                             Ok(commands) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Commands { commands },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::BeginAttachment) => match begin_attachment_of(value.as_ref()) {
+                            Ok(attachment_id) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::BeginAttachment { attachment_id },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error },
+                        },
+                        Some(ResultKind::AppendAttachment) => match append_attachment_of(value.as_ref()) {
+                            Ok((received, complete)) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::AppendAttachment { received, complete },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error },
                         },

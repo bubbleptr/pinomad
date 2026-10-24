@@ -305,6 +305,7 @@ fn a_failed_command_call_reports_success_and_a_notice() {
             request_id: None,
             images: vec![],
             skills: None,
+            attachments: vec![],
         },
     );
     // Command-class failures still succeed — no conversation is shown, so
@@ -370,6 +371,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
                 ref_: None,
             }],
             skills: None,
+            attachments: vec![],
         },
     );
     h.invoke(
@@ -386,6 +388,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             agent: None,
             images: vec![],
             skills: None,
+            attachments: vec![],
         },
     );
     h.invoke(3, FfiCall::SetPushToken { token: None });
@@ -401,6 +404,7 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             agent: Some("reviewer".to_string()),
             images: vec![],
             skills: None,
+            attachments: vec![],
         },
     );
     h.invoke(
@@ -423,6 +427,28 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
     h.invoke(9, FfiCall::SwitchConversation { id: 2 });
     h.invoke(10, FfiCall::SetAgent { agent: Some("reviewer".to_string()) });
     h.invoke(11, FfiCall::SetAgent { agent: None });
+    // 5.19 additions: host-stored attachment uploads and message refs.
+    h.invoke(12, FfiCall::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    h.invoke(
+        13,
+        FfiCall::AppendAttachment {
+            attachment_id: "A".repeat(22),
+            offset: 0,
+            data: "aGVsbG8=".to_string(),
+        },
+    );
+    h.invoke(
+        14,
+        FfiCall::Submit {
+            text: "look".to_string(),
+            when_busy: SubmitMode::FollowUp,
+            target: Some(2),
+            request_id: Some("r".to_string()),
+            images: vec![],
+            skills: None,
+            attachments: vec!["A".repeat(22)],
+        },
+    );
 
     let calls = call_frames(&h);
     let by_name: HashMap<String, Vec<&Json>> = calls.iter().fold(HashMap::new(), |mut acc, frame| {
@@ -442,6 +468,9 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
         ("call-steerQueued", by_name["steerQueued"][0]),
         ("call-setAgent", by_name["setAgent"][0]),
         ("call-setAgent-null", by_name["setAgent"][1]),
+        ("call-beginAttachment", by_name["beginAttachment"][0]),
+        ("call-appendAttachment", by_name["appendAttachment"][0]),
+        ("call-submit-attachments", by_name["submit"][1]),
     ]
     .into_iter()
     .collect();
@@ -490,6 +519,7 @@ fn ffi_sends_image_refs_and_keeps_bytes_inline() {
                 },
             ],
             skills: None,
+            attachments: vec![],
         },
     );
     let frames = call_frames(&h);
@@ -1107,6 +1137,199 @@ fn parse_command_input_splits_a_listed_command() {
 }
 
 #[test]
+fn begin_and_append_attachment_resolve_typed_results() {
+    let id = "A".repeat(22);
+    let mut host = ScriptedHost::new();
+    host.call_results.insert(
+        "beginAttachment".to_string(),
+        obj(&[("attachmentId", Json::from(id.clone()))]),
+    );
+    host.call_results.insert(
+        "appendAttachment".to_string(),
+        obj(&[("received", Json::from(5.0)), ("complete", Json::Bool(true))]),
+    );
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    h.invoke(2, FfiCall::AppendAttachment {
+        attachment_id: id.clone(),
+        offset: 0,
+        data: "aGVsbG8=".to_string(),
+    });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Ok(CallResult::BeginAttachment { attachment_id: id.clone() }))
+    );
+    assert_eq!(
+        h.ops.get(&2),
+        Some(&Ok(CallResult::AppendAttachment { received: 5, complete: true }))
+    );
+    let frames = call_frames(&h);
+    assert_eq!(
+        frames[0].get("args").cloned(),
+        Some(obj(&[("name", Json::from("notes.txt")), ("size", Json::from(5.0))]))
+    );
+    assert_eq!(
+        frames[1].get("args").cloned(),
+        Some(obj(&[
+            ("attachmentId", Json::from(id)),
+            ("offset", Json::from(0.0)),
+            ("data", Json::from("aGVsbG8=")),
+        ]))
+    );
+}
+
+#[test]
+fn attachment_results_malformed_or_error_fail_the_op() {
+    for (index, value) in [
+        obj(&[]),
+        obj(&[("attachmentId", Json::from(""))]),
+        obj(&[("attachmentId", Json::from(3.0))]),
+        Json::Null,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("beginAttachment".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed beginAttachment result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    for (index, value) in [
+        obj(&[]),
+        obj(&[("received", Json::from(-1.0)), ("complete", Json::Bool(true))]),
+        obj(&[("received", Json::from(1.5)), ("complete", Json::Bool(true))]),
+        obj(&[("received", Json::from(5.0)), ("complete", Json::from("yes"))]),
+        Json::Null,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut host = ScriptedHost::new();
+        host.call_results.insert("appendAttachment".to_string(), value);
+        let mut h = Harness::boot(host, "req-1");
+        h.invoke(1, FfiCall::AppendAttachment {
+            attachment_id: "A".repeat(22),
+            offset: 0,
+            data: "aGVsbG8=".to_string(),
+        });
+        match h.ops.get(&1) {
+            Some(Err(error)) => assert!(error.contains("malformed appendAttachment result"), "#{index}: {error}"),
+            other => panic!("#{index}: malformed value must fail the op, got {other:?}"),
+        }
+    }
+    // A host-side ok:false is an OperationFailed too.
+    let mut host = ScriptedHost::new();
+    host.call_errors.insert("beginAttachment".to_string(), "attachment budget exceeded".to_string());
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    assert_eq!(h.ops.get(&1), Some(&Err("attachment budget exceeded".to_string())));
+}
+
+#[test]
+fn begin_and_append_attachment_need_a_5_19_host() {
+    let mut host = ScriptedHost::new();
+    host.minor = 18.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    h.invoke(2, FfiCall::AppendAttachment {
+        attachment_id: "A".repeat(22),
+        offset: 0,
+        data: "aGVsbG8=".to_string(),
+    });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.19")));
+    assert!(matches!(h.ops.get(&2), Some(Err(e)) if e.contains("needs protocol 5.19")));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "beginAttachment" && s.to_string_lossy() != "appendAttachment").unwrap_or(true)
+    }));
+}
+
+#[test]
+fn submit_and_create_carry_attachments_and_refuse_them_before_5_19() {
+    let id = "A".repeat(22);
+    let mut h = Harness::new();
+    h.invoke(
+        1,
+        FfiCall::Submit {
+            text: "look".to_string(),
+            when_busy: SubmitMode::FollowUp,
+            target: Some(2),
+            request_id: Some("r".to_string()),
+            images: vec![],
+            skills: None,
+            attachments: vec![id.clone()],
+        },
+    );
+    h.invoke(
+        2,
+        FfiCall::CreateConversation {
+            home: NewConversationHome::Chat,
+            text: "go".to_string(),
+            checkout: None,
+            model: None,
+            thinking_level: None,
+            agent: None,
+            images: vec![],
+            skills: None,
+            attachments: vec![id.clone()],
+        },
+    );
+    let frames = call_frames(&h);
+    let submit = frames.iter().find(|f| f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "submit").unwrap_or(false)).unwrap();
+    assert_eq!(
+        submit.get("args").and_then(|args| args.get("attachments")).cloned(),
+        Some(Json::array(vec![Json::from(id.clone())]))
+    );
+    let create = frames.iter().find(|f| f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() == "createConversation").unwrap_or(false)).unwrap();
+    assert_eq!(
+        create.get("args").and_then(|args| args.get("attachments")).cloned(),
+        Some(Json::array(vec![Json::from(id.clone())]))
+    );
+
+    let mut host = ScriptedHost::new();
+    host.minor = 18.0;
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(
+        1,
+        FfiCall::Submit {
+            text: "look".to_string(),
+            when_busy: SubmitMode::FollowUp,
+            target: Some(2),
+            request_id: Some("r".to_string()),
+            images: vec![],
+            skills: None,
+            attachments: vec![id.clone()],
+        },
+    );
+    h.invoke(
+        2,
+        FfiCall::CreateConversation {
+            home: NewConversationHome::Chat,
+            text: "go".to_string(),
+            checkout: None,
+            model: None,
+            thinking_level: None,
+            agent: None,
+            images: vec![],
+            skills: None,
+            attachments: vec![id],
+        },
+    );
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::Unit)));
+    assert_eq!(h.ops.get(&2), Some(&Ok(CallResult::Unit)));
+    assert!(call_frames(&h).iter().all(|f| {
+        f.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy() != "submit" && s.to_string_lossy() != "createConversation").unwrap_or(true)
+    }));
+    assert_eq!(
+        h.client.snapshot().unwrap().notices.iter().filter(|notice| notice.message.contains("needs protocol 5.19")).count(),
+        2
+    );
+}
+
+#[test]
 fn list_files_needs_a_5_10_host() {
     let mut host = ScriptedHost::new();
     host.minor = 9.0;
@@ -1572,6 +1795,7 @@ fn ffi_forwards_bound_skills() {
             request_id: None,
             images: vec![],
             skills: Some(vec!["review".to_string()]),
+            attachments: vec![],
         },
     );
     let frames = call_frames(&h);

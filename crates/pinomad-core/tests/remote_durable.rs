@@ -765,6 +765,7 @@ fn submit_answer_and_abort_target_a_chosen_conversation() {
         request_id: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     h.invoke(3, Call::Answer {
         kind: DOC_KIND.to_string(),
@@ -780,6 +781,7 @@ fn submit_answer_and_abort_target_a_chosen_conversation() {
         request_id: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     let calls = h.host.calls();
     let methods: Vec<String> = calls
@@ -805,6 +807,7 @@ fn submit_sends_the_callers_request_id() {
         request_id: Some("retry:run-4".to_string()),
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     h.invoke(3, Call::Submit {
         text: "fresh".to_string(),
@@ -813,6 +816,7 @@ fn submit_sends_the_callers_request_id() {
         request_id: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     let submits = h.host.method("submit");
     assert_eq!(submits[0].get("args").and_then(|a| a.get("requestId")).and_then(Json::as_str).unwrap().to_string_lossy(), "retry:run-4");
@@ -830,6 +834,7 @@ fn images_need_a_5_5_host() {
         request_id: None,
         images,
         skills: None,
+        attachments: vec![],
     };
     let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(4.0))]);
     let mut h = Harness::new(old);
@@ -867,6 +872,7 @@ fn image_refs_need_a_5_15_host() {
         request_id: None,
         images,
         skills: None,
+        attachments: vec![],
     };
     let create = |images: Vec<Json>| Call::CreateConversation {
         home: obj(&[("kind", Json::from("chat"))]),
@@ -877,6 +883,7 @@ fn image_refs_need_a_5_15_host() {
         agent: None,
         images,
         skills: None,
+        attachments: vec![],
     };
 
     let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(14.0))]);
@@ -931,6 +938,148 @@ fn image_refs_need_a_5_15_host() {
         creates[0].get("args").and_then(|a| a.get("images")).cloned(),
         Some(Json::array(vec![reference]))
     );
+}
+
+#[test]
+fn attachments_need_a_5_19_host_and_are_capped() {
+    let id = "A".repeat(22);
+    let submit = |attachments: Vec<String>| Call::Submit {
+        text: "look".to_string(),
+        when_busy: "followUp".to_string(),
+        target: None,
+        request_id: None,
+        images: vec![],
+        skills: None,
+        attachments,
+    };
+    let create = |attachments: Vec<String>| Call::CreateConversation {
+        home: obj(&[("kind", Json::from("chat"))]),
+        text: "hi".to_string(),
+        checkout: None,
+        model: None,
+        thinking_level: None,
+        agent: None,
+        images: vec![],
+        skills: None,
+        attachments,
+    };
+
+    // A pre-5.19 host calls the field malformed and 4400s the connection.
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(18.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, submit(vec![id.clone()]));
+    h.invoke(3, create(vec![id.clone()]));
+    assert!(h.host.method("submit").is_empty());
+    assert!(h.host.method("createConversation").is_empty());
+    assert_eq!(
+        h.notices()
+            .iter()
+            .filter(|notice| {
+                notice
+                    .get("message")
+                    .and_then(Json::as_str)
+                    .is_some_and(|message| message.to_string_lossy().contains("needs protocol 5.19"))
+            })
+            .count(),
+        2,
+        "both send paths refuse the field locally"
+    );
+
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, submit(vec![id.clone()]));
+    h.invoke(3, create(vec![id.clone()]));
+    let attachments_arg = |frame: &Json| frame.get("args").and_then(|args| args.get("attachments")).cloned();
+    assert_eq!(
+        attachments_arg(&h.host.method("submit")[0]),
+        Some(Json::array(vec![Json::from(id.clone())]))
+    );
+    assert_eq!(
+        attachments_arg(&h.host.method("createConversation")[0]),
+        Some(Json::array(vec![Json::from(id.clone())]))
+    );
+    // An empty list is omitted, exactly like images and skills.
+    h.invoke(4, submit(vec![]));
+    assert_eq!(attachments_arg(&h.host.method("submit")[1]), None);
+
+    // More than ten references are refused before the frame goes out.
+    h.invoke(5, submit(vec![id; 11]));
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert!(h.notices().iter().any(|notice| {
+        notice
+            .get("message")
+            .and_then(Json::as_str)
+            .is_some_and(|message| message.to_string_lossy().contains("At most 10 attachments per message"))
+    }));
+}
+
+#[test]
+fn begin_and_append_attachment_are_direct_and_resolve_typed_values() {
+    let id = "A".repeat(22);
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.call_results.insert(
+        "beginAttachment".to_string(),
+        obj(&[("attachmentId", Json::from(id.clone()))]),
+    );
+    host.call_results.insert(
+        "appendAttachment".to_string(),
+        obj(&[("received", Json::from(5.0)), ("complete", Json::Bool(true))]),
+    );
+    let mut h = Harness::new(host);
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::RenameConversation { id: 1, title: "x".to_string() });
+    h.invoke(3, Call::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    h.invoke(4, Call::AppendAttachment {
+        attachment_id: id.clone(),
+        offset: 0,
+        data: "aGVsbG8=".to_string(),
+    });
+    // Same unqueued shape as listFiles/image: the hung command blocks the
+    // queued rename but not the upload calls.
+    assert!(h.host.method("renameConversation").is_empty());
+    assert_eq!(h.host.method("beginAttachment").len(), 1);
+    assert_eq!(h.host.method("appendAttachment").len(), 1);
+    assert_eq!(
+        h.host.method("beginAttachment")[0].get("args").cloned(),
+        Some(obj(&[("name", Json::from("notes.txt")), ("size", Json::from(5.0))]))
+    );
+    assert_eq!(
+        h.host.method("appendAttachment")[0].get("args").cloned(),
+        Some(obj(&[
+            ("attachmentId", Json::from(id.clone())),
+            ("offset", Json::from(0.0)),
+            ("data", Json::from("aGVsbG8=")),
+        ]))
+    );
+    assert_eq!(
+        h.ops.get(&3),
+        Some(&Ok(Some(obj(&[("attachmentId", Json::from(id))]))))
+    );
+    assert_eq!(
+        h.ops.get(&4),
+        Some(&Ok(Some(obj(&[
+            ("received", Json::from(5.0)),
+            ("complete", Json::Bool(true)),
+        ]))))
+    );
+}
+
+#[test]
+fn begin_and_append_attachment_need_a_5_19_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(18.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::BeginAttachment { name: "notes.txt".to_string(), size: 5 });
+    h.invoke(2, Call::AppendAttachment {
+        attachment_id: "A".repeat(22),
+        offset: 0,
+        data: "aGVsbG8=".to_string(),
+    });
+    assert!(matches!(h.ops.get(&1), Some(Err(e)) if e.contains("needs protocol 5.19")));
+    assert!(matches!(h.ops.get(&2), Some(Err(e)) if e.contains("needs protocol 5.19")));
+    assert!(h.host.method("beginAttachment").is_empty());
+    assert!(h.host.method("appendAttachment").is_empty());
 }
 
 #[test]
@@ -1271,6 +1420,7 @@ fn create_conversation_with_agent_needs_a_5_10_host() {
         agent,
         images: vec![],
         skills: None,
+        attachments: vec![],
     };
     // Command-class: the op still "succeeds"; the reason lands as a notice —
     // and no frame goes out, since a 5.9 host would silently drop the field.
@@ -1299,6 +1449,7 @@ fn create_conversation_carries_the_agent_on_5_10() {
         agent: Some("reviewer".to_string()),
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     let call = &h.host.method("createConversation")[0];
     assert_eq!(
@@ -1629,6 +1780,7 @@ fn calls_made_while_disconnected_fail_immediately() {
         request_id: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     // Commands report success (the error lands in the notice list), like the
     // reference's #command — but no call frame went out.
@@ -1776,6 +1928,7 @@ fn bound_skills_reach_a_5_16_host_only() {
         request_id: None,
         images: vec![],
         skills,
+        attachments: vec![],
     };
     let create = |skills: Option<Vec<String>>| Call::CreateConversation {
         home: obj(&[("kind", Json::from("chat"))]),
@@ -1786,6 +1939,7 @@ fn bound_skills_reach_a_5_16_host_only() {
         agent: None,
         images: vec![],
         skills,
+        attachments: vec![],
     };
     let skills_arg = |frame: &Json| frame.get("args").and_then(|args| args.get("skills")).cloned();
 

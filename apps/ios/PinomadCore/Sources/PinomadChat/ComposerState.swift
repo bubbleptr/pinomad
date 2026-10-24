@@ -12,17 +12,21 @@ public enum SendSlot: Equatable, Sendable {
 
     /// Offline calls still report success (the reason only becomes a
     /// notice), so a disconnected send would silently eat the draft —
-    /// nothing is live until the connection is back. Images alone are a
-    /// message; images still being prepared hold the send (not Stop). A
-    /// `command` runs at once, so it never offers steering.
+    /// nothing is live until the connection is back. Images or files alone
+    /// are a message; anything still uploading (or a failed upload) holds
+    /// the send, while Stop stays available if a run is going. A `command`
+    /// runs at once, so it never offers steering.
     public init(draft: String, connected: Bool, busy: Bool, hasImages: Bool = false,
-                preparing: Bool = false, command: Bool = false) {
-        if draft.allSatisfy(\.isWhitespace) && !hasImages && !preparing {
+                preparing: Bool = false, hasFiles: Bool = false,
+                filesBlocked: Bool = false, command: Bool = false) {
+        let hasContent = !draft.allSatisfy(\.isWhitespace) || hasImages || (hasFiles && !filesBlocked)
+        if !hasContent && !preparing && !filesBlocked {
             self = busy ? .stop(enabled: connected) : .hidden
-        } else if draft.allSatisfy(\.isWhitespace) && !hasImages && busy {
+        } else if !hasContent && busy {
             self = .stop(enabled: connected)
         } else {
-            self = .send(enabled: connected && !preparing, canSteer: busy && !command)
+            self = .send(enabled: connected && !preparing && !filesBlocked,
+                         canSteer: busy && !command)
         }
     }
 }
@@ -38,7 +42,7 @@ public enum ComposerSubmit: Equatable, Sendable {
 
     /// `commands` nil (unknown listing, an old host, the draft page) means
     /// nothing is a command.
-    public init(draft: String, commands: [CommandEntry]?, hasImages: Bool) {
+    public init(draft: String, commands: [CommandEntry]?, hasImages: Bool, hasFiles: Bool = false) {
         guard let commands,
               let input = parseCommandInput(text: draft, names: commands.map(\.name))
         else {
@@ -49,6 +53,8 @@ public enum ComposerSubmit: Equatable, Sendable {
             self = .blocked(reason: "/\(input.name) isn't available: \(reason)")
         } else if hasImages {
             self = .blocked(reason: "Commands can't include images. Remove them to run /\(input.name).")
+        } else if hasFiles {
+            self = .blocked(reason: "Commands can't include files. Remove them to run /\(input.name).")
         } else {
             self = .command(name: input.name, args: input.args)
         }

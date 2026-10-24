@@ -19,6 +19,12 @@ extension AppModel {
         // read from PINOMAD_* environment variables.
         let args = UserDefaults.standard
         let env = ProcessInfo.processInfo.environment
+        // The simulator end-to-end seam: attach one file from the app
+        // container after pairing, then create the draft once it uploaded.
+        if let file = env["PINOMAD_ATTACH_FILE"] {
+            pendingAttachFile = file
+            pendingAttachSend = env["PINOMAD_AUTOSEND"] != nil
+        }
         if env["PINOMAD_KEEPSCREEN"] != nil {
             // Perf runs: keep the phone awake so a scripted measurement
             // window isn't cut short by auto-lock.
@@ -101,6 +107,12 @@ extension AppModel {
             startContextDemo(context)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_FILES"] {
+            // File chips in the draft composer, or sent files in a bubble,
+            // without a host — the three upload states for the screenshots.
+            startFilesDemo(mode)
+            return true
+        }
         if let mode = env["PINOMAD_DEMO_AGENT"] {
             // The conversation model sheet's pickable Agent section on a
             // 5.18 host: `missing` keeps a since-removed agent selected,
@@ -118,6 +130,143 @@ extension AppModel {
             return true
         }
         return false
+    }
+
+    /// Attach the injected file once the session is ready, then (when
+    /// `PINOMAD_AUTOSEND` is set) create the draft after its upload settles.
+    /// This drives the real upload and send paths; only the picker tap is
+    /// skipped, because simctl has no file-picker automation.
+    func consumeDevAttachRequest() {
+        guard let path = pendingAttachFile else { return }
+        pendingAttachFile = nil
+        let url = URL(fileURLWithPath: path)
+        guard let data = try? Data(contentsOf: url) else {
+            showToast("Dev attach file is unreadable", level: "error")
+            return
+        }
+        navPath = [.newConversation]
+        let key = Self.draftKey
+        let name = url.lastPathComponent
+        Task { [weak self] in
+            // Ready arrives before the first view, so the host's version is
+            // not known yet; wait for the 5.19 announcement before attaching.
+            for _ in 0..<150 {
+                guard let self else { return }
+                if self.hostSupports(.attachments) {
+                    self.attachFileData(conversation: key, name: name, data: data)
+                    self.attachAfterUploadIfNeeded(key: key)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func attachAfterUploadIfNeeded(key: UInt64) {
+        guard pendingAttachSend else { return }
+        Task { [weak self] in
+            for _ in 0..<150 {
+                guard let self else { return }
+                if let tray = self.fileTrays[key], !tray.isEmpty, tray.canSend,
+                   self.snapshot?.organized != nil {
+                    self.pendingAttachSend = false
+                    await self.createConversation()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    /// `PINOMAD_DEMO_FILES=uploading|done|failed|all|bubble`: a draft with
+    /// staged file chips, or a sent message with attachment chips.
+    private func startFilesDemo(_ mode: String) {
+        phase = .connected
+        let host = HostInfo(version: "5.19.0", protocol: ProtocolVersion(major: 5, minor: 19))
+        let ref = ModelRef(provider: "faux", modelId: "faux-1")
+        let model = ModelSummary(
+            provider: ref.provider, modelId: ref.modelId, name: "Faux Model",
+            contextWindow: 200_000, thinkingLevels: [.off], images: true
+        )
+        let defaults = Defaults(model: ref, thinkingLevel: .off)
+
+        if mode == "bubble" || mode == "queue" {
+            let attachments = [
+                UserAttachment(id: String(repeating: "A", count: 22), name: "parser.patch", size: 2_048),
+                UserAttachment(id: String(repeating: "B", count: 22), name: "build.log", size: 8_192),
+            ]
+            let now = Date.now.timeIntervalSince1970 * 1000
+            let summary = ConversationSummary(
+                id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+                title: "Parser regression", status: nil, updatedAt: now,
+                label: nil, role: nil, activity: nil
+            )
+            let chat: [ChatEntry] = [
+                .user(id: "u1", text: "The parser regression is in this patch and log.",
+                      images: [], skills: [], attachments: attachments),
+            ]
+            let queue = mode == "queue"
+                ? [QueueItem(id: 1, mode: .followUp, text: "Then check the release notes",
+                             imageCount: 0, attachmentCount: 2)]
+                : []
+            let conversation = ConversationSnapshot(
+                id: 1, chat: chat, statusText: "", queueItems: queue,
+                agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
+                questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
+                contextUsage: nil, fresh: true, freshEpoch: 1
+            )
+            navPath = [.conversation(1)]
+            publishDevSnapshot(ClientSnapshot(
+                version: 1, connection: .connected, unauthorized: false,
+                protocolMismatch: nil, host: host, hostName: nil, settings: nil, devices: [],
+                organized: Organized(
+                    chats: [ConversationNode(summary: summary, children: [])],
+                    projects: [], archived: []
+                ),
+                notices: [], models: [model], defaults: defaults,
+                agents: nil, conversation: conversation
+            ))
+            replyStreams.sync(chat: chat)
+            return
+        }
+
+        navPath = [.newConversation]
+        drafts[Self.draftKey] = "Check these files before I send them."
+        var tray = FileAttachmentTray()
+        func source(_ name: String, _ size: Int) -> FileAttachmentSource {
+            FileAttachmentSource(name: name, data: Data(repeating: 0x41, count: size))
+        }
+        switch mode {
+        case "uploading":
+            let uploading = tray.add([source("parser.patch", 2_048)])[0]
+            tray.progress(id: uploading.id, received: 900, complete: false)
+            let done = tray.add([source("release-notes.md", 12_345)])[0]
+            tray.finish(id: done.id, attachmentId: String(repeating: "A", count: 22),
+                        received: 12_345)
+        case "done":
+            let done = tray.add([source("release-notes.md", 12_345)])[0]
+            tray.finish(id: done.id, attachmentId: String(repeating: "A", count: 22),
+                        received: 12_345)
+        case "failed":
+            let failed = tray.add([source("build.log", 8_192)])[0]
+            tray.fail(id: failed.id, error: "host offline")
+        default:
+            let uploading = tray.add([source("parser.patch", 2_048)])[0]
+            tray.progress(id: uploading.id, received: 900, complete: false)
+            let done = tray.add([source("release-notes.md", 12_345)])[0]
+            tray.finish(id: done.id, attachmentId: String(repeating: "A", count: 22),
+                        received: 12_345)
+            let failed = tray.add([source("build.log", 8_192)])[0]
+            tray.fail(id: failed.id, error: "host offline")
+        }
+        fileTrays[Self.draftKey] = tray
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: host, hostName: nil, settings: nil, devices: [],
+            organized: Organized(chats: [], projects: [], archived: []),
+            notices: [], models: [model], defaults: defaults,
+            agents: nil, conversation: nil
+        ))
     }
 
     /// Route `-openConversation` / `PINOMAD_OPEN` after the first ready.

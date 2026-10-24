@@ -62,9 +62,16 @@ extension AppModel {
         let key = Self.draftKey
         let text = drafts[key] ?? ""
         let tray = trays[key] ?? AttachmentTray()
+        var files = fileTrays[key] ?? FileAttachmentTray()
         guard !creating, let session,
-              !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty, tray.preparing == 0
+              !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
+              tray.preparing == 0, files.canSend, !filePreparing(key)
         else { return }
+        if files.expire() {
+            fileTrays[key] = files
+            lastError = "Attachment expired; attach it again"
+            return
+        }
         guard let organized = snapshot?.organized else { return }
         let known = KnownConversations(organized)
         let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
@@ -100,7 +107,7 @@ extension AppModel {
             _ = try await session.invoke(.createConversation(
                 home: draftHome, text: payload.text, checkout: checkout,
                 model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images,
-                skills: payload.skills))
+                skills: payload.skills, attachments: files.ids))
         } catch {
             lastError = "Couldn't create conversation: \(describe(error))"
             return
@@ -111,6 +118,7 @@ extension AppModel {
                 drafts[key] = nil
                 skillChips[key] = nil
                 trays[key] = nil
+                fileTrays[key] = nil
                 // The next draft starts from "no agent", as on the web; the
                 // remembered model/level stays.
                 draftAgent.clearAgent()

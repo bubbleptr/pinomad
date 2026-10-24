@@ -12,12 +12,16 @@ struct NewConversationView: View {
     @State private var showModels = false
     @State private var showPhotos = false
     @State private var showCamera = false
+    @State private var showFiles = false
     @State private var mentions = MentionCoordinator()
     @State private var selection = NSRange()
     @State private var focused = false
 
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
+    private var fileTray: FileAttachmentTray { model.fileTray(for: key) }
+    private var filesPreparing: Bool { model.filePreparing(key) }
+    private var filesBeingRead: Int { model.fileReads[key]?.count ?? 0 }
     private var pick: ModelPick { model.effectiveDraftPick }
     private var resolution: AgentDraft? { model.draftResolution }
     private var currentModel: ModelSummary? { summaryOf(models: model.snapshot?.models ?? [], model: pick.model) }
@@ -105,8 +109,9 @@ struct NewConversationView: View {
 
     private var canSend: Bool {
         model.connected && !model.creating && tray.preparing == 0 && !imagesBlocked
+            && fileTray.canSend && !filesPreparing
             && resolution?.problem == nil
-            && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty)
+            && (!draft.wrappedValue.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !fileTray.isEmpty)
     }
 
     var body: some View {
@@ -164,17 +169,32 @@ struct NewConversationView: View {
         }
         .imageSources(model: model, key: key, accepts: acceptsImages,
                       showPhotos: $showPhotos, showCamera: $showCamera)
+        .fileAttachmentImporter(model: model, key: key, isPresented: $showFiles)
     }
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !tray.isEmpty || tray.error != nil || imagesBlocked {
+            if filesPreparing {
+                Text("Uploading files…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if let status = fileTray.statusText {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
+                || fileTray.error != nil || imagesBlocked {
                 AttachmentStrip(
                     tray: tray,
-                    note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : tray.error,
+                    files: fileTray,
+                    preparingFiles: filesBeingRead,
+                    note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : fileTray.error ?? tray.error,
                     // The create already took these; a change now would be
                     // lost when the draft clears.
-                    remove: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
+                    removeImage: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
+                    removeFile: { if !model.creating { model.removeFile(conversation: key, id: $0) } },
+                    retryFile: { if !model.creating { model.retryFile(conversation: key, id: $0) } },
                     view: { model.viewing = $0 }
                 )
             }
@@ -295,6 +315,8 @@ struct NewConversationView: View {
             acceptsImages: acceptsImages,
             modelName: currentModel?.name ?? currentModel?.modelId,
             canAddImages: tray.freeSlots > 0,
+            attachFiles: model.hostSupports(.attachments)
+                ? { presentAfterMenu { showFiles = true } } : nil,
             photos: { presentAfterMenu { showPhotos = true } },
             camera: camera,
             paste: { model.pasteImage(into: key, accepts: acceptsImages) },

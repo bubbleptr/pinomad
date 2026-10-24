@@ -194,6 +194,10 @@ pub enum FfiCall {
         /// composer's `$name` text to the host's own matching.
         #[uniffi(default)]
         skills: Option<Vec<String>>,
+        /// Host-stored attachment ids (issue #321, 5.19); an older host is
+        /// refused locally instead of being sent a field it calls malformed.
+        #[uniffi(default)]
+        attachments: Vec<String>,
     },
     /// Show and talk to another conversation.
     SwitchConversation { id: u64 },
@@ -232,6 +236,10 @@ pub enum FfiCall {
         /// composer's `$name` text to the host's own matching.
         #[uniffi(default)]
         skills: Option<Vec<String>>,
+        /// Host-stored attachment ids (issue #321, 5.19); an older host is
+        /// refused locally.
+        #[uniffi(default)]
+        attachments: Vec<String>,
     },
     Compact { instructions: Option<String> },
     /// Run the host-declared command `name` (from `ListCommands`) on
@@ -307,6 +315,13 @@ pub enum FfiCall {
     /// the command queue like `listSkills`. Resolves `CallResult::Commands`.
     /// Needs a 5.17 host.
     ListCommands { conversation_id: u64 },
+    /// Create one host-stored upload slot (5.19, issue #321). Resolves
+    /// `CallResult::BeginAttachment`; sent outside the command queue like
+    /// `listFiles`, so chunks never wait behind a submit.
+    BeginAttachment { name: String, size: u64 },
+    /// Append one base64 chunk at `offset` (5.19); the host answers the
+    /// bytes it actually holds so a retry resumes instead of guessing.
+    AppendAttachment { attachment_id: String, offset: u64, data: String },
 }
 
 impl FfiCall {
@@ -322,6 +337,8 @@ impl FfiCall {
             FfiCall::ListSkills { .. } => Some(ResultKind::Skills),
             FfiCall::Image { .. } => Some(ResultKind::Image),
             FfiCall::ListCommands { .. } => Some(ResultKind::Commands),
+            FfiCall::BeginAttachment { .. } => Some(ResultKind::BeginAttachment),
+            FfiCall::AppendAttachment { .. } => Some(ResultKind::AppendAttachment),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
             _ => None,
@@ -338,6 +355,7 @@ impl FfiCall {
                 request_id,
                 images,
                 skills,
+                attachments,
             } => Call::Submit {
                 text,
                 when_busy: when_busy.as_str().to_string(),
@@ -345,6 +363,7 @@ impl FfiCall {
                 request_id,
                 images: images_json(&images),
                 skills,
+                attachments,
             },
             FfiCall::SwitchConversation { id } => Call::SwitchConversation { id },
             FfiCall::SetThinkingLevel { level } => Call::SetThinkingLevel {
@@ -365,6 +384,7 @@ impl FfiCall {
                 agent,
                 images,
                 skills,
+                attachments,
             } => Call::CreateConversation {
                 home: home.to_json(),
                 text,
@@ -374,6 +394,7 @@ impl FfiCall {
                 agent,
                 images: images_json(&images),
                 skills,
+                attachments,
             },
             FfiCall::Compact { instructions } => Call::Compact { instructions },
             FfiCall::RunCommand { name, args, target } => Call::RunCommand { name, args, target },
@@ -418,6 +439,10 @@ impl FfiCall {
             },
             FfiCall::Image { ref_ } => Call::Image { ref_ },
             FfiCall::ListCommands { conversation_id } => Call::ListCommands { conversation_id },
+            FfiCall::BeginAttachment { name, size } => Call::BeginAttachment { name, size },
+            FfiCall::AppendAttachment { attachment_id, offset, data } => {
+                Call::AppendAttachment { attachment_id, offset, data }
+            }
         }
     }
 }

@@ -28,6 +28,8 @@ use crate::u16str::U16String;
 
 const DEFAULT_RECONNECT_MIN_MS: u64 = 200;
 const DEFAULT_RECONNECT_MAX_MS: u64 = 2000;
+/// One message may reference this many host-stored attachments (issue #321).
+const MAX_ATTACHMENTS_PER_MESSAGE: usize = 10;
 const CONNECTED: &str = "connected";
 const RECONNECTING: &str = "reconnecting";
 const CLOSED: &str = "closed";
@@ -55,6 +57,9 @@ pub enum Call {
         /// sent to a 5.16 host — `Some(vec![])` expands nothing, `None`
         /// leaves the host matching `$name` in the text.
         skills: Option<Vec<String>>,
+        /// Host-stored attachment ids to reference (issue #321); a 5.19 host
+        /// only — an older one calls the field malformed and 4400s.
+        attachments: Vec<String>,
     },
     Archive { id: u64, archived: bool },
     Submit {
@@ -67,6 +72,8 @@ pub enum Call {
         /// sent to a 5.16 host — `Some(vec![])` expands nothing, `None`
         /// leaves the host matching `$name` in the text.
         skills: Option<Vec<String>>,
+        /// Host-stored attachment ids to reference (issue #321); 5.19 only.
+        attachments: Vec<String>,
     },
     /// Take a queued input back out of the inbox (5.14). `sent` means it
     /// already reached the transcript. Request-class: the caller owns the
@@ -130,6 +137,40 @@ pub enum Call {
     /// conversation (ADR-0029). Same read-only, unqueued shape as
     /// `listSkills`. Needs a 5.17 host.
     ListCommands { conversation_id: u64 },
+    /// `beginAttachment` — create one host-stored upload slot (5.19, issue
+    /// #321). Read-only in the same sense as `listFiles`: unqueued, so a
+    /// chunk upload never waits behind a submit and never blocks one.
+    BeginAttachment { name: String, size: u64 },
+    /// `appendAttachment` — append one base64 chunk at `offset` (5.19).
+    AppendAttachment { attachment_id: String, offset: u64, data: String },
+}
+
+/// Why a message's attachment ids can't be sent, or `Ok` when they can.
+/// The host enforces both rules too; this is the local refusal that keeps a
+/// pre-5.19 host from 4400-ing the connection.
+fn check_attachments(host_minor: u32, attachments: &[String]) -> Result<(), String> {
+    if attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(format!("At most {MAX_ATTACHMENTS_PER_MESSAGE} attachments per message"));
+    }
+    if !attachments.is_empty() && !host_supports_feature(host_minor, HostFeature::Attachments) {
+        return Err(
+            "The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Put `attachments` on a `submit`/`createConversation` args object;
+/// an empty list is omitted, like images.
+fn set_attachments(args: &mut JsonObject, attachments: &[String]) {
+    if !attachments.is_empty() {
+        set(
+            args,
+            "attachments",
+            Json::array(attachments.iter().map(|id| Json::from(id.clone())).collect()),
+        );
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -945,7 +986,12 @@ impl RemoteDurable {
             | Call::WithdrawQueued { .. }
             | Call::SteerQueued { .. } => OpKind::Request,
             Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. } | Call::ListSkills { .. } | Call::Image { .. } | Call::ListCommands { .. } => OpKind::Direct,
+            Call::ListFiles { .. }
+            | Call::ListSkills { .. }
+            | Call::Image { .. }
+            | Call::ListCommands { .. }
+            | Call::BeginAttachment { .. }
+            | Call::AppendAttachment { .. } => OpKind::Direct,
             _ => OpKind::Command,
         };
         match kind {
@@ -1026,7 +1072,7 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "renameConversation", args });
             }
-            Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images, skills } => {
+            Call::CreateConversation { home, text, checkout, model, thinking_level, agent, images, skills, attachments } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
                 }
@@ -1035,6 +1081,7 @@ impl RemoteDurable {
                 if has_image_ref(images) && !host_supports_feature(self.host_minor, HostFeature::ImageRefs) {
                     return Err(too_old_image_refs());
                 }
+                check_attachments(self.host_minor, attachments)?;
                 // A pre-5.10 host would silently ignore `agent` and create an
                 // unassigned conversation — fail instead (ADR-0023 §8).
                 if agent.is_some() && !host_supports_feature(self.host_minor, HostFeature::AgentConversations) {
@@ -1060,6 +1107,7 @@ impl RemoteDurable {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
                 self.set_bound_skills(&mut args, skills);
+                set_attachments(&mut args, attachments);
                 steps.push_back(Step::Call { method: "createConversation", args: Json::Object(Arc::new(args)) });
                 steps.push_back(Step::Show { target: ShowTarget::FromResult, slot: Slot::Main });
             }
@@ -1072,7 +1120,7 @@ impl RemoteDurable {
                 steps.push_back(Step::UnshowCurrentIf { id: *id, archived: *archived });
                 steps.push_back(Step::UnsideIfArchived { id: *id, archived: *archived });
             }
-            Call::Submit { text, when_busy, target, request_id, images, skills } => {
+            Call::Submit { text, when_busy, target, request_id, images, skills, attachments } => {
                 if !images.is_empty() && !host_supports_feature(self.host_minor, HostFeature::Images) {
                     return Err(too_old_images());
                 }
@@ -1080,6 +1128,7 @@ impl RemoteDurable {
                 if has_image_ref(images) && !host_supports_feature(self.host_minor, HostFeature::ImageRefs) {
                     return Err(too_old_image_refs());
                 }
+                check_attachments(self.host_minor, attachments)?;
                 let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
                 set(&mut args, "conversationId", Json::Number(conversation as f64));
@@ -1090,6 +1139,7 @@ impl RemoteDurable {
                     set(&mut args, "images", Json::array(images.clone()));
                 }
                 self.set_bound_skills(&mut args, skills);
+                set_attachments(&mut args, attachments);
                 steps.push_back(Step::Call { method: "submit", args: Json::Object(Arc::new(args)) });
             }
             Call::WithdrawQueued { submission_id, target } => {
@@ -1313,6 +1363,24 @@ impl RemoteDurable {
                 }
                 let args = obj(&[("conversationId", Json::Number(*conversation_id as f64))]);
                 steps.push_back(Step::Call { method: "listCommands", args });
+            }
+            Call::BeginAttachment { name, size } => {
+                if !host_supports_call(self.host_minor, "beginAttachment") {
+                    return Err(too_old("5.19"));
+                }
+                let args = obj(&[("name", Json::from(name.clone())), ("size", Json::Number(*size as f64))]);
+                steps.push_back(Step::Call { method: "beginAttachment", args });
+            }
+            Call::AppendAttachment { attachment_id, offset, data } => {
+                if !host_supports_call(self.host_minor, "appendAttachment") {
+                    return Err(too_old("5.19"));
+                }
+                let args = obj(&[
+                    ("attachmentId", Json::from(attachment_id.clone())),
+                    ("offset", Json::Number(*offset as f64)),
+                    ("data", Json::from(data.clone())),
+                ]);
+                steps.push_back(Step::Call { method: "appendAttachment", args });
             }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });

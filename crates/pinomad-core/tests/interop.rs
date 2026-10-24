@@ -341,6 +341,7 @@ fn interop_pairs_and_synchronizes_a_conversation() {
         agent: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     remote.wait_until(Duration::from_secs(15), |driver| {
         driver.ops.contains_key(&2)
@@ -587,6 +588,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         agent: None,
         images: vec![],
         skills: None,
+        attachments: vec![],
     });
     remote.wait_until(Duration::from_secs(15), |driver| {
         driver.ops.contains_key(&2) && driver.client.snapshot().and_then(|s| s.conversation.map(|c| c.id)).is_some()

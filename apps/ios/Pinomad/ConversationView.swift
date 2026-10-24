@@ -303,9 +303,9 @@ struct ConversationView: View {
         todo: TodoLine?
     ) -> some View {
         switch entry {
-        case let .user(_, text, images, skills, _):
+        case let .user(_, text, images, skills, attachments):
             // Only the skills the host expanded light up (ADR-0028).
-            UserRow(text: text, images: images, skills: skills).equatable()
+            UserRow(text: text, images: images, skills: skills, attachments: attachments).equatable()
         case let .run(id, cot, _, interrupted, failure):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
@@ -367,10 +367,14 @@ private struct UserRow: View, Equatable {
     let images: [MessageImage]
     /// The skills the host expanded into this message.
     let skills: [String]
+    /// Host-stored files the message referenced (issue #321); chips only.
+    let attachments: [UserAttachment]
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            if !text.isEmpty { UserMessageView(attributedText) }
+            ForEach(Array(attachments.enumerated()), id: \.offset) { _, file in
+                SentFileChip(name: file.name, size: Int(clamping: file.size))
+            }
             ForEach(Array(images.enumerated()), id: \.offset) { _, image in
                 InlineImage(
                     ToolImage(data: image.data, mimeType: image.mimeType, ref: image.ref),
@@ -379,6 +383,7 @@ private struct UserRow: View, Equatable {
                 )
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            if !text.isEmpty { UserMessageView(attributedText) }
         }
     }
 
@@ -398,6 +403,7 @@ private struct UserRow: View, Equatable {
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.text == rhs.text && lhs.images == rhs.images && lhs.skills == rhs.skills
+            && lhs.attachments == rhs.attachments
     }
 }
 
