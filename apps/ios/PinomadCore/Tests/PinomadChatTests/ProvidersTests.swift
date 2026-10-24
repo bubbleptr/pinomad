@@ -13,8 +13,10 @@ private func plan(_ name: String, subscription: Bool = true) -> ProviderOAuth {
     ProviderOAuth(name: name, subscription: subscription, loginLabel: nil)
 }
 
-private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
-    LoginFlow(id: id, providerId: "groq", method: .apiKey, events: [], prompt: nil, state: state, error: nil)
+private func flow(
+    _ id: String, _ state: LoginState, provider: String = "groq", method: LoginMethod = .apiKey
+) -> LoginFlow {
+    LoginFlow(id: id, providerId: provider, method: method, events: [], prompt: nil, state: state, error: nil)
 }
 
 @Suite struct ProviderWordingTests {
@@ -130,7 +132,7 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
 @Suite struct LoginTrackerTests {
     @Test func successEndsTheLoginOnce() {
         var tracker = LoginTracker()
-        let token = tracker.begin()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
         let r1 = tracker.started("l1", token: token)
         #expect(r1)
         let r2 = tracker.observe([flow("l1", .running)])
@@ -147,7 +149,7 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
     /// Leaving the page abandons the login it started.
     @Test func leavingCancelsARunningLogin() {
         var tracker = LoginTracker()
-        let token = tracker.begin()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
         _ = tracker.started("l1", token: token)
         _ = tracker.observe([flow("l1", .running)])
         let r6 = tracker.leave()
@@ -157,18 +159,19 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
     /// A Back before the host answered: the late start is cancelled on arrival.
     @Test func aStartResolvingAfterLeavingIsStale() {
         var tracker = LoginTracker()
-        let token = tracker.begin()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
         let r7 = tracker.leave()
         #expect(r7 == nil)
         let r8 = tracker.started("l1", token: token)
         #expect(!r8)
-        #expect(!tracker.isCurrent(token))
+        let stale = tracker.failed(token, logins: [])
+        #expect(!stale)
     }
 
     /// The host drops ended flows; one that was listed and vanished has ended.
     @Test func aDroppedFlowLeavesThePage() {
         var tracker = LoginTracker()
-        let token = tracker.begin()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
         _ = tracker.started("l1", token: token)
         // Not listed yet: the start answered before the stream caught up.
         let r9 = tracker.observe([])
@@ -184,16 +187,16 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
     /// A failure stays on the page; a retry follows the new flow from scratch.
     @Test func aRetryAfterFailureFollowsTheNewFlow() {
         var tracker = LoginTracker()
-        _ = tracker.started("l1", token: tracker.begin())
+        _ = tracker.started("l1", token: tracker.begin(provider: "groq", method: .apiKey))
         let r13 = tracker.observe([flow("l1", .failed)])
         #expect(r13 == nil)
         let r14 = tracker.leave()
         #expect(r14 == nil)
 
         var retry = LoginTracker()
-        _ = retry.started("l1", token: retry.begin())
+        _ = retry.started("l1", token: retry.begin(provider: "groq", method: .apiKey))
         _ = retry.observe([flow("l1", .failed)])
-        let token = retry.begin()
+        let token = retry.begin(provider: "groq", method: .apiKey)
         let r15 = retry.started("l2", token: token)
         #expect(r15)
         // The old flow was seen, the new one not yet: that's no drop.
@@ -205,7 +208,7 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
 
     @Test func aFailedCancelKeepsTheLoginOurs() {
         var tracker = LoginTracker()
-        _ = tracker.started("l1", token: tracker.begin())
+        _ = tracker.started("l1", token: tracker.begin(provider: "groq", method: .apiKey))
         let r18 = tracker.cancel()
         #expect(r18 == "l1")
         let r19 = tracker.leave()
@@ -213,6 +216,62 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
         tracker.cancelFailed("l1")
         let r20 = tracker.leave()
         #expect(r20 == "l1")
+    }
+
+    /// The connection dropped after the host began the login but before its
+    /// id came back: the flow it began is this page's, prompts and all.
+    @Test func aStartLostToADisconnectAdoptsTheHostsFlow() {
+        var tracker = LoginTracker()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
+        // The reconnect's snapshot can land before the start fails: the start may still answer.
+        let r21 = tracker.observe([flow("l1", .running)])
+        #expect(r21 == nil)
+        #expect(tracker.loginId == nil)
+        let r22 = tracker.failed(token, logins: [flow("l1", .running)])
+        #expect(r22)
+        #expect(tracker.loginId == "l1")
+        // Ours now: leaving cancels it.
+        let r23 = tracker.leave()
+        #expect(r23 == "l1")
+    }
+
+    @Test func aLostStartAdoptsAFlowListedAfterTheFailure() {
+        var tracker = LoginTracker()
+        _ = tracker.failed(tracker.begin(provider: "groq", method: .apiKey), logins: [])
+        #expect(tracker.loginId == nil)
+        // Another provider's, another method's, or an ended flow is not it.
+        let r24 = tracker.observe([
+            flow("l0", .running, provider: "openai"), flow("l2", .running, method: .oauth), flow("l3", .failed),
+        ])
+        #expect(r24 == nil)
+        #expect(tracker.loginId == nil)
+        let r25 = tracker.observe([flow("l1", .running)])
+        #expect(r25 == nil)
+        #expect(tracker.loginId == "l1")
+        let r26 = tracker.observe([])
+        #expect(r26 == .left)
+    }
+
+    @Test func aRetryLostToADisconnectAdoptsTheNewFlow() {
+        var tracker = LoginTracker()
+        _ = tracker.started("l1", token: tracker.begin(provider: "groq", method: .apiKey))
+        _ = tracker.observe([flow("l1", .failed)])
+        let token = tracker.begin(provider: "groq", method: .apiKey)
+        let r27 = tracker.failed(token, logins: [flow("l1", .failed), flow("l2", .running)])
+        #expect(r27)
+        #expect(tracker.loginId == "l2")
+    }
+
+    /// A page that left adopts nothing: no one would be there to cancel it.
+    @Test func aLeftPageAdoptsNothing() {
+        var tracker = LoginTracker()
+        let token = tracker.begin(provider: "groq", method: .apiKey)
+        _ = tracker.leave()
+        let r28 = tracker.failed(token, logins: [flow("l1", .running)])
+        #expect(!r28)
+        let r29 = tracker.observe([flow("l1", .running)])
+        #expect(r29 == nil)
+        #expect(tracker.loginId == nil)
     }
 }
 
@@ -241,6 +300,29 @@ private func flow(_ id: String, _ state: LoginState) -> LoginFlow {
         #expect(baseUrlProblem("localhost:11434") != nil)
         #expect(baseUrlProblem("ftp://host/v1") == "Use an http:// or https:// URL")
         #expect(baseUrlProblem(" http://localhost:11434/v1 ") == nil)
+    }
+
+    /// An answer is for the endpoint as asked about (#343 review).
+    @Test func aModelsAnswerForAnotherEndpointIsDropped() {
+        let asked = EndpointModelsFetch(api: .openaiCompletions, baseUrl: "http://a.local/v1", apiKey: "", models: "")
+        var now = asked
+        #expect(asked.answers(now) && asked.fills(now))
+        now.baseUrl = "http://b.local/v1"
+        #expect(!asked.answers(now))
+        now = asked
+        now.api = .anthropicMessages
+        #expect(!asked.answers(now))
+        now = asked
+        now.apiKey = "sk-other"
+        #expect(!asked.answers(now))
+    }
+
+    @Test func aModelsAnswerKeepsModelsTypedMeanwhile() {
+        let asked = EndpointModelsFetch(api: .openaiCompletions, baseUrl: "http://a.local/v1", apiKey: "", models: "")
+        var now = asked
+        now.models = "my-model"
+        #expect(asked.answers(now))
+        #expect(!asked.fills(now))
     }
 
     @Test func modelsAreTheNonBlankLines() {

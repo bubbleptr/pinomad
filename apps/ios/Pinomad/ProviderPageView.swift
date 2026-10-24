@@ -287,7 +287,7 @@ private struct LoginPanel: View {
     }
 
     private func start() {
-        let token = tracker.begin()
+        let token = tracker.begin(provider: provider.id, method: method)
         starting = true
         startError = nil
         Task {
@@ -300,8 +300,9 @@ private struct LoginPanel: View {
                     model.abandonLogin(id)
                 }
             } catch {
-                guard tracker.isCurrent(token) else { return }
-                startError = model.describe(error)
+                // A start lost to a disconnect may have adopted the host's flow.
+                guard tracker.failed(token, logins: model.providers?.logins ?? []) else { return }
+                if tracker.loginId == nil { startError = model.describe(error) }
                 starting = false
             }
         }

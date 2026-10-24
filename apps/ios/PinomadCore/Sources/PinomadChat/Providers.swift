@@ -215,6 +215,9 @@ public enum LoginOutcome: Equatable, Sendable {
 /// A start that resolves after the panel left (a quick Back) is cancelled
 /// on arrival; a flow that was listed and then vanished has ended — the
 /// host drops ended flows after a while, and a reconnect can skip the end.
+/// A start that failed, though the host began the login before the
+/// connection dropped, takes over the provider's running flow from the
+/// stream — otherwise a retry is refused and Cancel has nothing to cancel.
 public struct LoginTracker: Equatable, Sendable {
     /// The flow this panel follows, once started.
     public private(set) var loginId: String?
@@ -227,14 +230,28 @@ public struct LoginTracker: Equatable, Sendable {
     private var seen = false
     /// The outcome was reported; later snapshots repeat it.
     private var reported = false
+    /// What the last start asked for, until the page leaves: a flow the host
+    /// began for it is this page's even when the start's answer was lost.
+    private var target: Target?
+    /// A start call is in flight; its answer may still name the flow.
+    private var pending = false
+
+    private struct Target: Equatable, Sendable {
+        let provider: String
+        let method: LoginMethod
+    }
 
     public init() {}
 
     public var hasStarted: Bool { generation > 0 }
 
     /// Starting (again). The token names this start to `started`/`failed`.
-    public mutating func begin() -> Int {
+    public mutating func begin(provider: String, method: LoginMethod) -> Int {
         generation += 1
+        target = Target(provider: provider, method: method)
+        pending = true
+        // A retry follows its own flow, not the one that failed.
+        loginId = nil
         return generation
     }
 
@@ -242,20 +259,27 @@ public struct LoginTracker: Equatable, Sendable {
     /// left, or a newer start replaced it): the caller cancels `id`.
     public mutating func started(_ id: String, token: Int) -> Bool {
         guard token == generation else { return false }
-        loginId = id
-        running = id
-        seen = false
-        reported = false
+        pending = false
+        follow(id, listed: false)
         return true
     }
 
-    /// Whether a failed start is still current enough to show.
-    public func isCurrent(_ token: Int) -> Bool { token == generation }
+    /// The start failed; false means it is stale. The connection may have
+    /// dropped after the host began the login, so a running flow for the
+    /// same provider and method in `logins` is adopted as this page's.
+    public mutating func failed(_ token: Int, logins: [LoginFlow]) -> Bool {
+        guard token == generation else { return false }
+        pending = false
+        adopt(logins)
+        return true
+    }
 
     /// The panel went away: the running flow to cancel, if any. Any start
     /// still in flight becomes stale.
     public mutating func leave() -> String? {
         generation += 1
+        target = nil
+        pending = false
         defer { running = nil }
         return running
     }
@@ -278,6 +302,7 @@ public struct LoginTracker: Equatable, Sendable {
 
     /// Follow a new `providers.logins`; an outcome is reported once.
     public mutating func observe(_ logins: [LoginFlow]) -> LoginOutcome? {
+        adopt(logins)
         guard let loginId, !reported else { return nil }
         guard let flow = logins.first(where: { $0.id == loginId }) else {
             guard seen else { return nil }
@@ -303,6 +328,23 @@ public struct LoginTracker: Equatable, Sendable {
             return .left
         }
     }
+
+    /// Take over the flow a failed start began, once no start can still name it.
+    private mutating func adopt(_ logins: [LoginFlow]) {
+        guard loginId == nil, !pending, let target,
+              let orphan = logins.first(where: {
+                  $0.providerId == target.provider && $0.method == target.method && $0.state == .running
+              })
+        else { return }
+        follow(orphan.id, listed: true)
+    }
+
+    private mutating func follow(_ id: String, listed: Bool) {
+        loginId = id
+        running = id
+        seen = listed
+        reported = false
+    }
 }
 
 // MARK: - Custom endpoints
@@ -319,6 +361,34 @@ extension CustomProviderApi {
         case .anthropicMessages: "Anthropic Messages"
         case .googleGenerativeAi: "Google Gemini"
         }
+    }
+}
+
+/// "Fetch from /models" as the form stood when it asked. The answer is for
+/// that endpoint: dropped once the format, URL or key changed, and it
+/// doesn't replace models edited by hand while it was on its way.
+public struct EndpointModelsFetch: Equatable, Sendable {
+    public var api: CustomProviderApi
+    public var baseUrl: String
+    public var apiKey: String
+    public var models: String
+
+    public init(api: CustomProviderApi, baseUrl: String, apiKey: String, models: String) {
+        self.api = api
+        self.baseUrl = baseUrl
+        self.apiKey = apiKey
+        self.models = models
+    }
+
+    /// Whether the answer still speaks for `form`; a stale one is dropped,
+    /// its problem included.
+    public func answers(_ form: EndpointModelsFetch) -> Bool {
+        api == form.api && baseUrl == form.baseUrl && apiKey == form.apiKey
+    }
+
+    /// Whether listed models replace `form`'s.
+    public func fills(_ form: EndpointModelsFetch) -> Bool {
+        answers(form) && models == form.models
     }
 }
 

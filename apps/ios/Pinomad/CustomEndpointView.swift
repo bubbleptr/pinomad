@@ -177,22 +177,30 @@ struct CustomEndpointView: View {
         models = custom.models.joined(separator: "\n")
     }
 
+    private var fetchForm: EndpointModelsFetch {
+        EndpointModelsFetch(api: api, baseUrl: baseUrl, apiKey: apiKey, models: models)
+    }
+
     private func fetchModels() async {
         urlTouched = true
         guard baseUrlProblem(baseUrl) == nil else { return }
         fetching = true
         fetchProblem = nil
         defer { fetching = false }
+        // The answer is for the endpoint as it is now, not as it is when it lands.
+        let asked = fetchForm
         do {
             let listed = try await model.listEndpointModels(
                 api: api, baseUrl: baseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
                 apiKey: apiKey.isEmpty ? nil : apiKey, providerId: providerId)
+            guard asked.answers(fetchForm) else { return }
             if listed.isEmpty {
                 fetchProblem = "The endpoint listed no models. Enter model IDs by hand."
-            } else {
+            } else if asked.fills(fetchForm) {
                 models = listed.joined(separator: "\n")
             }
         } catch {
+            guard asked.answers(fetchForm) else { return }
             fetchProblem = "\(model.describe(error)) Enter model IDs by hand."
         }
     }
