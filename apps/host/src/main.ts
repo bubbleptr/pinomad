@@ -2,12 +2,14 @@
 // The headless host: owns the Harness, its SQLite store, and the lock; every UI
 // is a gateway client. Run on Node, not Bun (node:sqlite, pi-durable's engines).
 // Usage rows live in the pinomad.ts table — `pinomad host --help`.
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
 import type { ReadToolOptions } from "@earendil-works/pi-durable/tools";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
@@ -25,7 +27,7 @@ import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
 import { readServerConfig, resolveRelayOrigin } from "./server-config.ts";
 import { startHostLogRotation } from "./service/log-rotation.ts";
-import { watchModelAuth } from "./model-auth.ts";
+import { openModelAuth } from "./model-auth.ts";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { configureHarnessHttp, createHarnessSettings, defaultModel } from "./pi-setup.ts";
 import type { Harness } from "@earendil-works/pi-durable";
@@ -139,11 +141,15 @@ export async function main(argv: readonly string[]): Promise<void> {
   }
 
   async function piOptions(): Promise<OpenHostOptions> {
-    const modelRuntime = await ModelRuntime.create();
-    // Watches pi's auth.json — a Pi CLI login/logout republishes `models`/`auth`
-    // to every connected device (ADR-0021 §5-6).
-    const modelAuth = await watchModelAuth(modelRuntime, { authPath: join(getAgentDir(), "auth.json") });
-    const settingsManager = SettingsManager.create(process.cwd());
+    // Only the data directory's files are read (ADR-0031): credentials,
+    // custom endpoints and pi's model cache live beside settings.json, never
+    // in ~/.pi/agent.
+    const modelsPath = join(dataDir, "models.json");
+    const modelRuntime = await ModelRuntime.create({ authPath: join(dataDir, "auth.json"), modelsPath });
+    const modelAuth = await openModelAuth(modelRuntime, { modelsPath, installId: await installId(dataDir) });
+    // pi's built-in defaults, with the harness keys (proxy, retry,
+    // compaction, timeouts) a user put under "pi" in PiNomad's settings.json.
+    const settingsManager = SettingsManager.inMemory(await piSettings(join(dataDir, "settings.json")));
     configureHarnessHttp(settingsManager);
     // One source for hello.models, extension model lists, and the `models` stream.
     const summaries = () => modelAuth.models.value;
@@ -161,7 +167,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       // server's APNs (ADR-0025); the faux path leaves the sender off —
       // scripted answers only exist for tests.
       push: {},
-      // Unset keys fall back to pi's settings (ADR-0021 §2).
+      // Unset keys fall back to pi's built-in defaults (ADR-0031).
       settingsFallback: {
         defaultModel: () => {
           const model = defaultModel(settingsManager, modelRuntime);
@@ -220,6 +226,37 @@ export async function main(argv: readonly string[]): Promise<void> {
     process.stderr.write(`${JSON.stringify({ event: "fatal", error })}\n`);
     void host.close().finally(() => process.exit(1));
   });
+}
+
+/** The `"pi"` object in PiNomad's settings.json: pi harness settings, hand-edited only. */
+async function piSettings(path: string): Promise<Parameters<typeof SettingsManager.inMemory>[0]> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  let block: unknown;
+  try {
+    block = (JSON.parse(text) as { pi?: unknown }).pi;
+  } catch {
+    // A malformed file is openHostSettings' error to report; here it only means no overrides.
+    return {};
+  }
+  return typeof block === "object" && block !== null && !Array.isArray(block) ? block : {};
+}
+
+/** This installation's stable UUID (ChatGPT sign-in names the host by it), created on first use. */
+async function installId(dataDir: string): Promise<() => string> {
+  const path = join(dataDir, "install-id");
+  let id = (await readFile(path, "utf8").catch(() => "")).trim();
+  if (id === "") {
+    id = randomUUID();
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(path, `${id}\n`, { mode: 0o600 });
+  }
+  return () => id;
 }
 
 if (import.meta.main) await main(process.argv.slice(2));

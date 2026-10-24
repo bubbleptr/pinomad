@@ -50,7 +50,7 @@ export interface OpenHostOptions {
       }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
-  /** Live `models`/`auth` sources and `logout` (ADR-0021 §5-6); absent → the streams serve static snapshots and `logout` fails. */
+  /** Live `models`/`auth`/`providers` sources and the provider calls (ADR-0031); absent → the streams serve static snapshots and the calls fail. */
   readonly modelAuth?: ModelAuth;
   /**
    * Harness settings (pi-derived); the function form receives the settings

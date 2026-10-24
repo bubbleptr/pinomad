@@ -20,11 +20,11 @@ The host needs Node 25+ on macOS or Linux.
 
 ```sh
 npm i -g pinomad
-pinomad host        # uses the models and credentials you set up in pi (~/.pi/agent)
+pinomad host        # data and credentials live in ~/.pinomad
 pinomad link        # in another terminal: prints a browser link to the web client
 ```
 
-Haven't set up pi yet? `pinomad host --faux "hi"` runs a scripted fake model so you can click around.
+Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
 
 ## Connect your other devices
 

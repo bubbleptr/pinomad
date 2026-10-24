@@ -20,11 +20,11 @@
 
 ```sh
 npm i -g pinomad
-pinomad host        # 用你在 pi 里配好的模型和认证（~/.pi/agent）
+pinomad host        # 数据和凭据都在 ~/.pinomad
 pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
 ```
 
-还没配过 pi？`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
+模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
 
 ## 连上其他设备
 

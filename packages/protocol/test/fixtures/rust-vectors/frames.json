@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 20
+    "minor": 21
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":20},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":21},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":20},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":21},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -238,6 +238,10 @@
         "since": 0
       },
       {
+        "name": "answerLogin",
+        "since": 21
+      },
+      {
         "name": "appendAttachment",
         "since": 19
       },
@@ -248,6 +252,14 @@
       {
         "name": "beginAttachment",
         "since": 19
+      },
+      {
+        "name": "beginLogin",
+        "since": 21
+      },
+      {
+        "name": "cancelLogin",
+        "since": 21
       },
       {
         "name": "changes",
@@ -286,6 +298,10 @@
         "since": 17
       },
       {
+        "name": "listEndpointModels",
+        "since": 21
+      },
+      {
         "name": "listFiles",
         "since": 10
       },
@@ -302,6 +318,10 @@
         "since": 1
       },
       {
+        "name": "removeCustomProvider",
+        "since": 21
+      },
+      {
         "name": "removeProject",
         "since": 0
       },
@@ -316,6 +336,10 @@
       {
         "name": "runCommand",
         "since": 17
+      },
+      {
+        "name": "saveCustomProvider",
+        "since": 21
       },
       {
         "name": "setAgent",
@@ -382,6 +406,10 @@
       {
         "name": "models",
         "since": 1
+      },
+      {
+        "name": "providers",
+        "since": 21
       },
       {
         "name": "settings",
@@ -451,6 +479,18 @@
       "expect": true
     },
     {
+      "name": "answerLogin@21",
+      "minor": 21,
+      "call": "answerLogin",
+      "expect": true
+    },
+    {
+      "name": "answerLogin@20",
+      "minor": 20,
+      "call": "answerLogin",
+      "expect": false
+    },
+    {
       "name": "appendAttachment@19",
       "minor": 19,
       "call": "appendAttachment",
@@ -478,6 +518,30 @@
       "name": "beginAttachment@18",
       "minor": 18,
       "call": "beginAttachment",
+      "expect": false
+    },
+    {
+      "name": "beginLogin@21",
+      "minor": 21,
+      "call": "beginLogin",
+      "expect": true
+    },
+    {
+      "name": "beginLogin@20",
+      "minor": 20,
+      "call": "beginLogin",
+      "expect": false
+    },
+    {
+      "name": "cancelLogin@21",
+      "minor": 21,
+      "call": "cancelLogin",
+      "expect": true
+    },
+    {
+      "name": "cancelLogin@20",
+      "minor": 20,
+      "call": "cancelLogin",
       "expect": false
     },
     {
@@ -559,6 +623,18 @@
       "expect": false
     },
     {
+      "name": "listEndpointModels@21",
+      "minor": 21,
+      "call": "listEndpointModels",
+      "expect": true
+    },
+    {
+      "name": "listEndpointModels@20",
+      "minor": 20,
+      "call": "listEndpointModels",
+      "expect": false
+    },
+    {
       "name": "listFiles@10",
       "minor": 10,
       "call": "listFiles",
@@ -607,6 +683,18 @@
       "expect": false
     },
     {
+      "name": "removeCustomProvider@21",
+      "minor": 21,
+      "call": "removeCustomProvider",
+      "expect": true
+    },
+    {
+      "name": "removeCustomProvider@20",
+      "minor": 20,
+      "call": "removeCustomProvider",
+      "expect": false
+    },
+    {
       "name": "removeProject@0",
       "minor": 0,
       "call": "removeProject",
@@ -640,6 +728,18 @@
       "name": "runCommand@16",
       "minor": 16,
       "call": "runCommand",
+      "expect": false
+    },
+    {
+      "name": "saveCustomProvider@21",
+      "minor": 21,
+      "call": "saveCustomProvider",
+      "expect": true
+    },
+    {
+      "name": "saveCustomProvider@20",
+      "minor": 20,
+      "call": "saveCustomProvider",
       "expect": false
     },
     {

@@ -8,7 +8,8 @@ use std::sync::Arc;
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, ImageVariant, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::{
-    Call, Command, Event, ForkShow, ReadyOutcome, RemoteDurable, RemoteDurableOptions,
+    ApiKeyChange, Call, Command, CustomProviderApi, Event, ForkShow, LoginMethod, ReadyOutcome, RemoteDurable,
+    RemoteDurableOptions,
 };
 use pinomad_core::transport::{PlaintextTransport, Transport};
 use pinomad_core::u16str::U16String;
@@ -65,6 +66,17 @@ fn default_snapshots() -> HashMap<String, Json> {
         ]),
     );
     snapshots.insert("agents".to_string(), obj(&[("roles", Json::array(vec![])), ("problems", Json::array(vec![]))]));
+    snapshots.insert(
+        "providers".to_string(),
+        obj(&[
+            ("providers", Json::array(vec![obj(&[
+                ("id", Json::from("streamp")),
+                ("name", Json::from("Stream Provider")),
+                ("apiKey", obj(&[("name", Json::from("Stream Provider"))])),
+            ])])),
+            ("logins", Json::array(vec![])),
+        ]),
+    );
     snapshots
 }
 
@@ -1281,6 +1293,125 @@ fn logout_against_a_5_0_host_notices_and_sends_nothing() {
     assert!(h.notices().iter().any(|n| {
         n.get("message").and_then(Json::as_str).map(|m| m.to_string_lossy().contains("pinomad upgrade")).unwrap_or(false)
     }));
+}
+
+#[test]
+fn the_providers_stream_reaches_the_view_on_a_5_21_host_only() {
+    let mut h = setup();
+    assert!(h.host.subscribes().contains(&"providers".to_string()));
+    assert_eq!(h.dig(&["providers", "providers"]).and_then(|v| v.as_array().map(|a| a[0].get("id").cloned()).unwrap_or(None)), Some(Json::from("streamp")));
+
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(20.0))]);
+    let h = Harness::new(old);
+    assert!(!h.host.subscribes().contains(&"providers".to_string()));
+    assert!(h.host.subscribes().contains(&"auth".to_string()));
+    assert_eq!(h.view_get("providers"), Some(Json::Null));
+}
+
+/// Unlike `logout`, the provider calls are request-class: a pre-5.21 host
+/// rejects the op instead of posting a notice.
+#[test]
+fn provider_calls_against_a_5_20_host_reject_and_send_nothing() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(20.0))]);
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::BeginLogin { provider_id: "streamp".to_string(), method: LoginMethod::Oauth });
+    h.invoke(2, Call::ListEndpointModels {
+        api: CustomProviderApi::OpenaiCompletions,
+        base_url: "http://localhost:11434/v1".to_string(),
+        api_key: None,
+        provider_id: None,
+    });
+    let too_old = "The host is too old for this (needs protocol 5.21); run `pinomad upgrade` on the host".to_string();
+    assert_eq!(h.ops.get(&1), Some(&Err(too_old.clone())));
+    assert_eq!(h.ops.get(&2), Some(&Err(too_old)));
+    assert!(h.host.method("beginLogin").is_empty());
+    assert!(h.host.method("listEndpointModels").is_empty());
+    assert!(h.notices().is_empty());
+}
+
+#[test]
+fn provider_calls_send_the_reference_args() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.call_results.insert("beginLogin".to_string(), obj(&[("loginId", Json::from("login-1"))]));
+    host.call_results.insert(
+        "listEndpointModels".to_string(),
+        obj(&[("models", Json::array(vec![Json::from("llama3")]))]),
+    );
+    let mut h = Harness::new(host);
+    h.invoke(1, Call::BeginLogin { provider_id: "streamp".to_string(), method: LoginMethod::ApiKey });
+    h.invoke(2, Call::AnswerLogin { login_id: "login-1".to_string(), prompt_id: 3, value: "sk-test".to_string() });
+    h.invoke(3, Call::CancelLogin { login_id: "login-1".to_string() });
+    let provider = obj(&[
+        ("id", Json::from("ollama")),
+        ("name", Json::from("Ollama")),
+        ("api", Json::from("openai-completions")),
+        ("baseUrl", Json::from("http://localhost:11434/v1")),
+        ("models", Json::array(vec![Json::from("llama3")])),
+    ]);
+    h.invoke(4, Call::SaveCustomProvider { provider: provider.clone(), api_key: ApiKeyChange::Keep });
+    h.invoke(5, Call::SaveCustomProvider { provider: provider.clone(), api_key: ApiKeyChange::Remove });
+    h.invoke(6, Call::SaveCustomProvider { provider: provider.clone(), api_key: ApiKeyChange::Set("k".to_string()) });
+    h.invoke(7, Call::RemoveCustomProvider { provider_id: "ollama".to_string() });
+    h.invoke(8, Call::ListEndpointModels {
+        api: CustomProviderApi::OpenaiCompletions,
+        base_url: "http://localhost:11434/v1".to_string(),
+        api_key: None,
+        provider_id: Some("ollama".to_string()),
+    });
+    let args = |method: &str| -> Vec<Json> {
+        h.host.method(method).iter().map(|frame| frame.get("args").cloned().unwrap_or(Json::Null)).collect()
+    };
+    assert_eq!(
+        args("beginLogin"),
+        vec![obj(&[("providerId", Json::from("streamp")), ("method", Json::from("api_key"))])]
+    );
+    assert_eq!(
+        args("answerLogin"),
+        vec![obj(&[
+            ("loginId", Json::from("login-1")),
+            ("promptId", Json::from(3.0)),
+            ("value", Json::from("sk-test")),
+        ])]
+    );
+    assert_eq!(args("cancelLogin"), vec![obj(&[("loginId", Json::from("login-1"))])]);
+    // Absent keeps the stored key, `null` removes it, a string stores it.
+    assert_eq!(
+        args("saveCustomProvider"),
+        vec![
+            obj(&[("provider", provider.clone())]),
+            obj(&[("provider", provider.clone()), ("apiKey", Json::Null)]),
+            obj(&[("provider", provider), ("apiKey", Json::from("k"))]),
+        ]
+    );
+    assert_eq!(args("removeCustomProvider"), vec![obj(&[("providerId", Json::from("ollama"))])]);
+    assert_eq!(
+        args("listEndpointModels"),
+        vec![obj(&[
+            ("api", Json::from("openai-completions")),
+            ("baseUrl", Json::from("http://localhost:11434/v1")),
+            ("providerId", Json::from("ollama")),
+        ])]
+    );
+    assert_eq!(h.ops.get(&1), Some(&Ok(Some(obj(&[("loginId", Json::from("login-1"))])))));
+    assert_eq!(h.ops.get(&8), Some(&Ok(Some(obj(&[("models", Json::array(vec![Json::from("llama3")]))])))));
+}
+
+/// `listEndpointModels` waits on a remote endpoint, so it skips the command
+/// queue; the login calls queue like other requests.
+#[test]
+fn list_endpoint_models_is_not_blocked_by_a_hung_command() {
+    let mut h = setup();
+    h.host.hung_methods.insert("archive".to_string());
+    h.invoke(1, Call::Archive { id: 1, archived: true });
+    h.invoke(2, Call::BeginLogin { provider_id: "streamp".to_string(), method: LoginMethod::Oauth });
+    h.invoke(3, Call::ListEndpointModels {
+        api: CustomProviderApi::AnthropicMessages,
+        base_url: "https://example.test".to_string(),
+        api_key: Some("k".to_string()),
+        provider_id: None,
+    });
+    assert!(h.host.method("beginLogin").is_empty());
+    assert_eq!(h.host.method("listEndpointModels").len(), 1);
 }
 
 #[test]

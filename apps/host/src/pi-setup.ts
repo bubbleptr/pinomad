@@ -13,7 +13,7 @@ export function configureHarnessHttp(settingsManager: SettingsManager): void {
   configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 }
 
-/** Harness settings read at every use from pi's settings as loaded at startup; queue modes come from the settings store (live). */
+/** Harness settings read at every use from the "pi" block loaded at startup (ADR-0031); queue modes come from the settings store (live). */
 export function createHarnessSettings(
   settingsManager: SettingsManager,
   modes: Pick<HostSettingsStore, "value">,

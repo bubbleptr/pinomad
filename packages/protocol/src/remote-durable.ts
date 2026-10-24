@@ -356,6 +356,7 @@ class RemoteClient {
         devices: [],
         mcp: null,
         auth: null,
+        providers: null,
         settings: null,
         agents: null,
         host: this.#hostInfo(),
@@ -497,6 +498,7 @@ class RemoteClient {
       devices,
       mcp: this.#host("mcp") ?? null,
       auth: this.#host("auth") ?? null,
+      providers: this.#host("providers") ?? null,
       settings: this.#host("settings") ?? null,
       agents: this.#host("agents") ?? null,
       defaults: this.#effectiveDefaults(this.#helloDefaults),
@@ -527,6 +529,13 @@ class RemoteClient {
   #notice(level: Notice["level"], message: string): void {
     if (this.#state === undefined) return;
     this.#update({ notices: [...this.#state.notices, { id: this.#nextNotice++, level, message }].slice(-20) });
+  }
+
+  /** The provider calls all arrived together in 5.21 (ADR-0031). */
+  #requireProviders(): void {
+    if (!hostSupportsCall(this.#hostMinor, "beginLogin")) {
+      throw new Error("The host is too old for this (needs protocol 5.21); run `pinomad upgrade` on the host");
+    }
   }
 
   #call<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
@@ -818,6 +827,36 @@ class RemoteClient {
           }
           return this.#call("logout", { providerId });
         }),
+      beginLogin: (providerId, method) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          return (await this.#call("beginLogin", { providerId, method })).loginId;
+        }),
+      answerLogin: (loginId, promptId, value) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("answerLogin", { loginId, promptId, value });
+        }),
+      cancelLogin: (loginId) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("cancelLogin", { loginId });
+        }),
+      saveCustomProvider: (provider, apiKey) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("saveCustomProvider", apiKey === undefined ? { provider } : { provider, apiKey });
+        }),
+      removeCustomProvider: (providerId) =>
+        this.#request(async () => {
+          this.#requireProviders();
+          await this.#call("removeCustomProvider", { providerId });
+        }),
+      // Unqueued like listCommands: the host waits on a remote endpoint.
+      listEndpointModels: async (input) => {
+        this.#requireProviders();
+        return (await this.#call("listEndpointModels", input)).models;
+      },
       updateSettings: (patch) =>
         this.#command(() => {
           if (!hostSupportsCall(this.#hostMinor, "updateSettings")) {
