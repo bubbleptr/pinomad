@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 19 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 20 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -207,6 +207,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::ImageRefs => 15,
         HostFeature::BoundSkills => 16,
         HostFeature::Attachments => 19,
+        HostFeature::ImageVariants => 20,
     };
     host_minor >= since
 }
@@ -240,6 +241,40 @@ pub enum HostFeature {
     /// `submit`/`createConversation` carry `attachments` (19, issue #321) —
     /// an older host calls the field malformed and 4400s the connection.
     Attachments,
+    ImageVariants,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum ImageVariant {
+    Original,
+    Thumbnail,
+    Preview,
+}
+
+impl Default for ImageVariant {
+    fn default() -> Self {
+        Self::Original
+    }
+}
+
+impl ImageVariant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Thumbnail => "thumbnail",
+            Self::Preview => "preview",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        Some(match value {
+            "original" => Self::Original,
+            "thumbnail" => Self::Thumbnail,
+            "preview" => Self::Preview,
+            _ => return None,
+        })
+    }
 }
 
 /// `ApnsEnvironment` — matches the build's `aps-environment` entitlement.

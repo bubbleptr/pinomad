@@ -2,7 +2,7 @@ import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { HostAuth } from "./auth.ts";
-import type { MessageImage, OutgoingImage } from "./images.ts";
+import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { CommandListing } from "./commands.ts";
@@ -89,7 +89,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 19 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 20 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -206,10 +206,10 @@ export interface CallMethods {
   /**
    * The bytes behind an image ref (5.15, ADR-0027). Answers only refs this
    * connection's live `images: "ref"` subscriptions carried; a ref from a
-   * stream since unsubscribed is an `ok:false`. Read-only, sent outside the
-   * command queue like `listFiles`.
+   * stream since unsubscribed is an `ok:false`. Derived variants are 5.20;
+   * the result reports the variant actually returned, absent means original.
    */
-  image: { args: { ref: string }; result: MessageImage };
+  image: { args: { ref: string; variant?: "thumbnail" | "preview" }; result: ImageResult };
   /**
    * Take a queued input back out of the inbox (5.14). `sent`: it already
    * reached the transcript.
@@ -371,6 +371,8 @@ export const FEATURE_SINCE = {
   boundSkills: 16,
   /** `submit`/`createConversation` carry `attachments`, host-stored ids (19); an older host 4400s the field. */
   attachments: 19,
+  /** `image` accepts derived variants and reports the actual variant (20); older hosts return original. */
+  imageVariants: 20,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -566,7 +568,7 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "changes":
       return conversationId();
     case "image":
-      return nonempty(args.ref);
+      return nonempty(args.ref) && (args.variant === undefined || args.variant === "thumbnail" || args.variant === "preview");
     case "beginAttachment":
       return nonempty(args.name) && typeof args.size === "number" && Number.isSafeInteger(args.size) && args.size >= 0;
     case "appendAttachment":

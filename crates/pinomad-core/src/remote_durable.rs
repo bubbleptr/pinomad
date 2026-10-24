@@ -19,7 +19,7 @@ use crate::delta::{apply_immutable, op_from_json};
 use crate::frames::{
     classify_server_frame, conversation_stream, doc_stream, encode_client_frame, host_streams,
     host_supports_call, host_supports_feature, minor_version, ApnsPushToken, ClientFrame, HostFeature,
-    ServerFrame, INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE,
+    ImageVariant, ServerFrame, INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE,
 };
 use crate::json::{Json, JsonObject};
 use crate::organization::{checkout_of, home_of, organize};
@@ -132,7 +132,7 @@ pub enum Call {
     /// stream was shown (5.15, ADR-0027). Read-only and unqueued like
     /// `listFiles`: a slow fetch must not hold up commands, and a hung
     /// command must not hide a picture the screen already needs.
-    Image { ref_: String },
+    Image { ref_: String, variant: ImageVariant },
     /// `listCommands` — the slash commands the host declares for a
     /// conversation (ADR-0029). Same read-only, unqueued shape as
     /// `listSkills`. Needs a 5.17 host.
@@ -1351,11 +1351,18 @@ impl RemoteDurable {
                 }
                 steps.push_back(Step::Call { method: "listSkills", args: obj(&[("scope", scope.clone())]) });
             }
-            Call::Image { ref_ } => {
+            Call::Image { ref_, variant } => {
                 if !host_supports_call(self.host_minor, "image") {
                     return Err(too_old("5.15"));
                 }
-                steps.push_back(Step::Call { method: "image", args: obj(&[("ref", Json::from(ref_.clone()))]) });
+                let mut args = JsonObject::new();
+                set(&mut args, "ref", Json::from(ref_.clone()));
+                if *variant != ImageVariant::Original
+                    && host_supports_feature(self.host_minor, HostFeature::ImageVariants)
+                {
+                    set(&mut args, "variant", Json::from(variant.as_str()));
+                }
+                steps.push_back(Step::Call { method: "image", args: Json::Object(Arc::new(args)) });
             }
             Call::ListCommands { conversation_id } => {
                 if !host_supports_call(self.host_minor, "listCommands") {

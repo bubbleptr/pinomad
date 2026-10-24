@@ -330,6 +330,48 @@ describe("message images", () => {
     await expect.poll(async () => (await raw.call("image", { ref })).ok).toBe(false);
   });
 
+  it("shares derived images only after each connection proves the original ref", async () => {
+    let preparations = 0;
+    let release!: (image: { data: string; mimeType: string }) => void;
+    const blocked = new Promise<{ data: string; mimeType: string }>((resolve) => (release = resolve));
+    const host = await startFauxHost(defer, {
+      answers: ["seen"],
+      images: {
+        prepare: async () => {
+          preparations += 1;
+          if (preparations === 2) return await blocked;
+          return { data: "VEhVTUI=", mimeType: "image/jpeg" };
+        },
+      },
+    });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+
+    const first = await rawClient(host);
+    first.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    const snapshot = await first.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    const ref = firstRef(snapshot);
+    const thumbnail = { data: "VEhVTUI=", mimeType: "image/jpeg", variant: "thumbnail" };
+    expect(await first.call("image", { ref, variant: "thumbnail" })).toEqual({ ok: true, value: thumbnail });
+    expect(await first.call("image", { ref })).toEqual({ ok: true, value: PNG });
+
+    const second = await rawClient(host);
+    expect(await second.call("image", { ref, variant: "thumbnail" })).toEqual({ ok: false, error: "Unknown image" });
+    second.send({ type: "subscribe", stream: `conversation:${id}`, images: "ref" });
+    await second.next((frame) => frame.type === "snapshot" && frame.stream === `conversation:${id}`);
+    expect(await second.call("image", { ref, variant: "thumbnail" })).toEqual({ ok: true, value: thumbnail });
+    expect(preparations).toBe(1);
+
+    const pending = second.call("image", { ref, variant: "preview" });
+    await expect.poll(() => preparations).toBe(2);
+    second.send({ type: "unsubscribe", stream: `conversation:${id}` });
+    await expect.poll(async () => (await second.call("image", { ref })).ok).toBe(false);
+    release({ data: "UFJFVklFVw==", mimeType: "image/jpeg" });
+    expect(await pending).toEqual({ ok: false, error: "Unknown image" });
+  });
+
   it("keeps sending image bytes inline to a subscription that didn't ask for refs", async () => {
     const host = await startFauxHost(defer, { answers: ["seen"] });
     const client = await connectTo(defer, host);

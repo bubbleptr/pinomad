@@ -8,6 +8,12 @@ export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
 /** One attached image: base64 bytes (no `data:` prefix) and its type. */
 export type MessageImage = { readonly data: string; readonly mimeType: ImageMimeType };
 
+export type DerivedImageVariant = "thumbnail" | "preview";
+export type ImageVariant = "original" | DerivedImageVariant;
+
+/** The bytes and the variant the host actually returned; absent means original (5.15). */
+export type ImageResult = MessageImage & { readonly variant?: ImageVariant };
+
 /**
  * An image named by its content (5.15, ADR-0027): a conversation stream
  * subscribed with `images: "ref"` carries image blocks as

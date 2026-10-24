@@ -97,7 +97,7 @@ struct ToolCallDetail: View {
         VStack(alignment: .leading, spacing: 6) {
             if let input = call.input, !input.isEmpty { DetailBox(text: input) }
             if let output = call.output, !output.isEmpty { DetailBox(text: output) }
-            ForEach(call.images) { InlineImage($0) }
+            ForEach(call.images) { InlineImage($0, purpose: .toolResult) }
             ForEach(call.children) { ToolCallRow(call: $0) }
         }
     }

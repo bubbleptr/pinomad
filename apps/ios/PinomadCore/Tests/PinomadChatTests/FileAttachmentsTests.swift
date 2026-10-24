@@ -303,7 +303,7 @@ private actor UploadSpy {
         let copy = QueuedEdit.Copy(
             conversationId: 7, id: 42, text: "look", images: [], attachments: [file]
         )
-        let resolved = try await copy.resolvingImages { _ in
+        let resolved = try await copy.resolvingImages { _, _ in
             CachedImage(data: "bytes", mimeType: "image/png")
         }
         #expect(resolved.attachmentIds == [file.id])

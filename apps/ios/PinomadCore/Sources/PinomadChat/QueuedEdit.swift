@@ -125,7 +125,7 @@ extension QueuedEdit.Copy {
     /// would make it unresolvable (ADR-0027 §5). All-or-nothing: one failure
     /// throws and the caller keeps the row queued.
     public func resolvingImages(
-        using load: @escaping @Sendable (String) async throws -> CachedImage
+        using load: @escaping @Sendable (String, ImageVariant) async throws -> CachedImage
     ) async throws -> QueuedEdit.Copy {
         var resolved: [MessageImage] = []
         resolved.reserveCapacity(images.count)
@@ -137,7 +137,7 @@ extension QueuedEdit.Copy {
             guard let ref = image.ref, !ref.isEmpty else {
                 throw QueuedEditImageError.missingReference
             }
-            let bytes = try await load(ref)
+            let bytes = try await load(ref, .original)
             resolved.append(MessageImage(data: bytes.data, mimeType: bytes.mimeType))
         }
         return QueuedEdit.Copy(

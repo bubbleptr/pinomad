@@ -154,6 +154,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       models: modelRuntime,
       modelSummaries: summaries,
       modelAuth,
+      images,
       extensions: extensionsFor(modelRuntime, summaries, { images }),
       settings: (store) => createHarnessSettings(settingsManager, store),
       // Push notifications go over the account control connection to the

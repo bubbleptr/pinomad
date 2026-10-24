@@ -305,6 +305,15 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "image", args: { ref: "" } })).toBe("malformed");
   });
 
+  it("accepts only known derived variants on image (5.20)", () => {
+    const image = (variant: unknown) => kinds({ type: "call", id: 1, method: "image", args: { ref: "abc", variant } });
+    expect(image("thumbnail")).toBe("frame");
+    expect(image("preview")).toBe("frame");
+    expect(image("original")).toBe("malformed");
+    expect(image("unknown")).toBe("malformed");
+    expect(image("")).toBe("malformed");
+  });
+
   it("keeps a subscribe's images: \"ref\" and drops values it doesn't know", () => {
     expect(parseClientFrame({ type: "subscribe", stream: "conversation:3", images: "ref" })).toEqual({
       kind: "frame",

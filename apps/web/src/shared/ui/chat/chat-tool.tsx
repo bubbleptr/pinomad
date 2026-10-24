@@ -4,7 +4,7 @@ import {
   type ChatToolCallStatus,
 } from "@astryxdesign/core";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import {
   formatToolDuration,
   toolDisplayName,
@@ -15,6 +15,7 @@ import {
 } from "@pinomad/client/tool-item.ts";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
 import { useImageSrc, useNearViewport } from "@/entities/image/image-source";
+import { MessageLightbox } from "@/entities/image/message-images";
 import { ChatToolKindIcon } from "@/shared/ui/chat/chat-tool-kind";
 import { ImageIcon } from "@/shared/ui/icons";
 
@@ -98,7 +99,8 @@ export function ChatToolDetail({ tool, className, ...rest }: ChatToolDetailProps
  */
 function ToolResultImage({ image }: { image: ViewImage }) {
   const [observe, visible] = useNearViewport<HTMLDivElement>();
-  const state = useImageSrc(image, visible);
+  const [open, setOpen] = useState(false);
+  const state = useImageSrc(image, visible, "preview");
   if (state.status === "loading") {
     return (
       <div ref={observe} data-testid="tool-image-loading">
@@ -120,7 +122,12 @@ function ToolResultImage({ image }: { image: ViewImage }) {
   }
   return (
     <div ref={observe}>
-      <img src={state.src} alt="" style={{ maxWidth: "100%" }} />
+      <button type="button" aria-label="View image" className="block min-h-11 min-w-11 max-w-full cursor-zoom-in" onClick={() => setOpen(true)}>
+        <img src={state.src} alt="" style={{ maxWidth: "100%" }} />
+      </button>
+      {open ? (
+        <MessageLightbox images={[image]} index={0} onIndexChange={() => {}} onClose={() => setOpen(false)} />
+      ) : null}
     </div>
   );
 }

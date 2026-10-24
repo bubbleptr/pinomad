@@ -1,25 +1,29 @@
-// Image bytes are content-addressed by ref (ADR-0027), so one process-wide
-// cache serves every conversation, fork and side panel. Keeping it in memory
-// is deliberate: refs are stable, but 100 MB of base64 is not worth persisting.
-import { imageRef, type MessageImage, type ViewImage } from "@pinomad/protocol/images.ts";
+// Image bytes are content-addressed by ref and variant (ADR-0027, #311), so
+// one process-wide cache serves every conversation, fork and side panel.
+// Keeping it in memory is deliberate: 100 MB of base64 is not worth persisting.
+import { imageRef, type ImageResult, type ImageVariant, type MessageImage, type ViewImage } from "@pinomad/protocol/images.ts";
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const MAX_IN_FLIGHT = 4;
 
-export type ImageLoader = (ref: string) => Promise<MessageImage>;
+export type ImageLoader = (ref: string, variant?: ImageVariant) => Promise<ImageResult>;
 
 type QueuedLoad = {
+  readonly key: string;
   readonly ref: string;
+  readonly variant: ImageVariant;
   readonly loader: ImageLoader;
-  readonly resolve: (image: MessageImage) => void;
+  readonly resolve: (image: ImageResult) => void;
   readonly reject: (error: Error) => void;
 };
+
+const keyOf = (ref: string, variant: ImageVariant): string => `${variant}:${ref}`;
 
 export class ImageCache {
   readonly #maxBytes: number;
   /** Insertion order is the LRU order: oldest first. */
-  readonly #bytes = new Map<string, MessageImage>();
-  readonly #inflight = new Map<string, Promise<MessageImage>>();
+  readonly #bytes = new Map<string, ImageResult>();
+  readonly #inflight = new Map<string, Promise<ImageResult>>();
   readonly #queue: QueuedLoad[] = [];
   #size = 0;
   #loading = 0;
@@ -29,25 +33,30 @@ export class ImageCache {
   }
 
   /** Bytes without touching recency — safe to call during render. */
-  peek(ref: string): MessageImage | undefined {
-    return this.#bytes.get(ref);
+  peek(ref: string, variant: ImageVariant = "original"): ImageResult | undefined {
+    const direct = this.#bytes.get(keyOf(ref, variant));
+    if (direct !== undefined || variant === "original") return direct;
+    return this.#bytes.get(keyOf(ref, "original"));
   }
 
   /** Bytes and mark them most recently used. */
-  get(ref: string): MessageImage | undefined {
-    const image = this.#bytes.get(ref);
+  get(ref: string, variant: ImageVariant = "original"): ImageResult | undefined {
+    let key = keyOf(ref, variant);
+    if (!this.#bytes.has(key) && variant !== "original") key = keyOf(ref, "original");
+    const image = this.#bytes.get(key);
     if (image === undefined) return undefined;
-    this.#bytes.delete(ref);
-    this.#bytes.set(ref, image);
+    this.#bytes.delete(key);
+    this.#bytes.set(key, image);
     return image;
   }
 
   /** Put bytes in directly, as sending does once the client knows the ref. */
-  prime(ref: string, image: MessageImage): void {
-    const previous = this.#bytes.get(ref);
+  prime(ref: string, image: ImageResult, variant: ImageVariant = "original"): void {
+    const key = keyOf(ref, variant);
+    const previous = this.#bytes.get(key);
     if (previous !== undefined) this.#size -= previous.data.length;
-    this.#bytes.delete(ref);
-    this.#bytes.set(ref, image);
+    this.#bytes.delete(key);
+    this.#bytes.set(key, image);
     this.#size += image.data.length;
     while (this.#size > this.#maxBytes) {
       const oldest = this.#bytes.keys().next().value;
@@ -59,20 +68,21 @@ export class ImageCache {
   }
 
   /**
-   * Bytes for `ref`, loading them at most once even when several components
-   * ask together. The cache itself never remembers a failure: the next load
-   * starts a new request, so a reconnect or remount can recover.
+   * Bytes for one variant, loading equal requests once. A cached or in-flight
+   * original also serves derived display requests, never the other way around.
    */
-  load(ref: string, loader: ImageLoader): Promise<MessageImage> {
-    const cached = this.get(ref);
+  load(ref: string, loader: ImageLoader, variant: ImageVariant = "original"): Promise<ImageResult> {
+    const cached = this.get(ref, variant);
     if (cached !== undefined) return Promise.resolve(cached);
-    const inflight = this.#inflight.get(ref);
+    const key = keyOf(ref, variant);
+    const inflight = this.#inflight.get(key)
+      ?? (variant === "original" ? undefined : this.#inflight.get(keyOf(ref, "original")));
     if (inflight !== undefined) return inflight;
 
-    const promise = new Promise<MessageImage>((resolve, reject) => {
-      this.#queue.push({ ref, loader, resolve, reject });
+    const promise = new Promise<ImageResult>((resolve, reject) => {
+      this.#queue.push({ key, ref, variant, loader, resolve, reject });
     });
-    this.#inflight.set(ref, promise);
+    this.#inflight.set(key, promise);
     this.#pump();
     return promise;
   }
@@ -91,9 +101,9 @@ export class ImageCache {
       const job = this.#queue.shift();
       if (job === undefined) return;
       this.#loading += 1;
-      let request: Promise<MessageImage>;
+      let request: Promise<ImageResult>;
       try {
-        request = Promise.resolve(job.loader(job.ref));
+        request = Promise.resolve(job.variant === "original" ? job.loader(job.ref) : job.loader(job.ref, job.variant));
       } catch (error) {
         this.#finish(job);
         job.reject(error instanceof Error ? error : new Error(String(error)));
@@ -101,7 +111,7 @@ export class ImageCache {
       }
       void request.then(
         (image) => {
-          this.prime(job.ref, image);
+          this.prime(job.ref, image, image.variant ?? "original");
           this.#finish(job);
           job.resolve(image);
         },
@@ -114,7 +124,7 @@ export class ImageCache {
   }
 
   #finish(job: QueuedLoad): void {
-    this.#inflight.delete(job.ref);
+    this.#inflight.delete(job.key);
     this.#loading -= 1;
     this.#pump();
   }

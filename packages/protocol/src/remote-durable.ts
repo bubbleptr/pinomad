@@ -1,7 +1,7 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.ts";
-import type { OutgoingImage } from "./images.ts";
+import type { ImageVariant, OutgoingImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
@@ -785,11 +785,12 @@ class RemoteClient {
       },
       // Same unqueued shape as listFiles: fetching image bytes is read-only
       // and must not wait behind a hanging command (ADR-0027).
-      image: (ref) => {
+      image: (ref, variant: ImageVariant = "original") => {
         if (!hostSupportsCall(this.#hostMinor, "image")) {
           return Promise.reject(new Error("The host is too old for this (needs protocol 5.15); run `pinomad upgrade` on the host"));
         }
-        return this.#call("image", { ref });
+        const derived = variant !== "original" && hostSupportsFeature(this.#hostMinor, "imageVariants");
+        return this.#call("image", { ref, ...(derived ? { variant } : {}) });
       },
       // Same unqueued shape as listFiles: a read-only completion query must
       // not wait behind a hanging command (issue #143).
