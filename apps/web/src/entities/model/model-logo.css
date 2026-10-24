@@ -1,0 +1,12 @@
+/* A model logo as a bare glyph beside its name; monochrome SVGs inherit the text color. */
+.model-logo {
+  display: inline-flex;
+  flex: none;
+  inline-size: var(--model-logo-size, 16px);
+  block-size: var(--model-logo-size, 16px);
+}
+
+.model-logo svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
