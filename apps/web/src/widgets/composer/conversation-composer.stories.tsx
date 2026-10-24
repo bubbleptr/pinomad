@@ -33,7 +33,7 @@ export const Disconnected: Story = {
 
 export const Narrow: Story = { args: { narrow: true } };
 
-/** The + menu: what can be added to the message, then conversation actions. */
+/** The + menu: one row per way into the message, each with its typed shortcut. */
 export const AddMenu: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));
@@ -48,6 +48,14 @@ export const CommandMenu: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("combobox", { name: "Prompt" }));
     await userEvent.keyboard("/");
+  },
+};
+
+/** A `$` opens the skills, each on one line with its description. */
+export const SkillMenu: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("combobox", { name: "Prompt" }));
+    await userEvent.keyboard("$");
   },
 };
 

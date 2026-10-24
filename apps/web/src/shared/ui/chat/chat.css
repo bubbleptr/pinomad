@@ -882,10 +882,12 @@ mark.chat-skill-mention {
 }
 
 /* Astryx anchors suggestions to the caret and leaves their width intrinsic.
-   Size each menu from its own input so long descriptions cannot widen it. */
+   Size each menu from its own input so long descriptions cannot widen it,
+   capped so a wide composer doesn't stretch one-line rows into a sparse
+   band; names and descriptions truncate inside the cap. */
 .prompt-input__input > [popover]:has(.astryx-trigger-menu) {
   position-anchor: --pace-prompt-input !important;
-  width: anchor-size(width);
+  width: min(anchor-size(width), 24rem);
   min-width: 0;
   max-width: calc(100vw - 2 * var(--spacing-4));
 }
@@ -896,6 +898,17 @@ mark.chat-skill-mention {
      aligns it to the scrollport edge and ignores the list's padding; match
      the padding so a scrolled row keeps its inset. */
   scroll-padding-block: var(--spacing-1);
+}
+
+/* Rows and group headings at the + menu's density: 28px rows instead of
+   Astryx's 36, headings one step tighter. !important matches Astryx
+   StyleX's :not(#\#) specificity. */
+.prompt-input__input .astryx-trigger-menu [role="option"] {
+  padding: var(--spacing-1) var(--spacing-2) !important;
+}
+
+.prompt-input__input .astryx-trigger-menu [role="group"] > :not([role="option"]) {
+  padding: var(--spacing-1-5) var(--spacing-2) var(--spacing-0-5) !important;
 }
 
 .prompt-input .astryx-chat-composer {

@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
@@ -21,9 +20,10 @@ import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
 import { parseCommandInput } from "@pinomad/client/command-input.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
-import { ChatAddMenu } from "../../shared/ui/chat/chat-add-menu.tsx";
+import { ChatAddMenu, ChatAddMenuItem } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
+import { ArchiveArrowDown, Bot, CommandLine, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
 
 /** A queued edit's images as bytes, or undefined when any one cannot load. */
@@ -137,11 +137,8 @@ export function ConversationComposer({
           ? "Clear the message first"
           : undefined;
   const fileInput = useRef<HTMLInputElement>(null);
-  // No "why" slot on menu items: the reason goes into the label itself.
-  const addImages =
-    accepts || disconnected
-      ? "Add images…"
-      : `Add images… (${model?.name ?? agent.model?.modelId ?? "This model"} can't see images)`;
+  const imagesUnavailable =
+    accepts || disconnected ? undefined : `${model?.name ?? agent.model?.modelId ?? "This model"} can't see images`;
 
   // Queued-input calls are requests, not commands: their outcomes and errors
   // come back here instead of becoming host notices. One request per row at a
@@ -368,20 +365,32 @@ export function ConversationComposer({
                 if (open) slash.request(true);
               }}
             >
-              <DropdownMenuItem label={addImages} isDisabled={!accepts} onClick={() => fileInput.current?.click()} />
+              <ChatAddMenuItem
+                icon={ImageIcon}
+                label="Add images…"
+                hint={imagesUnavailable ?? "Or paste or drop"}
+                isDisabled={!accepts}
+                onClick={() => fileInput.current?.click()}
+              />
               {skills.trigger === undefined ? null : (
-                <DropdownMenuItem label="Use a skill…" onClick={() => inputRef.current?.openTrigger("$")} />
+                <ChatAddMenuItem icon={Sparkles} label="Use a skill…" hint="Or type $" onClick={() => inputRef.current?.openTrigger("$")} />
               )}
               {roles.length === 0 ? null : (
-                <DropdownMenuItem label="Mention an agent…" onClick={() => inputRef.current?.openTrigger("@")} />
+                <ChatAddMenuItem icon={Bot} label="Mention an agent…" hint="Or type @" onClick={() => inputRef.current?.openTrigger("@")} />
               )}
               {!listsCommands ? (
-                <DropdownMenuItem label="Compact conversation" onClick={() => void remote.controller.compact(undefined)} />
+                <ChatAddMenuItem
+                  icon={ArchiveArrowDown}
+                  label="Compact conversation"
+                  hint="Frees up context"
+                  onClick={() => void remote.controller.compact(undefined)}
+                />
               ) : (
                 // Opens the `/` menu, as typing `/` at the start would.
-                <DropdownMenuItem
+                <ChatAddMenuItem
+                  icon={CommandLine}
                   label="Run a command…"
-                  description={commandsUnavailable}
+                  hint={commandsUnavailable ?? "Or type /"}
                   isDisabled={commandsUnavailable !== undefined}
                   onClick={() => inputRef.current?.openTrigger("/")}
                 />
