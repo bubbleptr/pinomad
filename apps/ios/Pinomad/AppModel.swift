@@ -19,17 +19,6 @@ final class AppModel {
         case failed(ConnectFailure)
     }
 
-    /// What an optimistic send cleared, kept briefly so a command-class
-    /// refusal (attachments come back as notices) can restore it.
-    struct PendingAttachmentSend {
-        let text: String
-        let images: [MessageImage]
-        let chips: SkillChips
-        let files: FileAttachmentTray
-        let noticesBefore: UInt64
-        let expiresAt: Date
-    }
-
     /// What the root presents as a sheet — one slot, so a deep link or a
     /// scan arriving while another sheet is up waits for it to close
     /// instead of being dropped by SwiftUI.
@@ -119,8 +108,6 @@ final class AppModel {
     /// Picks still being read off the main actor. A send waits for these,
     /// exactly like an upload in progress.
     var fileReads: [UInt64: Int] = [:]
-    /// Sends with attachments whose cleared draft may still need restoring.
-    var pendingAttachmentSends: [UInt64: PendingAttachmentSend] = [:]
     /// The queued-input Edit flow: the copy read before withdrawing, its
     /// request phase, and the composer lock. Memory only; a host switch
     /// drops it (an unresolved copy is retried after a same-host reconnect).
@@ -471,7 +458,6 @@ final class AppModel {
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
-        pendingAttachmentSends = [:]
         fileReads = [:]
         replyStreams.sync(chat: nil)
         toasts = []
@@ -488,7 +474,6 @@ final class AppModel {
             questionDrafts = [:]
             trays = [:]
             fileTrays = [:]
-            pendingAttachmentSends = [:]
             queuedEdit.reset()
             queuedEditPreparing.removeAll()
             queuePending.removeAll()
@@ -516,46 +501,6 @@ final class AppModel {
         connectAttempt = attempt
         attempt.start()
         armConnectWatchdog()
-    }
-
-    /// A submit with attachments is command-class, so a refused reference
-    /// (expired / missing / still uploading at the host) only arrives as a
-    /// notice. Put the cleared draft back unless the reader moved on.
-    private func restoreRejectedAttachmentSend(after notices: [Notice]) {
-        guard !pendingAttachmentSends.isEmpty else { return }
-        let now = Date.now
-        for key in Array(pendingAttachmentSends.keys) {
-            guard let pending = pendingAttachmentSends[key] else { continue }
-            if now >= pending.expiresAt {
-                pendingAttachmentSends[key] = nil
-                continue
-            }
-            guard let rejection = notices.first(where: {
-                $0.id > pending.noticesBefore && AttachmentNotice.isRejection($0.message)
-            }) else { continue }
-            pendingAttachmentSends[key] = nil
-            guard (drafts[key] ?? "").isEmpty, trays[key]?.isEmpty ?? true,
-                  fileTrays[key] == nil else { continue }
-            drafts[key] = pending.text
-            skillChips[key] = pending.chips
-            if !pending.images.isEmpty {
-                var tray = AttachmentTray()
-                if let claim = tray.reserve(pending.images.count, accepts: true) {
-                    tray.fulfil(claim, with: pending.images)
-                }
-                trays[key] = tray
-            }
-            if !pending.files.isEmpty {
-                // The host refused these ids; keep the chips (and their
-                // sources) retryable instead of sending the same dead ids.
-                var files = pending.files
-                for id in files.entries.map(\.id) {
-                    files.fail(id: id, error: rejection.message, gone: true)
-                }
-                fileTrays[key] = files
-            }
-            lastError = rejection.message
-        }
     }
 
     private func apply(_ update: SessionUpdate) {
@@ -615,11 +560,9 @@ final class AppModel {
             if let hostKey = sessionHost?.hostKey {
                 cacheHostName(snapshot.hostName, for: hostKey)
             }
-            let freshNotices = noticeFeed.fresh(snapshot.notices)
-            restoreRejectedAttachmentSend(after: freshNotices)
             // A failure page explains itself; the core's notice for the
             // same thing (e.g. the 4401) would only repeat it in English.
-            for notice in freshNotices where phase == .connected { show(notice) }
+            for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
             let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
             push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
             if connectedNow && !lastSnapshotConnected { syncPushToken() }

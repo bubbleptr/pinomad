@@ -207,6 +207,14 @@ public final class PinomadSession: @unchecked Sendable {
         client.queuedInput(submissionId: submissionId)
     }
 
+    /// The current view's notices, read under the same lock as `snapshot()`.
+    /// A command-class refusal is already in this list when its `invoke`
+    /// resolves, so a caller can tell which send the host rejected without
+    /// waiting for the UI snapshot.
+    public func currentNotices() -> [Notice]? {
+        client.snapshot()?.notices
+    }
+
     /// The core's connection state right now. This is only a gate for
     /// retrying an idempotent request — never evidence that an in-flight
     /// request was refused; its connection epoch decides that. A fresh

@@ -29,20 +29,7 @@ extension AppModel {
         let attachments = files.ids
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
-        let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
-        // Only the newest send may claim a rejection notice: host notices
-        // carry no request id, so an older successful send must not be
-        // restored by another conversation's failure.
-        pendingAttachmentSends.removeAll()
-        if !attachments.isEmpty {
-            // Command-class submit failures only land as notices. Keep the
-            // cleared content briefly so a rejected attachment can put it
-            // back instead of losing the whole draft.
-            pendingAttachmentSends[id] = PendingAttachmentSend(
-                text: text, images: images, chips: chips, files: files,
-                noticesBefore: noticesBefore, expiresAt: .now.addingTimeInterval(60)
-            )
-        }
+        let noticesBefore = session.currentNotices()?.map(\.id).max() ?? 0
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
@@ -53,9 +40,20 @@ extension AppModel {
                 _ = try await session.invoke(
                     .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
                             images: images, skills: payload.skills, attachments: attachments))
+                guard let self, self.session === session else { return }
+                // Command-class failures resolve normally; their notice is
+                // already in the core view. Associate it with this send by
+                // reading the notices now, not on a later snapshot.
+                let rejection = (session.currentNotices() ?? []).first {
+                    $0.id > noticesBefore && AttachmentNotice.isRejection($0.message)
+                }
+                if let rejection {
+                    self.restoreRejectedSend(
+                        conversation: id, text: text, images: images, chips: chips,
+                        files: files, message: rejection.message)
+                }
             } catch {
                 guard let self else { return }
-                self.pendingAttachmentSends[id] = nil
                 // Don't clobber anything typed or attached meanwhile.
                 if (self.drafts[id] ?? "").isEmpty {
                     self.drafts[id] = text
@@ -74,6 +72,34 @@ extension AppModel {
                 self.lastError = "Couldn't send: \(self.describe(error))"
             }
         }
+    }
+
+    /// Put an optimistically cleared draft back after the host refused one
+    /// of its attachment ids. The refused ids are dropped so Retry starts a
+    /// fresh upload; the sources stay attached to the chips.
+    private func restoreRejectedSend(
+        conversation id: UInt64, text: String, images: [MessageImage],
+        chips: SkillChips, files: FileAttachmentTray, message: String
+    ) {
+        guard (drafts[id] ?? "").isEmpty, trays[id]?.isEmpty ?? true,
+              fileTrays[id] == nil else { return }
+        drafts[id] = text
+        skillChips[id] = chips
+        if !images.isEmpty {
+            var tray = AttachmentTray()
+            if let claim = tray.reserve(images.count, accepts: true) {
+                tray.fulfil(claim, with: images)
+            }
+            trays[id] = tray
+        }
+        if !files.isEmpty {
+            var restored = files
+            for entryId in restored.entries.map(\.id) {
+                restored.fail(id: entryId, error: message, gone: true)
+            }
+            fileTrays[id] = restored
+        }
+        lastError = message
     }
 
     /// Stage images for a conversation: slots are claimed now, the bytes
