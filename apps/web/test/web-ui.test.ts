@@ -26,7 +26,7 @@ import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
-import type { HostAuth } from "@pinomad/protocol/auth.ts";
+import type { HostAuth, HostProviders } from "@pinomad/protocol/auth.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { createServer } from "vite";
 import { expect, it } from "vitest";
@@ -335,12 +335,23 @@ it("logs a stored login out from the Providers section", async () => {
     { logins: [{ providerId: "anthropic", name: "Anthropic", kind: "api_key", subscription: false }] },
     (a, b) => a.logins === b.logins,
   );
+  const providers = new Published<HostProviders>({ providers: [], logins: [] }, (a, b) => a === b);
+  const unused = (): never => {
+    throw new Error("not used by this test");
+  };
   const modelAuth: ModelAuth = {
     models: constantValue([]),
     auth,
+    providers,
     async logout(providerId: string) {
       auth.set({ logins: auth.value.logins.filter((login) => login.providerId !== providerId) });
     },
+    beginLogin: unused,
+    answerLogin: unused,
+    cancelLogin: unused,
+    saveCustomProvider: unused,
+    removeCustomProvider: unused,
+    listEndpointModels: unused,
     close() {},
   };
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], modelAuth });

@@ -444,10 +444,13 @@ export async function openModelAuth(
   };
 }
 
-/** `GET {baseUrl}/models` in the endpoint's own dialect. */
+/**
+ * The endpoint's model list in its own dialect: `GET {baseUrl}/models`,
+ * except Anthropic, whose base URL is the root its SDK adds `/v1/…` to.
+ */
 async function fetchEndpointModels(api: CustomProviderApi, baseUrl: string, key: string | undefined): Promise<string[]> {
   const base = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${base}/models`);
+  const url = new URL(api === "anthropic-messages" ? `${base}/v1/models` : `${base}/models`);
   const headers: Record<string, string> = { accept: "application/json" };
   if (api === "anthropic-messages") {
     headers["anthropic-version"] = "2023-06-01";

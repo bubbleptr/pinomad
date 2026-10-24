@@ -8,6 +8,7 @@ import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
+import type { LoginMethod } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -276,6 +277,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
         { providerId: "openai", name: "OpenAI", kind: "api_key", subscription: false },
       ],
     },
+    providers: { providers: [], logins: [] },
     settings: {
       defaultModel: MODEL,
       defaultThinkingLevel: "high",
@@ -348,6 +350,17 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     createPairing: fn(async () => ({ url: `pinomad://pair#${key("P")}`, expiresAt: Date.now() + 5 * MINUTE })),
     revokeDevice: fn(async () => {}),
     logout: fn(async () => {}),
+    // Resolves to the flow the view already lists for this provider, so a
+    // story can show a login in progress without a live stream.
+    beginLogin: fn(
+      async (providerId: string, method: LoginMethod) =>
+        view.providers?.logins.find((flow) => flow.providerId === providerId && flow.method === method)?.id ?? "login-new",
+    ),
+    answerLogin: fn(async () => {}),
+    cancelLogin: fn(async () => {}),
+    saveCustomProvider: fn(async () => {}),
+    removeCustomProvider: fn(async () => {}),
+    listEndpointModels: fn(async () => ["llama-4-maverick-17b-128e-instruct", "gpt-oss-120b", "qwen3-235b-a22b-instruct-2507"]),
     updateSettings: fn(async () => {}),
     createAgent: fn(async () => {}),
     updateAgent: fn(async () => {}),
