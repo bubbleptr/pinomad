@@ -1,3 +1,4 @@
+import PinomadCore
 import SwiftUI
 
 /// Where the navigation stack can go.
@@ -13,6 +14,16 @@ enum Route: Hashable {
     case settings
     /// One paired machine's settings, by host key.
     case machine(String)
+    /// That machine's providers: what's connected, and ways to add one.
+    case providers(String)
+    /// Providers to sign in to with a subscription or account.
+    case providerSubscriptions
+    /// Providers that take an API key.
+    case providerKeys
+    /// One provider: its connection, or a login by the method given.
+    case provider(String, LoginMethod?)
+    /// Add a custom endpoint, or edit the one with this id.
+    case customEndpoint(String?)
 }
 
 /// The page for a route. The root stack and the settings sheet's own stack
@@ -29,6 +40,11 @@ struct RouteDestination: View {
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
+        case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
+        case .providerSubscriptions: ProviderGridView(model: model, kind: .subscription)
+        case .providerKeys: ProviderGridView(model: model, kind: .apiKey)
+        case .provider(let id, let method): ProviderPageView(model: model, providerId: id, method: method)
+        case .customEndpoint(let id): CustomEndpointView(model: model, providerId: id)
         }
     }
 }
@@ -42,4 +58,29 @@ enum ConversationFilter: Hashable {
     case chats
     /// By project path.
     case project(String)
+}
+
+/// Back to the Providers list from a page pushed above it, once a login
+/// or endpoint is saved. Each stack that can hold those pages sets it on
+/// its own path.
+struct PopToProvidersAction: Equatable {
+    let pop: @MainActor () -> Void
+
+    @MainActor func callAsFunction() { pop() }
+
+    /// A stack sets it once and its path never changes identity, so every
+    /// value is the same action — dependents needn't refresh on updates.
+    static func == (_: Self, _: Self) -> Bool { true }
+}
+
+extension EnvironmentValues {
+    @Entry var popToProviders = PopToProvidersAction {}
+}
+
+extension [Route] {
+    /// Drop everything above the topmost Providers list.
+    mutating func popToProviders() {
+        guard let index = lastIndex(where: { if case .providers = $0 { true } else { false } }) else { return }
+        removeSubrange(index + 1 ..< endIndex)
+    }
 }
