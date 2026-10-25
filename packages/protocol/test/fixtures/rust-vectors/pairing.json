@@ -3,71 +3,193 @@
     {
       "name": "https-link",
       "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
-      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F"
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
+      "url": "wss://omarchy:8443/",
+      "endpointSet": null
     },
     {
       "name": "http-link-defaults-socket",
       "pasted": "http://192.168.1.9:4400/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1",
-      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2F192.168.1.9%3A4400%2F"
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2F192.168.1.9%3A4400%2F",
+      "url": "ws://192.168.1.9:4400/",
+      "endpointSet": null
     },
     {
       "name": "deep-link",
       "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
-      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F"
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%3A8443%2F",
+      "url": "wss://omarchy:8443/",
+      "endpointSet": null
     },
     {
       "name": "http-link-port",
       "pasted": "http://omarchy:4400/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2Fomarchy%3A4400%2F",
-      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2Fomarchy%3A4400%2F"
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2Fomarchy%3A4400%2F",
+      "url": "ws://omarchy:4400/",
+      "endpointSet": null
     },
     {
       "name": "missing-fragment",
-      "pasted": "https://omarchy/"
+      "pasted": "https://omarchy/",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "deep-link-missing-url",
-      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1"
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "non-ws-url",
-      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=https%3A%2F%2Fevil%2F"
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=https%3A%2F%2Fevil%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "bad-pair-shape",
-      "pasted": "https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "three-part-pair",
-      "pasted": "https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "empty-secret",
-      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "non-b64-secret",
-      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.has%20space&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.has%20space&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "short-key",
-      "pasted": "https://omarchy/#pair=QQ.sec&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=QQ.sec&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "non-b64-key",
-      "pasted": "https://omarchy/#pair=!!.sec&url=wss%3A%2F%2Fomarchy%2F"
+      "pasted": "https://omarchy/#pair=!!.sec&url=wss%3A%2F%2Fomarchy%2F",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "token-smuggling-field",
       "pasted": "https://omarchy/#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%2F&token=abc",
-      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%2F"
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Fomarchy%2F",
+      "url": "wss://omarchy/",
+      "endpointSet": null
     },
     {
       "name": "garbage-url",
-      "pasted": "not a url"
+      "pasted": "not a url",
+      "url": null,
+      "endpointSet": null
     },
     {
       "name": "javascript-scheme",
-      "pasted": "javascript:alert(1)#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1"
+      "pasted": "javascript:alert(1)#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1",
+      "url": null,
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D",
+      "url": "wss://relay.example.com/c/host",
+      "endpointSet": {
+        "schemaVersion": 1,
+        "endpoints": [
+          {
+            "transport": "webSocket",
+            "role": "relay",
+            "url": "wss://relay.example.com/c/host"
+          },
+          {
+            "transport": "webSocket",
+            "role": "direct",
+            "url": "ws://192.168.1.5:7422/secure"
+          }
+        ]
+      }
+    },
+    {
+      "name": "endpoint-set-loopback-legacy",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2F127.0.0.1%3A7420%2Fsecure&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=ws%3A%2F%2F127.0.0.1%3A7420%2Fsecure&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D",
+      "url": "ws://127.0.0.1:7420/secure",
+      "endpointSet": {
+        "schemaVersion": 1,
+        "endpoints": [
+          {
+            "transport": "webSocket",
+            "role": "relay",
+            "url": "wss://relay.example.com/c/host"
+          },
+          {
+            "transport": "webSocket",
+            "role": "direct",
+            "url": "ws://192.168.1.5:7422/secure"
+          }
+        ]
+      }
+    },
+    {
+      "name": "endpoint-set-empty",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%5D%7D",
+      "url": null,
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set-malformed",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22backup%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%5D%7D",
+      "url": null,
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set-duplicate-param",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22direct%22%2C%22url%22%3A%22ws%3A%2F%2F192.168.1.5%3A7422%2Fsecure%22%7D%5D%7D",
+      "url": null,
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set-unknown-schema",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A2%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%5D%7D",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost",
+      "url": "wss://relay.example.com/c/host",
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set-unknown-transport",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22quic%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22quic%3A%2F%2Frelay%22%7D%5D%7D",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost",
+      "url": "wss://relay.example.com/c/host",
+      "endpointSet": null
+    },
+    {
+      "name": "endpoint-set-deduped",
+      "pasted": "pinomad://pair#pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%2C%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%5D%7D",
+      "expect": "pair=QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE.s3cr3t-token_1&url=wss%3A%2F%2Frelay.example.com%2Fc%2Fhost&endpointSet=%7B%22schemaVersion%22%3A1%2C%22endpoints%22%3A%5B%7B%22transport%22%3A%22webSocket%22%2C%22role%22%3A%22relay%22%2C%22url%22%3A%22wss%3A%2F%2Frelay.example.com%2Fc%2Fhost%22%7D%5D%7D",
+      "url": "wss://relay.example.com/c/host",
+      "endpointSet": {
+        "schemaVersion": 1,
+        "endpoints": [
+          {
+            "transport": "webSocket",
+            "role": "relay",
+            "url": "wss://relay.example.com/c/host"
+          }
+        ]
+      }
     }
   ],
   "params": [

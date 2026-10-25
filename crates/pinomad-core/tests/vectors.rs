@@ -10,8 +10,9 @@ use pinomad_core::frames::{
     classify_server_frame, decode_server_frame, encode_client_frame, host_streams, host_supports_call,
     host_supports_feature, CallMethod, ClientFrame, HostFeature, ServerFrame, PROTOCOL,
 };
+use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, ParsedEndpointSet};
 use pinomad_core::json::Json;
-use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param};
+use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param, parse_pairing_link};
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/protocol/test/fixtures")
@@ -252,12 +253,64 @@ fn pairing_links_parse_like_the_reference() {
             _ => None,
         };
         assert_eq!(pairing_fragment(&pasted), expect, "{name}");
+        let parsed = parse_pairing_link(&pasted);
+        let url = parsed.as_ref().map_or(Json::Null, |parsed| Json::from(parsed.url.clone()));
+        let expected_url = case.get("url").cloned().unwrap_or(Json::Null);
+        assert_eq!(url, expected_url, "{name}: url");
+        let endpoint_set = parsed
+            .as_ref()
+            .and_then(|parsed| parsed.endpoint_set.as_ref())
+            .map_or(Json::Null, |set| set.to_json());
+        let expected_set = case.get("endpointSet").cloned().unwrap_or(Json::Null);
+        assert_eq!(endpoint_set, expected_set, "{name}: endpointSet");
     }
     for case in field(&file, "params").as_array().unwrap().iter() {
         let name = as_text(field(case, "name"));
         let pair = as_text(field(case, "pair"));
         let expect = field(case, "expect").truthy();
         assert_eq!(parse_pair_param(&pair).is_some(), expect, "{name}");
+    }
+}
+
+#[test]
+fn endpoint_sets_parse_like_the_reference() {
+    let file = load("rust-vectors/endpoints");
+    for case in field(&file, "cases").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let parsed = if field(case, "present").truthy() {
+            let value = Json::parse(&as_text(field(case, "value"))).unwrap();
+            parse_endpoint_set(Some(&value))
+        } else {
+            parse_endpoint_set(None)
+        };
+        let (kind, got) = match parsed {
+            ParsedEndpointSet::Absent => ("absent", Json::Null),
+            ParsedEndpointSet::Unsupported => ("unsupported", Json::Null),
+            ParsedEndpointSet::Malformed => ("malformed", Json::Null),
+            ParsedEndpointSet::Valid(set) => ("valid", set.to_json()),
+        };
+        assert_eq!(kind, as_text(field(case, "kind")), "{name}: kind");
+        let expect = match case.get("expect") {
+            Some(Json::String(text)) => Json::parse(&text.to_string_lossy()).unwrap(),
+            _ => Json::Null,
+        };
+        assert_eq!(got, expect, "{name}: set");
+    }
+    for case in field(&file, "params").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let parsed = parse_endpoint_set_text(&as_text(field(case, "text")));
+        let (kind, got) = match parsed {
+            ParsedEndpointSet::Absent => ("absent", Json::Null),
+            ParsedEndpointSet::Unsupported => ("unsupported", Json::Null),
+            ParsedEndpointSet::Malformed => ("malformed", Json::Null),
+            ParsedEndpointSet::Valid(set) => ("valid", set.to_json()),
+        };
+        assert_eq!(kind, as_text(field(case, "kind")), "{name}: kind");
+        let expect = match case.get("expect") {
+            Some(Json::String(text)) => Json::parse(&text.to_string_lossy()).unwrap(),
+            _ => Json::Null,
+        };
+        assert_eq!(got, expect, "{name}: set");
     }
 }
 

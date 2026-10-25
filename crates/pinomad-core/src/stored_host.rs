@@ -6,6 +6,7 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::b64::from_base64url;
+use crate::endpoints::{parse_endpoint_set, EndpointSet, ParsedEndpointSet};
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
 
@@ -95,6 +96,10 @@ pub struct StoredHost {
     /// Present only when the stored link validated — a malformed one costs
     /// the association, not the pairing.
     pub account: Option<StoredHostAccount>,
+    /// The host's last published remote candidates (5.22, ADR-0032). Absent on
+    /// old records and when the stored set was unusable; an explicit empty set
+    /// survives because it clears the remote list while preserving `url`.
+    pub endpoint_set: Option<EndpointSet>,
 }
 
 /// `parseStoredHost`: a validated stored host, or None.
@@ -120,12 +125,18 @@ pub fn parse_stored_host(value: &Json) -> Option<StoredHost> {
         .and_then(Json::as_str)
         .map(|s| s.to_string_lossy())
         .filter(|n| !n.is_empty());
+    // A malformed or unsupported set costs only the set.
+    let endpoint_set = match parse_endpoint_set(value.get("endpointSet")) {
+        ParsedEndpointSet::Valid(set) => Some(set),
+        _ => None,
+    };
     Some(StoredHost {
         url: lossy(value.get("url")),
         host_key: lossy(value.get("hostKey")),
         private_key: lossy(value.get("privateKey")),
         name,
         account,
+        endpoint_set,
     })
 }
 

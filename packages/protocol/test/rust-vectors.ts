@@ -17,7 +17,17 @@ import {
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession } from "../src/secure-channel.ts";
-import { pairingFragment, parsePairParam } from "../src/pairing-link.ts";
+import {
+  ENDPOINT_SET_SCHEMA_VERSION,
+  MAX_HOST_ENDPOINTS,
+  MAX_HOST_ENDPOINT_URL_LENGTH,
+  encodeEndpointSetParam,
+  parseEndpointSet,
+  parseEndpointSetParam,
+  type EndpointSet,
+  type HostEndpoint,
+} from "../src/endpoints.ts";
+import { pairingFragment, parsePairParam, parsePairingLink } from "../src/pairing-link.ts";
 
 export interface VectorFile {
   readonly name: string;
@@ -376,28 +386,135 @@ function recordsVector(): VectorFile {
   });
 }
 
+// ─── Endpoint sets ───────────────────────────────────────────────────────────
+
+const relayEndpoint: HostEndpoint = {
+  transport: "webSocket",
+  role: "relay",
+  url: "wss://relay.example.com/c/host",
+};
+const directEndpoint: HostEndpoint = {
+  transport: "webSocket",
+  role: "direct",
+  url: "ws://192.168.1.5:7422/secure",
+};
+const endpointSet = (...endpoints: HostEndpoint[]): EndpointSet => ({
+  schemaVersion: ENDPOINT_SET_SCHEMA_VERSION,
+  endpoints,
+});
+const urlLimit = "ws://e/" + "a" + "😀".repeat((MAX_HOST_ENDPOINT_URL_LENGTH - "ws://e/".length - 1) / 2);
+
+function endpointCase(name: string, value: unknown, present = true) {
+  const parsed = parseEndpointSet(value);
+  return {
+    name,
+    present,
+    value: present ? wire(value) : null,
+    kind: parsed.kind,
+    expect: parsed.kind === "valid" ? wire(parsed.endpointSet) : null,
+  };
+}
+
+function endpointVector(): VectorFile {
+  const future = { transport: "quic", role: "relay", url: "quic://relay.example.com" } as unknown as HostEndpoint;
+  const cases = [
+    endpointCase("absent", undefined, false),
+    endpointCase("valid", endpointSet(relayEndpoint, directEndpoint)),
+    endpointCase("empty", endpointSet()),
+    endpointCase("deduped", endpointSet(relayEndpoint, relayEndpoint)),
+    endpointCase("role-conflict", endpointSet(directEndpoint, { ...directEndpoint, role: "relay" })),
+    endpointCase("unknown-transport-mixed", endpointSet(future, relayEndpoint)),
+    endpointCase("unknown-transport-only", endpointSet(future)),
+    endpointCase("unknown-schema", { schemaVersion: 2, endpoints: "not an array" }),
+    endpointCase("missing-schema", { endpoints: [] }),
+    endpointCase("malformed-shape", "set"),
+    endpointCase("malformed-array", []),
+    endpointCase("malformed-endpoints", { schemaVersion: 1, endpoints: null }),
+    endpointCase("malformed-entry", endpointSet(null as unknown as HostEndpoint)),
+    endpointCase("malformed-role", endpointSet({ ...relayEndpoint, role: "backup" } as unknown as HostEndpoint)),
+    endpointCase("malformed-url", endpointSet({ ...relayEndpoint, url: "http://relay.example.com" })),
+    endpointCase("url-at-limit", endpointSet({ ...directEndpoint, url: urlLimit })),
+    endpointCase("url-over-limit", endpointSet({ ...directEndpoint, url: urlLimit + "a" })),
+    endpointCase(
+      "raw-list-over-limit",
+      endpointSet(relayEndpoint, relayEndpoint, relayEndpoint, relayEndpoint, relayEndpoint),
+    ),
+  ];
+  const params = [
+    {
+      name: "valid",
+      text: wire(endpointSet(relayEndpoint, directEndpoint)),
+      kind: "valid",
+      expect: wire(endpointSet(relayEndpoint, directEndpoint)),
+    },
+    { name: "malformed-json", text: "{", kind: "malformed", expect: null },
+    {
+      name: "unknown-schema",
+      text: wire({ schemaVersion: 2, endpoints: [] }),
+      kind: "unsupported",
+      expect: null,
+    },
+  ];
+  return write("endpoints", {
+    maxEndpoints: MAX_HOST_ENDPOINTS,
+    maxUrlLength: MAX_HOST_ENDPOINT_URL_LENGTH,
+    cases,
+    params,
+  });
+}
+
 // ─── Pairing links ───────────────────────────────────────────────────────────
 
 function pairingVector(): VectorFile {
   const hostKey = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE"; // 32 zero-ish bytes
   const pair = `${hostKey}.s3cr3t-token_1`;
+  const relayTarget = encodeURIComponent(relayEndpoint.url);
+  const setParam = encodeEndpointSetParam(endpointSet(relayEndpoint, directEndpoint));
+  const loopbackTarget = encodeURIComponent("ws://127.0.0.1:7420/secure");
+  const malformedSet = encodeURIComponent(
+    JSON.stringify({ schemaVersion: 1, endpoints: [{ transport: "webSocket", role: "backup", url: relayEndpoint.url }] }),
+  );
+  const unknownSchema = encodeURIComponent(JSON.stringify({ schemaVersion: 2, endpoints: [relayEndpoint] }));
+  const unknownTransport = encodeURIComponent(
+    JSON.stringify({ schemaVersion: 1, endpoints: [{ transport: "quic", role: "relay", url: "quic://relay" }] }),
+  );
+  const link = (name: string, pasted: string) => {
+    const parsed = parsePairingLink(pasted);
+    return {
+      name,
+      pasted,
+      expect: pairingFragment(pasted),
+      url: parsed?.url ?? null,
+      endpointSet: parsed?.endpointSet ?? null,
+    };
+  };
+  const withSet = (endpointValue: string, target = relayTarget) =>
+    `pinomad://pair#pair=${pair}&url=${target}&endpointSet=${endpointValue}`;
   const links = [
-    { name: "https-link", pasted: `https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`) },
-    { name: "http-link-defaults-socket", pasted: `http://192.168.1.9:4400/#pair=${pair}`, expect: pairingFragment(`http://192.168.1.9:4400/#pair=${pair}`) },
-    { name: "deep-link", pasted: `pinomad://pair#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`, expect: pairingFragment(`pinomad://pair#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`) },
-    { name: "http-link-port", pasted: `http://omarchy:4400/#pair=${pair}&url=ws%3A%2F%2Fomarchy%3A4400%2F`, expect: pairingFragment(`http://omarchy:4400/#pair=${pair}&url=ws%3A%2F%2Fomarchy%3A4400%2F`) },
-    { name: "missing-fragment", pasted: "https://omarchy/", expect: pairingFragment("https://omarchy/") },
-    { name: "deep-link-missing-url", pasted: `pinomad://pair#pair=${pair}`, expect: pairingFragment(`pinomad://pair#pair=${pair}`) },
-    { name: "non-ws-url", pasted: `https://omarchy/#pair=${pair}&url=https%3A%2F%2Fevil%2F`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=https%3A%2F%2Fevil%2F`) },
-    { name: "bad-pair-shape", pasted: `https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "three-part-pair", pasted: `https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "empty-secret", pasted: `https://omarchy/#pair=${hostKey}.&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${hostKey}.&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "non-b64-secret", pasted: `https://omarchy/#pair=${hostKey}.has%20space&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${hostKey}.has%20space&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "short-key", pasted: `https://omarchy/#pair=${"QQ"}.sec&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${"QQ"}.sec&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "non-b64-key", pasted: `https://omarchy/#pair=${"!!"}.sec&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${"!!"}.sec&url=wss%3A%2F%2Fomarchy%2F`) },
-    { name: "token-smuggling-field", pasted: `https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%2F&token=abc`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%2F&token=abc`) },
-    { name: "garbage-url", pasted: "not a url", expect: pairingFragment("not a url") },
-    { name: "javascript-scheme", pasted: `javascript:alert(1)#pair=${pair}`, expect: pairingFragment(`javascript:alert(1)#pair=${pair}`) },
+    { name: "https-link", pasted: `https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`), url: "wss://omarchy:8443/", endpointSet: null },
+    { name: "http-link-defaults-socket", pasted: `http://192.168.1.9:4400/#pair=${pair}`, expect: pairingFragment(`http://192.168.1.9:4400/#pair=${pair}`), url: "ws://192.168.1.9:4400/", endpointSet: null },
+    { name: "deep-link", pasted: `pinomad://pair#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`, expect: pairingFragment(`pinomad://pair#pair=${pair}&url=wss%3A%2F%2Fomarchy%3A8443%2F`), url: "wss://omarchy:8443/", endpointSet: null },
+    { name: "http-link-port", pasted: `http://omarchy:4400/#pair=${pair}&url=ws%3A%2F%2Fomarchy%3A4400%2F`, expect: pairingFragment(`http://omarchy:4400/#pair=${pair}&url=ws%3A%2F%2Fomarchy%3A4400%2F`), url: "ws://omarchy:4400/", endpointSet: null },
+    { name: "missing-fragment", pasted: "https://omarchy/", expect: pairingFragment("https://omarchy/"), url: null, endpointSet: null },
+    { name: "deep-link-missing-url", pasted: `pinomad://pair#pair=${pair}`, expect: pairingFragment(`pinomad://pair#pair=${pair}`), url: null, endpointSet: null },
+    { name: "non-ws-url", pasted: `https://omarchy/#pair=${pair}&url=https%3A%2F%2Fevil%2F`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=https%3A%2F%2Fevil%2F`), url: null, endpointSet: null },
+    { name: "bad-pair-shape", pasted: `https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=not.a.pair&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "three-part-pair", pasted: `https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=a.b.c&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "empty-secret", pasted: `https://omarchy/#pair=${hostKey}.&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${hostKey}.&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "non-b64-secret", pasted: `https://omarchy/#pair=${hostKey}.has%20space&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${hostKey}.has%20space&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "short-key", pasted: `https://omarchy/#pair=${"QQ"}.sec&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${"QQ"}.sec&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "non-b64-key", pasted: `https://omarchy/#pair=${"!!"}.sec&url=wss%3A%2F%2Fomarchy%2F`, expect: pairingFragment(`https://omarchy/#pair=${"!!"}.sec&url=wss%3A%2F%2Fomarchy%2F`), url: null, endpointSet: null },
+    { name: "token-smuggling-field", pasted: `https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%2F&token=abc`, expect: pairingFragment(`https://omarchy/#pair=${pair}&url=wss%3A%2F%2Fomarchy%2F&token=abc`), url: "wss://omarchy/", endpointSet: null },
+    { name: "garbage-url", pasted: "not a url", expect: pairingFragment("not a url"), url: null, endpointSet: null },
+    { name: "javascript-scheme", pasted: `javascript:alert(1)#pair=${pair}`, expect: pairingFragment(`javascript:alert(1)#pair=${pair}`), url: null, endpointSet: null },
+    link("endpoint-set", withSet(setParam)),
+    link("endpoint-set-loopback-legacy", withSet(setParam, loopbackTarget)),
+    link("endpoint-set-empty", withSet(encodeEndpointSetParam(endpointSet()))),
+    link("endpoint-set-malformed", withSet(malformedSet)),
+    link("endpoint-set-duplicate-param", withSet(`${setParam}&endpointSet=${setParam}`)),
+    link("endpoint-set-unknown-schema", withSet(unknownSchema)),
+    link("endpoint-set-unknown-transport", withSet(unknownTransport)),
+    link("endpoint-set-deduped", withSet(encodeEndpointSetParam(endpointSet(relayEndpoint, relayEndpoint)))),
   ];
   const params = [
     { name: "valid", pair, expect: parsePairParam(pair) != null },
@@ -412,5 +529,5 @@ function pairingVector(): VectorFile {
 
 /** Every vector file, `test/fixtures/rust-vectors/<name>.json`. */
 export function buildVectors(): readonly VectorFile[] {
-  return [framesVector(), deltaVector(), recordsVector(), pairingVector()];
+  return [framesVector(), deltaVector(), recordsVector(), endpointVector(), pairingVector()];
 }

@@ -2,6 +2,7 @@
 // localStorage, iOS keychain, desktop's encrypted file). Validation lives
 // here so all three reject the same shapes: only ws/wss urls, and keys that
 // are base64url of exactly 32 bytes.
+import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
 /**
@@ -23,6 +24,12 @@ export type StoredHost = {
   /** The machine's display name, cached from the host's settings (5.12); absent until a 5.12 host announces it. */
   name?: string;
   account?: StoredHostAccount;
+  /**
+   * The host's last published remote candidates (5.22, ADR-0032). Absent on
+   * old records and when the stored set was unusable; an explicit empty set
+   * survives because it clears the remote list while preserving `url`.
+   */
+  endpointSet?: EndpointSet;
 };
 
 const isKey = (value: unknown): value is string => {
@@ -51,7 +58,7 @@ const isAccountLink = (value: unknown): value is StoredHostAccount => {
   return typeof account.serverOrigin === "string" && account.serverOrigin !== "" && isKey(account.hostId);
 };
 
-/** A validated stored host, or undefined. The result holds only the five fields. */
+/** A validated stored host, or undefined. The result holds only the fields it understands. */
 export function parseStoredHost(value: unknown): StoredHost | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const host = value as Record<string, unknown>;
@@ -61,12 +68,15 @@ export function parseStoredHost(value: unknown): StoredHost | undefined {
   // or an empty one is no name, the URL host labels it then.
   const account = isAccountLink(host.account) ? host.account : undefined;
   const name = typeof host.name === "string" && host.name !== "" ? host.name : undefined;
+  // An unusable set costs only the set — identity, account and url stay.
+  const parsedEndpoints = parseEndpointSet(host.endpointSet);
   return {
     url: host.url,
     hostKey: host.hostKey,
     privateKey: host.privateKey,
     ...(name === undefined ? {} : { name }),
     ...(account === undefined ? {} : { account }),
+    ...(parsedEndpoints.kind === "valid" ? { endpointSet: parsedEndpoints.endpointSet } : {}),
   };
 }
 

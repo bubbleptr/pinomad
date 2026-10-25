@@ -2,6 +2,7 @@ import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import { isCustomProviderApi, type CustomProviderApi, type CustomProviderInput, type HostAuth, type HostProviders, type LoginMethod } from "./auth.ts";
+import type { EndpointSet } from "./endpoints.ts";
 import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
@@ -91,7 +92,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 21 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 22 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -429,6 +430,12 @@ export type ServerFrame =
       readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
       /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
       readonly toolPresentations: Record<string, PresentationType>;
+      /**
+       * The host's current remote candidates (5.22, ADR-0032). Absent means an
+       * older host and never clears a stored set; a present valid set — including
+       * an empty one — replaces it.
+       */
+      readonly endpointSet?: EndpointSet;
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }

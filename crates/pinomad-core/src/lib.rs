@@ -11,6 +11,7 @@ pub mod command_input;
 pub mod context_usage;
 pub mod cot_view;
 pub mod delta;
+pub mod endpoints;
 pub mod family;
 pub mod folder_path;
 pub mod frames;
