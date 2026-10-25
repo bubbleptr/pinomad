@@ -12,8 +12,8 @@ use pinomad_core::noise::{
     RespondOptions,
 };
 use pinomad_core::secure_channel::{
-    decode_client_hello, decode_host_hello, encode_client_hello, respond_handshake, Pairing,
-    SecureConnection, SecureSession, SecureTransport, SECURE_PROLOGUE,
+    decode_client_hello, decode_host_hello, encode_client_hello, encode_host_hello, respond_handshake,
+    Pairing, PairingState, SecureConnection, SecureSession, SecureTransport, SECURE_PROLOGUE,
 };
 use pinomad_core::transport::{ConnOut, Connection, Transport};
 
@@ -438,6 +438,104 @@ fn connection_sends_pairing_once_and_reports_paired() {
     let (_, pair) = decode_client_hello(&hello).unwrap();
     assert!(pair.is_none());
     assert!(after.iter().any(|o| matches!(o, ConnOut::Authenticated { paired: false })));
+}
+
+#[test]
+fn shared_pairing_state_survives_handoff_and_is_spent_once() {
+    let host = generate_keypair().unwrap();
+    let device = generate_keypair().unwrap();
+    let private = to_base64url(&device.private_key);
+    let host_key = to_base64url(&host.public_key);
+    let state = PairingState::new(Some(Pairing {
+        secret: "one-time".into(),
+        name: "phone".into(),
+    }));
+
+    // Message 2 never arrives on the first path: the same secret is still
+    // offered by the next candidate's client hello.
+    let mut first = SecureTransport::with_pairing_state(
+        "ws://127.0.0.1:1/secure",
+        &host_key,
+        &private,
+        state.clone(),
+    )
+    .unwrap();
+    let mut first_conn = first.open();
+    let mut out = Vec::new();
+    first_conn.opened(&mut out);
+    let msg1 = out
+        .iter()
+        .find_map(|outcome| match outcome {
+            ConnOut::SendBytes(bytes) => Some(bytes.clone()),
+            _ => None,
+        })
+        .expect("first message 1");
+    let mut responder = respond_handshake(&host).unwrap();
+    let (hello, _) = responder.read_message1(&msg1).unwrap();
+    assert!(decode_client_hello(&hello).unwrap().1.is_some());
+    drop(first_conn);
+    drop(first);
+    assert!(state.current().is_some());
+
+    let mut second = SecureTransport::with_pairing_state(
+        "ws://127.0.0.1:2/secure",
+        &host_key,
+        &private,
+        state.clone(),
+    )
+    .unwrap();
+    let mut second_conn = second.open();
+    let mut out = Vec::new();
+    second_conn.opened(&mut out);
+    let msg1 = out
+        .iter()
+        .find_map(|outcome| match outcome {
+            ConnOut::SendBytes(bytes) => Some(bytes.clone()),
+            _ => None,
+        })
+        .expect("second message 1");
+    let mut responder = respond_handshake(&host).unwrap();
+    let (hello, _) = responder.read_message1(&msg1).unwrap();
+    assert!(decode_client_hello(&hello).unwrap().1.is_some());
+
+    // Message 2 verifies: this generation is paired, spends the secret, and
+    // later candidates must carry no pair block.
+    let (message2, _) = responder.write_message2(&encode_host_hello()).unwrap();
+    let mut after = Vec::new();
+    second_conn.data(&message2, &mut after);
+    assert!(after
+        .iter()
+        .any(|outcome| matches!(outcome, ConnOut::Authenticated { paired: true })));
+    assert!(second.mark_paired().is_some());
+    assert!(state.current().is_none());
+
+    let mut third = SecureTransport::with_pairing_state(
+        "ws://127.0.0.1:3/secure",
+        &host_key,
+        &private,
+        state,
+    )
+    .unwrap();
+    let mut third_conn = third.open();
+    let mut out = Vec::new();
+    third_conn.opened(&mut out);
+    let msg1 = out
+        .iter()
+        .find_map(|outcome| match outcome {
+            ConnOut::SendBytes(bytes) => Some(bytes.clone()),
+            _ => None,
+        })
+        .expect("third message 1");
+    let mut responder = respond_handshake(&host).unwrap();
+    let (hello, _) = responder.read_message1(&msg1).unwrap();
+    assert!(decode_client_hello(&hello).unwrap().1.is_none());
+    let (message2, _) = responder.write_message2(&encode_host_hello()).unwrap();
+    let mut after = Vec::new();
+    third_conn.data(&message2, &mut after);
+    assert!(after
+        .iter()
+        .any(|outcome| matches!(outcome, ConnOut::Authenticated { paired: false })));
+    assert!(third.mark_paired().is_none());
 }
 
 #[test]

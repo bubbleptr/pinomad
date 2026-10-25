@@ -91,8 +91,8 @@ import Testing
            "endpointSet":{"schemaVersion":1,"endpoints":"junk"}},
           {"url":"ws://b:1/","hostKey":"b","privateKey":"kb","pairedAt":0,
            "endpointSet":{"schemaVersion":1,"endpoints":[
-             {"role":"relay","url":"wss://relay.example/"},
-             {"role":"direct","url":"wss://direct.example/"}]}}
+             {"transport":"webSocket","role":"relay","url":"wss://relay.example/"},
+             {"transport":"webSocket","role":"direct","url":"wss://direct.example/"}]}}
         ],"activeHostKey":"b"}
         """.utf8)
         let stored = try JSONDecoder().decode(StoredHosts.self, from: data)
@@ -108,7 +108,7 @@ import Testing
     @Test func futureEndpointShapesDropOnlyTheField() throws {
         for endpoint in [
             #""endpointSet":{"schemaVersion":2,"endpoints":[]}"#,
-            #""endpointSet":{"schemaVersion":1,"endpoints":[{"role":"mesh","url":"ws://x/"}]}"#,
+            #""endpointSet":{"schemaVersion":1,"endpoints":[{"transport":"webSocket","role":"mesh","url":"ws://x/"}]}"#,
         ] {
             let data = Data("""
             {"hosts":[{"url":"ws://a:1/","hostKey":"a","privateKey":"k","pairedAt":0,\(endpoint)}]}
@@ -118,6 +118,50 @@ import Testing
             #expect(stored.hosts[0].hostKey == "a")
             #expect(stored.hosts[0].endpointSet == nil)
         }
+    }
+
+    private func endpointSetInKeychain(_ endpoints: String) throws -> StoredEndpointSet? {
+        let data = Data("""
+        {"hosts":[{"url":"ws://a:1/","hostKey":"a","privateKey":"k","pairedAt":0,
+          "endpointSet":{"schemaVersion":1,"endpoints":[\(endpoints)]}}]}
+        """.utf8)
+        return try JSONDecoder().decode(StoredHosts.self, from: data).hosts[0].endpointSet
+    }
+
+    @Test func unknownTransportEntriesAreSkippedAndKnownOnesSurvive() throws {
+        let set = try #require(try endpointSetInKeychain("""
+            {"transport":"quic","role":"relay","url":"quic://relay/"},
+            {"transport":"webSocket","role":"relay","url":"wss://relay/"}
+        """))
+        #expect(set.endpoints.map(\.url) == ["wss://relay/"])
+
+        let onlyUnknown = try endpointSetInKeychain("""
+            {"transport":"quic","role":"relay","url":"quic://relay/"}
+        """)
+        #expect(onlyUnknown == nil)
+    }
+
+    @Test func malformedTransportDropsOnlyTheEndpointField() throws {
+        for endpoint in [
+            #"{"transport":1,"role":"relay","url":"wss://relay/"}"#,
+            #"{"role":"relay","url":"wss://relay/"}"#,
+        ] {
+            #expect(try endpointSetInKeychain(endpoint) == nil)
+        }
+    }
+
+    @Test func duplicateEntriesFirstWinsAndRoleConflictIsMalformed() throws {
+        let duplicate = try #require(try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"wss://relay/"},
+            {"transport":"webSocket","role":"relay","url":"wss://relay/"}
+        """))
+        #expect(duplicate.endpoints.map(\.url) == ["wss://relay/"])
+
+        let conflict = try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"wss://same/"},
+            {"transport":"webSocket","role":"direct","url":"wss://same/"}
+        """)
+        #expect(conflict == nil)
     }
 
     /// Endpoint learning updates only endpoint fields and the legacy URL,
@@ -139,6 +183,28 @@ import Testing
         #expect(updated.hosts[0].pairedAt == before.pairedAt)
         #expect(updated.hosts[0].url == "wss://new-relay/")
         #expect(updated.hosts[0].endpointSet == set)
+    }
+
+    @Test func identicalEndpointUpdateIsNoChange() throws {
+        var stored = StoredHosts(hosts: [record("a")])
+        let set = StoredEndpointSet(endpoints: [
+            StoredEndpoint(role: .relay, url: "wss://new/"),
+        ])
+        let once = try #require(stored.settingEndpoints(set, url: "wss://new/", for: "a"))
+        stored = once
+        #expect(stored.settingEndpoints(set, url: "wss://new/", for: "a") == nil)
+    }
+
+    @Test func endpointSetEncodesTheProtocolTransport() throws {
+        var host = record("a")
+        host.endpointSet = StoredEndpointSet(endpoints: [
+            StoredEndpoint(role: .relay, url: "wss://relay.example/"),
+        ])
+        let data = try JSONEncoder().encode(host)
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.contains("\"transport\":\"webSocket\""))
+        let decoded = try JSONDecoder().decode(HostRecord.self, from: data)
+        #expect(decoded.endpointSet == host.endpointSet)
     }
 
     /// A late hello cannot bring a forgotten host back.

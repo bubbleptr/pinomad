@@ -41,6 +41,15 @@ const OUTDATED: &str = "outdated";
 
 const REMOTE_ACCESS_UNAVAILABLE: &str = "Remote access is unavailable: the host published no remote path and this device has no local entry.";
 
+/// Whether this client follows a hello's endpoint set. The distinction is
+/// explicit because an empty planned list is a real "no remote entry", while
+/// a single carrier must never be replaced by a hello set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteMode {
+    Single,
+    Planned,
+}
+
 /// Per-candidate deadlines, matching packages/protocol/src/remote-durable.ts.
 /// Every stage is bounded and a retired candidate cancels its timer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -487,13 +496,16 @@ pub enum ReadyOutcome {
 
 pub struct RemoteDurableOptions {
     pub source: Box<dyn CandidateSource>,
+    /// Single never follows hello endpoint sets; Planned always may.
+    pub mode: RemoteMode,
     /// `reconnectDelayMs` — {min,max} backoff seed.
     pub reconnect_delay_ms: Option<(u64, u64)>,
     /// `newRequestId` — a fresh 32-hex-char id per submit/fork; injected so
     /// tests can be deterministic and FFI hosts can supply their own RNG.
     pub request_id: Option<Box<dyn FnMut() -> String + Send>>,
-    /// The candidate plan for round one. Single-transport callers derive it
-    /// from the transport URL and leave these empty.
+    /// The planned candidate list for round one. In `Planned` mode an empty
+    /// list is a real "no remote entry"; `Single` ignores it and derives its
+    /// one carrier from `legacy_url`.
     pub candidates: Vec<RemoteCandidate>,
     /// The record's legacy URL (loopback entries stay local across hello
     /// updates). Defaults to the first candidate.
@@ -517,6 +529,7 @@ impl RemoteDurableOptions {
         let url = transport.url().to_string();
         RemoteDurableOptions {
             source: Box::new(SingleSource::new(transport)),
+            mode: RemoteMode::Single,
             reconnect_delay_ms: None,
             request_id: None,
             candidates: candidate_plan(&url, None, None),
@@ -725,7 +738,7 @@ impl RemoteDurable {
         let request_id = options
             .request_id
             .unwrap_or_else(|| Box::new(default_request_id));
-        let follows_host_endpoints = !options.candidates.is_empty();
+        let follows_host_endpoints = options.mode == RemoteMode::Planned;
         let legacy_url = options
             .legacy_url
             .clone()
@@ -736,10 +749,13 @@ impl RemoteDurable {
                     .map(|candidate| candidate.url.clone())
             })
             .unwrap_or_default();
-        let candidates = if options.candidates.is_empty() {
-            candidate_plan(&legacy_url, None, options.page_protocol.as_deref())
-        } else {
+        // A planned round's empty list means the host published no remote
+        // entry; it must not be refilled from the legacy URL. Single mode is
+        // the only one that derives its one carrier from that URL.
+        let candidates = if follows_host_endpoints {
             options.candidates
+        } else {
+            candidate_plan(&legacy_url, None, options.page_protocol.as_deref())
         };
         let mut this = RemoteDurable {
             source: options.source,
@@ -1004,11 +1020,19 @@ impl RemoteDurable {
     }
 
     fn live_conn(&self, conn: u32) -> bool {
-        self.conn().map(|c| c.id) == Some(conn)
-            && self
-                .dial
-                .as_ref()
-                .is_some_and(|dial| dial.generation == self.generation && !dial.done)
+        self.dial
+            .as_ref()
+            .is_some_and(|dial| dial.generation == self.generation && !dial.done)
+            && self.conn().map(|c| c.id) == Some(conn)
+    }
+
+    fn live_dial(&self, conn: u32, generation: u64) -> bool {
+        self.dial.as_ref().is_some_and(|dial| {
+            !dial.done
+                && dial.generation == generation
+                && dial.generation == self.generation
+                && dial.conn.as_ref().map(|c| c.id) == Some(conn)
+        })
     }
 
     // ─── Candidate rounds ───────────────────────────────────────────────
@@ -1323,32 +1347,44 @@ impl RemoteDurable {
 
     /// Translate one connection's outcomes into commands and state changes.
     fn drain_conn_out(&mut self, outcomes: Vec<ConnOut>) {
+        // Capture the source once. A malformed frame can retire this dial and
+        // install the next candidate mid-batch; the rest of the batch still
+        // belongs to the old socket and must be dropped, never applied to its
+        // successor by re-reading `self.conn()`.
+        let Some((source_id, source_generation)) = self
+            .dial
+            .as_ref()
+            .and_then(|dial| dial.conn.as_ref().map(|conn| (conn.id, dial.generation)))
+        else {
+            return;
+        };
         for outcome in outcomes {
-            let Some(id) = self.conn().map(|conn| conn.id) else {
+            if !self.live_dial(source_id, source_generation) {
                 return;
-            };
+            }
             match outcome {
-                ConnOut::SendBytes(bytes) => self.out.push(Command::SendBytes { conn: id, bytes }),
-                ConnOut::Close => self.out.push(Command::CloseSocket { conn: id }),
+                ConnOut::SendBytes(bytes) => {
+                    self.out.push(Command::SendBytes { conn: source_id, bytes })
+                }
+                ConnOut::Close => self.out.push(Command::CloseSocket { conn: source_id }),
                 ConnOut::Text(text) => self.receive_text(&text),
                 ConnOut::Closed { code, reason } => {
-                    if self.live_conn(id) {
-                        let stage = self
-                            .dial
-                            .as_ref()
-                            .map(|dial| dial.phase.stage())
-                            .unwrap_or(CandidateFailureStage::Closed);
-                        self.fail_current(stage, Some(code), reason);
-                    }
+                    let stage = self
+                        .dial
+                        .as_ref()
+                        .map(|dial| dial.phase.stage())
+                        .unwrap_or(CandidateFailureStage::Closed);
+                    self.fail_current(stage, Some(code), reason);
                 }
                 ConnOut::Authenticated { paired } => {
-                    if self.live_conn(id) {
-                        self.arm_phase(Phase::Hello, self.timeouts.hello_ms);
-                        if paired {
-                            self.paired();
-                        }
+                    self.arm_phase(Phase::Hello, self.timeouts.hello_ms);
+                    if paired {
+                        self.paired();
                     }
                 }
+            }
+            if !self.live_dial(source_id, source_generation) {
+                return;
             }
         }
     }

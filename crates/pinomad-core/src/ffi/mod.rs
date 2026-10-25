@@ -266,6 +266,7 @@ fn candidate_options(
     }));
     RemoteDurableOptions {
         source: Box::new(source),
+        mode: crate::remote_durable::RemoteMode::Planned,
         reconnect_delay_ms: None,
         request_id: None,
         candidates,
@@ -304,6 +305,10 @@ impl PinomadClient {
                 .1,
         };
         let host_key = crate::b64::to_base64url(&parsed.host_key);
+        // Validate reused and fresh key material before any candidate opens:
+        // the old contract returned ClientError::KeyMaterial immediately.
+        crate::secure_channel::SecureTransport::new(&parsed.url, &host_key, &private, None)
+            .map_err(|error| ClientError::KeyMaterial { message: error.to_string() })?;
         let options = candidate_options(
             &parsed.url,
             parsed.endpoint_set.as_ref(),

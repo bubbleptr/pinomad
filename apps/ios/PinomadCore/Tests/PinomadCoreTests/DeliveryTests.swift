@@ -200,6 +200,82 @@ struct HostStoreTests {
         session.close()
     }
 
+    /// Repeating the same hello set is a no-op: no update is emitted, so the
+    /// app neither rewrites the keychain nor shows a save warning.
+    @Test func repeatedIdenticalHelloEmitsNoEndpointUpdate() async throws {
+        let (session, _, _, store) = try makeSession()
+        let set = StoredEndpointSet(endpoints: [
+            StoredEndpoint(role: .relay, url: "wss://same/"),
+        ])
+        store.stored = StoredHosts(hosts: [
+            HostRecord(
+                url: "wss://same/",
+                hostKey: "host",
+                privateKey: "key",
+                endpointSet: set),
+        ], activeHostKey: "host")
+        let reader = UpdateReader(session)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .endpointSet(hostKey: "host", url: "wss://same/", endpointSet: set.ffi),
+        ]))
+        await session.waitForIdle()
+
+        #expect(await reader.next(timeout: .milliseconds(100)) == nil)
+        #expect(store.stored.hosts.first?.endpointSet == set)
+        session.close()
+    }
+
+    /// If both the write and the confirming read fail, the address error is
+    /// surfaced as a platform error; the live session is not closed.
+    @Test func endpointSaveAndReadFailureIsReported() async throws {
+        let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
+        store.loadError = FakeError.storeBroken
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .endpointSet(
+                hostKey: "host",
+                url: "wss://new/",
+                endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                    HostEndpoint(role: .relay, url: "wss://new/"),
+                ])),
+        ]))
+        await session.waitForIdle()
+
+        guard case .platformError(let message) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected a platform error for the unsaved addresses")
+            return
+        }
+        #expect(message.contains("updated addresses"))
+        #expect(session.currentConnectionGeneration == 0)
+        session.close()
+    }
+
+    /// A successful read proving the host is gone stays silent: a late hello
+    /// must not resurrect it or warn about a record nobody owns.
+    @Test func endpointUpdateForForgottenHostIsIgnored() async throws {
+        let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .endpointSet(
+                hostKey: "gone",
+                url: "wss://new/",
+                endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                    HostEndpoint(role: .relay, url: "wss://new/"),
+                ])),
+        ]))
+        await session.waitForIdle()
+
+        #expect(store.stored.hosts.isEmpty)
+        #expect(await reader.next(timeout: .milliseconds(100)) == nil)
+        session.close()
+    }
+
     /// Address learning is a separate storage event: the paired identity,
     /// name and account survive, and the endpoint set/legacy URL move
     /// together. A forgotten host stays forgotten.

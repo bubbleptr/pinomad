@@ -8,8 +8,8 @@ use std::sync::Arc;
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, ImageVariant, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::{
-    ApiKeyChange, Call, CandidateFailure, Command, CustomProviderApi, Event, ForkShow, LoginMethod, ReadyOutcome,
-    RemoteDurable, RemoteDurableOptions,
+    ApiKeyChange, Call, CandidateFailure, CandidateTimeouts, Command, CustomProviderApi, Event, ForkShow,
+    LoginMethod, ReadyOutcome, RemoteDurable, RemoteDurableOptions,
 };
 use pinomad_core::transport::{PlaintextTransport, Transport};
 use pinomad_core::u16str::U16String;
@@ -122,6 +122,23 @@ fn merge_hello(base: &Json, extras: &[(String, Json)]) -> Json {
 
 fn protocol_obj(minor: f64) -> Json {
     obj(&[("major", Json::from(5.0)), ("minor", Json::from(minor))])
+}
+
+fn endpoint_set(entries: &[(&str, &str)]) -> Json {
+    let endpoints = entries
+        .iter()
+        .map(|(role, url)| {
+            obj(&[
+                ("transport", Json::from("webSocket")),
+                ("role", Json::from(*role)),
+                ("url", Json::from(*url)),
+            ])
+        })
+        .collect();
+    obj(&[
+        ("schemaVersion", Json::from(1.0)),
+        ("endpoints", Json::array(endpoints)),
+    ])
 }
 
 /// The TS `fakeTransport`: answers every subscribe with a snapshot, answers
@@ -284,6 +301,7 @@ struct Harness {
     canceled: Vec<u32>,
     failures: Vec<CandidateFailure>,
     endpoints: Vec<(String, String, String)>,
+    open_urls: Vec<String>,
     /// Old tests drove reconnect in two steps. The core now starts the next
     /// round immediately, so the helper defers just the platform's socket
     /// open until the timer step — the candidate dial itself is real.
@@ -321,6 +339,7 @@ impl Harness {
             canceled: Vec::new(),
             failures: Vec::new(),
             endpoints: Vec::new(),
+            open_urls: Vec::new(),
             deferred_open: VecDeque::new(),
             defer_open: false,
         };
@@ -344,7 +363,8 @@ impl Harness {
                 Command::OpenConnection { conn, url } if self.defer_open => {
                     self.deferred_open.push_back(Command::OpenConnection { conn, url });
                 }
-                Command::OpenConnection { conn, .. } => {
+                Command::OpenConnection { conn, url } => {
+                    self.open_urls.push(url);
                     self.host.conn = conn;
                     self.host.opened += 1;
                     queue.extend(self.remote.handle(Event::SocketOpened { conn }));
@@ -562,6 +582,79 @@ fn close_1008_reconnects() {
     h.fire_timer();
     assert_eq!(h.connection(), "connected");
     assert_eq!(h.host.opened, 2);
+}
+
+#[test]
+fn single_mode_never_follows_hello_endpoint_sets() {
+    for set in [
+        endpoint_set(&[]),
+        endpoint_set(&[("relay", "wss://relay.example/")]),
+    ] {
+        let host = ScriptedHost::new(
+            vec![obj(&[])],
+            vec![("endpointSet".to_string(), set)],
+        );
+        let mut h = Harness::new(host);
+        assert_eq!(h.ready, Some(ReadyOutcome::Connected));
+        assert_eq!(h.open_urls, vec!["ws://fake/"]);
+
+        h.disconnect(1000, None);
+        h.fire_timer();
+        assert_eq!(h.connection(), "connected");
+        assert_eq!(h.host.opened, 2);
+        assert_eq!(h.open_urls, vec!["ws://fake/", "ws://fake/"]);
+    }
+}
+
+#[test]
+fn plaintext_authenticates_on_open_and_uses_the_hello_budget() {
+    let mut remote = RemoteDurable::new(RemoteDurableOptions {
+        candidate_timeouts: CandidateTimeouts {
+            socket_open_ms: 100,
+            noise_ms: 10,
+            hello_ms: 500,
+            sync_ms: 700,
+        },
+        round_timeout_ms: Some(2_000),
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+            url: "ws://fake/".to_string(),
+        }))
+    });
+    let _ = remote.take();
+    let commands = remote.handle(Event::SocketOpened { conn: 1 });
+    let mut active: HashMap<u32, u64> = HashMap::new();
+    for command in &commands {
+        match command {
+            Command::ScheduleDeadline { timer, delay_ms } => {
+                active.insert(*timer, *delay_ms);
+            }
+            Command::CancelDeadline { timer } => {
+                active.remove(timer);
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        active.values().any(|delay| *delay == 500),
+        "hello deadline missing: {active:?}"
+    );
+    assert!(
+        !active.values().any(|delay| *delay == 10),
+        "the retired noise deadline must not stay armed: {active:?}"
+    );
+    let timer = active
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 500).then_some(*timer))
+        .expect("hello timer");
+    let commands = remote.handle(Event::TimerFired { timer });
+    let ready = commands.iter().find_map(|command| match command {
+        Command::Ready { outcome } => Some(outcome.clone()),
+        _ => None,
+    });
+    match ready {
+        Some(ReadyOutcome::Error(message)) => assert!(message.contains("no progress within 500ms")),
+        other => panic!("expected hello timeout, got {other:?}"),
+    }
 }
 
 // ─── lifecycle hints (ADR-0024 §3, native only — the reference has no

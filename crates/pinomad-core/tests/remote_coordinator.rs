@@ -81,6 +81,27 @@ fn hello(endpoint_set: Option<EndpointSet>, major: f64) -> Json {
     obj(&fields)
 }
 
+fn malformed_hello() -> Json {
+    obj(&[
+        ("type", Json::from("hello")),
+        (
+            "protocol",
+            obj(&[
+                ("major", Json::from(PROTOCOL.major as f64)),
+                ("minor", Json::from(PROTOCOL.minor as f64)),
+            ]),
+        ),
+        (
+            "session",
+            obj(&[("id", Json::from("fake")), ("directory", Json::from(""))]),
+        ),
+        ("models", Json::array(vec![])),
+        ("docs", Json::from("junk")),
+        ("toolPresentations", obj(&[])),
+        ("defaults", obj(&[])),
+    ])
+}
+
 #[derive(Clone)]
 struct Script {
     /// Emit Noise message 2 on open.
@@ -357,6 +378,7 @@ impl Harness {
             .unwrap_or_default();
         let remote = RemoteDurable::new(RemoteDurableOptions {
             source: Box::new(source),
+            mode: pinomad_core::remote_durable::RemoteMode::Planned,
             reconnect_delay_ms: Some((10, 10)),
             request_id: None,
             candidates,
@@ -649,6 +671,32 @@ fn stage_deadlines_are_finite_and_bound_to_the_candidate_generation() {
         Some("wss://direct/")
     );
     assert_eq!(h.connection(), "connected");
+}
+
+#[test]
+fn a_retired_batch_never_touches_the_successor() {
+    let candidates = vec![relay("wss://bad/"), direct("wss://good/")];
+    let h = Harness::new(
+        candidates,
+        vec![
+            (
+                "wss://bad/",
+                vec![Script {
+                    auth: true,
+                    hello: Some(malformed_hello()),
+                    close: Some(1006),
+                    silent_open: false,
+                    answer_sync: false,
+                }],
+            ),
+            ("wss://good/", vec![Script::healthy()]),
+        ],
+        false,
+    );
+    assert_eq!(h.opened_urls(), vec!["wss://bad/".to_string(), "wss://good/".to_string()]);
+    assert_eq!(h.connection(), "connected");
+    assert!(matches!(h.ready, Some(ReadyOutcome::Connected)));
+    assert_eq!(h.failures.len(), 1, "the successor's Closed must be dropped");
 }
 
 #[test]

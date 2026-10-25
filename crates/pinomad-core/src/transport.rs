@@ -87,7 +87,11 @@ impl Transport for PlaintextTransport {
 pub struct PlaintextConnection;
 
 impl Connection for PlaintextConnection {
-    fn opened(&mut self, _out: &mut Vec<ConnOut>) {}
+    fn opened(&mut self, out: &mut Vec<ConnOut>) {
+        // The plaintext carrier has no Noise exchange, so it is authenticated
+        // as soon as the socket opens — matching the TS fake transport.
+        out.push(ConnOut::Authenticated { paired: false });
+    }
     fn data(&mut self, bytes: &[u8], out: &mut Vec<ConnOut>) {
         // One socket message is one frame; malformed UTF-8 is a protocol
         // failure the peer should never produce — the state machine drops

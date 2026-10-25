@@ -121,6 +121,8 @@ public final class PinomadSession: @unchecked Sendable {
         let socket: any SessionSocket
         var pending: [Data] = []
         var sending = false
+        /// One epoch bump per physical connection, whichever path retires it.
+        var retired = false
     }
     private var conns: [UInt64: ConnState] = [:]
     private var timers: [UInt64: any SessionTimerHandle] = [:]
@@ -274,6 +276,9 @@ public final class PinomadSession: @unchecked Sendable {
     /// The newest published snapshot version — tests only.
     var lastPublishedVersion: UInt64 { publishedVersion }
 
+    /// The current connection epoch — tests only.
+    var currentConnectionGeneration: UInt64 { connectionGeneration }
+
     /// What a request-class failure means, given the connection epoch the
     /// request started on and the current one. An untracked request keeps
     /// the old operation-failed behaviour; a moved epoch means the host may
@@ -320,7 +325,7 @@ public final class PinomadSession: @unchecked Sendable {
             // Bump before feeding: any request failed by this close must
             // know its connection epoch ended, even if a reconnect follows
             // before its caller resumes.
-            if conns[conn] != nil { connectionGeneration &+= 1 }
+            _ = retire(conn)
             feed(.socketClosed(conn: conn, code: code, reason: reason))
             // A remote close is terminal for this generation but the
             // core does not echo CloseSocket back — clean up here or the
@@ -334,7 +339,7 @@ public final class PinomadSession: @unchecked Sendable {
                 // it emits CloseSocket and treats this as an abnormal close.
                 state.pending.removeAll()
                 conns[conn] = state
-                connectionGeneration &+= 1
+                _ = retire(conn)
                 feed(.sendFailed(conn: conn))
             } else {
                 if !state.pending.isEmpty { state.pending.removeFirst() }
@@ -401,6 +406,18 @@ public final class PinomadSession: @unchecked Sendable {
         }
     }
 
+    /// Retire one physical connection exactly once. The epoch moves before
+    /// any resulting OperationFailed is dispatched, so a local close cannot
+    /// masquerade as the host refusing the request.
+    @discardableResult
+    private func retire(_ conn: UInt64) -> Bool {
+        guard var state = conns[conn], !state.retired else { return false }
+        state.retired = true
+        conns[conn] = state
+        connectionGeneration &+= 1
+        return true
+    }
+
     /// `handle` into the core; dispatch of the returned commands is part
     /// of the same synchronous stretch — no suspension can interleave.
     private func feed(_ event: FfiEvent) {
@@ -424,6 +441,10 @@ public final class PinomadSession: @unchecked Sendable {
                 conns[conn]?.pending.append(bytes)
                 pumpSend(conn: conn)
             case .closeSocket(let conn):
+                // The core can retire a connection without a callback (a
+                // failed local decrypt, for example). End its epoch here so
+                // later OperationFailed is "reply lost", not a refusal.
+                _ = retire(conn)
                 conns.removeValue(forKey: conn)?.socket.close()
             case .scheduleReconnect(let timer, let delayMs),
                  .scheduleDeadline(let timer, let delayMs):
@@ -541,11 +562,21 @@ public final class PinomadSession: @unchecked Sendable {
                 updateSink.yield(.endpoints(updated, saveError: nil))
             }
         } catch {
-            let existing = (try? dependencies.hostStore.load())?.hosts.first { $0.hostKey == hostKey }
-            guard let existing else { return }
-            updateSink.yield(.endpoints(
-                existing.applyingEndpoints(url: url, endpointSet: set),
-                saveError: error.localizedDescription))
+            // A successful load proves the host is gone (forgotten meanwhile),
+            // so there is nothing to warn about. If the read also fails, the
+            // address was not saved and the app still needs to know.
+            let saveError = error.localizedDescription
+            do {
+                guard let existing = try dependencies.hostStore
+                    .load().hosts.first(where: { $0.hostKey == hostKey })
+                else { return }
+                updateSink.yield(.endpoints(
+                    existing.applyingEndpoints(url: url, endpointSet: set),
+                    saveError: saveError))
+            } catch {
+                updateSink.yield(.platformError(
+                    "Couldn't save this host's updated addresses (\(saveError)); reading the keychain also failed (\(error.localizedDescription)). The connection is still live."))
+            }
         }
     }
 }

@@ -44,6 +44,11 @@ final class AppModel {
 
     var phase: Phase = .loading
     var lastError = ""
+    /// A paired handshake whose keychain write failed. Kept separately from
+    /// `lastError` so the failure page can show it beside the connection
+    /// failure instead of losing it with the list page.
+    private var pairingWarning = PairingWarningState()
+    var pairingSaveWarning: String? { pairingWarning.message }
     /// Every paired host and which one opens on launch, as last read from
     /// the keychain.
     private(set) var hosts = StoredHosts()
@@ -413,6 +418,7 @@ final class AppModel {
         self.session?.close()
         self.session = session
         snapshot = nil
+        pairingWarning.clear()
         lastError = ""
         pushError = nil
         push.currentConnectedHostKey = nil
@@ -455,7 +461,18 @@ final class AppModel {
         attempt.start()
     }
 
+    /// Route a learned endpoint set into the live host identity and the
+    /// in-memory list without replacing either record's key material.
+    private func applyEndpointPatch(_ patch: HostRecord) {
+        pairing.endpoints(patch)
+        guard let set = patch.endpointSet,
+              let next = hosts.settingEndpoints(set, url: patch.url, for: patch.hostKey)
+        else { return }
+        hosts = next
+    }
+
     private func apply(_ update: SessionUpdate) {
+        pairingWarning.apply(update)
         switch update {
         case .ready(let outcome):
             // A revoked device can be refused before the first snapshot; the
@@ -483,7 +500,7 @@ final class AppModel {
             // Per-path evidence is in the ready error's aggregate message;
             // the structured update stays available to other clients.
             break
-        case .endpoints(_, let saveError):
+        case .endpoints(let host, let saveError):
             // Address learning is independent of readiness: a failed write
             // leaves the live session alone and is retried by the next hello.
             if let saveError {
@@ -491,6 +508,7 @@ final class AppModel {
             } else {
                 reloadHosts()
             }
+            applyEndpointPatch(host)
         case .paired(let host, let saveError):
             // The handshake spent the link's code and (normally) made this
             // the launch host — the session is this host's device now,
@@ -501,8 +519,8 @@ final class AppModel {
             reloadHosts()
             accountRefreshAfterPairing()
             advancePushTarget()
-            if let saveError {
-                lastError = "Couldn't save this host (\(saveError)). After a restart the app returns to the previous host, and you'll need to pair again to use this one."
+            if let warning = pairingWarning.message {
+                lastError = warning
             }
         case .snapshot(let snapshot):
             // Terminal after the first view: revoked (4401) or a hello

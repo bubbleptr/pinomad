@@ -691,6 +691,37 @@ fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
 }
 
 #[test]
+fn pair_validates_reused_key_material_before_any_candidate() {
+    use pinomad_core::ffi::{ClientError, PinomadClient};
+    let link = "pinomad://pair#pair=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AQID&url=ws%3A%2F%2F127.0.0.1%3A1%2F";
+    let result = PinomadClient::pair(link.to_string(), "phone".to_string(), Some("bad".to_string()));
+    assert!(matches!(result, Err(ClientError::KeyMaterial { .. })));
+}
+
+#[test]
+fn an_explicit_empty_planned_set_never_dials_the_legacy_url() {
+    use pinomad_core::ffi::{EndpointSet, FfiCommand, PinomadClient, ReadyOutcome, StoredHost};
+    let client = PinomadClient::connect(StoredHost {
+        url: "wss://retired/".to_string(),
+        host_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        private_key: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_string(),
+        name: None,
+        account: None,
+        endpoint_set: Some(EndpointSet { schema_version: 1, endpoints: vec![] }),
+    })
+    .expect("empty planned set is a valid stored host");
+    let commands = client.take();
+    assert!(!commands
+        .iter()
+        .any(|command| matches!(command, FfiCommand::OpenConnection { .. })));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        FfiCommand::Ready { outcome: ReadyOutcome::Error { message } }
+            if message.contains("Remote access is unavailable")
+    )));
+}
+
+#[test]
 fn stored_host_endpoint_set_boundary_is_lossy_only_for_the_set() {
     use pinomad_core::ffi::{EndpointRole, EndpointSet, HostEndpoint, validate_stored_host};
     let host = StoredHost {
