@@ -42,6 +42,12 @@ public enum SessionUpdate: Sendable {
     /// from here on this session is `host`'s device, before and whatever
     /// the first view says. `saveError` is why the keychain didn't keep it.
     case paired(HostRecord, saveError: String?)
+    /// A validated hello endpoint set from a live connection, merged into
+    /// the stored host (never resurrecting a forgotten one).
+    case endpoints(HostRecord, saveError: String?)
+    /// One candidate path failed; the round continues and the aggregate
+    /// ready error carries the user-facing summary.
+    case candidateFailed(CandidateFailure)
     /// Platform-side failure the core cannot see (keychain, decoding).
     case platformError(String)
 }
@@ -419,20 +425,25 @@ public final class PinomadSession: @unchecked Sendable {
                 pumpSend(conn: conn)
             case .closeSocket(let conn):
                 conns.removeValue(forKey: conn)?.socket.close()
-            case .scheduleReconnect(let timer, let delayMs):
+            case .scheduleReconnect(let timer, let delayMs),
+                 .scheduleDeadline(let timer, let delayMs):
                 timers[timer] = dependencies.clock.schedule(
                     delay: .milliseconds(delayMs),
                     fire: { [sink] in sink.yield(.timerFired(timer: timer)) }
                 )
-            case .cancelReconnect(let timer):
+            case .cancelReconnect(let timer), .cancelDeadline(let timer):
                 timers.removeValue(forKey: timer)?.cancel()
             case .ready(let outcome):
                 updateSink.yield(.ready(outcome))
             case .viewChanged:
                 viewDirty = true
                 if !snapshotInFlight { startSnapshot() }
-            case .paired(let url, let hostKey, let privateKey):
-                persistPairing(url: url, hostKey: hostKey, privateKey: privateKey)
+            case .candidateFailed(let failure):
+                updateSink.yield(.candidateFailed(failure))
+            case .paired(let host):
+                persistPairing(host)
+            case .endpointSet(let hostKey, let url, let endpointSet):
+                mergeEndpoints(hostKey: hostKey, url: url, endpointSet: endpointSet)
             case .operationSucceeded(let op, let value):
                 pendingOpGeneration.removeValue(forKey: op)
                 pendingOps.removeValue(forKey: op)?.resume(returning: value)
@@ -488,18 +499,53 @@ public final class PinomadSession: @unchecked Sendable {
     /// `Paired` is delivered inside dispatch, so the write happens
     /// synchronously and `.paired` reaches the app before `.ready` — a
     /// failed write rides along on it, never swallowed.
-    private func persistPairing(url: String, hostKey: String, privateKey: String) {
-        var record = HostRecord(url: url, hostKey: hostKey, privateKey: privateKey, pairedAt: Date())
+    private func persistPairing(_ host: StoredHost) {
+        var record = HostRecord(
+            url: host.url,
+            hostKey: host.hostKey,
+            privateKey: host.privateKey,
+            name: host.name,
+            account: host.account.map { AccountLink(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
+            endpointSet: host.endpointSet.flatMap(StoredEndpointSet.init),
+            pairedAt: Date())
         do {
             try dependencies.hostStore.update { stored in
-                record.account = pairingAccount ?? stored.hosts.first { $0.hostKey == hostKey }?.account
-                stored.hosts.removeAll { $0.hostKey == hostKey }
+                let existing = stored.hosts.first { $0.hostKey == host.hostKey }
+                if record.name == nil { record.name = existing?.name }
+                record.account = pairingAccount ?? existing?.account ?? record.account
+                if record.endpointSet == nil { record.endpointSet = existing?.endpointSet }
+                stored.hosts.removeAll { $0.hostKey == host.hostKey }
                 stored.hosts.append(record)
-                stored.activeHostKey = hostKey
+                stored.activeHostKey = host.hostKey
             }
             updateSink.yield(.paired(record, saveError: nil))
         } catch {
             updateSink.yield(.paired(record, saveError: error.localizedDescription))
+        }
+    }
+
+    /// A validated hello set is an independent storage event: only endpoint
+    /// fields and the legacy URL change, and a host forgotten meanwhile is
+    /// not brought back. A failed write is reported without dropping the
+    /// live connection.
+    private func mergeEndpoints(hostKey: String, url: String, endpointSet: EndpointSet) {
+        guard let set = StoredEndpointSet(endpointSet) else { return }
+        var updated: HostRecord?
+        do {
+            try dependencies.hostStore.update { stored in
+                guard let next = stored.settingEndpoints(set, url: url, for: hostKey) else { return }
+                stored = next
+                updated = next.hosts.first { $0.hostKey == hostKey }
+            }
+            if let updated {
+                updateSink.yield(.endpoints(updated, saveError: nil))
+            }
+        } catch {
+            let existing = (try? dependencies.hostStore.load())?.hosts.first { $0.hostKey == hostKey }
+            guard let existing else { return }
+            updateSink.yield(.endpoints(
+                existing.applyingEndpoints(url: url, endpointSet: set),
+                saveError: error.localizedDescription))
         }
     }
 }

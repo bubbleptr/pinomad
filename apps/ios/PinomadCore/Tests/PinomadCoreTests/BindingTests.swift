@@ -12,8 +12,13 @@ struct BindingTests {
             link: testPairingLink, deviceName: "测试 iPhone 📱", devicePrivateKey: nil)
 
         let initial = client.take()
-        guard case .openConnection(let conn, let url) = initial.first else {
-            Issue.record("take() should start with OpenConnection, got \(initial)")
+        // The round cap is armed before the first dial (TS parity), so find
+        // the socket command rather than assuming it is first.
+        guard case .openConnection(let conn, let url)? = initial.first(where: {
+            if case .openConnection = $0 { return true }
+            return false
+        }) else {
+            Issue.record("take() should contain an OpenConnection, got \(initial)")
             return
         }
         #expect(conn == 1)

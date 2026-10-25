@@ -176,9 +176,11 @@ impl Harness {
     /// results, and protocol minor are set before the client opens.
     fn boot(host: ScriptedHost, request_id: &'static str) -> Self {
         let client = PinomadClient::with_options(RemoteDurableOptions {
-            transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
             reconnect_delay_ms: Some((20, 20)),
             request_id: Some(Box::new(move || request_id.to_string())),
+            ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+                url: "ws://fake/".to_string(),
+            }))
         });
         let mut harness = Harness {
             client: Arc::new(client),
@@ -217,7 +219,12 @@ impl Harness {
                 FfiCommand::CloseSocket { conn } => {
                     queue.extend(self.client.handle(FfiEvent::SocketClosed { conn, code: 1000, reason: None }));
                 }
-                FfiCommand::ScheduleReconnect { .. } | FfiCommand::CancelReconnect { .. } => {}
+                FfiCommand::ScheduleReconnect { .. }
+                | FfiCommand::CancelReconnect { .. }
+                | FfiCommand::ScheduleDeadline { .. }
+                | FfiCommand::CancelDeadline { .. }
+                | FfiCommand::CandidateFailed { .. }
+                | FfiCommand::EndpointSet { .. } => {}
                 FfiCommand::Ready { outcome } => self.ready = Some(outcome),
                 FfiCommand::ViewChanged => self.view_changes += 1,
                 FfiCommand::Paired { .. } => self.paired = true,
@@ -249,9 +256,11 @@ fn client_connects_and_reports_a_snapshot() {
 fn client_works_when_created_and_driven_on_another_thread() {
     let handle = std::thread::spawn(|| {
         let client = PinomadClient::with_options(RemoteDurableOptions {
-            transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
             reconnect_delay_ms: None,
             request_id: None,
+            ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+                url: "ws://fake/".to_string(),
+            }))
         });
         let mut h = Harness {
             client: Arc::new(client),
@@ -610,6 +619,7 @@ fn validate_stored_host_accepts_good_and_drops_bad_account() {
             // Not base64url of 32 bytes → the link drops, the host stays.
             host_id: "bad".to_string(),
         }),
+        endpoint_set: None,
     };
     let validated = validate_stored_host(good).expect("valid host");
     assert!(validated.account.is_none(), "malformed link drops only the account");
@@ -619,6 +629,116 @@ fn validate_stored_host_accepts_good_and_drops_bad_account() {
         ..validated.clone()
     };
     assert_eq!(validate_stored_host(bad_url), Err(StoredHostError::InvalidUrl));
+}
+
+#[test]
+fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
+    use pinomad_core::ffi::{EndpointRole, EndpointSet, FfiCommand, HostEndpoint, PinomadClient};
+    use pinomad_core::pairing_link::encode_uri_component;
+
+    let key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let set = EndpointSet {
+        schema_version: 1,
+        endpoints: vec![
+            HostEndpoint {
+                role: EndpointRole::Relay,
+                url: "wss://relay/".to_string(),
+            },
+            HostEndpoint {
+                role: EndpointRole::Direct,
+                url: "wss://direct/".to_string(),
+            },
+        ],
+    };
+    let encoded = encode_uri_component(
+        &serde_json::to_string(&serde_json::json!({
+            "schemaVersion": 1,
+            "endpoints": [
+                {"transport": "webSocket", "role": "relay", "url": "wss://relay/"},
+                {"transport": "webSocket", "role": "direct", "url": "wss://direct/"},
+            ]
+        }))
+        .unwrap(),
+    );
+    let link = format!(
+        "pinomad://pair#pair={key}.AQID&url={}&endpointSet={encoded}",
+        encode_uri_component("ws://127.0.0.1:7420/secure")
+    );
+    let client = PinomadClient::pair(link, "phone".to_string(), None).expect("pair link");
+    let commands = client.take();
+    let open = commands.iter().find_map(|command| match command {
+        FfiCommand::OpenConnection { url, .. } => Some(url.clone()),
+        _ => None,
+    });
+    assert_eq!(open.as_deref(), Some("ws://127.0.0.1:7420/secure"));
+
+    // A stored record uses its endpoint set instead of the legacy URL.
+    let stored = pinomad_core::ffi::StoredHost {
+        url: "wss://old/".to_string(),
+        host_key: key.to_string(),
+        private_key: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_string(),
+        name: None,
+        account: None,
+        endpoint_set: Some(set),
+    };
+    let client = PinomadClient::connect(stored).expect("stored host");
+    let commands = client.take();
+    let open = commands.iter().find_map(|command| match command {
+        FfiCommand::OpenConnection { url, .. } => Some(url.clone()),
+        _ => None,
+    });
+    assert_eq!(open.as_deref(), Some("wss://relay/"));
+}
+
+#[test]
+fn stored_host_endpoint_set_boundary_is_lossy_only_for_the_set() {
+    use pinomad_core::ffi::{EndpointRole, EndpointSet, HostEndpoint, validate_stored_host};
+    let host = StoredHost {
+        url: "wss://old/".to_string(),
+        host_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+        private_key: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_string(),
+        name: Some("Desk".to_string()),
+        account: None,
+        endpoint_set: Some(EndpointSet {
+            schema_version: 1,
+            endpoints: vec![
+                HostEndpoint {
+                    role: EndpointRole::Relay,
+                    url: "wss://relay/".to_string(),
+                },
+                HostEndpoint {
+                    role: EndpointRole::Direct,
+                    url: "wss://direct/".to_string(),
+                },
+            ],
+        }),
+    };
+    let validated = validate_stored_host(host.clone()).expect("valid host");
+    assert_eq!(validated.endpoint_set, host.endpoint_set);
+    assert_eq!(validated.name.as_deref(), Some("Desk"));
+
+    // Unsupported schema and an invalid URL lose only the set.
+    for endpoint_set in [
+        EndpointSet {
+            schema_version: 2,
+            endpoints: vec![],
+        },
+        EndpointSet {
+            schema_version: 1,
+            endpoints: vec![HostEndpoint {
+                role: EndpointRole::Relay,
+                url: "https://not-a-socket/".to_string(),
+            }],
+        },
+    ] {
+        let validated = validate_stored_host(StoredHost {
+            endpoint_set: Some(endpoint_set),
+            ..host.clone()
+        })
+        .expect("the host still validates");
+        assert!(validated.endpoint_set.is_none());
+        assert_eq!(validated.private_key, host.private_key);
+    }
 }
 
 const CHANGES_PATCH: &str = "diff --git a/t.txt b/t.txt\nindex 1111111..2222222 100644\n--- a/t.txt\n+++ b/t.txt\n@@ -1 +1 @@\n-old\n+new\n";
@@ -1713,8 +1833,9 @@ fn connect_rejects_bad_key_material() {
         private_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
         name: None,
         account: None,
+        endpoint_set: None,
     });
-    assert!(matches!(result, Err(ClientError::KeyMaterial { .. })));
+    assert!(matches!(result, Err(ClientError::InvalidStoredHost { .. })));
 }
 
 // ─── Account client ─────────────────────────────────────────────────────────
@@ -1775,7 +1896,11 @@ fn account_response_parses_values_and_errors() {
     assert_eq!(login.token.as_deref(), Some("t"));
 
     // The server's `error` code passes through verbatim, with the status.
-    let err = account_response(AccountOpKind::ListHosts, 429, r#"{"error":"rate_limited"}"#.to_string());
+    let err = account_response(
+        AccountOpKind::ListHosts,
+        429,
+        r#"{"error":"rate_limited"}"#.to_string(),
+    );
     assert_eq!(
         err.err(),
         Some(AccountError::Api {
@@ -1792,6 +1917,38 @@ fn account_response_parses_values_and_errors() {
             status: None
         })
     );
+
+    // The account offer carries the same endpoint set as QR/pasted links.
+    let body = r#"{"url":"wss://relay/","hostKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "secret":"AQID","expiresAt":1,"endpointSet":{"schemaVersion":1,"endpoints":[
+          {"transport":"webSocket","role":"relay","url":"wss://relay/"}]}}"#;
+    let AccountValue::PairingOffer(offer) =
+        account_response(AccountOpKind::RequestPairing, 200, body.to_string()).unwrap()
+    else {
+        panic!("expected a pairing offer")
+    };
+    assert_eq!(
+        offer.endpoint_set.as_ref().map(|set| set.endpoints.len()),
+        Some(1)
+    );
+
+    // An explicitly empty set cannot be paired; malformed sets too.
+    for endpoint_set in [
+        r#"{"schemaVersion":1,"endpoints":[]}"#,
+        r#"{"schemaVersion":1,"endpoints":"junk"}"#,
+    ] {
+        let body = format!(
+            r#"{{"url":"wss://relay/","hostKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","secret":"AQID","expiresAt":1,"endpointSet":{endpoint_set}}}"#
+        );
+        let err = account_response(AccountOpKind::RequestPairing, 200, body);
+        assert_eq!(
+            err.err(),
+            Some(AccountError::Api {
+                code: "invalid_response".to_string(),
+                status: None
+            })
+        );
+    }
 }
 
 #[test]
@@ -1819,22 +1976,38 @@ fn account_probe_and_origin_helpers() {
 #[test]
 fn account_pairing_link_and_host_matching() {
     use pinomad_core::ffi::{
-        AccountHost, AccountHostPairing, AccountHostStatus, PairingOffer, StoredHostAccount, account_pairing_link,
-        match_account_hosts, pairing_target,
+        AccountHost, AccountHostPairing, AccountHostStatus, EndpointRole, EndpointSet,
+        HostEndpoint, PairingOffer, StoredHostAccount, account_pairing_link, match_account_hosts,
+        pairing_target,
     };
     let key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let secret = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    let set = EndpointSet {
+        schema_version: 1,
+        endpoints: vec![
+            HostEndpoint {
+                role: EndpointRole::Relay,
+                url: "wss://relay.example.com/c/h".to_string(),
+            },
+            HostEndpoint {
+                role: EndpointRole::Direct,
+                url: "wss://direct.example.com/".to_string(),
+            },
+        ],
+    };
     let offer = PairingOffer {
         url: "wss://relay.example.com/c/h".to_string(),
         host_key: key.to_string(),
         secret: secret.to_string(),
         expires_at: 1.0,
+        endpoint_set: Some(set.clone()),
     };
     // The produced link is acceptable to the existing pairing flow.
     let link = account_pairing_link(offer.clone()).expect("valid offer links");
     let target = pairing_target(link).expect("the offer link parses");
     assert_eq!(target.url, "wss://relay.example.com/c/h");
     assert_eq!(target.host_key, key);
+    assert_eq!(target.endpoint_set, Some(set));
     // A malformed offer is refused before a socket opens.
     assert_eq!(
         account_pairing_link(PairingOffer {
@@ -1862,6 +2035,7 @@ fn account_pairing_link_and_host_matching() {
             server_origin: "https://relay.example.com/".to_string(),
             host_id: key.to_string(),
         }),
+        endpoint_set: None,
     };
     let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host.clone()], vec![linked]);
     assert_eq!(matches[0].status, AccountHostStatus::Paired);

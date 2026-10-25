@@ -6,6 +6,7 @@
 // and are re-exported; this file holds the twins plus conversions.
 
 use crate::ffi::calls::FfiCall;
+use crate::ffi::hosts::{CandidateFailure, EndpointSet, StoredHost};
 use crate::json::{Json, JsonObject};
 use crate::remote_durable::ReadyOutcome as CoreReadyOutcome;
 use crate::u16str::U16String;
@@ -70,13 +71,20 @@ pub enum FfiCommand {
     CloseSocket { conn: u64 },
     ScheduleReconnect { timer: u64, delay_ms: u64 },
     CancelReconnect { timer: u64 },
+    /// One candidate-stage or whole-round deadline.
+    ScheduleDeadline { timer: u64, delay_ms: u64 },
+    CancelDeadline { timer: u64 },
     Ready { outcome: ReadyOutcome },
     /// The view changed; call `snapshot()` after coalescing. This is the
     /// only command the platform may merge-drop.
     ViewChanged,
-    /// First pairing completed: persist `url`/`host_key`/`private_key`
-    /// (the `StoredHost` the keychain keeps).
-    Paired { url: String, host_key: String, private_key: String },
+    /// One candidate path failed; the round continues and aggregates these.
+    CandidateFailed { failure: CandidateFailure },
+    /// A validated hello endpoint set to merge into the stored host.
+    EndpointSet { host_key: String, url: String, endpoint_set: EndpointSet },
+    /// First pairing completed: persist this record, including the invite's
+    /// endpoint set, independently of readiness.
+    Paired { host: StoredHost },
     OperationSucceeded { op: u64, value: CallResult },
     /// Request-class calls only — commands and abort report their failure
     /// as a view notice and still succeed.

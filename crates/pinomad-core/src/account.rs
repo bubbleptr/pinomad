@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use url::{Host, Url};
 
+use crate::endpoints::{parse_endpoint_set, EndpointSet, ParsedEndpointSet};
 use crate::json::{Json, JsonObject};
 use crate::pairing_link::encode_uri_component;
 use crate::stored_host::StoredHost;
@@ -225,9 +226,8 @@ pub struct AccountHost {
 /// The answer to `POST /api/hosts/:hostId/pairing` — the vouched one-time
 /// offer `account_pairing_link` turns into a pairing link.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct PairingOffer {
-    /// The ws:/wss: socket the pairing handshake dials.
+    /// The ws:/wss: socket the pairing handshake dials (legacy fallback).
     pub url: String,
     /// base64url of the host's 32-byte Noise static key.
     pub host_key: String,
@@ -235,11 +235,13 @@ pub struct PairingOffer {
     pub secret: String,
     /// Epoch ms the offer dies.
     pub expires_at: f64,
+    /// The offer's remote candidates. Absent for old servers; a malformed or
+    /// explicitly empty set is `invalid_response` (ADR-0032).
+    pub endpoint_set: Option<EndpointSet>,
 }
 
 /// The decoded success payload — which variant answers which op is fixed.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountValue {
     Login(LoginSuccess),
     /// `me` — just the user.
@@ -350,12 +352,25 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
             }
             Ok(AccountValue::Hosts(hosts))
         }
-        AccountOpKind::RequestPairing => Ok(AccountValue::PairingOffer(PairingOffer {
-            url: str_field(value, "url").ok_or_else(AccountError::invalid)?,
-            host_key: str_field(value, "hostKey").ok_or_else(AccountError::invalid)?,
-            secret: str_field(value, "secret").ok_or_else(AccountError::invalid)?,
-            expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
-        })),
+        AccountOpKind::RequestPairing => {
+            let endpoint_set = match value.get("endpointSet") {
+                None => None,
+                Some(raw) => match parse_endpoint_set(Some(raw)) {
+                    ParsedEndpointSet::Valid(set) if !set.endpoints.is_empty() => Some(set),
+                    ParsedEndpointSet::Valid(_) | ParsedEndpointSet::Malformed => {
+                        return Err(AccountError::invalid())
+                    }
+                    ParsedEndpointSet::Unsupported | ParsedEndpointSet::Absent => None,
+                },
+            };
+            Ok(AccountValue::PairingOffer(PairingOffer {
+                url: str_field(value, "url").ok_or_else(AccountError::invalid)?,
+                host_key: str_field(value, "hostKey").ok_or_else(AccountError::invalid)?,
+                secret: str_field(value, "secret").ok_or_else(AccountError::invalid)?,
+                expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
+                endpoint_set,
+            }))
+        }
     }
 }
 
@@ -582,11 +597,15 @@ pub fn match_account_hosts(
 /// refused before a socket opens — `None`, which the platform reports as
 /// `invalid_offer` like `pairViaAccount` does.
 pub fn account_pairing_link(offer: &PairingOffer) -> Option<String> {
-    let pasted = format!(
+    let mut pasted = format!(
         "https://server.invalid/#pair={}.{}&url={}",
         offer.host_key,
         offer.secret,
         encode_uri_component(&offer.url)
     );
+    if let Some(set) = &offer.endpoint_set {
+        pasted.push_str("&endpointSet=");
+        pasted.push_str(&encode_uri_component(&set.to_json().to_json()));
+    }
     crate::pairing_link::pairing_fragment(&pasted).map(|fragment| format!("pinomad://pair#{fragment}"))
 }

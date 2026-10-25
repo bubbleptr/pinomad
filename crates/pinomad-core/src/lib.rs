@@ -26,6 +26,7 @@ pub mod presentation;
 pub mod provider_failure;
 pub mod questions;
 pub mod relay;
+pub mod remote_candidates;
 pub mod remote_durable;
 pub mod secure_channel;
 pub mod skill_blocks;

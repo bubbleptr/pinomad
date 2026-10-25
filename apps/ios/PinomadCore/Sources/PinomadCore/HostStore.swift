@@ -13,6 +13,68 @@ public struct AccountLink: Codable, Sendable, Equatable {
     }
 }
 
+/// The path role a published endpoint plays (ADR-0032).
+public enum StoredEndpointRole: String, Codable, Sendable, Equatable {
+    case direct
+    case relay
+}
+
+/// One remote socket the host published.
+public struct StoredEndpoint: Codable, Sendable, Equatable {
+    public var role: StoredEndpointRole
+    public var url: String
+
+    public init(role: StoredEndpointRole, url: String) {
+        self.role = role
+        self.url = url
+    }
+}
+
+/// The host's remote candidates as the keychain keeps them. Kept separate
+/// from the generated FFI record so a malformed/future set can fail on its
+/// own without taking the host or the rest of `StoredHosts` with it.
+public struct StoredEndpointSet: Codable, Sendable, Equatable {
+    public var schemaVersion: Int
+    public var endpoints: [StoredEndpoint]
+
+    public init(schemaVersion: Int = 1, endpoints: [StoredEndpoint] = []) {
+        self.schemaVersion = schemaVersion
+        self.endpoints = endpoints
+    }
+
+    /// The same bounds the protocol parser enforces; the FFI validator is the
+    /// final authority, this only keeps obviously unusable keychain data out.
+    public var isValid: Bool {
+        guard schemaVersion == 1, endpoints.count <= 4 else { return false }
+        var seen = Set<String>()
+        for endpoint in endpoints {
+            guard !endpoint.url.isEmpty, endpoint.url.utf16.count <= 1024,
+                  URL(string: endpoint.url).map({ $0.scheme == "ws" || $0.scheme == "wss" }) == true,
+                  seen.insert(endpoint.url).inserted
+            else { return false }
+        }
+        return true
+    }
+
+    public var ffi: EndpointSet {
+        EndpointSet(
+            schemaVersion: UInt32(schemaVersion),
+            endpoints: endpoints.map {
+                HostEndpoint(role: $0.role == .relay ? .relay : .direct, url: $0.url)
+            })
+    }
+
+    public init?(_ ffi: EndpointSet) {
+        let set = StoredEndpointSet(
+            schemaVersion: Int(ffi.schemaVersion),
+            endpoints: ffi.endpoints.map {
+                StoredEndpoint(role: $0.role == .relay ? .relay : .direct, url: $0.url)
+            })
+        guard set.isValid else { return nil }
+        self = set
+    }
+}
+
 /// One paired host as the keychain keeps it — the `Paired` payload plus
 /// the account linkage loaded back later. Multi-host shaped already
 /// (step 4); this step only ever uses the active one.
@@ -25,6 +87,9 @@ public struct HostRecord: Codable, Sendable, Equatable {
     /// lands; the label falls back to the address then.
     public var name: String?
     public var account: AccountLink?
+    /// The host's last published remote candidates (5.22, ADR-0032). Absent
+    /// on old records and when the stored set was unusable.
+    public var endpointSet: StoredEndpointSet?
     public var pairedAt: Date
 
     public init(
@@ -33,6 +98,7 @@ public struct HostRecord: Codable, Sendable, Equatable {
         privateKey: String,
         name: String? = nil,
         account: AccountLink? = nil,
+        endpointSet: StoredEndpointSet? = nil,
         pairedAt: Date = Date()
     ) {
         self.url = url
@@ -40,7 +106,41 @@ public struct HostRecord: Codable, Sendable, Equatable {
         self.privateKey = privateKey
         self.name = name
         self.account = account
+        self.endpointSet = endpointSet
         self.pairedAt = pairedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url, hostKey, privateKey, name, account, endpointSet, pairedAt
+    }
+
+    /// Decode each host on its own optional endpoint boundary: a malformed or
+    /// future `endpointSet` loses that field, never the device key or the
+    /// other hosts in the keychain item.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(String.self, forKey: .url)
+        hostKey = try container.decode(String.self, forKey: .hostKey)
+        privateKey = try container.decode(String.self, forKey: .privateKey)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        account = try container.decodeIfPresent(AccountLink.self, forKey: .account)
+        endpointSet = (try? container.decodeIfPresent(StoredEndpointSet.self, forKey: .endpointSet))
+            .flatMap { $0 }
+        if endpointSet?.isValid != true { endpointSet = nil }
+        pairedAt = try container.decode(Date.self, forKey: .pairedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(url, forKey: .url)
+        try container.encode(hostKey, forKey: .hostKey)
+        try container.encode(privateKey, forKey: .privateKey)
+        try container.encodeIfPresent(name, forKey: .name)
+        try container.encodeIfPresent(account, forKey: .account)
+        if let endpointSet, endpointSet.isValid {
+            try container.encode(endpointSet, forKey: .endpointSet)
+        }
+        try container.encode(pairedAt, forKey: .pairedAt)
     }
 
     /// The FFI record `PinomadClient.connect` takes — run through
@@ -51,8 +151,19 @@ public struct HostRecord: Codable, Sendable, Equatable {
             hostKey: hostKey,
             privateKey: privateKey,
             name: name,
-            account: account.map { StoredHostAccount(serverOrigin: $0.serverOrigin, hostId: $0.hostId) }
+            account: account.map { StoredHostAccount(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
+            endpointSet: endpointSet?.ffi
         )
+    }
+
+    /// Apply one validated endpoint update and the legacy URL that old
+    /// clients should see. The caller has already merged identity/name/account
+    /// under the store lock.
+    public func applyingEndpoints(url nextURL: String, endpointSet nextSet: StoredEndpointSet) -> HostRecord {
+        var next = self
+        next.endpointSet = nextSet
+        next.url = nextURL
+        return next
     }
 }
 
@@ -101,6 +212,24 @@ public struct StoredHosts: Codable, Sendable, Equatable {
         else { return nil }
         var next = self
         next.hosts[index].name = announced
+        return next
+    }
+
+    /// Apply a validated hello endpoint update to one stored host. A host
+    /// forgotten before the late update lands is not resurrected; name,
+    /// account, private key and pairing time stay untouched.
+    public func settingEndpoints(
+        _ endpointSet: StoredEndpointSet,
+        url: String,
+        for hostKey: String
+    ) -> StoredHosts? {
+        guard let index = hosts.firstIndex(where: { $0.hostKey == hostKey }) else {
+            return nil
+        }
+        let nextHost = hosts[index].applyingEndpoints(url: url, endpointSet: endpointSet)
+        guard nextHost != hosts[index] else { return nil }
+        var next = self
+        next.hosts[index] = nextHost
         return next
     }
 }

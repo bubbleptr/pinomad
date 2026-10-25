@@ -24,7 +24,7 @@ public final class ConnectAttempt {
         updates: AsyncStream<SessionUpdate>,
         close: @escaping @MainActor () -> Void,
         apply: @escaping UpdateHandler,
-        onTimeout: @escaping TimeoutHandler,
+        onTimeout: @escaping TimeoutHandler = { _ in },
         onFinished: (@MainActor () -> Void)? = nil
     ) {
         self.updates = updates

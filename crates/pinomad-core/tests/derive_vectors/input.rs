@@ -128,6 +128,7 @@ pub fn cot(json: &Json) -> CotView {
 }
 
 use pinomad_core::account::{AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer};
+use pinomad_core::endpoints::{parse_endpoint_set, ParsedEndpointSet};
 use pinomad_core::model::{ModelPick, ModelRef};
 use pinomad_core::stored_host::StoredHost;
 
@@ -221,5 +222,9 @@ pub fn pairing_offer(json: &Json) -> PairingOffer {
         host_key: text(json.get("hostKey")).unwrap_or_default(),
         secret: text(json.get("secret")).unwrap_or_default(),
         expires_at: num(json.get("expiresAt")).unwrap_or_default(),
+        endpoint_set: match parse_endpoint_set(json.get("endpointSet")) {
+            ParsedEndpointSet::Valid(set) if !set.endpoints.is_empty() => Some(set),
+            _ => None,
+        },
     }
 }

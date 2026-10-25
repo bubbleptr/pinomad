@@ -202,6 +202,39 @@ struct SessionOrderingTests {
         session.close()
     }
 
+    /// Candidate-stage and round deadlines use the same real timer table as
+    /// reconnect backoff, with the same cancel-then-late-fire guarantee.
+    @Test func cancelledStageDeadlineNeverFires() async throws {
+        let (session, _, clock, _) = try makeSession()
+        let (seen, hook) = recorder()
+        session.handleHook = hook
+        await session.waitForIdle()
+
+        session.enqueue(.commands([.scheduleDeadline(timer: 7, delayMs: 5_000)]))
+        await session.waitForIdle()
+        session.enqueue(.commands([.cancelDeadline(timer: 7)]))
+        await session.waitForIdle()
+        clock.latest?.triggerAnyway()
+        await session.waitForIdle()
+        #expect(!seenEvents(seen).contains("timer(7)"))
+        session.close()
+    }
+
+    @Test func armedStageDeadlineFiresOnce() async throws {
+        let (session, _, clock, _) = try makeSession()
+        let (seen, hook) = recorder()
+        session.handleHook = hook
+        await session.waitForIdle()
+
+        session.enqueue(.commands([.scheduleDeadline(timer: 8, delayMs: 5_000)]))
+        await session.waitForIdle()
+        clock.latest?.trigger()
+        clock.latest?.triggerAnyway()
+        await session.waitForIdle()
+        #expect(seenEvents(seen).filter { $0 == "timer(8)" }.count == 1)
+        session.close()
+    }
+
     @Test func armedTimerFiresOnce() async throws {
         let (session, _, clock, _) = try makeSession()
         let (seen, hook) = recorder()

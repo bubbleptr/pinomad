@@ -21,7 +21,8 @@ pub use types::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::remote_durable::{Command, Event, RemoteDurable, RemoteDurableOptions};
+use crate::remote_candidates::candidate_plan;
+use crate::remote_durable::{Command, Event, PlannedSource, RemoteDurable, RemoteDurableOptions};
 
 /// How a Request-class op's `OperationSucceeded` value decodes. Command and
 /// Unqueued ops always map to `CallResult::Unit`.
@@ -103,11 +104,30 @@ impl PinomadClient {
                     FfiCommand::ScheduleReconnect { timer: timer as u64, delay_ms }
                 }
                 Command::CancelReconnect { timer } => FfiCommand::CancelReconnect { timer: timer as u64 },
+                Command::ScheduleDeadline { timer, delay_ms } => {
+                    FfiCommand::ScheduleDeadline { timer: timer as u64, delay_ms }
+                }
+                Command::CancelDeadline { timer } => FfiCommand::CancelDeadline { timer: timer as u64 },
                 Command::Ready { outcome } => FfiCommand::Ready { outcome: outcome.into() },
                 Command::ViewChanged => FfiCommand::ViewChanged,
-                Command::Paired { url, host_key, private_key } => {
-                    FfiCommand::Paired { url, host_key, private_key }
-                }
+                Command::CandidateFailed { failure } => FfiCommand::CandidateFailed {
+                    failure: CandidateFailure::from_core(&failure),
+                },
+                Command::EndpointSet { host_key, url, endpoint_set } => FfiCommand::EndpointSet {
+                    host_key,
+                    url,
+                    endpoint_set: EndpointSet::from_core(&endpoint_set),
+                },
+                Command::Paired { url, host_key, private_key, endpoint_set } => FfiCommand::Paired {
+                    host: StoredHost {
+                        url,
+                        host_key,
+                        private_key,
+                        name: None,
+                        account: None,
+                        endpoint_set: endpoint_set.as_ref().map(EndpointSet::from_core),
+                    },
+                },
                 Command::OperationSucceeded { op, value } => {
                     match inner.result_kinds.remove(&op) {
                         Some(ResultKind::Project) => FfiCommand::OperationSucceeded {
@@ -216,6 +236,48 @@ impl PinomadClient {
     }
 }
 
+fn candidate_options(
+    url: &str,
+    endpoint_set: Option<&crate::endpoints::EndpointSet>,
+    host_key: &str,
+    private_key: &str,
+    pairing: Option<crate::secure_channel::Pairing>,
+) -> RemoteDurableOptions {
+    use crate::secure_channel::{PairingState, SecureTransport, UnavailableTransport};
+
+    let candidates = candidate_plan(url, endpoint_set, None);
+    let pairing_state = PairingState::new(pairing);
+    let host_key = host_key.to_string();
+    let host_key_for_open = host_key.clone();
+    let private_key = private_key.to_string();
+    let source = PlannedSource::new(Box::new(move |candidate| {
+        match SecureTransport::with_pairing_state(
+            &candidate.url,
+            &host_key_for_open,
+            &private_key,
+            pairing_state.clone(),
+        ) {
+            Ok(transport) => Box::new(transport),
+            Err(error) => Box::new(UnavailableTransport {
+                url: candidate.url.clone(),
+                reason: error.to_string(),
+            }),
+        }
+    }));
+    RemoteDurableOptions {
+        source: Box::new(source),
+        reconnect_delay_ms: None,
+        request_id: None,
+        candidates,
+        legacy_url: Some(url.to_string()),
+        page_protocol: None,
+        host_key,
+        pairing_endpoint_set: endpoint_set.cloned(),
+        candidate_timeouts: Default::default(),
+        round_timeout_ms: None,
+    }
+}
+
 #[uniffi::export]
 impl PinomadClient {
     /// Pair a new device: `link` is the scanned `pinomad://…#pair=…` URL,
@@ -241,39 +303,35 @@ impl PinomadClient {
                 .map_err(|e| ClientError::KeyMaterial { message: e.to_string() })?
                 .1,
         };
-        let transport = crate::secure_channel::SecureTransport::new(
+        let host_key = crate::b64::to_base64url(&parsed.host_key);
+        let options = candidate_options(
             &parsed.url,
-            &crate::b64::to_base64url(&parsed.host_key),
+            parsed.endpoint_set.as_ref(),
+            &host_key,
             &private,
             Some(crate::secure_channel::Pairing {
                 secret: parsed.secret,
                 name: device_name,
             }),
-        )
-        .map_err(|e| ClientError::KeyMaterial { message: e.to_string() })?;
-        Ok(Arc::new(Self::new(RemoteDurable::new(RemoteDurableOptions {
-            transport: Box::new(transport),
-            reconnect_delay_ms: None,
-            request_id: None,
-        }))))
+        );
+        Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
 
     /// Reconnect to a stored host — `host` is the record the keychain kept
     /// (run it through `validate_stored_host` after reading it back).
     #[uniffi::constructor]
     pub fn connect(host: StoredHost) -> Result<Arc<Self>, ClientError> {
-        let transport = crate::secure_channel::SecureTransport::new(
+        let host = validate_stored_host(host)
+            .map_err(|error| ClientError::InvalidStoredHost { message: error.to_string() })?;
+        let endpoint_set = host.endpoint_set.as_ref().and_then(EndpointSet::to_core);
+        let options = candidate_options(
             &host.url,
+            endpoint_set.as_ref(),
             &host.host_key,
             &host.private_key,
             None,
-        )
-        .map_err(|e| ClientError::KeyMaterial { message: e.to_string() })?;
-        Ok(Arc::new(Self::new(RemoteDurable::new(RemoteDurableOptions {
-            transport: Box::new(transport),
-            reconnect_delay_ms: None,
-            request_id: None,
-        }))))
+        );
+        Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
 
     /// The constructor's first commands — the initial `OpenConnection`

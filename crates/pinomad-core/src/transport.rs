@@ -21,10 +21,11 @@ pub enum ConnOut {
     Text(String),
     /// The socket is gone — the reference's `closed` handler.
     Closed { code: u16, reason: Option<String> },
-    /// The first secure session using a pairing secret just authenticated
-    /// (ADR-0024 §2): the owner emits Paired and the transport forgets the
-    /// secret — a later reconnect must not claim the pairing again.
-    Paired,
+    /// Noise message 2 verified (ADR-0024 §2, ADR-0032): the channel is
+    /// authenticated. `paired` is true only when this generation carried the
+    /// one-time pairing secret; the owner then persists the device identity
+    /// and the shared pairing state forgets the secret.
+    Authenticated { paired: bool },
 }
 
 /// One generation of a socket-level connection. Implementations handle the
@@ -59,9 +60,9 @@ pub trait Transport: Send {
     }
     /// Build the next connection generation.
     fn open(&mut self) -> Box<dyn Connection>;
-    /// A pairing just completed (ConnOut::Paired): forget the secret and
-    /// report `(url, host_key, private_key)` for the app to persist.
-    /// Implementations that never pair return None.
+    /// A pairing just completed (ConnOut::Authenticated { paired: true }):
+    /// forget the secret and report `(url, host_key, private_key)` for the
+    /// app to persist. Implementations that never pair return None.
     fn mark_paired(&mut self) -> Option<(String, String, String)> {
         None
     }
@@ -93,7 +94,10 @@ impl Connection for PlaintextConnection {
         // the connection on the close that follows a real socket failure.
         match String::from_utf8(bytes.to_vec()) {
             Ok(text) => out.push(ConnOut::Text(text)),
-            Err(_) => out.push(ConnOut::Closed { code: 1006, reason: None }),
+            Err(_) => out.push(ConnOut::Closed {
+                code: 1006,
+                reason: None,
+            }),
         }
     }
     fn closed(&mut self, code: u16, reason: Option<String>, out: &mut Vec<ConnOut>) {

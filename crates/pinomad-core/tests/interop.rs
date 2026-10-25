@@ -194,9 +194,11 @@ impl Driver {
                 // Timers fire synchronously inside pump, so a cancel can
                 // only arrive for one already discharged.
                 Command::CancelReconnect { .. } => {}
+                Command::ScheduleDeadline { .. } | Command::CancelDeadline { .. } => {}
+                Command::CandidateFailed { .. } | Command::EndpointSet { .. } => {}
                 Command::Ready { outcome } => self.ready = Some(outcome),
                 Command::ViewChanged => {}
-                Command::Paired { url, host_key, private_key } => {
+                Command::Paired { url, host_key, private_key, .. } => {
                     self.paired = Some((url, host_key, private_key));
                 }
                 Command::OperationSucceeded { op, value } => {
@@ -295,9 +297,9 @@ fn interop_pairs_and_synchronizes_a_conversation() {
     // mints a pairing link over the plaintext lane.
     let admin_url = format!("{}/?token={}", host.url.trim_end_matches('/'), host.token);
     let mut admin = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: admin_url }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: admin_url }))
     }));
     admin.wait_until(Duration::from_secs(10), |driver| driver.ready.is_some());
     assert_eq!(admin.ready, Some(ReadyOutcome::Connected));
@@ -313,7 +315,9 @@ fn interop_pairs_and_synchronizes_a_conversation() {
     let device = pinomad_core::noise::generate_keypair().expect("device keypair");
     let device_private = to_base64url(&device.private_key);
     let mut remote = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(
+        reconnect_delay_ms: None,
+        request_id: None,
+        ..RemoteDurableOptions::single(Box::new(
             SecureTransport::new(
                 &parsed.url,
                 &to_base64url(&parsed.host_key),
@@ -321,9 +325,7 @@ fn interop_pairs_and_synchronizes_a_conversation() {
                 Some(Pairing { secret: parsed.secret.clone(), name: "interop-rust".to_string() }),
             )
             .expect("secure transport"),
-        ),
-        reconnect_delay_ms: None,
-        request_id: None,
+        ))
     }));
     remote.wait_until(Duration::from_secs(15), |driver| driver.ready.is_some());
     assert_eq!(remote.ready, Some(ReadyOutcome::Connected));
@@ -459,9 +461,16 @@ impl FacadeDriver {
                     self.pump(more);
                 }
                 FfiCommand::CancelReconnect { .. } => {}
+                FfiCommand::ScheduleDeadline { .. }
+                | FfiCommand::CancelDeadline { .. }
+                | FfiCommand::CandidateFailed { .. }
+                | FfiCommand::EndpointSet { .. } => {}
                 FfiCommand::Ready { outcome } => self.ready = Some(outcome),
                 FfiCommand::ViewChanged => {}
-                FfiCommand::Paired { url, host_key, private_key } => {
+                FfiCommand::Paired { host } => {
+                    let url = host.url;
+                    let host_key = host.host_key;
+                    let private_key = host.private_key;
                     self.paired = Some((url, host_key, private_key));
                 }
                 FfiCommand::OperationSucceeded { op, value } => {
@@ -559,9 +568,9 @@ fn interop_facade_pairs_creates_and_reconnects() {
     // Phase 1 unchanged: a plaintext admin mints the pairing link.
     let admin_url = format!("{}/?token={}", host.url.trim_end_matches('/'), host.token);
     let mut admin = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: admin_url }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: admin_url }))
     }));
     admin.wait_until(Duration::from_secs(10), |driver| driver.ready.is_some());
     assert_eq!(admin.ready, Some(ReadyOutcome::Connected));
@@ -618,6 +627,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         private_key,
         name: None,
         account: None,
+        endpoint_set: None,
     })
     .expect("the emitted record validates");
     let client2 = PinomadClient::connect(stored).expect("connect to stored host");

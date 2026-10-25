@@ -8,8 +8,8 @@ use std::sync::Arc;
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, ImageVariant, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::{
-    ApiKeyChange, Call, Command, CustomProviderApi, Event, ForkShow, LoginMethod, ReadyOutcome, RemoteDurable,
-    RemoteDurableOptions,
+    ApiKeyChange, Call, CandidateFailure, Command, CustomProviderApi, Event, ForkShow, LoginMethod, ReadyOutcome,
+    RemoteDurable, RemoteDurableOptions,
 };
 use pinomad_core::transport::{PlaintextTransport, Transport};
 use pinomad_core::u16str::U16String;
@@ -141,6 +141,10 @@ struct ScriptedHost {
     hang_calls: bool,
     /// Calls to these methods are recorded but never answered.
     hung_methods: HashSet<String>,
+    /// A socket that dies immediately after it opens (the platform's open
+    /// succeeded, the path did not) — lets a round walk its candidates
+    /// without a live host.
+    fail_open: Option<(u16, Option<String>)>,
 }
 
 impl ScriptedHost {
@@ -157,6 +161,7 @@ impl ScriptedHost {
             call_results: HashMap::new(),
             hang_calls: false,
             hung_methods: HashSet::new(),
+            fail_open: None,
         }
     }
 
@@ -275,7 +280,15 @@ struct Harness {
     views: usize,
     paired: bool,
     timers: Vec<(u32, u64)>,
+    deadlines: Vec<(u32, u64)>,
     canceled: Vec<u32>,
+    failures: Vec<CandidateFailure>,
+    endpoints: Vec<(String, String, String)>,
+    /// Old tests drove reconnect in two steps. The core now starts the next
+    /// round immediately, so the helper defers just the platform's socket
+    /// open until the timer step — the candidate dial itself is real.
+    deferred_open: VecDeque<Command>,
+    defer_open: bool,
 }
 
 impl Harness {
@@ -286,7 +299,6 @@ impl Harness {
     fn with_options(host: ScriptedHost, delays: (u64, u64)) -> Self {
         let mut harness = Harness {
             remote: RemoteDurable::new(RemoteDurableOptions {
-                transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
                 reconnect_delay_ms: Some(delays),
                 request_id: Some(Box::new({
                     let mut n = 0u64;
@@ -295,6 +307,9 @@ impl Harness {
                         format!("request-{n}")
                     }
                 })),
+                ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+                    url: "ws://fake/".to_string(),
+                }))
             }),
             host,
             ready: None,
@@ -302,7 +317,12 @@ impl Harness {
             views: 0,
             paired: false,
             timers: Vec::new(),
+            deadlines: Vec::new(),
             canceled: Vec::new(),
+            failures: Vec::new(),
+            endpoints: Vec::new(),
+            deferred_open: VecDeque::new(),
+            defer_open: false,
         };
         let initial = harness.remote.take();
         harness.pump(initial);
@@ -321,26 +341,67 @@ impl Harness {
         let mut queue: VecDeque<Command> = commands.into();
         while let Some(command) = queue.pop_front() {
             match command {
+                Command::OpenConnection { conn, url } if self.defer_open => {
+                    self.deferred_open.push_back(Command::OpenConnection { conn, url });
+                }
                 Command::OpenConnection { conn, .. } => {
                     self.host.conn = conn;
                     self.host.opened += 1;
                     queue.extend(self.remote.handle(Event::SocketOpened { conn }));
-                    let hello = self.host.hello();
-                    queue.extend(self.remote.handle(Event::SocketData { conn, bytes: hello.into_bytes() }));
+                    if let Some((code, reason)) = self.host.fail_open.clone() {
+                        queue.extend(self.remote.handle(Event::SocketClosed {
+                            conn,
+                            code,
+                            reason,
+                        }));
+                    } else {
+                        let hello = self.host.hello();
+                        queue.extend(self.remote.handle(Event::SocketData {
+                            conn,
+                            bytes: hello.into_bytes(),
+                        }));
+                    }
                 }
                 Command::SendBytes { conn, bytes } => {
-                    let replies = self.host.receive(std::str::from_utf8(&bytes).expect("client frame"));
+                    let replies = self
+                        .host
+                        .receive(std::str::from_utf8(&bytes).expect("client frame"));
                     for reply in replies {
-                        queue.extend(self.remote.handle(Event::SocketData { conn, bytes: reply.into_bytes() }));
+                        queue.extend(self.remote.handle(Event::SocketData {
+                            conn,
+                            bytes: reply.into_bytes(),
+                        }));
                     }
                 }
                 Command::CloseSocket { conn } => {
-                    queue.extend(self.remote.handle(Event::SocketClosed { conn, code: 1000, reason: None }));
+                    queue.extend(self.remote.handle(Event::SocketClosed {
+                        conn,
+                        code: 1000,
+                        reason: None,
+                    }));
                 }
-                Command::ScheduleReconnect { timer, delay_ms } => self.timers.push((timer, delay_ms)),
+                Command::ScheduleReconnect { timer, delay_ms } => {
+                    self.timers.push((timer, delay_ms))
+                }
                 Command::CancelReconnect { timer } => {
                     self.timers.retain(|(armed, _)| *armed != timer);
                     self.canceled.push(timer);
+                }
+                Command::ScheduleDeadline { timer, delay_ms } => {
+                    self.deadlines.push((timer, delay_ms))
+                }
+                Command::CancelDeadline { timer } => {
+                    self.deadlines.retain(|(armed, _)| *armed != timer);
+                    self.canceled.push(timer);
+                }
+                Command::CandidateFailed { failure } => self.failures.push(failure),
+                Command::EndpointSet {
+                    host_key,
+                    url,
+                    endpoint_set,
+                } => {
+                    self.endpoints
+                        .push((host_key, url, endpoint_set.to_json().to_json()));
                 }
                 Command::Ready { outcome } => self.ready = Some(outcome),
                 Command::ViewChanged => self.views += 1,
@@ -358,14 +419,36 @@ impl Harness {
     /// Server closes the socket — `disconnect()` in the TS fake.
     fn disconnect(&mut self, code: u16, reason: Option<&str>) {
         let conn = self.host.conn;
-        self.handle(Event::SocketClosed { conn, code, reason: reason.map(|r| r.to_string()) });
+        self.defer_open = true;
+        self.handle(Event::SocketClosed {
+            conn,
+            code,
+            reason: reason.map(|r| r.to_string()),
+        });
+        self.defer_open = false;
     }
 
-    /// Fire the most recent reconnect timer.
+    /// A close whose next-round sockets are allowed to open immediately.
+    fn disconnect_now(&mut self, code: u16, reason: Option<&str>) {
+        let conn = self.host.conn;
+        self.handle(Event::SocketClosed {
+            conn,
+            code,
+            reason: reason.map(|r| r.to_string()),
+        });
+    }
+
+    /// Fire the most recent reconnect timer, or open the next round's
+    /// deferred socket when the core already started it.
     fn fire_timer(&mut self) {
-        let (timer, _) = *self.timers.last().expect("no timer scheduled");
-        self.timers.pop();
-        self.handle(Event::TimerFired { timer });
+        if let Some((timer, _)) = self.timers.last().copied() {
+            self.timers.pop();
+            self.handle(Event::TimerFired { timer });
+            return;
+        }
+        if let Some(command) = self.deferred_open.pop_front() {
+            self.pump(vec![command]);
+        }
     }
 
     fn invoke(&mut self, op: u64, call: Call) {
@@ -457,16 +540,18 @@ fn unknown_frame_types_are_ignored() {
 }
 
 #[test]
-fn close_4400_is_terminal_after_ready() {
+fn bare_4400_retires_only_the_current_candidate() {
     let mut h = setup();
-    h.disconnect(4400, Some("Invalid client frame"));
-    assert_eq!(h.connection(), "closed");
-    let message = h.last_notice().get("message").and_then(Json::as_str).unwrap().to_string_lossy();
-    assert!(message.contains("malformed"));
-    assert!(message.contains("Invalid client frame"));
-    // No reconnect timer armed.
-    assert!(h.timers.is_empty());
-    assert_eq!(h.host.opened, 1);
+    // The next round's path also dies; only then does the round back off.
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(4400, Some("Invalid client frame"));
+    assert_eq!(h.connection(), "reconnecting");
+    assert_ne!(h.view_get("unauthorized"), Some(Json::Bool(true)));
+    assert!(!h.timers.is_empty(), "the failed round backs off");
+    let first = h.failures.first().expect("the 4400 candidate failure");
+    assert_eq!(first.code, Some(4400));
+    assert_eq!(first.reason.as_deref(), Some("Invalid client frame"));
+    assert_eq!(h.host.opened, 2);
 }
 
 #[test]
@@ -484,44 +569,51 @@ fn close_1008_reconnects() {
 
 #[test]
 fn foreground_reconnects_immediately_and_resets_the_backoff() {
-    // delays (20, 80): first loss arms 20, a second loss would arm 40 —
+    // delays (20, 80): first failed round arms 20, a second would arm 40 —
     // the reset shows the counter went back to zero.
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut h = Harness::with_options(host, (20, 80));
-    h.disconnect(1006, None);
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(1006, None);
     let (timer, delay) = h.timers.last().copied().expect("backoff armed");
     assert_eq!(delay, 20);
+    h.host.fail_open = None;
     h.handle(Event::Foreground);
     assert!(h.canceled.contains(&timer));
     assert!(h.timers.is_empty());
     // A fresh generation opened right away — no TimerFired needed.
-    assert_eq!(h.host.opened, 2);
+    assert_eq!(h.host.opened, 3);
     assert_eq!(h.connection(), "connected");
-    // The backoff counter reset: the next loss re-arms at the minimum.
-    h.disconnect(1006, None);
+    // The backoff counter reset: the next failed round re-arms at the minimum.
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(1006, None);
     assert_eq!(h.timers.last().map(|(_, delay)| *delay), Some(20));
 }
 
 #[test]
 fn network_changed_reconnects_immediately() {
     let mut h = setup();
-    h.disconnect(1006, None);
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(1006, None);
     let (timer, _) = h.timers.last().copied().expect("backoff armed");
+    h.host.fail_open = None;
     h.handle(Event::NetworkChanged);
     assert!(h.canceled.contains(&timer));
-    assert_eq!(h.host.opened, 2);
+    assert_eq!(h.host.opened, 3);
     assert_eq!(h.connection(), "connected");
 }
 
 #[test]
 fn background_leaves_the_backoff_timer_armed() {
     let mut h = setup();
-    h.disconnect(1006, None);
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(1006, None);
     h.handle(Event::Background);
-    assert_eq!(h.host.opened, 1);
-    assert_eq!(h.timers.len(), 1);
-    h.fire_timer();
     assert_eq!(h.host.opened, 2);
+    assert_eq!(h.timers.len(), 1);
+    h.host.fail_open = None;
+    h.fire_timer();
+    assert_eq!(h.host.opened, 3);
 }
 
 #[test]
@@ -538,56 +630,73 @@ fn lifecycle_hints_do_not_disturb_live_or_terminal_states() {
     h.handle(Event::Foreground);
     h.handle(Event::NetworkChanged);
     assert_eq!(h.host.opened, 1);
-    // Terminal (4401): same.
+    // Terminal (all paths 4401): same.
     let mut h = setup();
-    h.disconnect(4401, None);
+    h.host.fail_open = Some((4401, None));
+    h.disconnect_now(4401, None);
+    assert_eq!(h.connection(), "closed");
     h.handle(Event::Foreground);
-    assert_eq!(h.host.opened, 1);
-    // Still connecting (OpenConnection emitted, not yet answered): the
-    // conn exists but there is no timer to cancel.
+    h.handle(Event::NetworkChanged);
+    assert_eq!(h.host.opened, 2);
+    // Still connecting (OpenConnection emitted, not yet answered): a
+    // network change retires that dial and starts a new round.
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+            url: "ws://fake/".to_string(),
+        }))
     });
     remote.take();
     assert!(remote.handle(Event::Foreground).is_empty());
-    assert!(remote.handle(Event::NetworkChanged).is_empty());
+    let commands = remote.handle(Event::NetworkChanged);
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(command, Command::OpenConnection { .. }))
+    );
 }
 
 #[test]
 fn close_while_backing_off_cancels_the_timer() {
     let mut h = setup();
-    h.disconnect(1006, None);
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(1006, None);
     let (timer, _) = h.timers.last().copied().expect("backoff armed");
     h.handle(Event::Close);
     assert!(h.canceled.contains(&timer));
     assert_eq!(h.connection(), "closed");
     // And the dead timer no longer reconnects.
     h.handle(Event::TimerFired { timer });
-    assert_eq!(h.host.opened, 1);
+    assert_eq!(h.host.opened, 2);
 }
 
 #[test]
 fn close_4401_flags_unauthorized_and_4400_does_not() {
-    for (code, expect_unauthorized) in [(4401u16, true), (4400u16, false)] {
-        let mut h = setup();
-        h.disconnect(code, None);
-        assert_eq!(h.connection(), "closed");
-        assert_eq!(
-            h.view_get("unauthorized").map(|v| v == Json::Bool(true)).unwrap_or(false),
-            expect_unauthorized
-        );
-    }
+    // All dialled paths rejected → terminal revoked state.
+    let mut h = setup();
+    h.host.fail_open = Some((4401, None));
+    h.disconnect_now(4401, None);
+    assert_eq!(h.connection(), "closed");
+    assert_eq!(h.view_get("unauthorized"), Some(Json::Bool(true)));
+
+    // A bare 4400 is only this candidate's evidence; the next path still
+    // gets its turn, and a failed round backs off instead of revoking.
+    let mut h = setup();
+    h.host.fail_open = Some((1006, None));
+    h.disconnect_now(4400, None);
+    assert_eq!(h.connection(), "reconnecting");
+    assert_ne!(h.view_get("unauthorized"), Some(Json::Bool(true)));
+    assert!(!h.timers.is_empty());
 }
 
 #[test]
 fn close_4401_before_ready_rejects_unauthorized() {
     let _host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: "ws://fake/".to_string() }))
     });
     let commands = remote.handle(Event::SocketClosed { conn: 1, code: 4401, reason: None });
     let ready = commands
@@ -676,9 +785,9 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
 fn subscriptions_wait_for_the_hello() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: "ws://fake/".to_string() }))
     });
     let _ = remote.take();
     // Switching before hello records the wanted streams but cannot send yet:
@@ -1297,7 +1406,7 @@ fn logout_against_a_5_0_host_notices_and_sends_nothing() {
 
 #[test]
 fn the_providers_stream_reaches_the_view_on_a_5_21_host_only() {
-    let mut h = setup();
+    let h = setup();
     assert!(h.host.subscribes().contains(&"providers".to_string()));
     assert_eq!(h.dig(&["providers", "providers"]).and_then(|v| v.as_array().map(|a| a[0].get("id").cloned()).unwrap_or(None)), Some(Json::from("streamp")));
 
@@ -2018,9 +2127,9 @@ fn commands_execute_serially() {
 fn protocol_mismatch_before_ready_reports_it() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), obj(&[("major", Json::from(6.0))]))]);
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: "ws://fake/".to_string() }))
     });
     // Drive manually: open → socket opened → hello data → commands.
     let mut commands = remote.handle(Event::SocketOpened { conn: 1 });
@@ -2047,9 +2156,9 @@ fn first_view_waits_for_every_host_stream() {
     let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
     host.held.insert("settings".to_string());
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: "ws://fake/".to_string() }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: "ws://fake/".to_string() }))
     });
     // open → SocketOpened → hello arrives → subscribes go out; every stream
     // but `settings` gets its snapshot. No Ready yet.

@@ -155,12 +155,9 @@ final class AppModel {
     /// The `/` command listings for this host session, one entry per
     /// conversation (issue #254). Reset when the host changes.
     var commandCache = CommandListCache()
-    /// The first-connect deadline for the current attempt, nil once it is
-    /// ready or has failed.
-    private var connectWatchdog: ConnectWatchdog?
     /// Scene state for a session that starts while the app is backgrounded
-    /// (an account pairing response can land then). Its first-connect
-    /// window starts paused and gets a full 15 seconds on foreground.
+    /// (an account pairing response can land then). The core owns the
+    /// candidate deadlines, so foregrounding only restarts a backoff.
     private var isInBackground = UIApplication.shared.applicationState == .background
     let store = KeychainHostStore()
     /// Content-addressed image bytes for ref-mode conversations (ADR-0027).
@@ -269,7 +266,6 @@ final class AppModel {
 
     func didEnterForeground() {
         isInBackground = false
-        connectWatchdog?.resume()
         session?.notifyForeground()
         Task { [weak self] in
             await self?.push.refreshAuthorization()
@@ -278,7 +274,6 @@ final class AppModel {
     }
     func didEnterBackground() {
         isInBackground = true
-        connectWatchdog?.pause()
         session?.notifyBackground()
     }
 
@@ -361,8 +356,6 @@ final class AppModel {
     }
 
     func fail(_ failure: ConnectFailure) {
-        connectWatchdog?.cancel()
-        connectWatchdog = nil
         phase = .failed(failure)
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
@@ -398,8 +391,6 @@ final class AppModel {
     /// and "back to the previous host".
     private func stopSession() {
         sessionGeneration &+= 1
-        connectWatchdog?.cancel()
-        connectWatchdog = nil
         connectAttempt?.stop()
         connectAttempt = nil
         session?.close()
@@ -408,38 +399,6 @@ final class AppModel {
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
-    }
-
-    /// A fresh 15-second window for this attempt. The callback carries the
-    /// session generation so a timer that already woke up cannot stop a
-    /// session that replaced it.
-    private func armConnectWatchdog() {
-        connectWatchdog?.cancel()
-        let generation = sessionGeneration
-        let watchdog = ConnectWatchdog { [weak self] in
-            Task { @MainActor in
-                guard let self,
-                      self.sessionGeneration == generation,
-                      self.phase == .connecting,
-                      let attempt = self.connectAttempt
-                else { return }
-                self.connectWatchdog?.cancel()
-                self.connectWatchdog = nil
-                // Close, then keep draining until the session's update
-                // stream ends; the failure page waits for that finish.
-                attempt.timeout(address: self.connectAddress)
-            }
-        }
-        connectWatchdog = watchdog
-        watchdog.begin(paused: isInBackground)
-    }
-
-    /// The session finished draining after a timeout with no ready. The
-    /// paired update (if any) has already been applied by now.
-    private func finishTimedOut(address: String?) {
-        guard phase == .connecting else { return }
-        stopSession()
-        fail(.timedOut(address: address))
     }
 
     /// Take over `session`. `sameHost` is a rebuilt session for the host
@@ -491,26 +450,14 @@ final class AppModel {
             apply: { [weak self] update in
                 guard let self, self.sessionGeneration == generation else { return }
                 self.apply(update)
-            },
-            onTimeout: { [weak self] address in
-                guard let self,
-                      self.sessionGeneration == generation,
-                      self.phase == .connecting
-                else { return }
-                self.finishTimedOut(address: address)
             })
         connectAttempt = attempt
         attempt.start()
-        armConnectWatchdog()
     }
 
     private func apply(_ update: SessionUpdate) {
         switch update {
         case .ready(let outcome):
-            // The first ready ends the first-connect window whatever it
-            // says — a success, or a failure page of its own.
-            connectWatchdog?.cancel()
-            connectWatchdog = nil
             // A revoked device can be refused before the first snapshot; the
             // account list still needs the marker.
             if outcome == .unauthorized, let host = revokedHost {
@@ -532,6 +479,18 @@ final class AppModel {
                 openConversation(id)
             }
             advancePushTarget()
+        case .candidateFailed:
+            // Per-path evidence is in the ready error's aggregate message;
+            // the structured update stays available to other clients.
+            break
+        case .endpoints(_, let saveError):
+            // Address learning is independent of readiness: a failed write
+            // leaves the live session alone and is retried by the next hello.
+            if let saveError {
+                lastError = "Couldn't save this host's updated addresses (\(saveError)). The connection is still live."
+            } else {
+                reloadHosts()
+            }
         case .paired(let host, let saveError):
             // The handshake spent the link's code and (normally) made this
             // the launch host — the session is this host's device now,

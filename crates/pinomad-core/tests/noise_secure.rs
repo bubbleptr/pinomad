@@ -422,21 +422,22 @@ fn connection_sends_pairing_once_and_reports_paired() {
     )
     .unwrap();
 
-    // First generation: hello carries the pair block, Paired fires once.
+    // First generation: hello carries the pair block, Authenticated reports
+    // that this generation spent the invite.
     let mut conn = transport.open();
     let (hello, after) = drive_handshake(&mut *conn, &host);
     let (_, pair) = decode_client_hello(&hello).unwrap();
     let pair = pair.expect("first hello carries pair");
     assert_eq!(pair.secret, "one-time");
-    assert!(after.iter().any(|o| matches!(o, ConnOut::Paired)));
+    assert!(after.iter().any(|o| matches!(o, ConnOut::Authenticated { paired: true })));
     transport.mark_paired();
 
-    // Second generation: no pair block, no Paired.
+    // Second generation: no pair block, so Authenticated says unpaired.
     let mut conn = transport.open();
     let (hello, after) = drive_handshake(&mut *conn, &host);
     let (_, pair) = decode_client_hello(&hello).unwrap();
     assert!(pair.is_none());
-    assert!(!after.iter().any(|o| matches!(o, ConnOut::Paired)));
+    assert!(after.iter().any(|o| matches!(o, ConnOut::Authenticated { paired: false })));
 }
 
 #[test]

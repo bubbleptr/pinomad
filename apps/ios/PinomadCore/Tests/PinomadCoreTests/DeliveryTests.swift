@@ -114,11 +114,11 @@ struct HostStoreTests {
         let reader = UpdateReader(session)
         await session.waitForIdle()
 
-        session.enqueue(.commands([.paired(
+        session.enqueue(.commands([.paired(host: StoredHost(
             url: "ws://192.168.1.2:7420/",
             hostKey: String(repeating: "B", count: 43),
             privateKey: String(repeating: "C", count: 43)
-        )]))
+        ))]))
         await session.waitForIdle()
 
         #expect(store.stored.active?.hostKey == String(repeating: "B", count: 43))
@@ -137,15 +137,44 @@ struct HostStoreTests {
         store.saveError = FakeError.storeBroken
         await session.waitForIdle()
 
-        session.enqueue(.commands([.paired(
+        session.enqueue(.commands([.paired(host: StoredHost(
             url: "ws://10.0.0.1:7420/",
             hostKey: String(repeating: "D", count: 43),
             privateKey: String(repeating: "E", count: 43)
-        )]))
+        ))]))
         await session.waitForIdle()
 
         guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
             Issue.record("expected paired with a save error for the failed save")
+            return
+        }
+        session.close()
+    }
+
+    /// A failed keychain write is reported on the paired update, but it
+    /// neither erases the paired identity nor blocks the ready update from
+    /// the same round.
+    @Test func pairedSaveFailureDoesNotSuppressReady() async throws {
+        let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
+        store.saveError = FakeError.storeBroken
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .paired(host: StoredHost(
+                url: "ws://10.0.0.1:7420/",
+                hostKey: String(repeating: "G", count: 43),
+                privateKey: String(repeating: "H", count: 43))),
+            .ready(outcome: .connected),
+        ]))
+        await session.waitForIdle()
+
+        guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected the save failure on paired")
+            return
+        }
+        guard case .ready(.connected) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected ready after the failed save")
             return
         }
         session.close()
@@ -157,17 +186,62 @@ struct HostStoreTests {
         store.loadError = FakeError.storeBroken
         await session.waitForIdle()
 
-        session.enqueue(.commands([.paired(
+        session.enqueue(.commands([.paired(host: StoredHost(
             url: "ws://10.0.0.1:7420/",
             hostKey: String(repeating: "F", count: 43),
             privateKey: String(repeating: "F", count: 43)
-        )]))
+        ))]))
         await session.waitForIdle()
 
         guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
             Issue.record("expected paired with a save error for the failed load")
             return
         }
+        session.close()
+    }
+
+    /// Address learning is a separate storage event: the paired identity,
+    /// name and account survive, and the endpoint set/legacy URL move
+    /// together. A forgotten host stays forgotten.
+    @Test func endpointUpdatesMergeWithoutResurrectingOrLosingIdentity() async throws {
+        let (session, _, _, store) = try makeSession()
+        let key = String(repeating: "B", count: 43)
+        let privateKey = String(repeating: "C", count: 43)
+        await session.waitForIdle()
+        session.enqueue(.commands([.paired(host: StoredHost(
+            url: "wss://old-relay/",
+            hostKey: key,
+            privateKey: privateKey,
+            name: "Desk",
+            account: nil,
+            endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                HostEndpoint(role: .relay, url: "wss://old-relay/"),
+            ]))) ]))
+        await session.waitForIdle()
+        let pairedAt = try #require(store.stored.hosts.first?.pairedAt)
+
+        let learned = EndpointSet(schemaVersion: 1, endpoints: [
+            HostEndpoint(role: .relay, url: "wss://new-relay/"),
+            HostEndpoint(role: .direct, url: "wss://new-direct/"),
+        ])
+        session.enqueue(.commands([
+            .endpointSet(hostKey: key, url: "wss://new-relay/", endpointSet: learned),
+        ]))
+        await session.waitForIdle()
+        let host = try #require(store.stored.hosts.first)
+        #expect(host.hostKey == key)
+        #expect(host.privateKey == privateKey)
+        #expect(host.name == "Desk")
+        #expect(host.pairedAt == pairedAt)
+        #expect(host.url == "wss://new-relay/")
+        #expect(host.endpointSet?.endpoints.map(\.url) == ["wss://new-relay/", "wss://new-direct/"])
+
+        store.stored = store.stored.forgetting(key)
+        session.enqueue(.commands([
+            .endpointSet(hostKey: key, url: "wss://later/", endpointSet: learned),
+        ]))
+        await session.waitForIdle()
+        #expect(store.stored.hosts.isEmpty)
         session.close()
     }
 
