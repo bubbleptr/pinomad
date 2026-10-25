@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import type { Lang } from "@/lib/i18n.ts";
+import { buttonVariants } from "@/components/ui/button.tsx";
 import { githubUrl } from "@/lib/nav.ts";
 import type { LandingCopy } from "./copy.tsx";
 import { StarIcon } from "./icons.tsx";
@@ -26,7 +27,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
         <h1 id="hero-title">{t.title}</h1>
         <p className="lead">{t.lead}</p>
         <div className="actions">
-          <a className="button" href="#quick-start">
+          <a className={buttonVariants()} href="#quick-start">
             {t.start}
           </a>
           <a className="text-link" href={githubUrl}>
@@ -173,10 +174,10 @@ export function Closing({ t }: { t: LandingCopy["closing"] }) {
         <h2 id="closing-title">{t.title}</h2>
         <p className="lead">{t.lead}</p>
         <div className="actions">
-          <a className="button" href="#quick-start">
+          <a className={buttonVariants()} href="#quick-start">
             {t.start}
           </a>
-          <a className="button button-quiet" href={githubUrl}>
+          <a className={buttonVariants({ variant: "quiet" })} href={githubUrl}>
             <StarIcon />
             {t.star}
           </a>

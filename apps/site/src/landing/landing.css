@@ -45,9 +45,14 @@
 }
 
 /* From preflight. A display utility would otherwise show an element the markup
-   hides until hydration (the durable demo's button, the copy button). */
+   hides until hydration (the durable demo's button, the copy button), and buttons
+   would keep the browser's small control font. */
 @layer landing {
   [hidden]:where(:not([hidden="until-found"])) {
     display: none !important;
+  }
+
+  button {
+    font: inherit;
   }
 }

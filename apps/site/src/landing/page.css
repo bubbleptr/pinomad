@@ -364,66 +364,6 @@ html[lang="zh-CN"] .eyebrow {
   gap: 0.75rem 1.5rem;
 }
 
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-height: 2.875rem;
-  padding: 0.65rem 1.25rem;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--fg);
-  color: var(--bg);
-  font: inherit;
-  font-weight: 600;
-  font-size: 0.95rem;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.button:hover {
-  background: oklch(0.86 0 0);
-}
-
-.button:active {
-  background: oklch(0.8 0 0);
-}
-
-.button:disabled {
-  cursor: default;
-  background: var(--surface-2);
-  color: var(--fg-3);
-}
-
-/* The durable demo's button ships hidden until the page hydrates; display above
-   would otherwise override the hidden attribute and leave a dead button without JS. */
-.button[hidden] {
-  display: none;
-}
-
-.button-quiet {
-  border-color: var(--border-strong);
-  background: transparent;
-  color: var(--fg);
-}
-
-.button-quiet:hover {
-  border-color: var(--fg-3);
-  background: var(--surface);
-}
-
-.button-quiet:active {
-  background: var(--surface-2);
-}
-
-.button-small {
-  min-height: 2.5rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-}
-
 .text-link {
   display: inline-flex;
   align-items: center;
@@ -1007,26 +947,6 @@ html[lang="zh-CN"] .node-labels text {
   color: var(--fg-3);
   font-size: 0.8rem;
   font-weight: 500;
-}
-
-.copy-button {
-  min-height: 2rem;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.copy-button:hover {
-  background: var(--surface-2);
-}
-
-.copy-button[hidden] {
-  display: none;
 }
 
 .code-card pre {
