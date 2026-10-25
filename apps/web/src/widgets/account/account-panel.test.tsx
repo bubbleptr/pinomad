@@ -8,7 +8,7 @@ import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import { ACTIVE_HOST_KEY } from "../../entities/host/host-store.ts";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
-import { AccountPanel } from "./account-panel.tsx";
+import { AccountPanel, accountErrorMessage } from "./account-panel.tsx";
 
 const KEY_A = "A".repeat(43);
 const KEY_B = "B".repeat(43);
@@ -130,5 +130,14 @@ describe("AccountPanel", () => {
     });
     expect(model.retryUnsavedHost).toHaveBeenCalled();
     expect(localStorage.getItem(ACTIVE_HOST_KEY)).toBe(KEY_A);
+  });
+});
+
+describe("accountErrorMessage pairing paths", () => {
+  it("separates an actual refusal from unreachable, timeout and unsupported paths", () => {
+    expect(accountErrorMessage({ code: "pair_rejected" })).toContain("refused this device");
+    expect(accountErrorMessage({ code: "pair_unreachable" })).toContain("Couldn't reach the host");
+    expect(accountErrorMessage({ code: "pair_timeout" })).toContain("didn't answer");
+    expect(accountErrorMessage({ code: "pair_unsupported" })).toContain("can't connect to any address");
   });
 });

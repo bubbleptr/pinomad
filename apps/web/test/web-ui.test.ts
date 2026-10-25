@@ -2489,6 +2489,40 @@ it("carries the invite's endpoint set through pairing into the stored host", asy
   await prompt(page).waitFor();
 });
 
+it("carries the endpoint set through a pasted pairing link into the stored host", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: ["pasted"],
+    remote: { port: 0 },
+  });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const parsed = parsePairingLink(pairingUrl)!;
+  expect(parsed.endpointSet).toBeDefined();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 844 } });
+  await page.goto(webOrigin);
+  await page.getByLabel("Pairing link").fill(pairingUrl);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+
+  const stored = await page.evaluate(
+    () =>
+      (JSON.parse(localStorage.getItem("pinomad.hosts")!) as {
+        url: string;
+        endpointSet?: unknown;
+      }[])[0]!,
+  );
+  expect(stored.endpointSet).toEqual(parsed.endpointSet);
+  const relay = parsed.endpointSet!.endpoints.find((endpoint) => endpoint.role === "relay");
+  const direct = parsed.endpointSet!.endpoints.find((endpoint) => endpoint.role === "direct");
+  expect(stored.url).toBe((relay ?? direct)!.url);
+});
+
 it("manages paired devices from Settings → Devices", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });

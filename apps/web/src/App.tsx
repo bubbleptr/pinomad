@@ -257,14 +257,27 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
   );
 }
 
+type RemoteConnect = (options: RemoteDurableOptions) => Promise<RemoteDurable>;
+
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
-function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
+export function SecureClient({
+  address,
+  connect,
+}: {
+  address: Extract<ResolvedAddress, { kind: "pair" | "device" }>;
+  /** Test seam, matching useRemoteDurable's connect override. */
+  connect?: RemoteConnect;
+}) {
   const { store, hosts, paired, endpoints } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   // A pairing whose save failed (e.g. locked keychain): the device key would
   // die with the process, and the spent invite can't pair again — surface it
   // instead of losing the identity silently.
   const [unsaved, setUnsaved] = useState<StoredHost>();
+  // Manual retries must keep the identity and stop replaying the invite secret
+  // once message 2 verified, even if the save or first sync failed afterwards.
+  const pairedRef = useRef(false);
+  const [pairedOnce, setPairedOnce] = useState(false);
   const device = useMemo<KeyPair>(() => {
     // A stored key for the same host survives a spent pairing link: the host
     // admits a registered device without consuming the offer.
@@ -287,18 +300,31 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       live = false;
     };
   }, [address]);
-  const candidates = useMemo(
-    () => candidatePlan(address.url, address.endpointSet, { pageProtocol: window.location.protocol }),
-    [address],
+  // Retry reads the latest stored address set, not the one this page started
+  // with; the connection key below deliberately excludes it, so a background
+  // hello update does not restart a healthy connection.
+  const target = useMemo(
+    () => ({
+      url: stored?.url ?? address.url,
+      endpointSet: stored?.endpointSet ?? address.endpointSet,
+    }),
+    [address, stored],
   );
+  const candidates = useMemo(
+    () => candidatePlan(target.url, target.endpointSet, { pageProtocol: window.location.protocol }),
+    [target],
+  );
+  const pairing =
+    address.kind === "pair" && !pairedOnce && pairName !== undefined
+      ? { secret: address.secret, name: pairName }
+      : undefined;
   const options = useMemo<RemoteDurableOptions | undefined>(() => {
     // A pair address holds off opening the socket until the label resolves —
     // the name travels inside the first handshake.
     if (address.kind === "pair" && pairName === undefined) return undefined;
-    const pairing = address.kind === "pair" ? { secret: address.secret, name: pairName! } : undefined;
     return {
       candidates,
-      legacyUrl: address.url,
+      legacyUrl: target.url,
       pageProtocol: window.location.protocol,
       ...(pairing === undefined ? {} : { pairing }),
       openTransport: (candidate, currentPairing) =>
@@ -309,6 +335,9 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
           ...(currentPairing === undefined ? {} : { pairing: currentPairing }),
         }),
       onPaired: () => {
+        if (pairedRef.current) return;
+        pairedRef.current = true;
+        setPairedOnce(true);
         const endpointSet = address.endpointSet;
         const host: StoredHost = {
           url: endpointSet === undefined ? address.url : preferredLegacyUrl(address.url, endpointSet),
@@ -332,7 +361,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
         );
       },
     };
-  }, [address, candidates, device, endpoints, paired, pairName, stored]);
+  }, [address, candidates, device, endpoints, paired, pairName, pairing, stored, target]);
   if (options === undefined) return <Centered>{null}</Centered>;
   const rejected =
     address.kind === "pair" ? (
@@ -385,12 +414,15 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
   return (
     <RemoteWorkbench
       options={options}
-      connectionKey={`${candidates.map((candidate) => candidate.url).join(" ")} ${address.hostKey}`}
-      label={address.url}
+      // Stable across background address updates: only a manual Retry (its
+      // attempt counter) or another host remounts the connection.
+      connectionKey={address.hostKey}
+      label={target.url}
       rejected={rejected}
       device={device}
       notice={notice}
       hostKey={address.hostKey}
+      {...(connect === undefined ? {} : { connect })}
     />
   );
 }
@@ -404,6 +436,7 @@ export function RemoteWorkbench({
   device,
   notice,
   hostKey,
+  connect,
 }: {
   options: RemoteDurableOptions;
   connectionKey: string;
@@ -416,12 +449,18 @@ export function RemoteWorkbench({
   notice?: ReactNode;
   /** The stored pairing this connection authenticates as — absent for token clients (5.12 name caching). */
   hostKey?: string;
+  /** Test seam forwarded to useRemoteDurable. */
+  connect?: RemoteConnect;
 }) {
   // Bumping the attempt counter changes the connection key, which remounts the
   // connection — the same fresh connect a page reload would give, without
   // losing the resolved address.
   const [attempt, setAttempt] = useState(0);
-  const state = useRemoteDurable(options, `${connectionKey} ${attempt}`);
+  const state = useRemoteDurable(
+    options,
+    `${connectionKey} ${attempt}`,
+    connect === undefined ? undefined : { connect },
+  );
   if (state.status === "connecting") {
     return (
       <Centered>
@@ -435,6 +474,7 @@ export function RemoteWorkbench({
     // the hosts list repeats inline.
     return (
       <Centered>
+        {notice === undefined ? null : <div className="w-full max-w-md">{notice}</div>}
         {state.mismatch !== undefined ? (
           <VersionMismatch wsUrl={label} mismatch={state.mismatch} />
         ) : rejected !== undefined && state.unauthorized ? (

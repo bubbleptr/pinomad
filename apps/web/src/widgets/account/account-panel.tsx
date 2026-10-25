@@ -50,6 +50,12 @@ export function accountErrorMessage(error: AccountError): string {
       return "The host didn't answer in time. Try again.";
     case "pair_rejected":
       return "The host refused this device. If you revoked it before, pair it with a QR code instead.";
+    case "pair_unreachable":
+      return "Couldn't reach the host on any offered path. Check your network connection or Tailscale and try again.";
+    case "pair_timeout":
+      return "The host didn't answer on any offered path in time. Try again.";
+    case "pair_unsupported":
+      return "This app can't connect to any address the host offered. The page may block an insecure ws:// path; try the desktop app or a secure address.";
     case "pairing_not_saved":
       return "Paired, but this device couldn't save the pairing.";
     default:

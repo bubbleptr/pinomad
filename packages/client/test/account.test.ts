@@ -13,6 +13,7 @@ import {
   matchAccountHosts,
   normalizeServerOrigin,
   pairViaAccount,
+  PairingHandshakeError,
   probeAccounts,
   type AccountFetch,
   type AccountFetchInit,
@@ -436,9 +437,146 @@ describe("accountPairingFragment + pairViaAccount", () => {
     expect(dialed).toBe(false);
   });
 
-  it("turns a rejected handshake into pair_rejected", async () => {
+  it("turns a rejected handshake into pair_rejected with its path evidence", async () => {
     const client = bearer([{ status: 200, body: offer() }]);
     const result = await pairViaAccount(client, HOST_ID, "d", () => Promise.reject(new Error("closed 4401")));
-    expect(result).toEqual({ ok: false, error: { code: "pair_rejected" } });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_rejected",
+        candidates: [{ outcome: "rejected", code: 4401, role: "legacy", url: "wss://relay.example.com/c/host" }],
+      },
+    });
+  });
+
+  it("reports an HTTPS page's unsupported candidates without dialing", async () => {
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.5:7422/secure" },
+      ],
+    };
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet } }]);
+    let dialed = 0;
+    const result = await pairViaAccount(
+      client,
+      HOST_ID,
+      "d",
+      () => {
+        dialed += 1;
+        return Promise.reject(new Error("relay offline"));
+      },
+      { pageProtocol: "https:" },
+    );
+    expect(dialed).toBe(1); // the wss relay was dialed; the ws direct was not
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_unreachable",
+        candidates: [
+          { outcome: "unreachable", role: "relay", url: "wss://relay.example.com/c/host" },
+          { outcome: "unsupported", role: "direct", url: "ws://192.168.1.5:7422/secure" },
+        ],
+      },
+    });
+
+    // An unsupported-only offer never dials and is not reported as a refusal.
+    const onlyDirect = bearer([
+      {
+        status: 200,
+        body: {
+          ...offer(),
+          endpointSet: {
+            schemaVersion: 1,
+            endpoints: [{ transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" }],
+          },
+        },
+      },
+    ]);
+    const noDial = await pairViaAccount(
+      onlyDirect,
+      HOST_ID,
+      "d",
+      () => {
+        throw new Error("must not dial");
+      },
+      { pageProtocol: "https:" },
+    );
+    expect(noDial).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_unsupported",
+        candidates: [{ outcome: "unsupported", role: "direct", reason: expect.stringContaining("mixed content") }],
+      },
+    });
+  });
+
+  it("reports unreachable paths separately from a refusal", async () => {
+    const client = bearer([{ status: 200, body: offer() }]);
+    const result = await pairViaAccount(client, HOST_ID, "d", () =>
+      Promise.reject(new Error("ECONNRESET")),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_unreachable",
+        candidates: [{ outcome: "unreachable", role: "legacy", reason: "ECONNRESET" }],
+      },
+    });
+  });
+
+  it("classifies a typed 4401 close as a refusal", async () => {
+    const client = bearer([{ status: 200, body: offer() }]);
+    const result = await pairViaAccount(client, HOST_ID, "d", () =>
+      Promise.reject(new PairingHandshakeError(4401)),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "pair_rejected", candidates: [{ outcome: "rejected", code: 4401 }] },
+    });
+  });
+
+  it("keeps a rejection's code when another path is unsupported", async () => {
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.5:7422/secure" },
+      ],
+    };
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet } }]);
+    const result = await pairViaAccount(
+      client,
+      HOST_ID,
+      "d",
+      () => Promise.reject(new PairingHandshakeError(4401)),
+      { pageProtocol: "https:" },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_rejected",
+        candidates: [
+          { outcome: "rejected", code: 4401 },
+          { outcome: "unsupported", role: "direct" },
+        ],
+      },
+    });
+  });
+
+  it("reports a pairing deadline as a timeout, not a refusal", async () => {
+    const client = bearer([{ status: 200, body: offer() }]);
+    const result = await pairViaAccount(
+      client,
+      HOST_ID,
+      "d",
+      () => new Promise<void>(() => {}),
+      { attemptTimeoutMs: 10 },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "pair_timeout", candidates: [{ outcome: "timeout", role: "legacy" }] },
+    });
   });
 });

@@ -477,6 +477,103 @@ describe("candidate coordinator", () => {
     }
   });
 
+  it("counts only dialed paths for an unauthorized verdict, keeping unsupported in the diagnostics", async () => {
+    const plan = [
+      relay("wss://relay/"),
+      { ...direct("ws://direct/"), unsupported: "mixed content: this HTTPS page blocks the insecure ws:// connection" },
+    ];
+    const failures: CandidateFailure[] = [];
+    const first = network(plan, (candidate) =>
+      candidate.role === "relay" ? { steps: ["open", "auth", { close: UNAUTHORIZED_CLOSE_CODE }] } : { steps: [] },
+    );
+    const error = await connectRemoteDurable(
+      options(first, {}, { onCandidateFailure: (failure) => failures.push(failure) }),
+    ).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(failures.map((failure) => failure.stage)).toEqual(["hello", "unsupported"]);
+
+    // The same plan after ready: one rejected relay and one unsupported direct
+    // must still end in the revoked UI, not an endless backoff.
+    let attempt = 0;
+    const second = network(plan, (candidate) =>
+      candidate.role === "relay"
+        ? {
+            steps:
+              attempt++ === 0
+                ? ["open", "auth", "hello", "sync"]
+                : ["open", "auth", { close: UNAUTHORIZED_CLOSE_CODE }],
+          }
+        : { steps: [] },
+    );
+    const remote = await ready(connectRemoteDurable(options(second)));
+    try {
+      second.opens.at(-1)!.handlers.closed(1006);
+      await flush();
+      expect(remote.view.current().connection).toBe("closed");
+      expect(remote.view.current().unauthorized).toBe(true);
+      const opens = second.opens.length;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(second.opens).toHaveLength(opens);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("reports an unsupported-only plan as skipped paths, not as an empty remote list", async () => {
+    const mixed = "mixed content: this HTTPS page blocks the insecure ws:// connection";
+    const plan = [
+      { ...relay("ws://relay/"), unsupported: mixed },
+      { ...direct("ws://direct/"), unsupported: mixed },
+    ];
+    const error = await connectRemoteDurable(options(network(plan, () => ({ steps: [] })), {})).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(ConnectionFailedError);
+    expect((error as Error).message).toContain("mixed content");
+    expect((error as Error).message).not.toContain("published no remote path");
+
+    // After a successful relay learns an unsupported-only set, the next round
+    // is terminal with the skipped reason, not the empty-plan message.
+    const unsupportedSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "direct" as const, url: "ws://direct/" }],
+    };
+    const learned = network([relay("wss://relay/")], () => ({
+      steps: ["open", "auth", "sync", { hello: unsupportedSet }],
+    }));
+    const remote = await ready(
+      connectRemoteDurable({
+        ...options(learned),
+        legacyUrl: "wss://relay/",
+        pageProtocol: "https:",
+      }),
+    );
+    try {
+      learned.opens[0]!.handlers.closed(1006);
+      await flush();
+      expect(remote.view.current().connection).toBe("closed");
+      expect(remote.view.current().notices.at(-1)?.message).toContain("mixed content");
+      expect(remote.view.current().notices.at(-1)?.message).not.toContain("published no remote path");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("updates an existing public view to closed when aborted after ready", async () => {
+    const controller = new AbortController();
+    const harness = network([relay()], () => ({ steps: ["open", "auth", "hello", "sync"] }));
+    const remote = await ready(connectRemoteDurable({ ...options(harness), signal: controller.signal }));
+    expect(remote.view.current().connection).toBe("connected");
+    controller.abort();
+    await flush();
+    expect(remote.view.current().connection).toBe("closed");
+    remote.close();
+  });
+
   it("keeps a client-local loopback through an explicit empty remote set", async () => {
     const empty = { schemaVersion: 1 as const, endpoints: [] };
     const harness = network([loopback()], () => ({ steps: ["open", "auth", "sync", { hello: empty }] }));

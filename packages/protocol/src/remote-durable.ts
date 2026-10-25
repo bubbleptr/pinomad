@@ -82,6 +82,9 @@ export class ConnectionFailedError extends Error {
   }
 }
 
+const REMOTE_ACCESS_UNAVAILABLE =
+  "Remote access is unavailable: the host published no remote path and this device has no local entry.";
+
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const describeFailure = (failure: CandidateFailure): string => {
@@ -710,6 +713,20 @@ class RemoteClient {
     }
   }
 
+  #dialedFailures(failures: readonly CandidateFailure[]): CandidateFailure[] {
+    return failures.filter((failure) => failure.stage !== "unsupported");
+  }
+
+  /**
+   * Only paths this client actually dialed can make the round unauthorized.
+   * An unsupported candidate (mixed content, say) is evidence about this
+   * platform, not about whether the host accepts the device.
+   */
+  #unauthorizedRound(failures: readonly CandidateFailure[]): boolean {
+    const dialed = this.#dialedFailures(failures);
+    return dialed.length > 0 && dialed.every((failure) => failure.unauthorized);
+  }
+
   #roundFailed(): void {
     if (!this.#roundActive) return;
     this.#roundActive = false;
@@ -718,15 +735,23 @@ class RemoteClient {
     this.#dial = undefined;
     if (this.#closed) return;
     const failures = [...this.#failures];
-    const usable = this.#roundCandidates.some((candidate) => candidate.unsupported === undefined);
+    const dialed = this.#dialedFailures(failures);
+    const unauthorized = this.#unauthorizedRound(failures);
+    const emptyPlan = this.#roundCandidates.length === 0;
     if (!this.#everReady) {
       this.#closed = true;
       this.#clearTimers();
       this.#stopListeners();
-      this.#rejectReady(this.#aggregateError(failures));
+      this.#rejectReady(
+        unauthorized
+          ? new UnauthorizedError()
+          : emptyPlan
+            ? new Error(REMOTE_ACCESS_UNAVAILABLE)
+            : this.#aggregateError(failures),
+      );
       return;
     }
-    if (failures.length > 0 && failures.every((failure) => failure.unauthorized)) {
+    if (unauthorized) {
       this.#closed = true;
       this.#clearTimers();
       this.#stopListeners();
@@ -734,17 +759,15 @@ class RemoteClient {
       this.#notice("error", new UnauthorizedError().message);
       return;
     }
-    if (!usable) {
-      // An explicit empty remote set with no local entry is a configuration
-      // verdict, not a transient outage: retrying old paths would be a lie.
+    if (dialed.length === 0) {
+      // No path was dialed. A genuinely empty plan has no remote entry at
+      // all; an unsupported-only plan keeps its skipped-path reasons instead
+      // of claiming the host published nothing.
       this.#closed = true;
       this.#clearTimers();
       this.#stopListeners();
       this.#update({ connection: "closed" });
-      this.#notice(
-        "error",
-        "Remote access is unavailable: the host published no remote path and this device has no local entry.",
-      );
+      this.#notice("error", emptyPlan ? REMOTE_ACCESS_UNAVAILABLE : this.#aggregateError(failures).message);
       return;
     }
     this.#update({ connection: "reconnecting" });
@@ -756,12 +779,8 @@ class RemoteClient {
   }
 
   #aggregateError(failures: readonly CandidateFailure[]): Error {
-    if (failures.length > 0 && failures.every((failure) => failure.unauthorized)) return new UnauthorizedError();
-    if (failures.length === 0) {
-      return new Error(
-        "Remote access is unavailable: the host published no remote path and this device has no local entry.",
-      );
-    }
+    if (this.#unauthorizedRound(failures)) return new UnauthorizedError();
+    if (failures.length === 0) return new Error(REMOTE_ACCESS_UNAVAILABLE);
     return new ConnectionFailedError(failures);
   }
 
@@ -832,6 +851,9 @@ class RemoteClient {
     this.#abandonDial();
     this.#rejectPending();
     this.#rejectSnapshotWaiters(new DisconnectedError());
+    // A post-ready abort still has a public view: close it without touching
+    // the paired / persisted state.
+    this.#update({ connection: "closed" });
     this.#rejectReady(new Error("Connection attempt aborted"));
   }
 
