@@ -9,14 +9,14 @@
 // A page without the meta would be left with 'unsafe-inline' alone, so the
 // build fails if one can't be placed.
 //
-// Usage: node scripts/csp.ts <dist/client>
+// Usage: bun scripts/csp.ts <dist/client>
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.argv[2];
-if (!root) throw new Error("usage: node scripts/csp.ts <dir>");
+if (!root) throw new Error("usage: bun scripts/csp.ts <dir>");
 
 const hash = (text: string) => `'sha256-${createHash("sha256").update(text, "utf8").digest("base64")}'`;
 
