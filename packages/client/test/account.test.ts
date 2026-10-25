@@ -489,7 +489,10 @@ describe("accountPairingFragment + pairViaAccount", () => {
           ...offer(),
           endpointSet: {
             schemaVersion: 1,
-            endpoints: [{ transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" }],
+            endpoints: [
+              { transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" },
+              { transport: "webSocket", role: "direct", url: "ws://192.168.1.6:7422/secure" },
+            ],
           },
         },
       },
@@ -507,7 +510,10 @@ describe("accountPairingFragment + pairViaAccount", () => {
       ok: false,
       error: {
         code: "pair_unsupported",
-        candidates: [{ outcome: "unsupported", role: "direct", reason: expect.stringContaining("mixed content") }],
+        candidates: [
+          { outcome: "unsupported", role: "direct", reason: expect.stringContaining("mixed content") },
+          { outcome: "unsupported", role: "direct", reason: expect.stringContaining("mixed content") },
+        ],
       },
     });
   });
@@ -560,6 +566,77 @@ describe("accountPairingFragment + pairViaAccount", () => {
         candidates: [
           { outcome: "rejected", code: 4401 },
           { outcome: "unsupported", role: "direct" },
+        ],
+      },
+    });
+  });
+
+  const twoPaths = (): { schemaVersion: 1; endpoints: { transport: "webSocket"; role: "relay" | "direct"; url: string }[] } => ({
+    schemaVersion: 1,
+    endpoints: [
+      { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" },
+      { transport: "webSocket", role: "direct", url: "wss://direct.example.com/secure" },
+    ],
+  });
+
+  it("does not let one rejected relay override a direct timeout", async () => {
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet: twoPaths() } }]);
+    let calls = 0;
+    const result = await pairViaAccount(
+      client,
+      HOST_ID,
+      "d",
+      () => {
+        calls += 1;
+        return calls === 1 ? Promise.reject(new PairingHandshakeError(4401)) : new Promise<void>(() => {});
+      },
+      { attemptTimeoutMs: 5 },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_timeout",
+        candidates: [
+          { outcome: "rejected", code: 4401, role: "relay" },
+          { outcome: "timeout", role: "direct" },
+        ],
+      },
+    });
+  });
+
+  it("does not let one rejected relay override a direct unreachable path", async () => {
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet: twoPaths() } }]);
+    let calls = 0;
+    const result = await pairViaAccount(client, HOST_ID, "d", () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.reject(new PairingHandshakeError(4401))
+        : Promise.reject(new Error("ECONNRESET"));
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_unreachable",
+        candidates: [
+          { outcome: "rejected", code: 4401, role: "relay" },
+          { outcome: "unreachable", reason: "ECONNRESET", role: "direct" },
+        ],
+      },
+    });
+  });
+
+  it("calls the round rejected only when every dialed path was rejected", async () => {
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet: twoPaths() } }]);
+    const result = await pairViaAccount(client, HOST_ID, "d", () =>
+      Promise.reject(new PairingHandshakeError(4401)),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "pair_rejected",
+        candidates: [
+          { outcome: "rejected", code: 4401, role: "relay" },
+          { outcome: "rejected", code: 4401, role: "direct" },
         ],
       },
     });

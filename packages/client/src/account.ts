@@ -80,22 +80,27 @@ const fail = (code: string, status?: number): { readonly ok: false; readonly err
 });
 
 /**
- * Pairing failed on every path. The primary code names the strongest evidence
- * (a real refusal beats a timeout, a timeout beats an unreachable path, and a
- * platform limitation is last), while `candidates` keeps every path's reason.
+ * Pairing failed on every path. Only a round whose every DIALED path was
+ * rejected can be called `pair_rejected`; a single relay's unauthenticated
+ * 4401 must not overwrite a timeout or unreachable direct. Unsupported paths
+ * are never dialed and do not vote. The diagnostics keep every path's reason,
+ * rejected ones included.
  */
 const pairFailure = (candidates: readonly PairCandidateDiagnostic[]): {
   readonly ok: false;
   readonly error: AccountError;
 } => {
-  const outcomes = new Set(candidates.map((candidate) => candidate.outcome));
-  const code = outcomes.has("rejected")
+  const dialed = candidates.filter((candidate) => candidate.outcome !== "unsupported");
+  const allRejected = dialed.length > 0 && dialed.every((candidate) => candidate.outcome === "rejected");
+  const any = (outcome: PairCandidateOutcome): boolean =>
+    dialed.some((candidate) => candidate.outcome === outcome);
+  const code = allRejected
     ? "pair_rejected"
-    : outcomes.has("timeout")
+    : any("timeout")
       ? "pair_timeout"
-      : outcomes.has("unreachable")
+      : any("unreachable")
         ? "pair_unreachable"
-        : outcomes.has("unsupported")
+        : candidates.some((candidate) => candidate.outcome === "unsupported")
           ? "pair_unsupported"
           : "pair_unreachable";
   return {
