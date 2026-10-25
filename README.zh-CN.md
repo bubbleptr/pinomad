@@ -26,68 +26,15 @@ pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链�
 
 模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
 
-## 连上其他设备
-
-给配对设备开一个端口，然后每台设备各扫一个二维码：
-
-```sh
-pinomad host --remote-port 7422
-pinomad pair        # 一次性的二维码和链接，5 分钟后过期
-```
-
-iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。
-
-配对链接始终保留 legacy socket 地址，也可以带上可远程访问的中继和直连候选。没有 `--public-url` 时，直连地址用宿主探测到的局域网地址；在 tailnet 里或走隧道时，加上 `--public-url http://<tailnet-ip>:7422`，让它指向那个地址。宿主加入了中继时，旧客户端继续使用链接里的中继地址。宿主在家、人在外面也想连，就在 VPS 上跑中继，见[远程访问](docs/remote-access.md)。
-
-## 常驻运行
-
-把宿主装成当前用户的服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起：
-
-```sh
-pinomad service install --remote-port 7422
-pinomad service status
-pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重启
-```
-
-服务参数、日志和各平台的注意事项见[常驻运行](docs/service.md)。
-
-## 客户端
-
-| 客户端 | 获取方式 |
-|---|---|
-| Web | 宿主自己提供（`pinomad link`），中继也提供；现代浏览器都能用 |
-| macOS（Apple 芯片） | [GitHub Releases](https://github.com/bubbleptr/pinomad/releases) 上签名过的 DMG，会自动更新 |
-| iOS | 目前只在 TestFlight 内部测试 |
-| Linux、Windows | 用 Web 客户端 |
-
-## agent 能做什么
-
-工具和 pi 一样是 read、bash、edit、write 四个，另外还有：
-
-| 功能 | 说明 |
-|---|---|
-| 项目和 worktree | 把一个目录登记成项目。Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到 |
-| Fork | 从某条消息分出去，两条线各自往下聊 |
-| 子代理 | 把自成一体的任务交给子代理，多个子代理并行执行 |
-| 具名 Agent | `<数据目录>/agents/<名字>.md` 里的可复用角色——`subagent` 调用或 `@名字` 提及可以派给它，可选锁定模型和思考等级 |
-| 提问代替审批 | 工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题 |
-| codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
-| MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |
-| 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩放并转成 JPEG |
-| AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills；消息里用 `$名字` 提及的 skill 会把全文随消息发给模型 |
-
-细节和 MCP 配置说明见[使用说明](docs/usage.md)。
-
 ## 文档
 
-以下文档都是中文。
+用户文档在 **[pinomad.si/zh/docs](https://pinomad.si/zh/docs/)**：[快速上手](https://pinomad.si/zh/docs/)（连上其他设备、常驻运行、客户端）、[agent 能做什么](https://pinomad.si/zh/docs/features/)、[使用说明](https://pinomad.si/zh/docs/usage/)、[远程访问](https://pinomad.si/zh/docs/remote-access/)、[常驻运行](https://pinomad.si/zh/docs/service/)。
+
+开发相关：
 
 | 文档 | 内容 |
 |---|---|
-| [使用说明](docs/usage.md) | 项目、worktree、工具、MCP 配置 |
-| [远程访问](docs/remote-access.md) | 配对、隧道、自部署中继（VPS 或容器平台） |
-| [常驻运行](docs/service.md) | `service` 和 `upgrade` 命令，各平台注意事项 |
-| [官网](docs/website.md) | pinomad.si 落地页和 app.pinomad.si 托管实例 |
+| [官网](docs/website.md) | pinomad.si 官网和 app.pinomad.si 托管实例 |
 | [架构概览](docs/architecture.md) | 各部分和语言怎么配合，收发流程图 |
 | [架构决策](docs/adr/README.md) | 为什么这样设计 |
 | [路线图](docs/roadmap.md) | 方向和顺序；具体条目在 GitHub Issues |

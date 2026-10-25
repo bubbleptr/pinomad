@@ -1,4 +1,4 @@
-// The server-accounts API (ADR-0022; docs/remote-access.md "服务端账号") as a
+// The server-accounts API (ADR-0022; apps/site/content/docs/remote-access.zh.md "服务端账号") as a
 // client sees it — `packages/client/src/account.ts` with the transport lifted
 // out (ADR-0024 §3): `account_request` builds the HTTP the platform sends
 // verbatim, `account_response` turns the status+body it gets back into typed
