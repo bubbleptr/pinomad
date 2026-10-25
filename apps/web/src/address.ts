@@ -1,4 +1,4 @@
-import { parsePairParam } from "@pinomad/protocol/pairing-link.ts";
+import { pairingEndpointSet, parsePairParam } from "@pinomad/protocol/pairing-link.ts";
 import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
 import type {} from "./entities/host/desktop-bridge.ts"; // brings in the window.pinomadDesktop global
 
@@ -52,6 +52,10 @@ export function resolveAddress(
   if (pair !== null) {
     const parsed = parsePairParam(pair);
     if (parsed === undefined) return undefined;
+    // A scanned / page-fragment invite is validated by the same additive
+    // endpointSet rule as a pasted or deep link; otherwise a bad set would
+    // silently fall back to the legacy url here.
+    if (pairingEndpointSet(params) === false) return undefined;
     const url = params.get("url") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
     return { kind: "pair", url, hostKey: parsed.hostKey, secret: parsed.secret };
   }

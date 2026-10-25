@@ -68,6 +68,9 @@ export const PARENT_FOLDER_CASES = [
 ];
 
 const valid = () => ({ url: "ws://192.168.1.5:7422/secure", hostKey: KEY_A, privateKey: KEY_B });
+const relayEndpoint = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
+const directEndpoint = { transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" };
+const endpointSet = (...endpoints: object[]) => ({ schemaVersion: 1, endpoints });
 
 export const HOST_CASES: { name: string; value: unknown }[] = [
   { name: "valid", value: valid() },
@@ -95,6 +98,23 @@ export const HOST_CASES: { name: string; value: unknown }[] = [
   { name: "non-object-array", value: ["a"] },
   { name: "ws-default-port", value: { ...valid(), url: "ws://example.com:80/x" } },
   { name: "url-path-only", value: { ...valid(), url: "ws:opaque" } },
+  { name: "endpoint-set", value: { ...valid(), endpointSet: endpointSet(relayEndpoint, directEndpoint) } },
+  { name: "endpoint-set-empty", value: { ...valid(), endpointSet: endpointSet() } },
+  { name: "endpoint-set-deduped", value: { ...valid(), endpointSet: endpointSet(relayEndpoint, relayEndpoint) } },
+  { name: "endpoint-set-unknown-schema", value: { ...valid(), endpointSet: { schemaVersion: 2, endpoints: [relayEndpoint] } } },
+  {
+    name: "endpoint-set-unknown-transport-only",
+    value: { ...valid(), endpointSet: endpointSet({ transport: "quic", role: "relay", url: "quic://relay" }) },
+  },
+  {
+    name: "endpoint-set-malformed-role",
+    value: { ...valid(), endpointSet: endpointSet({ ...relayEndpoint, role: "backup" }) },
+  },
+  {
+    name: "endpoint-set-role-conflict",
+    value: { ...valid(), endpointSet: endpointSet(relayEndpoint, { ...relayEndpoint, role: "direct" }) },
+  },
+  { name: "endpoint-set-not-an-object", value: { ...valid(), endpointSet: "junk" } },
 ];
 
 const storedA = { url: "ws://10.0.0.2:7422", hostKey: HOST_KEY_A, privateKey: KEY_A };

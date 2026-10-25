@@ -367,8 +367,10 @@ pub fn stored_host_json(host: Option<&StoredHost>) -> Json {
         ("privateKey", Some(s(&host.private_key))),
         ("name", host.name.as_ref().map(|n| s(n))),
         ("account", host.account.as_ref().map(|a| a.to_json())),
+        ("endpointSet", host.endpoint_set.as_ref().map(|set| set.to_json())),
     ])
 }
+
 
 pub fn host_labels_json(labels: &[pinomad_core::stored_host::HostLabel]) -> Json {
     let mut object = JsonObject::new();

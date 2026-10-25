@@ -36,6 +36,8 @@ fn to_core(host: &StoredHost) -> crate::stored_host::StoredHost {
             .account
             .as_ref()
             .map(|link| crate::stored_host::StoredHostAccount::new(link.server_origin.clone(), link.host_id.clone())),
+        // The UniFFI surface does not expose endpoint sets yet (issue #348/#350).
+        endpoint_set: None,
     }
 }
 

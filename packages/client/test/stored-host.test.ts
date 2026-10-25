@@ -122,3 +122,48 @@ describe("hostLabels", () => {
     expect(labels.get(HOST_KEY_B)).toBe(`10.0.0.3:7422 · ${HOST_KEY_B.slice(0, 6)}`);
   });
 });
+
+
+describe("parseStoredHost endpoint sets", () => {
+  const relay = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
+  const direct = { transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" };
+  const set = (...endpoints: object[]) => ({ schemaVersion: 1, endpoints });
+
+  it("keeps a valid remote set, including an explicit empty one", () => {
+    const host = valid();
+    expect(parseStoredHost({ ...host, endpointSet: set(relay, direct) })).toEqual({
+      ...host,
+      endpointSet: set(relay, direct),
+    });
+    expect(parseStoredHost({ ...host, endpointSet: set() })).toEqual({ ...host, endpointSet: set() });
+  });
+
+  it("dedupes identical entries and skips unknown transports", () => {
+    const host = valid();
+    const quic = { transport: "quic", role: "relay", url: "quic://relay" };
+    expect(parseStoredHost({ ...host, endpointSet: set(relay, relay, quic) })).toEqual({
+      ...host,
+      endpointSet: set(relay),
+    });
+  });
+
+  it("drops only the set when it is malformed or unsupported", () => {
+    const host = valid();
+    const bad = [
+      "junk",
+      { schemaVersion: 2, endpoints: [relay] },
+      { schemaVersion: 1, endpoints: [{ ...relay, role: "backup" }] },
+      { schemaVersion: 1, endpoints: [relay, { ...relay, role: "direct" }] },
+      { schemaVersion: 1, endpoints: [{ transport: "quic", role: "relay", url: "quic://relay" }] },
+    ];
+    for (const endpointSet of bad) {
+      expect(parseStoredHost({ ...host, endpointSet })).toEqual(host);
+    }
+  });
+
+  it("leaves the legacy url and identity untouched when a set is present", () => {
+    const host = { ...valid(), url: "ws://127.0.0.1:7420/secure" };
+    const parsed = parseStoredHost({ ...host, endpointSet: set(relay) });
+    expect(parsed).toEqual({ ...host, endpointSet: set(relay) });
+  });
+});

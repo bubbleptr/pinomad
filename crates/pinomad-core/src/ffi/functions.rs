@@ -307,8 +307,9 @@ pub fn host_labels(hosts: Vec<StoredHost>) -> Vec<HostLabel> {
             private_key: host.private_key.clone(),
             name: host.name.clone(),
             // `hostLabels` reads only the label fields; the account linkage
-            // is irrelevant here.
+            // and endpoint set are irrelevant here.
             account: None,
+            endpoint_set: None,
         })
         .collect();
     crate::stored_host::host_labels(&cores)

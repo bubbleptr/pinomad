@@ -236,6 +236,46 @@
       "name": "url-path-only",
       "value": "{\"url\":\"ws:opaque\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}",
       "expect": "{\"url\":\"ws:opaque\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "endpoint-set",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}}"
+    },
+    {
+      "name": "endpoint-set-empty",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[]}}"
+    },
+    {
+      "name": "endpoint-set-deduped",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}}"
+    },
+    {
+      "name": "endpoint-set-unknown-schema",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":2,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "endpoint-set-unknown-transport-only",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"quic\",\"role\":\"relay\",\"url\":\"quic://relay\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "endpoint-set-malformed-role",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"backup\",\"url\":\"wss://relay.example.com/c/host\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "endpoint-set-role-conflict",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"wss://relay.example.com/c/host\"}]}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
+    },
+    {
+      "name": "endpoint-set-not-an-object",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"endpointSet\":\"junk\"}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
     }
   ],
   "hostLabels": [

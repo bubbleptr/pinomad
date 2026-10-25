@@ -1,0 +1,173 @@
+{
+  "maxEndpoints": 4,
+  "maxUrlLength": 1024,
+  "cases": [
+    {
+      "name": "absent",
+      "present": false,
+      "value": null,
+      "kind": "absent",
+      "expect": null
+    },
+    {
+      "name": "valid",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}"
+    },
+    {
+      "name": "empty",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[]}"
+    },
+    {
+      "name": "deduped",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}"
+    },
+    {
+      "name": "role-conflict",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "surrogate-distinct-same-role",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud801\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud801\"}]}"
+    },
+    {
+      "name": "surrogate-identical-deduped",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"}]}"
+    },
+    {
+      "name": "surrogate-role-conflict",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://example.com/\\ud800\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "unknown-transport-mixed",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"quic\",\"role\":\"relay\",\"url\":\"quic://relay.example.com\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}"
+    },
+    {
+      "name": "unknown-transport-only",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"quic\",\"role\":\"relay\",\"url\":\"quic://relay.example.com\"}]}",
+      "kind": "unsupported",
+      "expect": null
+    },
+    {
+      "name": "unknown-schema",
+      "present": true,
+      "value": "{\"schemaVersion\":2,\"endpoints\":\"not an array\"}",
+      "kind": "unsupported",
+      "expect": null
+    },
+    {
+      "name": "missing-schema",
+      "present": true,
+      "value": "{\"endpoints\":[]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-shape",
+      "present": true,
+      "value": "\"set\"",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-array",
+      "present": true,
+      "value": "[]",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-endpoints",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":null}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-entry",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[null]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-role",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"backup\",\"url\":\"wss://relay.example.com/c/host\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "malformed-url",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"http://relay.example.com\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "url-at-limit",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://e/a😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://e/a😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"}]}"
+    },
+    {
+      "name": "url-over-limit",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://e/a😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀a\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "raw-list-over-limit",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}",
+      "kind": "malformed",
+      "expect": null
+    }
+  ],
+  "params": [
+    {
+      "name": "valid",
+      "text": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://192.168.1.5:7422/secure\"}]}"
+    },
+    {
+      "name": "malformed-json",
+      "text": "{",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
+      "name": "unknown-schema",
+      "text": "{\"schemaVersion\":2,\"endpoints\":[]}",
+      "kind": "unsupported",
+      "expect": null
+    }
+  ]
+}
