@@ -183,6 +183,7 @@ final class StubHostStore: HostStore, @unchecked Sendable {
         if let loadError { throw loadError }
         var next = stored
         try body(&next)
+        guard next != stored else { return }
         if let saveError { throw saveError }
         stored = next
     }

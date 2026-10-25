@@ -141,6 +141,67 @@ import Testing
         #expect(onlyUnknown == nil)
     }
 
+    /// Swift's canonical String equality must not collapse URLs whose UTF-16
+    /// code units differ. Both survive when the role matches; different roles
+    /// are distinct identities, not a conflict.
+    @Test func composedAndDecomposedURLsStayDistinct() throws {
+        let composed = "wss://example.com/caf\u{00E9}"
+        let decomposed = "wss://example.com/cafe\u{0301}"
+        #expect(Array(composed.utf16) != Array(decomposed.utf16))
+        #expect(StoredEndpointSet(endpoints: [
+            StoredEndpoint(role: .relay, url: composed),
+        ]) != StoredEndpointSet(endpoints: [
+            StoredEndpoint(role: .relay, url: decomposed),
+        ]))
+
+        let sameRole = try #require(try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"\(composed)"},
+            {"transport":"webSocket","role":"relay","url":"\(decomposed)"}
+        """))
+        #expect(sameRole.endpoints.count == 2)
+        #expect(sameRole.endpoints.map { Array($0.url.utf16) }
+            == [Array(composed.utf16), Array(decomposed.utf16)])
+
+        let differentRoles = try #require(try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"\(composed)"},
+            {"transport":"webSocket","role":"direct","url":"\(decomposed)"}
+        """))
+        #expect(differentRoles.endpoints.count == 2)
+        #expect(differentRoles.endpoints.map(\.role) == [.relay, .direct])
+    }
+
+    @Test func exactDuplicateAndConflictStillFollowTheProtocolTable() throws {
+        let url = "wss://example.com/same"
+        let duplicate = try #require(try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"\(url)"},
+            {"transport":"webSocket","role":"relay","url":"\(url)"}
+        """))
+        #expect(duplicate.endpoints.count == 1)
+
+        let conflict = try endpointSetInKeychain("""
+            {"transport":"webSocket","role":"relay","url":"\(url)"},
+            {"transport":"webSocket","role":"direct","url":"\(url)"}
+        """)
+        #expect(conflict == nil)
+    }
+
+    @Test func ffiConversionUsesExactUTF16IdentityToo() throws {
+        let composed = "wss://example.com/caf\u{00E9}"
+        let decomposed = "wss://example.com/cafe\u{0301}"
+        let ffi = EndpointSet(schemaVersion: 1, endpoints: [
+            HostEndpoint(role: .relay, url: composed),
+            HostEndpoint(role: .relay, url: decomposed),
+        ])
+        let set = try #require(StoredEndpointSet(ffi))
+        #expect(set.endpoints.count == 2)
+
+        let conflict = EndpointSet(schemaVersion: 1, endpoints: [
+            HostEndpoint(role: .relay, url: composed),
+            HostEndpoint(role: .direct, url: composed),
+        ])
+        #expect(StoredEndpointSet(conflict) == nil)
+    }
+
     @Test func malformedTransportDropsOnlyTheEndpointField() throws {
         for endpoint in [
             #"{"transport":1,"role":"relay","url":"wss://relay/"}"#,

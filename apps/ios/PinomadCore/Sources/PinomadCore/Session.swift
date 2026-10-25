@@ -147,11 +147,26 @@ public final class PinomadSession: @unchecked Sendable {
     /// stored host — nil for a QR/pasted pairing (which keeps any link the
     /// same host already had).
     private let pairingAccount: AccountLink?
+    /// The in-memory identity this session is connected as. It survives a
+    /// failed keychain write and is the source of truth for Retry's routing.
+    private var currentHost: HostRecord?
+    /// Whether the store is believed to hold `currentHost`. A paired host
+    /// whose save failed is current but not stored; a stored host that a
+    /// successful read no longer contains has been forgotten.
+    private var currentHostInStore: Bool
 
-    init(client: PinomadClient, dependencies: SessionDependencies, pairingAccount: AccountLink? = nil) {
+    init(
+        client: PinomadClient,
+        dependencies: SessionDependencies,
+        pairingAccount: AccountLink? = nil,
+        host: HostRecord? = nil,
+        hostIsStored: Bool = false
+    ) {
         self.client = client
         self.dependencies = dependencies
         self.pairingAccount = pairingAccount
+        self.currentHost = host
+        self.currentHostInStore = hostIsStored
         var sink: AsyncStream<SessionEvent>.Continuation!
         self.events = AsyncStream { sink = $0 }
         self.sink = sink
@@ -181,7 +196,11 @@ public final class PinomadSession: @unchecked Sendable {
     ) throws -> PinomadSession {
         let validated = try validateStoredHost(host: host.ffi)
         let client = try PinomadClient.connect(host: validated)
-        return PinomadSession(client: client, dependencies: dependencies)
+        return PinomadSession(
+            client: client,
+            dependencies: dependencies,
+            host: host,
+            hostIsStored: true)
     }
 
     // ── public inputs: all just yields into the one queue ──
@@ -529,6 +548,7 @@ public final class PinomadSession: @unchecked Sendable {
             account: host.account.map { AccountLink(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
             endpointSet: host.endpointSet.flatMap(StoredEndpointSet.init),
             pairedAt: Date())
+        var saveError: String?
         do {
             try dependencies.hostStore.update { stored in
                 let existing = stored.hosts.first { $0.hostKey == host.hostKey }
@@ -539,44 +559,72 @@ public final class PinomadSession: @unchecked Sendable {
                 stored.hosts.append(record)
                 stored.activeHostKey = host.hostKey
             }
-            updateSink.yield(.paired(record, saveError: nil))
         } catch {
-            updateSink.yield(.paired(record, saveError: error.localizedDescription))
+            saveError = error.localizedDescription
         }
+        // The host accepted this device even if the keychain did not. Keep
+        // that identity as the session's routing source for learned endpoints.
+        currentHost = record
+        currentHostInStore = saveError == nil
+        updateSink.yield(.paired(record, saveError: saveError))
     }
 
-    /// A validated hello set is an independent storage event: only endpoint
-    /// fields and the legacy URL change, and a host forgotten meanwhile is
-    /// not brought back. A failed write is reported without dropping the
-    /// live connection.
+    /// A validated hello set updates the live session's routing identity even
+    /// when the keychain never held it (a paired save failure). Storage stays
+    /// separate: a host proven forgotten is not resurrected.
     private func mergeEndpoints(hostKey: String, url: String, endpointSet: EndpointSet) {
         guard let set = StoredEndpointSet(endpointSet) else { return }
-        var updated: HostRecord?
+        var memory = currentHost
+        if memory?.hostKey == hostKey {
+            memory?.url = url
+            memory?.endpointSet = set
+            currentHost = memory
+        }
+
+        var stored: HostRecord?
+        var saveError: String?
         do {
-            try dependencies.hostStore.update { stored in
-                guard let next = stored.settingEndpoints(set, url: url, for: hostKey) else { return }
-                stored = next
-                updated = next.hosts.first { $0.hostKey == hostKey }
+            try dependencies.hostStore.update { hosts in
+                guard let next = hosts.settingEndpoints(set, url: url, for: hostKey) else { return }
+                hosts = next
+                stored = next.hosts.first { $0.hostKey == hostKey }
             }
-            if let updated {
-                updateSink.yield(.endpoints(updated, saveError: nil))
+            if stored != nil {
+                currentHostInStore = true
+            } else if currentHostInStore {
+                // A successful read with no host proves it was forgotten.
+                return
             }
         } catch {
-            // A successful load proves the host is gone (forgotten meanwhile),
-            // so there is nothing to warn about. If the read also fails, the
-            // address was not saved and the app still needs to know.
-            let saveError = error.localizedDescription
+            saveError = error.localizedDescription
             do {
-                guard let existing = try dependencies.hostStore
+                if let existing = try dependencies.hostStore
                     .load().hosts.first(where: { $0.hostKey == hostKey })
-                else { return }
-                updateSink.yield(.endpoints(
-                    existing.applyingEndpoints(url: url, endpointSet: set),
-                    saveError: saveError))
+                {
+                    currentHostInStore = true
+                    stored = existing.applyingEndpoints(url: url, endpointSet: set)
+                } else if currentHostInStore {
+                    // Again: the host is gone, not a failed save.
+                    return
+                }
             } catch {
-                updateSink.yield(.platformError(
-                    "Couldn't save this host's updated addresses (\(saveError)); reading the keychain also failed (\(error.localizedDescription)). The connection is still live."))
+                // Neither the write nor the confirming read worked. The live
+                // session still gets the new route; the warning says it was
+                // not persisted.
+                if let memory {
+                    updateSink.yield(.endpoints(memory, saveError: saveError))
+                } else {
+                    updateSink.yield(.platformError(
+                        "Couldn't save this host's updated addresses (\(saveError)); reading the keychain also failed (\(error.localizedDescription)). The connection is still live."))
+                }
+                return
             }
+        }
+
+        if let memory {
+            updateSink.yield(.endpoints(memory, saveError: saveError))
+        } else if let stored {
+            updateSink.yield(.endpoints(stored, saveError: saveError))
         }
     }
 }

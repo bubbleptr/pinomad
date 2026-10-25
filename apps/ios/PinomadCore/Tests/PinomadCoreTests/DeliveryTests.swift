@@ -200,6 +200,135 @@ struct HostStoreTests {
         session.close()
     }
 
+    /// A paired host whose keychain save failed is still the live identity:
+    /// the next hello's B route must reach Retry, not stay on the invite A.
+    @Test func learnedRouteReachesRetryAfterPairedSaveFailure() async throws {
+        let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
+        let key = String(repeating: "B", count: 43)
+        let privateKey = String(repeating: "C", count: 43)
+        store.saveError = FakeError.storeBroken
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .paired(host: StoredHost(
+                url: "wss://invite-a/",
+                hostKey: key,
+                privateKey: privateKey)),
+            .endpointSet(
+                hostKey: key,
+                url: "wss://learned-b/",
+                endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                    HostEndpoint(role: .relay, url: "wss://learned-b/"),
+                ])),
+        ]))
+        await session.waitForIdle()
+
+        guard case .paired(let paired, .some) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected the paired save failure")
+            return
+        }
+        var attempt = PairingAttempt()
+        attempt.paired(paired)
+        guard case .endpoints(let patch, nil) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected the learned route even though the save failed")
+            return
+        }
+        attempt.endpoints(patch)
+        guard case .host(let retry) = attempt.retry else {
+            Issue.record("expected a retry host")
+            return
+        }
+        #expect(retry.url == "wss://learned-b/")
+        #expect(retry.privateKey == privateKey)
+        #expect(retry.endpointSet?.endpoints.first?.url == "wss://learned-b/")
+        session.close()
+    }
+
+    /// With both the write and the confirming read failing, the live route
+    /// still moves to B and the update carries the persistence warning.
+    @Test func learnedRouteSurvivesDoubleKeychainFailure() async throws {
+        let (session, _, _, store) = try makeSession()
+        let reader = UpdateReader(session)
+        let key = String(repeating: "D", count: 43)
+        let privateKey = String(repeating: "E", count: 43)
+        store.loadError = FakeError.storeBroken
+        store.saveError = FakeError.storeBroken
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .paired(host: StoredHost(
+                url: "wss://invite-a/",
+                hostKey: key,
+                privateKey: privateKey)),
+            .endpointSet(
+                hostKey: key,
+                url: "wss://learned-b/",
+                endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                    HostEndpoint(role: .relay, url: "wss://learned-b/"),
+                ])),
+        ]))
+        await session.waitForIdle()
+
+        guard case .paired(let paired, .some) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected the paired save failure")
+            return
+        }
+        var attempt = PairingAttempt()
+        attempt.paired(paired)
+        guard case .endpoints(let patch, .some(let saveError)) = await reader.next(timeout: .seconds(5)) else {
+            Issue.record("expected a routed update with a save error")
+            return
+        }
+        attempt.endpoints(patch)
+        guard case .host(let retry) = attempt.retry else {
+            Issue.record("expected a retry host")
+            return
+        }
+        #expect(!saveError.isEmpty)
+        #expect(retry.url == "wss://learned-b/")
+        #expect(retry.privateKey == privateKey)
+        session.close()
+    }
+
+    /// A stored host forgotten while its session drains must not gain a
+    /// routing update back; the successful empty read proves it is gone.
+    @Test func forgottenStoredHostIsNotRoutedBackIntoTheSession() async throws {
+        let store = StubHostStore()
+        let socketFactory = FakeSocketFactory()
+        let client = try PinomadClient.pair(
+            link: testPairingLink, deviceName: "test", devicePrivateKey: nil)
+        let old = HostRecord(
+            url: "wss://old/", hostKey: "gone", privateKey: "key",
+            endpointSet: StoredEndpointSet(endpoints: [
+                StoredEndpoint(role: .relay, url: "wss://old/"),
+            ]))
+        let session = PinomadSession(
+            client: client,
+            dependencies: SessionDependencies(
+                socketFactory: socketFactory,
+                clock: TestClock(),
+                hostStore: store),
+            host: old,
+            hostIsStored: true)
+        let reader = UpdateReader(session)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .endpointSet(
+                hostKey: "gone",
+                url: "wss://new/",
+                endpointSet: EndpointSet(schemaVersion: 1, endpoints: [
+                    HostEndpoint(role: .relay, url: "wss://new/"),
+                ])),
+        ]))
+        await session.waitForIdle()
+
+        #expect(store.stored.hosts.isEmpty)
+        #expect(await reader.next(timeout: .milliseconds(100)) == nil)
+        session.close()
+    }
+
     /// Repeating the same hello set is a no-op: no update is emitted, so the
     /// app neither rewrites the keychain nor shows a save warning.
     @Test func repeatedIdenticalHelloEmitsNoEndpointUpdate() async throws {

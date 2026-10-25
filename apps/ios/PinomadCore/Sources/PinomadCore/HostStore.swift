@@ -39,6 +39,14 @@ public struct StoredEndpoint: Codable, Sendable, Equatable {
         self.role = role
         self.url = url
     }
+
+    /// Exact UTF-16 equality, like the protocol identity. Swift's String
+    /// equality is canonical and would merge composed/decomposed URLs.
+    public static func == (lhs: StoredEndpoint, rhs: StoredEndpoint) -> Bool {
+        lhs.transport == rhs.transport
+            && lhs.role == rhs.role
+            && lhs.url.utf16.elementsEqual(rhs.url.utf16)
+    }
 }
 
 /// The host's remote candidates as the keychain keeps them. Kept separate
@@ -56,9 +64,23 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
         case transport, role, url
     }
 
+    /// Protocol identity is exact UTF-16 code units, not Swift's canonical
+    /// String equivalence (composed and decomposed URLs are distinct).
+    private struct ExactURL: Hashable {
+        let units: [UInt16]
+
+        init(_ url: String) {
+            units = Array(url.utf16)
+        }
+    }
+
     public init(schemaVersion: Int = 1, endpoints: [StoredEndpoint] = []) {
         self.schemaVersion = schemaVersion
         self.endpoints = endpoints
+    }
+
+    public static func == (lhs: StoredEndpointSet, rhs: StoredEndpointSet) -> Bool {
+        lhs.schemaVersion == rhs.schemaVersion && lhs.endpoints == rhs.endpoints
     }
 
     /// Decode with the protocol table: unknown transports are skipped, a set
@@ -75,7 +97,7 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
         }
         var raw = try container.nestedUnkeyedContainer(forKey: .endpoints)
         var rawCount = 0
-        var roles: [String: StoredEndpointRole] = [:]
+        var roles: [ExactURL: StoredEndpointRole] = [:]
         var endpoints: [StoredEndpoint] = []
         while !raw.isAtEnd {
             rawCount += 1
@@ -99,7 +121,8 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
                     forKey: .url, in: entry,
                     debugDescription: "not a ws:/wss: endpoint")
             }
-            if let prior = roles[url] {
+            let identity = ExactURL(url)
+            if let prior = roles[identity] {
                 if prior != role {
                     throw DecodingError.dataCorruptedError(
                         forKey: .url, in: entry,
@@ -107,7 +130,7 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
                 }
                 continue
             }
-            roles[url] = role
+            roles[identity] = role
             endpoints.append(StoredEndpoint(role: role, url: url))
         }
         guard !endpoints.isEmpty || rawCount == 0 else {
@@ -123,14 +146,15 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
     /// final authority, this only keeps obviously unusable keychain data out.
     public var isValid: Bool {
         guard schemaVersion == 1, endpoints.count <= 4 else { return false }
-        var roles: [String: StoredEndpointRole] = [:]
+        var roles: [ExactURL: StoredEndpointRole] = [:]
         for endpoint in endpoints {
             guard endpoint.transport == .webSocket, Self.isSocketURL(endpoint.url) else { return false }
-            if let prior = roles[endpoint.url] {
+            let identity = ExactURL(endpoint.url)
+            if let prior = roles[identity] {
                 guard prior == endpoint.role else { return false }
                 continue
             }
-            roles[endpoint.url] = endpoint.role
+            roles[identity] = endpoint.role
         }
         return true
     }
@@ -145,16 +169,17 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
 
     public init?(_ ffi: EndpointSet) {
         guard ffi.schemaVersion == 1, ffi.endpoints.count <= 4 else { return nil }
-        var roles: [String: StoredEndpointRole] = [:]
+        var roles: [ExactURL: StoredEndpointRole] = [:]
         var endpoints: [StoredEndpoint] = []
         for entry in ffi.endpoints {
             let role: StoredEndpointRole = entry.role == .relay ? .relay : .direct
             guard Self.isSocketURL(entry.url) else { return nil }
-            if let prior = roles[entry.url] {
+            let identity = ExactURL(entry.url)
+            if let prior = roles[identity] {
                 guard prior == role else { return nil }
                 continue
             }
-            roles[entry.url] = role
+            roles[identity] = role
             endpoints.append(StoredEndpoint(role: role, url: entry.url))
         }
         self.init(endpoints: endpoints)
