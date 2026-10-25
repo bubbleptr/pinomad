@@ -15,8 +15,9 @@ export default defineConfig({
       // Everything is prerendered to static files for Cloudflare Pages; there is
       // no server at runtime (docs/website.md).
       prerender: { enabled: true, crawlLinks: true, autoSubfolderIndex: true, failOnError: true },
-      // Not linked from any page, so the crawler can't find it.
-      pages: [{ path: "/api/search.json" }],
+      // Not linked from any page, so the crawler can't find them. The 404 pages
+      // become 404.html / zh/404.html after the build (scripts/not-found.ts).
+      pages: [{ path: "/api/search.json" }, { path: "/404/" }, { path: "/zh/404/" }],
     }),
     react(),
   ],

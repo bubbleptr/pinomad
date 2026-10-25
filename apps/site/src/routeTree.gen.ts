@@ -10,12 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as R404RouteImport } from './routes/404'
 import { Route as ApiSearchDotjsonRouteImport } from './routes/api/search[.]json'
 import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as ChangelogIndexRouteImport } from './routes/changelog/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as ZhIndexRouteImport } from './routes/zh/index'
+import { Route as Zh404RouteImport } from './routes/zh/404'
 import { Route as ZhBlogIndexRouteImport } from './routes/zh/blog/index'
 import { Route as ZhBlogSlugRouteImport } from './routes/zh/blog/$slug'
 import { Route as ZhChangelogIndexRouteImport } from './routes/zh/changelog/index'
@@ -24,6 +26,11 @@ import { Route as ZhDocsSplatRouteImport } from './routes/zh/docs/$'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const R404Route = R404RouteImport.update({
+  id: '/404',
+  path: '/404',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSearchDotjsonRoute = ApiSearchDotjsonRouteImport.update({
@@ -56,6 +63,11 @@ const ZhIndexRoute = ZhIndexRouteImport.update({
   path: '/zh/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Zh404Route = Zh404RouteImport.update({
+  id: '/zh/404',
+  path: '/zh/404',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ZhBlogIndexRoute = ZhBlogIndexRouteImport.update({
   id: '/zh/blog/',
   path: '/zh/blog/',
@@ -79,9 +91,11 @@ const ZhDocsSplatRoute = ZhDocsSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/404': typeof R404Route
   '/api/search.json': typeof ApiSearchDotjsonRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/zh/404': typeof Zh404Route
   '/blog/': typeof BlogIndexRoute
   '/changelog/': typeof ChangelogIndexRoute
   '/zh/': typeof ZhIndexRoute
@@ -92,9 +106,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/404': typeof R404Route
   '/api/search.json': typeof ApiSearchDotjsonRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/zh/404': typeof Zh404Route
   '/blog': typeof BlogIndexRoute
   '/changelog': typeof ChangelogIndexRoute
   '/zh': typeof ZhIndexRoute
@@ -106,9 +122,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/404': typeof R404Route
   '/api/search.json': typeof ApiSearchDotjsonRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
+  '/zh/404': typeof Zh404Route
   '/blog/': typeof BlogIndexRoute
   '/changelog/': typeof ChangelogIndexRoute
   '/zh/': typeof ZhIndexRoute
@@ -121,9 +139,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/404'
     | '/api/search.json'
     | '/blog/$slug'
     | '/docs/$'
+    | '/zh/404'
     | '/blog/'
     | '/changelog/'
     | '/zh/'
@@ -134,9 +154,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/404'
     | '/api/search.json'
     | '/blog/$slug'
     | '/docs/$'
+    | '/zh/404'
     | '/blog'
     | '/changelog'
     | '/zh'
@@ -147,9 +169,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/404'
     | '/api/search.json'
     | '/blog/$slug'
     | '/docs/$'
+    | '/zh/404'
     | '/blog/'
     | '/changelog/'
     | '/zh/'
@@ -161,9 +185,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  R404Route: typeof R404Route
   ApiSearchDotjsonRoute: typeof ApiSearchDotjsonRoute
   BlogSlugRoute: typeof BlogSlugRoute
   DocsSplatRoute: typeof DocsSplatRoute
+  Zh404Route: typeof Zh404Route
   BlogIndexRoute: typeof BlogIndexRoute
   ChangelogIndexRoute: typeof ChangelogIndexRoute
   ZhIndexRoute: typeof ZhIndexRoute
@@ -180,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/404': {
+      id: '/404'
+      path: '/404'
+      fullPath: '/404'
+      preLoaderRoute: typeof R404RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/search.json': {
@@ -224,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZhIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/zh/404': {
+      id: '/zh/404'
+      path: '/zh/404'
+      fullPath: '/zh/404'
+      preLoaderRoute: typeof Zh404RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/zh/blog/': {
       id: '/zh/blog/'
       path: '/zh/blog'
@@ -257,9 +297,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  R404Route: R404Route,
   ApiSearchDotjsonRoute: ApiSearchDotjsonRoute,
   BlogSlugRoute: BlogSlugRoute,
   DocsSplatRoute: DocsSplatRoute,
+  Zh404Route: Zh404Route,
   BlogIndexRoute: BlogIndexRoute,
   ChangelogIndexRoute: ChangelogIndexRoute,
   ZhIndexRoute: ZhIndexRoute,

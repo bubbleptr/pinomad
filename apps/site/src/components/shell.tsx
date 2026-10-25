@@ -1,8 +1,10 @@
+import { useLocation, useRouter } from "@tanstack/react-router";
 import { defineI18nUI } from "fumadocs-ui/i18n";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 import type { ReactNode } from "react";
 import { i18n, localized, type Lang } from "@/lib/i18n.ts";
+import { counterpart } from "@/lib/pages.ts";
 import appCss from "@/styles/app.css?url";
 import favicon from "../../../web/public/favicon.svg?url";
 
@@ -19,6 +21,7 @@ const ui = defineI18nUI(i18n, {
     "Next Page(pagination)": "下一页",
     "Edit on GitHub(edit page)": "在 GitHub 上编辑",
     "Choose a language(language switcher)": "选择语言",
+    "Choose a language(language switcher)(aria-label)": "选择语言",
     "Language(language switcher)": "语言",
     "Theme(site menu)": "主题",
     "Toggle Theme(theme switcher)(aria-label)": "切换主题",
@@ -37,8 +40,16 @@ export const shellLinks = [{ rel: "stylesheet", href: appCss }];
 
 /** Fumadocs context for docs and blog: theme, search, and translated UI strings. */
 export function Shell({ lang, children }: { lang: Lang; children: ReactNode }) {
+  const router = useRouter();
+  const pathname = useLocation({ select: (l) => l.pathname });
+  // Fumadocs' own switch swaps the /zh prefix, which lands on a missing page
+  // when this one has no version in the other language.
+  const i18nProps = {
+    ...ui.provider(lang),
+    onLocaleChange: (target: string) => router.navigate({ href: counterpart(pathname, target === "zh" ? "zh" : "en") }),
+  };
   return (
-    <RootProvider i18n={ui.provider(lang)} search={{ options: { type: "static", api: "/api/search.json" } }}>
+    <RootProvider i18n={i18nProps} search={{ options: { type: "static", api: "/api/search.json" } }}>
       {children}
     </RootProvider>
   );
