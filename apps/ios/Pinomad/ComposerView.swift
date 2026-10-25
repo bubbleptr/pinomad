@@ -273,6 +273,7 @@ struct ConversationComposer: View {
                 plusMenu
                 ModelCapsule(
                     label: modelText,
+                    logo: conversation.agent.model,
                     prefix: agentPick?.current.map { "@\($0)" },
                     enabled: connected && sheetHasContent
                 ) {
@@ -709,6 +710,8 @@ struct Thumbnail: View {
 
 struct ModelCapsule: View {
     let label: String
+    /// The picked model, for its logo ahead of everything else.
+    let logo: ModelRef?
     /// The named agent (`@name`) the pick comes from, shown first.
     let prefix: String?
     let enabled: Bool
@@ -716,9 +719,10 @@ struct ModelCapsule: View {
     let problem: String?
     let action: () -> Void
 
-    init(label: String, prefix: String? = nil, enabled: Bool,
+    init(label: String, logo: ModelRef?, prefix: String? = nil, enabled: Bool,
          problem: String? = nil, action: @escaping () -> Void) {
         self.label = label
+        self.logo = logo
         self.prefix = prefix
         self.enabled = enabled
         self.problem = problem
@@ -733,6 +737,10 @@ struct ModelCapsule: View {
                         .lineLimit(1)
                         .foregroundStyle(.red)
                 } else {
+                    if let logo {
+                        ModelLogo(model: logo, size: 14)
+                            .padding(.trailing, 2)
+                    }
                     if let prefix {
                         Text(prefix)
                             .fontWeight(.medium)

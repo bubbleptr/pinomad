@@ -396,3 +396,37 @@ private func flow(
         #expect(providerInitials("radius") == "R")
     }
 }
+
+@Suite struct ModelLogoTests {
+    private func logo(_ provider: String, _ modelId: String) -> String? {
+        modelLogoAsset(ModelRef(provider: provider, modelId: modelId))
+    }
+
+    @Test func namesTheMakerWhoeverServesIt() {
+        #expect(logo("github-copilot", "claude-sonnet-4.5") == "provider-claude-color")
+        #expect(logo("amazon-bedrock", "us.anthropic.claude-opus-4-1-20250805-v1:0") == "provider-claude-color")
+        #expect(logo("openrouter", "moonshotai/kimi-k2") == "provider-kimi-color")
+    }
+
+    @Test func tellsGemmaFromGemini() {
+        #expect(logo("google", "gemma-3-27b-it") == "provider-gemma-color")
+        #expect(logo("openrouter", "google/gemini-2.5-pro") == "provider-gemini-color")
+    }
+
+    /// Short names match the whole token only.
+    @Test func readsOSeriesAsOpenAIWithoutCatchingOtherOWords() {
+        #expect(logo("github-copilot", "o4-mini") == "provider-openai")
+        #expect(logo("openrouter", "openrouter/optimus-alpha") == "provider-openrouter")
+    }
+
+    @Test func creditsTheLeftmostMakerInAFineTune() {
+        #expect(logo("groq", "deepseek-r1-distill-llama-70b") == "provider-deepseek-color")
+        #expect(logo("nvidia", "nvidia/llama-3.1-nemotron-70b-instruct") == "provider-nvidia-color")
+    }
+
+    @Test func fallsBackToTheProvidersLogoThenToNone() {
+        #expect(logo("kimi-coding", "k3-256k") == "provider-kimi-color")
+        #expect(logo("opencode", "big-pickle") == "provider-opencode")
+        #expect(logo("custom-lab", "house-model") == nil)
+    }
+}
