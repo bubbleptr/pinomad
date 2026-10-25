@@ -36,7 +36,7 @@ export default defineConfig({
     ssr: { build: { outDir: ".output/server" } },
   },
   server: {
-    // The landing page uses the shared app icon from apps/web/public in place.
+    // The site uses the shared app icon from apps/web/public in place.
     fs: { allow: [here("../..")] },
   },
 });

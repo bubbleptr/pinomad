@@ -18,14 +18,14 @@ cd apps/site && bun run build && bun run preview
 
 官网是 TanStack Start 应用，构建时把所有页面预渲染成静态文件（`dist/`），线上不跑服务端；预渲染用的服务端产物在 `.output/server/`，不发布。英文在根路径，中文在 `/zh/` 下；网址一律以 `/` 结尾（页面输出成 `<路径>/index.html`，Pages 会把不带斜杠的地址 308 过去）。
 
-- **落地页**：`src/landing/en.html`、`zh.html` 是手写的 HTML 片段，原样渲染；页头只放文档、博客、更新日志、登录这些站内入口，不放页内锚点；交互在 `interactions.js`，样式在 `landing.css`，页头元信息在 `meta.ts`。改文案时中英两份一起改，功能描述以文档的 `features` 页为准。截图放在 `apps/site/shots/`（中英各一份，都是深色模式），每张有 2x 原图（`hero.webp` 2400×1500，功能截图 1120×840）和同名加 `-<宽>` 的 1x 版本，页面用 `srcset` 二选一；`public/og-image.jpg` 是英文首屏图缩到 1920×1200。图标直接引用 `apps/web/public/` 里的文件，构建时打上哈希。iPhone 那格还用 `partials/skeleton-phone.html` 占位，等原生 iOS 版替换验收（#133）后补。
-- **插画和示意图**只存一份，放在 `partials/`，页面里写 `<!-- include 文件名.svg -->`，由 `landing.tsx` 内联。片段里中英文各一份（`.zh` / `.en`），按页面的 `lang` 显示其中一种；所以 SVG 本身 `aria-hidden`，读屏用的描述写在各页面里。
+- **落地页**：React 组件，在 `src/landing/`。文案在 `copy.tsx`，中英两份共用一个类型，缺了哪条 typecheck 就报错；改文案时两份一起改，功能描述以文档的 `features` 页为准。区块组件在 `sections.tsx`，有交互的单独成文件（`durable.tsx` 是"拔电源"示意图，`quick-start.tsx` 带复制按钮），页头页脚在 `site-header.tsx` / `site-footer.tsx`，样式在 `landing.css`，页头元信息在 `meta.ts`。页头的站内链接（文档、博客、更新日志、登录）和文档页的 Fumadocs 页头共用 `src/lib/nav.ts`，不放页内锚点。截图放在 `apps/site/shots/`（中英各一份，都是深色模式），每张有 2x 原图（`hero.webp` 2400×1500，功能截图 1120×840）和同名加 `-<宽>` 的 1x 版本，页面用 `srcset` 二选一（`shots.ts`）；`public/og-image.jpg` 是英文首屏图缩到 1920×1200。图标直接引用 `apps/web/public/` 里的文件，构建时打上哈希。iPhone 那格还是抽象占位图，等原生 iOS 版替换验收（#133）后补。示意图的 SVG 是 `aria-hidden` 的，读屏用的描述写在文案里。
+- **组件库**：`apps/site/components.json` 是 shadcn 的配置，选的是 Base UI 风格（`base-vega`，和 Fumadocs 用的同一个 Base UI）。用 `bunx shadcn add <组件>` 把组件源码复制进 `src/components/ui/`；React Bits 这类走 shadcn 注册表的组件也用它装。不要在 `apps/site` 里跑 `shadcn init`：它会改全局 CSS，文档页会跟着变。
 - **文档和博客**用 Fumadocs：内容在 `content/docs/`、`content/blog/`。用户文档以这里为准，仓库里的 `docs/usage.md` 等只是指向官网的链接，README 只留快速上手；中文版是同名加 `.zh` 的文件（`index.zh.mdx`），没有中文版的页面在中文站显示英文版。侧栏顺序在 `content/docs/meta.json`。搜索索引在构建时生成为 `/api/search.json`，在浏览器里搜。
 - **更新日志**：`content/changelog/` 每个版本一个文件（`v0.7.0.mdx`，中文版 `v0.7.0.zh.mdx`），frontmatter 写 `title`、`version`、`date`，正文写给用户看的变化，不照搬 GitHub Release 自动生成的 PR 列表。`/changelog/` 一页按日期倒序列出全部版本，每条链到对应的 GitHub Release。
 - **404**：`/404/`、`/zh/404/` 两个路由预渲染后由 `scripts/not-found.ts` 改名成 `404.html`、`zh/404.html`，并去掉全部客户端脚本（Pages 会在任意缺失的地址上返回它们，路由不能拿那个地址去接管）。Pages 用离请求路径最近的 `404.html`，状态码 404，所以 `/zh/` 下缺页显示中文版。页内跳转到不存在的页面时，加载器先查内容索引再取数据，显示同一个 `NotFound` 组件；语言切换对应语言没有这一页时，落到那个语言的文档或博客首页。
 - **登录入口**：页头的"登录"指向 `app.pinomad.si`。Web 端给用过它的浏览器在 `pinomad.si` 上写 `pinomad_app=1`，`public/app-hint.js` 读到后把它改成"打开 Web 端"，首页（`/`、`/zh/`）直接跳到 Web 端；带 `?home` 时不跳。
 
-**CSP**：页面里有框架写的内联脚本（水合用的路由状态、文档的主题切换），内容每次构建都变。`public/_headers` 因此给 `script-src` 和 `style-src` 留了 `'unsafe-inline'`，构建最后一步 `scripts/csp.ts` 给每个页面在 `<head>` 最前面写一条 `<meta>` CSP，只放行这一页内联脚本的哈希；浏览器两条策略都要满足，所以实际只有哈希对得上的内联脚本能跑。落地页没有 `style=""`，样式也只认哈希，动画只能用样式表里的类、SVG 属性、SMIL 和 JS 的 CSSOM（`el.style.x = …`）；文档和博客页的代码高亮和组件带 `style=""`，这些页面放开内联样式。页面新加外部资源时要同步改 `_headers`。
+**CSP**：页面里有框架写的内联脚本（水合用的路由状态、文档的主题切换），内容每次构建都变。`public/_headers` 因此给 `script-src` 和 `style-src` 留了 `'unsafe-inline'`，构建最后一步 `scripts/csp.ts` 给每个页面在 `<head>` 最前面写一条 `<meta>` CSP，只放行这一页内联脚本的哈希；浏览器两条策略都要满足，所以实际只有哈希对得上的内联脚本能跑。落地页没有 `style=""`，样式也只认哈希：组件不用 `style` prop（预渲染会把它写成 `style=""`），动画只能用样式表里的类、SVG 属性、SMIL 和在 effect 里写的 CSSOM（`el.style.x = …`）。哪天落地页用了带内联样式的组件，`csp.ts` 会自动把它归到放开内联样式的那类，构建不会报错，所以要看构建最后一行的计数；文档和博客页的代码高亮和组件带 `style=""`，这些页面放开内联样式。页面新加外部资源时要同步改 `_headers`。
 
 ## Cloudflare Pages
 
