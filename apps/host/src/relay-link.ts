@@ -18,6 +18,7 @@ import {
   signRelayChallengeV2,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { HostValue } from "./host-value.ts";
 
@@ -38,7 +39,13 @@ export type RelayLinkState =
  * the IK handshake's commit, so refusals here are hints, not the verdict.
  */
 export type AccountOfferResult =
-  | { readonly ok: true; readonly secret: string; readonly expiresAt: number }
+  | {
+      readonly ok: true;
+      readonly secret: string;
+      readonly expiresAt: number;
+      /** The same remote candidates a QR invite would carry; the server forwards only. */
+      readonly endpointSet?: EndpointSet;
+    }
   | { readonly ok: false; readonly reason: string };
 
 export interface RelayLink {
@@ -274,7 +281,13 @@ export function startRelayLink(options: {
             socket.send(
               encodeRelayFrame(
                 result.ok
-                  ? { t: "pairing", requestId: frame.requestId, secret: result.secret, expiresAt: result.expiresAt }
+                  ? {
+                      t: "pairing",
+                      requestId: frame.requestId,
+                      secret: result.secret,
+                      expiresAt: result.expiresAt,
+                      ...(result.endpointSet === undefined ? {} : { endpointSet: result.endpointSet }),
+                    }
                   : { t: "pairing-refused", requestId: frame.requestId, reason: result.reason },
               ),
             );

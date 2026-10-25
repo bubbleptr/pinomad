@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { describe, expect, it } from "vitest";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
+import { parsePairingLink } from "@pinomad/protocol/pairing-link.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -232,18 +233,31 @@ describe("relay link pairing answers", () => {
 
   it("answers pairing-request with the minted offer or the refusal reason", async () => {
     const server = await fakeServer();
-    let reply: AccountOfferResult = { ok: true, secret: "the-secret", expiresAt: 4242 };
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.20:7422/" },
+      ],
+    };
+    let reply: AccountOfferResult = { ok: true, secret: "the-secret", expiresAt: 4242, endpointSet };
     await linkWith(server, async () => reply);
     await server.register;
 
     const answerP = server.nextMessage();
     server.send({ t: "pairing-request", requestId: "req-1" });
-    expect(await answerP).toEqual({ t: "pairing", requestId: "req-1", secret: "the-secret", expiresAt: 4242 });
+    expect(await answerP).toEqual({ t: "pairing", requestId: "req-1", secret: "the-secret", expiresAt: 4242, endpointSet });
 
     reply = { ok: false, reason: "disabled" };
     const refusedP = server.nextMessage();
     server.send({ t: "pairing-request", requestId: "req-2" });
     expect(await refusedP).toEqual({ t: "pairing-refused", requestId: "req-2", reason: "disabled" });
+
+    // A host that can only offer the legacy shape sends no set at all.
+    reply = { ok: true, secret: "legacy", expiresAt: 7 };
+    const legacyP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-3" });
+    expect(await legacyP).toEqual({ t: "pairing", requestId: "req-3", secret: "legacy", expiresAt: 7 });
   });
 
   it("refuses requests when no offer source exists", async () => {
@@ -457,19 +471,30 @@ describe("relay link", () => {
     expect(second.view.current().connection).toBe("connected");
   });
 
-  it("prefers the relay over the LAN listener in pairing links", async () => {
+  it("publishes relay and direct candidates while keeping the relay as the legacy url", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const { origin } = await startTestRelay(dir.path);
+    const { origin, deviceUrl } = await startTestRelay(dir.path);
     const host = await startFauxHost(defer, {
       dataDir: dir.path,
-      remote: { port: 0 },
+      remote: { port: 0, publicUrl: "http://192.168.1.20:7422" },
       relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
     });
     await waitForRelayState(host, "registered");
     const tokenClient = await connectTo(defer, host);
     const { url } = await tokenClient.controller.createPairing();
     expect(url.startsWith(`${origin}/#pair=`)).toBe(true);
+
+    const parsed = parsePairingLink(url)!;
+    // Old clients read the relay; new ones see both candidates in Auto order.
+    expect(parsed.url).toBe(deviceUrl);
+    expect(parsed.endpointSet).toEqual({
+      schemaVersion: 1,
+      endpoints: [
+        { transport: "webSocket", role: "relay", url: deviceUrl },
+        { transport: "webSocket", role: "direct", url: "ws://192.168.1.20:7422/" },
+      ],
+    });
   });
 
   it("re-registers after a relay restart and carries devices again", async () => {

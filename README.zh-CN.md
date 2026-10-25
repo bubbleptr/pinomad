@@ -37,7 +37,7 @@ pinomad pair        # 一次性的二维码和链接，5 分钟后过期
 
 iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。
 
-配对链接默认用宿主探测到的局域网地址。在 tailnet 里或走隧道时，加上 `--public-url http://<tailnet-ip>:7422`，让链接指向那个地址。宿主在家、人在外面也想连，就在 VPS 上跑中继，见[远程访问](docs/remote-access.md)。
+配对链接始终保留 legacy socket 地址，也可以带上当前的中继和直连候选。没有 `--public-url` 时，直连地址用宿主探测到的局域网地址；在 tailnet 里或走隧道时，加上 `--public-url http://<tailnet-ip>:7422`，让它指向那个地址。宿主加入了中继时，旧客户端继续使用链接里的中继地址。宿主在家、人在外面也想连，就在 VPS 上跑中继，见[远程访问](docs/remote-access.md)。
 
 ## 常驻运行
 

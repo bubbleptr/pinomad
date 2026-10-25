@@ -89,7 +89,7 @@ export interface OpenHostOptions {
   readonly remote?: {
     /** 0 picks a free port. */
     readonly port: number;
-    /** Address advertised in pairing links; defaults to the detected LAN IP. */
+    /** Advertised direct address; unset re-probes the LAN for every invite and hello. */
     readonly publicUrl?: string;
     /** One-time pairing offer lifetime; default five minutes. */
     readonly pairingTtlMs?: number;
@@ -339,7 +339,17 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}
-        : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),
+        : {
+            remote: {
+              url: gateway.remote.url,
+              // The gateway re-probes the LAN on each read; keep the getter so
+              // callers never hold a startup address as "current".
+              get advertiseUrl(): string {
+                return gateway.remote!.advertiseUrl;
+              },
+              hostKey: hostKey.publicKey,
+            },
+          }),
       ...(gateway.relay === undefined
         ? {}
         : { relay: { origin: gateway.relay.origin, hostId: gateway.relay.hostId, state: () => gateway.relay!.state() } }),

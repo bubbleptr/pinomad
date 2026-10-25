@@ -230,25 +230,46 @@ describe("GET /api/hosts", () => {
 });
 
 describe("POST /api/hosts/:hostId/pairing", () => {
-  it("asks the host over its control connection and returns url/hostKey/secret", async () => {
+  it("forwards the current candidate set without persisting it", async () => {
     const { relay, accounts } = await startServer();
     const session = await login(relay);
     const keys = bindHost(accounts);
     const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: `${WS_ORIGIN}/c/${relayHostId(keys.publicKey)}` },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.20:7422/" },
+      ],
+    };
 
-    const requestP = api(relay, { method: "POST", path: pairingPath(keys), headers: bearer(session) });
-    const ask = await nextFrame(control);
-    expect(ask.t).toBe("pairing-request");
-    const requestId = (ask as { requestId: string }).requestId;
-    control.send(encodeRelayFrame({ t: "pairing", requestId, secret: "the-secret", expiresAt: 4242 }));
+    const firstP = api(relay, { method: "POST", path: pairingPath(keys), headers: bearer(session) });
+    const firstAsk = await nextFrame(control);
+    expect(firstAsk.t).toBe("pairing-request");
+    const firstId = (firstAsk as { requestId: string }).requestId;
+    control.send(encodeRelayFrame({ t: "pairing", requestId: firstId, secret: "the-secret", expiresAt: 4242, endpointSet }));
 
-    const response = await requestP;
-    expect(response.status).toBe(200);
-    expect(response.json).toEqual({
+    const first = await firstP;
+    expect(first.status).toBe(200);
+    expect(first.json).toEqual({
       url: `${WS_ORIGIN}/c/${relayHostId(keys.publicKey)}`,
       hostKey: NOISE_KEY,
       secret: "the-secret",
       expiresAt: 4242,
+      endpointSet,
+    });
+
+    // An old host sends no set; nothing from the previous answer may stick.
+    const secondP = api(relay, { method: "POST", path: pairingPath(keys), headers: bearer(session) });
+    const secondAsk = (await nextFrame(control)) as { requestId: string };
+    control.send(encodeRelayFrame({ t: "pairing", requestId: secondAsk.requestId, secret: "next-secret", expiresAt: 4243 }));
+    const second = await secondP;
+    expect(second.status).toBe(200);
+    expect(second.json).toEqual({
+      url: `${WS_ORIGIN}/c/${relayHostId(keys.publicKey)}`,
+      hostKey: NOISE_KEY,
+      secret: "next-secret",
+      expiresAt: 4243,
     });
   });
 

@@ -83,7 +83,10 @@ function secondUser(accounts: Accounts): string {
 }
 
 /** The full joined state: server-side hosts row plus a matching server.json. */
-async function joinedHost(server: { accounts: Accounts; origin: string }): Promise<{
+async function joinedHost(
+  server: { accounts: Accounts; origin: string },
+  options?: { readonly remote?: { readonly port: number; readonly publicUrl?: string } },
+): Promise<{
   host: OpenedHost;
   hostId: string;
   dataDir: string;
@@ -105,6 +108,7 @@ async function joinedHost(server: { accounts: Accounts; origin: string }): Promi
   await writeServerConfig(dir.path, { origin: server.origin });
   const host = await startFauxHost(defer, {
     dataDir: dir.path,
+    ...(options?.remote === undefined ? {} : { remote: options.remote }),
     relay: { origin: server.origin, reconnectDelayMs: QUICK_RECONNECT },
   });
   const deadline = Date.now() + 10_000;
@@ -139,6 +143,14 @@ interface PairingResult {
   hostKey: string;
   secret: string;
   expiresAt: number;
+  endpointSet?: {
+    readonly schemaVersion: 1;
+    readonly endpoints: readonly {
+      readonly transport: "webSocket";
+      readonly role: "direct" | "relay";
+      readonly url: string;
+    }[];
+  };
 }
 
 describe("server-vouched pairing end to end", () => {
@@ -167,6 +179,12 @@ describe("server-vouched pairing end to end", () => {
     expect(offer.url).toBe(`${server.origin.replace("http", "ws")}/c/${hostId}`);
     expect(offer.hostKey).toBe(hosts[0]!.noisePublicKey);
     expect(offer.expiresAt).toBeGreaterThan(Date.now());
+    // The account offer carries the same relay candidate the QR link does;
+    // the API only forwards it and does not store a per-host address.
+    expect(offer.endpointSet).toEqual({
+      schemaVersion: 1,
+      endpoints: [{ transport: "webSocket", role: "relay", url: offer.url }],
+    });
 
     // The client side of the response: pair=<hostKey>.<secret>, url=<device path>.
     const device = generateKeyPair();
@@ -180,6 +198,27 @@ describe("server-vouched pairing end to end", () => {
     await waitForView(tokenClient.view, (view) =>
       view.notices.some((notice) => notice.message === 'New device "vouched phone" joined through your account'),
     );
+  });
+
+  it("forwards the direct candidate alongside the relay and keeps the legacy url", async () => {
+    const server = await startServer();
+    const { host, hostId } = await joinedHost(server, {
+      remote: { port: 0, publicUrl: "https://pinomad.example.com/base" },
+    });
+    await connectTo(defer, host);
+    const session = await login(server.relay);
+
+    const ask = await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(session) });
+    expect(ask.status).toBe(200);
+    const offer = ask.json as PairingResult;
+    expect(offer.url).toBe(`${server.origin.replace("http", "ws")}/c/${hostId}`);
+    expect(offer.endpointSet).toEqual({
+      schemaVersion: 1,
+      endpoints: [
+        { transport: "webSocket", role: "relay", url: offer.url },
+        { transport: "webSocket", role: "direct", url: "wss://pinomad.example.com/base/" },
+      ],
+    });
   });
 
   it("answers disabled once the host switch is off", async () => {

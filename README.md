@@ -37,7 +37,7 @@ pinomad pair        # one-time QR code and link, expires after 5 minutes
 
 Scan the code with the iPhone app, or paste the link into the Mac app. The remote port accepts paired devices only; revoke them under Settings → Devices.
 
-The pairing link uses the LAN address the host detects. On a tailnet or behind a tunnel, add `--public-url http://<tailnet-ip>:7422` so the link points there. To reach a host at home from anywhere, run the relay on a VPS: see [Remote access](docs/remote-access.md).
+The pairing link always keeps a legacy socket URL and can carry the current relay and direct candidates. Without `--public-url` the direct address is the LAN address the host detects; on a tailnet or behind a tunnel, add `--public-url http://<tailnet-ip>:7422` so it points there. When the host is joined to a relay, older clients keep using the relay URL. To reach a host at home from anywhere, run the relay on a VPS: see [Remote access](docs/remote-access.md).
 
 ## Keep it running
 

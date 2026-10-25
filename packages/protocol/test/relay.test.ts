@@ -119,6 +119,23 @@ describe("relay frame codecs", () => {
     expect(
       decodeHostToRelay(encodeRelayFrame({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123 })),
     ).toEqual({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123 });
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.20:7422/" },
+      ],
+    };
+    expect(
+      decodeHostToRelay(encodeRelayFrame({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123, endpointSet })),
+    ).toEqual({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123, endpointSet });
+    // A future schema is additive, not fatal: the relay forwards the legacy
+    // offer and leaves the candidate set out.
+    expect(
+      decodeHostToRelay(
+        JSON.stringify({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123, endpointSet: { schemaVersion: 2, endpoints: [] } }),
+      ),
+    ).toEqual({ t: "pairing", requestId: "req-1", secret: "sec", expiresAt: 123 });
     expect(decodeHostToRelay(encodeRelayFrame({ t: "pairing-refused", requestId: "req-1", reason: "disabled" }))).toEqual({
       t: "pairing-refused",
       requestId: "req-1",
@@ -140,6 +157,10 @@ describe("relay frame codecs", () => {
       JSON.stringify({ t: "pairing", requestId: "r", secret: "s" }),
       JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: "soon" }),
       JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: Number.NaN }),
+      // A known schema with a broken set must not reach a pairing link; an
+      // empty set cannot describe a usable relay-vouched offer either.
+      JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: 1, endpointSet: { schemaVersion: 1, endpoints: null } }),
+      JSON.stringify({ t: "pairing", requestId: "r", secret: "s", expiresAt: 1, endpointSet: { schemaVersion: 1, endpoints: [] } }),
       JSON.stringify({ t: "pairing-refused" }),
       JSON.stringify({ t: "pairing-refused", requestId: "r" }),
       JSON.stringify({ t: "pairing-refused", requestId: "r", reason: 5 }),

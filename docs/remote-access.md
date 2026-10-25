@@ -11,6 +11,8 @@ bun run start
 
 手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备在 Web 的 Settings → Devices 里管理，在那直接点 Revoke 就能吊销。
 
+配对邀请始终带 legacy `url`，并可以再带一份 `endpointSet` 候选列表（ADR-0032）：开着远程端口时，直连候选是当前探测到的局域网地址或显式 `--public-url`；加入中继时，中继也会作为候选。自动 LAN 地址在每次生成邀请和每次安全连接的 `hello` 时重新探测，不是启动时的缓存。只有回环地址可达时，邀请只保留 legacy 回环地址，不发布 `127.0.0.1` 候选；旧客户端继续只读 `url`。
+
 <details><summary>手动/高级：分开跑各个进程</summary>
 
 默认只监听 `127.0.0.1`。`--remote-port N` 另起一个监听所有网卡的安全通道端口，同端口用 HTTP 提供构建好的 Web 客户端（`apps/web/dist`，缺失时页面是 503）：
@@ -31,7 +33,7 @@ bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 
 ### 经 tailnet 直连
 
-宿主带 `--remote-port 7422`，tailnet 里的设备用宿主的 MagicDNS 名直连（经局域网时 2–7ms，不走 DERP）；同时开着 `--relay` 或加入了账号时，不在 tailnet 里的设备照旧走中继。`pinomad pair` 这时只给出中继链接，要走直连就取出其中的 `pair=…`，拼到 tailnet 地址后面。
+宿主带 `--remote-port 7422`，tailnet 里的设备用宿主的 MagicDNS 名直连（经局域网时 2–7ms，不走 DERP）；同时开着 `--relay` 或加入了账号时，不在 tailnet 里的设备照旧走中继。`pinomad pair` 这时会在同一个邀请里同时给出中继和直连候选（MagicDNS 地址可以通过 `--public-url` 指定），legacy `url` 仍指向中继，旧客户端不受影响。
 
 Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面连不上或流量被 tun 截走：
 
@@ -58,7 +60,7 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 
 ```sh
 pinomad join https://relay.example.com <token>   # 登记到账号、写好 server.json、装好宿主服务
-pinomad pair                                     # 打出的二维码指向中继
+pinomad pair                                     # 中继作 legacy 地址，同时带远程端口的直连候选
 ```
 
 Caddy 终止 TLS（自动签证书，WebSocket 无需额外配置）：
@@ -179,7 +181,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 `GET /api/hosts` 列出当前账号下的宿主：`[{hostId, name, noisePublicKey, online, lastSeenAt, pairing}]`。`pairing` 取 `available` / `offline` / `host_too_old` / `key_mismatch` 之一：宿主离线；在线但没声明 `pairing` 能力、或登记时没有用 v2 签名报告 Noise 公钥（太旧）；在线报告的公钥和加入时记下的不一致；其余情况可用。
 
-`POST /api/hosts/:hostId/pairing` 让服务端经宿主的控制连接要一份一次性邀请。宿主必须在 register 里声明 `features: ["pairing"]` 才会被问——旧宿主的解码器遇到不认识的帧会断开，所以服务端只对声明过的控制连接发 `pairing-request`。成功返回 `{url, hostKey, secret, expiresAt}`：客户端拼 `pair=<hostKey>.<secret>&url=<url>`，照 ADR-0008 的 IK 流程经 `/c/<hostId>` 连上宿主。错误：宿主不属于本账号或不存在 → 404；离线 → 409 `host_offline`；太旧或公钥不一致 → 409 `host_too_old` / `key_mismatch`；宿主拒绝 → 409，错误码是宿主给的原因（`disabled` 是开关关闭、`not_joined` 是没加入账号）；10 秒没应答 → 504 `host_timeout`；在途请求超限（每台宿主 4 个、每个会话 2 个）→ 429 `rate_limited`。提前拒绝只是给客户端看的错误，真正是否准入仍由宿主的 `admitDevice` 在握手时判定——被吊销的公钥照走邀请但登记时被拒。
+`POST /api/hosts/:hostId/pairing` 让服务端经宿主的控制连接要一份一次性邀请。宿主必须在 register 里声明 `features: ["pairing"]` 才会被问——旧宿主的解码器遇到不认识的帧会断开，所以服务端只对声明过的控制连接发 `pairing-request`。成功返回 `{url, hostKey, secret, expiresAt, endpointSet?}`：客户端拼 `pair=<hostKey>.<secret>&url=<url>`，照 ADR-0008 的 IK 流程经 `/c/<hostId>` 连上宿主。`endpointSet` 是宿主当前公布的中继 / 直连候选，服务端只转发、不持久化；旧宿主不返回它，旧客户端也会忽略它，账号配对继续按 `url` 走单中继。错误：宿主不属于本账号或不存在 → 404；离线 → 409 `host_offline`；太旧或公钥不一致 → 409 `host_too_old` / `key_mismatch`；宿主拒绝 → 409，错误码是宿主给的原因（`disabled` 是开关关闭、`not_joined` 是没加入账号）；10 秒没应答 → 504 `host_timeout`；在途请求超限（每台宿主 4 个、每个会话 2 个）→ 429 `rate_limited`。提前拒绝只是给客户端看的错误，真正是否准入仍由宿主的 `admitDevice` 在握手时判定——被吊销的公钥照走邀请但登记时被拒。
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。旧版服务端的纯 `--allow-host` 模式下 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端据此判断服务端没开账号。
 
