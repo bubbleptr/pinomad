@@ -16,7 +16,7 @@ bun run site          # 开发服务器，http://127.0.0.1:5299
 cd apps/site && bun run build && bun run preview
 ```
 
-官网是 TanStack Start 应用，构建时把所有页面预渲染成静态文件（`dist/client/`），线上不跑服务端。英文在根路径，中文在 `/zh/` 下；网址一律以 `/` 结尾（页面输出成 `<路径>/index.html`，Pages 会把不带斜杠的地址 308 过去）。
+官网是 TanStack Start 应用，构建时把所有页面预渲染成静态文件（`dist/`），线上不跑服务端；预渲染用的服务端产物在 `.output/server/`，不发布。英文在根路径，中文在 `/zh/` 下；网址一律以 `/` 结尾（页面输出成 `<路径>/index.html`，Pages 会把不带斜杠的地址 308 过去）。
 
 - **落地页**：`src/landing/en.html`、`zh.html` 是手写的 HTML 片段，原样渲染；交互在 `interactions.js`，样式在 `landing.css`，页头元信息在 `meta.ts`。改文案时中英两份一起改，功能描述以两份 README 为准。截图放在 `apps/site/shots/`（中英各一份，都是深色模式），每张有 2x 原图（`hero.webp` 2400×1500，功能截图 1120×840）和同名加 `-<宽>` 的 1x 版本，页面用 `srcset` 二选一；`public/og-image.jpg` 是英文首屏图缩到 1920×1200。图标直接引用 `apps/web/public/` 里的文件，构建时打上哈希。iPhone 那格还用 `partials/skeleton-phone.html` 占位，等原生 iOS 版替换验收（#133）后补。
 - **插画和示意图**只存一份，放在 `partials/`，页面里写 `<!-- include 文件名.svg -->`，由 `landing.tsx` 内联。片段里中英文各一份（`.zh` / `.en`），按页面的 `lang` 显示其中一种；所以 SVG 本身 `aria-hidden`，读屏用的描述写在各页面里。
@@ -34,7 +34,7 @@ cd apps/site && bun run build && bun run preview
    - Production branch：`main`
    - Root directory：留空（仓库根，要用根目录的 `bun.lock`）
    - Build command：`bun install --frozen-lockfile --filter @pinomad/site && bun run --cwd apps/site build`
-   - Build output directory：`apps/site/dist/client`（`dist/server` 只在预渲染时用，不发布）
+   - Build output directory：`apps/site/dist`
    - 环境变量：`BUN_VERSION` = 本机 `bun --version` 的版本；`SKIP_DEPENDENCY_INSTALL` = `1`（Pages 看到 `bun.lock` 会先在根目录装整个 workspace，Electron 的 postinstall 又慢又可能失败；跳过它，由构建命令按需安装）
    - Build watch paths 只包含 `apps/site/*`、`apps/web/public/*`、`docs/assets/*`、`bun.lock`，别的改动不触发重建
 3. 项目的 Custom domains 里加 `pinomad.si`（经 API 加时 DNS 不会自动建，要自己加一条代理的 CNAME：`pinomad.si` → `pinomad.pages.dev`）。`www` 不用加进 Pages，只要一条代理的 CNAME 指向根域名，由下一步的规则跳转。

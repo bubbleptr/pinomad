@@ -9,7 +9,7 @@
 // A page without the meta would be left with 'unsafe-inline' alone, so the
 // build fails if one can't be placed.
 //
-// Usage: bun scripts/csp.ts <dist/client>
+// Usage: bun scripts/csp.ts <dist>
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";

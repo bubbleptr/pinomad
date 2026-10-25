@@ -13,3 +13,4 @@ target/
 storybook-static/
 .tanstack/
 .wrangler/
+.output/

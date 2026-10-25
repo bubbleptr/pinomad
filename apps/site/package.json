@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 127.0.0.1 --port 5299 --strictPort",
-    "build": "vite build && bun scripts/csp.ts dist/client",
-    "preview": "vite preview --host 127.0.0.1 --port 5298 --strictPort --outDir dist/client"
+    "build": "vite build && bun scripts/csp.ts dist",
+    "preview": "vite preview --host 127.0.0.1 --port 5298 --strictPort --outDir dist"
   },
   "dependencies": {
     "@fontsource-variable/montserrat": "5.3.0",

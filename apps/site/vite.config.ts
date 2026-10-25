@@ -28,6 +28,12 @@ export default defineConfig({
     // Keep every asset a hashed file: data: URIs would need img-src data: in the CSP.
     assetsInlineLimit: 0,
   },
+  environments: {
+    // Cloudflare Pages publishes apps/site/dist as-is, so only the static site
+    // goes there. The server bundle exists to prerender and must not be served.
+    client: { build: { outDir: "dist" } },
+    ssr: { build: { outDir: ".output/server" } },
+  },
   server: {
     // The landing page uses the shared app icon from apps/web/public in place.
     fs: { allow: [here("../..")] },
