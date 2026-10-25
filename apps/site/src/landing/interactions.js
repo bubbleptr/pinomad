@@ -198,11 +198,9 @@ export function initLanding() {
   const durable = document.querySelector("[data-durable]");
   if (durable) setupDurable(durable);
 
-  // —— Header: sticks once JS is here, floats a frosted pill once the page moves,
-  // and underlines the section being read. ——
+  // —— Header: sticks once JS is here and floats a frosted pill once the page
+  // moves. ——
   function setupHeader(header) {
-    const links = [...header.querySelectorAll(".nav-sections a")];
-    const sections = links.map((a) => document.getElementById(a.hash.slice(1)));
     let frame = 0;
 
     function update() {
@@ -211,20 +209,6 @@ export function initLanding() {
       // the top can't flip it back and forth.
       if (scrollY > 24) header.classList.add("is-floating");
       else if (scrollY < 8) header.classList.remove("is-floating");
-
-      // The current section is the last one whose top has passed a third of the
-      // way down; at the very bottom, the last section.
-      let current = -1;
-      sections.forEach((section, i) => {
-        if (section.getBoundingClientRect().top <= innerHeight / 3) current = i;
-      });
-      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) {
-        current = sections.length - 1;
-      }
-      links.forEach((a, i) => {
-        if (i === current) a.setAttribute("aria-current", "location");
-        else a.removeAttribute("aria-current");
-      });
     }
 
     function schedule() {
@@ -236,7 +220,6 @@ export function initLanding() {
     update();
     header.setAttribute("data-sticky", "");
     addEventListener("scroll", schedule, { passive: true });
-    addEventListener("resize", schedule);
   }
 
   const header = document.querySelector(".site-header");

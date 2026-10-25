@@ -61,6 +61,7 @@ export function baseOptions(lang: Lang): BaseLayoutProps {
     links: [
       { text: lang === "zh" ? "文档" : "Docs", url: localized(lang, "/docs/"), active: "nested-url" },
       { text: lang === "zh" ? "博客" : "Blog", url: localized(lang, "/blog/"), active: "nested-url" },
+      { text: lang === "zh" ? "更新日志" : "Changelog", url: localized(lang, "/changelog/"), active: "nested-url" },
       {
         text: (
           <>

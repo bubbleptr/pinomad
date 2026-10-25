@@ -197,7 +197,7 @@ code {
   min-height: 4rem;
 }
 
-/* main.js turns stickiness on; without it the header stays at the top of the
+/* interactions.js turns stickiness on; without it the header stays at the top of the
    page as a plain bar instead of a see-through one over the copy. */
 .site-header[data-sticky] {
   position: sticky;
@@ -243,55 +243,6 @@ html:has(.site-header[data-sticky]) section[id] {
   transition:
     opacity var(--pill-enter) var(--pill-ease),
     scale var(--pill-enter) var(--pill-ease);
-}
-
-/* Section links, with the one you're reading underlined (main.js). */
-.nav-sections {
-  display: none;
-  align-items: center;
-  gap: clamp(1rem, 2vw, 1.5rem);
-  font-size: 0.875rem;
-}
-
-.nav-sections a {
-  position: relative;
-  padding-block: 0.5rem;
-  color: var(--fg-3);
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.nav-sections a::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: var(--fg);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.nav-sections a:hover,
-.nav-sections a[aria-current] {
-  color: var(--fg);
-}
-
-.nav-sections a[aria-current]::after {
-  opacity: 1;
-}
-
-/* Wide enough for the section links: they carry Quick start, so the header-nav
-   copy steps aside. */
-@media (min-width: 62rem) {
-  .nav-sections {
-    display: flex;
-  }
-
-  .header-nav .nav-quick {
-    display: none;
-  }
 }
 
 .brand {
@@ -432,7 +383,7 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-3);
 }
 
-/* The durable demo's button ships hidden until main.js wires it up; display above
+/* The durable demo's button ships hidden until interactions.js wires it up; display above
    would otherwise override the hidden attribute and leave a dead button without JS. */
 .button[hidden] {
   display: none;
@@ -1150,7 +1101,7 @@ html[lang="zh-CN"] .node-labels text {
   color: var(--fg);
 }
 
-/* —— Scroll reveal. main.js adds .reveal only to blocks that start below the first
+/* —— Scroll reveal. interactions.js adds .reveal only to blocks that start below the first
    screen and only without reduced motion, so nothing is hidden without JS; print
    always shows everything. The transition sits on .is-revealed so hiding is
    instant and only the reveal animates. —— */

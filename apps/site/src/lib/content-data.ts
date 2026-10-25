@@ -7,7 +7,7 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { staticFunctionMiddleware } from "@tanstack/start-static-server-functions";
 import type { Lang } from "./i18n.ts";
-import { blog, blogPosts, source } from "./source.ts";
+import { blog, blogPosts, changelog, releases, source } from "./source.ts";
 
 export const loadDocsPage = createServerFn({ method: "GET" })
   .middleware([staticFunctionMiddleware])
@@ -46,3 +46,16 @@ export const loadBlogPost = createServerFn({ method: "GET" })
     if (!post) throw notFound();
     return { path: post.path, title: post.data.title, description: post.data.description };
   });
+
+export const loadChangelog = createServerFn({ method: "GET" })
+  .middleware([staticFunctionMiddleware])
+  .validator((lang: Lang) => lang)
+  .handler(({ data: lang }) =>
+    changelog
+      .getPages(lang)
+      .flatMap((page) => {
+        const entry = releases.get(page.path);
+        return entry ? [{ path: page.path, version: entry.version, title: entry.title, date: entry.date }] : [];
+      })
+      .sort((a, b) => b.date.localeCompare(a.date)),
+  );

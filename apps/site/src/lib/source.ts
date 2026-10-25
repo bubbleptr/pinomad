@@ -30,3 +30,21 @@ export const blog = loader({
   baseUrl: "/blog",
   i18n,
 });
+
+// One file per release (`v0.7.0.mdx`, `v0.7.0.zh.mdx`), newest shown first.
+export const releases = defineCollections({
+  type: "doc",
+  dir: "content/changelog",
+  async: true,
+  schema: z.object({
+    title: z.string(),
+    version: z.string(),
+    date: z.iso.date(),
+  }),
+});
+
+export const changelog = loader({
+  source: releases.toFumadocsSource(),
+  baseUrl: "/changelog",
+  i18n,
+});

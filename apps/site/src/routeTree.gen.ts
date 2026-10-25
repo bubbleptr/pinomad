@@ -13,10 +13,12 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiSearchDotjsonRouteImport } from './routes/api/search[.]json'
 import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
+import { Route as ChangelogIndexRouteImport } from './routes/changelog/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as ZhIndexRouteImport } from './routes/zh/index'
 import { Route as ZhBlogIndexRouteImport } from './routes/zh/blog/index'
 import { Route as ZhBlogSlugRouteImport } from './routes/zh/blog/$slug'
+import { Route as ZhChangelogIndexRouteImport } from './routes/zh/changelog/index'
 import { Route as ZhDocsSplatRouteImport } from './routes/zh/docs/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -39,6 +41,11 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
   path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangelogIndexRoute = ChangelogIndexRouteImport.update({
+  id: '/changelog/',
+  path: '/changelog/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
   id: '/docs/$',
   path: '/docs/$',
@@ -59,6 +66,11 @@ const ZhBlogSlugRoute = ZhBlogSlugRouteImport.update({
   path: '/zh/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ZhChangelogIndexRoute = ZhChangelogIndexRouteImport.update({
+  id: '/zh/changelog/',
+  path: '/zh/changelog/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ZhDocsSplatRoute = ZhDocsSplatRouteImport.update({
   id: '/zh/docs/$',
   path: '/zh/docs/$',
@@ -71,10 +83,12 @@ export interface FileRoutesByFullPath {
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/blog/': typeof BlogIndexRoute
+  '/changelog/': typeof ChangelogIndexRoute
   '/zh/': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog/': typeof ZhBlogIndexRoute
+  '/zh/changelog/': typeof ZhChangelogIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -82,10 +96,12 @@ export interface FileRoutesByTo {
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/blog': typeof BlogIndexRoute
+  '/changelog': typeof ChangelogIndexRoute
   '/zh': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog': typeof ZhBlogIndexRoute
+  '/zh/changelog': typeof ZhChangelogIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -94,10 +110,12 @@ export interface FileRoutesById {
   '/blog/$slug': typeof BlogSlugRoute
   '/docs/$': typeof DocsSplatRoute
   '/blog/': typeof BlogIndexRoute
+  '/changelog/': typeof ChangelogIndexRoute
   '/zh/': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog/': typeof ZhBlogIndexRoute
+  '/zh/changelog/': typeof ZhChangelogIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -107,10 +125,12 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/docs/$'
     | '/blog/'
+    | '/changelog/'
     | '/zh/'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog/'
+    | '/zh/changelog/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,10 +138,12 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/docs/$'
     | '/blog'
+    | '/changelog'
     | '/zh'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog'
+    | '/zh/changelog'
   id:
     | '__root__'
     | '/'
@@ -129,10 +151,12 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/docs/$'
     | '/blog/'
+    | '/changelog/'
     | '/zh/'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog/'
+    | '/zh/changelog/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -141,10 +165,12 @@ export interface RootRouteChildren {
   BlogSlugRoute: typeof BlogSlugRoute
   DocsSplatRoute: typeof DocsSplatRoute
   BlogIndexRoute: typeof BlogIndexRoute
+  ChangelogIndexRoute: typeof ChangelogIndexRoute
   ZhIndexRoute: typeof ZhIndexRoute
   ZhBlogSlugRoute: typeof ZhBlogSlugRoute
   ZhDocsSplatRoute: typeof ZhDocsSplatRoute
   ZhBlogIndexRoute: typeof ZhBlogIndexRoute
+  ZhChangelogIndexRoute: typeof ZhChangelogIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,6 +203,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/changelog/': {
+      id: '/changelog/'
+      path: '/changelog'
+      fullPath: '/changelog/'
+      preLoaderRoute: typeof ChangelogIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$': {
       id: '/docs/$'
       path: '/docs/$'
@@ -205,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZhBlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/zh/changelog/': {
+      id: '/zh/changelog/'
+      path: '/zh/changelog'
+      fullPath: '/zh/changelog/'
+      preLoaderRoute: typeof ZhChangelogIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/zh/docs/$': {
       id: '/zh/docs/$'
       path: '/zh/docs/$'
@@ -221,10 +261,12 @@ const rootRouteChildren: RootRouteChildren = {
   BlogSlugRoute: BlogSlugRoute,
   DocsSplatRoute: DocsSplatRoute,
   BlogIndexRoute: BlogIndexRoute,
+  ChangelogIndexRoute: ChangelogIndexRoute,
   ZhIndexRoute: ZhIndexRoute,
   ZhBlogSlugRoute: ZhBlogSlugRoute,
   ZhDocsSplatRoute: ZhDocsSplatRoute,
   ZhBlogIndexRoute: ZhBlogIndexRoute,
+  ZhChangelogIndexRoute: ZhChangelogIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
