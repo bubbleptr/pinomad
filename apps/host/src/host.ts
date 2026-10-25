@@ -22,7 +22,7 @@ import lockfile from "proper-lockfile";
 import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
-import { startGateway } from "./gateway.ts";
+import { startGateway, validatePublicUrl } from "./gateway.ts";
 import { AttachmentStore } from "./attachments.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -142,6 +142,9 @@ async function hostToken(dataDir: string): Promise<string> {
 }
 
 export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
+  // A bad explicit advertisement is a configuration error, not a reason to
+  // create the data directory or start listening.
+  if (options.remote?.publicUrl !== undefined) validatePublicUrl(options.remote.publicUrl);
   await mkdir(options.dataDir, { recursive: true });
   // Durable has no cross-process lock of its own; a second opener would corrupt the store.
   const stale = Math.max(2000, options.lockStaleMs ?? 10_000);

@@ -179,12 +179,9 @@ describe("server-vouched pairing end to end", () => {
     expect(offer.url).toBe(`${server.origin.replace("http", "ws")}/c/${hostId}`);
     expect(offer.hostKey).toBe(hosts[0]!.noisePublicKey);
     expect(offer.expiresAt).toBeGreaterThan(Date.now());
-    // The account offer carries the same relay candidate the QR link does;
-    // the API only forwards it and does not store a per-host address.
-    expect(offer.endpointSet).toEqual({
-      schemaVersion: 1,
-      endpoints: [{ transport: "webSocket", role: "relay", url: offer.url }],
-    });
+    // This relay is loopback-only in the test, so it stays a legacy local
+    // address and never becomes a published remote candidate.
+    expect(offer.endpointSet).toBeUndefined();
 
     // The client side of the response: pair=<hostKey>.<secret>, url=<device path>.
     const device = generateKeyPair();
@@ -212,12 +209,10 @@ describe("server-vouched pairing end to end", () => {
     expect(ask.status).toBe(200);
     const offer = ask.json as PairingResult;
     expect(offer.url).toBe(`${server.origin.replace("http", "ws")}/c/${hostId}`);
+    // The loopback relay is filtered out; the reachable direct path remains.
     expect(offer.endpointSet).toEqual({
       schemaVersion: 1,
-      endpoints: [
-        { transport: "webSocket", role: "relay", url: offer.url },
-        { transport: "webSocket", role: "direct", url: "wss://pinomad.example.com/base/" },
-      ],
+      endpoints: [{ transport: "webSocket", role: "direct", url: "wss://pinomad.example.com/base/" }],
     });
   });
 

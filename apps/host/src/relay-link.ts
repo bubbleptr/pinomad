@@ -18,7 +18,7 @@ import {
   signRelayChallengeV2,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
-import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
+import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { HostValue } from "./host-value.ts";
 
@@ -278,6 +278,21 @@ export function startRelayLink(options: {
             // The answer is worthless off the asking connection: a replaced or
             // dead control means the server already dropped the request.
             if (socket !== control || socket.readyState !== WebSocket.OPEN) return;
+            // Never put a malformed set on the wire: the server would close the
+            // control, taking every future account pairing ask with it. Refuse
+            // this one answer instead, and leave the legacy offer unusable on
+            // purpose rather than silently dropping candidates.
+            const checked =
+              result.ok && result.endpointSet !== undefined ? parseEndpointSet(result.endpointSet) : undefined;
+            if (
+              result.ok &&
+              checked !== undefined &&
+              (checked.kind !== "valid" || checked.endpointSet.endpoints.length === 0)
+            ) {
+              refused("invalid_endpoint");
+              return;
+            }
+            const endpointSet = checked?.kind === "valid" ? checked.endpointSet : undefined;
             socket.send(
               encodeRelayFrame(
                 result.ok
@@ -286,7 +301,7 @@ export function startRelayLink(options: {
                       requestId: frame.requestId,
                       secret: result.secret,
                       expiresAt: result.expiresAt,
-                      ...(result.endpointSet === undefined ? {} : { endpointSet: result.endpointSet }),
+                      ...(endpointSet === undefined ? {} : { endpointSet }),
                     }
                   : { t: "pairing-refused", requestId: frame.requestId, reason: result.reason },
               ),

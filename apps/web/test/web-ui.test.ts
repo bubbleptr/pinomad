@@ -2488,6 +2488,23 @@ it("manages paired devices from Settings → Devices", async () => {
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
 });
 
+it("falls back to the copyable link when an invite is too long for a QR code", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    remote: { port: 0, publicUrl: `https://example.com/${"a".repeat(1000)}` },
+  });
+  await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  const dialog = await openSettings(page, "Devices");
+  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await dialog.getByText("This link is too long for a QR code.", { exact: false }).waitFor();
+  expect(await page.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
+  await dialog.getByText("#pair=", { exact: false }).waitFor();
+  await dialog.getByText("Expires in", { exact: false }).waitFor();
+});
+
 it("registers the desktop bridge's device name and shows the pairing minute", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });

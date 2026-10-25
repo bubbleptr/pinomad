@@ -260,6 +260,34 @@ describe("relay link pairing answers", () => {
     expect(await legacyP).toEqual({ t: "pairing", requestId: "req-3", secret: "legacy", expiresAt: 7 });
   });
 
+  it("refuses an invalid candidate set without dropping the control", async () => {
+    const server = await fakeServer();
+    let reply: AccountOfferResult = {
+      ok: true,
+      secret: "bad",
+      expiresAt: 1,
+      endpointSet: {
+        schemaVersion: 1,
+        endpoints: [
+          { transport: "webSocket", role: "relay", url: `wss://relay.example.com/${"a".repeat(2000)}` },
+        ],
+      },
+    };
+    await linkWith(server, async () => reply);
+    await server.register;
+
+    const badP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-bad" });
+    // The control stays usable: only this answer is refused, so the server
+    // never sees a malformed set and never closes the host's control.
+    expect(await badP).toEqual({ t: "pairing-refused", requestId: "req-bad", reason: "invalid_endpoint" });
+
+    reply = { ok: true, secret: "good", expiresAt: 2 };
+    const goodP = server.nextMessage();
+    server.send({ t: "pairing-request", requestId: "req-good" });
+    expect(await goodP).toEqual({ t: "pairing", requestId: "req-good", secret: "good", expiresAt: 2 });
+  });
+
   it("refuses requests when no offer source exists", async () => {
     const server = await fakeServer();
     await linkWith(server);
@@ -471,10 +499,10 @@ describe("relay link", () => {
     expect(second.view.current().connection).toBe("connected");
   });
 
-  it("publishes relay and direct candidates while keeping the relay as the legacy url", async () => {
+  it("falls back to the direct legacy url when the loopback relay is filtered", async () => {
     const dir = await tempDir();
     defer(dir.remove);
-    const { origin, deviceUrl } = await startTestRelay(dir.path);
+    const { origin } = await startTestRelay(dir.path);
     const host = await startFauxHost(defer, {
       dataDir: dir.path,
       remote: { port: 0, publicUrl: "http://192.168.1.20:7422" },
@@ -483,17 +511,15 @@ describe("relay link", () => {
     await waitForRelayState(host, "registered");
     const tokenClient = await connectTo(defer, host);
     const { url } = await tokenClient.controller.createPairing();
-    expect(url.startsWith(`${origin}/#pair=`)).toBe(true);
+    // The loopback relay cannot reach a phone, so the direct address owns the
+    // legacy url; old clients still get one usable path.
+    expect(url.startsWith("http://192.168.1.20:7422/#pair=")).toBe(true);
 
     const parsed = parsePairingLink(url)!;
-    // Old clients read the relay; new ones see both candidates in Auto order.
-    expect(parsed.url).toBe(deviceUrl);
+    expect(parsed.url).toBe("ws://192.168.1.20:7422/");
     expect(parsed.endpointSet).toEqual({
       schemaVersion: 1,
-      endpoints: [
-        { transport: "webSocket", role: "relay", url: deviceUrl },
-        { transport: "webSocket", role: "direct", url: "ws://192.168.1.20:7422/" },
-      ],
+      endpoints: [{ transport: "webSocket", role: "direct", url: "ws://192.168.1.20:7422/" }],
     });
   });
 

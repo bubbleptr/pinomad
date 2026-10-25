@@ -166,7 +166,22 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
 const QR_QUIET = 2;
 
 function QrImage({ text }: { text: string }) {
-  const qr = useMemo(() => encode(text, { border: 0 }), [text]);
+  const qr = useMemo(() => {
+    try {
+      return encode(text, { border: 0 });
+    } catch (error) {
+      // Only capacity is expected here; a renderer bug must still surface.
+      if (error instanceof Error && error.message === "Data too long") return undefined;
+      throw error;
+    }
+  }, [text]);
+  if (qr === undefined) {
+    return (
+      <Text type="supporting">
+        This link is too long for a QR code. Copy it below and paste it into the app instead.
+      </Text>
+    );
+  }
   const size = qr.size + QR_QUIET * 2;
   return (
     <svg
