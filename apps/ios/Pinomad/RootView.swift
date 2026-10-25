@@ -103,6 +103,12 @@ private struct FailureView: View {
             Text(detail)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if let warning = model.pairingSaveWarning {
+                Text(warning)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+            }
             VStack(spacing: 10) {
                 if canRetry {
                     Button("Try again") { model.retryConnection() }

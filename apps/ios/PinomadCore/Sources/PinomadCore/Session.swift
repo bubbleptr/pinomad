@@ -42,6 +42,12 @@ public enum SessionUpdate: Sendable {
     /// from here on this session is `host`'s device, before and whatever
     /// the first view says. `saveError` is why the keychain didn't keep it.
     case paired(HostRecord, saveError: String?)
+    /// A validated hello endpoint set from a live connection, merged into
+    /// the stored host (never resurrecting a forgotten one).
+    case endpoints(HostRecord, saveError: String?)
+    /// One candidate path failed; the round continues and the aggregate
+    /// ready error carries the user-facing summary.
+    case candidateFailed(CandidateFailure)
     /// Platform-side failure the core cannot see (keychain, decoding).
     case platformError(String)
 }
@@ -115,6 +121,8 @@ public final class PinomadSession: @unchecked Sendable {
         let socket: any SessionSocket
         var pending: [Data] = []
         var sending = false
+        /// One epoch bump per physical connection, whichever path retires it.
+        var retired = false
     }
     private var conns: [UInt64: ConnState] = [:]
     private var timers: [UInt64: any SessionTimerHandle] = [:]
@@ -139,11 +147,26 @@ public final class PinomadSession: @unchecked Sendable {
     /// stored host — nil for a QR/pasted pairing (which keeps any link the
     /// same host already had).
     private let pairingAccount: AccountLink?
+    /// The in-memory identity this session is connected as. It survives a
+    /// failed keychain write and is the source of truth for Retry's routing.
+    private var currentHost: HostRecord?
+    /// Whether the store is believed to hold `currentHost`. A paired host
+    /// whose save failed is current but not stored; a stored host that a
+    /// successful read no longer contains has been forgotten.
+    private var currentHostInStore: Bool
 
-    init(client: PinomadClient, dependencies: SessionDependencies, pairingAccount: AccountLink? = nil) {
+    init(
+        client: PinomadClient,
+        dependencies: SessionDependencies,
+        pairingAccount: AccountLink? = nil,
+        host: HostRecord? = nil,
+        hostIsStored: Bool = false
+    ) {
         self.client = client
         self.dependencies = dependencies
         self.pairingAccount = pairingAccount
+        self.currentHost = host
+        self.currentHostInStore = hostIsStored
         var sink: AsyncStream<SessionEvent>.Continuation!
         self.events = AsyncStream { sink = $0 }
         self.sink = sink
@@ -173,7 +196,11 @@ public final class PinomadSession: @unchecked Sendable {
     ) throws -> PinomadSession {
         let validated = try validateStoredHost(host: host.ffi)
         let client = try PinomadClient.connect(host: validated)
-        return PinomadSession(client: client, dependencies: dependencies)
+        return PinomadSession(
+            client: client,
+            dependencies: dependencies,
+            host: host,
+            hostIsStored: true)
     }
 
     // ── public inputs: all just yields into the one queue ──
@@ -268,6 +295,9 @@ public final class PinomadSession: @unchecked Sendable {
     /// The newest published snapshot version — tests only.
     var lastPublishedVersion: UInt64 { publishedVersion }
 
+    /// The current connection epoch — tests only.
+    var currentConnectionGeneration: UInt64 { connectionGeneration }
+
     /// What a request-class failure means, given the connection epoch the
     /// request started on and the current one. An untracked request keeps
     /// the old operation-failed behaviour; a moved epoch means the host may
@@ -314,7 +344,7 @@ public final class PinomadSession: @unchecked Sendable {
             // Bump before feeding: any request failed by this close must
             // know its connection epoch ended, even if a reconnect follows
             // before its caller resumes.
-            if conns[conn] != nil { connectionGeneration &+= 1 }
+            _ = retire(conn)
             feed(.socketClosed(conn: conn, code: code, reason: reason))
             // A remote close is terminal for this generation but the
             // core does not echo CloseSocket back — clean up here or the
@@ -328,7 +358,7 @@ public final class PinomadSession: @unchecked Sendable {
                 // it emits CloseSocket and treats this as an abnormal close.
                 state.pending.removeAll()
                 conns[conn] = state
-                connectionGeneration &+= 1
+                _ = retire(conn)
                 feed(.sendFailed(conn: conn))
             } else {
                 if !state.pending.isEmpty { state.pending.removeFirst() }
@@ -395,6 +425,18 @@ public final class PinomadSession: @unchecked Sendable {
         }
     }
 
+    /// Retire one physical connection exactly once. The epoch moves before
+    /// any resulting OperationFailed is dispatched, so a local close cannot
+    /// masquerade as the host refusing the request.
+    @discardableResult
+    private func retire(_ conn: UInt64) -> Bool {
+        guard var state = conns[conn], !state.retired else { return false }
+        state.retired = true
+        conns[conn] = state
+        connectionGeneration &+= 1
+        return true
+    }
+
     /// `handle` into the core; dispatch of the returned commands is part
     /// of the same synchronous stretch — no suspension can interleave.
     private func feed(_ event: FfiEvent) {
@@ -418,21 +460,30 @@ public final class PinomadSession: @unchecked Sendable {
                 conns[conn]?.pending.append(bytes)
                 pumpSend(conn: conn)
             case .closeSocket(let conn):
+                // The core can retire a connection without a callback (a
+                // failed local decrypt, for example). End its epoch here so
+                // later OperationFailed is "reply lost", not a refusal.
+                _ = retire(conn)
                 conns.removeValue(forKey: conn)?.socket.close()
-            case .scheduleReconnect(let timer, let delayMs):
+            case .scheduleReconnect(let timer, let delayMs),
+                 .scheduleDeadline(let timer, let delayMs):
                 timers[timer] = dependencies.clock.schedule(
                     delay: .milliseconds(delayMs),
                     fire: { [sink] in sink.yield(.timerFired(timer: timer)) }
                 )
-            case .cancelReconnect(let timer):
+            case .cancelReconnect(let timer), .cancelDeadline(let timer):
                 timers.removeValue(forKey: timer)?.cancel()
             case .ready(let outcome):
                 updateSink.yield(.ready(outcome))
             case .viewChanged:
                 viewDirty = true
                 if !snapshotInFlight { startSnapshot() }
-            case .paired(let url, let hostKey, let privateKey):
-                persistPairing(url: url, hostKey: hostKey, privateKey: privateKey)
+            case .candidateFailed(let failure):
+                updateSink.yield(.candidateFailed(failure))
+            case .paired(let host):
+                persistPairing(host)
+            case .endpointSet(let hostKey, let url, let endpointSet):
+                mergeEndpoints(hostKey: hostKey, url: url, endpointSet: endpointSet)
             case .operationSucceeded(let op, let value):
                 pendingOpGeneration.removeValue(forKey: op)
                 pendingOps.removeValue(forKey: op)?.resume(returning: value)
@@ -488,18 +539,92 @@ public final class PinomadSession: @unchecked Sendable {
     /// `Paired` is delivered inside dispatch, so the write happens
     /// synchronously and `.paired` reaches the app before `.ready` — a
     /// failed write rides along on it, never swallowed.
-    private func persistPairing(url: String, hostKey: String, privateKey: String) {
-        var record = HostRecord(url: url, hostKey: hostKey, privateKey: privateKey, pairedAt: Date())
+    private func persistPairing(_ host: StoredHost) {
+        var record = HostRecord(
+            url: host.url,
+            hostKey: host.hostKey,
+            privateKey: host.privateKey,
+            name: host.name,
+            account: host.account.map { AccountLink(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
+            endpointSet: host.endpointSet.flatMap(StoredEndpointSet.init),
+            pairedAt: Date())
+        var saveError: String?
         do {
             try dependencies.hostStore.update { stored in
-                record.account = pairingAccount ?? stored.hosts.first { $0.hostKey == hostKey }?.account
-                stored.hosts.removeAll { $0.hostKey == hostKey }
+                let existing = stored.hosts.first { $0.hostKey == host.hostKey }
+                if record.name == nil { record.name = existing?.name }
+                record.account = pairingAccount ?? existing?.account ?? record.account
+                if record.endpointSet == nil { record.endpointSet = existing?.endpointSet }
+                stored.hosts.removeAll { $0.hostKey == host.hostKey }
                 stored.hosts.append(record)
-                stored.activeHostKey = hostKey
+                stored.activeHostKey = host.hostKey
             }
-            updateSink.yield(.paired(record, saveError: nil))
         } catch {
-            updateSink.yield(.paired(record, saveError: error.localizedDescription))
+            saveError = error.localizedDescription
+        }
+        // The host accepted this device even if the keychain did not. Keep
+        // that identity as the session's routing source for learned endpoints.
+        currentHost = record
+        currentHostInStore = saveError == nil
+        updateSink.yield(.paired(record, saveError: saveError))
+    }
+
+    /// A validated hello set updates the live session's routing identity even
+    /// when the keychain never held it (a paired save failure). Storage stays
+    /// separate: a host proven forgotten is not resurrected.
+    private func mergeEndpoints(hostKey: String, url: String, endpointSet: EndpointSet) {
+        guard let set = StoredEndpointSet(endpointSet) else { return }
+        var memory = currentHost
+        if memory?.hostKey == hostKey {
+            memory?.url = url
+            memory?.endpointSet = set
+            currentHost = memory
+        }
+
+        var stored: HostRecord?
+        var saveError: String?
+        do {
+            try dependencies.hostStore.update { hosts in
+                guard let next = hosts.settingEndpoints(set, url: url, for: hostKey) else { return }
+                hosts = next
+                stored = next.hosts.first { $0.hostKey == hostKey }
+            }
+            if stored != nil {
+                currentHostInStore = true
+            } else if currentHostInStore {
+                // A successful read with no host proves it was forgotten.
+                return
+            }
+        } catch {
+            saveError = error.localizedDescription
+            do {
+                if let existing = try dependencies.hostStore
+                    .load().hosts.first(where: { $0.hostKey == hostKey })
+                {
+                    currentHostInStore = true
+                    stored = existing.applyingEndpoints(url: url, endpointSet: set)
+                } else if currentHostInStore {
+                    // Again: the host is gone, not a failed save.
+                    return
+                }
+            } catch {
+                // Neither the write nor the confirming read worked. The live
+                // session still gets the new route; the warning says it was
+                // not persisted.
+                if let memory {
+                    updateSink.yield(.endpoints(memory, saveError: saveError))
+                } else {
+                    updateSink.yield(.platformError(
+                        "Couldn't save this host's updated addresses (\(saveError)); reading the keychain also failed (\(error.localizedDescription)). The connection is still live."))
+                }
+                return
+            }
+        }
+
+        if let memory {
+            updateSink.yield(.endpoints(memory, saveError: saveError))
+        } else if let stored {
+            updateSink.yield(.endpoints(stored, saveError: saveError))
         }
     }
 }

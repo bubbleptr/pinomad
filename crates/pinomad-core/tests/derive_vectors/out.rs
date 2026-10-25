@@ -514,12 +514,18 @@ fn account_value_json(value: &AccountValue) -> Json {
             ("command", Some(s(command))),
         ]),
         AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
-        AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at }) => obj(&[
-            ("url", Some(s(url))),
-            ("hostKey", Some(s(host_key))),
-            ("secret", Some(s(secret))),
-            ("expiresAt", Some(num(*expires_at))),
-        ]),
+        AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at, endpoint_set }) => {
+            let mut fields = vec![
+                ("url", Some(s(url))),
+                ("hostKey", Some(s(host_key))),
+                ("secret", Some(s(secret))),
+                ("expiresAt", Some(num(*expires_at))),
+            ];
+            if let Some(set) = endpoint_set {
+                fields.push(("endpointSet", Some(set.to_json())));
+            }
+            obj(&fields)
+        }
     }
 }
 

@@ -192,7 +192,8 @@ struct AccountTests {
                 socketFactory: FakeSocketFactory(), clock: TestClock(), hostStore: store),
             pairingAccount: link)
         session.enqueue(.commands([
-            .paired(url: "wss://relay.example.com/c/host1", hostKey: "key1", privateKey: "private")
+            .paired(host: StoredHost(
+                url: "wss://relay.example.com/c/host1", hostKey: "key1", privateKey: "private"))
         ]))
         await session.waitForIdle()
         #expect(store.stored.active?.account == link)

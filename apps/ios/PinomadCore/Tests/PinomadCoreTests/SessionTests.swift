@@ -121,6 +121,51 @@ struct SessionOrderingTests {
         session.close()
     }
 
+    /// A local CloseSocket (invalid ciphertext, malformed secure record)
+    /// retires the epoch exactly once, so a later OperationFailed is a lost
+    /// reply rather than the host refusing the call.
+    @Test func localCloseAdvancesTheEpochExactlyOnce() async throws {
+        let (session, factory, _, _) = try makeSession()
+        await session.waitForIdle()
+        let socket = try #require(factory.socket(conn: 1))
+        let started = session.currentConnectionGeneration
+
+        socket.deliverOpened()
+        await session.waitForIdle()
+        socket.deliverData(Data([9, 9, 9, 9]))
+        await session.waitForIdle()
+        let after = session.currentConnectionGeneration
+        #expect(after == started + 1)
+        #expect(socket.isClosed)
+        #expect(PinomadSession.requestFailure(
+            startedOn: started, current: after, message: "host said no") == .connectionLost)
+
+        // A second core close for the retired id must not move it again.
+        session.enqueue(.commands([.closeSocket(conn: 1)]))
+        await session.waitForIdle()
+        #expect(session.currentConnectionGeneration == after)
+        session.close()
+    }
+
+    @Test func sendFailureAndCoreCloseBumpTheEpochOnlyOnce() async throws {
+        let (session, factory, _, _) = try makeSession()
+        await session.waitForIdle()
+        let socket = try #require(factory.socket(conn: 1))
+        let started = session.currentConnectionGeneration
+
+        socket.policy = .hold
+        session.enqueue(.commands([.sendBytes(conn: 1, bytes: Data([1]))]))
+        await session.waitForIdle()
+        await spinUntil({ socket.calls.count == 1 }, "send in flight")
+        socket.releaseHeld(fail: true)
+        await spinUntil(
+            { session.currentConnectionGeneration == started + 1 },
+            "send failure retires the epoch")
+        await session.waitForIdle()
+        #expect(session.currentConnectionGeneration == started + 1)
+        session.close()
+    }
+
     @Test func sendFailureReportsSendFailed() async throws {
         let (session, factory, _, _) = try makeSession()
         let (seen, hook) = recorder()
@@ -199,6 +244,39 @@ struct SessionOrderingTests {
         clock.latest?.triggerAnyway()
         await session.waitForIdle()
         #expect(!seenEvents(seen).contains("timer(3)"))
+        session.close()
+    }
+
+    /// Candidate-stage and round deadlines use the same real timer table as
+    /// reconnect backoff, with the same cancel-then-late-fire guarantee.
+    @Test func cancelledStageDeadlineNeverFires() async throws {
+        let (session, _, clock, _) = try makeSession()
+        let (seen, hook) = recorder()
+        session.handleHook = hook
+        await session.waitForIdle()
+
+        session.enqueue(.commands([.scheduleDeadline(timer: 7, delayMs: 5_000)]))
+        await session.waitForIdle()
+        session.enqueue(.commands([.cancelDeadline(timer: 7)]))
+        await session.waitForIdle()
+        clock.latest?.triggerAnyway()
+        await session.waitForIdle()
+        #expect(!seenEvents(seen).contains("timer(7)"))
+        session.close()
+    }
+
+    @Test func armedStageDeadlineFiresOnce() async throws {
+        let (session, _, clock, _) = try makeSession()
+        let (seen, hook) = recorder()
+        session.handleHook = hook
+        await session.waitForIdle()
+
+        session.enqueue(.commands([.scheduleDeadline(timer: 8, delayMs: 5_000)]))
+        await session.waitForIdle()
+        clock.latest?.trigger()
+        clock.latest?.triggerAnyway()
+        await session.waitForIdle()
+        #expect(seenEvents(seen).filter { $0 == "timer(8)" }.count == 1)
         session.close()
     }
 

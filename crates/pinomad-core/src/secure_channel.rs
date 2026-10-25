@@ -341,6 +341,29 @@ enum Stage {
     Dead,
 }
 
+/// The shared pairing offer for one connection round. Every candidate
+/// builds its own Noise handshake, but message 2 is accepted at most once:
+/// the first channel to authenticate takes the secret, and later candidates
+/// dial with the device identity alone.
+#[derive(Clone, Default)]
+pub struct PairingState {
+    inner: Arc<Mutex<Option<Pairing>>>,
+}
+
+impl PairingState {
+    pub fn new(pairing: Option<Pairing>) -> Self {
+        PairingState { inner: Arc::new(Mutex::new(pairing)) }
+    }
+
+    pub fn current(&self) -> Option<Pairing> {
+        self.inner.lock().expect("pairing state poisoned").clone()
+    }
+
+    fn take(&self) -> Option<Pairing> {
+        self.inner.lock().expect("pairing state poisoned").take()
+    }
+}
+
 /// The client-side `secureWebSocketTransport`: Noise IK on open, then the
 /// record layer carries the gateway frames. Queued texts flush when the
 /// session is ready, so frames sent during the handshake are not lost.
@@ -398,10 +421,9 @@ impl Connection for SecureConnection {
             match handshake.read_message2(bytes) {
                 Ok((_hello, session, _hash)) => {
                     self.stage = Stage::Ready(session);
-                    if self.sent_pairing {
-                        self.sent_pairing = false;
-                        out.push(ConnOut::Paired);
-                    }
+                    let paired = self.sent_pairing;
+                    self.sent_pairing = false;
+                    out.push(ConnOut::Authenticated { paired });
                     let queued = std::mem::take(&mut self.queue);
                     for text in queued {
                         self.send(text, out);
@@ -458,11 +480,22 @@ pub struct SecureTransport {
     host_key_b64: String,
     device: KeyPair,
     device_private_b64: String,
-    pairing: Option<Pairing>,
+    pairing: PairingState,
 }
 
 impl SecureTransport {
     pub fn new(url: &str, host_key: &str, device_private_key: &str, pairing: Option<Pairing>) -> Result<Self, ChannelError> {
+        Self::with_pairing_state(url, host_key, device_private_key, PairingState::new(pairing))
+    }
+
+    /// A candidate connection in a round that may try several sockets: all of
+    /// them share the same device key and one-time pairing state.
+    pub fn with_pairing_state(
+        url: &str,
+        host_key: &str,
+        device_private_key: &str,
+        pairing: PairingState,
+    ) -> Result<Self, ChannelError> {
         let host_key_bytes: [u8; KEY_LENGTH] = from_base64url(host_key)
             .map_err(|_| fail("hostKey is not base64url"))?
             .try_into()
@@ -488,8 +521,8 @@ impl SecureTransport {
         Ok((pair.clone(), to_base64url(&pair.private_key)))
     }
 
-    pub fn pairing(&self) -> Option<&Pairing> {
-        self.pairing.as_ref()
+    pub fn pairing(&self) -> Option<Pairing> {
+        self.pairing.current()
     }
 }
 
@@ -499,7 +532,7 @@ impl Transport for SecureTransport {
     }
 
     fn open(&mut self) -> Box<dyn Connection> {
-        let pairing = if self.pairing.is_some() { self.pairing.clone() } else { None };
+        let pairing = self.pairing.current();
         match SecureConnection::new(&self.device, self.host_key, pairing.as_ref()) {
             Ok(connection) => Box::new(connection),
             Err(_) => Box::new(DeadConnection),
@@ -507,12 +540,52 @@ impl Transport for SecureTransport {
     }
 
     fn mark_paired(&mut self) -> Option<(String, String, String)> {
-        self.pairing = None;
+        // Only the generation that actually carried the invite may spend it.
+        self.pairing.take()?;
         Some((
             self.url.clone(),
             self.host_key_b64.clone(),
             self.device_private_b64.clone(),
         ))
+    }
+}
+
+/// A candidate whose key material could not even build a carrier. It still
+/// needs to close cleanly and report why, rather than pretend bytes can flow.
+pub struct UnavailableTransport {
+    pub url: String,
+    pub reason: String,
+}
+
+impl Transport for UnavailableTransport {
+    fn url(&self) -> &str {
+        &self.url
+    }
+
+    fn open(&mut self) -> Box<dyn Connection> {
+        Box::new(UnavailableConnection { reason: self.reason.clone() })
+    }
+}
+
+struct UnavailableConnection {
+    reason: String,
+}
+
+impl Connection for UnavailableConnection {
+    fn opened(&mut self, out: &mut Vec<ConnOut>) {
+        out.push(ConnOut::Close);
+        out.push(ConnOut::Closed {
+            code: 1008,
+            reason: Some(format!("Secure channel failed: {}", self.reason)),
+        });
+    }
+    fn data(&mut self, _bytes: &[u8], _out: &mut Vec<ConnOut>) {}
+    fn closed(&mut self, code: u16, reason: Option<String>, out: &mut Vec<ConnOut>) {
+        out.push(ConnOut::Closed { code, reason });
+    }
+    fn send(&mut self, _text: String, _out: &mut Vec<ConnOut>) {}
+    fn close(&mut self, out: &mut Vec<ConnOut>) {
+        out.push(ConnOut::Close);
     }
 }
 

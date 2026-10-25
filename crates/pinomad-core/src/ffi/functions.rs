@@ -391,6 +391,7 @@ pub fn pairing_target(link: String) -> Option<PairingTarget> {
         url: parsed.url,
         // The same encoding `Paired` reports and the keychain keeps.
         host_key: crate::b64::to_base64url(&parsed.host_key),
+        endpoint_set: parsed.endpoint_set.as_ref().map(crate::ffi::hosts::EndpointSet::from_core),
     })
 }
 

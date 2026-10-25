@@ -35,6 +35,16 @@ public struct PairingAttempt: Equatable, Sendable {
         target = nil
     }
 
+    /// A hello learned new endpoints for this host. Only the routing fields
+    /// move: the in-memory device identity, name, account and pairing time
+    /// are the ones the host accepted, even when the keychain save failed.
+    public mutating func endpoints(_ patch: HostRecord) {
+        guard var host, host.hostKey == patch.hostKey else { return }
+        host.url = patch.url
+        host.endpointSet = patch.endpointSet
+        self.host = host
+    }
+
     public mutating func clear() {
         host = nil
         link = nil

@@ -194,9 +194,11 @@ impl Driver {
                 // Timers fire synchronously inside pump, so a cancel can
                 // only arrive for one already discharged.
                 Command::CancelReconnect { .. } => {}
+                Command::ScheduleDeadline { .. } | Command::CancelDeadline { .. } => {}
+                Command::CandidateFailed { .. } | Command::EndpointSet { .. } => {}
                 Command::Ready { outcome } => self.ready = Some(outcome),
                 Command::ViewChanged => {}
-                Command::Paired { url, host_key, private_key } => {
+                Command::Paired { url, host_key, private_key, .. } => {
                     self.paired = Some((url, host_key, private_key));
                 }
                 Command::OperationSucceeded { op, value } => {
@@ -295,9 +297,9 @@ fn interop_pairs_and_synchronizes_a_conversation() {
     // mints a pairing link over the plaintext lane.
     let admin_url = format!("{}/?token={}", host.url.trim_end_matches('/'), host.token);
     let mut admin = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: admin_url }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: admin_url }))
     }));
     admin.wait_until(Duration::from_secs(10), |driver| driver.ready.is_some());
     assert_eq!(admin.ready, Some(ReadyOutcome::Connected));
@@ -313,7 +315,9 @@ fn interop_pairs_and_synchronizes_a_conversation() {
     let device = pinomad_core::noise::generate_keypair().expect("device keypair");
     let device_private = to_base64url(&device.private_key);
     let mut remote = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(
+        reconnect_delay_ms: None,
+        request_id: None,
+        ..RemoteDurableOptions::single(Box::new(
             SecureTransport::new(
                 &parsed.url,
                 &to_base64url(&parsed.host_key),
@@ -321,9 +325,7 @@ fn interop_pairs_and_synchronizes_a_conversation() {
                 Some(Pairing { secret: parsed.secret.clone(), name: "interop-rust".to_string() }),
             )
             .expect("secure transport"),
-        ),
-        reconnect_delay_ms: None,
-        request_id: None,
+        ))
     }));
     remote.wait_until(Duration::from_secs(15), |driver| driver.ready.is_some());
     assert_eq!(remote.ready, Some(ReadyOutcome::Connected));
@@ -398,7 +400,8 @@ struct FacadeDriver {
     pending: std::collections::VecDeque<pinomad_core::ffi::FfiCommand>,
     ready: Option<pinomad_core::ffi::ReadyOutcome>,
     ops: HashMap<u64, Result<pinomad_core::ffi::CallResult, String>>,
-    paired: Option<(String, String, String)>,
+    paired: Option<pinomad_core::ffi::StoredHost>,
+    failed_candidates: Vec<String>,
 }
 
 #[cfg(feature = "ffi")]
@@ -411,6 +414,7 @@ impl FacadeDriver {
             ready: None,
             ops: HashMap::new(),
             paired: None,
+            failed_candidates: Vec::new(),
         };
         let initial = driver.client.take();
         driver.pump(initial);
@@ -423,17 +427,34 @@ impl FacadeDriver {
         while let Some(command) = self.pending.pop_front() {
             match command {
                 FfiCommand::OpenConnection { conn, url } => {
-                    let (socket, _) = {
-                        let request = tungstenite::client::IntoClientRequest::into_client_request(&url).expect("ws url");
-                        let host = request.uri().host().unwrap().to_string();
+                    let opened = (|| -> std::io::Result<WebSocket<TcpStream>> {
+                        let request = tungstenite::client::IntoClientRequest::into_client_request(&url)
+                            .map_err(std::io::Error::other)?;
+                        let host = request
+                            .uri()
+                            .host()
+                            .ok_or_else(|| std::io::Error::other("missing host"))?
+                            .to_string();
                         let port = request.uri().port_u16().unwrap_or(80);
-                        let stream = TcpStream::connect((host.as_str(), port)).expect("tcp connect");
-                        tungstenite::client(request, stream).expect("ws handshake")
-                    };
-                    self.sockets.insert(conn, socket);
-                    let more = self.client.handle(FfiEvent::SocketOpened { conn });
-                    self.pump(more);
-                    self.read_socket(conn);
+                        let stream = TcpStream::connect((host.as_str(), port))?;
+                        Ok(tungstenite::client(request, stream).map_err(std::io::Error::other)?.0)
+                    })();
+                    match opened {
+                        Ok(socket) => {
+                            self.sockets.insert(conn, socket);
+                            let more = self.client.handle(FfiEvent::SocketOpened { conn });
+                            self.pump(more);
+                            self.read_socket(conn);
+                        }
+                        Err(_) => {
+                            let more = self.client.handle(FfiEvent::SocketClosed {
+                                conn,
+                                code: 1006,
+                                reason: None,
+                            });
+                            self.pump(more);
+                        }
+                    }
                 }
                 FfiCommand::SendBytes { conn, bytes } => {
                     let message = match String::from_utf8(bytes.clone()) {
@@ -442,7 +463,11 @@ impl FacadeDriver {
                     };
                     match self.sockets.get_mut(&conn) {
                         Some(socket) => socket.send(message).expect("ws send"),
-                        None => panic!("SendBytes for missing conn {conn} (closed already?)"),
+                        None => {
+                            let more = self.client.handle(FfiEvent::SendFailed { conn });
+                            self.pump(more);
+                            continue;
+                        }
                     }
                     self.read_socket(conn);
                 }
@@ -459,11 +484,15 @@ impl FacadeDriver {
                     self.pump(more);
                 }
                 FfiCommand::CancelReconnect { .. } => {}
+                FfiCommand::ScheduleDeadline { .. }
+                | FfiCommand::CancelDeadline { .. }
+                | FfiCommand::EndpointSet { .. } => {}
+                FfiCommand::CandidateFailed { failure } => {
+                    self.failed_candidates.push(failure.url);
+                }
                 FfiCommand::Ready { outcome } => self.ready = Some(outcome),
                 FfiCommand::ViewChanged => {}
-                FfiCommand::Paired { url, host_key, private_key } => {
-                    self.paired = Some((url, host_key, private_key));
-                }
+                FfiCommand::Paired { host } => self.paired = Some(host),
                 FfiCommand::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
@@ -559,9 +588,9 @@ fn interop_facade_pairs_creates_and_reconnects() {
     // Phase 1 unchanged: a plaintext admin mints the pairing link.
     let admin_url = format!("{}/?token={}", host.url.trim_end_matches('/'), host.token);
     let mut admin = Driver::new(RemoteDurable::new(RemoteDurableOptions {
-        transport: Box::new(PlaintextTransport { url: admin_url }),
         reconnect_delay_ms: None,
         request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: admin_url }))
     }));
     admin.wait_until(Duration::from_secs(10), |driver| driver.ready.is_some());
     assert_eq!(admin.ready, Some(ReadyOutcome::Connected));
@@ -576,7 +605,8 @@ fn interop_facade_pairs_creates_and_reconnects() {
     let mut remote = FacadeDriver::new(client);
     remote.wait_until(Duration::from_secs(15), |driver| driver.ready.is_some());
     assert_eq!(remote.ready, Some(FfiReadyOutcome::Connected));
-    let (url, host_key, private_key) = remote.paired.clone().expect("the channel must report the pairing");
+    let paired = remote.paired.clone().expect("the channel must report the pairing");
+    let (url, host_key, private_key) = (paired.url.clone(), paired.host_key.clone(), paired.private_key.clone());
 
     // Phase 3: typed call + typed snapshot.
     remote.invoke(2, FfiCall::CreateConversation {
@@ -618,6 +648,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         private_key,
         name: None,
         account: None,
+        endpoint_set: None,
     })
     .expect("the emitted record validates");
     let client2 = PinomadClient::connect(stored).expect("connect to stored host");
@@ -626,4 +657,57 @@ fn interop_facade_pairs_creates_and_reconnects() {
     assert_eq!(remote2.ready, Some(FfiReadyOutcome::Connected));
     let snapshot2 = remote2.client.snapshot().expect("snapshot on reconnect");
     assert_eq!(snapshot2.connection, pinomad_core::ffi::ConnectionState::Connected);
+}
+
+/// A failed first candidate must hand off to a healthy second one while
+/// keeping the invitation's endpoint set on the stored host.
+#[cfg(feature = "ffi")]
+#[test]
+fn interop_facade_handoff_keeps_invite_endpoint_set() {
+    use pinomad_core::ffi::{PinomadClient, ReadyOutcome as FfiReadyOutcome};
+    use pinomad_core::pairing_link::encode_uri_component;
+
+    let host = spawn_host();
+    let admin_url = format!("{}/?token={}", host.url.trim_end_matches('/'), host.token);
+    let mut admin = Driver::new(RemoteDurable::new(RemoteDurableOptions {
+        reconnect_delay_ms: None,
+        request_id: None,
+        ..RemoteDurableOptions::single(Box::new(PlaintextTransport { url: admin_url }))
+    }));
+    admin.wait_until(Duration::from_secs(10), |driver| driver.ready.is_some());
+    admin.invoke(1, Call::CreatePairing);
+    admin.wait_until(Duration::from_secs(10), |driver| driver.ops.contains_key(&1));
+    let pairing = admin.ops.get(&1).as_ref().unwrap().as_ref().unwrap().clone().unwrap();
+    let link = pairing.get("url").and_then(Json::as_str).map(|s| s.to_string_lossy()).expect("pairing url");
+    let parsed = parse_pairing_link(&link).expect("parse pairing link");
+    let bad = "ws://127.0.0.1:1/secure";
+    let set = serde_json::json!({
+        "schemaVersion": 1,
+        "endpoints": [
+            {"transport": "webSocket", "role": "relay", "url": bad},
+            {"transport": "webSocket", "role": "direct", "url": parsed.url.clone()},
+        ]
+    });
+    let handoff_link = format!(
+        "pinomad://pair#pair={}.{}&url={}&endpointSet={}",
+        to_base64url(&parsed.host_key),
+        parsed.secret,
+        encode_uri_component("wss://legacy.invalid/"),
+        encode_uri_component(&set.to_string())
+    );
+
+    let parsed_handoff = parse_pairing_link(&handoff_link).expect("handoff link parses");
+    assert_eq!(
+        parsed_handoff.endpoint_set.as_ref().map(|set| set.endpoints.len()),
+        Some(2),
+        "the invite must retain both candidates"
+    );
+    let client = PinomadClient::pair(handoff_link, "interop-handoff".to_string(), None).expect("pair link");
+    let mut remote = FacadeDriver::new(client);
+    remote.wait_until(Duration::from_secs(20), |driver| driver.ready.is_some());
+    assert_eq!(remote.ready, Some(FfiReadyOutcome::Connected));
+    assert_eq!(remote.failed_candidates.first().map(String::as_str), Some(bad));
+    let paired = remote.paired.expect("paired record");
+    assert_eq!(paired.endpoint_set.as_ref().map(|set| set.endpoints.len()), Some(2));
+    assert_eq!(paired.url, bad);
 }

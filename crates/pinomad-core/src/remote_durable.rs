@@ -16,13 +16,17 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use crate::delta::{apply_immutable, op_from_json};
+use crate::endpoints::{EndpointSet, ParsedEndpointSet, parse_endpoint_set};
 use crate::frames::{
-    classify_server_frame, conversation_stream, doc_stream, encode_client_frame, host_streams,
-    host_supports_call, host_supports_feature, minor_version, ApnsPushToken, ClientFrame, HostFeature,
-    ImageVariant, ServerFrame, INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE,
+    ApnsPushToken, ClientFrame, HostFeature, ImageVariant, PROTOCOL, ServerFrame,
+    UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
+    encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
 };
 use crate::json::{Json, JsonObject};
 use crate::organization::{checkout_of, home_of, organize};
+use crate::remote_candidates::{
+    RemoteCandidate, RemoteCandidateRole, candidate_plan, preferred_legacy_url,
+};
 use crate::transport::{ConnOut, Connection, Transport};
 use crate::u16str::U16String;
 
@@ -34,6 +38,141 @@ const CONNECTED: &str = "connected";
 const RECONNECTING: &str = "reconnecting";
 const CLOSED: &str = "closed";
 const OUTDATED: &str = "outdated";
+
+const REMOTE_ACCESS_UNAVAILABLE: &str = "Remote access is unavailable: the host published no remote path and this device has no local entry.";
+
+/// Whether this client follows a hello's endpoint set. The distinction is
+/// explicit because an empty planned list is a real "no remote entry", while
+/// a single carrier must never be replaced by a hello set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteMode {
+    Single,
+    Planned,
+}
+
+/// Per-candidate deadlines, matching packages/protocol/src/remote-durable.ts.
+/// Every stage is bounded and a retired candidate cancels its timer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CandidateTimeouts {
+    pub socket_open_ms: u64,
+    pub noise_ms: u64,
+    pub hello_ms: u64,
+    pub sync_ms: u64,
+}
+
+impl Default for CandidateTimeouts {
+    fn default() -> Self {
+        CandidateTimeouts {
+            socket_open_ms: 5_000,
+            noise_ms: 5_000,
+            hello_ms: 5_000,
+            sync_ms: 10_000,
+        }
+    }
+}
+
+/// Which phase a candidate failed in, for the per-path diagnostics a round
+/// aggregates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CandidateFailureStage {
+    Unsupported,
+    Open,
+    Noise,
+    Hello,
+    Sync,
+    Round,
+    Closed,
+}
+
+impl CandidateFailureStage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CandidateFailureStage::Unsupported => "unsupported",
+            CandidateFailureStage::Open => "open",
+            CandidateFailureStage::Noise => "noise",
+            CandidateFailureStage::Hello => "hello",
+            CandidateFailureStage::Sync => "sync",
+            CandidateFailureStage::Round => "round",
+            CandidateFailureStage::Closed => "closed",
+        }
+    }
+}
+
+/// One path's failure evidence. `unauthorized` is only true for a raw 4401
+/// close, which says nothing about the host's other paths until the round
+/// ends.
+#[derive(Clone, Debug)]
+pub struct CandidateFailure {
+    pub candidate: RemoteCandidate,
+    pub stage: CandidateFailureStage,
+    pub unauthorized: bool,
+    pub code: Option<u16>,
+    pub reason: Option<String>,
+}
+
+/// One connection source per round. The coordinator builds every candidate's
+/// carrier with the same device identity; only the socket URL changes.
+pub trait CandidateSource: Send {
+    /// Open one carrier generation for `candidate`.
+    fn open(&mut self, candidate: &RemoteCandidate) -> Box<dyn Connection>;
+    /// The generation that just authenticated carried the invitation: spend
+    /// the shared secret and report what the platform persists. Sources that
+    /// never pair return None.
+    fn mark_paired(&mut self) -> Option<(String, String, String)> {
+        None
+    }
+}
+
+/// The legacy single-carrier mode: one transport object opens every
+/// generation, and a hello endpoint set does not rebuild the plan.
+pub struct SingleSource {
+    transport: Box<dyn Transport>,
+}
+
+impl SingleSource {
+    pub fn new(transport: Box<dyn Transport>) -> Self {
+        SingleSource { transport }
+    }
+}
+
+impl CandidateSource for SingleSource {
+    fn open(&mut self, _candidate: &RemoteCandidate) -> Box<dyn Connection> {
+        self.transport.open()
+    }
+
+    fn mark_paired(&mut self) -> Option<(String, String, String)> {
+        self.transport.mark_paired()
+    }
+}
+
+/// Multi-candidate mode: the plan may be replaced by a validated hello, and
+/// each open asks the factory for a carrier bound to that URL.
+pub struct PlannedSource {
+    open: Box<dyn FnMut(&RemoteCandidate) -> Box<dyn Transport> + Send>,
+    current: Option<Box<dyn Transport>>,
+}
+
+impl PlannedSource {
+    pub fn new(open: Box<dyn FnMut(&RemoteCandidate) -> Box<dyn Transport> + Send>) -> Self {
+        PlannedSource {
+            open,
+            current: None,
+        }
+    }
+}
+
+impl CandidateSource for PlannedSource {
+    fn open(&mut self, candidate: &RemoteCandidate) -> Box<dyn Connection> {
+        let mut transport = (self.open)(candidate);
+        let connection = transport.open();
+        self.current = Some(transport);
+        connection
+    }
+
+    fn mark_paired(&mut self) -> Option<(String, String, String)> {
+        self.current.as_mut()?.mark_paired()
+    }
+}
 
 /// The FFI-facing call surface — every DurableController method, modeled as
 /// data so the platform layer can construct them.
@@ -278,23 +417,69 @@ pub enum Event {
 /// view, and resolve operations by their caller's id.
 #[derive(Debug)]
 pub enum Command {
-    OpenConnection { conn: u32, url: String },
-    SendBytes { conn: u32, bytes: Vec<u8> },
-    CloseSocket { conn: u32 },
+    OpenConnection {
+        conn: u32,
+        url: String,
+    },
+    SendBytes {
+        conn: u32,
+        bytes: Vec<u8>,
+    },
+    CloseSocket {
+        conn: u32,
+    },
     /// Arm the reconnect timer; `timer` is echoed back via TimerFired.
-    ScheduleReconnect { timer: u32, delay_ms: u64 },
+    ScheduleReconnect {
+        timer: u32,
+        delay_ms: u64,
+    },
     /// Drop a previously armed reconnect timer — an early reconnect or a
     /// closed session makes it dead. Platforms holding real timers (iOS
     /// suspends them in the background) must not wake for it.
-    CancelReconnect { timer: u32 },
-    Ready { outcome: ReadyOutcome },
+    CancelReconnect {
+        timer: u32,
+    },
+    /// Arm one candidate-stage or whole-round deadline. The id is echoed by
+    /// TimerFired and is dead once canceled.
+    ScheduleDeadline {
+        timer: u32,
+        delay_ms: u64,
+    },
+    CancelDeadline {
+        timer: u32,
+    },
+    Ready {
+        outcome: ReadyOutcome,
+    },
     /// `view()` changed; read it again. Emitted at most once per handle().
     ViewChanged,
+    /// One candidate failed; the round continues and aggregates these.
+    CandidateFailed {
+        failure: CandidateFailure,
+    },
+    /// A validated (possibly empty) hello endpoint set, with the legacy URL
+    /// old clients should see. The platform updates only that host record.
+    EndpointSet {
+        host_key: String,
+        url: String,
+        endpoint_set: EndpointSet,
+    },
     /// First channel with a pairing secret authenticated: what the app
-    /// persists — where, which host, which device key.
-    Paired { url: String, host_key: String, private_key: String },
-    OperationSucceeded { op: u64, value: Option<Json> },
-    OperationFailed { op: u64, error: String },
+    /// persists — where, which host, which device key, and the invite's set.
+    Paired {
+        url: String,
+        host_key: String,
+        private_key: String,
+        endpoint_set: Option<EndpointSet>,
+    },
+    OperationSucceeded {
+        op: u64,
+        value: Option<Json>,
+    },
+    OperationFailed {
+        op: u64,
+        error: String,
+    },
 }
 
 /// What `RemoteDurable` reports when the first view arrives — or why it
@@ -310,12 +495,52 @@ pub enum ReadyOutcome {
 }
 
 pub struct RemoteDurableOptions {
-    pub transport: Box<dyn Transport>,
+    pub source: Box<dyn CandidateSource>,
+    /// Single never follows hello endpoint sets; Planned always may.
+    pub mode: RemoteMode,
     /// `reconnectDelayMs` — {min,max} backoff seed.
     pub reconnect_delay_ms: Option<(u64, u64)>,
     /// `newRequestId` — a fresh 32-hex-char id per submit/fork; injected so
     /// tests can be deterministic and FFI hosts can supply their own RNG.
     pub request_id: Option<Box<dyn FnMut() -> String + Send>>,
+    /// The planned candidate list for round one. In `Planned` mode an empty
+    /// list is a real "no remote entry"; `Single` ignores it and derives its
+    /// one carrier from `legacy_url`.
+    pub candidates: Vec<RemoteCandidate>,
+    /// The record's legacy URL (loopback entries stay local across hello
+    /// updates). Defaults to the first candidate.
+    pub legacy_url: Option<String>,
+    pub page_protocol: Option<String>,
+    /// The host's fixed key, for EndpointSet storage updates.
+    pub host_key: String,
+    /// The invitation's candidate set, persisted as soon as message 2 lands.
+    pub pairing_endpoint_set: Option<EndpointSet>,
+    pub candidate_timeouts: CandidateTimeouts,
+    /// Cap a whole round; defaults to every candidate's stage budgets plus a
+    /// small margin so a later candidate always gets its turn.
+    pub round_timeout_ms: Option<u64>,
+}
+
+impl RemoteDurableOptions {
+    /// Legacy single-carrier options: one URL, one transport, no endpoint
+    /// following. The candidate coordinator still gives it the same staged
+    /// deadlines and retry loop.
+    pub fn single(transport: Box<dyn Transport>) -> Self {
+        let url = transport.url().to_string();
+        RemoteDurableOptions {
+            source: Box::new(SingleSource::new(transport)),
+            mode: RemoteMode::Single,
+            reconnect_delay_ms: None,
+            request_id: None,
+            candidates: candidate_plan(&url, None, None),
+            legacy_url: Some(url),
+            page_protocol: None,
+            host_key: String::new(),
+            pairing_endpoint_set: None,
+            candidate_timeouts: CandidateTimeouts::default(),
+            round_timeout_ms: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -398,6 +623,38 @@ struct Conn {
     inner: Box<dyn Connection>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Phase {
+    Open,
+    Noise,
+    Hello,
+    Sync,
+    Ready,
+}
+
+impl Phase {
+    fn stage(self) -> CandidateFailureStage {
+        match self {
+            Phase::Open => CandidateFailureStage::Open,
+            Phase::Noise => CandidateFailureStage::Noise,
+            Phase::Hello => CandidateFailureStage::Hello,
+            Phase::Sync => CandidateFailureStage::Sync,
+            Phase::Ready => CandidateFailureStage::Closed,
+        }
+    }
+}
+
+/// One candidate's live connection. Retired attempts stay dead by generation
+/// even if their socket or timer delivers late.
+struct DialAttempt {
+    candidate: RemoteCandidate,
+    generation: u64,
+    conn: Option<Conn>,
+    phase: Phase,
+    timer: Option<u32>,
+    done: bool,
+}
+
 struct FirstView {
     /// Host streams whose snapshots the first view waits for.
     remaining: HashSet<Vec<u16>>,
@@ -409,8 +666,27 @@ fn key(name: &str) -> Vec<u16> {
 }
 
 pub struct RemoteDurable {
-    transport: Box<dyn Transport>,
-    conn: Option<Conn>,
+    source: Box<dyn CandidateSource>,
+    candidates: Vec<RemoteCandidate>,
+    round_candidates: Vec<RemoteCandidate>,
+    candidate_index: usize,
+    failures: Vec<CandidateFailure>,
+    legacy_url: String,
+    page_protocol: Option<String>,
+    follows_host_endpoints: bool,
+    host_key: String,
+    pairing_endpoint_set: Option<EndpointSet>,
+    timeouts: CandidateTimeouts,
+    round_timeout_ms: Option<u64>,
+    round: u64,
+    round_active: bool,
+    round_expired: bool,
+    ever_ready: bool,
+    outage_noticed: bool,
+    generation: u64,
+    dial: Option<DialAttempt>,
+    round_timer: Option<u32>,
+    reconnect_remaining: Option<HashSet<Vec<u16>>>,
     next_conn: u32,
     wanted: BTreeSet<Vec<u16>>,
     values: HashMap<Vec<u16>, Json>,
@@ -456,12 +732,53 @@ pub struct RemoteDurable {
 
 impl RemoteDurable {
     pub fn new(options: RemoteDurableOptions) -> Self {
-        let (reconnect_min_ms, reconnect_max_ms) =
-            options.reconnect_delay_ms.unwrap_or((DEFAULT_RECONNECT_MIN_MS, DEFAULT_RECONNECT_MAX_MS));
-        let request_id = options.request_id.unwrap_or_else(|| Box::new(default_request_id));
+        let (reconnect_min_ms, reconnect_max_ms) = options
+            .reconnect_delay_ms
+            .unwrap_or((DEFAULT_RECONNECT_MIN_MS, DEFAULT_RECONNECT_MAX_MS));
+        let request_id = options
+            .request_id
+            .unwrap_or_else(|| Box::new(default_request_id));
+        let follows_host_endpoints = options.mode == RemoteMode::Planned;
+        let legacy_url = options
+            .legacy_url
+            .clone()
+            .or_else(|| {
+                options
+                    .candidates
+                    .first()
+                    .map(|candidate| candidate.url.clone())
+            })
+            .unwrap_or_default();
+        // A planned round's empty list means the host published no remote
+        // entry; it must not be refilled from the legacy URL. Single mode is
+        // the only one that derives its one carrier from that URL.
+        let candidates = if follows_host_endpoints {
+            options.candidates
+        } else {
+            candidate_plan(&legacy_url, None, options.page_protocol.as_deref())
+        };
         let mut this = RemoteDurable {
-            transport: options.transport,
-            conn: None,
+            source: options.source,
+            candidates,
+            round_candidates: Vec::new(),
+            candidate_index: 0,
+            failures: Vec::new(),
+            legacy_url,
+            page_protocol: options.page_protocol,
+            follows_host_endpoints,
+            host_key: options.host_key,
+            pairing_endpoint_set: options.pairing_endpoint_set,
+            timeouts: options.candidate_timeouts,
+            round_timeout_ms: options.round_timeout_ms,
+            round: 0,
+            round_active: false,
+            round_expired: false,
+            ever_ready: false,
+            outage_noticed: false,
+            generation: 0,
+            dial: None,
+            round_timer: None,
+            reconnect_remaining: None,
             next_conn: 0,
             wanted: BTreeSet::new(),
             values: HashMap::new(),
@@ -494,7 +811,7 @@ impl RemoteDurable {
             version: 0,
             out: Vec::new(),
         };
-        this.open();
+        this.begin_round();
         this
     }
 
@@ -506,7 +823,9 @@ impl RemoteDurable {
 
     /// The current view — absent until Ready(Connected).
     pub fn view(&self) -> Option<Json> {
-        self.state.as_ref().map(|state| Json::Object(Arc::new(state.clone())))
+        self.state
+            .as_ref()
+            .map(|state| Json::Object(Arc::new(state.clone())))
     }
 
     /// The serialized view — `JSON.stringify` of `view()`.
@@ -545,43 +864,62 @@ impl RemoteDurable {
         match event {
             Event::SocketOpened { conn } => {
                 if self.live_conn(conn) {
+                    // The socket opened: Noise starts now. Outcomes below may
+                    // advance straight to hello in a test harness, so arm
+                    // this before draining rather than overwriting them.
+                    self.arm_phase(Phase::Noise, self.timeouts.noise_ms);
                     let mut conn_out = Vec::new();
-                    self.conn.as_mut().unwrap().inner.opened(&mut conn_out);
+                    if let Some(conn) = self.conn_mut() {
+                        conn.inner.opened(&mut conn_out);
+                    }
                     self.drain_conn_out(conn_out);
                 }
             }
             Event::SocketData { conn, bytes } => {
                 if self.live_conn(conn) {
                     let mut conn_out = Vec::new();
-                    self.conn.as_mut().unwrap().inner.data(&bytes, &mut conn_out);
+                    if let Some(conn) = self.conn_mut() {
+                        conn.inner.data(&bytes, &mut conn_out);
+                    }
                     self.drain_conn_out(conn_out);
                 }
             }
             Event::SocketClosed { conn, code, reason } => {
                 if self.live_conn(conn) {
                     let mut conn_out = Vec::new();
-                    self.conn.as_mut().unwrap().inner.closed(code, reason.clone(), &mut conn_out);
+                    if let Some(conn) = self.conn_mut() {
+                        conn.inner.closed(code, reason.clone(), &mut conn_out);
+                    }
                     self.drain_conn_out(conn_out);
+                    if self.live_conn(conn) {
+                        let stage = self
+                            .dial
+                            .as_ref()
+                            .map(|dial| dial.phase.stage())
+                            .unwrap_or(CandidateFailureStage::Closed);
+                        self.fail_current(stage, Some(code), reason);
+                    }
                 }
             }
             Event::SendFailed { conn } => {
                 if self.live_conn(conn) {
                     // A write failure means the socket is broken — tell the
                     // platform to close it, then treat it as an abnormal
-                    // close so pending calls fail and the retry arms.
+                    // close so pending calls fail and the round moves on.
                     self.out.push(Command::CloseSocket { conn });
-                    self.lost(1006, None);
+                    let stage = self
+                        .dial
+                        .as_ref()
+                        .map(|dial| dial.phase.stage())
+                        .unwrap_or(CandidateFailureStage::Closed);
+                    self.fail_current(stage, Some(1006), None);
                 }
             }
-            Event::TimerFired { timer } => {
-                if self.reconnect_timer == Some(timer) && !self.closed {
-                    self.reconnect_timer = None;
-                    self.open();
-                }
-            }
+            Event::TimerFired { timer } => self.timer_fired(timer),
             Event::Invoke { op, call } => self.invoke(op, call),
             Event::Close => self.close(),
-            Event::Foreground | Event::NetworkChanged => self.reconnect_now(),
+            Event::Foreground => self.reconnect_now(false),
+            Event::NetworkChanged => self.reconnect_now(true),
             Event::Background => {}
         }
         if self.view_dirty {
@@ -591,78 +929,503 @@ impl RemoteDurable {
         std::mem::take(&mut self.out)
     }
 
-    /// ADR-0024 §3's native addition — the TS reference has no counterpart
-    /// (the browser never sleeps its timers): iOS suspends timers in the
-    /// background, so a pending reconnect backoff could stall long after
-    /// the app is usable again. While waiting, cancel the timer, reset the
-    /// backoff, and connect now. Connected, connecting, and terminal
-    /// states are untouched.
-    fn reconnect_now(&mut self) {
-        if let Some(timer) = self.reconnect_timer.take() {
-            self.attempt = 0;
-            self.out.push(Command::CancelReconnect { timer });
-            self.open();
+    fn timer_fired(&mut self, timer: u32) {
+        if self.closed {
+            return;
+        }
+        if self.reconnect_timer == Some(timer) {
+            self.reconnect_timer = None;
+            self.begin_round();
+            return;
+        }
+        if self.round_timer == Some(timer) {
+            self.round_timer = None;
+            if !self.round_active {
+                return;
+            }
+            self.round_expired = true;
+            if let Some(dial) = &self.dial {
+                let candidate = dial.candidate.clone();
+                let budget = self.round_budget();
+                self.record_failure(
+                    candidate,
+                    CandidateFailureStage::Round,
+                    false,
+                    None,
+                    Some(format!("the connection round exceeded {budget}ms")),
+                );
+            }
+            self.abandon_dial();
+            self.round_failed();
+            return;
+        }
+        let Some(dial) = &self.dial else { return };
+        if dial.timer != Some(timer) {
+            return;
+        }
+        let phase = dial.phase;
+        let ms = self.timeout_for(phase);
+        if let Some(dial) = &mut self.dial {
+            dial.timer = None;
+        }
+        self.fail_current(
+            phase.stage(),
+            None,
+            Some(format!("no progress within {ms}ms")),
+        );
+    }
+
+    fn timeout_for(&self, phase: Phase) -> u64 {
+        match phase {
+            Phase::Open => self.timeouts.socket_open_ms,
+            Phase::Noise => self.timeouts.noise_ms,
+            Phase::Hello => self.timeouts.hello_ms,
+            Phase::Sync | Phase::Ready => self.timeouts.sync_ms,
         }
     }
 
-    fn live_conn(&self, conn: u32) -> bool {
-        self.conn.as_ref().map(|c| c.id) == Some(conn)
+    /// A pending backoff is cut short; a network change also restarts a round
+    /// that is still dialling. A live ready connection is never re-dialled by
+    /// an interface change.
+    fn reconnect_now(&mut self, force: bool) {
+        if self.closed {
+            return;
+        }
+        if self.dial.as_ref().map(|dial| dial.phase) == Some(Phase::Ready) {
+            return;
+        }
+        let had_backoff = self.reconnect_timer.take();
+        if let Some(timer) = had_backoff {
+            self.attempt = 0;
+            self.out.push(Command::CancelReconnect { timer });
+        } else if !force {
+            return;
+        }
+        if force && self.dial.is_some() {
+            self.clear_round_timer();
+            self.abandon_dial();
+        }
+        if !self.round_active || self.dial.is_none() {
+            self.attempt = 0;
+            self.begin_round();
+        }
     }
 
-    /// `#open` — a new connection generation.
-    fn open(&mut self) {
-        self.hello_received = false;
-        self.next_conn += 1;
-        let id = self.next_conn;
-        let inner = self.transport.open();
-        self.conn = Some(Conn { id, inner });
-        self.out.push(Command::OpenConnection { conn: id, url: self.transport.url().to_string() });
+    fn conn(&self) -> Option<&Conn> {
+        self.dial.as_ref()?.conn.as_ref()
+    }
+
+    fn conn_mut(&mut self) -> Option<&mut Conn> {
+        self.dial.as_mut()?.conn.as_mut()
+    }
+
+    fn live_conn(&self, conn: u32) -> bool {
+        self.dial
+            .as_ref()
+            .is_some_and(|dial| dial.generation == self.generation && !dial.done)
+            && self.conn().map(|c| c.id) == Some(conn)
+    }
+
+    fn live_dial(&self, conn: u32, generation: u64) -> bool {
+        self.dial.as_ref().is_some_and(|dial| {
+            !dial.done
+                && dial.generation == generation
+                && dial.generation == self.generation
+                && dial.conn.as_ref().map(|c| c.id) == Some(conn)
+        })
+    }
+
+    // ─── Candidate rounds ───────────────────────────────────────────────
+
+    fn begin_round(&mut self) {
+        if self.closed || self.dial.is_some() {
+            return;
+        }
+        self.clear_round_timer();
+        self.clear_backoff();
+        self.round += 1;
+        self.round_candidates = self.candidates.clone();
+        self.candidate_index = 0;
+        self.failures.clear();
+        self.round_expired = false;
+        self.round_active = true;
+        let budget = self.round_budget();
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.round_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: budget,
+        });
+        self.open_candidate();
+    }
+
+    fn round_budget(&self) -> u64 {
+        let per_candidate = self.timeouts.socket_open_ms
+            + self.timeouts.noise_ms
+            + self.timeouts.hello_ms
+            + self.timeouts.sync_ms;
+        self.round_timeout_ms
+            .unwrap_or(self.round_candidates.len() as u64 * per_candidate + 1_000)
+    }
+
+    fn open_candidate(&mut self) {
+        loop {
+            if self.closed || !self.round_active || self.dial.is_some() {
+                return;
+            }
+            if self.round_expired {
+                self.round_failed();
+                return;
+            }
+            let Some(candidate) = self.round_candidates.get(self.candidate_index).cloned() else {
+                self.round_failed();
+                return;
+            };
+            self.candidate_index += 1;
+            if let Some(reason) = candidate.unsupported.clone() {
+                self.record_failure(
+                    candidate,
+                    CandidateFailureStage::Unsupported,
+                    false,
+                    None,
+                    Some(reason),
+                );
+                continue;
+            }
+            self.hello_received = false;
+            self.next_conn += 1;
+            let id = self.next_conn;
+            self.generation += 1;
+            let generation = self.generation;
+            let inner = self.source.open(&candidate);
+            self.dial = Some(DialAttempt {
+                candidate: candidate.clone(),
+                generation,
+                conn: Some(Conn { id, inner }),
+                phase: Phase::Open,
+                timer: None,
+                done: false,
+            });
+            self.out.push(Command::OpenConnection {
+                conn: id,
+                url: candidate.url,
+            });
+            self.arm_phase(Phase::Open, self.timeouts.socket_open_ms);
+            return;
+        }
+    }
+
+    fn arm_phase(&mut self, phase: Phase, ms: u64) {
+        if self.dial.is_none() || self.closed {
+            return;
+        }
+        self.clear_dial_timer();
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        if let Some(dial) = &mut self.dial {
+            dial.phase = phase;
+            dial.timer = Some(timer);
+        }
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: ms,
+        });
+    }
+
+    fn clear_dial_timer(&mut self) {
+        let Some(timer) = self.dial.as_mut().and_then(|dial| dial.timer.take()) else {
+            return;
+        };
+        self.out.push(Command::CancelDeadline { timer });
+    }
+
+    fn clear_round_timer(&mut self) {
+        let Some(timer) = self.round_timer.take() else {
+            return;
+        };
+        self.out.push(Command::CancelDeadline { timer });
+    }
+
+    fn clear_backoff(&mut self) {
+        if let Some(timer) = self.reconnect_timer.take() {
+            self.out.push(Command::CancelReconnect { timer });
+        }
+    }
+
+    fn record_failure(
+        &mut self,
+        candidate: RemoteCandidate,
+        stage: CandidateFailureStage,
+        unauthorized: bool,
+        code: Option<u16>,
+        reason: Option<String>,
+    ) {
+        let failure = CandidateFailure {
+            candidate,
+            stage,
+            unauthorized,
+            code,
+            reason,
+        };
+        self.failures.push(failure.clone());
+        self.out.push(Command::CandidateFailed { failure });
+    }
+
+    fn fail_current(
+        &mut self,
+        stage: CandidateFailureStage,
+        code: Option<u16>,
+        reason: Option<String>,
+    ) {
+        let Some(dial) = &self.dial else { return };
+        if self.closed || dial.done {
+            return;
+        }
+        let candidate = dial.candidate.clone();
+        let was_ready = dial.phase == Phase::Ready;
+        self.record_failure(
+            candidate,
+            stage,
+            code == Some(UNAUTHORIZED_CLOSE_CODE),
+            code,
+            reason,
+        );
+        self.abandon_dial();
+        self.reject_pending_calls();
+        if self.closed {
+            return;
+        }
+        if was_ready {
+            self.set_field("connection", Json::from(RECONNECTING));
+            self.begin_round();
+            return;
+        }
+        if self.round_expired {
+            self.round_failed();
+            return;
+        }
+        self.open_candidate();
+    }
+
+    /// Stop the current dial without recording a failure or starting the next
+    /// one. Its socket and deadline are retired; late events find no live
+    /// connection.
+    fn abandon_dial(&mut self) {
+        let Some(mut dial) = self.dial.take() else {
+            return;
+        };
+        dial.done = true;
+        if let Some(timer) = dial.timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        if let Some(conn) = dial.conn.take() {
+            self.out.push(Command::CloseSocket { conn: conn.id });
+        }
+    }
+
+    fn reject_pending_calls(&mut self) {
+        let pending: Vec<u64> = self.pending_calls.drain().map(|(_, op)| op).collect();
+        for op_id in pending {
+            if let Some(index) = self.active.iter().position(|op| op.op_id == op_id) {
+                self.fail_op(index, "Disconnected from host");
+            }
+        }
+    }
+
+    fn dialed_failures(&self) -> Vec<&CandidateFailure> {
+        self.failures
+            .iter()
+            .filter(|failure| failure.stage != CandidateFailureStage::Unsupported)
+            .collect()
+    }
+
+    fn unauthorized_round(&self) -> bool {
+        let dialed = self.dialed_failures();
+        !dialed.is_empty() && dialed.iter().all(|failure| failure.unauthorized)
+    }
+
+    fn aggregate_message(&self) -> String {
+        if self.unauthorized_round() {
+            return "Unauthorized: this client is not allowed (wrong token, or the device is not paired or was revoked)"
+                .to_string();
+        }
+        let details = self
+            .failures
+            .iter()
+            .map(describe_failure)
+            .collect::<Vec<_>>()
+            .join("; ");
+        if details.is_empty() {
+            REMOTE_ACCESS_UNAVAILABLE.to_string()
+        } else {
+            format!("Could not connect to the host: {details}")
+        }
+    }
+
+    fn round_failed(&mut self) {
+        if !self.round_active {
+            return;
+        }
+        self.round_active = false;
+        self.clear_round_timer();
+        self.clear_backoff();
+        self.abandon_dial();
+        if self.closed {
+            return;
+        }
+        let dialed = self.dialed_failures().len();
+        let unauthorized = self.unauthorized_round();
+        let empty_plan = self.round_candidates.is_empty();
+        if !self.ever_ready {
+            self.closed = true;
+            self.clear_all_timers();
+            self.ready_sent = true;
+            let outcome = if unauthorized {
+                ReadyOutcome::Unauthorized
+            } else if empty_plan {
+                ReadyOutcome::Error(REMOTE_ACCESS_UNAVAILABLE.to_string())
+            } else {
+                ReadyOutcome::Error(self.aggregate_message())
+            };
+            self.out.push(Command::Ready { outcome });
+            return;
+        }
+        if unauthorized {
+            self.closed = true;
+            self.clear_all_timers();
+            self.set_field("connection", Json::from(CLOSED));
+            self.set_field("unauthorized", Json::Bool(true));
+            self.notice(
+                Json::from("error"),
+                Json::from("Unauthorized: this client is not allowed (wrong token, or the device is not paired or was revoked)"),
+            );
+            return;
+        }
+        if dialed == 0 {
+            self.closed = true;
+            self.clear_all_timers();
+            self.set_field("connection", Json::from(CLOSED));
+            let message = if empty_plan {
+                REMOTE_ACCESS_UNAVAILABLE.to_string()
+            } else {
+                self.aggregate_message()
+            };
+            self.notice(Json::from("error"), Json::from(message));
+            return;
+        }
+        self.set_field("connection", Json::from(RECONNECTING));
+        if !self.outage_noticed {
+            self.outage_noticed = true;
+            let message = self.aggregate_message();
+            self.notice(Json::from("error"), Json::from(message));
+        }
+        self.schedule_backoff();
+    }
+
+    fn schedule_backoff(&mut self) {
+        self.clear_backoff();
+        let delay = self
+            .reconnect_min_ms
+            .saturating_mul(2u64.saturating_pow(self.attempt))
+            .min(self.reconnect_max_ms);
+        self.attempt = self.attempt.saturating_add(1);
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.reconnect_timer = Some(timer);
+        self.out.push(Command::ScheduleReconnect {
+            timer,
+            delay_ms: delay,
+        });
+    }
+
+    fn clear_all_timers(&mut self) {
+        self.clear_round_timer();
+        self.clear_backoff();
+        self.clear_dial_timer();
     }
 
     /// Translate one connection's outcomes into commands and state changes.
-    /// The conn's id is captured once — after `lost` it is dead and any
-    /// leftover outcomes drop.
     fn drain_conn_out(&mut self, outcomes: Vec<ConnOut>) {
+        // Capture the source once. A malformed frame can retire this dial and
+        // install the next candidate mid-batch; the rest of the batch still
+        // belongs to the old socket and must be dropped, never applied to its
+        // successor by re-reading `self.conn()`.
+        let Some((source_id, source_generation)) = self
+            .dial
+            .as_ref()
+            .and_then(|dial| dial.conn.as_ref().map(|conn| (conn.id, dial.generation)))
+        else {
+            return;
+        };
         for outcome in outcomes {
-            let Some(id) = self.conn.as_ref().map(|conn| conn.id) else {
+            if !self.live_dial(source_id, source_generation) {
                 return;
-            };
+            }
             match outcome {
-                ConnOut::SendBytes(bytes) => self.out.push(Command::SendBytes { conn: id, bytes }),
-                ConnOut::Close => self.out.push(Command::CloseSocket { conn: id }),
+                ConnOut::SendBytes(bytes) => {
+                    self.out.push(Command::SendBytes { conn: source_id, bytes })
+                }
+                ConnOut::Close => self.out.push(Command::CloseSocket { conn: source_id }),
                 ConnOut::Text(text) => self.receive_text(&text),
-                ConnOut::Closed { code, reason } => self.lost(code, reason),
-                ConnOut::Paired => self.paired(),
+                ConnOut::Closed { code, reason } => {
+                    let stage = self
+                        .dial
+                        .as_ref()
+                        .map(|dial| dial.phase.stage())
+                        .unwrap_or(CandidateFailureStage::Closed);
+                    self.fail_current(stage, Some(code), reason);
+                }
+                ConnOut::Authenticated { paired } => {
+                    self.arm_phase(Phase::Hello, self.timeouts.hello_ms);
+                    if paired {
+                        self.paired();
+                    }
+                }
+            }
+            if !self.live_dial(source_id, source_generation) {
+                return;
             }
         }
     }
 
     fn paired(&mut self) {
-        if let Some(details) = self.transport.mark_paired() {
+        let endpoint_set = self.pairing_endpoint_set.clone();
+        if let Some(details) = self.source.mark_paired() {
+            // The stored legacy URL is the invite's preferred path (relay
+            // first), not whichever candidate happened to verify message 2;
+            // old clients cannot use the endpoint set.
+            let url = match &endpoint_set {
+                Some(set) => preferred_legacy_url(&self.legacy_url, set),
+                None if !self.legacy_url.is_empty() => self.legacy_url.clone(),
+                None => details.0,
+            };
             self.out.push(Command::Paired {
-                url: details.0,
+                url,
                 host_key: details.1,
                 private_key: details.2,
+                endpoint_set,
             });
         }
     }
 
     /// `#send` — a text frame through the live connection (queues inside a
     /// secure connection that is still handshaking, like the reference).
-    /// The `skills` arg for a host that takes it (5.16, ADR-0028). An older
-    /// host never gets the list: the `$name` text still goes out and the
-    /// host matches it (or not) as it always did — nothing to refuse.
     fn set_bound_skills(&self, args: &mut JsonObject, skills: &Option<Vec<String>>) {
         if let Some(skills) = skills {
             if host_supports_feature(self.host_minor, HostFeature::BoundSkills) {
-                set(args, "skills", Json::array(skills.iter().map(|name| Json::from(name.clone())).collect()));
+                set(
+                    args,
+                    "skills",
+                    Json::array(skills.iter().map(|name| Json::from(name.clone())).collect()),
+                );
             }
         }
     }
 
     fn send(&mut self, frame: ClientFrame) {
         let text = encode_client_frame(&frame);
-        if let Some(conn) = self.conn.as_mut() {
+        if let Some(conn) = self.conn_mut() {
             let mut conn_out = Vec::new();
             conn.inner.send(text, &mut conn_out);
             self.drain_conn_out(conn_out);
@@ -679,16 +1442,24 @@ impl RemoteDurable {
             return;
         }
         let images = host_supports_feature(self.host_minor, HostFeature::ImageRefs)
-            && U16String(stream.clone()).to_string_lossy().starts_with("conversation:");
-        self.send(ClientFrame::Subscribe { stream: U16String(stream), images });
+            && U16String(stream.clone())
+                .to_string_lossy()
+                .starts_with("conversation:");
+        self.send(ClientFrame::Subscribe {
+            stream: U16String(stream),
+            images,
+        });
     }
 
-    /// `#receive` — one complete JSON text frame; errors are channel
+    /// `#receive` — one complete JSON text frame; errors are candidate
     /// failures like a JSON.parse/apply exception inside the transport.
     fn receive_text(&mut self, text: &str) {
         let parsed = match Json::parse(text) {
             Ok(parsed) => parsed,
-            Err(error) => return self.fail_channel(&format!("invalid frame JSON: {error}")),
+            Err(error) => {
+                return self
+                    .fail_channel(&format!("the host sent a frame that is not JSON: {error}"));
+            }
         };
         let frame = classify_server_frame(parsed);
         let result = match frame {
@@ -696,7 +1467,12 @@ impl RemoteDurable {
             ServerFrame::Snapshot { stream, value } => self.receive_snapshot(stream, value),
             ServerFrame::Ops { stream, ops } => self.receive_ops(stream, ops),
             ServerFrame::Ended { stream, reason } => self.receive_ended(stream, reason),
-            ServerFrame::Result { id, ok, value, error } => {
+            ServerFrame::Result {
+                id,
+                ok,
+                value,
+                error,
+            } => {
                 self.receive_result(id, ok, value, error);
                 Ok(())
             }
@@ -711,13 +1487,19 @@ impl RemoteDurable {
         }
     }
 
-    /// The secure transport's fail(): close the socket and surface a 1008 —
-    /// the same code a real malformed record produces.
+    /// A secure-channel or frame failure retires this candidate only; the
+    /// round decides whether another path gets a turn.
     fn fail_channel(&mut self, message: &str) {
-        if let Some(conn) = self.conn.take() {
-            self.out.push(Command::CloseSocket { conn: conn.id });
-        }
-        self.lost(1008, Some(format!("Secure channel failed: {message}")));
+        let stage = self
+            .dial
+            .as_ref()
+            .map(|dial| dial.phase.stage())
+            .unwrap_or(CandidateFailureStage::Closed);
+        self.fail_current(
+            stage,
+            Some(1008),
+            Some(format!("Secure channel failed: {message}")),
+        );
     }
 
     fn stream_of(value: &Json) -> Option<Vec<u16>> {
@@ -738,7 +1520,11 @@ impl RemoteDurable {
                 .get("hostVersion")
                 .and_then(Json::as_str)
                 .map(|s| s.to_string_lossy());
-            let direction = if host_major > PROTOCOL.major as f64 { "client-older" } else { "host-older" };
+            let direction = if host_major > PROTOCOL.major as f64 {
+                "client-older"
+            } else {
+                "host-older"
+            };
             self.closed = true;
             if self.state.is_none() {
                 self.ready_sent = true;
@@ -753,7 +1539,11 @@ impl RemoteDurable {
             } else {
                 let mut mismatch = JsonObject::new();
                 set(&mut mismatch, "hostMajor", Json::Number(host_major));
-                set(&mut mismatch, "clientMajor", Json::Number(PROTOCOL.major as f64));
+                set(
+                    &mut mismatch,
+                    "clientMajor",
+                    Json::Number(PROTOCOL.major as f64),
+                );
                 if let Some(version) = frame.get("hostVersion") {
                     set(&mut mismatch, "hostVersion", version.clone());
                 }
@@ -775,8 +1565,11 @@ impl RemoteDurable {
                 };
                 self.notice(Json::from("error"), Json::from(message));
             }
-            // The close below stays terminal — closed is already set.
-            self.send_close();
+            // A hello authenticated by this channel is a host-wide verdict:
+            // no other path would speak a different major (ADR-0032 §6).
+            self.closed = true;
+            self.clear_all_timers();
+            self.abandon_dial();
             return Ok(());
         }
         let host_minor = match &announced {
@@ -786,7 +1579,12 @@ impl RemoteDurable {
         };
         self.host_minor = host_minor;
         self.hello_received = true;
-        self.attempt = 0;
+        self.clear_dial_timer();
+        if let Some(dial) = &mut self.dial {
+            dial.phase = Phase::Sync;
+            dial.timer = None;
+        }
+        self.arm_phase(Phase::Sync, self.timeouts.sync_ms);
         self.docs = parse_docs(&frame)?;
         self.hello_models = frame.get("models").cloned().unwrap_or(Json::Null);
         self.hello_defaults = frame
@@ -822,17 +1620,44 @@ impl RemoteDurable {
         for stream in self.wanted.clone() {
             self.subscribe_stream(stream);
         }
+        if let Some(value) = frame.get("endpointSet") {
+            if let ParsedEndpointSet::Valid(set) = parse_endpoint_set(Some(value)) {
+                if self.follows_host_endpoints {
+                    self.candidates =
+                        candidate_plan(&self.legacy_url, Some(&set), self.page_protocol.as_deref());
+                }
+                let url = preferred_legacy_url(&self.legacy_url, &set);
+                self.out.push(Command::EndpointSet {
+                    host_key: self.host_key.clone(),
+                    url,
+                    endpoint_set: set,
+                });
+            }
+        }
+        let remaining: HashSet<Vec<u16>> = host_streams(host_minor)
+            .into_iter()
+            .map(|name| key(name))
+            .collect();
         if self.state.is_some() {
             self.set_or_clear("session", frame.get("session").cloned());
             self.set_or_clear("toolPresentations", frame.get("toolPresentations").cloned());
-            self.set_field("connection", Json::from(CONNECTED));
+            self.set_field("connection", Json::from(RECONNECTING));
             self.set_field("host", self.host_info());
+            self.reconnect_remaining = Some(remaining);
             self.refresh()?;
+            if self
+                .reconnect_remaining
+                .as_ref()
+                .is_some_and(HashSet::is_empty)
+            {
+                self.finish_reconnect();
+            }
         } else {
             // First view waits for every covered host stream's snapshot.
-            let remaining: HashSet<Vec<u16>> =
-                host_streams(host_minor).into_iter().map(|name| key(name)).collect();
-            self.first_view = Some(FirstView { remaining, hello: frame });
+            self.first_view = Some(FirstView {
+                remaining,
+                hello: frame,
+            });
         }
         Ok(())
     }
@@ -860,6 +1685,12 @@ impl RemoteDurable {
                 first_ready = true;
             }
         }
+        let mut reconnect_ready = false;
+        if let Some(remaining) = &mut self.reconnect_remaining {
+            if remaining.remove(&units) && remaining.is_empty() {
+                reconnect_ready = true;
+            }
+        }
         for op in self.active.iter_mut() {
             if let Some(Wait::Snapshots(waiting)) = &mut op.waiting {
                 if waiting.remove(&units) && waiting.is_empty() {
@@ -870,6 +1701,8 @@ impl RemoteDurable {
         }
         if first_ready {
             self.finish_first_view();
+        } else if reconnect_ready {
+            self.finish_reconnect();
         }
         for op_id in ready_ops {
             if let Some(index) = self.active.iter().position(|op| op.op_id == op_id) {
@@ -954,88 +1787,18 @@ impl RemoteDurable {
         }
     }
 
-    // ─── Lost/close/reconnect ───────────────────────────────────────────
-
-    /// `#lost` — the socket died. Pending calls fail "Disconnected from
-    /// host"; what happens next follows the close-code policy.
-    fn lost(&mut self, code: u16, reason: Option<String>) {
-        self.conn = None;
-        let pending: Vec<u64> = self.pending_calls.drain().map(|(_, op)| op).collect();
-        for op_id in pending {
-            if let Some(index) = self.active.iter().position(|op| op.op_id == op_id) {
-                self.fail_op(index, "Disconnected from host");
-            }
-        }
-        if self.state.is_none() {
-            self.closed = true;
-            if !self.ready_sent {
-                self.ready_sent = true;
-                self.out.push(Command::Ready {
-                    outcome: if code == UNAUTHORIZED_CLOSE_CODE {
-                        ReadyOutcome::Unauthorized
-                    } else {
-                        ReadyOutcome::Error(
-                            reason.unwrap_or_else(|| format!("Could not connect to {}", self.transport.url())),
-                        )
-                    },
-                });
-            }
-            return;
-        }
-        if self.closed {
-            return;
-        }
-        if code == UNAUTHORIZED_CLOSE_CODE {
-            self.closed = true;
-            self.set_field("connection", Json::from(CLOSED));
-            self.set_field("unauthorized", Json::Bool(true));
-            self.notice(
-                Json::from("error"),
-                Json::from("Unauthorized: this client is not allowed (wrong token, or the device is not paired or was revoked)"),
-            );
-            return;
-        }
-        // 4400 is terminal like 4401 (ADR-0018 §4): the host rejected a
-        // malformed frame, and a reconnect would send the same ones. A
-        // plain 1008 (a failed secure handshake, say) still reconnects.
-        if code == INVALID_FRAME_CLOSE_CODE {
-            self.closed = true;
-            self.set_field("connection", Json::from(CLOSED));
-            let suffix = reason.map(|r| format!(": {r}")).unwrap_or_default();
-            self.notice(
-                Json::from("error"),
-                Json::from(format!("The host rejected a malformed frame from this client{suffix}")),
-            );
-            return;
-        }
-        self.set_field("connection", Json::from(RECONNECTING));
-        let delay = self.reconnect_min_ms.saturating_mul(2u64.saturating_pow(self.attempt)).min(self.reconnect_max_ms);
-        self.attempt += 1;
-        let timer = self.next_timer;
-        self.next_timer += 1;
-        self.reconnect_timer = Some(timer);
-        self.out.push(Command::ScheduleReconnect { timer, delay_ms: delay });
-    }
-
     /// `#close` — the app ended the session.
     fn close(&mut self) {
         if self.closed {
             return;
         }
         self.closed = true;
-        // A session that ends while backing off leaves no timer behind.
-        if let Some(timer) = self.reconnect_timer.take() {
-            self.out.push(Command::CancelReconnect { timer });
-        }
+        self.clear_all_timers();
         self.set_field("connection", Json::from(CLOSED));
-        self.send_close();
-    }
-
-    fn send_close(&mut self) {
-        if let Some(conn) = self.conn.as_mut() {
-            let mut conn_out = Vec::new();
-            conn.inner.close(&mut conn_out);
-            self.drain_conn_out(conn_out);
+        if let Some(dial) = self.dial.take() {
+            if let Some(conn) = dial.conn {
+                self.out.push(Command::CloseSocket { conn: conn.id });
+            }
         }
     }
 
@@ -1698,7 +2461,7 @@ impl RemoteDurable {
             .and_then(Json::as_str)
             .map(|s| s.to_string_lossy() == CONNECTED)
             .unwrap_or(false);
-        if self.conn.is_none() || !connected {
+        if self.conn().is_none() || !connected {
             return Err("Not connected to the host".to_string());
         }
         let id = self.next_call;
@@ -2019,11 +2782,68 @@ impl RemoteDurable {
             self.state = None;
             return self.fail_channel(&error);
         }
+        self.mark_dial_ready();
         if !self.ready_sent {
             self.ready_sent = true;
-            self.out.push(Command::Ready { outcome: ReadyOutcome::Connected });
+            self.out.push(Command::Ready {
+                outcome: ReadyOutcome::Connected,
+            });
         }
     }
+
+    /// The current candidate completed every required snapshot. Cancel both
+    /// its stage deadline and the whole-round budget before declaring ready.
+    fn mark_dial_ready(&mut self) {
+        self.clear_round_timer();
+        self.clear_dial_timer();
+        if let Some(dial) = &mut self.dial {
+            dial.phase = Phase::Ready;
+        }
+        self.round_active = false;
+        self.reconnect_remaining = None;
+        self.attempt = 0;
+        self.ever_ready = true;
+        self.outage_noticed = false;
+    }
+
+    /// A reconnect's fresh snapshots arrived: the connection is usable again.
+    fn finish_reconnect(&mut self) {
+        self.reconnect_remaining = None;
+        self.set_field("connection", Json::from(CONNECTED));
+        if let Err(error) = self.refresh() {
+            return self.fail_channel(&error);
+        }
+        self.mark_dial_ready();
+    }
+}
+
+fn describe_failure(failure: &CandidateFailure) -> String {
+    let role = match failure.candidate.role {
+        RemoteCandidateRole::Loopback => "local",
+        RemoteCandidateRole::Relay => "relay",
+        RemoteCandidateRole::Direct => "direct",
+        RemoteCandidateRole::Legacy => "legacy",
+    };
+    let where_ = format!("{role} {}", failure.candidate.url);
+    if failure.stage == CandidateFailureStage::Unsupported {
+        return format!(
+            "{where_} skipped ({})",
+            failure.reason.as_deref().unwrap_or("unsupported")
+        );
+    }
+    let code = failure
+        .code
+        .map(|code| format!(" (close {code})"))
+        .unwrap_or_default();
+    let reason = failure
+        .reason
+        .as_deref()
+        .map(|reason| format!(": {reason}"))
+        .unwrap_or_default();
+    format!(
+        "{where_} failed at {}{code}{reason}",
+        failure.stage.as_str()
+    )
 }
 
 fn num_id(value: Option<&Json>) -> Option<u64> {

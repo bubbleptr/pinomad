@@ -6,12 +6,72 @@
 // the platform's; the core only judges the outcome.
 
 use crate::account as core;
-use crate::ffi::hosts::{StoredHost, StoredHostAccount};
+use crate::ffi::hosts::{EndpointSet, StoredHost, StoredHostAccount};
 
 pub use crate::account::{
-    AccountError, AccountHost, AccountHostPairing, AccountHostStatus, AccountHttpHeader, AccountHttpRequest,
-    AccountOp, AccountOpKind, AccountsProbe, AccountUser, AccountValue, JoinToken, LoginSuccess, PairingOffer,
+    AccountError, AccountHost, AccountHostPairing, AccountHostStatus, AccountHttpHeader,
+    AccountHttpRequest, AccountOp, AccountOpKind, AccountUser, AccountsProbe, JoinToken,
+    LoginSuccess,
 };
+
+/// The pairing answer at the boundary: the core's typed value plus the
+/// optional remote candidate set (ADR-0032). The core record itself keeps
+/// the UTF-16-safe endpoint model, so the FFI twin is the typed copy.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct PairingOffer {
+    pub url: String,
+    pub host_key: String,
+    pub secret: String,
+    pub expires_at: f64,
+    #[uniffi(default = None)]
+    pub endpoint_set: Option<EndpointSet>,
+}
+
+impl PairingOffer {
+    fn from_core(offer: &core::PairingOffer) -> Self {
+        PairingOffer {
+            url: offer.url.clone(),
+            host_key: offer.host_key.clone(),
+            secret: offer.secret.clone(),
+            expires_at: offer.expires_at,
+            endpoint_set: offer.endpoint_set.as_ref().map(EndpointSet::from_core),
+        }
+    }
+
+    fn to_core(&self) -> core::PairingOffer {
+        core::PairingOffer {
+            url: self.url.clone(),
+            host_key: self.host_key.clone(),
+            secret: self.secret.clone(),
+            expires_at: self.expires_at,
+            endpoint_set: self.endpoint_set.as_ref().and_then(EndpointSet::to_core),
+        }
+    }
+}
+
+/// The decoded success payload, mirroring `core::AccountValue`.
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum AccountValue {
+    Login(LoginSuccess),
+    Me(AccountUser),
+    Unit,
+    JoinToken(JoinToken),
+    Hosts(Vec<AccountHost>),
+    PairingOffer(PairingOffer),
+}
+
+fn value_from_core(value: core::AccountValue) -> AccountValue {
+    match value {
+        core::AccountValue::Login(value) => AccountValue::Login(value),
+        core::AccountValue::Me(value) => AccountValue::Me(value),
+        core::AccountValue::Unit => AccountValue::Unit,
+        core::AccountValue::JoinToken(value) => AccountValue::JoinToken(value),
+        core::AccountValue::Hosts(value) => AccountValue::Hosts(value),
+        core::AccountValue::PairingOffer(value) => {
+            AccountValue::PairingOffer(PairingOffer::from_core(&value))
+        }
+    }
+}
 
 /// One `matchAccountHosts` verdict — `stored` is the FFI record, not the
 /// core's raw-carrying one.
@@ -32,12 +92,13 @@ fn to_core(host: &StoredHost) -> crate::stored_host::StoredHost {
         host_key: host.host_key.clone(),
         private_key: host.private_key.clone(),
         name: host.name.clone(),
-        account: host
-            .account
-            .as_ref()
-            .map(|link| crate::stored_host::StoredHostAccount::new(link.server_origin.clone(), link.host_id.clone())),
-        // The UniFFI surface does not expose endpoint sets yet (issue #348/#350).
-        endpoint_set: None,
+        account: host.account.as_ref().map(|link| {
+            crate::stored_host::StoredHostAccount::new(
+                link.server_origin.clone(),
+                link.host_id.clone(),
+            )
+        }),
+        endpoint_set: host.endpoint_set.as_ref().and_then(EndpointSet::to_core),
     }
 }
 
@@ -51,6 +112,7 @@ fn from_core(host: &crate::stored_host::StoredHost) -> StoredHost {
             server_origin: link.server_origin.clone(),
             host_id: link.host_id.clone(),
         }),
+        endpoint_set: host.endpoint_set.as_ref().map(EndpointSet::from_core),
     }
 }
 
@@ -80,7 +142,7 @@ pub fn account_response(
     status: u16,
     body: String,
 ) -> Result<AccountValue, AccountError> {
-    core::account_response(op_kind, status, &body)
+    core::account_response(op_kind, status, &body).map(value_from_core)
 }
 
 /// The probe verdict: `status` None means the request failed or timed out,
@@ -130,5 +192,5 @@ pub fn match_account_hosts(
 /// offer fails the pairing-link rule; the platform reports `invalid_offer`.
 #[uniffi::export]
 pub fn account_pairing_link(offer: PairingOffer) -> Option<String> {
-    core::account_pairing_link(&offer)
+    core::account_pairing_link(&offer.to_core())
 }
