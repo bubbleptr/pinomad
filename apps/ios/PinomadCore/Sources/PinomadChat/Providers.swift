@@ -526,6 +526,58 @@ public func providerLogoAsset(id: String, baseUrl: String? = nil) -> String? {
     return logoOf.first { id == $0.id || id.hasPrefix("\($0.id)-") }.map { "provider-\($0.logo)" }
 }
 
+/// Model family → logo, tested against each token of the lowercased id.
+/// Family names, plus a vendor prefix only where all its models share one
+/// logo: no `google`, since `google/gemma-3` has to reach Gemma. Short names
+/// (`o3`, `hy4`, `ring`) match the whole token so they don't catch longer
+/// words. Mirrors the web's model-logo.tsx.
+// Regex isn't Sendable, but these are never mutated, only matched against.
+nonisolated(unsafe) private let makerOf: [(pattern: Regex<Substring>, logo: String)] = [
+    (/^claude/, "claude-color"),
+    (/^(?:gpt|chatgpt|codex)|^o\d$/, "openai"),
+    (/^gemini/, "gemini-color"),
+    (/gemma/, "gemma-color"),
+    (/^grok/, "grok"),
+    (/^(?:qwen|qwq|qvq)/, "qwen-color"),
+    (/^deepseek/, "deepseek-color"),
+    (/^(?:kimi|moonshot)/, "kimi-color"),
+    (/^(?:glm|chatglm)/, "zai"),
+    (/^minimax/, "minimax-color"),
+    (/^(?:mistral|mixtral|codestral|devstral|magistral|ministral|pixtral|voxtral)/, "mistral-color"),
+    (/^llama|^muse$/, "meta-color"),
+    (/^(?:mimo|xiaomimimo)/, "xiaomimimo"),
+    (/^(?:nvidia|nemotron)/, "nvidia-color"),
+    (/^nova$/, "nova-color"),
+    (/^(?:command|c4ai|aya|cohere)$/, "cohere-color"),
+    (/^(?:seed|doubao|bytedance)/, "bytedance-color"),
+    (/^hunyuan|^hy\d$/, "hunyuan-color"),
+    (/^(?:step\d*|stepfun)$/, "stepfun-color"),
+    (/^longcat/, "longcat-color"),
+    (/^(?:ling|ring)$/, "ling-color"),
+    (/^(?:phi\d*|mai)$/, "microsoft-color"),
+    (/^granite/, "ibm"),
+    (/^solar/, "upstage-color"),
+    (/^mercury$/, "inception"),
+    (/^lfm/, "liquid"),
+    (/^laguna$/, "poolside-color"),
+    (/^trinity$/, "arcee-color"),
+    (/^kat$/, "kwaipilot-color"),
+    (/^(?:sakana|fugu|namazu)$/, "sakana-color"),
+    (/^reka$/, "reka"),
+]
+
+/// The asset catalog name of a model's logo: its maker's, found in the id
+/// whoever serves it (`us.anthropic.claude-…` on Bedrock is Claude), else
+/// its provider's. The leftmost family wins, so a fine-tune reads as its
+/// maker's (`deepseek-r1-distill-llama` is DeepSeek).
+public func modelLogoAsset(_ model: ModelRef) -> String? {
+    let tokens = model.modelId.lowercased().split { !($0.isASCII && ($0.isLetter || $0.isNumber)) }
+    for token in tokens {
+        if let maker = makerOf.first(where: { token.contains($0.pattern) }) { return "provider-\(maker.logo)" }
+    }
+    return providerLogoAsset(id: model.provider)
+}
+
 /// Up to two initials for a provider without a logo.
 public func providerInitials(_ name: String) -> String {
     name.split(whereSeparator: \.isWhitespace).prefix(2).compactMap(\.first).map { $0.uppercased() }.joined()

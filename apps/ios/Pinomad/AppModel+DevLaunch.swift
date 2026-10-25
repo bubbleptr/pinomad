@@ -121,6 +121,13 @@ extension AppModel {
             startAgentDemo(mode)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_MODELS"] {
+            // The model capsule and sheet with makers' logos; `sheet` opens
+            // the sheet over the conversation.
+            phase = .connected
+            startModelsDemo(sheet: mode == "sheet")
+            return true
+        }
         if !injected.isEmpty {
             // No auto-pair: pre-fill the pairing field after the normal
             // launch, exactly as a pasted link would.
@@ -703,6 +710,62 @@ extension AppModel {
         ))
         replyStreams.sync(chat: chat)
         devShowsModelSheet = true
+    }
+
+    /// `PINOMAD_DEMO_MODELS`: models from many makers, some served by
+    /// another provider (Claude on Copilot and Bedrock) and one with no
+    /// logo, so the capsule and the sheet's logos can be photographed
+    /// without a live host. The capsule shows GPT-5, a monochrome logo
+    /// that takes the text's color; the sheet opens on Claude.
+    private func startModelsDemo(sheet: Bool) {
+        navPath = [.conversation(1)]
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let levels: [ThinkingLevel] = [.off, .low, .medium, .high]
+        let entries: [(provider: String, modelId: String, name: String, reasons: Bool)] = [
+            ("github-copilot", "claude-sonnet-4.5", "Claude Sonnet 4.5", true),
+            ("amazon-bedrock", "us.anthropic.claude-opus-4-1-20250805-v1:0", "Claude Opus 4.1", true),
+            ("openai", "gpt-5", "GPT-5", true),
+            ("github-copilot", "o4-mini", "o4-mini", true),
+            ("google", "gemini-2.5-pro", "Gemini 2.5 Pro", true),
+            ("openrouter", "google/gemma-3-27b-it", "Gemma 3 27B", false),
+            ("xai", "grok-4", "Grok 4", true),
+            ("openrouter", "moonshotai/kimi-k2", "Kimi K2", false),
+            ("groq", "deepseek-r1-distill-llama-70b", "DeepSeek R1 Distill Llama 70B", true),
+            ("openrouter", "qwen/qwen3-coder", "Qwen3 Coder", false),
+            ("mistral", "devstral-medium-latest", "Devstral Medium", false),
+            ("openrouter", "microsoft/phi-4", "Phi 4", false),
+            ("custom-lab", "house-model", "House Model", false),
+        ]
+        let models = entries.map {
+            ModelSummary(provider: $0.provider, modelId: $0.modelId, name: $0.name,
+                         contextWindow: 200_000, thinkingLevels: $0.reasons ? levels : [], images: true)
+        }
+        let picked = entries[sheet ? 0 : 2]
+        let current = ModelRef(provider: picked.provider, modelId: picked.modelId)
+        let summary = ConversationSummary(
+            id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+            title: "Pick a model", status: nil, updatedAt: now,
+            label: nil, role: nil, currentAgent: nil, activity: nil
+        )
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "Which model should review the parser change?", images: []),
+        ]
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: [],
+            agent: AgentState(model: current, thinkingLevel: .medium, instructions: nil, cwd: nil),
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false,
+            contextUsage: nil, fresh: true, freshEpoch: 1
+        )
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: nil, hostName: "Demo Mac", settings: nil, devices: [],
+            organized: Organized(chats: [ConversationNode(summary: summary, children: [])],
+                                 projects: [], archived: []),
+            notices: [], models: models, defaults: Defaults(model: current, thinkingLevel: .medium),
+            agents: nil, conversation: conversation
+        ))
+        replyStreams.sync(chat: chat)
+        devShowsModelSheet = sheet
     }
 
     /// Grows a live run by one step every two seconds (commands, a thinking

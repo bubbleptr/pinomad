@@ -64,9 +64,9 @@ struct ModelSheet: View {
                         Button {
                             pick(summary)
                         } label: {
+                            let ref = ModelRef(provider: summary.provider, modelId: summary.modelId)
                             Row(title: summary.name ?? summary.modelId, subtitle: summary.provider,
-                                checked: sameModel(a: ModelRef(provider: summary.provider, modelId: summary.modelId),
-                                                   b: selected.model))
+                                checked: sameModel(a: ref, b: selected.model), logo: ref)
                         }
                     }
                 }
@@ -146,9 +146,16 @@ private struct Row: View {
     let checked: Bool
     /// False mutes the row: it is shown but not a button.
     var available = true
+    /// A model row's logo; the slot stays when it has none.
+    var logo: ModelRef? = nil
 
     var body: some View {
         HStack {
+            if let logo {
+                ModelLogo(model: logo, size: 20, reserve: true)
+                    .foregroundStyle(.primary)
+                    .padding(.trailing, 4)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).foregroundStyle(available ? Color.primary : Color.secondary)
                 if let subtitle {
@@ -162,5 +169,28 @@ private struct Row: View {
             }
         }
         .contentShape(.rect)
+    }
+}
+
+/// A model's logo (its maker's, else its provider's) as a bare glyph beside
+/// its name; monochrome logos take the foreground style like text.
+/// Decorative: the name is always beside it. With no logo it draws nothing,
+/// or an empty slot of the same size when `reserve` keeps a list's titles
+/// aligned.
+struct ModelLogo: View {
+    let model: ModelRef
+    var size: CGFloat = 16
+    var reserve = false
+
+    var body: some View {
+        if let asset = modelLogoAsset(model) {
+            Image(asset)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else if reserve {
+            Color.clear.frame(width: size, height: size)
+        }
     }
 }
