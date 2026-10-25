@@ -11,3 +11,5 @@ apps/ios/**/.swiftpm/
 xcuserdata/
 target/
 storybook-static/
+.tanstack/
+.wrangler/

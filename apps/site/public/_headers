@@ -1,8 +1,10 @@
-# Cloudflare Pages headers. The page loads only same-origin files (Vite emits
-# external JS/CSS, fonts are self-hosted, no inline script/style), so the CSP can
-# stay at 'self'.
+# Cloudflare Pages headers. Everything is same-origin (fonts self-hosted, the docs
+# search index is a static JSON file). The prerendered pages carry inline scripts
+# whose hashes change every build, so this header allows 'unsafe-inline' and each
+# page's own <meta> CSP, written by scripts/csp.ts, narrows it to those hashes:
+# the browser enforces both policies.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin

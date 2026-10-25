@@ -1206,3 +1206,9 @@ html[lang="zh-CN"] .node-labels text {
     display: none;
   }
 }
+
+/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
+html:not([data-app-user]) .when-signed-in,
+html[data-app-user] .when-signed-out {
+  display: none;
+}
