@@ -146,6 +146,10 @@ async function stubDesktopBridge(context: BrowserContext): Promise<void> {
           if (index !== -1) write(hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
           return Promise.resolve();
         },
+        updateEndpoints: (hostKey: string, endpointSet: unknown) => {
+          write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
+          return Promise.resolve();
+        },
       },
       // The real preload answers this from main; the stub stands in for it.
       deviceName: () => Promise.resolve("Linux Desktop (test-box)"),
@@ -2455,6 +2459,36 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   await page.getByText("No host link", { exact: true }).waitFor();
 });
 
+it("carries the invite's endpoint set through pairing into the stored host", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["paired"], remote: { port: 0 } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+  const parsedLink = parsePairingLink(pairingUrl)!;
+  // The host publishes remote candidates; the pairing link carries them.
+  expect(parsedLink.endpointSet).toBeDefined();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${webOrigin}/${new URL(pairingUrl).hash}`);
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+
+  const stored = await page.evaluate(() => (JSON.parse(localStorage.getItem("pinomad.hosts")!) as {
+    url: string;
+    endpointSet?: unknown;
+  }[])[0]!);
+  expect(stored.endpointSet).toEqual(parsedLink.endpointSet);
+  const relay = parsedLink.endpointSet!.endpoints.find((endpoint) => endpoint.role === "relay");
+  const direct = parsedLink.endpointSet!.endpoints.find((endpoint) => endpoint.role === "direct");
+  expect(stored.url).toBe((relay ?? direct)!.url);
+
+  // A reload with no fragment reconnects from the stored record.
+  await page.goto(`${webOrigin}/`);
+  await prompt(page).waitFor();
+});
+
 it("manages paired devices from Settings → Devices", async () => {
   const webOrigin = await startWeb();
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
@@ -3048,6 +3082,10 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
           write(read().map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
           return Promise.resolve();
         },
+        updateEndpoints: (hostKey: string, endpointSet: unknown) => {
+          write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
+          return Promise.resolve();
+        },
       },
     };
     (window as unknown as { testAllowSaves: () => void }).testAllowSaves = () => {
@@ -3123,6 +3161,10 @@ const fakeUpdatesBridge = `{
       },
       setName: (hostKey, name) => {
         write(read().map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
+        return Promise.resolve();
+      },
+      updateEndpoints: (hostKey, endpointSet) => {
+        write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
         return Promise.resolve();
       },
     },

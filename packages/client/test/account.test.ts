@@ -17,6 +17,7 @@ import {
   type AccountFetch,
   type AccountFetchInit,
   type AccountHost,
+  type PairConnectArgs,
 } from "../src/account.ts";
 import type { StoredHost } from "../src/stored-host.ts";
 
@@ -350,6 +351,78 @@ describe("accountPairingFragment + pairViaAccount", () => {
     expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: HOST_ID });
     expect(seen.name).toBe("test device");
     expect(seen.url).toBe("wss://relay.example.com/c/host");
+  });
+
+  it("carries a forwarded endpoint set through the offer and the stored host", async () => {
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "ws://192.168.1.5:7422/secure" },
+      ],
+    };
+    const offered = { ...offer(), endpointSet };
+    const fragment = accountPairingFragment(offered);
+    expect(fragment).toBeDefined();
+    const params = new URLSearchParams(fragment!);
+    expect(JSON.parse(params.get("endpointSet")!)).toEqual(endpointSet);
+
+    const client = bearer([{ status: 200, body: offered }]);
+    const result = await pairViaAccount(client, HOST_ID, "d", () => Promise.resolve());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.endpointSet).toEqual(endpointSet);
+    expect(result.value.url).toBe("wss://relay.example.com/c/host");
+  });
+
+  it("tries every candidate with one device identity and one secret until message 2", async () => {
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://dead-relay.example/c/host" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "wss://direct.example/c/host" },
+      ],
+    };
+    const client = bearer([{ status: 200, body: { ...offer(), endpointSet } }]);
+    const attempts: PairConnectArgs[] = [];
+    const result = await pairViaAccount(client, HOST_ID, "d", (args) => {
+      attempts.push(args);
+      return attempts.length === 1 ? Promise.reject(new Error("relay offline")) : Promise.resolve();
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(attempts.map((attempt) => attempt.url)).toEqual([
+      "wss://dead-relay.example/c/host",
+      "wss://direct.example/c/host",
+    ]);
+    expect(attempts[0]!.device.privateKey).toEqual(attempts[1]!.device.privateKey);
+    expect(attempts[0]!.secret).toBe(attempts[1]!.secret);
+    expect(attempts[0]!.signal).toBeDefined();
+    expect(result.value.privateKey).toBe(toBase64Url(attempts[0]!.device.privateKey));
+  });
+
+  it("rejects malformed or explicitly empty forwarded sets", async () => {
+    for (const endpointSet of [
+      { schemaVersion: 1, endpoints: [] },
+      { schemaVersion: 1, endpoints: "junk" },
+      { schemaVersion: 1, endpoints: [{ transport: "webSocket", role: "relay", url: "http://relay" }] },
+    ]) {
+      const client = bearer([{ status: 200, body: { ...offer(), endpointSet } }]);
+      expect(await client.requestPairing("host")).toEqual({ ok: false, error: { code: "invalid_response" } });
+    }
+    // An unknown schema/transport falls back to the legacy url, as old servers do.
+    const fallback = bearer([
+      {
+        status: 200,
+        body: {
+          ...offer(),
+          endpointSet: { schemaVersion: 2, endpoints: [{ transport: "quic", role: "relay", url: "quic://x" }] },
+        },
+      },
+    ]);
+    const parsed = await fallback.requestPairing("host");
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.endpointSet).toBeUndefined();
   });
 
   it("propagates the server's refusal and never opens a socket", async () => {

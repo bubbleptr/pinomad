@@ -39,7 +39,8 @@ describe("resolveAddress", () => {
 
   it("validates endpointSet on the scanned page fragment like a pasted link", () => {
     const relay: HostEndpoint = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
-    const valid = encodeEndpointSetParam({ schemaVersion: 1, endpoints: [relay] });
+    const endpointSet = { schemaVersion: 1 as const, endpoints: [relay] };
+    const valid = encodeEndpointSetParam(endpointSet);
     const target = encodeURIComponent(relay.url);
     const fragment = (endpointSet: string) =>
       `#pair=${hostKey}.abc&url=${target}&endpointSet=${endpointSet}`;
@@ -49,6 +50,7 @@ describe("resolveAddress", () => {
       url: relay.url,
       hostKey,
       secret: "abc",
+      endpointSet,
     });
     // A loopback legacy url stays the client-local entry even with a remote set.
     const loopback = "ws://127.0.0.1:7420/secure";
@@ -59,7 +61,7 @@ describe("resolveAddress", () => {
         [],
         null,
       ),
-    ).toEqual({ kind: "pair", url: loopback, hostKey, secret: "abc" });
+    ).toEqual({ kind: "pair", url: loopback, hostKey, secret: "abc", endpointSet });
 
     // Empty, malformed and repeated sets reject the whole invite.
     const empty = encodeEndpointSetParam({ schemaVersion: 1, endpoints: [] });
@@ -106,6 +108,15 @@ describe("resolveAddress", () => {
     expect(resolveAddress(`#pair=${hostKey.slice(0, -4)}.abc`, http, [], null)).toBeUndefined();
     // A malformed fragment stays unresolved even with hosts stored.
     expect(resolveAddress("#pair=nodot", http, [storedA], storedA.hostKey)).toBeUndefined();
+  });
+
+  it("carries a stored device's endpoint set into the connection plan", () => {
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "direct" as const, url: "wss://direct.example/secure" }],
+    };
+    const stored = { ...storedA, endpointSet };
+    expect(resolveAddress("", http, [stored], null)).toEqual({ kind: "device", ...stored });
   });
 
   it("connects to the active host when there is no fragment", () => {

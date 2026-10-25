@@ -13,6 +13,8 @@ import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
+import { mergeStoredHost, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
+import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
@@ -98,7 +100,14 @@ export function App() {
   const state = useMemo<HostsState>(
     () =>
       loaded === undefined
-        ? { store, hosts: [], activeHostKey: null, paired: () => Promise.resolve(), setName: () => Promise.resolve() }
+        ? {
+            store,
+            hosts: [],
+            activeHostKey: null,
+            paired: () => Promise.resolve(),
+            setName: () => Promise.resolve(),
+            endpoints: () => Promise.resolve(),
+          }
         : {
             store,
             hosts: loaded.hosts,
@@ -106,15 +115,18 @@ export function App() {
             paired: async (host) => {
               await store.save(host);
               localStorage.setItem(ACTIVE_HOST_KEY, host.hostKey);
-              setLoaded((prev) =>
-                prev === undefined
-                  ? prev
-                  : {
-                      ...prev,
-                      hosts: [...prev.hosts.filter((each) => each.hostKey !== host.hostKey), host],
-                      activeHostKey: host.hostKey,
-                    },
-              );
+              setLoaded((prev) => {
+                if (prev === undefined) return prev;
+                const existing = prev.hosts.find((each) => each.hostKey === host.hostKey);
+                return {
+                  ...prev,
+                  hosts: [
+                    ...prev.hosts.filter((each) => each.hostKey !== host.hostKey),
+                    existing === undefined ? host : mergeStoredHost(existing, host),
+                  ],
+                  activeHostKey: host.hostKey,
+                };
+              });
             },
             // A settings-stream rename lands here: the in-memory list moves
             // the same way the store did — order and selection untouched.
@@ -126,6 +138,24 @@ export function App() {
                   : {
                       ...prev,
                       hosts: prev.hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)),
+                    },
+              );
+            },
+            // A hello's remote set is an address-only update: identity,
+            // account, name and selection stay untouched, and a forgotten
+            // host is not resurrected.
+            endpoints: async (hostKey, endpointSet) => {
+              await store.updateEndpoints(hostKey, endpointSet);
+              setLoaded((prev) =>
+                prev === undefined
+                  ? prev
+                  : {
+                      ...prev,
+                      hosts: prev.hosts.map((each) =>
+                        each.hostKey === hostKey
+                          ? updateStoredHostEndpoints(each, endpointSet)
+                          : each,
+                      ),
                     },
               );
             },
@@ -229,7 +259,7 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
 function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "pair" | "device" }> }) {
-  const { store, hosts, paired } = useHosts();
+  const { store, hosts, paired, endpoints } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   // A pairing whose save failed (e.g. locked keychain): the device key would
   // die with the process, and the spent invite can't pair again — surface it
@@ -257,28 +287,52 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
       live = false;
     };
   }, [address]);
+  const candidates = useMemo(
+    () => candidatePlan(address.url, address.endpointSet, { pageProtocol: window.location.protocol }),
+    [address],
+  );
   const options = useMemo<RemoteDurableOptions | undefined>(() => {
-    const base = { url: address.url, hostKey: fromBase64Url(address.hostKey), device };
-    if (address.kind !== "pair") return { transport: secureWebSocketTransport(base) };
     // A pair address holds off opening the socket until the label resolves —
     // the name travels inside the first handshake.
-    if (pairName === undefined) return undefined;
+    if (address.kind === "pair" && pairName === undefined) return undefined;
+    const pairing = address.kind === "pair" ? { secret: address.secret, name: pairName! } : undefined;
     return {
-      transport: secureWebSocketTransport({
-        ...base,
-        pairing: { secret: address.secret, name: pairName },
-        onPaired: () => {
-          const host = { url: address.url, hostKey: address.hostKey, privateKey: toBase64Url(device.privateKey) };
-          void paired(host).catch((error: unknown) => {
-            console.error("Could not save the paired host", error);
-            setUnsaved(host);
-          });
-          // The fragment held a one-time secret; it must not linger in history.
-          history.replaceState(null, "", window.location.pathname + window.location.search);
-        },
-      }),
+      candidates,
+      legacyUrl: address.url,
+      pageProtocol: window.location.protocol,
+      ...(pairing === undefined ? {} : { pairing }),
+      openTransport: (candidate, currentPairing) =>
+        secureWebSocketTransport({
+          url: candidate.url,
+          hostKey: fromBase64Url(address.hostKey),
+          device,
+          ...(currentPairing === undefined ? {} : { pairing: currentPairing }),
+        }),
+      onPaired: () => {
+        const endpointSet = address.endpointSet;
+        const host: StoredHost = {
+          url: endpointSet === undefined ? address.url : preferredLegacyUrl(address.url, endpointSet),
+          hostKey: address.hostKey,
+          privateKey: toBase64Url(device.privateKey),
+          ...(endpointSet === undefined ? {} : { endpointSet }),
+        };
+        const saved = stored === undefined ? host : mergeStoredHost(stored, host);
+        void paired(saved).catch((error: unknown) => {
+          console.error("Could not save the paired host", error);
+          setUnsaved(saved);
+        });
+        // The fragment held a one-time secret; it must not linger in history.
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      },
+      // A validated hello set, including an explicit empty one, is an
+      // address-only update keyed by hostKey; identity and account stay put.
+      onEndpointSet: (endpointSet) => {
+        void endpoints(address.hostKey, endpointSet).catch((error: unknown) =>
+          console.error("Could not store the host's remote endpoints", error),
+        );
+      },
     };
-  }, [address, device, paired, pairName]);
+  }, [address, candidates, device, endpoints, paired, pairName, stored]);
   if (options === undefined) return <Centered>{null}</Centered>;
   const rejected =
     address.kind === "pair" ? (
@@ -331,7 +385,7 @@ function SecureClient({ address }: { address: Extract<ResolvedAddress, { kind: "
   return (
     <RemoteWorkbench
       options={options}
-      connectionKey={`${address.url} ${address.hostKey}`}
+      connectionKey={`${candidates.map((candidate) => candidate.url).join(" ")} ${address.hostKey}`}
       label={address.url}
       rejected={rejected}
       device={device}

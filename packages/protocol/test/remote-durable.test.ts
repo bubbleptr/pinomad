@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { INVALID_FRAME_CLOSE_CODE, PROTOCOL, UNAUTHORIZED_CLOSE_CODE, type ClientFrame, type ServerFrame, type StreamName } from "../src/frames.ts";
-import { connectRemoteDurable, DisconnectedError, type RemoteDurable } from "../src/remote-durable.ts";
+import {
+  connectRemoteDurable,
+  DisconnectedError,
+  UnauthorizedError,
+  type RemoteDurable,
+} from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
 import type { ConversationDefaults, DurableView } from "../src/view.ts";
 
@@ -188,20 +193,15 @@ describe("RemoteDurable reconnect", () => {
     }
   });
 
-  it("treats a 4400 close after ready as terminal: closed, noticed, no reconnect", async () => {
+  it("treats a 4400 close after ready as a candidate failure, not a global stop", async () => {
     const { transport, opened } = fakeTransport([{}]);
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
     try {
       opened[0]!.closed(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
-      await waitForView(remote, (view) => view.connection === "closed");
-      expect(remote.view.current().notices.at(-1)).toMatchObject({
-        level: "error",
-        message: expect.stringContaining("malformed"),
-      });
-      expect(remote.view.current().notices.at(-1)!.message).toContain("Invalid client frame");
-      // Reconnecting would loop on the same rejection; give it room to fire.
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      expect(opened).toHaveLength(1);
+      // ADR-0032 §6: a bare close, 4400 included, only retires this candidate.
+      await waitForView(remote, (view) => view.connection === "reconnecting");
+      await waitForView(remote, (view) => view.connection === "connected");
+      expect(opened).toHaveLength(2);
     } finally {
       remote.close();
     }
@@ -220,22 +220,34 @@ describe("RemoteDurable reconnect", () => {
     }
   });
 
-  it("flags a post-ready 4401 close as unauthorized; a 4400 close is not", async () => {
-    // The distinction decides the UI: 4401 shows the revoked-pairing screen,
-    // 4400 must fall through to the plain disconnect banner and its notice.
-    for (const [code, unauthorized] of [
-      [UNAUTHORIZED_CLOSE_CODE, true],
-      [INVALID_FRAME_CLOSE_CODE, undefined],
-    ] as const) {
-      const { transport, opened } = fakeTransport([{}]);
-      const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
-      try {
-        opened[0]!.closed(code);
-        await waitForView(remote, (view) => view.connection === "closed");
-        expect(remote.view.current().unauthorized).toBe(unauthorized);
-      } finally {
-        remote.close();
-      }
+  it("summarizes unauthorized only when every candidate was rejected, and 4400 never is", async () => {
+    const rejection = (code: number) => ({
+      transport: {
+        label: "rejected",
+        open(handlers: FrameHandlers) {
+          queueMicrotask(() => handlers.closed(code));
+          return { send() {}, close() {} };
+        },
+      } satisfies FrameTransport,
+    });
+    await expect(
+      connectRemoteDurable({ transport: rejection(UNAUTHORIZED_CLOSE_CODE).transport }),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(
+      connectRemoteDurable({ transport: rejection(INVALID_FRAME_CLOSE_CODE).transport }),
+    ).rejects.not.toBeInstanceOf(UnauthorizedError);
+
+    // After ready, one rejected path is retried before any verdict; only a
+    // round in which every path says 4401 is terminal.
+    const { transport, opened } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 10, max: 10 } });
+    try {
+      opened[0]!.closed(UNAUTHORIZED_CLOSE_CODE);
+      await waitForView(remote, (view) => view.connection === "connected");
+      expect(opened).toHaveLength(2);
+      expect(remote.view.current().unauthorized).not.toBe(true);
+    } finally {
+      remote.close();
     }
   });
 });

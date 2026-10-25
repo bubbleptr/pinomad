@@ -2,6 +2,7 @@
 // a stand-in for the preload bridge.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
+import { updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";
@@ -37,6 +38,11 @@ const fakeBridge = ({ failSaves = false }: { failSaves?: boolean } = {}): Deskto
       setName: (hostKey, name) => {
         const index = saved.findIndex((each) => each.hostKey === hostKey);
         if (index !== -1) saved[index] = { ...saved[index]!, name };
+        return Promise.resolve();
+      },
+      updateEndpoints: (hostKey, endpointSet) => {
+        const index = saved.findIndex((each) => each.hostKey === hostKey);
+        if (index !== -1) saved[index] = updateStoredHostEndpoints(saved[index]!, endpointSet);
         return Promise.resolve();
       },
     },
@@ -80,6 +86,29 @@ describe("browser host store", () => {
     expect(JSON.parse(localStorage.getItem(HOSTS_KEY)!)).toEqual([legacy]);
   });
 
+  it("keeps the cached name, account and remote set when a re-save omits them", async () => {
+    const store = hostStore();
+    const account = { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) };
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+    };
+    const existing = { ...host("wss://old.example/secure"), name: "Desk", account, endpointSet };
+    await store.save(existing);
+    const freshKey = toBase64Url(generateKeyPair().privateKey);
+    await store.save({ url: "wss://new.example/secure", hostKey: existing.hostKey, privateKey: freshKey });
+    expect(await store.list()).toEqual([
+      {
+        url: "wss://new.example/secure",
+        hostKey: existing.hostKey,
+        privateKey: freshKey,
+        name: "Desk",
+        account,
+        endpointSet,
+      },
+    ]);
+  });
+
   it("does not resurrect a migrated host that was removed", async () => {
     const legacy = host();
     localStorage.setItem(DEVICE_KEY, JSON.stringify(legacy));
@@ -113,6 +142,54 @@ describe("browser host store", () => {
     await store.setName(a.hostKey, "Desk");
     expect(await store.list()).toEqual([]);
     await store.setName("never-paired", "Desk");
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("applies a hello endpoint set in place, preserving identity, name and account", async () => {
+    const store = hostStore();
+    const entry: StoredHost = {
+      ...host("wss://old.example/secure"),
+      name: "Desk",
+      account: { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) },
+    };
+    await store.save(entry);
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "direct" as const, url: "wss://direct.example/secure" },
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" },
+      ],
+    };
+    await store.updateEndpoints(entry.hostKey, endpointSet);
+    expect(await store.list()).toEqual([
+      { ...entry, url: "wss://relay.example/secure", endpointSet },
+    ]);
+  });
+
+  it("keeps a loopback legacy url and clears only the remote set on an explicit empty set", async () => {
+    const store = hostStore();
+    const local = host("ws://127.0.0.1:7420/secure");
+    const remote = host("wss://old.example/secure");
+    await store.save(local);
+    await store.save(remote);
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+    };
+    await store.updateEndpoints(local.hostKey, endpointSet);
+    await store.updateEndpoints(remote.hostKey, { schemaVersion: 1, endpoints: [] });
+    expect(await store.list()).toEqual([
+      { ...local, endpointSet },
+      { ...remote, endpointSet: { schemaVersion: 1, endpoints: [] } },
+    ]);
+  });
+
+  it("does not resurrect a forgotten host with a late endpoint update", async () => {
+    const store = hostStore();
+    const entry = host();
+    await store.save(entry);
+    await store.remove(entry.hostKey);
+    await store.updateEndpoints(entry.hostKey, { schemaVersion: 1, endpoints: [] });
     expect(await store.list()).toEqual([]);
   });
 
@@ -215,6 +292,21 @@ describe("desktop host store", () => {
     expect(bridge.saved).toEqual([{ ...a, name: "Desk" }]);
     expect(await store.list()).toEqual([{ ...a, name: "Desk" }]);
   });
+
+  it("updateEndpoints goes through the bridge and leaves identity and selection alone", async () => {
+    const bridge = fakeBridge();
+    window.pinomadDesktop = bridge;
+    const a = { ...host("wss://old.example/secure"), name: "Desk" };
+    bridge.saved.push(a);
+
+    const store = hostStore();
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+    };
+    await store.updateEndpoints(a.hostKey, endpointSet);
+    expect(bridge.saved).toEqual([{ ...a, url: "wss://relay.example/secure", endpointSet }]);
+  });
 });
 
 describe("useHostNameSync", () => {
@@ -241,6 +333,7 @@ describe("useHostNameSync", () => {
       activeHostKey: null,
       paired: () => Promise.resolve(),
       setName,
+      endpoints: () => Promise.resolve(),
     };
     return { state, setName };
   };

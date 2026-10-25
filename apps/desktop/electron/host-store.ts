@@ -5,7 +5,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isSecureServerOrigin, normalizeServerOrigin } from "@pinomad/client/account.ts";
-import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
+import {
+  mergeStoredHost,
+  parseStoredHost,
+  updateStoredHostEndpoints,
+  type StoredHost,
+} from "@pinomad/client/stored-host.ts";
+import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 
 export type { StoredHost };
 
@@ -36,6 +42,11 @@ export interface HostStore {
    * the entry is gone — a name arriving after a forget must not resurrect it.
    */
   setName(hostKey: string, name: string): Promise<void>;
+  /**
+   * Apply a host-published remote set by hostKey inside the same serialized
+   * queue: only endpoint fields move, and a forgotten host is not resurrected.
+   */
+  updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
   account(): Promise<StoredAccount | undefined>;
   saveAccount(account: StoredAccount): Promise<void>;
   clearAccount(): Promise<void>;
@@ -115,7 +126,7 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
         const blob = await readBlob();
         const index = blob.hosts.findIndex((each) => each.hostKey === host.hostKey);
         if (index === -1) blob.hosts.push(host);
-        else blob.hosts[index] = host;
+        else blob.hosts[index] = mergeStoredHost(blob.hosts[index]!, host);
         await writeBlob(blob);
       }),
     remove: (hostKey) =>
@@ -130,6 +141,16 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
         const index = blob.hosts.findIndex((each) => each.hostKey === hostKey);
         if (index === -1) return;
         blob.hosts[index] = { ...blob.hosts[index]!, name };
+        await writeBlob(blob);
+      }),
+    updateEndpoints: (hostKey, endpointSet) =>
+      enqueue(async () => {
+        const parsed = parseEndpointSet(endpointSet);
+        if (parsed.kind !== "valid") throw new Error("invalid endpoint set");
+        const blob = await readBlob();
+        const index = blob.hosts.findIndex((each) => each.hostKey === hostKey);
+        if (index === -1) return;
+        blob.hosts[index] = updateStoredHostEndpoints(blob.hosts[index]!, parsed.endpointSet);
         await writeBlob(blob);
       }),
     account: () => enqueue(async () => (await readBlob()).account),

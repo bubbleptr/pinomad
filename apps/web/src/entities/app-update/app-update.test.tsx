@@ -32,7 +32,13 @@ function fakeUpdates(initial: UpdateStatus) {
 const installBridge = (updates: ReturnType<typeof fakeUpdates>) => {
   window.pinomadDesktop = {
     updates,
-    hosts: { list: async () => [], save: async () => {}, remove: async () => {}, setName: async () => {} },
+    hosts: {
+      list: async () => [],
+      save: async () => {},
+      remove: async () => {},
+      setName: async () => {},
+      updateEndpoints: async () => {},
+    },
   } satisfies DesktopBridge;
 };
 

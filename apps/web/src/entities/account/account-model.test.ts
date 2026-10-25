@@ -233,11 +233,19 @@ describe("account model", () => {
 
   it("pairHost pairs through the injected handshake and persists the link", async () => {
     const store = hosts();
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/h1" },
+        { transport: "webSocket" as const, role: "direct" as const, url: "wss://direct.example:8443/secure" },
+      ],
+    };
     const offer = {
       url: "wss://relay.example.com/c/h1",
       hostKey: toBase64Url(generateKeyPair().publicKey),
       secret: toBase64Url(generateKeyPair().privateKey),
       expiresAt: Date.now() + 60_000,
+      endpointSet,
     };
     const setup = makeModel({ fake: fakeFetch(
       { status: 401 },
@@ -251,6 +259,8 @@ describe("account model", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    // Account Pair forwards the same candidates into the persisted record.
+    expect(result.value.endpointSet).toEqual(endpointSet);
     // The account row's name seeds the stored entry (5.12).
     expect(result.value.name).toBe("omarchy");
     expect(setup.calls[3]!.init?.method).toBe("POST");

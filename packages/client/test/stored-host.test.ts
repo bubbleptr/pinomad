@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { EndpointSet, HostEndpoint } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { hostLabels, parseStoredHost } from "../src/stored-host.ts";
+import { hostLabels, mergeStoredHost, parseStoredHost, updateStoredHostEndpoints } from "../src/stored-host.ts";
 import { HOST_CASES, HOST_KEY_A, HOST_KEY_B, HOST_KEY_C, HOST_LABEL_CASES, KEY_A, KEY_B } from "./misc-cases.ts";
 
 const key = () => toBase64Url(generateKeyPair().privateKey);
@@ -125,9 +126,12 @@ describe("hostLabels", () => {
 
 
 describe("parseStoredHost endpoint sets", () => {
-  const relay = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
-  const direct = { transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" };
-  const set = (...endpoints: object[]) => ({ schemaVersion: 1, endpoints });
+  const relay: HostEndpoint = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
+  const direct: HostEndpoint = { transport: "webSocket", role: "direct", url: "ws://192.168.1.5:7422/secure" };
+  const set = (...endpoints: object[]): EndpointSet => ({
+    schemaVersion: 1,
+    endpoints: endpoints as HostEndpoint[],
+  });
 
   it("keeps a valid remote set, including an explicit empty one", () => {
     const host = valid();
@@ -165,5 +169,48 @@ describe("parseStoredHost endpoint sets", () => {
     const host = { ...valid(), url: "ws://127.0.0.1:7420/secure" };
     const parsed = parseStoredHost({ ...host, endpointSet: set(relay) });
     expect(parsed).toEqual({ ...host, endpointSet: set(relay) });
+  });
+
+  it("applies a published set to the legacy url, relay first and loopback never", () => {
+    const host = valid();
+    expect(updateStoredHostEndpoints(host, set(direct, relay))).toEqual({
+      ...host,
+      endpointSet: set(direct, relay),
+      url: relay.url,
+    });
+    const local = { ...host, url: "ws://127.0.0.1:7420/secure" };
+    expect(updateStoredHostEndpoints(local, set(relay))).toEqual({
+      ...local,
+      endpointSet: set(relay),
+    });
+  });
+
+  it("keeps the local entry on an explicit empty set and leaves the legacy url alone", () => {
+    const local = { ...valid(), url: "ws://localhost:7420/secure" };
+    expect(updateStoredHostEndpoints(local, set())).toEqual({ ...local, endpointSet: set() });
+    const remote = valid();
+    expect(updateStoredHostEndpoints(remote, set())).toEqual({ ...remote, endpointSet: set() });
+  });
+
+  it("merges a pairing write without dropping the stored name, account or set", () => {
+    const existing = {
+      ...valid(),
+      name: "Desk",
+      account: { serverOrigin: "https://relay.example.com", hostId: key() },
+      endpointSet: set(relay),
+    };
+    const incoming = { ...valid(), url: "wss://relay.example.com/c/host" };
+    expect(mergeStoredHost(existing, incoming)).toEqual({
+      ...incoming,
+      name: "Desk",
+      account: existing.account,
+      endpointSet: set(relay),
+    });
+    // A pairing invite that carries a set replaces it; a fresh one wins.
+    expect(mergeStoredHost(existing, { ...incoming, endpointSet: set(direct) })).toMatchObject({
+      endpointSet: set(direct),
+      name: "Desk",
+      account: existing.account,
+    });
   });
 });
