@@ -4,6 +4,7 @@ import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 import type { ReactNode } from "react";
 import { i18n, localized, type Lang } from "@/lib/i18n.ts";
+import { githubUrl, siteNav } from "@/lib/nav.ts";
 import { counterpart } from "@/lib/pages.ts";
 import appCss from "@/styles/app.css?url";
 import favicon from "../../../web/public/favicon.svg?url";
@@ -30,11 +31,6 @@ const ui = defineI18nUI(i18n, {
   },
 });
 
-const appLabel = {
-  en: { signedOut: "Sign in", signedIn: "Open web app" },
-  zh: { signedOut: "登录", signedIn: "打开 Web 端" },
-} as const;
-
 /** Stylesheet for every docs and blog page; the landing page brings its own. */
 export const shellLinks = [{ rel: "stylesheet", href: appCss }];
 
@@ -56,7 +52,7 @@ export function Shell({ lang, children }: { lang: Lang; children: ReactNode }) {
 }
 
 export function baseOptions(lang: Lang): BaseLayoutProps {
-  const label = appLabel[lang];
+  const nav = siteNav(lang);
   return {
     i18n,
     nav: {
@@ -68,19 +64,17 @@ export function baseOptions(lang: Lang): BaseLayoutProps {
       ),
       url: localized(lang, "/"),
     },
-    githubUrl: "https://github.com/bubbleptr/pinomad",
+    githubUrl,
     links: [
-      { text: lang === "zh" ? "文档" : "Docs", url: localized(lang, "/docs/"), active: "nested-url" },
-      { text: lang === "zh" ? "博客" : "Blog", url: localized(lang, "/blog/"), active: "nested-url" },
-      { text: lang === "zh" ? "更新日志" : "Changelog", url: localized(lang, "/changelog/"), active: "nested-url" },
+      ...nav.links.map((link) => ({ ...link, active: "nested-url" as const })),
       {
         text: (
           <>
-            <span className="when-signed-out">{label.signedOut}</span>
-            <span className="when-signed-in">{label.signedIn}</span>
+            <span className="when-signed-out">{nav.app.signedOut}</span>
+            <span className="when-signed-in">{nav.app.signedIn}</span>
           </>
         ),
-        url: "https://app.pinomad.si/",
+        url: nav.app.url,
         external: true,
       },
     ],

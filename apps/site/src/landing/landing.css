@@ -1,5 +1,5 @@
 /* Near-black and white, no accent colour: the product does the talking. Everything is in this
-   file — no inline style and no <style> inside the SVGs — so the page runs under style-src 'self'. */
+   file — no style props and no <style> inside the SVGs — so the page runs under style-src 'self'. */
 
 @font-face {
   font-family: Montserrat;
@@ -45,12 +45,6 @@
   --gutter: clamp(1rem, 4vw, 2rem);
   --radius: 0.875rem;
   --section-space: clamp(5rem, 12vw, 8.5rem);
-}
-
-/* The shared SVG partials carry both languages; the page's lang picks one. */
-html[lang="zh-CN"] .en,
-html[lang="en"] .zh {
-  display: none;
 }
 
 *,
@@ -202,7 +196,7 @@ code {
   padding-inline: 1rem;
 }
 
-/* interactions.js turns stickiness on; without it the header stays at the top of the
+/* SiteHeader turns stickiness on once hydrated; without JS the header stays at the top of the
    page as a plain bar instead of a see-through one over the copy. */
 .site-header[data-sticky] {
   position: sticky;
@@ -403,7 +397,7 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-3);
 }
 
-/* The durable demo's button ships hidden until interactions.js wires it up; display above
+/* The durable demo's button ships hidden until the page hydrates; display above
    would otherwise override the hidden attribute and leave a dead button without JS. */
 .button[hidden] {
   display: none;
@@ -1121,7 +1115,7 @@ html[lang="zh-CN"] .node-labels text {
   color: var(--fg);
 }
 
-/* —— Scroll reveal. interactions.js adds .reveal only to blocks that start below the first
+/* —— Scroll reveal. useReveal adds .reveal only to blocks that start below the first
    screen and only without reduced motion, so nothing is hidden without JS; print
    always shows everything. The transition sits on .is-revealed so hiding is
    instant and only the reveal animates. —— */
