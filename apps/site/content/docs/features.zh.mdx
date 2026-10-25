@@ -1,0 +1,20 @@
+---
+title: agent 能做什么
+description: 工具、项目和 worktree、子代理、具名 Agent、codemode、MCP 等。
+---
+
+工具和 pi 一样是 read、bash、edit、write 四个，另外还有：
+
+| 功能 | 说明 |
+|---|---|
+| 项目和 worktree | 把一个目录登记成项目。Git 仓库里每个对话在自己的 worktree 和分支上干活，你的检出不会被动到 |
+| Fork | 从某条消息分出去，两条线各自往下聊 |
+| 子代理 | 把自成一体的任务交给子代理，多个子代理并行执行 |
+| 具名 Agent | `<数据目录>/agents/<名字>.md` 里的可复用角色——`subagent` 调用或 `@名字` 提及可以派给它，可选锁定模型和思考等级 |
+| 提问代替审批 | 工具执行前不弹审批；方向拿不准时，agent 会提 1–4 个选择题 |
+| codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
+| MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |
+| 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩放并转成 JPEG |
+| AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills；消息里用 `$名字` 提及的 skill 会把全文随消息发给模型 |
+
+细节和 MCP 配置说明见[使用说明](/zh/docs/usage/)。

@@ -26,68 +26,15 @@ pinomad link        # in another terminal: prints a browser link to the web clie
 
 Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
 
-## Connect your other devices
-
-Open a port for paired devices, then pair each device with its own QR code:
-
-```sh
-pinomad host --remote-port 7422
-pinomad pair        # one-time QR code and link, expires after 5 minutes
-```
-
-Scan the code with the iPhone app, or paste the link into the Mac app. The remote port accepts paired devices only; revoke them under Settings → Devices.
-
-The pairing link always keeps a legacy socket URL and can carry the reachable relay and direct candidates. Without `--public-url` the direct address is the LAN address the host detects; on a tailnet or behind a tunnel, add `--public-url http://<tailnet-ip>:7422` so it points there. When the host is joined to a relay, older clients keep using the relay URL. To reach a host at home from anywhere, run the relay on a VPS: see [Remote access](docs/remote-access.md).
-
-## Keep it running
-
-Install the host as a user service (LaunchAgent on macOS, systemd user unit on Linux) so it starts at boot and restarts on crash:
-
-```sh
-pinomad service install --remote-port 7422
-pinomad service status
-pinomad upgrade     # install pinomad@latest, wait for running tasks, restart
-```
-
-Service flags, logs, and platform caveats: [Running as a service](docs/service.md).
-
-## Clients
-
-| Client | How to get it |
-|---|---|
-| Web | Served by the host itself (`pinomad link`) and by the relay; any modern browser |
-| macOS (Apple silicon) | Signed DMG from [GitHub Releases](https://github.com/bubbleptr/pinomad/releases); updates itself |
-| iOS | Internal TestFlight only for now |
-| Linux, Windows | Use the web client |
-
-## What the agent can do
-
-The agent has pi's four tools (read, bash, edit, write) plus:
-
-| Feature | What it does |
-|---|---|
-| Projects and worktrees | Register a directory as a project. In a Git repo each conversation works in its own worktree and branch, so your checkout stays untouched |
-| Forks | Branch off from a message and keep both lines going |
-| Subagents | Hand self-contained tasks to subagents that run in parallel |
-| Named agents | Reusable roles in `<data dir>/agents/<name>.md` — a `subagent` call or an `@name` mention delegates to one, optionally pinning its model and thinking level |
-| Questions, not approvals | Tools run without approval prompts; when the direction is unclear, the agent asks 1–4 multiple-choice questions |
-| codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
-| MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |
-| Images | Paste, drop, or pick up to 4 images per message in the Web/desktop composer — resized to JPEG before sending |
-| AGENTS.md and skills | Reads `AGENTS.md` / `CLAUDE.md` and skills from `~/.agents` and the project, on every request; a `$name` mention sends that skill's full text with the message |
-
-Details and the MCP config reference: [Usage](docs/usage.md).
-
 ## Documentation
 
-These docs are written in Chinese.
+User docs live on **[pinomad.si/docs](https://pinomad.si/docs/)**: [getting started](https://pinomad.si/docs/) (connecting your other devices, keeping the host running, clients) and [what the agent can do](https://pinomad.si/docs/features/). Usage, remote access, and the service reference are in Chinese for now: [中文文档](https://pinomad.si/zh/docs/).
+
+For contributors (in Chinese):
 
 | Doc | Covers |
 |---|---|
-| [Usage](docs/usage.md) | Projects, worktrees, tools, MCP configuration |
-| [Remote access](docs/remote-access.md) | Pairing, tunnels, self-hosted relay (VPS or container platforms) |
-| [Running as a service](docs/service.md) | `service` and `upgrade` commands, platform notes |
-| [Website](docs/website.md) | The pinomad.si landing page and the hosted app.pinomad.si instance |
+| [Website](docs/website.md) | The pinomad.si site and the hosted app.pinomad.si instance |
 | [Architecture overview](docs/architecture.md) | How the parts and languages fit together, with send/receive diagrams |
 | [Architecture decisions](docs/adr/README.md) | Why things are the way they are |
 | [Roadmap](docs/roadmap.md) | Direction and order; items live in GitHub Issues |

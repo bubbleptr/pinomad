@@ -1,4 +1,4 @@
-// The server-accounts API (ADR-0022; docs/remote-access.md "服务端账号") as a
+// The server-accounts API (ADR-0022; apps/site/content/docs/remote-access.zh.md "服务端账号") as a
 // client sees it: login/session ops, the account's host list, join tokens,
 // and server-vouched pairing asks. Shared by web and desktop, so it
 // takes fetch as an injected minimal surface — DOM and undici both

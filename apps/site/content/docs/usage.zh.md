@@ -1,9 +1,9 @@
 ---
 title: 使用说明：项目、工具与 MCP
-description: 项目、worktree、工具、具名 Agent 和 MCP 的使用细节。
+description: 项目、worktree、工具、具名 Agent、MCP、iOS 账号和推送通知的使用细节。
 ---
 
-从 README 移来的使用细节。安装和快速上手见 [README](https://github.com/bubbleptr/pinomad/blob/main/README.zh-CN.md)。
+先装好宿主，见[快速上手](/zh/docs/)。
 
 默认数据目录是 `~/.pinomad`（session.sqlite、token、目录锁），可用 `--data-dir` 或 `PINOMAD_DATA_DIR` 覆盖；同一数据目录同时只能有一个宿主进程。
 

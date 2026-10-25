@@ -5,7 +5,7 @@
 | 域名 | 内容 | 部署 |
 |---|---|---|
 | `pinomad.si`（`www` 跳到根域名） | 落地页、文档和博客，`apps/site` 的静态构建，中英两份（英文在根路径，中文在 `/zh/`） | Cloudflare Pages，接 GitHub，合进 `main` 自动发布 |
-| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | Zeabur，`deploy/server/Dockerfile`，见[远程访问](remote-access.md)的"容器平台" |
+| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | Zeabur，`deploy/server/Dockerfile`，见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"容器平台" |
 
 官网只是静态文件，不跟服务端共享代码和部署，也不跟 npm 版本走；服务端照旧托管和它同版本的 Web 客户端（ADR-0015 §4）。
 
@@ -18,9 +18,9 @@ cd apps/site && bun run build && bun run preview
 
 官网是 TanStack Start 应用，构建时把所有页面预渲染成静态文件（`dist/`），线上不跑服务端；预渲染用的服务端产物在 `.output/server/`，不发布。英文在根路径，中文在 `/zh/` 下；网址一律以 `/` 结尾（页面输出成 `<路径>/index.html`，Pages 会把不带斜杠的地址 308 过去）。
 
-- **落地页**：`src/landing/en.html`、`zh.html` 是手写的 HTML 片段，原样渲染；页头只放文档、博客、更新日志、登录这些站内入口，不放页内锚点；交互在 `interactions.js`，样式在 `landing.css`，页头元信息在 `meta.ts`。改文案时中英两份一起改，功能描述以两份 README 为准。截图放在 `apps/site/shots/`（中英各一份，都是深色模式），每张有 2x 原图（`hero.webp` 2400×1500，功能截图 1120×840）和同名加 `-<宽>` 的 1x 版本，页面用 `srcset` 二选一；`public/og-image.jpg` 是英文首屏图缩到 1920×1200。图标直接引用 `apps/web/public/` 里的文件，构建时打上哈希。iPhone 那格还用 `partials/skeleton-phone.html` 占位，等原生 iOS 版替换验收（#133）后补。
+- **落地页**：`src/landing/en.html`、`zh.html` 是手写的 HTML 片段，原样渲染；页头只放文档、博客、更新日志、登录这些站内入口，不放页内锚点；交互在 `interactions.js`，样式在 `landing.css`，页头元信息在 `meta.ts`。改文案时中英两份一起改，功能描述以文档的 `features` 页为准。截图放在 `apps/site/shots/`（中英各一份，都是深色模式），每张有 2x 原图（`hero.webp` 2400×1500，功能截图 1120×840）和同名加 `-<宽>` 的 1x 版本，页面用 `srcset` 二选一；`public/og-image.jpg` 是英文首屏图缩到 1920×1200。图标直接引用 `apps/web/public/` 里的文件，构建时打上哈希。iPhone 那格还用 `partials/skeleton-phone.html` 占位，等原生 iOS 版替换验收（#133）后补。
 - **插画和示意图**只存一份，放在 `partials/`，页面里写 `<!-- include 文件名.svg -->`，由 `landing.tsx` 内联。片段里中英文各一份（`.zh` / `.en`），按页面的 `lang` 显示其中一种；所以 SVG 本身 `aria-hidden`，读屏用的描述写在各页面里。
-- **文档和博客**用 Fumadocs：内容在 `content/docs/`、`content/blog/`，中文版是同名加 `.zh` 的文件（`index.zh.mdx`），没有中文版的页面在中文站显示英文版。侧栏顺序在 `content/docs/meta.json`。搜索索引在构建时生成为 `/api/search.json`，在浏览器里搜。
+- **文档和博客**用 Fumadocs：内容在 `content/docs/`、`content/blog/`。用户文档以这里为准，仓库里的 `docs/usage.md` 等只是指向官网的链接，README 只留快速上手；中文版是同名加 `.zh` 的文件（`index.zh.mdx`），没有中文版的页面在中文站显示英文版。侧栏顺序在 `content/docs/meta.json`。搜索索引在构建时生成为 `/api/search.json`，在浏览器里搜。
 - **更新日志**：`content/changelog/` 每个版本一个文件（`v0.7.0.mdx`，中文版 `v0.7.0.zh.mdx`），frontmatter 写 `title`、`version`、`date`，正文写给用户看的变化，不照搬 GitHub Release 自动生成的 PR 列表。`/changelog/` 一页按日期倒序列出全部版本，每条链到对应的 GitHub Release。
 - **404**：`/404/`、`/zh/404/` 两个路由预渲染后由 `scripts/not-found.ts` 改名成 `404.html`、`zh/404.html`，并去掉全部客户端脚本（Pages 会在任意缺失的地址上返回它们，路由不能拿那个地址去接管）。Pages 用离请求路径最近的 `404.html`，状态码 404，所以 `/zh/` 下缺页显示中文版。页内跳转到不存在的页面时，加载器先查内容索引再取数据，显示同一个 `NotFound` 组件；语言切换对应语言没有这一页时，落到那个语言的文档或博客首页。
 - **登录入口**：页头的"登录"指向 `app.pinomad.si`。Web 端给用过它的浏览器在 `pinomad.si` 上写 `pinomad_app=1`，`public/app-hint.js` 读到后把它改成"打开 Web 端"，首页（`/`、`/zh/`）直接跳到 Web 端；带 `?home` 时不跳。
@@ -46,6 +46,6 @@ cd apps/site && bun run build && bun run preview
 
 ## app.pinomad.si
 
-`app` 子域名的 DNS 记录在同一个 Cloudflare 区域里：A 记录指向 Zeabur 服务器 IP，**灰云**（和[远程访问](remote-access.md)里说的一样，证书由 Zeabur 签，橙云会让国内访问多绕一圈）。从旧域名迁过来的步骤见[远程访问](remote-access.md)的"更换服务端域名"。
+`app` 子域名的 DNS 记录在同一个 Cloudflare 区域里：A 记录指向 Zeabur 服务器 IP，**灰云**（和[远程访问](https://pinomad.si/zh/docs/remote-access/)里说的一样，证书由 Zeabur 签，橙云会让国内访问多绕一圈）。从旧域名迁过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"更换服务端域名"。
 
 托管实例现在不开放注册（ADR-0022），落地页上的 "Open the web app" 对访客来说只能看到登录页；开放注册前它主要给作者自己和已配对的设备用。
