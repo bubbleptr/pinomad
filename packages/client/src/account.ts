@@ -4,8 +4,15 @@
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 
+import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
+import { UNAUTHORIZED_CLOSE_CODE } from "@pinomad/protocol/frames.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { pairingFragment, parsePairParam } from "@pinomad/protocol/pairing-link.ts";
+import {
+  candidatePlan,
+  preferredLegacyUrl,
+  type RemoteCandidateRole,
+} from "@pinomad/protocol/remote-candidates.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { FrameConnection } from "@pinomad/protocol/transport.ts";
 import type { StoredHost } from "./stored-host.ts";
@@ -46,6 +53,20 @@ const fallbackFetch = (url: string, init?: AccountFetchInit): Promise<AccountFet
 export interface AccountError {
   readonly code: string;
   readonly status?: number;
+  /** Per-path evidence for an account pairing attempt; absent on other API errors. */
+  readonly candidates?: readonly PairCandidateDiagnostic[];
+}
+
+/** Why one offered pairing candidate did not complete message 2. */
+export type PairCandidateOutcome = "unsupported" | "rejected" | "unreachable" | "timeout";
+
+export interface PairCandidateDiagnostic {
+  readonly url: string;
+  readonly role: RemoteCandidateRole;
+  readonly outcome: PairCandidateOutcome;
+  /** The close code when the host answered. */
+  readonly code?: number;
+  readonly reason?: string;
 }
 
 export type AccountResult<T> =
@@ -57,6 +78,36 @@ const fail = (code: string, status?: number): { readonly ok: false; readonly err
   ok: false,
   error: { code, ...(status === undefined ? {} : { status }) },
 });
+
+/**
+ * Pairing failed on every path. Only a round whose every DIALED path was
+ * rejected can be called `pair_rejected`; a single relay's unauthenticated
+ * 4401 must not overwrite a timeout or unreachable direct. Unsupported paths
+ * are never dialed and do not vote. The diagnostics keep every path's reason,
+ * rejected ones included.
+ */
+const pairFailure = (candidates: readonly PairCandidateDiagnostic[]): {
+  readonly ok: false;
+  readonly error: AccountError;
+} => {
+  const dialed = candidates.filter((candidate) => candidate.outcome !== "unsupported");
+  const allRejected = dialed.length > 0 && dialed.every((candidate) => candidate.outcome === "rejected");
+  const any = (outcome: PairCandidateOutcome): boolean =>
+    dialed.some((candidate) => candidate.outcome === outcome);
+  const code = allRejected
+    ? "pair_rejected"
+    : any("timeout")
+      ? "pair_timeout"
+      : any("unreachable")
+        ? "pair_unreachable"
+        : candidates.some((candidate) => candidate.outcome === "unsupported")
+          ? "pair_unsupported"
+          : "pair_unreachable";
+  return {
+    ok: false,
+    error: { code, ...(candidates.length === 0 ? {} : { candidates }) },
+  };
+};
 
 /** The session is gone (or was never there): time to log in again. */
 export const isUnauthenticated = (error: AccountError): boolean => error.code === "unauthenticated";
@@ -179,6 +230,8 @@ export interface PairingOffer {
   readonly hostKey: string;
   readonly secret: string;
   readonly expiresAt: number;
+  /** Remote candidates forwarded additively by the server (ADR-0032); absent on older servers. */
+  readonly endpointSet?: EndpointSet;
 }
 
 export interface AccountClient {
@@ -339,7 +392,25 @@ export function createAccountClient(options: {
       ) {
         return fail("invalid_response");
       }
-      return ok({ url: value.url, hostKey: value.hostKey, secret: value.secret, expiresAt: value.expiresAt });
+      // A pairing invite with an explicit empty set is malformed (ADR-0032
+      // §8); unknown schemas fall back to the legacy url, as on the host's
+      // own pairing link.
+      let endpointSet: EndpointSet | undefined;
+      if (value.endpointSet !== undefined) {
+        const parsed = parseEndpointSet(value.endpointSet);
+        if (parsed.kind === "malformed") return fail("invalid_response");
+        if (parsed.kind === "valid") {
+          if (parsed.endpointSet.endpoints.length === 0) return fail("invalid_response");
+          endpointSet = parsed.endpointSet;
+        }
+      }
+      return ok({
+        url: value.url,
+        hostKey: value.hostKey,
+        secret: value.secret,
+        expiresAt: value.expiresAt,
+        ...(endpointSet === undefined ? {} : { endpointSet }),
+      });
     },
   };
 }
@@ -350,8 +421,10 @@ export function createAccountClient(options: {
  * malformed offer is refused before a socket opens.
  */
 export function accountPairingFragment(offer: PairingOffer): string | undefined {
+  const endpointSet =
+    offer.endpointSet === undefined ? "" : `&endpointSet=${encodeEndpointSetParam(offer.endpointSet)}`;
   return pairingFragment(
-    `https://server.invalid/#pair=${offer.hostKey}.${offer.secret}&url=${encodeURIComponent(offer.url)}`,
+    `https://server.invalid/#pair=${offer.hostKey}.${offer.secret}&url=${encodeURIComponent(offer.url)}${endpointSet}`,
   );
 }
 
@@ -413,6 +486,30 @@ export function matchAccountHosts(
   });
 }
 
+/** A pairing socket closed; the code distinguishes a refusal from a broken path. */
+export class PairingHandshakeError extends Error {
+  readonly code?: number;
+
+  constructor(code?: number) {
+    super(code === undefined ? "pairing connection closed" : `pairing connection closed (${code})`);
+    this.name = "PairingHandshakeError";
+    if (code !== undefined) this.code = code;
+  }
+}
+
+/** A host refusal (4401) is the only close code that means "this device is not allowed". */
+const rejectedPairing = (error: unknown): { code?: number } | undefined => {
+  if (error instanceof PairingHandshakeError) {
+    return error.code === UNAUTHORIZED_CLOSE_CODE ? { code: error.code } : undefined;
+  }
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (code === UNAUTHORIZED_CLOSE_CODE) return { code };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b4401\b/.test(message) ? { code: UNAUTHORIZED_CLOSE_CODE } : undefined;
+};
+
 /** What pairViaAccount's connect seam runs: one secure-channel handshake. */
 export interface PairConnectArgs {
   readonly url: string;
@@ -420,6 +517,8 @@ export interface PairConnectArgs {
   readonly device: KeyPair;
   readonly secret: string;
   readonly name: string;
+  /** Aborted when this candidate's pairing deadline expires. */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -430,35 +529,64 @@ export interface PairConnectArgs {
 function pairHandshake(args: PairConnectArgs): Promise<void> {
   return new Promise((resolve, reject) => {
     let connection: FrameConnection | undefined;
+    let settled = false;
+    const signal = args.signal;
+    const cleanup = (): void => signal?.removeEventListener("abort", abort);
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      connection?.close();
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const abort = (): void => finish(new Error("pairing attempt aborted"));
+    if (signal?.aborted) {
+      finish(new Error("pairing attempt aborted"));
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
     const transport = secureWebSocketTransport({
       url: args.url,
       hostKey: args.hostKey,
       device: args.device,
       pairing: { secret: args.secret, name: args.name },
-      onPaired: () => {
-        resolve();
-        connection?.close();
-      },
+      onPaired: () => finish(),
     });
-    connection = transport.open({
-      message: () => {},
-      // Settled already → no-op; before onPaired it's the refusal signal.
-      closed: (code) => reject(new Error(`pairing connection closed (${code})`)),
-    });
+    try {
+      connection = transport.open({
+        message: () => {},
+        // Settled already → no-op; before onPaired it's the refusal signal.
+        closed: (code) => finish(new PairingHandshakeError(code)),
+      });
+      // A carrier that reported a synchronous refusal before returning still
+      // needs its socket closed.
+      if (settled) connection.close();
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   });
+}
+
+export interface AccountPairSettings {
+  /** The page's protocol, so a mixed-content candidate is skipped before dialing. */
+  readonly pageProtocol?: string;
+  /** Per-candidate deadline; pairing must not hang on one path. Defaults to 10s. */
+  readonly attemptTimeoutMs?: number;
 }
 
 /**
  * The whole "pair this account host" action: ask the server for a vouched
- * offer, normalize it through the pairing-link rule, run the IK handshake,
- * and hand back the StoredHost (with the account link) to persist. Pairing is
- * never retried implicitly — a refusal or dead socket is the caller's error.
+ * offer, normalize it through the pairing-link rule, then try the offered
+ * candidates in Auto order with one device identity and one secret. The first
+ * verified message 2 ends the action — paired, not necessarily business ready.
  */
 export async function pairViaAccount(
   client: AccountClient,
   hostId: string,
   name: string,
   connect: (args: PairConnectArgs) => Promise<void> = pairHandshake,
+  settings: AccountPairSettings = {},
 ): Promise<AccountResult<StoredHost>> {
   const offer = await client.requestPairing(hostId);
   if (!offer.ok) return offer;
@@ -468,16 +596,86 @@ export async function pairViaAccount(
   const pair = parsePairParam(params.get("pair")!);
   const url = params.get("url");
   if (pair === undefined || url === null) return fail("invalid_offer");
+  const hostKey = fromBase64Url(pair.hostKey);
   const device = generateKeyPair();
-  try {
-    await connect({ url, hostKey: fromBase64Url(pair.hostKey), device, secret: pair.secret, name });
-  } catch {
-    return fail("pair_rejected");
+  const planned = candidatePlan(url, offer.value.endpointSet, { pageProtocol: settings.pageProtocol });
+  const diagnostics: (PairCandidateDiagnostic | undefined)[] = planned.map((candidate) =>
+    candidate.unsupported === undefined
+      ? undefined
+      : {
+          url: candidate.url,
+          role: candidate.role,
+          outcome: "unsupported",
+          reason: candidate.unsupported,
+        },
+  );
+  const candidates = planned.filter((candidate) => candidate.unsupported === undefined);
+  const orderedDiagnostics = (): PairCandidateDiagnostic[] =>
+    diagnostics.filter((diagnostic): diagnostic is PairCandidateDiagnostic => diagnostic !== undefined);
+  if (candidates.length === 0) return pairFailure(orderedDiagnostics());
+  const timeoutMs = settings.attemptTimeoutMs ?? 10_000;
+  let paired = false;
+  for (let index = 0; index < planned.length; index++) {
+    const candidate = planned[index]!;
+    if (candidate.unsupported !== undefined) continue;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const aborted = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(new Error("pairing attempt aborted")), { once: true });
+    });
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new Error("pairing attempt timed out"));
+      }, timeoutMs);
+    });
+    try {
+      await Promise.race([
+        connect({ url: candidate.url, hostKey, device, secret: pair.secret, name, signal: controller.signal }),
+        aborted,
+        deadline,
+      ]);
+      paired = true;
+      break;
+    } catch (error) {
+      // This path failed; a later candidate shares the same device and secret
+      // until message 2 verifies (ADR-0032 §4). Keep the per-path evidence:
+      // only a real 4401 is a refusal, and a timeout is not a host outage.
+      if (timedOut) {
+        diagnostics[index] = {
+          url: candidate.url,
+          role: candidate.role,
+          outcome: "timeout",
+          reason: `no answer within ${timeoutMs}ms`,
+        };
+      } else {
+        const rejected = rejectedPairing(error);
+        const reason = error instanceof Error ? error.message : String(error);
+        diagnostics[index] =
+          rejected === undefined
+            ? { url: candidate.url, role: candidate.role, outcome: "unreachable", reason }
+            : {
+                url: candidate.url,
+                role: candidate.role,
+                outcome: "rejected",
+                reason,
+                ...(rejected.code === undefined ? {} : { code: rejected.code }),
+              };
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      controller.abort();
+    }
   }
+  if (!paired) return pairFailure(orderedDiagnostics());
+  const endpointSet = offer.value.endpointSet;
   return ok({
-    url,
+    url: endpointSet === undefined ? url : preferredLegacyUrl(url, endpointSet),
     hostKey: pair.hostKey,
     privateKey: toBase64Url(device.privateKey),
     account: { serverOrigin: client.origin, hostId },
+    ...(endpointSet === undefined ? {} : { endpointSet }),
   });
 }

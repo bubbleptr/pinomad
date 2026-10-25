@@ -165,6 +165,7 @@ export function secureWebSocketTransport(options: {
       let session: SecureSession | undefined;
       let queue: string[] = [];
       let closedFired = false;
+      let authenticated = false;
       const fireClosed = (code: number, reason?: string): void => {
         if (closedFired) return;
         closedFired = true;
@@ -178,6 +179,7 @@ export function secureWebSocketTransport(options: {
       };
 
       socket.onopen = () => {
+        handlers.opened?.();
         const hello: ClientHello = pairing === undefined ? { v: 1 } : { v: 1, pair: pairing };
         socket.send(handshake.writeMessage1(encodeClientHello(hello)));
       };
@@ -188,6 +190,10 @@ export function secureWebSocketTransport(options: {
             const { payload, result } = handshake.readMessage2(bytes);
             decodeHostHello(payload);
             session = new SecureSession(result);
+            if (!authenticated) {
+              authenticated = true;
+              handlers.authenticated?.();
+            }
             if (pairing !== undefined) {
               pairing = undefined;
               options.onPaired?.();

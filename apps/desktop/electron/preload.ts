@@ -14,6 +14,8 @@ const bridge: DesktopBridge = {
     save: (host) => ipcRenderer.invoke("pinomad:hosts:save", host),
     remove: (hostKey) => ipcRenderer.invoke("pinomad:hosts:remove", hostKey),
     setName: (hostKey, name) => ipcRenderer.invoke("pinomad:hosts:setName", { hostKey, name }),
+    updateEndpoints: (hostKey, endpointSet) =>
+      ipcRenderer.invoke("pinomad:hosts:updateEndpoints", { hostKey, endpointSet }),
   },
   account: {
     get: () => ipcRenderer.invoke("pinomad:account:get"),

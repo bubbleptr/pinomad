@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { encodeEndpointSetParam } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { pairingFragmentFromDeepLink } from "../electron/deep-link.ts";
@@ -15,6 +16,20 @@ describe("pairingFragmentFromDeepLink", () => {
   it("drops a smuggled token — resolveAddress checks token before pair", () => {
     expect(pairingFragmentFromDeepLink(`pinomad://pair#pair=${hostKey}.sec&token=evil&url=${ws}`)).toBe(
       `pair=${hostKey}.sec&url=${ws}`,
+    );
+  });
+
+  it("carries the additive endpointSet through the deep link", () => {
+    const endpointSet = encodeEndpointSetParam({
+      schemaVersion: 1,
+      endpoints: [
+        { transport: "webSocket", role: "relay", url: "wss://relay.example/c/host" },
+        { transport: "webSocket", role: "direct", url: "wss://direct.example/secure" },
+      ],
+    });
+    const link = `pinomad://pair#pair=${hostKey}.sec&url=${ws}&endpointSet=${endpointSet}`;
+    expect(pairingFragmentFromDeepLink(link)).toBe(
+      `pair=${hostKey}.sec&url=${ws}&endpointSet=${endpointSet}`,
     );
   });
 

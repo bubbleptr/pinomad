@@ -3,6 +3,7 @@
 // here so all three reject the same shapes: only ws/wss urls, and keys that
 // are base64url of exactly 32 bytes.
 import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
+import { preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
 /**
@@ -78,6 +79,31 @@ export function parseStoredHost(value: unknown): StoredHost | undefined {
     ...(account === undefined ? {} : { account }),
     ...(parsedEndpoints.kind === "valid" ? { endpointSet: parsedEndpoints.endpointSet } : {}),
   };
+}
+
+/**
+ * Merge a pairing write with the record already stored under the same hostKey:
+ * the new pairing owns url, privateKey and (when it carries one) the remote
+ * set, while identity-adjacent fields the caller did not supply survive.
+ */
+export function mergeStoredHost(existing: StoredHost, incoming: StoredHost): StoredHost {
+  const endpointSet = incoming.endpointSet ?? existing.endpointSet;
+  return {
+    ...incoming,
+    ...(incoming.name === undefined && existing.name !== undefined ? { name: existing.name } : {}),
+    ...(incoming.account === undefined && existing.account !== undefined ? { account: existing.account } : {}),
+    ...(endpointSet === undefined ? {} : { endpointSet }),
+  };
+}
+
+/**
+ * Apply a host-published remote set to a stored record: only the set and the
+ * legacy compatibility url change. An explicit empty set clears the remote
+ * candidates while the old legacy url (and a loopback local entry) stays, as
+ * no valid legacy url can express "none".
+ */
+export function updateStoredHostEndpoints(host: StoredHost, endpointSet: EndpointSet): StoredHost {
+  return { ...host, endpointSet, url: preferredLegacyUrl(host.url, endpointSet) };
 }
 
 /**

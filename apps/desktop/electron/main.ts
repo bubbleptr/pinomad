@@ -11,6 +11,7 @@ import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { updateEventChannel } from "../../web/src/entities/app-update/update-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
@@ -109,6 +110,10 @@ function installHostStoreIpc(): void {
   ipcMain.handle("pinomad:hosts:save", handle((host: StoredHost) => hosts.save(host)));
   ipcMain.handle("pinomad:hosts:remove", handle((hostKey: string) => hosts.remove(hostKey)));
   ipcMain.handle("pinomad:hosts:setName", handle((args: { hostKey: string; name: string }) => hosts.setName(args.hostKey, args.name)));
+  ipcMain.handle(
+    "pinomad:hosts:updateEndpoints",
+    handle((args: { hostKey: string; endpointSet: EndpointSet }) => hosts.updateEndpoints(args.hostKey, args.endpointSet)),
+  );
   // The account session rides the same encrypted store and caller check.
   ipcMain.handle("pinomad:account:get", handle(() => hosts.account()));
   ipcMain.handle("pinomad:account:save", handle((account: StoredAccount) => hosts.saveAccount(account)));

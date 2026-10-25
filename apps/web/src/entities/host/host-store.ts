@@ -1,5 +1,10 @@
 import { createContext, useContext, useEffect } from "react";
-import { parseStoredHost } from "@pinomad/client/stored-host.ts";
+import {
+  mergeStoredHost,
+  parseStoredHost,
+  updateStoredHostEndpoints,
+} from "@pinomad/client/stored-host.ts";
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";
 import { DEVICE_KEY, storedDevice, type StoredHost } from "../../address.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
@@ -27,6 +32,12 @@ export interface HostStore {
    * a name arriving after a forget must not resurrect the pairing.
    */
   setName(hostKey: string, name: string): Promise<void>;
+  /**
+   * Apply a host-published remote set by hostKey: only endpoint fields move,
+   * and a forgotten host is never resurrected. Serialized with every other
+   * read-modify-write on the store.
+   */
+  updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
 }
 
 const readHosts = (): StoredHost[] => {
@@ -75,7 +86,12 @@ function migrated(): StoredHost[] {
 const browserStore: HostStore = {
   list: () => Promise.resolve(migrated()),
   save: (host) => {
-    writeHosts([...migrated().filter((each) => each.hostKey !== host.hostKey), host]);
+    const hosts = migrated();
+    const existing = hosts.find((each) => each.hostKey === host.hostKey);
+    writeHosts([
+      ...hosts.filter((each) => each.hostKey !== host.hostKey),
+      existing === undefined ? host : mergeStoredHost(existing, host),
+    ]);
     return Promise.resolve();
   },
   remove: (hostKey) => {
@@ -89,6 +105,15 @@ const browserStore: HostStore = {
     const hosts = migrated();
     if (!hosts.some((each) => each.hostKey === hostKey)) return Promise.resolve();
     writeHosts(hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)));
+    return Promise.resolve();
+  },
+  updateEndpoints: (hostKey, endpointSet) => {
+    const hosts = migrated();
+    const index = hosts.findIndex((each) => each.hostKey === hostKey);
+    if (index === -1) return Promise.resolve();
+    const next = [...hosts];
+    next[index] = updateStoredHostEndpoints(hosts[index]!, endpointSet);
+    writeHosts(next);
     return Promise.resolve();
   },
 };
@@ -124,6 +149,7 @@ function desktopStore(bridge: DesktopBridge): HostStore {
     save: (host) => bridge.hosts.save(host),
     remove: (hostKey) => bridge.hosts.remove(hostKey),
     setName: (hostKey, name) => bridge.hosts.setName(hostKey, name),
+    updateEndpoints: (hostKey, endpointSet) => bridge.hosts.updateEndpoints(hostKey, endpointSet),
   };
 }
 
@@ -141,6 +167,8 @@ export type HostsState = {
   readonly paired: (host: StoredHost) => Promise<void>;
   /** Persist an announced host name and update the in-memory list; unlike `paired` it does not select the host. */
   readonly setName: (hostKey: string, name: string) => Promise<void>;
+  /** Persist a host-published remote set and update the in-memory list in place. */
+  readonly endpoints: (hostKey: string, endpointSet: EndpointSet) => Promise<void>;
 };
 
 const defaultState: HostsState = {
@@ -149,6 +177,7 @@ const defaultState: HostsState = {
   activeHostKey: null,
   paired: (host) => browserStore.save(host),
   setName: (hostKey, name) => browserStore.setName(hostKey, name),
+  endpoints: (hostKey, endpointSet) => browserStore.updateEndpoints(hostKey, endpointSet),
 };
 
 // Deep components — the sidebar footer, the connection-failure screens — read

@@ -92,6 +92,8 @@ interface Probe {
   readonly messages: string[];
   readonly closed: Promise<{ code: number; reason?: string }>;
   readonly connection: FrameConnection;
+  /** Carrier-open and handshake-verified callbacks, in order. */
+  readonly phases: string[];
   /** Resolves on the first message (after the handshake is done and a frame arrives). */
   nextMessage(): Promise<string>;
 }
@@ -103,6 +105,7 @@ function openClient(
   const waiting: ((text: string) => void)[] = [];
   let closedResolve!: (close: { code: number; reason?: string }) => void;
   const closed = new Promise<{ code: number; reason?: string }>((resolve) => (closedResolve = resolve));
+  const phases: string[] = [];
   const handlers: FrameHandlers = {
     message(text) {
       const pending = waiting.shift();
@@ -110,12 +113,15 @@ function openClient(
       else messages.push(text);
     },
     closed: (code, reason) => closedResolve({ code, reason }),
+    opened: () => phases.push("opened"),
+    authenticated: () => phases.push("authenticated"),
   };
   const connection = transport.open(handlers);
   return {
     messages,
     closed,
     connection,
+    phases,
     nextMessage: () =>
       messages.length > 0 ? Promise.resolve(messages.shift()!) : new Promise((resolve) => waiting.push(resolve)),
   };
@@ -141,6 +147,7 @@ describe("secureWebSocketTransport", () => {
     expect(server.hellos).toHaveLength(1);
     expect(server.hellos[0]!.pair).toEqual({ secret: "one-time", name: "phone" });
     expect(paired).toBe(1);
+    expect(first.phases).toEqual(["opened", "authenticated"]);
 
     server.closeAll(1000);
     await first.closed;
@@ -152,6 +159,7 @@ describe("secureWebSocketTransport", () => {
     expect(server.hellos).toHaveLength(2);
     expect(server.hellos[1]!.pair).toBeUndefined();
     expect(paired).toBe(1);
+    expect(second.phases).toEqual(["opened", "authenticated"]);
     server.close();
   });
 
@@ -194,6 +202,7 @@ describe("secureWebSocketTransport", () => {
     const client = openClient(transport);
     const outcome = await client.closed;
     expect(outcome.code).toBe(1008);
+    expect(client.phases).toEqual(["opened"]);
     // fail() must actually close the socket, not just report it.
     await serverClose;
     server.close();

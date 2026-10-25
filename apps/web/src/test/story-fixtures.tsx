@@ -523,11 +523,18 @@ export const DEVBOX_HOST: StoredHost = { url: "wss://omarchy.tailf76614.ts.net:8
 
 export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST], activeHostKey: string | null = HOME_HOST.hostKey): HostsState {
   return {
-    store: { list: fn(async () => [...hosts]), save: fn(async () => {}), remove: fn(async () => {}), setName: fn(async () => {}) },
+    store: {
+      list: fn(async () => [...hosts]),
+      save: fn(async () => {}),
+      remove: fn(async () => {}),
+      setName: fn(async () => {}),
+      updateEndpoints: fn(async () => {}),
+    },
     hosts,
     activeHostKey,
     paired: fn(async () => {}),
     setName: fn(async () => {}),
+    endpoints: fn(async () => {}),
   };
 }
 

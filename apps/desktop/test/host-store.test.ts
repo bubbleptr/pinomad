@@ -187,6 +187,84 @@ describe("createHostStore", () => {
     expect(raw.hosts).toEqual([]);
   });
 
+  it("updateEndpoints rewrites only the set and legacy url inside the serialized queue", async () => {
+    const { store } = await tempStore();
+    const account = { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) };
+    const a = { ...host("wss://old.example/secure"), name: "Desk", account };
+    const b = host("ws://127.0.0.1:7420/secure");
+    await store.save(a);
+    await store.save(b);
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [
+        { transport: "webSocket" as const, role: "direct" as const, url: "wss://direct.example/secure" },
+        { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" },
+      ],
+    };
+    await store.updateEndpoints(a.hostKey, endpointSet);
+    const empty = { schemaVersion: 1 as const, endpoints: [] };
+    await store.updateEndpoints(b.hostKey, endpointSet);
+    await store.updateEndpoints(b.hostKey, empty);
+    expect(await store.list()).toEqual([
+      { ...a, url: "wss://relay.example/secure", endpointSet },
+      { ...b, endpointSet: empty },
+    ]);
+  });
+
+  it("updateEndpoints writes nothing for a forgotten host", async () => {
+    const { store, dir } = await tempStore();
+    const a = host();
+    await store.save(a);
+    await store.remove(a.hostKey);
+    await store.updateEndpoints(a.hostKey, { schemaVersion: 1, endpoints: [] });
+    expect(await store.list()).toEqual([]);
+    const raw = JSON.parse(cipher.decrypt(await readFile(join(dir, "hosts.bin"))));
+    expect(raw.hosts).toEqual([]);
+  });
+
+  it("re-saving keeps the stored name, account and endpoint set when the write omits them", async () => {
+    const { store } = await tempStore();
+    const account = { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) };
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+    };
+    const existing = { ...host("wss://old.example/secure"), name: "Desk", account, endpointSet };
+    await store.save(existing);
+    const freshKey = toBase64Url(generateKeyPair().privateKey);
+    await store.save({ url: "wss://new.example/secure", hostKey: existing.hostKey, privateKey: freshKey });
+    expect(await store.list()).toEqual([
+      {
+        url: "wss://new.example/secure",
+        hostKey: existing.hostKey,
+        privateKey: freshKey,
+        name: "Desk",
+        account,
+        endpointSet,
+      },
+    ]);
+  });
+
+  it("serializes endpoint updates with name writes and removals", async () => {
+    const { store } = await tempStore();
+    const a = host("wss://old.example/secure");
+    const b = host("wss://other.example/secure");
+    await store.save(a);
+    await store.save(b);
+    const endpointSet = {
+      schemaVersion: 1 as const,
+      endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+    };
+    await Promise.all([
+      store.setName(a.hostKey, "Desk"),
+      store.updateEndpoints(a.hostKey, endpointSet),
+      store.remove(b.hostKey),
+    ]);
+    expect(await store.list()).toEqual([
+      { ...a, name: "Desk", url: "wss://relay.example/secure", endpointSet },
+    ]);
+  });
+
   it("round-trips the account credential encrypted, independent of the hosts", async () => {
     const { store, dir } = await tempStore();
     expect(await store.account()).toBeUndefined();

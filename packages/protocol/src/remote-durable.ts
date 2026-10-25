@@ -16,13 +16,14 @@ import {
   hostStreams,
   hostSupportsCall,
   hostSupportsFeature,
-  INVALID_FRAME_CLOSE_CODE,
   PROTOCOL,
   type ServerFrame,
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
 } from "./frames.ts";
-import { type FrameConnection, type FrameTransport, webSocketTransport } from "./transport.ts";
+import { parseEndpointSet, type EndpointSet } from "./endpoints.ts";
+import { candidatePlan, type RemoteCandidate } from "./remote-candidates.ts";
+import { type FrameConnection, type FrameHandlers, type FrameTransport, webSocketTransport } from "./transport.ts";
 import type {
   ConversationDefaults,
   DurableController,
@@ -33,6 +34,72 @@ import type {
   Notice,
 } from "./view.ts";
 
+/** The one-time offer a pairing candidate carries until message 2 verifies. */
+export interface PairingContext {
+  readonly secret: string;
+  readonly name: string;
+}
+
+/** Per-candidate deadlines. Every stage is bounded, and a retired candidate cancels its timer. */
+export interface CandidateTimeouts {
+  readonly socketOpenMs: number;
+  readonly noiseMs: number;
+  readonly helloMs: number;
+  readonly syncMs: number;
+}
+
+export const DEFAULT_CANDIDATE_TIMEOUTS: CandidateTimeouts = {
+  socketOpenMs: 5_000,
+  noiseMs: 5_000,
+  helloMs: 5_000,
+  syncMs: 10_000,
+};
+
+/**
+ * The round budget defaults to every candidate's four stage deadlines plus a
+ * small margin, so a cap never starves a later candidate of its turn. An
+ * explicit `roundTimeoutMs` may be tighter for tests or operations.
+ */
+
+/** Which phase a candidate failed in, for the per-path diagnostics a round aggregates. */
+export type CandidateFailureStage = "unsupported" | "open" | "noise" | "hello" | "sync" | "round" | "closed";
+
+export interface CandidateFailure {
+  readonly candidate: RemoteCandidate;
+  readonly stage: CandidateFailureStage;
+  readonly unauthorized: boolean;
+  readonly code?: number;
+  readonly reason?: string;
+}
+
+/** Every applicable candidate failed; `failures` carries one entry per path. */
+export class ConnectionFailedError extends Error {
+  readonly failures: readonly CandidateFailure[];
+  constructor(failures: readonly CandidateFailure[]) {
+    super(`Could not connect to the host: ${failures.map(describeFailure).join("; ")}`);
+    this.name = "ConnectionFailedError";
+    this.failures = failures;
+  }
+}
+
+const REMOTE_ACCESS_UNAVAILABLE =
+  "Remote access is unavailable: the host published no remote path and this device has no local entry.";
+
+const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+const describeFailure = (failure: CandidateFailure): string => {
+  const role = failure.candidate.role === "loopback" ? "local" : failure.candidate.role;
+  const where = `${role} ${failure.candidate.url}`;
+  if (failure.stage === "unsupported") return `${where} skipped (${failure.reason ?? "unsupported"})`;
+  const code = failure.code === undefined ? "" : ` (close ${failure.code})`;
+  return `${where} failed at ${failure.stage}${code}${failure.reason === undefined ? "" : `: ${failure.reason}`}`;
+};
+
+/** A source of network-change events; web and desktop wrap their platform's. */
+export interface NetworkChanges {
+  subscribe(listener: () => void): () => void;
+}
+
 export type RemoteDurableOptions = (
   | {
       /** `ws://127.0.0.1:<port>` of a host's gateway. */
@@ -40,8 +107,41 @@ export type RemoteDurableOptions = (
       readonly token: string;
     }
   | { readonly transport: FrameTransport }
+  | {
+      /** Already ordered by `candidatePlan`; unsupported entries are reported, not dialed. */
+      readonly candidates: readonly RemoteCandidate[];
+      /**
+       * Builds the carrier for one candidate. `pairing` is present until
+       * message 2 verifies, so every retry before that shares the identity and
+       * secret; afterwards this client passes undefined.
+       */
+      readonly openTransport: (candidate: RemoteCandidate, pairing: PairingContext | undefined) => FrameTransport;
+      /** The invite's one-time offer for this round; cleared exactly once on message 2. */
+      readonly pairing?: PairingContext;
+      /**
+       * The record's legacy url, used only to rebuild the plan from a hello's
+       * endpoint set (a loopback entry stays local). Defaults to the first candidate.
+       */
+      readonly legacyUrl?: string;
+      /** The page's protocol, so a hello update can mark mixed-content paths unsupported. */
+      readonly pageProtocol?: string;
+    }
 ) & {
   readonly reconnectDelayMs?: { readonly min: number; readonly max: number };
+  readonly candidateTimeouts?: Partial<CandidateTimeouts>;
+  /** Cap a whole round; defaults to the sum of every candidate's stage budgets. */
+  readonly roundTimeoutMs?: number;
+  /** Abort a connection attempt before ready; after ready, close the durable instead. */
+  readonly signal?: AbortSignal;
+  readonly network?: NetworkChanges;
+  /** Message 2 verified: persist the device identity now, independently of ready. */
+  readonly onPaired?: () => void | Promise<void>;
+  /** Persisting after paired failed; the pairing itself stays valid and ready continues. */
+  readonly onPairedError?: (error: Error) => void;
+  /** A validated hello endpoint set (including an explicit empty one). */
+  readonly onEndpointSet?: (endpointSet: EndpointSet) => void | Promise<void>;
+  readonly onEndpointSetError?: (error: Error) => void;
+  readonly onCandidateFailure?: (failure: CandidateFailure) => void;
 };
 
 export interface RemoteDurable {
@@ -126,6 +226,16 @@ function needsImageRefs(images: readonly OutgoingImage[]): boolean {
   });
 }
 
+/** One candidate's live connection; retired attempts are ignored by generation. */
+interface DialAttempt {
+  readonly candidate: RemoteCandidate;
+  readonly generation: number;
+  connection?: FrameConnection;
+  phase: "open" | "noise" | "hello" | "sync" | "ready";
+  timer?: ReturnType<typeof setTimeout>;
+  done: boolean;
+}
+
 class RemoteClient {
   readonly ready: Promise<RemoteDurable>;
   readonly #options: RemoteDurableOptions;
@@ -142,8 +252,30 @@ class RemoteClient {
   #toolPresentations: Record<string, PresentationType> = {};
   readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
   readonly #pending = new Map<number, Pending>();
-  readonly #transport: FrameTransport;
-  #connection: FrameConnection | undefined;
+  #candidates: RemoteCandidate[];
+  /** The list this round walks; a hello's newer set applies from the next round. */
+  #roundCandidates: RemoteCandidate[] = [];
+  readonly #openTransport: (candidate: RemoteCandidate, pairing: PairingContext | undefined) => FrameTransport;
+  readonly #baseUrl: string;
+  readonly #pageProtocol: string | undefined;
+  readonly #timeouts: CandidateTimeouts;
+  readonly #roundTimeoutMs: number | undefined;
+  readonly #followsHostEndpoints: boolean;
+  #pairing: PairingContext | undefined;
+  #dial: DialAttempt | undefined;
+  #generation = 0;
+  #round = 0;
+  #candidateIndex = 0;
+  #failures: CandidateFailure[] = [];
+  #roundTimer: ReturnType<typeof setTimeout> | undefined;
+  #backoffTimer: ReturnType<typeof setTimeout> | undefined;
+  #backoffGeneration = 0;
+  #networkUnsubscribe: (() => void) | undefined;
+  #signalCleanup: (() => void) | undefined;
+  #roundExpired = false;
+  #roundActive = false;
+  #everReady = false;
+  #outageNoticed = false;
   #state: DurableView | undefined;
   #current: ConversationId | undefined;
   #side: ConversationId | undefined;
@@ -172,68 +304,561 @@ class RemoteClient {
 
   constructor(options: RemoteDurableOptions) {
     this.#options = options;
-    this.#transport = "transport" in options ? options.transport : webSocketTransport(options.url, options.token);
+    this.#followsHostEndpoints = "candidates" in options;
+    if ("candidates" in options) {
+      this.#candidates = [...options.candidates];
+      this.#openTransport = options.openTransport;
+      this.#pairing = options.pairing;
+      this.#baseUrl = options.legacyUrl ?? options.candidates[0]?.url ?? "";
+      this.#pageProtocol = options.pageProtocol;
+    } else if ("transport" in options) {
+      this.#candidates = [{ url: options.transport.label, role: "legacy" }];
+      this.#openTransport = () => options.transport;
+      this.#baseUrl = options.transport.label;
+      this.#pageProtocol = undefined;
+    } else {
+      this.#candidates = candidatePlan(options.url, undefined);
+      this.#openTransport = () => webSocketTransport(options.url, options.token);
+      this.#baseUrl = options.url;
+      this.#pageProtocol = undefined;
+    }
+    this.#timeouts = { ...DEFAULT_CANDIDATE_TIMEOUTS, ...options.candidateTimeouts };
+    this.#roundTimeoutMs = options.roundTimeoutMs;
     this.ready = new Promise((resolve, reject) => {
       this.#resolveReady = resolve;
       this.#rejectReady = reject;
     });
-    this.#open();
+    const signal = options.signal;
+    const initiallyAborted = signal?.aborted === true;
+    if (signal !== undefined) {
+      const abort = (): void => this.#abort();
+      if (initiallyAborted) queueMicrotask(abort);
+      else {
+        signal.addEventListener("abort", abort, { once: true });
+        this.#signalCleanup = () => signal.removeEventListener("abort", abort);
+      }
+    }
+    this.#networkUnsubscribe = options.network?.subscribe(() => this.#networkChanged());
+    if (!initiallyAborted) this.#beginRound();
   }
 
-  #open(): void {
+  #isActive(dial: DialAttempt): boolean {
+    return !this.#closed && this.#dial === dial && !dial.done && dial.generation === this.#generation;
+  }
+
+  #clearTimer(dial: DialAttempt): void {
+    if (dial.timer === undefined) return;
+    clearTimeout(dial.timer);
+    dial.timer = undefined;
+  }
+
+  #arm(dial: DialAttempt, phase: "open" | "noise" | "hello" | "sync", ms: number): void {
+    this.#clearTimer(dial);
+    dial.timer = setTimeout(() => {
+      dial.timer = undefined;
+      if (!this.#isActive(dial)) return;
+      this.#failDial(dial, phase, undefined, `no progress within ${ms}ms`);
+    }, Math.max(0, ms));
+  }
+
+  #beginRound(): void {
+    if (this.#closed || this.#dial !== undefined) return;
+    this.#clearRoundTimers();
+    this.#clearBackoff();
+    this.#round += 1;
+    const round = this.#round;
+    this.#roundCandidates = [...this.#candidates];
+    this.#candidateIndex = 0;
+    this.#failures = [];
+    this.#roundExpired = false;
+    this.#roundActive = true;
+    const perCandidate =
+      this.#timeouts.socketOpenMs + this.#timeouts.noiseMs + this.#timeouts.helloMs + this.#timeouts.syncMs;
+    const budget = this.#roundTimeoutMs ?? this.#roundCandidates.length * perCandidate + 1_000;
+    this.#roundTimer = setTimeout(() => {
+      this.#roundTimer = undefined;
+      if (this.#closed || !this.#roundActive || this.#round !== round) return;
+      const dial = this.#dial;
+      this.#roundExpired = true;
+      if (dial !== undefined) {
+        this.#recordFailure(dial.candidate, "round", false, undefined, `the connection round exceeded ${budget}ms`);
+        this.#abandonDial(dial);
+      }
+      this.#roundFailed();
+    }, budget);
+    this.#openCandidate();
+  }
+
+  #openCandidate(): void {
+    if (this.#closed || !this.#roundActive || this.#dial !== undefined) return;
+    if (this.#roundExpired) {
+      this.#roundFailed();
+      return;
+    }
+    const candidate = this.#roundCandidates[this.#candidateIndex++];
+    if (candidate === undefined) {
+      this.#roundFailed();
+      return;
+    }
+    if (candidate.unsupported !== undefined) {
+      this.#recordFailure(candidate, "unsupported", false, undefined, candidate.unsupported);
+      queueMicrotask(() => this.#openCandidate());
+      return;
+    }
+    const dial: DialAttempt = {
+      candidate,
+      generation: ++this.#generation,
+      phase: "open",
+      done: false,
+    };
+    this.#dial = dial;
     this.#helloReceived = false;
-    const connection: FrameConnection = this.#transport.open({
-      message: (data) => {
-        if (this.#connection === connection) this.#receive(JSON.parse(data) as ServerFrame);
+    this.#arm(dial, "open", this.#timeouts.socketOpenMs);
+    const handlers: FrameHandlers = {
+      opened: () => {
+        if (this.#isActive(dial)) this.#phase(dial, "noise", this.#timeouts.noiseMs);
       },
-      closed: (code, reason) => this.#lost(connection, code, reason),
-    });
-    this.#connection = connection;
+      authenticated: () => {
+        if (!this.#isActive(dial)) return;
+        this.#phase(dial, "hello", this.#timeouts.helloMs);
+        this.#paired();
+      },
+      message: (data) => {
+        if (this.#isActive(dial)) this.#message(dial, data);
+      },
+      closed: (code, reason) => {
+        if (this.#isActive(dial)) this.#failDial(dial, dial.phase === "ready" ? "closed" : dial.phase, code, reason);
+      },
+    };
+    let transport: FrameTransport;
+    try {
+      transport = this.#openTransport(candidate, this.#pairing);
+    } catch (error) {
+      this.#failDial(dial, "open", undefined, asError(error).message);
+      return;
+    }
+    let connection: FrameConnection;
+    try {
+      connection = transport.open(handlers);
+    } catch (error) {
+      this.#failDial(dial, "open", undefined, asError(error).message);
+      return;
+    }
+    if (!this.#isActive(dial)) {
+      connection.close();
+      return;
+    }
+    dial.connection = connection;
   }
 
-  #lost(connection: FrameConnection, code: number, reason: string | undefined): void {
-    if (this.#connection !== connection) return;
-    this.#connection = undefined;
+  #phase(dial: DialAttempt, phase: "noise" | "hello", ms: number): void {
+    if (!this.#isActive(dial)) return;
+    dial.phase = phase;
+    this.#arm(dial, phase, ms);
+  }
+
+  /** Message 2 verified: the invite is spent and later candidates use the device identity alone. */
+  #paired(): void {
+    if (this.#pairing === undefined) return;
+    this.#pairing = undefined;
+    if (this.#options.onPaired === undefined) return;
+    const report = (error: unknown): void => {
+      try {
+        this.#options.onPairedError?.(asError(error));
+      } catch {
+        // A diagnostic callback must not break the connection.
+      }
+    };
+    try {
+      void Promise.resolve(this.#options.onPaired()).catch(report);
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  #message(dial: DialAttempt, data: string): void {
+    let frame: ServerFrame;
+    try {
+      frame = JSON.parse(data) as ServerFrame;
+    } catch {
+      this.#failDial(dial, dial.phase === "ready" ? "closed" : dial.phase, undefined, "the host sent a frame that is not JSON");
+      return;
+    }
+    if (frame === null || typeof frame !== "object") return;
+    if (frame.type === "hello") {
+      this.#onHello(dial, frame);
+      return;
+    }
+    this.#receive(frame);
+  }
+
+  #onHello(dial: DialAttempt, frame: Extract<ServerFrame, { type: "hello" }>): void {
+    // Hosts up to v4 announced a bare integer; the frame type says
+    // ProtocolVersion, so read it defensively rather than widen the type.
+    const announced: unknown = frame.protocol;
+    const hostMajor =
+      typeof announced === "number"
+        ? announced
+        : announced !== null && typeof announced === "object"
+          ? (announced as { major?: unknown }).major
+          : undefined;
+    if (hostMajor !== PROTOCOL.major) {
+      // A hello this side authenticated is a host-wide verdict: no other path
+      // would speak a different major, so the round stops here (ADR-0032 §6).
+      const mismatch = new ProtocolMismatchError(
+        typeof hostMajor === "number" ? hostMajor : Number.NaN,
+        PROTOCOL.major,
+        frame.hostVersion,
+      );
+      this.#closed = true;
+      this.#clearTimers();
+      this.#stopListeners();
+      this.#abandonDial();
+      if (this.#state === undefined) {
+        this.#rejectReady(mismatch);
+      } else {
+        this.#update({
+          connection: "outdated",
+          protocolMismatch: {
+            hostMajor: mismatch.hostMajor,
+            clientMajor: mismatch.clientMajor,
+            ...(mismatch.hostVersion === undefined ? {} : { hostVersion: mismatch.hostVersion }),
+            direction: mismatch.direction,
+          },
+        });
+        this.#notice("error", mismatch.message);
+      }
+      return;
+    }
+    this.#clearTimer(dial);
+    dial.phase = "sync";
+    this.#arm(dial, "sync", this.#timeouts.syncMs);
+    // The minor decides which streams and calls this host knows (ADR-0018
+    // §1-2); hosts before the version object announced none.
+    const hostMinor =
+      announced !== null && typeof announced === "object" && typeof (announced as { minor?: unknown }).minor === "number"
+        ? (announced as { minor: number }).minor
+        : 0;
+    this.#hostMinor = hostMinor;
+    this.#helloReceived = true;
+    this.#docs = frame.docs;
+    this.#toolPresentations = frame.toolPresentations;
+    this.#helloModels = frame.models;
+    this.#helloDefaults = frame.defaults ?? {};
+    this.#hostVersion = frame.hostVersion;
+    this.#fresh.clear();
+    // A host that got older between reconnects no longer covers every host
+    // stream; drop the ones it predates together with their values.
+    const covered = new Set<StreamName>(hostStreams(hostMinor));
+    for (const name of HOST_STREAM_NAMES) {
+      if (covered.has(name)) {
+        this.#wanted.add(name);
+      } else {
+        this.#wanted.delete(name);
+        this.#values.delete(name);
+        this.#fresh.delete(name);
+      }
+    }
+    if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
+    if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
+    for (const stream of this.#wanted) this.#subscribe(stream);
+    if (frame.endpointSet !== undefined) {
+      const parsed = parseEndpointSet(frame.endpointSet);
+      // Malformed or unsupported sets keep the previous candidates and never
+      // interrupt the live connection; a valid set (empty included) owns the
+      // next round's remote list.
+      if (parsed.kind === "valid") {
+        if (this.#followsHostEndpoints) {
+          this.#candidates = candidatePlan(this.#baseUrl, parsed.endpointSet, { pageProtocol: this.#pageProtocol });
+        }
+        if (this.#options.onEndpointSet !== undefined) {
+          const report = (error: unknown): void => {
+            try {
+              this.#options.onEndpointSetError?.(asError(error));
+            } catch {
+              // A diagnostic callback must not break the live connection.
+            }
+          };
+          try {
+            void Promise.resolve(this.#options.onEndpointSet(parsed.endpointSet)).catch(report);
+          } catch (error) {
+            report(error);
+          }
+        }
+      }
+    }
+    if (this.#state !== undefined) {
+      this.#update({
+        session: frame.session,
+        toolPresentations: frame.toolPresentations,
+        connection: "reconnecting",
+        host: this.#hostInfo(),
+      });
+      this.#refresh();
+    }
+    void this.#afterHello(dial, frame, hostMinor);
+  }
+
+  async #afterHello(
+    dial: DialAttempt,
+    hello: Extract<ServerFrame, { type: "hello" }>,
+    hostMinor: number,
+  ): Promise<void> {
+    try {
+      // A snapshot may already have landed between the hello and this call;
+      // only the streams still missing one need a waiter.
+      const missing = hostStreams(hostMinor).filter((stream) => !this.#fresh.has(stream));
+      await Promise.all(missing.map((stream) => this.#snapshot(stream)));
+    } catch {
+      // The candidate was retired or the host ended a stream; its sync timer
+      // decides whether another candidate gets a turn.
+      return;
+    }
+    if (!this.#isActive(dial)) return;
+    this.#clearTimer(dial);
+    this.#clearRoundTimer();
+    dial.phase = "ready";
+    this.#roundActive = false;
+    this.#attempt = 0;
+    this.#everReady = true;
+    this.#outageNoticed = false;
+    if (this.#state === undefined) {
+      this.#state = {
+        session: hello.session,
+        organized: { chats: [], projects: [], archived: [] },
+        models: this.#host("models") ?? hello.models,
+        defaults: this.#effectiveDefaults(hello.defaults ?? {}),
+        notices: [],
+        connection: "connected",
+        docs: [],
+        toolPresentations: hello.toolPresentations,
+        devices: [],
+        mcp: null,
+        auth: null,
+        providers: null,
+        settings: null,
+        agents: null,
+        host: this.#hostInfo(),
+      };
+      this.#refresh();
+      this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
+      return;
+    }
+    this.#update({ session: hello.session, connection: "connected" });
+    this.#refresh();
+  }
+
+  #recordFailure(
+    candidate: RemoteCandidate,
+    stage: CandidateFailureStage,
+    unauthorized: boolean,
+    code?: number,
+    reason?: string,
+  ): void {
+    const failure: CandidateFailure = {
+      candidate,
+      stage,
+      unauthorized,
+      ...(code === undefined ? {} : { code }),
+      ...(reason === undefined ? {} : { reason }),
+    };
+    this.#failures.push(failure);
+    try {
+      this.#options.onCandidateFailure?.(failure);
+    } catch {
+      // A diagnostic callback must not break the round.
+    }
+  }
+
+  #failDial(dial: DialAttempt, stage: CandidateFailureStage, code?: number, reason?: string): void {
+    if (!this.#isActive(dial)) return;
+    const wasReady = dial.phase === "ready";
+    this.#recordFailure(dial.candidate, stage, code === UNAUTHORIZED_CLOSE_CODE, code, reason);
+    this.#abandonDial(dial);
+    this.#rejectPending();
+    if (this.#closed) return;
+    // A live connection was lost: the next round starts from the first path.
+    // During a reconnect round, keep walking the remaining candidates.
+    if (wasReady) {
+      this.#update({ connection: "reconnecting" });
+      this.#beginRound();
+      return;
+    }
+    if (this.#roundExpired) {
+      this.#roundFailed();
+      return;
+    }
+    queueMicrotask(() => this.#openCandidate());
+  }
+
+  /** Stop the current dial without recording a failure or starting the next one. */
+  #abandonDial(expected?: DialAttempt): void {
+    const dial = this.#dial;
+    if (dial === undefined || (expected !== undefined && dial !== expected)) return;
+    this.#dial = undefined;
+    dial.done = true;
+    this.#clearTimer(dial);
+    this.#rejectSnapshotWaiters(new DisconnectedError());
+    dial.connection?.close();
+  }
+
+  #rejectPending(): void {
     for (const pending of this.#pending.values()) pending.reject(new DisconnectedError());
     this.#pending.clear();
-    if (this.#state === undefined) {
+  }
+
+  #rejectSnapshotWaiters(error: Error): void {
+    for (const waiters of this.#snapshotWaiters.values()) {
+      for (const waiter of waiters.splice(0)) waiter.reject(error);
+    }
+  }
+
+  #dialedFailures(failures: readonly CandidateFailure[]): CandidateFailure[] {
+    return failures.filter((failure) => failure.stage !== "unsupported");
+  }
+
+  /**
+   * Only paths this client actually dialed can make the round unauthorized.
+   * An unsupported candidate (mixed content, say) is evidence about this
+   * platform, not about whether the host accepts the device.
+   */
+  #unauthorizedRound(failures: readonly CandidateFailure[]): boolean {
+    const dialed = this.#dialedFailures(failures);
+    return dialed.length > 0 && dialed.every((failure) => failure.unauthorized);
+  }
+
+  #roundFailed(): void {
+    if (!this.#roundActive) return;
+    this.#roundActive = false;
+    this.#clearRoundTimers();
+    this.#clearBackoff();
+    this.#dial = undefined;
+    if (this.#closed) return;
+    const failures = [...this.#failures];
+    const dialed = this.#dialedFailures(failures);
+    const unauthorized = this.#unauthorizedRound(failures);
+    const emptyPlan = this.#roundCandidates.length === 0;
+    if (!this.#everReady) {
       this.#closed = true;
+      this.#clearTimers();
+      this.#stopListeners();
       this.#rejectReady(
-        code === UNAUTHORIZED_CLOSE_CODE
+        unauthorized
           ? new UnauthorizedError()
-          : new Error(reason ?? `Could not connect to ${this.#transport.label}`),
+          : emptyPlan
+            ? new Error(REMOTE_ACCESS_UNAVAILABLE)
+            : this.#aggregateError(failures),
       );
       return;
     }
-    if (this.#closed) return;
-    if (code === UNAUTHORIZED_CLOSE_CODE) {
+    if (unauthorized) {
       this.#closed = true;
+      this.#clearTimers();
+      this.#stopListeners();
       this.#update({ connection: "closed", unauthorized: true });
       this.#notice("error", new UnauthorizedError().message);
       return;
     }
-    // 4400 is terminal like 4401 (ADR-0018 §4): the host rejected a malformed
-    // frame from this client, and a reconnect would send the same ones. A
-    // plain 1008 (a failed secure handshake, say) still reconnects below.
-    if (code === INVALID_FRAME_CLOSE_CODE) {
+    if (dialed.length === 0) {
+      // No path was dialed. A genuinely empty plan has no remote entry at
+      // all; an unsupported-only plan keeps its skipped-path reasons instead
+      // of claiming the host published nothing.
       this.#closed = true;
+      this.#clearTimers();
+      this.#stopListeners();
       this.#update({ connection: "closed" });
-      this.#notice(
-        "error",
-        `The host rejected a malformed frame from this client${reason === undefined ? "" : `: ${reason}`}`,
-      );
+      this.#notice("error", emptyPlan ? REMOTE_ACCESS_UNAVAILABLE : this.#aggregateError(failures).message);
       return;
     }
     this.#update({ connection: "reconnecting" });
+    if (!this.#outageNoticed) {
+      this.#outageNoticed = true;
+      this.#notice("error", this.#aggregateError(failures).message);
+    }
+    this.#scheduleBackoff();
+  }
+
+  #aggregateError(failures: readonly CandidateFailure[]): Error {
+    if (this.#unauthorizedRound(failures)) return new UnauthorizedError();
+    if (failures.length === 0) return new Error(REMOTE_ACCESS_UNAVAILABLE);
+    return new ConnectionFailedError(failures);
+  }
+
+  #scheduleBackoff(): void {
+    this.#clearBackoff();
     const { min, max } = this.#options.reconnectDelayMs ?? { min: 200, max: 2000 };
     const delay = Math.min(max, min * 2 ** this.#attempt++);
-    setTimeout(() => {
-      if (!this.#closed) this.#open();
+    const generation = this.#backoffGeneration;
+    this.#backoffTimer = setTimeout(() => {
+      if (this.#backoffGeneration !== generation) return;
+      this.#backoffTimer = undefined;
+      if (!this.#closed) this.#beginRound();
     }, delay);
   }
 
+  #networkChanged(): void {
+    if (this.#closed) return;
+    // A live connection is not re-dialed on an interface change; only a
+    // pending round or backoff restarts immediately.
+    if (this.#dial?.phase === "ready") return;
+    this.#clearBackoff();
+    this.#clearRoundTimers();
+    this.#abandonDial();
+    this.#attempt = 0;
+    this.#beginRound();
+  }
+
+  #clearTimerDial(): void {
+    if (this.#dial !== undefined) this.#clearTimer(this.#dial);
+  }
+
+  #clearRoundTimer(): void {
+    if (this.#roundTimer === undefined) return;
+    clearTimeout(this.#roundTimer);
+    this.#roundTimer = undefined;
+  }
+
+  #clearRoundTimers(): void {
+    this.#clearRoundTimer();
+    this.#clearTimerDial();
+  }
+
+  #clearBackoff(): void {
+    this.#backoffGeneration += 1;
+    if (this.#backoffTimer === undefined) return;
+    clearTimeout(this.#backoffTimer);
+    this.#backoffTimer = undefined;
+  }
+
+  #clearTimers(): void {
+    this.#clearRoundTimer();
+    this.#clearBackoff();
+    if (this.#dial !== undefined) this.#clearTimer(this.#dial);
+  }
+
+  #stopListeners(): void {
+    this.#networkUnsubscribe?.();
+    this.#networkUnsubscribe = undefined;
+    this.#signalCleanup?.();
+    this.#signalCleanup = undefined;
+  }
+
+  #abort(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#clearTimers();
+    this.#stopListeners();
+    this.#abandonDial();
+    this.#rejectPending();
+    this.#rejectSnapshotWaiters(new DisconnectedError());
+    // A post-ready abort still has a public view: close it without touching
+    // the paired / persisted state.
+    this.#update({ connection: "closed" });
+    this.#rejectReady(new Error("Connection attempt aborted"));
+  }
+
   #send(frame: ClientFrame): void {
-    this.#connection?.send(JSON.stringify(frame));
+    this.#dial?.connection?.send(JSON.stringify(frame));
   }
 
   #receive(frame: ServerFrame): void {
@@ -241,85 +866,6 @@ class RemoteClient {
     // build does not know — are ignored, never fatal.
     if (frame === null || typeof frame !== "object") return;
     switch (frame.type) {
-      case "hello": {
-        // Hosts up to v4 announced a bare integer; the frame type says
-        // ProtocolVersion, so read it defensively rather than widen the type.
-        const announced: unknown = frame.protocol;
-        const hostMajor =
-          typeof announced === "number"
-            ? announced
-            : announced !== null && typeof announced === "object"
-              ? (announced as { major?: unknown }).major
-              : undefined;
-        if (hostMajor !== PROTOCOL.major) {
-          // Reconnecting would loop on the same mismatch; mark closed first so
-          // the close below stays terminal, then surface it the way the view
-          // can tell it from a lost connection.
-          const mismatch = new ProtocolMismatchError(
-            typeof hostMajor === "number" ? hostMajor : Number.NaN,
-            PROTOCOL.major,
-            frame.hostVersion,
-          );
-          this.#closed = true;
-          if (this.#state === undefined) {
-            this.#rejectReady(mismatch);
-          } else {
-            this.#update({
-              connection: "outdated",
-              protocolMismatch: {
-                hostMajor: mismatch.hostMajor,
-                clientMajor: mismatch.clientMajor,
-                ...(mismatch.hostVersion === undefined ? {} : { hostVersion: mismatch.hostVersion }),
-                direction: mismatch.direction,
-              },
-            });
-            this.#notice("error", mismatch.message);
-          }
-          this.#connection?.close();
-          return;
-        }
-        // The minor decides which streams and calls this host knows (ADR-0018
-        // §1-2); hosts before the version object announced none.
-        const hostMinor =
-          announced !== null && typeof announced === "object" && typeof (announced as { minor?: unknown }).minor === "number"
-            ? (announced as { minor: number }).minor
-            : 0;
-        this.#hostMinor = hostMinor;
-        this.#helloReceived = true;
-        this.#attempt = 0;
-        this.#docs = frame.docs;
-        this.#toolPresentations = frame.toolPresentations;
-        this.#helloModels = frame.models;
-        this.#helloDefaults = frame.defaults ?? {};
-        this.#hostVersion = frame.hostVersion;
-        this.#fresh.clear();
-        // A host that got older between reconnects no longer covers every host
-        // stream; drop the ones it predates together with their values.
-        const covered = new Set<StreamName>(hostStreams(hostMinor));
-        for (const name of HOST_STREAM_NAMES) {
-          if (covered.has(name)) {
-            this.#wanted.add(name);
-          } else {
-            this.#wanted.delete(name);
-            this.#values.delete(name);
-            this.#fresh.delete(name);
-          }
-        }
-        if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
-        if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
-        for (const stream of this.#wanted) this.#subscribe(stream);
-        if (this.#state !== undefined) {
-          this.#update({
-            session: frame.session,
-            toolPresentations: frame.toolPresentations,
-            connection: "connected",
-            host: this.#hostInfo(),
-          });
-          this.#refresh();
-        }
-        else this.#awaitFirstView(frame, hostMinor);
-        return;
-      }
       case "snapshot":
         if (!this.#wanted.has(frame.stream)) return;
         this.#values.set(frame.stream, frame.value);
@@ -352,30 +898,6 @@ class RemoteClient {
         this.#notice(frame.level, frame.message);
         return;
     }
-  }
-
-  #awaitFirstView(hello: Extract<ServerFrame, { type: "hello" }>, hostMinor: number): void {
-    void Promise.all(hostStreams(hostMinor).map((stream) => this.#snapshot(stream))).then(() => {
-      this.#state = {
-        session: hello.session,
-        organized: { chats: [], projects: [], archived: [] },
-        models: this.#host("models") ?? hello.models,
-        defaults: this.#effectiveDefaults(hello.defaults ?? {}),
-        notices: [],
-        connection: "connected",
-        docs: [],
-        toolPresentations: hello.toolPresentations,
-        devices: [],
-        mcp: null,
-        auth: null,
-        providers: null,
-        settings: null,
-        agents: null,
-        host: this.#hostInfo(),
-      };
-      this.#refresh();
-      this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
-    });
   }
 
   /** Resolve at the stream's next snapshot; reject if the host ends it instead. */
@@ -551,7 +1073,7 @@ class RemoteClient {
   }
 
   #call<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
-    if (this.#connection === undefined || this.#state?.connection !== "connected") {
+    if (this.#dial?.phase !== "ready" || this.#state?.connection !== "connected") {
       return Promise.reject(new Error("Not connected to the host"));
     }
     const id = this.#nextCall++;
@@ -964,7 +1486,11 @@ class RemoteClient {
   #close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#clearTimers();
+    this.#stopListeners();
+    this.#abandonDial();
+    this.#rejectPending();
+    this.#rejectSnapshotWaiters(new DisconnectedError());
     this.#update({ connection: "closed" });
-    this.#connection?.close();
   }
 }

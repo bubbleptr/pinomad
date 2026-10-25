@@ -1,3 +1,4 @@
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { pairingEndpointSet, parsePairParam } from "@pinomad/protocol/pairing-link.ts";
 import { parseStoredHost, type StoredHost } from "@pinomad/client/stored-host.ts";
 import type {} from "./entities/host/desktop-bridge.ts"; // brings in the window.pinomadDesktop global
@@ -28,8 +29,21 @@ export function storedDevice(stored: string | null): StoredHost | undefined {
  */
 export type ResolvedAddress =
   | { readonly kind: "token"; readonly url: string; readonly token: string }
-  | { readonly kind: "pair"; readonly url: string; readonly hostKey: string; readonly secret: string }
-  | { readonly kind: "device"; readonly url: string; readonly hostKey: string; readonly privateKey: string };
+  | {
+      readonly kind: "pair";
+      readonly url: string;
+      readonly hostKey: string;
+      readonly secret: string;
+      /** The invite's validated remote candidates; absent on old hosts/links. */
+      readonly endpointSet?: EndpointSet;
+    }
+  | {
+      readonly kind: "device";
+      readonly url: string;
+      readonly hostKey: string;
+      readonly privateKey: string;
+      readonly endpointSet?: EndpointSet;
+    };
 
 /**
  * Resolve where to connect from the fragment and the paired hosts.
@@ -55,9 +69,16 @@ export function resolveAddress(
     // A scanned / page-fragment invite is validated by the same additive
     // endpointSet rule as a pasted or deep link; otherwise a bad set would
     // silently fall back to the legacy url here.
-    if (pairingEndpointSet(params) === false) return undefined;
+    const endpointSet = pairingEndpointSet(params);
+    if (endpointSet === false) return undefined;
     const url = params.get("url") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
-    return { kind: "pair", url, hostKey: parsed.hostKey, secret: parsed.secret };
+    return {
+      kind: "pair",
+      url,
+      hostKey: parsed.hostKey,
+      secret: parsed.secret,
+      ...(endpointSet === undefined ? {} : { endpointSet }),
+    };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
   const host = hosts.find((each) => each.hostKey === activeHostKey) ?? hosts[0];

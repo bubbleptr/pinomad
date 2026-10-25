@@ -1,3 +1,4 @@
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { UpdateStatus } from "../app-update/update-protocol.ts";
 import type { StoredHost } from "./host-store.ts";
 
@@ -14,6 +15,8 @@ export interface DesktopBridge {
     remove(hostKey: string): Promise<void>;
     /** Cache the machine name the host announced (5.12); writes nothing when the entry is gone. */
     setName(hostKey: string, name: string): Promise<void>;
+    /** Apply a secure-channel remote set; writes nothing when the entry is gone. */
+    updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
   };
   /**
    * The bearer credential for the server-accounts API, kept in main's

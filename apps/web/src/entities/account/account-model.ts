@@ -293,7 +293,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     pairHost: async (hostId) => {
       if (client === undefined) return fail("unauthenticated");
       const name = deps.name ?? (() => "This device");
-      const result = await pairViaAccount(client, hostId, await name(), deps.connect);
+      const result = await pairViaAccount(client, hostId, await name(), deps.connect, {
+        pageProtocol: window.location.protocol,
+      });
       if (!result.ok) {
         if (isUnauthenticated(result.error)) signedOut();
         return result;
