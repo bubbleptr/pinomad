@@ -1,0 +1,21 @@
+{
+  "include": ["src", "scripts", "vite.config.ts"],
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2023",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "types": ["vite/client", "node"],
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

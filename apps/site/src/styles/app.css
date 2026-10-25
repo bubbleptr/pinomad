@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+@source "../components";
+
+html {
+  scrollbar-gutter: stable;
+}
+
+/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
+html:not([data-app-user]) .when-signed-in,
+html[data-app-user] .when-signed-out {
+  display: none;
+}

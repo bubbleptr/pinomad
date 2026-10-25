@@ -1,0 +1,38 @@
+---
+title: Attach files, slash commands, and switching agents mid-conversation
+version: v0.7.0
+date: 2026-10-24
+---
+
+**Composer**
+
+- Attach local files to a message from the web, desktop, and iOS composer. The model gets read-only paths to them.
+- Hosts can declare slash commands; type `/` in the composer to run one.
+- Pick a skill from the `$` menu and its full text goes to the model with your message. Only picked skills expand.
+- Steer, edit, or withdraw a queued message before the agent reaches it.
+- `+` is now one menu for everything that goes into a message, and the placeholder hints at `@`, `$`, and `/`.
+
+**Agents**
+
+- Switch a conversation's named agent mid-conversation from the model picker (web) or the model sheet (iOS).
+
+**Web and desktop**
+
+- The sidebar footer is now a user bar with your hosts and Settings.
+- Run details moved from the composer into the overview card, which is split into collapsible sections.
+- Add project browses folders in columns.
+- Images in messages load on demand instead of with the conversation.
+
+**iOS**
+
+- A new home page with status tiles and machine groups, plus project and filter pages.
+- A settings page per machine: host name, paired devices, and the account-devices switch.
+- The conversation overview opens from the ⓘ button.
+- New motion, haptics, and Lucide icons; the app UI is now in English.
+
+**Host and server**
+
+- Project skills load from every level up to the Git root.
+- Named agents recover from file-watcher events the host missed.
+- The macOS host log rotates instead of growing without bound.
+- Push notifications retry when Apple's servers cut a connection.

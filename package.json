@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/client && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web && tsc --noEmit -p apps/server && tsc --noEmit -p apps/cli && tsc --noEmit -p apps/desktop",
+    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/client && tsc --noEmit -p apps/host && tsc --noEmit -p apps/web && tsc --noEmit -p apps/server && tsc --noEmit -p apps/cli && tsc --noEmit -p apps/desktop && tsc --noEmit -p apps/site",
     "test": "vitest run && cargo test && cargo test -p pinomad-core --features ffi",
     "build": "cd apps/web && bun run build && cd ../site && bun run build",
     "host": "node apps/host/src/main.ts",
