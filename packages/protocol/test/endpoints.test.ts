@@ -39,6 +39,14 @@ describe("parseEndpointSet", () => {
     expect(parseEndpointSet(set(direct, conflicting))).toEqual({ kind: "malformed" });
   });
 
+  it("keeps lone surrogates in URL identity instead of collapsing them", () => {
+    const first = { ...relay, url: "ws://example.com/\uD800" };
+    const second = { ...relay, url: "ws://example.com/\uD801" };
+    expect(parseEndpointSet(set(first, second))).toEqual({ kind: "valid", endpointSet: set(first, second) });
+    expect(parseEndpointSet(set(first, first))).toEqual({ kind: "valid", endpointSet: set(first) });
+    expect(parseEndpointSet(set(first, { ...first, role: "direct" }))).toEqual({ kind: "malformed" });
+  });
+
   it("ignores unknown transports, but only when a supported entry remains", () => {
     const future = { transport: "quic", role: "relay", url: "quic://relay.example.com" } as unknown as HostEndpoint;
     expect(parseEndpointSet(set(future, relay))).toEqual({ kind: "valid", endpointSet: set(relay) });

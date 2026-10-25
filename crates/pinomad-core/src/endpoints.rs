@@ -18,8 +18,9 @@ pub const ENDPOINT_SET_SCHEMA_VERSION: u32 = 1;
 pub const MAX_ENDPOINTS: usize = 4;
 pub const MAX_ENDPOINT_URL_LENGTH: usize = 1024;
 
-/// The path role a socket plays. Tailscale and other providers are
-/// transports, not roles.
+/// The path role a socket plays. Transport is the wire protocol (only
+/// WebSocket today), not the network that carries it — a Tailscale address is
+/// still a direct WebSocket.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HostEndpointRole {
     Direct,
@@ -39,7 +40,9 @@ impl HostEndpointRole {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostEndpoint {
     pub role: HostEndpointRole,
-    pub url: String,
+    /// The published URL as UTF-16 code units, never a lossy UTF-8 copy: two
+    /// different lone surrogates stay distinct for identity and conflict checks.
+    pub url: U16String,
 }
 
 impl HostEndpoint {
@@ -47,7 +50,7 @@ impl HostEndpoint {
         let mut object = JsonObject::new();
         object.set(U16String::from_str("transport"), Json::from("webSocket"));
         object.set(U16String::from_str("role"), Json::from(self.role.as_str()));
-        object.set(U16String::from_str("url"), Json::from(self.url.clone()));
+        object.set(U16String::from_str("url"), Json::String(self.url.clone()));
         Json::Object(Arc::new(object))
     }
 }
@@ -114,7 +117,7 @@ pub fn parse_endpoint_set(value: Option<&Json>) -> ParsedEndpointSet {
         return ParsedEndpointSet::Malformed;
     }
     let mut endpoints = Vec::new();
-    let mut roles: HashMap<String, HostEndpointRole> = HashMap::new();
+    let mut roles: HashMap<U16String, HostEndpointRole> = HashMap::new();
     for entry in raw.iter() {
         if !entry.is_object() {
             return ParsedEndpointSet::Malformed;
@@ -145,10 +148,12 @@ pub fn parse_endpoint_set(value: Option<&Json>) -> ParsedEndpointSet {
         if url.units().len() > MAX_ENDPOINT_URL_LENGTH {
             return ParsedEndpointSet::Malformed;
         }
-        let url = url.to_string_lossy();
-        if !is_socket_url(&url) {
+        // Only the syntax probe is lossy; identity, deduplication and the
+        // emitted value keep the original UTF-16 units.
+        if !is_socket_url(&url.to_string_lossy()) {
             return ParsedEndpointSet::Malformed;
         }
+        let url = url.clone();
         match roles.get(&url) {
             Some(prior) if *prior != role => return ParsedEndpointSet::Malformed,
             Some(_) => continue,

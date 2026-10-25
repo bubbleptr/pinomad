@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_HOST_URL, deviceName, resolveAddress, servedByHost } from "../src/address.ts";
+import { encodeEndpointSetParam, type HostEndpoint } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 
@@ -33,6 +34,67 @@ describe("resolveAddress", () => {
       url: "ws://127.0.0.1:7422",
       hostKey,
       secret: "abc",
+    });
+  });
+
+  it("validates endpointSet on the scanned page fragment like a pasted link", () => {
+    const relay: HostEndpoint = { transport: "webSocket", role: "relay", url: "wss://relay.example.com/c/host" };
+    const valid = encodeEndpointSetParam({ schemaVersion: 1, endpoints: [relay] });
+    const target = encodeURIComponent(relay.url);
+    const fragment = (endpointSet: string) =>
+      `#pair=${hostKey}.abc&url=${target}&endpointSet=${endpointSet}`;
+
+    expect(resolveAddress(fragment(valid), https, [], null)).toEqual({
+      kind: "pair",
+      url: relay.url,
+      hostKey,
+      secret: "abc",
+    });
+    // A loopback legacy url stays the client-local entry even with a remote set.
+    const loopback = "ws://127.0.0.1:7420/secure";
+    expect(
+      resolveAddress(
+        `#pair=${hostKey}.abc&url=${encodeURIComponent(loopback)}&endpointSet=${valid}`,
+        https,
+        [],
+        null,
+      ),
+    ).toEqual({ kind: "pair", url: loopback, hostKey, secret: "abc" });
+
+    // Empty, malformed and repeated sets reject the whole invite.
+    const empty = encodeEndpointSetParam({ schemaVersion: 1, endpoints: [] });
+    expect(resolveAddress(fragment(empty), https, [], null)).toBeUndefined();
+    const malformed = encodeURIComponent(
+      JSON.stringify({ schemaVersion: 1, endpoints: [{ transport: "webSocket", role: "backup", url: relay.url }] }),
+    );
+    expect(resolveAddress(fragment(malformed), https, [], null)).toBeUndefined();
+    expect(resolveAddress(fragment(`${valid}&endpointSet=${valid}`), https, [], null)).toBeUndefined();
+
+    // Unknown schema / transport falls back to the legacy url, as on pasted links.
+    const unknown = encodeURIComponent(JSON.stringify({ schemaVersion: 2, endpoints: [] }));
+    expect(resolveAddress(fragment(unknown), https, [], null)).toEqual({
+      kind: "pair",
+      url: relay.url,
+      hostKey,
+      secret: "abc",
+    });
+    const future = encodeURIComponent(
+      JSON.stringify({ schemaVersion: 1, endpoints: [{ transport: "quic", role: "relay", url: "quic://relay" }] }),
+    );
+    expect(resolveAddress(fragment(future), https, [], null)).toEqual({
+      kind: "pair",
+      url: relay.url,
+      hostKey,
+      secret: "abc",
+    });
+  });
+
+  it("keeps token precedence over an invalid endpointSet", () => {
+    const empty = encodeEndpointSetParam({ schemaVersion: 1, endpoints: [] });
+    expect(resolveAddress(`#token=abc&endpointSet=${empty}`, http, [], null)).toEqual({
+      kind: "token",
+      url: DEFAULT_HOST_URL,
+      token: "abc",
     });
   });
 

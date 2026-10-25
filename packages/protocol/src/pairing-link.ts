@@ -29,6 +29,26 @@ export interface ParsedPairingLink {
 }
 
 /**
+ * Validate the optional `endpointSet` fields of a pairing fragment.
+ *
+ * Returns the usable set, `undefined` when the field is absent or this build
+ * does not understand it, and `false` when the invite must be rejected:
+ * repeated parameters, a malformed current-schema set, or an explicit empty
+ * set (pairing needs at least one remote path). Pasted links and the page
+ * fragment share this rule so a scanned invite cannot bypass it.
+ */
+export function pairingEndpointSet(params: URLSearchParams): EndpointSet | undefined | false {
+  const sets = params.getAll("endpointSet");
+  if (sets.length > 1) return false;
+  if (sets.length === 0) return undefined;
+  const parsed = parseEndpointSetParam(sets[0]!);
+  if (parsed.kind === "malformed") return false;
+  if (parsed.kind !== "valid") return undefined;
+  if (parsed.endpointSet.endpoints.length === 0) return false;
+  return parsed.endpointSet;
+}
+
+/**
  * Parse a pairing link — pasted, scanned, or arriving through a `pinomad://`
  * deep link — into the values the pairing flow needs.
  *
@@ -66,18 +86,8 @@ export function parsePairingLink(pasted: string): ParsedPairingLink | undefined 
       return undefined;
     }
   }
-  const sets = params.getAll("endpointSet");
-  if (sets.length > 1) return undefined;
-  let endpointSet: EndpointSet | undefined;
-  if (sets.length === 1) {
-    const parsed = parseEndpointSetParam(sets[0]!);
-    if (parsed.kind === "malformed") return undefined;
-    if (parsed.kind === "valid") {
-      // Pairing needs at least one remote path; an empty set is not a usable invite.
-      if (parsed.endpointSet.endpoints.length === 0) return undefined;
-      endpointSet = parsed.endpointSet;
-    }
-  }
+  const endpointSet = pairingEndpointSet(params);
+  if (endpointSet === false) return undefined;
   return {
     hostKey: parsedPair.hostKey,
     secret: parsedPair.secret,

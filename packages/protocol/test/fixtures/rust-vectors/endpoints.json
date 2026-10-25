@@ -38,6 +38,27 @@
       "expect": null
     },
     {
+      "name": "surrogate-distinct-same-role",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud801\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud801\"}]}"
+    },
+    {
+      "name": "surrogate-identical-deduped",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"}]}",
+      "kind": "valid",
+      "expect": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"}]}"
+    },
+    {
+      "name": "surrogate-role-conflict",
+      "present": true,
+      "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"ws://example.com/\\ud800\"},{\"transport\":\"webSocket\",\"role\":\"direct\",\"url\":\"ws://example.com/\\ud800\"}]}",
+      "kind": "malformed",
+      "expect": null
+    },
+    {
       "name": "unknown-transport-mixed",
       "present": true,
       "value": "{\"schemaVersion\":1,\"endpoints\":[{\"transport\":\"quic\",\"role\":\"relay\",\"url\":\"quic://relay.example.com\"},{\"transport\":\"webSocket\",\"role\":\"relay\",\"url\":\"wss://relay.example.com/c/host\"}]}",

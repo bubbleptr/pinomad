@@ -10,7 +10,11 @@ export const ENDPOINT_SET_SCHEMA_VERSION = 1 as const;
 export const MAX_HOST_ENDPOINTS = 4;
 export const MAX_HOST_ENDPOINT_URL_LENGTH = 1024;
 
-/** The path role a socket plays. Tailscale and other providers are transports, not roles. */
+/**
+ * The path role a socket plays. Transport is the wire protocol (only
+ * WebSocket today), not the network that carries it — a Tailscale address is
+ * still a direct WebSocket.
+ */
 export type HostEndpointRole = "direct" | "relay";
 
 /** One socket the host publishes. Only WebSocket is supported today. */

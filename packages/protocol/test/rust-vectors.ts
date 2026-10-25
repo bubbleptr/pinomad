@@ -403,6 +403,10 @@ const endpointSet = (...endpoints: HostEndpoint[]): EndpointSet => ({
   endpoints,
 });
 const urlLimit = "ws://e/" + "a" + "😀".repeat((MAX_HOST_ENDPOINT_URL_LENGTH - "ws://e/".length - 1) / 2);
+// Different lone surrogates normalize to the same URL, but identity and
+// deduplication must keep the published UTF-16 values distinct.
+const surrogateEndpointA: HostEndpoint = { ...relayEndpoint, url: "ws://example.com/\uD800" };
+const surrogateEndpointB: HostEndpoint = { ...relayEndpoint, url: "ws://example.com/\uD801" };
 
 function endpointCase(name: string, value: unknown, present = true) {
   const parsed = parseEndpointSet(value);
@@ -423,6 +427,12 @@ function endpointVector(): VectorFile {
     endpointCase("empty", endpointSet()),
     endpointCase("deduped", endpointSet(relayEndpoint, relayEndpoint)),
     endpointCase("role-conflict", endpointSet(directEndpoint, { ...directEndpoint, role: "relay" })),
+    endpointCase("surrogate-distinct-same-role", endpointSet(surrogateEndpointA, surrogateEndpointB)),
+    endpointCase("surrogate-identical-deduped", endpointSet(surrogateEndpointA, surrogateEndpointA)),
+    endpointCase(
+      "surrogate-role-conflict",
+      endpointSet(surrogateEndpointA, { ...surrogateEndpointA, role: "direct" }),
+    ),
     endpointCase("unknown-transport-mixed", endpointSet(future, relayEndpoint)),
     endpointCase("unknown-transport-only", endpointSet(future)),
     endpointCase("unknown-schema", { schemaVersion: 2, endpoints: "not an array" }),
