@@ -3,14 +3,16 @@ import type { ComponentProps } from "react";
 import { ChatInlinePager } from "@/shared/ui/chat/chat-inline-pager";
 import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";
 import { TextShimmer } from "@/shared/ui/chat/text-shimmer";
-import { ChevronRight } from "@/shared/ui/icons";
+import { Brain, ChevronRight } from "@/shared/ui/icons";
 import type { CotStep } from "@pinomad/client/cot-view.ts";
 
 /**
  * A Thinking part as one step row: "Thought 2s" when settled, a shimmering
  * "Thinking…" while live, the body behind a disclosure when there is one
- * (ADR-0030 §3). Thinking content is the provider's to give or withhold, so an
- * empty body is a normal row, not a special state.
+ * (ADR-0030 §3). A brain sits in the tool rows' kind-icon column, so a
+ * thought reads as a step like any call beside it. Thinking content is the
+ * provider's to give or withhold, so an empty body is a normal row, not a
+ * special state.
  */
 
 export type ChatThoughtStepItem = Extract<CotStep, { kind: "thinking" }>;
@@ -63,6 +65,11 @@ export function ChatThoughtStep({
       )}
     </ChatInlinePager>
   );
+  const icon = (
+    <span aria-hidden="true" className="chat-tool-kind" data-kind="thinking" data-slot="chat-tool-kind">
+      <Brain />
+    </span>
+  );
 
   if (!body) {
     return (
@@ -71,6 +78,7 @@ export function ChatThoughtStep({
         data-slot="chat-thought-step"
         {...rest}
       >
+        {icon}
         {label}
       </p>
     );
@@ -83,6 +91,7 @@ export function ChatThoughtStep({
       {...rest}
     >
       <Collapsible.Trigger className="chat-step__trigger">
+        {icon}
         {label}
         <ChevronRight aria-hidden="true" className="chat-step__chevron" />
       </Collapsible.Trigger>

@@ -16,6 +16,7 @@ import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { Check } from "@/shared/ui/icons";
+import { ModelLogo } from "./model-logo.tsx";
 
 /**
  * The popover's Agent section: a draft or a 5.18 conversation picks one of
@@ -34,10 +35,10 @@ export type ModelSelectorAgent =
 
 /**
  * The composer model/thinking capsule: a ghost button showing
- * `<model name> · <Thinking label>` (just the name when the model can't
- * reason), prefixed with `@name` when a named agent is set, opening a
- * popover with the Agent section, a searchable model list and the selected
- * model's thinking levels.
+ * `<model logo> <model name> · <Thinking label>` (just the name when the
+ * model can't reason), prefixed with `@name` when a named agent is set,
+ * opening a popover with the Agent section, a searchable model list and the
+ * selected model's thinking levels.
  */
 export function ModelSelector({
   models,
@@ -169,6 +170,7 @@ export function ModelSelector({
             {filtered.map((model) => (
               <ListItem
                 description={model.provider}
+                startContent={<ModelLogo model={model} reserve />}
                 endContent={
                   sameModel(model, selected.model)
                     ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
@@ -217,6 +219,7 @@ export function ModelSelector({
         {...(problem === undefined ? {} : { tooltip: problem.title })}
       >
         <span className="flex min-w-0 items-center gap-1.5">
+          {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
           {problem === undefined ? (
             <span className="truncate">
               {agentName === undefined ? "" : `@${agentName} · `}

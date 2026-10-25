@@ -8,6 +8,9 @@ const models: ModelSummary[] = [
   { provider: "anthropic", modelId: "claude-a", name: "Claude A", contextWindow: 200_000, thinkingLevels: ["off", "medium", "high"] },
   { provider: "openai", modelId: "gpt-b", name: "GPT B", contextWindow: 400_000, thinkingLevels: ["off", "low", "medium"] },
   { provider: "local", modelId: "llama-c", name: "Llama C", contextWindow: 128_000, thinkingLevels: ["off"] },
+  // The maker's logo, not OpenRouter's; then a model with no logo at all, whose row keeps the logo slot.
+  { provider: "openrouter", modelId: "moonshotai/kimi-d", name: "Kimi D", contextWindow: 256_000, thinkingLevels: ["off"] },
+  { provider: "custom-lab", modelId: "house-e", name: "House E", contextWindow: 32_000, thinkingLevels: ["off"] },
 ];
 
 const roles: AgentRole[] = [

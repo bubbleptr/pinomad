@@ -1,11 +1,11 @@
 # LobeHub Icons 的来源与许可证
 
-Web 客户端设置里 Providers 一节的服务商图标（`apps/web/src/entities/provider/logos/`）取自 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 的静态 SVG，未作修改；单色图标用 `currentColor` 填充，随明暗主题变色。服务商 id 到图标文件的对应在 `apps/web/src/entities/provider/provider-logo.tsx`。
+Web 客户端设置里 Providers 一节的服务商图标、模型选择器里的模型厂商图标（都在 `apps/web/src/entities/provider/logos/`）取自 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 的静态 SVG，未作修改；单色图标用 `currentColor` 填充，随明暗主题变色。服务商 id 到图标文件的对应在 `apps/web/src/entities/provider/provider-logo.tsx`，模型 id 到厂商图标的对应在 `apps/web/src/entities/model/model-logo.tsx`。
 
 iOS 客户端用同一批文件：`apps/ios/scripts/provider-logos.sh` 把它们复制进 `apps/ios/Pinomad/Assets.xcassets/ProviderLogos/`，只改了 Xcode 导入需要的部分（去掉 `<title>` 和 `style`，尺寸写成 24，`currentColor` 换成固定颜色：纯单色的标成模板图随文字变色，和品牌色混用的另存一份深色模式用的白色版本）。对应表在 `apps/ios/PinomadCore/Sources/PinomadChat/Providers.swift`。
 
 - 来源：npm 包 `@lobehub/icons-static-svg`，固定版本 1.98.0
-- 许可：MIT，原文如下。许可只覆盖这些 SVG 文件本身；图标里的名称和标志是各公司的商标，归其所有者，这里仅用来指明对应的服务商
+- 许可：MIT，原文如下。许可只覆盖这些 SVG 文件本身；图标里的名称和标志是各公司的商标，归其所有者，这里仅用来指明对应的服务商或模型厂商
 
 ```text
 MIT License

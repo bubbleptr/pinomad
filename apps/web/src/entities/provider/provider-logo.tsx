@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 import type { CSSProperties } from "react";
 
-// Logos from @lobehub/icons-static-svg 1.98.0 (MIT, docs/licenses/lobehub-icons.md).
+// Logos from @lobehub/icons-static-svg 1.98.0 (MIT, docs/licenses/lobehub-icons.md),
+// for providers here and model makers in entities/model/model-logo.tsx.
 // Monochrome ones paint with currentColor, so they follow the theme.
 const LOGOS = import.meta.glob<string>("./logos/*.svg", { query: "?raw", import: "default", eager: true });
 
@@ -44,10 +45,18 @@ const LOGO_OF: readonly (readonly [id: string, logo: string])[] = [
   ["lmstudio", "lmstudio"],
 ];
 
-const svgFor = (providerId: string): string | undefined => {
-  const entry = LOGO_OF.find(([id]) => providerId === id || providerId.startsWith(`${id}-`));
+/** The logo file a provider id maps to, if any. */
+export const providerLogoFile = (providerId: string): string | undefined =>
+  LOGO_OF.find(([id]) => providerId === id || providerId.startsWith(`${id}-`))?.[1];
+
+/** A file under `logos/` as inline SVG markup. */
+export const logoSvg = (file: string): string | undefined =>
   // The <title> would surface as a hover tooltip; the name is beside the logo anyway.
-  return entry === undefined ? undefined : LOGOS[`./logos/${entry[1]}.svg`]?.replace(/<title>.*?<\/title>/, "");
+  LOGOS[`./logos/${file}.svg`]?.replace(/<title>.*?<\/title>/, "");
+
+const svgFor = (providerId: string): string | undefined => {
+  const file = providerLogoFile(providerId);
+  return file === undefined ? undefined : logoSvg(file);
 };
 
 /** Ollama's default port is the one tell a custom endpoint gives about what serves it. */

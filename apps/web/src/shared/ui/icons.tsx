@@ -14,6 +14,7 @@ import {
   BarChartIcon,
   BotIcon,
   BoxIcon,
+  BrainIcon,
   BubbleChatIcon,
   Cancel01Icon,
   ChatAddIcon,
@@ -96,6 +97,7 @@ export const ArrowUp = iconComponent(ArrowUp02Icon);
 export const BarChart3 = iconComponent(BarChartIcon);
 export const Bot = iconComponent(RobotIcon);
 export const Box = iconComponent(BoxIcon);
+export const Brain = iconComponent(BrainIcon);
 export const Cancel = iconComponent(Cancel01Icon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const ChatBubble = iconComponent(BubbleChatIcon);

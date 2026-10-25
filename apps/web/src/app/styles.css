@@ -5,6 +5,7 @@
 @import "@astryxdesign/theme-neutral/theme.css";
 @import "../shared/ui/chat/chat.css";
 @import "../entities/attachment/attachments.css";
+@import "../entities/model/model-logo.css";
 @import "../entities/provider/provider-logo.css";
 @import "../widgets/app-frame/providers-section.css";
 @import "../presentation/question.css";
