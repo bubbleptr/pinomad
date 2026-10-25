@@ -114,6 +114,7 @@ export function startRelayLink(options: {
   readonly maxPendingAccepts?: number;
 }): RelayLink {
   const origin = options.origin.replace(/\/+$/, "");
+  if (origin.includes("#")) throw new Error(`relay origin must not include a fragment: ${origin}`);
   const wsBase = relayWsBase(origin);
   const hostId = relayHostId(options.signingKey.publicKey);
   const minDelay = options.reconnectDelayMs?.min ?? 1_000;
@@ -284,10 +285,13 @@ export function startRelayLink(options: {
             // purpose rather than silently dropping candidates.
             const checked =
               result.ok && result.endpointSet !== undefined ? parseEndpointSet(result.endpointSet) : undefined;
+            // Unknown schema or transports are "do not know": send the legacy
+            // answer without a set, matching decodePairingEndpointSet. Only a
+            // malformed current set or an explicit empty one is a bad offer.
             if (
               result.ok &&
-              checked !== undefined &&
-              (checked.kind !== "valid" || checked.endpointSet.endpoints.length === 0)
+              (checked?.kind === "malformed" ||
+                (checked?.kind === "valid" && checked.endpointSet.endpoints.length === 0))
             ) {
               refused("invalid_endpoint");
               return;

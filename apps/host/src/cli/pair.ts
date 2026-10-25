@@ -4,6 +4,7 @@
 // a host without remote access prints a loopback link instead, usable only by
 // clients on this machine (ADR-0020).
 import { renderUnicodeCompact } from "uqr";
+import { isLoopbackUrl } from "@pinomad/protocol/endpoints.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { hostAddress } from "./host-address.ts";
 
@@ -26,7 +27,7 @@ export async function printPairing({ url, token }: { url: string; token: string 
   const remote = await connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
   try {
     const { url: pairing, expiresAt } = await remote.controller.createPairing();
-    if (new URL(pairing).hostname === "127.0.0.1") {
+    if (isLoopbackUrl(pairing)) {
       // A QR is useless for a loopback link: a phone can't reach the host's
       // 127.0.0.1 (ADR-0020 §4). Say so instead of drawing one.
       console.log(pairing);

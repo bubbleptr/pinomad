@@ -23,6 +23,7 @@ import { createCodemode } from "./extensions/codemode.ts";
 import { createContext } from "./extensions/context.ts";
 import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
+import { validatePublicUrl, validateRelayOrigin } from "./gateway.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
 import { readServerConfig, resolveRelayOrigin } from "./server-config.ts";
@@ -49,6 +50,11 @@ export async function main(argv: readonly string[]): Promise<void> {
     },
   });
 
+  // Validate an explicit advertisement before anything persistent opens:
+  // piOptions() creates the data dir for install-id, so a bad config must not
+  // reach it.
+  if (values["public-url"] !== undefined) validatePublicUrl(values["public-url"]);
+
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
   // The joined server's origin lives in server.json (pinomad join writes it);
   // an explicit --relay must agree with it or the host refuses to start.
@@ -59,6 +65,9 @@ export async function main(argv: readonly string[]): Promise<void> {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+  // The same early guard for a bad relay origin: the full target still waits
+  // for the relay key in openHost / startGateway.
+  if (relayOrigin !== undefined) validateRelayOrigin(relayOrigin);
   // One agentsHome for prompts and `listSkills` — the user-skills entry must
   // be the same dir both ways (ADR-0006, issue #143).
   const agentsHome = join(homedir(), ".agents");

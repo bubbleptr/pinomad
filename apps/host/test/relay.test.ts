@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { describe, expect, it } from "vitest";
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { parsePairingLink } from "@pinomad/protocol/pairing-link.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
@@ -260,32 +261,58 @@ describe("relay link pairing answers", () => {
     expect(await legacyP).toEqual({ t: "pairing", requestId: "req-3", secret: "legacy", expiresAt: 7 });
   });
 
-  it("refuses an invalid candidate set without dropping the control", async () => {
+  it("keeps unsupported sets on the legacy path and refuses malformed or empty ones", async () => {
     const server = await fakeServer();
+    const relay = { transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example.com/c/host" };
     let reply: AccountOfferResult = {
       ok: true,
-      secret: "bad",
+      secret: "schema",
       expiresAt: 1,
-      endpointSet: {
-        schemaVersion: 1,
-        endpoints: [
-          { transport: "webSocket", role: "relay", url: `wss://relay.example.com/${"a".repeat(2000)}` },
-        ],
-      },
+      endpointSet: { schemaVersion: 2, endpoints: [relay] } as unknown as EndpointSet,
     };
     await linkWith(server, async () => reply);
     await server.register;
+    const ask = async (requestId: string): Promise<Record<string, unknown>> => {
+      const answer = server.nextMessage();
+      server.send({ t: "pairing-request", requestId });
+      return answer;
+    };
 
-    const badP = server.nextMessage();
-    server.send({ t: "pairing-request", requestId: "req-bad" });
-    // The control stays usable: only this answer is refused, so the server
-    // never sees a malformed set and never closes the host's control.
-    expect(await badP).toEqual({ t: "pairing-refused", requestId: "req-bad", reason: "invalid_endpoint" });
+    // Unknown schema / transport are "do not know" (ADR-0032 §8): keep the
+    // legacy answer and leave the field out, exactly like an old host.
+    expect(await ask("schema")).toEqual({ t: "pairing", requestId: "schema", secret: "schema", expiresAt: 1 });
 
-    reply = { ok: true, secret: "good", expiresAt: 2 };
-    const goodP = server.nextMessage();
-    server.send({ t: "pairing-request", requestId: "req-good" });
-    expect(await goodP).toEqual({ t: "pairing", requestId: "req-good", secret: "good", expiresAt: 2 });
+    reply = {
+      ok: true,
+      secret: "transport",
+      expiresAt: 2,
+      endpointSet: { schemaVersion: 1, endpoints: [{ ...relay, transport: "quic" }] } as unknown as EndpointSet,
+    };
+    expect(await ask("transport")).toEqual({
+      t: "pairing",
+      requestId: "transport",
+      secret: "transport",
+      expiresAt: 2,
+    });
+
+    reply = {
+      ok: true,
+      secret: "malformed",
+      expiresAt: 3,
+      endpointSet: { schemaVersion: 1, endpoints: null } as unknown as EndpointSet,
+    };
+    expect(await ask("malformed")).toEqual({
+      t: "pairing-refused",
+      requestId: "malformed",
+      reason: "invalid_endpoint",
+    });
+
+    reply = { ok: true, secret: "empty", expiresAt: 4, endpointSet: { schemaVersion: 1, endpoints: [] } };
+    expect(await ask("empty")).toEqual({ t: "pairing-refused", requestId: "empty", reason: "invalid_endpoint" });
+
+    // A refused answer never poisons the next ask.
+    reply = { ok: true, secret: "good", expiresAt: 5 };
+    expect(await ask("good")).toEqual({ t: "pairing", requestId: "good", secret: "good", expiresAt: 5 });
   });
 
   it("refuses requests when no offer source exists", async () => {

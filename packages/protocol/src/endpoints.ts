@@ -11,6 +11,25 @@ export const MAX_HOST_ENDPOINTS = 4;
 export const MAX_HOST_ENDPOINT_URL_LENGTH = 1024;
 
 /**
+ * Whether a host name only reaches the machine itself. This is the
+ * client-local boundary from ADR-0032: hosts filter these from the published
+ * set, and pairing presenters use it to explain a link-only offer.
+ */
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  return host === "localhost" || host.endsWith(".localhost") || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+/** The same predicate for a URL; unparseable input is not a loopback address. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    return isLoopbackHostname(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The path role a socket plays. Transport is the wire protocol (only
  * WebSocket today), not the network that carries it — a Tailscale address is
  * still a direct WebSocket.

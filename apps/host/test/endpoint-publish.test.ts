@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
@@ -6,6 +8,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { printPairing } from "../src/cli/pair.ts";
 import { loadHostKey } from "../src/devices.ts";
+import { main } from "../src/main.ts";
 import { remoteEndpointCandidates, validateRelayTarget } from "../src/gateway.ts";
 import { relayWsBase } from "../src/relay-link.ts";
 import { connectTo, startFauxHost, tempDir, useCleanups } from "./support.ts";
@@ -35,6 +38,19 @@ vi.mock("node:os", async (importOriginal) => {
 const defer = useCleanups();
 
 type Hello = Extract<ServerFrame, { type: "hello" }>;
+
+/** Run the real CLI printer and return everything it wrote. */
+async function pairingOutput(host: { readonly url: string; readonly token: string }): Promise<string> {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  let output = "";
+  try {
+    await printPairing({ url: host.url, token: host.token });
+    output = log.mock.calls.map((call) => call.join(" ")).join("\n");
+  } finally {
+    log.mockRestore();
+  }
+  return output;
+}
 
 async function readHello(args: {
   readonly url: string;
@@ -178,12 +194,28 @@ describe("host endpoint advertisement", () => {
     expect(hello.endpointSet).toEqual(direct);
   });
 
-  it.each(["pinomad.example.com", "ftp://pinomad.example.com", "http://"])(
-    "rejects an invalid --public-url %s before listening",
-    async (publicUrl) => {
-      await expect(startFauxHost(defer, { remote: { port: 0, publicUrl } })).rejects.toThrow(/--public-url/);
-    },
-  );
+  it.each([
+    "pinomad.example.com",
+    "ftp://pinomad.example.com",
+    "http://",
+    "https://example.com/base#frag",
+    "https://example.com/base#",
+  ])("rejects an invalid --public-url %s before listening", async (publicUrl) => {
+    await expect(startFauxHost(defer, { remote: { port: 0, publicUrl } })).rejects.toThrow(/--public-url/);
+  });
+
+  it("keeps a percent-encoded # in a public URL path", async () => {
+    const host = await startFauxHost(defer, {
+      remote: { port: 0, publicUrl: "https://example.com/base%23frag" },
+    });
+    const tokenClient = await connectTo(defer, host);
+    const link = parsePairingLink((await tokenClient.controller.createPairing()).url)!;
+    expect(link.url).toBe("wss://example.com/base%23frag/");
+    expect(link.endpointSet).toEqual({
+      schemaVersion: 1,
+      endpoints: [{ transport: "webSocket", role: "direct", url: "wss://example.com/base%23frag/" }],
+    });
+  });
 
   it("accepts a direct endpoint at the shared 1024-unit limit", async () => {
     const host = await startFauxHost(defer, {
@@ -193,6 +225,17 @@ describe("host endpoint advertisement", () => {
     const link = parsePairingLink((await tokenClient.controller.createPairing()).url)!;
     const direct = link.endpointSet!.endpoints[0]!;
     expect(direct.url).toHaveLength(1024);
+  });
+
+  it("rejects an invalid CLI --public-url before creating the data directory", async () => {
+    const base = await tempDir();
+    defer(base.remove);
+    const dataDir = join(base.path, "not-created");
+    await expect(
+      main(["--data-dir", dataDir, "--remote-port", "7422", "--public-url", "pinomad.example.com"]),
+    ).rejects.toThrow(/--public-url/);
+    await expect(access(dataDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(dataDir, "install-id"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects a direct endpoint above 1024 UTF-16 units before listening", async () => {
@@ -212,6 +255,22 @@ describe("host endpoint advertisement", () => {
     ).toThrow(/1024/);
   });
 
+  it("rejects relay fragments but keeps a percent-encoded #", () => {
+    const keys = ed25519.keygen();
+    expect(() => validateRelayTarget("https://relay.example.com/base#frag", keys.publicKey)).toThrow(/fragment/);
+    expect(() => validateRelayTarget("https://relay.example.com/base#", keys.publicKey)).toThrow(/fragment/);
+    expect(() => validateRelayTarget("https://relay.example.com/base%23frag", keys.publicKey)).not.toThrow();
+  });
+
+  it("rejects a relay fragment before dialing", async () => {
+    await expect(
+      startFauxHost(defer, { relay: { origin: "https://relay.example.com/base#frag" } }),
+    ).rejects.toThrow(/--relay.*fragment/);
+    await expect(
+      startFauxHost(defer, { relay: { origin: "https://relay.example.com/base#" } }),
+    ).rejects.toThrow(/--relay.*fragment/);
+  });
+
   it("rejects a relay endpoint above 1024 UTF-16 units before dialing", async () => {
     await expect(
       startFauxHost(defer, {
@@ -220,18 +279,29 @@ describe("host endpoint advertisement", () => {
     ).rejects.toThrow(/--relay.*1024/);
   });
 
+  it.each(["http://localhost:7422", "http://127.0.0.2:7422", "http://[::1]:7422"])(
+    "treats %s as loopback in the CLI",
+    async (publicUrl) => {
+      const host = await startFauxHost(defer, { remote: { port: 0, publicUrl } });
+      const output = await pairingOutput(host);
+      expect(output).toContain("This link only works on this machine");
+    },
+  );
+
+  it("draws a QR for a non-loopback invite", async () => {
+    const host = await startFauxHost(defer, {
+      remote: { port: 0, publicUrl: "https://192.0.2.1:7422" },
+    });
+    const output = await pairingOutput(host);
+    expect(output).not.toContain("This link only works on this machine");
+    expect(output).toContain("#pair=");
+  });
+
   it("prints a copyable link when a valid invite exceeds QR capacity", async () => {
     const host = await startFauxHost(defer, {
       remote: { port: 0, publicUrl: `https://example.com/${"a".repeat(1000)}` },
     });
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    let output = "";
-    try {
-      await printPairing({ url: host.url, token: host.token });
-      output = log.mock.calls.map((call) => call.join(" ")).join("\n");
-    } finally {
-      log.mockRestore();
-    }
+    const output = await pairingOutput(host);
     expect(output).toContain("This link is too long for a QR code.");
     expect(output).toContain("#pair=");
   });

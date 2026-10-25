@@ -36,6 +36,7 @@ import {
   encodeEndpointSetParam,
   MAX_HOST_ENDPOINT_URL_LENGTH,
   parseEndpointSet,
+  isLoopbackUrl,
   type EndpointSet,
   type HostEndpoint,
 } from "@pinomad/protocol/endpoints.ts";
@@ -664,12 +665,6 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
   return fallback;
 }
 
-/** True when a URL host only reaches the machine itself (ADR-0032: never a remote candidate). */
-export function isLoopbackHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return host === "localhost" || host.endsWith(".localhost") || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
-}
-
 /**
  * The ws(s) socket a legacy http(s) advertise URL resolves to. The pairing
  * page appends "/" before the fragment, so the candidate keeps that same
@@ -690,10 +685,6 @@ function relaySocketTarget(origin: string, hostId: string): string {
   return `${relayWsBase(origin)}/c/${hostId}`;
 }
 
-function isLoopbackSocketUrl(url: string): boolean {
-  return isLoopbackHostname(new URL(url).hostname);
-}
-
 /** The remote candidates a host with these sources may publish, in Auto order. */
 export function remoteEndpointCandidates(input: {
   readonly relay?: { readonly origin: string; readonly hostId: string };
@@ -706,7 +697,7 @@ export function remoteEndpointCandidates(input: {
       role: "relay",
       url: relaySocketTarget(input.relay.origin, input.relay.hostId),
     };
-    if (!isLoopbackSocketUrl(endpoint.url)) endpoints.push(endpoint);
+    if (!isLoopbackUrl(endpoint.url)) endpoints.push(endpoint);
   }
   if (input.direct !== undefined) {
     const endpoint: HostEndpoint = {
@@ -714,7 +705,7 @@ export function remoteEndpointCandidates(input: {
       role: "direct",
       url: advertiseEndpointUrl(input.direct.advertiseUrl),
     };
-    if (!isLoopbackSocketUrl(endpoint.url)) endpoints.push(endpoint);
+    if (!isLoopbackUrl(endpoint.url)) endpoints.push(endpoint);
   }
   return endpoints;
 }
@@ -736,6 +727,9 @@ function endpointProblem(endpoint: HostEndpoint): string | undefined {
  * startup instead of every invitation and hello later.
  */
 export function validatePublicUrl(publicUrl: string): void {
+  if (publicUrl.includes("#")) {
+    throw new Error(`--public-url must not include a fragment: ${publicUrl}`);
+  }
   let url: URL;
   try {
     url = new URL(publicUrl);
@@ -753,15 +747,23 @@ export function validatePublicUrl(publicUrl: string): void {
   if (problem !== undefined) throw new Error(`--public-url ${problem}: ${publicUrl}`);
 }
 
-/** Validate the relay origin and the full device URL it would publish, without dialing. */
-export function validateRelayTarget(origin: string, signingKey: Uint8Array): void {
-  const hostId = relayHostId(signingKey);
-  let target: string;
+/** Validate a relay origin's scheme and fragment before anything dials it. */
+export function validateRelayOrigin(origin: string): void {
+  if (origin.includes("#")) {
+    throw new Error(`--relay must not include a fragment: ${origin}`);
+  }
   try {
-    target = relaySocketTarget(origin, hostId);
+    relayWsBase(origin);
   } catch {
     throw new Error(`--relay must be an absolute http(s) URL: ${origin}`);
   }
+}
+
+/** Validate the relay origin and the full device URL it would publish, without dialing. */
+export function validateRelayTarget(origin: string, signingKey: Uint8Array): void {
+  validateRelayOrigin(origin);
+  const hostId = relayHostId(signingKey);
+  const target = relaySocketTarget(origin, hostId);
   const problem = endpointProblem({ transport: "webSocket", role: "relay", url: target });
   if (problem !== undefined) throw new Error(`--relay ${problem}: ${origin}`);
 }
