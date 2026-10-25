@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { connectRemoteDurable, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { parsePairingLink } from "@pinomad/protocol/pairing-link.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
 import { DevicesDoc, RevocationsDoc } from "../src/devices.ts";
@@ -52,12 +53,12 @@ function connectDeviceAt(
   });
 }
 
-/** Parse `#pair=<hostKey>.<secret>` off a createPairing url. */
+/** Parse the `pair` field off a createPairing url's fragment. */
 function pairFrom(url: string): { hostKey: Uint8Array; secret: string } {
-  const marker = "#pair=";
-  const at = url.indexOf(marker);
-  if (at < 0) throw new Error(`no pairing marker in ${url}`);
-  const [key, secret] = url.slice(at + marker.length).split(".");
+  const params = new URLSearchParams(url.slice(url.indexOf("#") + 1));
+  const pair = params.get("pair");
+  if (pair === null) throw new Error(`no pairing marker in ${url}`);
+  const [key, secret] = pair.split(".");
   return { hostKey: fromBase64Url(key!), secret: secret! };
 }
 
@@ -73,6 +74,11 @@ describe("remote access", () => {
     const { url } = await createPairing(tokenClient);
     const port = new URL(host.url).port;
     expect(url.startsWith(`http://127.0.0.1:${port}/#pair=`)).toBe(true);
+    // A loopback-only invite stays on the legacy single URL: there is no
+    // remote entry a phone could dial, so no endpoint set rides along.
+    const parsedLink = parsePairingLink(url)!;
+    expect(parsedLink.url).toBe(`ws://127.0.0.1:${port}/secure`);
+    expect(parsedLink.endpointSet).toBeUndefined();
     const params = new URLSearchParams(url.slice(url.indexOf("#") + 1));
     const target = params.get("url");
     expect(target).toBe(`ws://127.0.0.1:${port}/secure`);
@@ -97,6 +103,24 @@ describe("remote access", () => {
     await remote.close();
     const again = await connectDeviceAt(target!, hostKey, device);
     expect(again.view.current().connection).toBe("connected");
+  });
+
+  it("publishes the direct candidate and keeps the legacy url in a remote-only invite", async () => {
+    const host = await startFauxHost(defer, {
+      remote: { port: 0, publicUrl: "https://pinomad.example.com/base" },
+    });
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
+
+    // The page the QR opens is still the host's own; the legacy url is the
+    // socket the old clients dial, and endpointSet repeats it as a candidate.
+    expect(url.startsWith("https://pinomad.example.com/base/#pair=")).toBe(true);
+    const parsed = parsePairingLink(url)!;
+    expect(parsed.url).toBe("wss://pinomad.example.com/base/");
+    expect(parsed.endpointSet).toEqual({
+      schemaVersion: 1,
+      endpoints: [{ transport: "webSocket", role: "direct", url: "wss://pinomad.example.com/base/" }],
+    });
   });
 
   it("runs the Noise handshake on /secure without a token or an Origin check", async () => {

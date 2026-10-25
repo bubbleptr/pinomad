@@ -22,6 +22,7 @@ import { constantValue, Published } from "@pinomad/host/src/host-value.ts";
 import type { ModelAuth } from "@pinomad/host/src/model-auth.ts";
 import { connectTo, followFirst, freePort, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "@pinomad/host/test/support.ts";
 import { parseAttachmentBlock } from "@pinomad/protocol/attachments.ts";
+import { parsePairingLink } from "@pinomad/protocol/pairing-link.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { generateKeyPair, keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -65,6 +66,13 @@ async function shot(page: Page, name: string): Promise<void> {
  */
 const prompt = (root: Page | Locator): Locator =>
   root.getByRole("textbox", { name: "Prompt" }).or(root.getByRole("combobox", { name: "Prompt" }));
+
+/** A generated invite's `pair` value, independent of the additive fields after it. */
+function pairOf(link: string): string {
+  const parsed = parsePairingLink(link);
+  if (parsed === undefined) throw new Error(`not a pairing link: ${link}`);
+  return `${parsed.hostKey}.${parsed.secret}`;
+}
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -2406,7 +2414,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2462,7 +2470,9 @@ it("manages paired devices from Settings → Devices", async () => {
 
   // A device paired from another client appears in the list.
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const [hostKey, secret] = pairingUrl.split("#pair=")[1]!.split(".");
+  const parsedPairing = parsePairingLink(pairingUrl)!;
+  const hostKey = parsedPairing.hostKey;
+  const secret = parsedPairing.secret;
   const phone = await connectRemoteDurable({
     transport: secureWebSocketTransport({
       url: host.remote!.url,
@@ -2476,6 +2486,23 @@ it("manages paired devices from Settings → Devices", async () => {
 
   await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
+});
+
+it("falls back to the copyable link when an invite is too long for a QR code", async () => {
+  const webOrigin = await startWeb();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    remote: { port: 0, publicUrl: `https://example.com/${"a".repeat(1000)}` },
+  });
+  await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+
+  const dialog = await openSettings(page, "Devices");
+  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await dialog.getByText("This link is too long for a QR code.", { exact: false }).waitFor();
+  expect(await page.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
+  await dialog.getByText("#pair=", { exact: false }).waitFor();
+  await dialog.getByText("Expires in", { exact: false }).waitFor();
 });
 
 it("registers the desktop bridge's device name and shows the pairing minute", async () => {
@@ -2550,7 +2577,7 @@ it("names the host and opens no socket until a pair link is confirmed", async ()
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2573,7 +2600,7 @@ it("drops a pair link back to the no-link screen on Cancel", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2591,7 +2618,7 @@ it("re-resolves the address when the hash changes in place", async () => {
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2613,7 +2640,7 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2639,7 +2666,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
   });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
   const pairLink = `${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`;
 
   const browser = await chromium.launch();
@@ -2681,7 +2708,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());
@@ -2708,7 +2735,7 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
-  const pair = pairingUrl.split("#pair=")[1]!;
+  const pair = pairOf(pairingUrl);
 
   const browser = await chromium.launch();
   defer(() => browser.close());

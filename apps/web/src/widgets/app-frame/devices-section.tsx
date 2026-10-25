@@ -8,6 +8,7 @@ import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
 import { encode } from "uqr";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
+import { isLoopbackUrl } from "@pinomad/protocol/endpoints.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
@@ -143,7 +144,7 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
   }
   // A loopback link only reaches clients on this machine: the QR would send a
   // phone to an address it cannot open (ADR-0020 §4), so show the hint instead.
-  const loopback = new URL(url).hostname === "127.0.0.1";
+  const loopback = isLoopbackUrl(url);
   return (
     <VStack gap={3} hAlign="center">
       {loopback ? null : <QrImage text={url} />}
@@ -166,7 +167,22 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
 const QR_QUIET = 2;
 
 function QrImage({ text }: { text: string }) {
-  const qr = useMemo(() => encode(text, { border: 0 }), [text]);
+  const qr = useMemo(() => {
+    try {
+      return encode(text, { border: 0 });
+    } catch (error) {
+      // Only capacity is expected here; a renderer bug must still surface.
+      if (error instanceof Error && error.message === "Data too long") return undefined;
+      throw error;
+    }
+  }, [text]);
+  if (qr === undefined) {
+    return (
+      <Text type="supporting">
+        This link is too long for a QR code. Copy it below and paste it into the app instead.
+      </Text>
+    );
+  }
   const size = qr.size + QR_QUIET * 2;
   return (
     <svg

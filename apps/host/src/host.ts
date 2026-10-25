@@ -22,7 +22,7 @@ import lockfile from "proper-lockfile";
 import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
-import { startGateway } from "./gateway.ts";
+import { startGateway, validatePublicUrl } from "./gateway.ts";
 import { AttachmentStore } from "./attachments.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -89,7 +89,7 @@ export interface OpenHostOptions {
   readonly remote?: {
     /** 0 picks a free port. */
     readonly port: number;
-    /** Address advertised in pairing links; defaults to the detected LAN IP. */
+    /** Advertised direct address; unset re-probes the LAN for every invite and hello. */
     readonly publicUrl?: string;
     /** One-time pairing offer lifetime; default five minutes. */
     readonly pairingTtlMs?: number;
@@ -142,6 +142,9 @@ async function hostToken(dataDir: string): Promise<string> {
 }
 
 export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
+  // A bad explicit advertisement is a configuration error, not a reason to
+  // create the data directory or start listening.
+  if (options.remote?.publicUrl !== undefined) validatePublicUrl(options.remote.publicUrl);
   await mkdir(options.dataDir, { recursive: true });
   // Durable has no cross-process lock of its own; a second opener would corrupt the store.
   const stale = Math.max(2000, options.lockStaleMs ?? 10_000);
@@ -339,7 +342,17 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
       ...(gateway.remote === undefined || hostKey === undefined
         ? {}
-        : { remote: { url: gateway.remote.url, advertiseUrl: gateway.remote.advertiseUrl, hostKey: hostKey.publicKey } }),
+        : {
+            remote: {
+              url: gateway.remote.url,
+              // The gateway re-probes the LAN on each read; keep the getter so
+              // callers never hold a startup address as "current".
+              get advertiseUrl(): string {
+                return gateway.remote!.advertiseUrl;
+              },
+              hostKey: hostKey.publicKey,
+            },
+          }),
       ...(gateway.relay === undefined
         ? {}
         : { relay: { origin: gateway.relay.origin, hostId: gateway.relay.hostId, state: () => gateway.relay!.state() } }),

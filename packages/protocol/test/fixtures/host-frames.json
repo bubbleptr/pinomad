@@ -31,6 +31,10 @@
     "toolPresentations": {
       "edit": "pinomad.diff",
       "write": "pinomad.diff"
+    },
+    "endpointSet": {
+      "schemaVersion": 1,
+      "endpoints": []
     }
   },
   {

@@ -5,6 +5,7 @@
 // imports, no Buffer.
 
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { parseEndpointSet, type EndpointSet } from "./endpoints.ts";
 import { fromBase64Url, toBase64Url } from "./secure-channel.ts";
 import { HOST_NAME_MAX_UNITS } from "./settings.ts";
 
@@ -133,7 +134,17 @@ export interface RegisterFrame {
  * IK handshake's commit.
  */
 export type PairingAnswerFrame =
-  | { readonly t: "pairing"; readonly requestId: string; readonly secret: string; readonly expiresAt: number }
+  | {
+      readonly t: "pairing";
+      readonly requestId: string;
+      readonly secret: string;
+      readonly expiresAt: number;
+      /**
+       * The same remote candidates the QR invite carries (ADR-0032). Optional:
+       * an older host omits it, and the server forwards that legacy offer as-is.
+       */
+      readonly endpointSet?: EndpointSet;
+    }
   | { readonly t: "pairing-refused"; readonly requestId: string; readonly reason: string };
 
 export function encodeRelayFrame(frame: RelayToHost | HostToRelay): string {
@@ -264,6 +275,20 @@ function decodePushResult(value: {
   return { t: "push-result", requestId: value.requestId, result: value.result, reason: value.reason };
 }
 
+/**
+ * The pairing answer's additive candidate set. An unknown schema is a future
+ * host we cannot read, so the legacy offer still goes through; a broken set
+ * under the current schema, or an empty one, is not a usable pairing offer.
+ */
+function decodePairingEndpointSet(value: unknown): EndpointSet | undefined {
+  const parsed = parseEndpointSet(value);
+  if (parsed.kind === "absent" || parsed.kind === "unsupported") return undefined;
+  if (parsed.kind === "malformed" || parsed.endpointSet.endpoints.length === 0) {
+    throw new Error("malformed pairing");
+  }
+  return parsed.endpointSet;
+}
+
 /** Throws on anything malformed — the relay closes the control on that. */
 export function decodeHostToRelay(text: string): HostToRelay {
   const value = decodeJson(text) as {
@@ -279,6 +304,7 @@ export function decodeHostToRelay(text: string): HostToRelay {
     requestId?: unknown;
     secret?: unknown;
     expiresAt?: unknown;
+    endpointSet?: unknown;
     reason?: unknown;
     token?: unknown;
     environment?: unknown;
@@ -298,7 +324,15 @@ export function decodeHostToRelay(text: string): HostToRelay {
       ) {
         throw new Error("malformed pairing");
       }
-      return { t: "pairing", requestId: value.requestId, secret: value.secret, expiresAt: value.expiresAt };
+      return {
+        t: "pairing",
+        requestId: value.requestId,
+        secret: value.secret,
+        expiresAt: value.expiresAt,
+        ...(value.endpointSet === undefined
+          ? {}
+          : { endpointSet: decodePairingEndpointSet(value.endpointSet) }),
+      };
     case "pairing-refused":
       if (!isBoundedString(value.requestId) || !isBoundedString(value.reason)) {
         throw new Error("malformed pairing-refused");

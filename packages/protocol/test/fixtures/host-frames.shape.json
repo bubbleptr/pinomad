@@ -8,6 +8,10 @@
         }
       },
       "docs": [],
+      "endpointSet": {
+        "endpoints": [],
+        "schemaVersion": "number"
+      },
       "models": [
         {
           "contextWindow": "number",

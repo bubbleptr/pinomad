@@ -4,6 +4,8 @@ import {
   MAX_HOST_ENDPOINTS,
   MAX_HOST_ENDPOINT_URL_LENGTH,
   encodeEndpointSetParam,
+  isLoopbackHostname,
+  isLoopbackUrl,
   parseEndpointSet,
   parseEndpointSetParam,
   type EndpointSet,
@@ -111,5 +113,30 @@ describe("endpointSet query parameter", () => {
   it("rejects text that is not the shared JSON shape", () => {
     expect(parseEndpointSetParam("{")).toEqual({ kind: "malformed" });
     expect(parseEndpointSetParam("[]")).toEqual({ kind: "malformed" });
+  });
+});
+
+describe("loopback predicate", () => {
+  it("recognizes the client-local host forms", () => {
+    for (const hostname of ["localhost", "LOCALHOST", "localhost.", "app.localhost", "127.0.0.1", "127.9.8.7", "::1", "[::1]"]) {
+      expect(isLoopbackHostname(hostname), hostname).toBe(true);
+    }
+    for (const hostname of ["192.168.1.20", "relay.example.com", "10.0.0.1", "::2", ""]) {
+      expect(isLoopbackHostname(hostname), hostname).toBe(false);
+    }
+  });
+
+  it("applies the same rule to http(s) and ws(s) URLs", () => {
+    for (const url of [
+      "http://localhost:7422/#pair=x",
+      "https://127.0.0.2:7422/",
+      "ws://127.0.0.1:7422/secure",
+      "wss://[::1]:7422/",
+    ]) {
+      expect(isLoopbackUrl(url), url).toBe(true);
+    }
+    for (const url of ["https://192.168.1.20:7422/", "wss://relay.example.com/c/host", "not a url"]) {
+      expect(isLoopbackUrl(url), url).toBe(false);
+    }
   });
 });

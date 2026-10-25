@@ -4,22 +4,42 @@
 // a host without remote access prints a loopback link instead, usable only by
 // clients on this machine (ADR-0020).
 import { renderUnicodeCompact } from "uqr";
+import { isLoopbackUrl } from "@pinomad/protocol/endpoints.ts";
 import { connectRemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { hostAddress } from "./host-address.ts";
+
+/**
+ * The terminal QR for a pairing link, or undefined when the link exceeds
+ * uqr's capacity. Only the documented capacity error is swallowed; a real
+ * renderer failure still reaches the caller.
+ */
+export function pairingQr(link: string): string | undefined {
+  try {
+    return renderUnicodeCompact(link);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Data too long") return undefined;
+    throw error;
+  }
+}
 
 /** Fetch a one-time pairing offer from the host and print it as a QR + URL. */
 export async function printPairing({ url, token }: { url: string; token: string }): Promise<void> {
   const remote = await connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
   try {
     const { url: pairing, expiresAt } = await remote.controller.createPairing();
-    if (new URL(pairing).hostname === "127.0.0.1") {
+    if (isLoopbackUrl(pairing)) {
       // A QR is useless for a loopback link: a phone can't reach the host's
       // 127.0.0.1 (ADR-0020 §4). Say so instead of drawing one.
       console.log(pairing);
       console.log("This link only works on this machine — give it to the desktop app.");
       console.log("To pair a phone, restart the host with --remote-port or --relay, then run pair again.");
     } else {
-      console.log(renderUnicodeCompact(pairing));
+      const qr = pairingQr(pairing);
+      if (qr === undefined) {
+        console.log("This link is too long for a QR code. Copy it below and paste it into the app instead.");
+      } else {
+        console.log(qr);
+      }
       console.log(pairing);
     }
     console.log(`Expires at ${new Date(expiresAt).toLocaleTimeString()}`);

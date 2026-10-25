@@ -18,6 +18,7 @@ import {
   signRelayChallengeV2,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
+import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { HostValue } from "./host-value.ts";
 
@@ -38,7 +39,13 @@ export type RelayLinkState =
  * the IK handshake's commit, so refusals here are hints, not the verdict.
  */
 export type AccountOfferResult =
-  | { readonly ok: true; readonly secret: string; readonly expiresAt: number }
+  | {
+      readonly ok: true;
+      readonly secret: string;
+      readonly expiresAt: number;
+      /** The same remote candidates a QR invite would carry; the server forwards only. */
+      readonly endpointSet?: EndpointSet;
+    }
   | { readonly ok: false; readonly reason: string };
 
 export interface RelayLink {
@@ -107,6 +114,7 @@ export function startRelayLink(options: {
   readonly maxPendingAccepts?: number;
 }): RelayLink {
   const origin = options.origin.replace(/\/+$/, "");
+  if (origin.includes("#")) throw new Error(`relay origin must not include a fragment: ${origin}`);
   const wsBase = relayWsBase(origin);
   const hostId = relayHostId(options.signingKey.publicKey);
   const minDelay = options.reconnectDelayMs?.min ?? 1_000;
@@ -271,10 +279,34 @@ export function startRelayLink(options: {
             // The answer is worthless off the asking connection: a replaced or
             // dead control means the server already dropped the request.
             if (socket !== control || socket.readyState !== WebSocket.OPEN) return;
+            // Never put a malformed set on the wire: the server would close the
+            // control, taking every future account pairing ask with it. Refuse
+            // this one answer instead, and leave the legacy offer unusable on
+            // purpose rather than silently dropping candidates.
+            const checked =
+              result.ok && result.endpointSet !== undefined ? parseEndpointSet(result.endpointSet) : undefined;
+            // Unknown schema or transports are "do not know": send the legacy
+            // answer without a set, matching decodePairingEndpointSet. Only a
+            // malformed current set or an explicit empty one is a bad offer.
+            if (
+              result.ok &&
+              (checked?.kind === "malformed" ||
+                (checked?.kind === "valid" && checked.endpointSet.endpoints.length === 0))
+            ) {
+              refused("invalid_endpoint");
+              return;
+            }
+            const endpointSet = checked?.kind === "valid" ? checked.endpointSet : undefined;
             socket.send(
               encodeRelayFrame(
                 result.ok
-                  ? { t: "pairing", requestId: frame.requestId, secret: result.secret, expiresAt: result.expiresAt }
+                  ? {
+                      t: "pairing",
+                      requestId: frame.requestId,
+                      secret: result.secret,
+                      expiresAt: result.expiresAt,
+                      ...(endpointSet === undefined ? {} : { endpointSet }),
+                    }
                   : { t: "pairing-refused", requestId: frame.requestId, reason: result.reason },
               ),
             );

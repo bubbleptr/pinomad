@@ -386,7 +386,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
           if (request === undefined || request.control !== socket) return;
           request.settle(
             answer.t === "pairing"
-              ? { status: "ok", secret: answer.secret, expiresAt: answer.expiresAt }
+              ? {
+                  status: "ok",
+                  secret: answer.secret,
+                  expiresAt: answer.expiresAt,
+                  ...(answer.endpointSet === undefined ? {} : { endpointSet: answer.endpointSet }),
+                }
               : { status: "refused", reason: answer.reason },
           );
           return;

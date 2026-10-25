@@ -32,6 +32,15 @@ import { WebSocket, WebSocketServer } from "ws";
 import { Value } from "typebox/value";
 import { QuestionSchema, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import {
+  ENDPOINT_SET_SCHEMA_VERSION,
+  encodeEndpointSetParam,
+  MAX_HOST_ENDPOINT_URL_LENGTH,
+  parseEndpointSet,
+  isLoopbackUrl,
+  type EndpointSet,
+  type HostEndpoint,
+} from "@pinomad/protocol/endpoints.ts";
+import {
   type CallMethod,
   type CallMethods,
   type ClientFrame,
@@ -49,6 +58,7 @@ import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
 import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
+import { relayHostId } from "@pinomad/protocol/relay.ts";
 import {
   decodeClientHello,
   encodeHostHello,
@@ -173,7 +183,7 @@ export interface SecureGatewayOptions {
   readonly offers: PairingOffers;
   /** How long a new socket may sit before message 1 arrives; default 10 s. */
   readonly handshakeTimeoutMs?: number;
-  /** The 0.0.0.0 listener (LAN direct; user's own tunnel via publicUrl). */
+  /** The 0.0.0.0 listener; publicUrl overrides the per-invite LAN probe. */
   readonly lan?: { readonly port: number; readonly publicUrl?: string };
   /** Outbound link to a self-hosted relay (ADR-0008 phase 2). */
   readonly relay?: {
@@ -255,6 +265,12 @@ export interface Gateway {
 export const LOOPBACK_SECURE_PATH = "/secure";
 
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
+  // Configuration is checked before any port opens: an invalid optional
+  // advertisement must not take down the token or secure listeners later.
+  if (options.secure?.lan?.publicUrl !== undefined) validatePublicUrl(options.secure.lan.publicUrl);
+  if (options.secure?.relay !== undefined) {
+    validateRelayTarget(options.secure.relay.origin, options.secure.relay.signingKey.publicKey);
+  }
   const conversations = await ConversationList.open(options.harness, options.docs);
   // One lister for the gateway: all clients' `listFiles` share its cache and
   // its concurrency bound (issue #138 §成本控制).
@@ -296,8 +312,29 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
-  let remote: { url: string; advertiseUrl: string; close(): Promise<void> } | undefined;
+  let remote: RemoteListener | undefined;
   let relay: RelayLink | undefined;
+  // One LAN probe supplies both the pairing page and its direct candidate. The
+  // relay stays first in Auto order, but a loopback relay is client-local and
+  // never enters the published set, exactly like a loopback direct address.
+  const currentAdvertisement = (): { readonly endpoints: HostEndpoint[]; readonly advertiseUrl?: string } => {
+    const advertiseUrl = remote?.advertiseUrl;
+    const endpoints = remoteEndpointCandidates({
+      ...(relay === undefined ? {} : { relay: { origin: relay.origin, hostId: relay.hostId } }),
+      ...(advertiseUrl === undefined ? {} : { direct: { advertiseUrl } }),
+    });
+    return { endpoints, ...(advertiseUrl === undefined ? {} : { advertiseUrl }) };
+  };
+  // Producers must never send a set the shared parser would reject; this also
+  // enforces the 1024-UTF-16-unit URL cap without truncating anything.
+  const checkedEndpointSet = (endpoints: readonly HostEndpoint[]): EndpointSet => {
+    const parsed = parseEndpointSet({ schemaVersion: ENDPOINT_SET_SCHEMA_VERSION, endpoints });
+    if (parsed.kind !== "valid" || parsed.endpointSet.endpoints.length !== endpoints.length) {
+      throw new Error("The host generated an invalid remote endpoint set");
+    }
+    return parsed.endpointSet;
+  };
+  const currentEndpointSet = (): EndpointSet => checkedEndpointSet(currentAdvertisement().endpoints);
   const register = (connection: GatewayConnection, devicePublicKey?: string, joined?: DeviceEntry): void => {
     // A server-vouched device announces itself to every client already online
     // (ADR-0022 §6); broadcast before the newcomer joins `clients` — the
@@ -320,23 +357,59 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         const spec = options.secure;
         if (spec === undefined) return undefined;
         const pair = (secret: string) => `pair=${toBase64Url(spec.hostKey.publicKey)}.${secret}`;
+        // The legacy `url` is always present: old clients keep their single
+        // address, while new ones read the same candidates from endpointSet.
+        const fragment = (secret: string, target: string, endpointSet?: EndpointSet): string =>
+          `${pair(secret)}&url=${encodeURIComponent(target)}${
+            endpointSet === undefined ? "" : `&endpointSet=${encodeEndpointSetParam(endpointSet)}`
+          }`;
+        // Validate before minting: a bad advertisement must not consume an
+        // offer or leave the caller with a link older clients cannot use.
+        const advertisement = currentAdvertisement();
+        const endpointSet = checkedEndpointSet(advertisement.endpoints);
+        const relayReachable = endpointSet.endpoints.some((endpoint) => endpoint.role === "relay");
         // The offer's source is the link it rides on: a reachable URL is a
         // "qr" offer; a loopback-only one is "local" (ADR-0020 §4, ADR-0022 §6).
-        // The relay wins: a link through it works from any network, while the
-        // LAN URL only reaches devices that can already see the host.
-        if (relay !== undefined) {
+        // A remote relay still owns the legacy URL: a link through it works
+        // from any network, while the LAN candidate only reaches nearby devices.
+        if (relayReachable && relay !== undefined) {
           const { secret, expiresAt } = spec.offers.create("qr");
-          const target = `${relayWsBase(relay.origin)}/c/${relay.hostId}`;
-          return { url: `${relay.origin}/#${pair(secret)}&url=${encodeURIComponent(target)}`, expiresAt };
+          return {
+            url: `${relay.origin}/#${fragment(secret, relaySocketTarget(relay.origin, relay.hostId), endpointSet)}`,
+            expiresAt,
+          };
+        }
+        if (endpointSet.endpoints.length > 0) {
+          const direct = endpointSet.endpoints.find((endpoint) => endpoint.role === "direct");
+          const advertise = advertisement.advertiseUrl;
+          if (direct === undefined || advertise === undefined) {
+            throw new Error("The host generated an invalid remote endpoint set");
+          }
+          const { secret, expiresAt } = spec.offers.create("qr");
+          return { url: `${advertise}/#${fragment(secret, direct.url, endpointSet)}`, expiresAt };
+        }
+        if (relay !== undefined) {
+          // A loopback relay stays a local legacy link. It is useful on this
+          // machine only, and an empty pairing set would be malformed.
+          const { secret, expiresAt } = spec.offers.create("qr");
+          return {
+            url: `${relay.origin}/#${fragment(secret, relaySocketTarget(relay.origin, relay.hostId))}`,
+            expiresAt,
+          };
         }
         if (remote !== undefined) {
+          // A listener without a reachable LAN/public address is loopback-only:
+          // its legacy URL points home and no candidate set is published.
+          const advertise = advertisement.advertiseUrl;
+          if (advertise === undefined) throw new Error("The host generated an invalid remote endpoint set");
           const { secret, expiresAt } = spec.offers.create("qr");
-          return { url: `${remote.advertiseUrl}/#${pair(secret)}`, expiresAt };
+          return { url: `${advertise}/#${fragment(secret, advertiseEndpointUrl(advertise))}`, expiresAt };
         }
         const { secret, expiresAt } = spec.offers.create("local");
         const target = `ws://127.0.0.1:${port}${LOOPBACK_SECURE_PATH}`;
-        return { url: `http://127.0.0.1:${port}/#${pair(secret)}&url=${encodeURIComponent(target)}`, expiresAt };
+        return { url: `http://127.0.0.1:${port}/#${fragment(secret, target)}`, expiresAt };
       },
+      endpointSet: currentEndpointSet,
     });
     clients.add(client);
   };
@@ -423,8 +496,18 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         if (normalizeOrigin(config.origin) !== normalizeOrigin(relayOrigin)) {
           return { ok: false, reason: "rebinding" };
         }
+        // Same candidates as the QR invite, minted at answer time so the LAN
+        // probe is fresh. Validate before spending an offer; a malformed set
+        // must refuse this answer instead of killing the relay control.
+        let endpointSet: EndpointSet | undefined;
+        try {
+          const current = checkedEndpointSet(currentAdvertisement().endpoints);
+          endpointSet = current.endpoints.length === 0 ? undefined : current;
+        } catch {
+          return { ok: false, reason: "invalid_endpoint" };
+        }
         const { secret, expiresAt } = secure.offers.createAccount(config.binding);
-        return { ok: true, secret, expiresAt };
+        return { ok: true, secret, expiresAt, ...(endpointSet === undefined ? {} : { endpointSet }) };
       },
       onStateChange: (state) => {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
@@ -462,9 +545,20 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
             : { transport: options.push.transport }),
           ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
         });
+  const remoteInfo =
+    remote === undefined
+      ? undefined
+      : {
+          url: remote.url,
+          // Read-through, not a startup snapshot: the readiness log and any
+          // caller outside the gateway see the current LAN address too.
+          get advertiseUrl(): string {
+            return remote!.advertiseUrl;
+          },
+        };
   return {
     url: `ws://127.0.0.1:${port}`,
-    ...(remote === undefined ? {} : { remote: { url: remote.url, advertiseUrl: remote.advertiseUrl } }),
+    ...(remoteInfo === undefined ? {} : { remote: remoteInfo }),
     ...(relay === undefined ? {} : { relay }),
     broadcast,
     async close() {
@@ -572,6 +666,109 @@ export function pickLanAddress(interfaces: ReturnType<typeof networkInterfaces>)
 }
 
 /**
+ * The ws(s) socket a legacy http(s) advertise URL resolves to. The pairing
+ * page appends "/" before the fragment, so the candidate keeps that same
+ * trailing slash and path; the invite also writes it as the explicit legacy
+ * `url` so old clients do not lose a public URL's path.
+ */
+export function advertiseEndpointUrl(advertiseUrl: string): string {
+  const url = new URL(advertiseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (!url.pathname.endsWith("/")) url.pathname = `${url.pathname}/`;
+  return url.href;
+}
+
+const normalizeAdvertiseUrl = (url: string): string => url.replace(/\/+$/, "");
+
+/** The relay's device socket, built from the same origin the host registers with. */
+function relaySocketTarget(origin: string, hostId: string): string {
+  return `${relayWsBase(origin)}/c/${hostId}`;
+}
+
+/** The remote candidates a host with these sources may publish, in Auto order. */
+export function remoteEndpointCandidates(input: {
+  readonly relay?: { readonly origin: string; readonly hostId: string };
+  readonly direct?: { readonly advertiseUrl: string };
+}): HostEndpoint[] {
+  const endpoints: HostEndpoint[] = [];
+  if (input.relay !== undefined) {
+    const endpoint: HostEndpoint = {
+      transport: "webSocket",
+      role: "relay",
+      url: relaySocketTarget(input.relay.origin, input.relay.hostId),
+    };
+    if (!isLoopbackUrl(endpoint.url)) endpoints.push(endpoint);
+  }
+  if (input.direct !== undefined) {
+    const endpoint: HostEndpoint = {
+      transport: "webSocket",
+      role: "direct",
+      url: advertiseEndpointUrl(input.direct.advertiseUrl),
+    };
+    if (!isLoopbackUrl(endpoint.url)) endpoints.push(endpoint);
+  }
+  return endpoints;
+}
+
+/** Why a generated endpoint would be malformed under the shared wire rules, if it would. */
+function endpointProblem(endpoint: HostEndpoint): string | undefined {
+  if (endpoint.url.length > MAX_HOST_ENDPOINT_URL_LENGTH) {
+    return `is longer than ${MAX_HOST_ENDPOINT_URL_LENGTH} UTF-16 units`;
+  }
+  const parsed = parseEndpointSet({ schemaVersion: ENDPOINT_SET_SCHEMA_VERSION, endpoints: [endpoint] });
+  return parsed.kind === "valid" && parsed.endpointSet.endpoints.length === 1
+    ? undefined
+    : "is not a ws:// or wss:// URL";
+}
+
+/**
+ * Validate an explicit public URL before any listener opens. The pairing page
+ * and the direct candidate both derive from it, so a bad value must fail
+ * startup instead of every invitation and hello later.
+ */
+export function validatePublicUrl(publicUrl: string): void {
+  if (publicUrl.includes("#")) {
+    throw new Error(`--public-url must not include a fragment: ${publicUrl}`);
+  }
+  let url: URL;
+  try {
+    url = new URL(publicUrl);
+  } catch {
+    throw new Error(`--public-url must be an absolute http(s) URL: ${publicUrl}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`--public-url must be an absolute http(s) URL: ${publicUrl}`);
+  }
+  const problem = endpointProblem({
+    transport: "webSocket",
+    role: "direct",
+    url: advertiseEndpointUrl(normalizeAdvertiseUrl(publicUrl)),
+  });
+  if (problem !== undefined) throw new Error(`--public-url ${problem}: ${publicUrl}`);
+}
+
+/** Validate a relay origin's scheme and fragment before anything dials it. */
+export function validateRelayOrigin(origin: string): void {
+  if (origin.includes("#")) {
+    throw new Error(`--relay must not include a fragment: ${origin}`);
+  }
+  try {
+    relayWsBase(origin);
+  } catch {
+    throw new Error(`--relay must be an absolute http(s) URL: ${origin}`);
+  }
+}
+
+/** Validate the relay origin and the full device URL it would publish, without dialing. */
+export function validateRelayTarget(origin: string, signingKey: Uint8Array): void {
+  validateRelayOrigin(origin);
+  const hostId = relayHostId(signingKey);
+  const target = relaySocketTarget(origin, hostId);
+  const problem = endpointProblem({ transport: "webSocket", role: "relay", url: target });
+  if (problem !== undefined) throw new Error(`--relay ${problem}: ${origin}`);
+}
+
+/**
  * Everything `admitDevice` needs beyond the socket: the store, and the reads
  * it performs inside its one commit so a revoked key, a flipped switch, or a
  * rewritten server.json cannot slip between check and write (ADR-0022 §6).
@@ -663,12 +860,20 @@ function secureHandshake(
   });
 }
 
+/** The remote listener's current advertisement, re-read on every invite/hello. */
+interface RemoteListener {
+  readonly url: string;
+  /** The browser-facing http(s) address the invitation opens; re-probes the LAN. */
+  readonly advertiseUrl: string;
+  close(): Promise<void>;
+}
+
 /** The 0.0.0.0 listener: plain HTTP for the web client + secure WebSockets. */
 async function startRemote(
   options: GatewayOptions,
   admission: AdmissionPolicy,
   register: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void,
-): Promise<{ url: string; advertiseUrl: string; close(): Promise<void> } | undefined> {
+): Promise<RemoteListener | undefined> {
   const spec = options.secure;
   const remote = spec?.lan;
   if (spec === undefined || remote === undefined) return undefined;
@@ -688,10 +893,15 @@ async function startRemote(
   secure.on("connection", (socket) => secureHandshake(socket, spec, admission, register));
   const { port } = http.address() as AddressInfo;
   const url = `ws://127.0.0.1:${port}`;
-  const advertiseUrl = remote.publicUrl?.replace(/\/+$/, "") ?? `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${port}`;
+  const currentAdvertiseUrl = (): string =>
+    remote.publicUrl === undefined
+      ? `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${port}`
+      : normalizeAdvertiseUrl(remote.publicUrl);
   return {
     url,
-    advertiseUrl,
+    get advertiseUrl() {
+      return currentAdvertiseUrl();
+    },
     async close() {
       for (const socket of secure.clients) socket.terminate();
       await new Promise<void>((resolve) => secure.close(() => resolve()));
@@ -1141,6 +1351,8 @@ interface ClientHooks {
   closeDevice(publicKey: string): void;
   /** A fresh one-time pairing URL; undefined while remote access is off. */
   createPairing(): { url: string; expiresAt: number } | undefined;
+  /** The host's current remote candidates; an empty set means loopback-only. */
+  endpointSet(): EndpointSet;
 }
 
 class GatewayClient {
@@ -1225,6 +1437,10 @@ class GatewayClient {
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
       })),
       toolPresentations: options.toolPresentations ?? {},
+      // Re-probed per hello, not the listener's startup address (ADR-0032 §2).
+      // A loopback-only host publishes an explicit empty set so clients clear
+      // stale remote candidates without ever seeing 127.0.0.1.
+      endpointSet: this.#hooks.endpointSet(),
     });
   }
 

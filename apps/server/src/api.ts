@@ -11,6 +11,7 @@
 // origin, and never with credentials.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { relayWsBase } from "@pinomad/host/src/relay-link.ts";
 import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, type Accounts } from "./accounts.ts";
 
@@ -23,7 +24,13 @@ export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mism
  * never there), "cancelled" that the HTTP client went away first.
  */
 export type PairingRequestResult =
-  | { readonly status: "ok"; readonly secret: string; readonly expiresAt: number }
+  | {
+      readonly status: "ok";
+      readonly secret: string;
+      readonly expiresAt: number;
+      /** Forwarded from the host's answer; never stored server-side. */
+      readonly endpointSet?: EndpointSet;
+    }
   | { readonly status: "refused"; readonly reason: string }
   | { readonly status: "gone" }
   | { readonly status: "timeout" }
@@ -292,6 +299,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
           hostKey: row.noisePublicKey,
           secret: result.secret,
           expiresAt: result.expiresAt,
+          // Additive: old clients ignore it, and an old host simply sends none.
+          // The server holds no endpoint directory; it only forwards this answer.
+          ...(result.endpointSet === undefined ? {} : { endpointSet: result.endpointSet }),
         });
         return;
       case "refused":
