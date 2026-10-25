@@ -715,7 +715,8 @@ extension AppModel {
     /// `PINOMAD_DEMO_MODELS`: models from many makers, some served by
     /// another provider (Claude on Copilot and Bedrock) and one with no
     /// logo, so the capsule and the sheet's logos can be photographed
-    /// without a live host.
+    /// without a live host. The capsule shows GPT-5, a monochrome logo
+    /// that takes the text's color; the sheet opens on Claude.
     private func startModelsDemo(sheet: Bool) {
         navPath = [.conversation(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
@@ -739,7 +740,8 @@ extension AppModel {
             ModelSummary(provider: $0.provider, modelId: $0.modelId, name: $0.name,
                          contextWindow: 200_000, thinkingLevels: $0.reasons ? levels : [], images: true)
         }
-        let claude = ModelRef(provider: entries[0].provider, modelId: entries[0].modelId)
+        let picked = entries[sheet ? 0 : 2]
+        let current = ModelRef(provider: picked.provider, modelId: picked.modelId)
         let summary = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
             title: "Pick a model", status: nil, updatedAt: now,
@@ -750,7 +752,7 @@ extension AppModel {
         ]
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
-            agent: AgentState(model: claude, thinkingLevel: .medium, instructions: nil, cwd: nil),
+            agent: AgentState(model: current, thinkingLevel: .medium, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: false,
             contextUsage: nil, fresh: true, freshEpoch: 1
         )
@@ -759,7 +761,7 @@ extension AppModel {
             protocolMismatch: nil, host: nil, hostName: "Demo Mac", settings: nil, devices: [],
             organized: Organized(chats: [ConversationNode(summary: summary, children: [])],
                                  projects: [], archived: []),
-            notices: [], models: models, defaults: Defaults(model: claude, thinkingLevel: .medium),
+            notices: [], models: models, defaults: Defaults(model: current, thinkingLevel: .medium),
             agents: nil, conversation: conversation
         ))
         replyStreams.sync(chat: chat)
