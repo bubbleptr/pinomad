@@ -1,10 +1,10 @@
-import { Link } from "@tanstack/react-router";
+import { Link, notFound } from "@tanstack/react-router";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { Suspense } from "react";
-import type { loadBlogIndex } from "@/lib/content-data.ts";
+import { loadBlogPost, type loadBlogIndex } from "@/lib/content-data.ts";
 import type { Lang } from "@/lib/i18n.ts";
-import { blogPosts } from "@/lib/source.ts";
+import { blog, blogPosts } from "@/lib/source.ts";
 import { baseOptions, Shell } from "./shell.tsx";
 
 const copy = {
@@ -24,7 +24,7 @@ export function BlogIndexPage({ lang, posts }: { lang: Lang; posts: BlogIndex })
   return (
     <Shell lang={lang}>
       <HomeLayout {...baseOptions(lang)}>
-        <main className="mx-auto w-full max-w-3xl px-4 py-12">
+        <div className="mx-auto w-full max-w-3xl px-4 py-12">
           <h1 className="text-3xl font-semibold">{copy[lang].title}</h1>
           <p className="mt-2 text-fd-muted-foreground">{copy[lang].lead}</p>
           <ul className="mt-10 flex flex-col gap-8">
@@ -40,14 +40,18 @@ export function BlogIndexPage({ lang, posts }: { lang: Lang; posts: BlogIndex })
               </li>
             ))}
           </ul>
-        </main>
+        </div>
       </HomeLayout>
     </Shell>
   );
 }
 
-export async function preloadPost(path: string) {
-  await blogPosts.get(path)?.preload();
+export async function blogPostLoader(lang: Lang, slug: string) {
+  // Only posts that exist were prerendered (see docsLoader).
+  if (!blog.getPage([slug], lang)) throw notFound();
+  const data = await loadBlogPost({ data: { lang, slug } });
+  await blogPosts.get(data.path)?.preload();
+  return data;
 }
 
 export function BlogPostPage({ lang, path }: { lang: Lang; path: string }) {

@@ -56,13 +56,13 @@ export function ChangelogPage({ lang, entries }: { lang: Lang; entries: Entries 
   return (
     <Shell lang={lang}>
       <HomeLayout {...baseOptions(lang)}>
-        <main className="mx-auto w-full max-w-4xl px-4 py-12">
+        <div className="mx-auto w-full max-w-4xl px-4 py-12">
           <h1 className="text-3xl font-semibold">{copy[lang].title}</h1>
           <p className="mt-2 mb-10 text-fd-muted-foreground">{copy[lang].lead}</p>
           {entries.map((entry) => (
             <Release key={entry.path} lang={lang} entry={entry} />
           ))}
-        </main>
+        </div>
       </HomeLayout>
     </Shell>
   );
