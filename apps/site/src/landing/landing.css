@@ -178,7 +178,10 @@ code {
   stroke-linejoin: round;
 }
 
-/* —— Header —— */
+/* —— Header ——
+   Matches the Fumadocs bar on docs, blog, and changelog: same width, height, and
+   brand size, links beside the brand, language and GitHub at the far end, so
+   following a header link leaves everything in place. */
 .site-header {
   --pill-blur: 16px;
   --pill-tint: 62%;
@@ -187,14 +190,16 @@ code {
   --pill-enter: 450ms;
   --pill-exit: 315ms;
   --pill-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  color: var(--fg);
 }
 
-.site-header .wrap {
+.header-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 4rem;
+  max-width: 87.5rem;
+  min-height: 3.5rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
 }
 
 /* interactions.js turns stickiness on; without it the header stays at the top of the
@@ -210,18 +215,18 @@ html:has(.site-header[data-sticky]) section[id] {
 }
 
 /* Once the page moves, a frosted pill grows in behind the bar's own content,
-   reaching ~14px past it, so nothing in the bar changes place. Fade and shape
+   reaching 10px past it, so nothing in the bar changes place. Fade and shape
    share one duration and curve; a taller start or a faster fade read as a jump. */
-.site-header[data-sticky] .wrap {
+.site-header[data-sticky] .header-bar {
   position: relative;
   z-index: 0;
 }
 
-.site-header[data-sticky] .wrap::before {
+.site-header[data-sticky] .header-bar::before {
   content: "";
   position: absolute;
   z-index: -1;
-  inset: var(--pill-offset) max(6px, calc(var(--gutter) - 14px));
+  inset: var(--pill-offset) 6px;
   border-radius: 999px;
   background: color-mix(in oklch, var(--surface) var(--pill-tint), transparent);
   -webkit-backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
@@ -237,7 +242,7 @@ html:has(.site-header[data-sticky]) section[id] {
     scale var(--pill-exit) var(--pill-ease);
 }
 
-.site-header.is-floating .wrap::before {
+.site-header.is-floating .header-bar::before {
   opacity: 1;
   scale: 1;
   transition:
@@ -247,32 +252,47 @@ html:has(.site-header[data-sticky]) section[id] {
 
 .brand {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.625rem;
   font-weight: 600;
-  font-size: 1.05rem;
+  line-height: 1.5;
   text-decoration: none;
 }
 
 .brand img {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .header-nav {
   display: flex;
   align-items: center;
-  gap: clamp(0.75rem, 2.5vw, 1.75rem);
-  font-size: 0.9rem;
+  gap: 0.5rem;
+  margin-inline-start: 1.5rem;
+  font-size: 0.875rem;
 }
 
-.header-nav a {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  font-size: 0.875rem;
+}
+
+:is(.header-nav, .header-actions) a {
   color: var(--fg-2);
+  line-height: 1.25rem;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
-.header-nav a:hover {
+:is(.header-nav, .header-actions) a:not(.star-link) {
+  padding: 0.5rem;
+}
+
+:is(.header-nav, .header-actions) a:hover {
   color: var(--fg);
 }
 
@@ -436,11 +456,11 @@ html[lang="zh-CN"] .eyebrow {
   border-radius: 999px;
 }
 
-.header-nav .star-link {
+.header-actions .star-link {
   color: var(--fg);
 }
 
-.header-nav .star-link:hover {
+.header-actions .star-link:hover {
   border-color: var(--fg-3);
 }
 
@@ -1148,12 +1168,29 @@ html[lang="zh-CN"] .node-labels text {
   }
 }
 
+/* Brand and links on the left, language and star on the right: the star drops its
+   words before the two groups meet; on phones the optional links go and the star
+   keeps only its icon. */
+@media (max-width: 45rem) {
+  .star-text {
+    display: none;
+  }
+}
+
 @media (max-width: 40rem) {
+  .header-nav {
+    margin-inline-start: 1rem;
+  }
+
   .header-nav .nav-optional {
     display: none;
   }
 
-  .star-text {
+  .header-actions .star-link {
+    padding-inline: 0.6rem;
+  }
+
+  .star-label {
     display: none;
   }
 }
