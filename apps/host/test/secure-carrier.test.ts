@@ -13,7 +13,9 @@ describe("secure carrier", () => {
     const host = await startFauxHost(defer, { remote: { port: 0 } });
     const port = Number(new URL(host.remote!.url).port);
     const socket = connect(port, "127.0.0.1");
-    defer(() => socket.destroy());
+    defer(() => {
+      socket.destroy();
+    });
     await once(socket, "connect");
     socket.write(
       `GET / HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n`
