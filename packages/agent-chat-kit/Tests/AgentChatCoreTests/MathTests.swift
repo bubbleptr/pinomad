@@ -1,4 +1,5 @@
 @testable import AgentChatCore
+import Foundation
 import Testing
 
 @Suite struct MathTests {
@@ -43,6 +44,51 @@ import Testing
         #expect(inline("run `echo $HOME$` now") == "run echo $HOME$ now")
         #expect(blocks("```sh\necho $a$\n```") == [.codeBlock(language: "sh", code: "echo $a$\n")])
         #expect(inline(#"price \$5, math $x$"#) == "price $5, math [x]")
+    }
+
+    // Code is whatever cmark says is code: indented blocks, fences in a
+    // quote, and indentation measured from a list item's content.
+    @Test func everyKindOfCodeBlockKeepsItsDollars() {
+        #expect(blocks("    echo $HOME/$USER\n") == [.codeBlock(language: nil, code: "echo $HOME/$USER\n")])
+        #expect(PlainText.of(markdown: "    echo $HOME/$USER\n") == "echo $HOME/$USER")
+        #expect(blocks("> ```sh\n> echo $a$\n> ```") == [.blockQuote([.codeBlock(language: "sh", code: "echo $a$\n")])])
+        guard case let .list(list)? = blocks("- x\n\n      echo $a/$b\n").first else {
+            Issue.record("not a list")
+            return
+        }
+        #expect(list.items.first?.blocks.last == .codeBlock(language: nil, code: "echo $a/$b\n"))
+    }
+
+    // Four spaces in a list item are only two past its content: still prose.
+    @Test func indentedProseInAListItemIsStillMath() {
+        guard case let .list(list)? = blocks("- x\n\n    then $a_1$\n").first,
+              case let .paragraph(text)? = list.items.first?.blocks.last
+        else {
+            Issue.record("not a list with a paragraph")
+            return
+        }
+        #expect(text.runs.contains { $0.math == .inline && $0.text == "a_1" })
+    }
+
+    // A dollar in a URL is part of the address, not a formula.
+    @Test func linkDestinationsKeepTheirDollars() {
+        let url = "https://example.com/$release$/file"
+        #expect(runs("[下载](\(url))").map(\.link) == [URL(string: url)])
+        #expect(runs("![图](\(url) \"t\")").allSatisfy { $0.math == nil })
+        #expect(MathSyntax.protect("[r]: \(url)\n") == "[r]: \(url)\n")
+        // The label is text, and its math still counts.
+        #expect(runs("[$x$](https://example.com)").contains { $0.math == .inline && $0.link != nil })
+    }
+
+    // A formula on its own lines may hold what reads as Markdown until it
+    // closes; the blocks it spans stay open until then.
+    @Test func unclosedDisplayMathKeepsItsBlocksOpen() {
+        var stream = MarkdownStream()
+        stream.append("$$\na\n- b\n")
+        stream.append("$$")
+        stream.finish()
+        #expect(stream.blocks.map(\.content) == [.math("a\n- b")])
+        #expect(stream.blocks.map(\.content) == blocks("$$\na\n- b\n$$"))
     }
 
     @Test func displayMathIsABlock() {

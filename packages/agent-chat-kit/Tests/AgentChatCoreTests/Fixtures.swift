@@ -78,6 +78,14 @@ enum Fixtures {
         \[
         \tau(G)=\det(L_{ii})
         \]
+
+            echo $HOME/$USER
+
+        见 [下载](https://example.com/$release$/file)，$n$ 个文件：
+
+        > ```sh
+        > echo $a$
+        > ```
         """#,
     ]
 }

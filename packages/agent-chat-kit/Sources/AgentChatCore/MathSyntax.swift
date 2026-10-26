@@ -1,3 +1,5 @@
+import Markdown
+
 /// TeX math in a reply, hidden from Markdown before it is parsed: cmark
 /// would read `\{` and `\;` as escapes and `_i ... _j` as emphasis.
 ///
@@ -5,8 +7,10 @@
 /// `inlineMark`, `$$…$$` and `\[…\]` within a paragraph code spans
 /// starting with `displayMark`. A `$$` or `\[` on a line of its own,
 /// closed by one on a later line, becomes a fenced ```` ```math ```` block,
-/// the way GitHub writes display math. Code spans and fenced code keep
-/// their dollars.
+/// the way GitHub writes display math. Math is only looked for in the
+/// lines cmark reads as paragraphs, headings and tables: code, HTML and
+/// link reference definitions keep their dollars, as do code spans and
+/// link destinations.
 ///
 /// Every line break stays where it was: the stream maps the parser's line
 /// numbers back to offsets in the text as written.
@@ -16,62 +20,90 @@ enum MathSyntax {
     static let fenceLanguage = "math"
 
     static func protect(_ source: String) -> String {
-        guard source.contains("$") || source.contains("\\(") || source.contains("\\[") else { return source }
+        protecting(source).text
+    }
+
+    /// `pendingLine` is the 1-based line of the first formula that has not
+    /// closed but still could: until it does, the Markdown it spans may be
+    /// read as other blocks, so none of them may close.
+    static func protecting(_ source: String) -> (text: String, pendingLine: Int?) {
+        guard source.contains("$") || source.contains("\\(") || source.contains("\\[") else { return (source, nil) }
         let lines = linesKeepingEndings(source)
+        let prose = proseLines(source)
         var output = ""
         var paragraph = ""
-        var fence: (mark: Character, count: Int)?
+        var paragraphStart = 0
+        var pendingLine: Int?
         var index = 0
 
-        func flushParagraph() {
-            output += protectInline(paragraph)
+        func flushParagraph(last: Bool = false) {
+            let (text, open) = protectInline(paragraph)
+            output += text
+            if last, pendingLine == nil, let open {
+                let breaks = paragraph.prefix(open).count { isLineEnding($0) }
+                pendingLine = paragraphStart + breaks + 1
+            }
             paragraph = ""
         }
 
         while index < lines.count {
             let line = lines[index]
-            let body = line.drop { $0 == " " || $0 == "\t" }
-            if let open = fence {
-                output += line
-                if closesFence(body, open) { fence = nil }
-                index += 1
-                continue
-            }
-            if let opened = opensFence(body) {
+            guard prose.contains(index) else {
                 flushParagraph()
-                fence = opened
                 output += line
                 index += 1
                 continue
             }
             let token = trimmed(line)
-            if token == "$$" || token == "\\[",
-               let close = lines[(index + 1)...].firstIndex(where: { trimmed($0) == (token == "$$" ? "$$" : "\\]") }) {
-                flushParagraph()
-                output += replacingToken(in: line, with: "```" + fenceLanguage)
-                for content in lines[(index + 1)..<close] { output += content }
-                output += replacingToken(in: lines[close], with: "```")
-                index = close + 1
-                continue
+            if token == "$$" || token == "\\[" {
+                let closer = token == "$$" ? "$$" : "\\]"
+                if let close = lines.indices.dropFirst(index + 1).first(where: { prose.contains($0) && trimmed(lines[$0]) == closer }) {
+                    flushParagraph()
+                    output += replacingToken(in: line, with: "```" + fenceLanguage)
+                    for content in lines[(index + 1)..<close] { output += content }
+                    output += replacingToken(in: lines[close], with: "```")
+                    index = close + 1
+                    continue
+                }
+                if pendingLine == nil { pendingLine = index + 1 }
             }
-            if token.isEmpty {
-                flushParagraph()
-                output += line
-            } else {
-                paragraph += line
-            }
+            if paragraph.isEmpty { paragraphStart = index }
+            paragraph += line
             index += 1
         }
-        flushParagraph()
-        return output
+        flushParagraph(last: true)
+        return (output, pendingLine)
+    }
+
+    /// Indices of the lines cmark parses as paragraphs, headings or tables,
+    /// at any depth: what is left is code, HTML, link reference definitions,
+    /// thematic breaks and blank lines. Blocks are settled before inlines
+    /// are parsed, so the math inside the text cannot change which lines
+    /// these are.
+    private static func proseLines(_ source: String) -> Set<Int> {
+        var lines = Set<Int>()
+        func collect(_ markup: any Markup) {
+            switch markup {
+            case is Paragraph, is Heading, is Markdown.Table:
+                if let range = markup.range {
+                    lines.formUnion((range.lowerBound.line - 1)...(range.upperBound.line - 1))
+                }
+            default:
+                for child in markup.children { collect(child) }
+            }
+        }
+        collect(Document(parsing: source))
+        return lines
     }
 
     /// Math and code spans within one run of text lines. Inline math stays
-    /// on its line; `$$…$$` may cross lines, but not a blank one.
-    private static func protectInline(_ text: String) -> String {
-        guard !text.isEmpty else { return text }
+    /// on its line; `$$…$$` may cross lines, but not a blank one. `open` is
+    /// where a `$$` or `\[` starts that the text ends before closing.
+    private static func protectInline(_ text: String) -> (text: String, open: Int?) {
+        guard !text.isEmpty else { return (text, nil) }
         let chars = Array(text)
         var output = ""
+        var open: Int?
         var i = 0
         while i < chars.count {
             let c = chars[i]
@@ -79,12 +111,13 @@ enum MathSyntax {
                 let next = chars[i + 1]
                 if next == "(" || next == "[" {
                     let closer: [Character] = next == "(" ? ["\\", ")"] : ["\\", "]"]
-                    if let end = find(closer, in: chars, from: i + 2, sameLine: next == "("),
-                       !isBlank(chars[(i + 2)..<end]) {
+                    let end = find(closer, in: chars, from: i + 2, sameLine: next == "(")
+                    if let end, !isBlank(chars[(i + 2)..<end]) {
                         output += codeSpan(next == "(" ? inlineMark : displayMark, String(chars[(i + 2)..<end]))
                         i = end + 2
                         continue
                     }
+                    if end == nil, next == "[", open == nil { open = i }
                 }
                 // `\$` and `\\` are escapes: their second character is not syntax.
                 output.append(c)
@@ -103,13 +136,20 @@ enum MathSyntax {
                 }
                 continue
             }
+            if c == "]", i + 1 < chars.count, chars[i + 1] == "(",
+               let end = linkTailEnd(in: chars, from: i + 2) {
+                output += String(chars[i...end])
+                i = end + 1
+                continue
+            }
             if c == "$" {
                 if i + 1 < chars.count, chars[i + 1] == "$" {
-                    if let end = find(["$", "$"], in: chars, from: i + 2, sameLine: false),
-                       !isBlank(chars[(i + 2)..<end]) {
+                    let end = find(["$", "$"], in: chars, from: i + 2, sameLine: false)
+                    if let end, !isBlank(chars[(i + 2)..<end]) {
                         output += codeSpan(displayMark, String(chars[(i + 2)..<end]))
                         i = end + 2
                     } else {
+                        if end == nil, open == nil { open = i }
                         output += "$$"
                         i += 2
                     }
@@ -124,7 +164,46 @@ enum MathSyntax {
             output.append(c)
             i += 1
         }
-        return output
+        return (output, open)
+    }
+
+    /// Where the `(destination "title")` after a link's `]` ends, at its
+    /// `)`; nil if what follows is not one. The destination is part of the
+    /// address, not text, so its dollars stay as written.
+    private static func linkTailEnd(in chars: [Character], from start: Int) -> Int? {
+        var j = start
+        func skipSpace() { while j < chars.count, chars[j].isWhitespace { j += 1 } }
+        skipSpace()
+        if j < chars.count, chars[j] == "<" {
+            j += 1
+            while j < chars.count, chars[j] != ">" {
+                if chars[j] == "<" || isLineEnding(chars[j]) { return nil }
+                j += chars[j] == "\\" ? 2 : 1
+            }
+            guard j < chars.count else { return nil }
+            j += 1
+        } else {
+            var depth = 0
+            while j < chars.count, !chars[j].isWhitespace, !(chars[j] == ")" && depth == 0) {
+                if chars[j] == "(" { depth += 1 }
+                if chars[j] == ")" { depth -= 1 }
+                j += chars[j] == "\\" ? 2 : 1
+            }
+            guard depth == 0 else { return nil }
+        }
+        let beforeTitle = j
+        skipSpace()
+        let titleClosers: [Character: Character] = ["\"": "\"", "'": "'", "(": ")"]
+        if j > beforeTitle, j < chars.count, let quote = titleClosers[chars[j]] {
+            j += 1
+            while j < chars.count, chars[j] != quote {
+                j += chars[j] == "\\" ? 2 : 1
+            }
+            guard j < chars.count else { return nil }
+            j += 1
+            skipSpace()
+        }
+        return j < chars.count && chars[j] == ")" ? j : nil
     }
 
     /// Pandoc's rule: the opening `$` has a non-space after it, the closing
@@ -209,19 +288,6 @@ enum MathSyntax {
         return ticks + String(mark) + latex + tail + ticks
     }
 
-    private static func opensFence(_ body: Substring) -> (mark: Character, count: Int)? {
-        guard let mark = body.first, mark == "`" || mark == "~" else { return nil }
-        let count = body.prefix { $0 == mark }.count
-        guard count >= 3 else { return nil }
-        if mark == "`", body.dropFirst(count).contains("`") { return nil }
-        return (mark, count)
-    }
-
-    private static func closesFence(_ body: Substring, _ fence: (mark: Character, count: Int)) -> Bool {
-        let count = body.prefix { $0 == fence.mark }.count
-        return count >= fence.count && body.dropFirst(count).allSatisfy(\.isWhitespace)
-    }
-
     /// The line with its `$$`, `\[` or `\]` swapped for a fence, keeping its
     /// indentation and line ending.
     private static func replacingToken(in line: Substring, with fence: String) -> String {
@@ -236,13 +302,19 @@ enum MathSyntax {
         return result
     }
 
+    /// cmark ends lines at LF, CR and CRLF only; Swift's `isNewline` also
+    /// takes U+2028 and form feeds, which would shift every line number.
+    private static func isLineEnding(_ c: Character) -> Bool {
+        c == "\n" || c == "\r" || c == "\r\n"
+    }
+
     private static func linesKeepingEndings(_ text: String) -> [Substring] {
         var lines: [Substring] = []
         var start = text.startIndex
         var index = start
         while index < text.endIndex {
             let next = text.index(after: index)
-            if text[index].isNewline {
+            if isLineEnding(text[index]) {
                 lines.append(text[start..<next])
                 start = next
             }

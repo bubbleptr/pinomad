@@ -63,7 +63,7 @@ struct MathBlockView: View {
         let segments = MathLayout.segments(of: latex)
         if segments.count == 1, case let .latex(source) = segments[0],
            let drawn = MathRenderer.render(source, size: resolved.pointSize * MathText.scale, display: true) {
-            drawn.image.accessibilityLabel(latex)
+            drawn.image
         } else {
             MathText.text(latex, display: true, font: resolved)
         }
@@ -97,17 +97,25 @@ enum MathRenderer {
         var math = MathImage(latex: latex, fontSize: size, textColor: .black,
                              labelMode: display ? .display : .text, textAlignment: .left)
         let (error, image, layout) = math.asImage()
-        guard error == nil, let image, let layout else {
+        guard error == nil, let image, let layout, let bitmap = bitmap(of: image) else {
             failures.setObject(NSNull(), forKey: key)
             return nil
         }
-        #if canImport(UIKit)
-        let swiftUIImage = Image(uiImage: image)
-        #else
-        let swiftUIImage = Image(nsImage: image)
-        #endif
-        let drawn = Drawn(image: swiftUIImage.renderingMode(.template), descent: layout.descent)
+        // Inside a Text an image is read by its own label: VoiceOver reads
+        // the TeX in its place and the prose around it as written.
+        let labelled = Image(bitmap.image, scale: bitmap.scale, label: SwiftUI.Text(verbatim: latex))
+        let drawn = Drawn(image: labelled.renderingMode(.template), descent: layout.descent)
         cache.setObject(drawn, forKey: key)
         return drawn
     }
+
+    #if canImport(UIKit)
+    private static func bitmap(of image: UIImage) -> (image: CGImage, scale: CGFloat)? {
+        image.cgImage.map { ($0, image.scale) }
+    }
+    #else
+    private static func bitmap(of image: NSImage) -> (image: CGImage, scale: CGFloat)? {
+        image.cgImage(forProposedRect: nil, context: nil, hints: nil).map { ($0, CGFloat($0.width) / image.size.width) }
+    }
+    #endif
 }
