@@ -5,7 +5,6 @@ import { Text } from "@astryxdesign/core/Text";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
-import { DIRECT_UNAVAILABLE } from "@pinomad/protocol/remote-candidates.ts";
 import { DEVBOX_HOST, fakeHosts, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
 import { HostsFallback, HostsMenu, HostsSection, type HostsRtc } from "./hosts.tsx";
 
@@ -152,8 +151,11 @@ export const DirectOnlyFailure: Story = {
         <Banner
           status="error"
           title="Direct connection unavailable"
-          description={`${DIRECT_UNAVAILABLE} (the ICE connection failed)`}
+          description="This host can't be reached without the relay, and the peer-to-peer link didn't connect."
         />
+        <Text type="supporting" style={{ textAlign: "center" }}>
+          Details: the ICE connection failed
+        </Text>
         <Text type="supporting" style={{ textAlign: "center" }}>
           Change this host's connection mode under Hosts below, then retry.
         </Text>

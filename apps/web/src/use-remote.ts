@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   connectRemoteDurable,
+  DirectUnavailableError,
   ProtocolMismatchError,
   type AppLifecycle,
   type NetworkChanges,
@@ -18,7 +19,14 @@ export type RemoteState =
    * `mismatch` = the host speaks a protocol this bundle doesn't; carries the
    * error so the host's version can key the reload-once guard.
    */
-  | { readonly status: "failed"; readonly error: string; readonly unauthorized: boolean; readonly mismatch?: ProtocolMismatchError }
+  | {
+      readonly status: "failed";
+      readonly error: string;
+      readonly unauthorized: boolean;
+      readonly mismatch?: ProtocolMismatchError;
+      /** Present only when Direct only exhausted its paths; `reason` is the last stage failure. */
+      readonly direct?: DirectUnavailableError;
+    }
   | { readonly status: "ready"; readonly remote: RemoteDurable };
 
 /**
@@ -189,6 +197,7 @@ export function useRemoteDurable(
             error: error instanceof Error ? error.message : String(error),
             unauthorized: error instanceof UnauthorizedError,
             ...(error instanceof ProtocolMismatchError ? { mismatch: error } : {}),
+            ...(error instanceof DirectUnavailableError ? { direct: error } : {}),
           });
       },
     );

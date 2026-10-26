@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientFrame, ServerFrame } from "@pinomad/protocol/frames.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
-import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
+import { DirectUnavailableError, type RemoteDurable, type RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "@pinomad/protocol/transport.ts";
 import { useRemoteDurable } from "./use-remote.ts";
 
@@ -147,6 +147,21 @@ describe("useRemoteDurable first-connect timeout", () => {
     });
     expect(result.current.status).toBe("failed");
     expect(remote.close).toHaveBeenCalled();
+  });
+
+  it("keeps a typed DirectUnavailableError for the failure screen", async () => {
+    const error = new DirectUnavailableError("the ICE connection failed");
+    const { result } = renderHook(() =>
+      useRemoteDurable({ transport: fakeTransport().transport }, "key", {
+        timeoutMs: TIMEOUT_MS,
+        connect: () => Promise.reject(error),
+      }),
+    );
+    await act(async () => {});
+    const state = result.current;
+    expect(state.status).toBe("failed");
+    if (state.status !== "failed") throw new Error("unreachable");
+    expect(state.direct).toBe(error);
   });
 
   it("returns to connecting when the key changes after a failure", async () => {

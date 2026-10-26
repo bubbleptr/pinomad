@@ -14,7 +14,7 @@ import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
-import { candidatePlan, DIRECT_UNAVAILABLE, preferredLegacyUrl, type RemoteCandidate } from "@pinomad/protocol/remote-candidates.ts";
+import { candidatePlan, preferredLegacyUrl, type RemoteCandidate } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
@@ -526,14 +526,23 @@ export function RemoteWorkbench({
           <VStack gap={4} hAlign="center">
             <Banner
               status="error"
-              title={state.error.startsWith(DIRECT_UNAVAILABLE) ? "Direct connection unavailable" : "Could not connect to the host"}
-              description={state.error}
+              title={state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}
+              description={
+                state.direct === undefined
+                  ? state.error
+                  : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."
+              }
             />
-            {state.error.startsWith(DIRECT_UNAVAILABLE) ? (
+            {state.direct === undefined ? null : (
+              <Text type="supporting" style={{ textAlign: "center" }}>
+                {`Details: ${state.direct.reason}`}
+              </Text>
+            )}
+            {state.direct === undefined ? null : (
               <Text type="supporting" style={{ textAlign: "center" }}>
                 Change this host's connection mode under Hosts below, then retry.
               </Text>
-            ) : null}
+            )}
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}

@@ -340,16 +340,19 @@ export function HostsSection({
         <VStack gap={3} role="group" aria-label={`Connection to ${paired.label(connectionHost)}`}>
           <Text weight="semibold">{`Connection to ${paired.label(connectionHost)}`}</Text>
           <VStack gap={1}>
-            <SegmentedControl
-              value={connectionHost.connectionMode ?? "auto"}
-              onChange={(next) => changeMode(connectionHost, next as ConnectionMode)}
-              label="Connection mode"
-              size="sm"
-            >
-              <SegmentedControlItem value="auto" label="Auto" />
-              <SegmentedControlItem value="directOnly" label="Direct only" />
-              <SegmentedControlItem value="relayOnly" label="Relay only" />
-            </SegmentedControl>
+            <HStack gap={2} vAlign="center" wrap="wrap">
+              <SegmentedControl
+                className="shrink-0"
+                value={connectionHost.connectionMode ?? "auto"}
+                onChange={(next) => changeMode(connectionHost, next as ConnectionMode)}
+                label="Connection mode"
+                size="sm"
+              >
+                <SegmentedControlItem value="auto" label="Auto" />
+                <SegmentedControlItem value="directOnly" label="Direct only" />
+                <SegmentedControlItem value="relayOnly" label="Relay only" />
+              </SegmentedControl>
+            </HStack>
             <Text type="supporting">{MODE_HELP[connectionHost.connectionMode ?? "auto"]}</Text>
           </VStack>
           {modeError === undefined ? null : (
@@ -358,22 +361,19 @@ export function HostsSection({
           {paired.isConnected(connectionHost) ? (
             <VStack gap={1}>
               <Text weight="semibold">Status</Text>
-              <HStack gap={2}>
-                <Text type="supporting">Path</Text>
-                <Text>{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</Text>
-              </HStack>
-              <HStack gap={2}>
-                <Text type="supporting">Peer-to-peer</Text>
-                <Text>
-                  {p2pStatus({
+              <List density="compact">
+                <ListItem label="Path" description={diagnostics === undefined ? "—" : pathLabel(diagnostics)} />
+                <ListItem
+                  label="Peer-to-peer"
+                  description={p2pStatus({
                     diagnostics,
                     mode: connectionHost.connectionMode ?? "auto",
                     hostMinor,
                     rtcAvailable,
                     connectedSince: connectedSince.current,
                   })}
-                </Text>
-              </HStack>
+                />
+              </List>
             </VStack>
           ) : null}
           <HStack hAlign="end">

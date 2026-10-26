@@ -8,6 +8,7 @@ import type { ConnectionMode } from "../src/connection-mode.ts";
 import type { RtcDataChannel, RtcPeer, RtcPlatform, RtcSendOutcome } from "../src/rtc-carrier.ts";
 import {
   connectRemoteDurable,
+  DirectUnavailableError,
   DisconnectedError,
   type RemoteDurable,
   type RemoteDurableOptions,
@@ -715,6 +716,8 @@ describe("RTC standby handoff", () => {
       () => undefined,
       (reason: unknown) => reason,
     );
+    expect(error).toBeInstanceOf(DirectUnavailableError);
+    expect((error as DirectUnavailableError).reason).toContain("no peer");
     expect((error as Error).message).toContain("Direct connection unavailable");
     expect(failingNetwork.opens).toHaveLength(0);
   });
