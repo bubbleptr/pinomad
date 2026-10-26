@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button.tsx";
+import { Button, buttonVariants } from "@/components/ui/button.tsx";
+import { formatDate, localized, type Lang } from "@/lib/i18n.ts";
+import { githubUrl } from "@/lib/nav.ts";
 import type { LandingCopy } from "./copy.tsx";
+import { StarIcon } from "./icons.tsx";
 
-export function QuickStart({ t }: { t: LandingCopy["quickStart"] }) {
+/** The newest changelog entry, read from the changelog when the page is prerendered. */
+export type LatestRelease = { version: string; date: string };
+
+export function GetStarted({ lang, t, latest }: { lang: Lang; t: LandingCopy["start"]; latest?: LatestRelease }) {
   return (
     <section className="section" id="quick-start" aria-labelledby="quick-start-title">
       <div className="wrap split">
@@ -32,12 +38,38 @@ export function QuickStart({ t }: { t: LandingCopy["quickStart"] }) {
           </pre>
         </div>
       </div>
+      <div className="wrap">
+        <h3 className="clients-title">{t.clientsTitle}</h3>
+        <ul className="clients">
+          {t.clients.map((client) => (
+            <li key={client.name} className="client">
+              <h4>{client.name}</h4>
+              <p>{client.body}</p>
+              {client.tag && <span className="tag">{client.tag}</span>}
+            </li>
+          ))}
+        </ul>
+        <div className="start-end">
+          {latest && (
+            <p className="latest">
+              {t.latest(latest.version, formatDate(lang, latest.date))}
+              {" · "}
+              <a href={localized(lang, "/changelog/")}>{t.changelog}</a>
+            </p>
+          )}
+          <a className={buttonVariants({ variant: "quiet" })} href={githubUrl}>
+            <StarIcon />
+            {t.star}
+          </a>
+          <p className="star-note">{t.starNote}</p>
+        </div>
+      </div>
     </section>
   );
 }
 
 /** Ships hidden: without JS or the async clipboard API the block is still plain selectable text. */
-function CopyButton({ text, t }: { text: string; t: LandingCopy["quickStart"] }) {
+function CopyButton({ text, t }: { text: string; t: LandingCopy["start"] }) {
   const [ready, setReady] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);

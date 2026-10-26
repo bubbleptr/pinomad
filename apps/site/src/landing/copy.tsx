@@ -3,9 +3,10 @@ import type { Lang } from "@/lib/i18n.ts";
 
 // Every word on the landing page, once per language. Both languages share one
 // shape, so a section added to one and missed in the other fails the typecheck.
-// Feature claims follow the docs' features page.
+// What ships today is written as a feature; what's planned stays in `next`,
+// labelled as planned and linked to its issue (#364 has the selling points).
 
-type Shot = "worktree" | "question" | "subagents";
+type Link = { text: string; href: string };
 
 export interface LandingCopy {
   skip: string;
@@ -21,17 +22,16 @@ export interface LandingCopy {
     modelsMore: string;
     shotAlt: string;
   };
-  anywhere: {
+  core: {
     eyebrow: string;
     title: string;
-    lead: string;
-    chips: { name: string; text: string }[];
-    caption: string;
+    machine: { title: string; body: string; placeholder: string };
+    anywhere: { title: string; body: string; placeholder: string };
+    allFeatures: string;
   };
   durable: {
-    eyebrow: string;
     title: string;
-    lead: string;
+    body: string;
     description: string;
     model: string;
     crash: string;
@@ -47,20 +47,30 @@ export interface LandingCopy {
     done: string;
     doneClean: string;
   };
-  features: {
+  agents: {
     eyebrow: string;
     title: string;
     lead: string;
-    rows: { shot: Shot; title: string; body: ReactNode; alt: string }[];
-    moreTitle: string;
-    more: { term: string; body: ReactNode }[];
+    roles: { name: string; job: string }[];
+    blog: string;
+    shotAlt: string;
+    placeholder: string;
   };
-  clients: {
+  connection: {
     eyebrow: string;
     title: string;
-    items: { name: string; body: ReactNode; tag?: string }[];
+    lead: string;
+    chips: { name: string; text: string }[];
+    placeholder: string;
   };
-  quickStart: {
+  next: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    items: { title: string; body: string; link: Link }[];
+    placeholder: string;
+  };
+  start: {
     eyebrow: string;
     title: string;
     lead: string;
@@ -71,12 +81,22 @@ export interface LandingCopy {
     copyFailed: string;
     hostComment: string;
     linkComment: string;
+    clientsTitle: string;
+    clients: { name: string; body: ReactNode; tag?: string }[];
+    latest: (version: string, date: string) => string;
+    changelog: string;
+    star: string;
+    starNote: string;
   };
-  closing: { title: string; lead: string; start: string; star: string; starNote: string };
   footer: { sign: string; nav: string; docs: string; license: string };
 }
 
 const models = ["Anthropic", "OpenAI", "Google", "DeepSeek", "xAI", "Mistral"];
+const issue = (n: number) => `https://github.com/bubbleptr/pinomad/issues/${n}`;
+const adr4 = "https://github.com/bubbleptr/pinomad/blob/main/docs/adr/0004-built-in-first-plugin-protocol-later.md";
+const blogPost = "https://kieran.build/zh/blog/indie-dev-weekly-03/";
+
+export const blogUrl = blogPost;
 
 export const copy: Record<Lang, LandingCopy> = {
   en: {
@@ -94,20 +114,24 @@ export const copy: Record<Lang, LandingCopy> = {
       shotAlt:
         "The PiNomad web client mid-run: conversations in the sidebar; the agent has answered, been asked for more, and is now reading and editing files and running commands",
     },
-    anywhere: {
-      eyebrow: "Any screen",
-      title: "Step away from your desk",
-      lead: "Start a task at your desk, then check on it or steer it from your phone. Devices pair with a one-time QR code and talk to the host over an end-to-end encrypted channel.",
-      chips: [
-        { name: "Direct", text: " over your LAN or tailnet" },
-        { name: "Relay", text: " that only sees ciphertext" },
-      ],
-      caption: "Screenshot coming: the same run on iPhone.",
+    core: {
+      eyebrow: "How it works",
+      title: "Runs on your machine, survives crashes, follows you around",
+      machine: {
+        title: "Your machine does the work",
+        body: "The host runs on a Mac mini, a Linux box, or a VPS, and the agent uses that machine's shell, repositories, and credentials.",
+        placeholder: "Diagram coming: the host on your own machine.",
+      },
+      anywhere: {
+        title: "Step away from your desk",
+        body: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
+        placeholder: "Screenshot coming: the same run on iPhone.",
+      },
+      allFeatures: "Everything the agent can do",
     },
     durable: {
-      eyebrow: "Durable runs",
       title: "Runs survive crashes and restarts",
-      lead: "Pi Durable writes a checkpoint after every model call and tool call. After a restart the run continues from the last one; only the call that was in flight runs again.",
+      body: "Pi Durable writes a checkpoint after every model call and tool call. After a restart the run continues from the last one; only the call that was in flight runs again.",
       description:
         "A run drawn as a track of model and tool calls. Each finished call plants a flag. The host crashes between two calls; after the restart the run continues from the last flag, and only the half-finished call is redone.",
       model: "model",
@@ -124,65 +148,79 @@ export const copy: Record<Lang, LandingCopy> = {
       done: "Done. No call behind a flag ran twice.",
       doneClean: "Done. Next time, pull the plug while it runs.",
     },
-    features: {
-      eyebrow: "Features",
-      title: "What the agent can do",
-      lead: "The agent has pi's four tools (read, bash, edit, write), plus:",
-      rows: [
-        {
-          shot: "worktree",
-          title: "A worktree for every conversation",
-          body: "In a Git repo each conversation works in its own worktree and branch, so your checkout stays untouched.",
-          alt: "The slugkit project's conversations in the sidebar. The open one has read, written and edited files and run the tests, and the line under its composer shows it works in its own Git worktree on a pinomad branch",
-        },
-        {
-          shot: "question",
-          title: "Questions, not approvals",
-          body: "Tools run without approval prompts. When the direction is unclear, the agent asks one to four multiple-choice questions.",
-          alt: "A question card from the agent: what to call the command, slugkit or slug, and whether to read titles from arguments or also from stdin, each with a box for a custom answer",
-        },
-        {
-          shot: "subagents",
-          title: "Subagents and named agents",
-          body: (
-            <>
-              Hand self-contained tasks to subagents that run in parallel, or delegate to a reusable role with an <code>@name</code> mention, optionally pinning its model and thinking level.
-            </>
-          ),
-          alt: "One turn running three subagents: German titles is done, Vietnamese titles is still running a script, and the @reviewer agent is checking the fold map for collisions",
-        },
+    agents: {
+      eyebrow: "Named agents",
+      title: "Give each role its own agent",
+      lead: "Define a role once, with its own prompt, model, and thinking level, then hand it work with an @mention or as a subagent. Split the work the way a small team would:",
+      roles: [
+        { name: "Planner", job: "designs the change with you" },
+        { name: "Worker", job: "writes the code" },
+        { name: "Critic", job: "argues against protocol and design changes" },
+        { name: "Writer", job: "polishes the copy" },
       ],
-      moreTitle: "And also",
-      more: [
-        { term: "Forks", body: "Branch off from a message and keep both lines going." },
-        {
-          term: "codemode",
-          body: "The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context.",
-        },
-        {
-          term: "MCP",
-          body: (
-            <>
-              Servers configured in <code>~/.agents/mcp.json</code>, in the usual <code>mcpServers</code> format.
-            </>
-          ),
-        },
-        { term: "Images", body: "Paste, drop, or pick up to 4 images per message in the web and desktop composer." },
-        {
-          term: "AGENTS.md and skills",
-          body: (
-            <>
-              Reads <code>AGENTS.md</code> / <code>CLAUDE.md</code> and skills from <code>~/.agents</code> and the
-              project, on every request.
-            </>
-          ),
-        },
-      ],
+      blog: "How the author splits a week's work across five named agents (in Chinese)",
+      shotAlt:
+        "One turn running three subagents: German titles is done, Vietnamese titles is still running a script, and the @reviewer agent is checking the fold map for collisions",
+      placeholder: "Diagram coming: a planner handing work to workers, a critic, and a writer.",
     },
-    clients: {
-      eyebrow: "Clients",
-      title: "Pick up the same run anywhere",
+    connection: {
+      eyebrow: "Connection",
+      title: "Reach your host from anywhere, privately",
+      lead: "Pair a device by scanning a one-time QR code. From then on it talks to the host over an end-to-end encrypted channel.",
+      chips: [
+        { name: "Direct", text: " over your LAN or tailnet" },
+        { name: "Relay", text: " that only sees ciphertext" },
+      ],
+      placeholder: "Diagram coming: a device, the encrypted channel, and the host.",
+    },
+    next: {
+      eyebrow: "Coming next",
+      title: "Where PiNomad is heading",
+      lead: "None of this ships yet. Each item links to the issue where it's planned.",
       items: [
+        {
+          title: "One host, many execution environments",
+          body: "Keep the host on your main machine and point a project at a Windows, macOS, Linux, or Android machine. The model thinks on the host; the tools run on the other machine over SSH, through pi-env.",
+          link: { text: "#363", href: issue(363) },
+        },
+        {
+          title: "Hosts working together",
+          body: "One client connected to several hosts, and an agent that hands parts of a task to agents on other machines.",
+          link: { text: "#148", href: issue(148) },
+        },
+        {
+          title: "More ways to connect",
+          body: "Peer-to-peer connections alongside the relay, and a built-in Tailscale network.",
+          link: { text: "#345", href: issue(345) },
+        },
+        {
+          title: "An open plugin protocol",
+          body: "Built-in features are already written against the same extension boundary. Once it settles, the protocol opens to plugins from anyone.",
+          link: { text: "ADR-0004", href: adr4 },
+        },
+      ],
+      placeholder: "Diagram coming: one host driving Windows, macOS, Linux, and Android machines.",
+    },
+    start: {
+      eyebrow: "Get started",
+      title: "Install, start the host, open a client",
+      lead: "Free and open source under Apache-2.0. The host needs Node 25+ on macOS or Linux.",
+      notes: [
+        <>
+          <code>pinomad host</code> uses the models and credentials you set up in pi (<code>~/.pi/agent</code>).
+          Haven't set up pi yet? <code>pinomad host --faux "hi"</code> runs a scripted fake model so you can click
+          around.
+        </>,
+        "It's early. Pi Durable is itself experimental, and the host and its clients must speak the same protocol major version.",
+      ],
+      terminal: "Terminal",
+      copy: "Copy",
+      copied: "Copied",
+      copyFailed: "Copy failed",
+      hostComment: "# uses the models and credentials set up in pi",
+      linkComment: "# in another terminal: prints a web client link",
+      clientsTitle: "Clients",
+      clients: [
         {
           name: "Web",
           body: (
@@ -205,30 +243,8 @@ export const copy: Record<Lang, LandingCopy> = {
         { name: "iOS", body: "Pairs with your host by scanning a one-time QR code.", tag: "Internal TestFlight only for now" },
         { name: "Linux, Windows", body: "Use the web client." },
       ],
-    },
-    quickStart: {
-      eyebrow: "Quick start",
-      title: "Install, start the host, open a client",
-      lead: "The host needs Node 25+ on macOS or Linux.",
-      notes: [
-        <>
-          <code>pinomad host</code> uses the models and credentials you set up in pi (<code>~/.pi/agent</code>).
-          Haven't set up pi yet? <code>pinomad host --faux "hi"</code> runs a scripted fake model so you can click
-          around.
-        </>,
-        "It's early. Pi Durable is itself experimental, and the host and its clients must speak the same protocol major version.",
-      ],
-      terminal: "Terminal",
-      copy: "Copy",
-      copied: "Copied",
-      copyFailed: "Copy failed",
-      hostComment: "# uses the models and credentials set up in pi",
-      linkComment: "# in another terminal: prints a web client link",
-    },
-    closing: {
-      title: "Start a run. Walk away.",
-      lead: "Free and open source. It runs on your hardware, with your model credentials.",
-      start: "Get started",
+      latest: (version, date) => `Latest release: ${version}, ${date}`,
+      changelog: "Changelog",
       star: "Star on GitHub",
       starNote: "If PiNomad is useful to you, a star helps other people find it.",
     },
@@ -257,20 +273,24 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是对话列表，agent 答完上一轮后，正顺着追问改测试、跑测试",
     },
-    anywhere: {
-      eyebrow: "多端接力",
-      title: "离开电脑也能接着管",
-      lead: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。新设备扫一次性二维码就能完成配对，和宿主之间全程走端到端加密的安全通道。",
-      chips: [
-        { name: "直连", text: "：局域网或 tailnet" },
-        { name: "中继", text: "：只转发密文" },
-      ],
-      caption: "截图待补：在 iPhone 上接着看同一个任务。",
+    core: {
+      eyebrow: "工作方式",
+      title: "跑在你的机器上，崩了能接着跑，走到哪跟到哪",
+      machine: {
+        title: "活在你自己的机器上干",
+        body: "宿主可以跑在 Mac mini、Linux 主机或 VPS 上，agent 直接用那台机器的 shell、代码仓库和凭据。",
+        placeholder: "示意图待补：宿主跑在你自己的机器上。",
+      },
+      anywhere: {
+        title: "离开电脑也能接着管",
+        body: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
+        placeholder: "截图待补：在 iPhone 上接着看同一个任务。",
+      },
+      allFeatures: "agent 能做的所有事",
     },
     durable: {
-      eyebrow: "断点续跑",
       title: "步步存检查点，重启不用从头来",
-      lead: "每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。",
+      body: "每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。",
       description:
         "示意图：一条任务路线串联起多次模型调用和工具调用，每完成一步就插一面旗。宿主在两步中途崩溃，重启后直接从上一面旗恢复，只重做中断的那一步。",
       model: "模型",
@@ -287,61 +307,77 @@ export const copy: Record<Lang, LandingCopy> = {
       done: "跑完了，插过旗的步骤一步都没重跑。",
       doneClean: "跑完了。再试一次，趁它在跑时拔掉电源看看。",
     },
-    features: {
-      eyebrow: "功能",
-      title: "agent 能做什么",
-      lead: "除了和 pi 一样的 read、bash、edit、write 四个基础工具，还支持：",
-      rows: [
-        {
-          shot: "worktree",
-          title: "每个对话独立一个 worktree",
-          body: "在 Git 项目里，每个对话都在独立的 worktree 和分支上改代码，多个任务并行互不干扰，也不会动到你手头正在改的目录。",
-          alt: "左侧是 slugkit 项目下的多条对话。当前对话已经完成读写文件和跑测试，输入框底部显示它运行在独立的 Git worktree 和 pinomad/ 分支上",
-        },
-        {
-          shot: "question",
-          title: "提问代替审批",
-          body: "调工具不弹确认框，不用一路点允许。遇到需要你拿主意的地方，agent 会列 1–4 道选择题让你拍板。",
-          alt: "agent 发出的提问卡片：询问命令该叫 slugkit 还是 slug、是否支持从标准输入读取标题，每道题除了现成选项也可以自己填答案",
-        },
-        {
-          shot: "subagents",
-          title: "子代理和具名 Agent",
-          body: (
-            <>
-              独立的活可以拆给多个子代理并行去跑；也可以配置带专属提示词、模型和思考等级的具名 Agent，用 <code>@名字</code> 直接点名派活。
-            </>
-          ),
-          alt: "同一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突",
-        },
+    agents: {
+      eyebrow: "具名 Agent",
+      title: "每个角色交给一个专属 agent",
+      lead: "把一个角色定义一次：提示词、模型、思考等级都是它自己的。之后用 @名字 或子代理派活给它，像一个小团队那样分工：",
+      roles: [
+        { name: "Planner", job: "和你一起定方案" },
+        { name: "Worker", job: "写代码" },
+        { name: "Critic", job: "对协议和设计改动做对抗审查" },
+        { name: "Writer", job: "润色文案" },
       ],
-      moreTitle: "还有这些",
-      more: [
-        { term: "Fork", body: "从任意一条消息分出新对话，继承此前上下文，两条线各自往下聊。" },
-        { term: "codemode", body: "模型写 JavaScript 在 QuickJS 沙箱里组合调用其他工具，只把最终输出放进上下文。" },
-        {
-          term: "MCP",
-          body: (
-            <>
-              在 <code>~/.agents/mcp.json</code> 里按通用的 <code>mcpServers</code> 格式配好就能用。
-            </>
-          ),
-        },
-        { term: "图片", body: "Web 和桌面端输入框支持直接粘贴、拖入或选图，单条消息最多附带 4 张。" },
-        {
-          term: "AGENTS.md 和 skills",
-          body: (
-            <>
-              每次请求都会读取 <code>~/.agents</code> 和项目目录下的 <code>AGENTS.md</code>、<code>CLAUDE.md</code> 与 skills。
-            </>
-          ),
-        },
-      ],
+      blog: "看作者一周的开发记录：五个具名 Agent 怎么分工",
+      shotAlt: "同一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突",
+      placeholder: "示意图待补：Planner 把活分给 Worker、Critic 和 Writer。",
     },
-    clients: {
-      eyebrow: "客户端",
-      title: "同一个任务，在哪都能接着看",
+    connection: {
+      eyebrow: "连接",
+      title: "在哪都能连上宿主，内容只有你看得到",
+      lead: "新设备扫一次性二维码就能配对，之后和宿主之间全程走端到端加密的通道。",
+      chips: [
+        { name: "直连", text: "：局域网或 tailnet" },
+        { name: "中继", text: "：只转发密文" },
+      ],
+      placeholder: "示意图待补：设备、加密通道和宿主。",
+    },
+    next: {
+      eyebrow: "接下来",
+      title: "PiNomad 接下来要做的",
+      lead: "下面这些都还没上线，每一项都链到规划它的 issue。",
       items: [
+        {
+          title: "一台宿主，多个执行环境",
+          body: "宿主留在你的主力机上，把项目指向一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具通过 SSH 在那台机器上执行，底层是 pi-env。",
+          link: { text: "#363", href: issue(363) },
+        },
+        {
+          title: "多台宿主协作",
+          body: "一个客户端同时连多台宿主，再由一个 agent 把任务拆给其他机器上的 agent。",
+          link: { text: "#148", href: issue(148) },
+        },
+        {
+          title: "更多连接方式",
+          body: "在中继之外加上 P2P 直连，以及内置的 Tailscale 网络。",
+          link: { text: "#345", href: issue(345) },
+        },
+        {
+          title: "开放插件协议",
+          body: "内置功能已经按同一套扩展边界来写，等协议稳定后对外开放，谁都能写插件。",
+          link: { text: "ADR-0004", href: adr4 },
+        },
+      ],
+      placeholder: "示意图待补：一台宿主驱动 Windows、macOS、Linux 和 Android 机器。",
+    },
+    start: {
+      eyebrow: "开始使用",
+      title: "三条命令跑起来",
+      lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
+      notes: [
+        <>
+          <code>pinomad host</code> 会直接复用你在 pi（<code>~/.pi/agent</code>）里配好的模型和认证。还没配过
+          pi？可以先跑 <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
+        </>,
+        "项目还在早期，底层的 Pi Durable 也处于实验阶段；升级时请保持宿主和客户端的协议主版本号一致。",
+      ],
+      terminal: "终端",
+      copy: "复制",
+      copied: "已复制",
+      copyFailed: "复制失败",
+      hostComment: "# 复用 pi 里配好的模型和认证",
+      linkComment: "# 另开一个终端，打印 Web 客户端链接",
+      clientsTitle: "客户端",
+      clients: [
         {
           name: "Web",
           body: (
@@ -363,29 +399,8 @@ export const copy: Record<Lang, LandingCopy> = {
         { name: "iOS", body: "扫一下宿主生成的一次性二维码即可完成配对。", tag: "目前仅限 TestFlight 内测" },
         { name: "Linux、Windows", body: "直接使用 Web 客户端。" },
       ],
-    },
-    quickStart: {
-      eyebrow: "快速上手",
-      title: "三条命令跑起来",
-      lead: "宿主需要 Node 25+，支持 macOS 和 Linux。",
-      notes: [
-        <>
-          <code>pinomad host</code> 会直接复用你在 pi（<code>~/.pi/agent</code>）里配好的模型和认证。还没配过
-          pi？可以先跑 <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
-        </>,
-        "项目还在早期，底层的 Pi Durable 也处于实验阶段；升级时请保持宿主和客户端的协议主版本号一致。",
-      ],
-      terminal: "终端",
-      copy: "复制",
-      copied: "已复制",
-      copyFailed: "复制失败",
-      hostComment: "# 复用 pi 里配好的模型和认证",
-      linkComment: "# 另开一个终端，打印 Web 客户端链接",
-    },
-    closing: {
-      title: "派好活，放手让它跑。",
-      lead: "免费开源。跑在你自己的机器上，用你自己的模型账号。",
-      start: "开始使用",
+      latest: (version, date) => `最新版本：${version}，${date}`,
+      changelog: "更新日志",
       star: "在 GitHub 上 Star",
       starNote: "如果 PiNomad 对你有用，点颗 Star 能帮更多人发现它。",
     },
