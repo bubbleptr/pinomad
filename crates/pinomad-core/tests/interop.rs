@@ -23,7 +23,8 @@ struct SpawnedHost {
     child: Child,
     url: String,
     token: String,
-    dir: TempDataDir,
+    /// Kept for its Drop cleanup; the test never reads the path.
+    _dir: TempDataDir,
 }
 
 /// A throwaway host data dir. The host's lock lives beside it as `<dir>.lock`,
@@ -70,7 +71,7 @@ fn free_port() -> u16 {
 fn spawn_host() -> SpawnedHost {
     let dir = TempDataDir::new();
     let port = free_port();
-    let mut child = ProcCommand::new("node")
+    let child = ProcCommand::new("node")
         .arg("apps/host/src/main.ts")
         .arg("--data-dir")
         .arg(dir.path())
@@ -85,7 +86,7 @@ fn spawn_host() -> SpawnedHost {
         .expect("spawn node host");
     // Own the child and dir before reading readiness: a failed spawn test must
     // still kill the process and drop its temp trees.
-    let mut host = SpawnedHost { child, url: String::new(), token: String::new(), dir };
+    let mut host = SpawnedHost { child, url: String::new(), token: String::new(), _dir: dir };
     let stdout = host.child.stdout.take().unwrap();
     let mut lines = BufReader::new(stdout);
     let deadline = Instant::now() + Duration::from_secs(60);

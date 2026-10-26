@@ -577,7 +577,7 @@ fn direct(url: &str) -> RemoteCandidate {
 #[test]
 fn walks_candidates_in_auto_order_and_shares_one_pairing_until_message2() {
     let candidates = vec![loopback(), relay("wss://relay/"), direct("wss://direct/")];
-    let mut h = Harness::new(
+    let h = Harness::new(
         candidates,
         vec![
             (loopback().url.as_str(), vec![Script::rejected(1006)]),
@@ -616,7 +616,7 @@ fn walks_candidates_in_auto_order_and_shares_one_pairing_until_message2() {
 #[test]
 fn a_message2_lost_before_hello_retries_with_the_device_identity() {
     let candidates = vec![relay("wss://one/"), relay("wss://two/")];
-    let mut h = Harness::new(
+    let h = Harness::new(
         candidates,
         vec![
             (
@@ -739,7 +739,7 @@ fn late_events_and_cancelled_timers_from_a_retired_candidate_are_ignored() {
 #[test]
 fn only_a_round_whose_every_dialed_path_was_unauthorized_is_revoked() {
     let all = vec![relay("wss://one/"), direct("wss://two/")];
-    let mut h = Harness::new(
+    let h = Harness::new(
         all,
         vec![
             ("wss://one/", vec![Script::rejected(4401)]),
@@ -751,7 +751,7 @@ fn only_a_round_whose_every_dialed_path_was_unauthorized_is_revoked() {
     assert_eq!(h.shared.lock().unwrap().opens.len(), 2);
 
     let mixed = vec![relay("wss://one/"), direct("wss://two/")];
-    let mut h = Harness::new(
+    let h = Harness::new(
         mixed,
         vec![
             ("wss://one/", vec![Script::rejected(4401)]),
@@ -771,7 +771,7 @@ fn only_a_round_whose_every_dialed_path_was_unauthorized_is_revoked() {
 #[test]
 fn an_authenticated_protocol_mismatch_stops_the_whole_round() {
     let candidates = vec![relay("wss://one/"), direct("wss://two/")];
-    let mut h = Harness::new(
+    let h = Harness::new(
         candidates,
         vec![
             (
@@ -802,7 +802,7 @@ fn an_unsupported_candidate_is_skipped_not_counted_as_a_host_failure() {
         },
         direct("wss://direct/"),
     ];
-    let mut h = Harness::new(
+    let h = Harness::new(
         candidates,
         vec![("wss://direct/", vec![Script::healthy()])],
         false,
