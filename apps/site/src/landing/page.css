@@ -781,10 +781,8 @@ html[lang="zh-CN"] .hero h1 {
   text-wrap: pretty;
 }
 
-/* Inside a card the frame steps down to the page colour (and the boxes in it up to the card's). */
 .cell .diagram {
   margin-top: 0.75rem;
-  background: var(--bg);
 }
 
 .cell-machine .diagram {
@@ -1102,14 +1100,32 @@ html[lang="zh-CN"] .hero h1 {
   gap: 1rem;
 }
 
-/* —— Diagrams (diagrams.tsx). One frame per picture, the drawing capped so its labels
-   stay near body size on a desktop. SVG units are px here, so font sizes are in the
-   drawing's own units. —— */
+/* —— Diagrams (diagrams.tsx): miniature product UI on a hatched plate. Depth comes
+   from lightness steps (plate < tile < card) plus a highlight along each card's top
+   edge; the SVG's own filter adds the shadow. The plate is the same colour in a card
+   or on the page. SVG units are px here, so sizes are in the drawing's own units. —— */
+:root {
+  --dg-plate: oklch(0.2 0.003 260);
+  --dg-hatch: rgb(255 255 255 / 0.03);
+  --dg-hairline: rgb(255 255 255 / 0.07);
+  --dg-shine: rgb(255 255 255 / 0.07);
+  --dg-card: oklch(0.275 0.004 260);
+  --dg-card-back: oklch(0.235 0.003 260);
+  --dg-tile: oklch(0.31 0.004 260);
+  --dg-screen: oklch(0.19 0.003 260);
+  --dg-bar: oklch(0.36 0.004 260);
+  --dg-bar-strong: oklch(0.45 0.004 260);
+  --dg-icon: oklch(0.66 0.004 260);
+  --dg-line: rgb(255 255 255 / 0.2);
+  --dg-line-strong: rgb(255 255 255 / 0.34);
+}
+
 .diagram {
-  padding: clamp(0.75rem, 3vw, 1.5rem);
-  border: 1px solid var(--border);
+  padding: clamp(0.5rem, 2vw, 1.5rem);
   border-radius: var(--radius);
-  background: var(--surface);
+  background-color: var(--dg-plate);
+  background-image: repeating-linear-gradient(-45deg, var(--dg-hatch) 0 1px, transparent 1px 7px);
+  box-shadow: inset 0 0 0 1px var(--dg-hairline);
 }
 
 .diagram svg {
@@ -1121,67 +1137,144 @@ html[lang="zh-CN"] .hero h1 {
   overflow: visible;
 }
 
-.dg-box {
-  fill: var(--bg);
-  stroke: var(--border-strong);
-  stroke-width: 1.25;
+.dg-card {
+  fill: var(--dg-card);
+  stroke: var(--dg-hairline);
+  stroke-width: 1;
 }
 
-.dg-box.is-main {
-  stroke: var(--fg-3);
+.dg-card.is-back {
+  fill: var(--dg-card-back);
+}
+
+.dg-shine {
+  fill: none;
+  stroke: var(--dg-shine);
+  stroke-width: 1;
+}
+
+.dg-tile {
+  fill: var(--dg-tile);
+  stroke: var(--dg-hairline);
+  stroke-width: 1;
+}
+
+.dg-screen {
+  fill: var(--dg-screen);
+}
+
+/* Planned, not shipped: the same dashes as the roadmap cards, and nothing filled in. */
+.dg-ghost {
+  fill: none;
+  stroke: var(--dg-line);
+  stroke-dasharray: 4 4;
+}
+
+.dg-rule {
+  fill: none;
+  stroke: var(--dg-hairline);
+}
+
+.dg-bar,
+.dg-dot,
+.dg-avatar {
+  fill: var(--dg-bar);
+}
+
+.dg-bar.is-strong {
+  fill: var(--dg-bar-strong);
+}
+
+.dg-island {
+  fill: var(--bg);
+}
+
+.dg-qr,
+.dg-live {
+  fill: var(--fg-2);
+}
+
+.dg-icon {
+  fill: none;
+  stroke: var(--dg-icon);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .dg-line {
   fill: none;
-  stroke: var(--fg-3);
+  stroke: var(--dg-line);
   stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .dg-line.is-strong {
-  stroke: var(--fg-2);
+  stroke: var(--dg-line-strong);
   stroke-width: 1.5;
 }
 
-/* Planned, not shipped: the same dashes as the roadmap cards. */
 .dg-planned {
-  stroke-dasharray: 5 4;
+  stroke-dasharray: 4 4;
 }
 
-.dg-solid {
-  fill: var(--fg-2);
+/* The one bright thing in a diagram. */
+.dg-chip {
+  fill: var(--fg);
 }
 
-/* The disc under a padlock takes the colour of whatever is behind it. */
-.dg-cut {
-  fill: var(--surface);
-}
-
-.dg-cut.in-box {
+.dg-chip-text {
   fill: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-anchor: middle;
 }
 
 .dg-name {
   fill: var(--fg);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   text-anchor: middle;
 }
 
 .dg-name.is-small {
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.dg-name.is-planned {
+  fill: var(--fg-2);
+}
+
+.dg-title {
+  fill: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.dg-initial {
+  fill: var(--fg);
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
 }
 
 .dg-note {
   fill: var(--fg-3);
-  font-size: 13px;
+  font-size: 12px;
   text-anchor: middle;
 }
 
-.dg-mono {
+.dg-mono,
+.dg-code {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+}
+
+.dg-code {
+  fill: var(--fg);
+  font-size: 13px;
 }
 
 .dg-start {
@@ -1190,21 +1283,6 @@ html[lang="zh-CN"] .hero h1 {
 
 .dg-end {
   text-anchor: end;
-}
-
-.cell .dg-box,
-.cell .dg-cut {
-  fill: var(--surface);
-}
-
-/* On a phone a card is frame enough: the diagram in it takes the full width, so its labels stay legible. */
-@media (max-width: 40rem) {
-  .cell .diagram,
-  .plan .diagram {
-    padding: 0;
-    border: 0;
-    background: none;
-  }
 }
 
 /* —— Coming next. Dashed edges say "not shipped" before the words do. —— */
