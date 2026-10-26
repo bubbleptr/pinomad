@@ -12,7 +12,12 @@
 - 保留 50 ms 兜底轮询，仅用于漏回调，不是逐条节流；
 - 不启用任何密文去重。
 
-`summary.csv` 是汇总；每次运行的 `*.app.log` 是 iOS 证据，`*.node.log` 是
-Node/libdatachannel 侧证据。地址已替换为 RFC 5737 / RFC 3849 示例。
+`summary.csv` 是汇总（`platform` 列区分 simulator / device）；每次运行的
+`*.app.log` 是 iOS 证据，`*.node.log` 是 Node/libdatachannel 侧证据。
+地址已替换为 RFC 5737 / RFC 3849 示例。
 
-旧证据（第一版错误归因那次）已从当前树删除；它在 git 历史中仍可查。
+- simulator：IPv4 5 次、IPv6 5 次、后台 3 次。
+- iPhone 17 Pro / iOS 27.0：IPv4 5 次、原生 IPv6 5 次、后台 3 次；
+  后台测试用 Safari 把 App 压后台，再以前台 resume 方式返回，不重启进程。
+  13 次设备的 Node `writeFalse` 为 15–49，全部 `matched=true`，0 重复、0 解密失败。
+- 旧证据（第一版错误归因那次）已从当前树删除；它在 git 历史中仍可查。

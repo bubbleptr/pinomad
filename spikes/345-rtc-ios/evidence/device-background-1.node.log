@@ -1,0 +1,45 @@
+{"ts":"2026-10-26T05:09:25.185Z","event":"offer","runId":"1792991365185-1","bytes":720,"remoteAddress":"192.0.2.88"}
+{"ts":"2026-10-26T05:09:25.193Z","event":"answer","bytes":721,"candidates":4}
+{"ts":"2026-10-26T05:09:25.194Z","event":"pc-state","label":"answer","state":"connecting"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"ice-state","label":"answer","state":"checking"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"gathering-state","label":"answer","state":"in-progress"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"gathering-state","label":"answer","state":"complete"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"local-candidate","label":"answer","mid":"8fd","candidate":"a=candidate:1 1 UDP 2114977791 192.0.2.225 62915 typ host"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"local-candidate","label":"answer","mid":"8fd","candidate":"a=candidate:2 1 UDP 2114977535 198.51.100.1 62915 typ host"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"local-candidate","label":"answer","mid":"8fd","candidate":"a=candidate:3 1 UDP 2114977279 100.64.0.1 62915 typ host"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"local-candidate","label":"answer","mid":"8fd","candidate":"a=candidate:4 1 UDP 2114977023 100.64.0.2 62915 typ host"}
+{"ts":"2026-10-26T05:09:25.194Z","event":"local-description","label":"answer","type":"answer","bytes":448}
+{"ts":"2026-10-26T05:09:25.212Z","event":"ice-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T05:09:25.260Z","event":"ice-state","label":"answer","state":"completed"}
+{"ts":"2026-10-26T05:09:26.249Z","event":"pc-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T05:09:26.249Z","event":"data-channel","runId":"1792991365185-1","label":"pinomad-rtc-spike","maxMessageSize":262144}
+{"ts":"2026-10-26T05:09:26.253Z","event":"noise-peer-spawn","helperPath":"/Users/void/.lody/repos/local---9328531e0abe/worktrees/7a466aa0-98c3-40c1-953a-92b534df8bd9/spikes/345-rtc-ios/target/debug/rtc-noise-peer","seed":7}
+{"ts":"2026-10-26T05:09:26.253Z","event":"dc-open","pair":{"local":{"address":"192.0.2.225","port":62915,"type":"host"},"remote":{"address":"192.0.2.88","port":64594,"type":"host"}},"maxMessageSize":262144,"highWater":262144,"lowWater":65536}
+{"ts":"2026-10-26T05:09:26.328Z","event":"noise-peer","line":"noise-peer ready host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20"}
+{"ts":"2026-10-26T05:09:26.329Z","event":"noise-peer","line":"noise-peer msg1 client_hello={\"v\":1} device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"}
+{"ts":"2026-10-26T05:09:26.330Z","event":"noise-peer","line":"noise-peer msg2 55 bytes"}
+{"ts":"2026-10-26T05:09:26.504Z","event":"selected-pair","local":{"address":"192.0.2.225","port":62915,"type":"host"},"remote":{"address":"192.0.2.88","port":64594,"type":"host"}}
+{"ts":"2026-10-26T05:09:26.985Z","event":"noise-peer","line":"noise-peer bulk matched bytes=4194304 records_received=65"}
+{"ts":"2026-10-26T05:09:27.339Z","event":"noise-peer","line":"noise-peer echoing 65 records"}
+{"ts":"2026-10-26T05:09:27.489Z","event":"dc-buffered-low","bufferedAmount":0,"queued":43}
+{"ts":"2026-10-26T05:09:27.538Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":41}
+{"ts":"2026-10-26T05:09:27.616Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":34}
+{"ts":"2026-10-26T05:09:27.619Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":33}
+{"ts":"2026-10-26T05:09:27.620Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":32}
+{"ts":"2026-10-26T05:09:27.637Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":31}
+{"ts":"2026-10-26T05:09:27.662Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":29}
+{"ts":"2026-10-26T05:09:27.663Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":28}
+{"ts":"2026-10-26T05:09:27.664Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":27}
+{"ts":"2026-10-26T05:09:27.666Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":26}
+{"ts":"2026-10-26T05:09:27.667Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":25}
+{"ts":"2026-10-26T05:09:27.668Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":24}
+{"ts":"2026-10-26T05:09:27.800Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":21}
+{"ts":"2026-10-26T05:09:27.827Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":9}
+{"ts":"2026-10-26T05:09:27.887Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":7}
+{"ts":"2026-10-26T05:09:27.903Z","event":"dc-buffered-low","bufferedAmount":0,"queued":6}
+{"ts":"2026-10-26T05:09:28.041Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":2}
+{"ts":"2026-10-26T05:09:28.043Z","event":"dc-buffered-low","bufferedAmount":0,"queued":1}
+{"ts":"2026-10-26T05:09:28.043Z","event":"dc-send-drained","sent":66,"writeFalse":34,"bufferedAmount":0,"maxBuffered":327675}
+{"ts":"2026-10-26T05:09:28.043Z","event":"dc-run-summary","runId":"1792991365185-1","reason":"drained","sent":66,"writeFalse":34,"maxBuffered":327675,"maxQueue":44}
+{"ts":"2026-10-26T05:09:28.057Z","event":"dc-send-drained","sent":66,"writeFalse":34,"bufferedAmount":0,"maxBuffered":327675}
+{"ts":"2026-10-26T05:09:40.195Z","event":"answer-idle","state":"connected","pair":{"local":{"address":"192.0.2.225","port":62915,"type":"host"},"remote":{"address":"192.0.2.88","port":64594,"type":"host"}}}

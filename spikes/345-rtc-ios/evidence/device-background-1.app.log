@@ -1,0 +1,186 @@
+1792991363.110 === RTC spike start 2026-10-26 05:09:23 +0000 ===
+1792991363.110 bundle=build.kieran.pinomad.rtcspike device=iPhone os=iOS 27.0
+1792991363.110 server=http://192.0.2.225:8765 family=ipv4 seed=7
+1792991363.110 env=["RTCSPIKE_SERVER": "http://192.0.2.225:8765", "RTCSPIKE_FAMILY": "ipv4", "RTCSPIKE_DEDUPE": "0", "RTCSPIKE_STUN": "stun.cloudflare.com:3478", "RTCSPIKE_HOLD_MS": "1500"]
+1792991363.111 NSBonjourServices=absent
+1792991363.112 interface=en0 address=192.0.2.88 family=ipv4
+1792991363.113 udp bound 192.0.2.88:64594 fd receive loop ready
+1792991363.118 STUN config=stun.cloudflare.com:3478 resolved=["162.159.207.0:3478"]
+1792991363.157 engine created local=192.0.2.88:64594
+1792991363.157 start local=192.0.2.88:64594 stun=[162.159.207.0:3478]
+1792991363.157 sent #1 -> 162.159.207.0:3478 bytes=20
+1792991363.407 sent #2 -> 162.159.207.0:3478 bytes=20
+1792991363.505 APP scene=active at 758399583ms
+1792991363.687 STUN mapped 203.0.113.10:21886 via 162.159.207.0:3478 rtt=280ms
+1792991365.159 gather complete in 2039ms; local candidates={192.0.2.88:64594: "host", 203.0.113.10:21886: "srflx"}
+1792991365.159 offer a=candidate:fffeff7e1074e725da6d0a37 1 udp 2130706175 192.0.2.88 64594 typ host ufrag sRN0V5k56tvOEJYp
+1792991365.159 offer a=candidate:fffe7f645059572ec32f36a2 1 udp 1686109951 203.0.113.10 21886 typ srflx raddr 0.0.0.0 rport 0 ufrag sRN0V5k56tvOEJYp
+1792991365.159 offer 720 bytes with m=application
+1792991365.163 offer ready bytes=701 candidates=2
+1792991365.163 offer a=candidate:fffeff7e1074e725da6d0a37 1 udp 2130706175 192.0.2.88 64594 typ host ufrag sRN0V5k56tvOEJYp
+1792991365.163 offer a=candidate:fffe7f645059572ec32f36a2 1 udp 1686109951 203.0.113.10 21886 typ srflx raddr 0.0.0.0 rport 0 ufrag sRN0V5k56tvOEJYp
+1792991365.163 POST http://192.0.2.225:8765/offer offerBytes=701
+1792991365.218 ICE state Checking
+1792991365.223 answer received status=200 bytes=699
+1792991365.225 answer accepted; ICE checks start
+1792991365.227 sent #3 -> 192.0.2.225:62915 bytes=64
+1792991365.234 Rtc rejected datagram from 192.0.2.225:62915
+1792991365.275 ICE state Connected
+1792991366.218 selected candidate pair 192.0.2.88:64594/host -> 192.0.2.225:62915/host rtt=Some(7ms)
+1792991366.218 selected pair local=192.0.2.88:64594/host remote=192.0.2.225:62915/host
+1792991366.249 DTLS connected
+1792991366.270 buffered-amount-low, queued=0
+1792991366.274 DataChannel open id=ChannelId(0) label=pinomad-rtc-spike
+1792991366.274 DataChannel open label=pinomad-rtc-spike
+1792991366.274 Noise IK start device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13 host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20
+1792991366.274 queued Noise message1 (1 bytes)
+1792991366.274 pumped 1 records, queued=0, buffered=103, write_false=0
+1792991366.384 Noise message2 accepted host_hello_v=1 hash=6946264b5175d78323d031da25306ad8670fe5b06c6d0d8e12034a20b6b9151a
+1792991366.384 Noise IK ready hash=6946264b5175d78323d031da25306ad8670fe5b06c6d0d8e12034a20b6b9151a
+1792991366.384 sealed one 4194304 byte business frame into 65 records; pumping with 524288 byte SCTP buffer, 131072 byte low-water
+1792991366.384 pumped 8 records, queued=57, buffered=524280, write_false=1
+1792991366.424 sent #100 -> 192.0.2.225:62915 bytes=1129
+1792991366.435 pumped 1 records, queued=56, buffered=524280, write_false=32
+1792991366.449 sent #200 -> 192.0.2.225:62915 bytes=1129
+1792991366.456 pumped 1 records, queued=55, buffered=524280, write_false=63
+1792991366.468 sent #300 -> 192.0.2.225:62915 bytes=1129
+1792991366.477 pumped 1 records, queued=54, buffered=524280, write_false=94
+1792991366.477 sent #400 -> 192.0.2.225:62915 bytes=1129
+1792991366.486 sent #500 -> 192.0.2.225:62915 bytes=1129
+1792991366.488 pumped 1 records, queued=53, buffered=524280, write_false=125
+1792991366.510 sent #600 -> 192.0.2.225:62915 bytes=1129
+1792991366.515 pumped 1 records, queued=52, buffered=524280, write_false=156
+1792991366.521 sent #700 -> 192.0.2.225:62915 bytes=1129
+1792991366.528 pumped 1 records, queued=51, buffered=524280, write_false=187
+1792991366.530 sent #800 -> 192.0.2.225:62915 bytes=1129
+1792991366.538 pumped 1 records, queued=50, buffered=524280, write_false=218
+1792991366.538 sent #900 -> 192.0.2.225:62915 bytes=1129
+1792991366.544 pumped 1 records, queued=49, buffered=524280, write_false=249
+1792991366.546 sent #1000 -> 192.0.2.225:62915 bytes=1129
+1792991366.549 pumped 1 records, queued=48, buffered=524280, write_false=280
+1792991366.553 pumped 1 records, queued=47, buffered=524280, write_false=311
+1792991366.554 sent #1100 -> 192.0.2.225:62915 bytes=1129
+1792991366.592 pumped 1 records, queued=46, buffered=524280, write_false=342
+1792991366.593 sent #1200 -> 192.0.2.225:62915 bytes=821
+1792991366.621 pumped 1 records, queued=45, buffered=524280, write_false=373
+1792991366.626 pumped 1 records, queued=44, buffered=524280, write_false=404
+1792991366.627 sent #1300 -> 192.0.2.225:62915 bytes=1129
+1792991366.632 pumped 1 records, queued=43, buffered=524280, write_false=435
+1792991366.636 pumped 1 records, queued=42, buffered=524280, write_false=466
+1792991366.636 sent #1400 -> 192.0.2.225:62915 bytes=1129
+1792991366.640 pumped 1 records, queued=41, buffered=524280, write_false=497
+1792991366.641 sent #1500 -> 192.0.2.225:62915 bytes=1129
+1792991366.644 pumped 1 records, queued=40, buffered=524280, write_false=528
+1792991366.648 pumped 1 records, queued=39, buffered=524280, write_false=559
+1792991366.649 sent #1600 -> 192.0.2.225:62915 bytes=1129
+1792991366.652 pumped 1 records, queued=38, buffered=524280, write_false=590
+1792991366.687 pumped 1 records, queued=37, buffered=524280, write_false=621
+1792991366.687 sent #1700 -> 192.0.2.225:62915 bytes=1129
+1792991366.691 pumped 1 records, queued=36, buffered=524280, write_false=652
+1792991366.692 sent #1800 -> 192.0.2.225:62915 bytes=1129
+1792991366.696 pumped 1 records, queued=35, buffered=524280, write_false=683
+1792991366.699 pumped 1 records, queued=34, buffered=524280, write_false=714
+1792991366.700 sent #1900 -> 192.0.2.225:62915 bytes=1129
+1792991366.704 pumped 1 records, queued=33, buffered=524280, write_false=745
+1792991366.704 sent #2000 -> 192.0.2.225:62915 bytes=1129
+1792991366.707 pumped 1 records, queued=32, buffered=524280, write_false=776
+1792991366.711 pumped 1 records, queued=31, buffered=524280, write_false=807
+1792991366.711 sent #2100 -> 192.0.2.225:62915 bytes=1129
+1792991366.714 pumped 1 records, queued=30, buffered=524280, write_false=838
+1792991366.757 pumped 1 records, queued=29, buffered=524280, write_false=869
+1792991366.757 sent #2200 -> 192.0.2.225:62915 bytes=1129
+1792991366.762 pumped 1 records, queued=28, buffered=524280, write_false=900
+1792991366.762 sent #2300 -> 192.0.2.225:62915 bytes=1129
+1792991366.766 pumped 1 records, queued=27, buffered=524280, write_false=931
+1792991366.770 pumped 1 records, queued=26, buffered=524280, write_false=962
+1792991366.771 sent #2400 -> 192.0.2.225:62915 bytes=1129
+1792991366.774 pumped 1 records, queued=25, buffered=524280, write_false=993
+1792991366.775 sent #2500 -> 192.0.2.225:62915 bytes=1129
+1792991366.778 pumped 1 records, queued=24, buffered=524280, write_false=1024
+1792991366.782 pumped 1 records, queued=23, buffered=524280, write_false=1055
+1792991366.782 sent #2600 -> 192.0.2.225:62915 bytes=1129
+1792991366.785 pumped 1 records, queued=22, buffered=524280, write_false=1086
+1792991366.821 pumped 1 records, queued=21, buffered=524280, write_false=1117
+1792991366.821 sent #2700 -> 192.0.2.225:62915 bytes=1129
+1792991366.825 pumped 1 records, queued=20, buffered=524280, write_false=1148
+1792991366.826 sent #2800 -> 192.0.2.225:62915 bytes=1129
+1792991366.830 pumped 1 records, queued=19, buffered=524280, write_false=1179
+1792991366.834 pumped 1 records, queued=18, buffered=524280, write_false=1210
+1792991366.834 sent #2900 -> 192.0.2.225:62915 bytes=1129
+1792991366.837 pumped 1 records, queued=17, buffered=524280, write_false=1242
+1792991366.841 pumped 1 records, queued=16, buffered=524280, write_false=1273
+1792991366.841 sent #3000 -> 192.0.2.225:62915 bytes=1129
+1792991366.845 pumped 1 records, queued=15, buffered=524280, write_false=1304
+1792991366.845 sent #3100 -> 192.0.2.225:62915 bytes=1129
+1792991366.848 pumped 1 records, queued=14, buffered=524280, write_false=1335
+1792991366.888 pumped 1 records, queued=13, buffered=523218, write_false=1367
+1792991366.888 sent #3200 -> 192.0.2.225:62915 bytes=1129
+1792991366.892 pumped 1 records, queued=12, buffered=523218, write_false=1398
+1792991366.893 sent #3300 -> 192.0.2.225:62915 bytes=1129
+1792991366.896 pumped 1 records, queued=11, buffered=523218, write_false=1429
+1792991366.900 pumped 1 records, queued=10, buffered=523218, write_false=1460
+1792991366.900 sent #3400 -> 192.0.2.225:62915 bytes=1129
+1792991366.904 pumped 1 records, queued=9, buffered=523218, write_false=1491
+1792991366.907 pumped 1 records, queued=8, buffered=523218, write_false=1522
+1792991366.907 sent #3500 -> 192.0.2.225:62915 bytes=1129
+1792991366.911 pumped 1 records, queued=7, buffered=523218, write_false=1553
+1792991366.911 sent #3600 -> 192.0.2.225:62915 bytes=1129
+1792991366.914 pumped 1 records, queued=6, buffered=524280, write_false=1584
+1792991366.935 pumped 1 records, queued=5, buffered=524280, write_false=1615
+1792991366.936 sent #3700 -> 192.0.2.225:62915 bytes=1129
+1792991366.948 pumped 1 records, queued=4, buffered=524280, write_false=1646
+1792991366.948 sent #3800 -> 192.0.2.225:62915 bytes=1129
+1792991366.953 pumped 1 records, queued=3, buffered=524280, write_false=1677
+1792991366.957 pumped 1 records, queued=2, buffered=524280, write_false=1708
+1792991366.958 sent #3900 -> 192.0.2.225:62915 bytes=1129
+1792991366.961 pumped 1 records, queued=1, buffered=524280, write_false=1739
+1792991366.962 pumped 1 records, queued=0, buffered=523325, write_false=1739
+1792991366.962 all bulk records accepted by SCTP; awaiting Noise echo
+1792991366.962 bulk sent records=65 bytes=4194304 writeFalse=1739 buffered=523325
+1792991366.995 buffered-amount-low, queued=0
+1792991367.221 APP scene=inactive at 758403298ms
+1792991367.365 sent #4000 -> 192.0.2.225:62915 bytes=65
+1792991367.405 Noise record #1 bytes=65535 first=639f1a0933eedbab
+1792991367.432 Noise record #2 bytes=65535 first=747069f5e8b003eb
+1792991367.448 Noise record #3 bytes=65535 first=2829b8a6d810819c
+1792991367.452 sent #4100 -> 192.0.2.225:62915 bytes=65
+1792991367.489 sent #4200 -> 192.0.2.225:62915 bytes=65
+1792991367.522 Noise record #8 bytes=65535 first=9f2c037819db02c5
+1792991367.534 sent #4300 -> 192.0.2.225:62915 bytes=65
+1792991367.555 sent #4400 -> 192.0.2.225:62915 bytes=65
+1792991367.630 Noise record #16 bytes=65535 first=f00f44844a455274
+1792991367.638 sent #4500 -> 192.0.2.225:62915 bytes=65
+1792991367.651 sent #4600 -> 192.0.2.225:62915 bytes=65
+1792991367.657 Noise record #24 bytes=65535 first=d4f534603a3de50c
+1792991367.673 sent #4700 -> 192.0.2.225:62915 bytes=69
+1792991367.680 sent #4800 -> 192.0.2.225:62915 bytes=69
+1792991367.711 sent #4900 -> 192.0.2.225:62915 bytes=69
+1792991367.721 sent #5000 -> 192.0.2.225:62915 bytes=69
+1792991367.736 sent #5100 -> 192.0.2.225:62915 bytes=69
+1792991367.743 sent #5200 -> 192.0.2.225:62915 bytes=69
+1792991367.749 sent #5300 -> 192.0.2.225:62915 bytes=69
+1792991367.755 Noise record #32 bytes=65535 first=293c00e0906aa1d2
+1792991367.795 sent #5400 -> 192.0.2.225:62915 bytes=65
+1792991367.812 sent #5500 -> 192.0.2.225:62915 bytes=65
+1792991367.836 sent #5600 -> 192.0.2.225:62915 bytes=65
+1792991367.891 Noise record #40 bytes=65535 first=10d5b2888949c642
+1792991367.892 sent #5700 -> 192.0.2.225:62915 bytes=65
+1792991367.907 sent #5800 -> 192.0.2.225:62915 bytes=65
+1792991368.035 sent #5900 -> 192.0.2.225:62915 bytes=65
+1792991368.035 APP scene=background at 758404113ms
+1792991368.035 APP paused timer, nextDeadline=Optional(758404295)
+1792991368.051 Noise record #48 bytes=65535 first=d864e2d35d5a2bcf
+1792991368.108 sent #6000 -> 192.0.2.225:62915 bytes=65
+1792991368.169 sent #6100 -> 192.0.2.225:62915 bytes=65
+1792991368.178 Noise record #56 bytes=65535 first=1a28fb7f02829a68
+1792991368.184 sent #6200 -> 192.0.2.225:62915 bytes=65
+1792991368.281 sent #6300 -> 192.0.2.225:62915 bytes=65
+1792991368.304 Noise record #64 bytes=65535 first=22ef30b3c404ca78
+1792991368.308 Noise record #65 bytes=1169 first=26e4c47279f1ec6b
+1792991368.308 Noise frame complete received_bytes=4194304 expected_bytes=4194304 matched=true
+1792991368.308 bulk received records=65 bytes=4194304 matched=true
+1792991368.308 COMPLETE phase=Complete local=192.0.2.88:64594 local_kind={192.0.2.88:64594: "host", 203.0.113.10:21886: "srflx"} remote_kind={198.51.100.1:62915: "host", 100.64.0.1:62915: "host", 192.0.2.225:62915: "host", 100.64.0.2:62915: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1739 pair=Some("192.0.2.88:64594/host -> 192.0.2.225:62915/host")
+1792991368.311 COMPLETE phase=Complete local=192.0.2.88:64594 local_kind={192.0.2.88:64594: "host", 203.0.113.10:21886: "srflx"} remote_kind={198.51.100.1:62915: "host", 100.64.0.1:62915: "host", 192.0.2.225:62915: "host", 100.64.0.2:62915: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1739 pair=Some("192.0.2.88:64594/host -> 192.0.2.225:62915/host")
+1792991372.226 STOP complete + hold
+1792991372.227 stopped at 758408304; Rtc dropped with the engine
+1792991372.228 resources released: socket closed, timer cancelled, SpikePeer dropped, transmits=6380

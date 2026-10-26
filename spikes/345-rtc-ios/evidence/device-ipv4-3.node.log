@@ -1,0 +1,36 @@
+{"ts":"2026-10-26T05:05:10.543Z","event":"ice-state","label":"answer","state":"failed"}
+{"ts":"2026-10-26T05:05:10.543Z","event":"ice-state","label":"answer","state":"closed"}
+{"ts":"2026-10-26T05:05:10.543Z","event":"dc-closed","runId":"1792991080518-1","queued":0,"sent":66,"writeFalse":15}
+{"ts":"2026-10-26T05:05:10.544Z","event":"pc-state","label":"answer","state":"failed"}
+{"ts":"2026-10-26T05:05:10.544Z","event":"pc-state","label":"answer","state":"closed"}
+{"ts":"2026-10-26T05:05:10.546Z","event":"noise-peer-exit","runId":"1792991080518-1","code":null,"signal":"SIGTERM","queued":0,"writeFalse":15}
+{"ts":"2026-10-26T05:05:11.572Z","event":"answer-idle","state":"connected","pair":{"local":{"address":"192.0.2.225","port":58617,"type":"host"},"remote":{"address":"192.0.2.88","port":61573,"type":"host"}}}
+{"ts":"2026-10-26T05:05:12.477Z","event":"offer","runId":"1792991112477-3","bytes":720,"remoteAddress":"192.0.2.88"}
+{"ts":"2026-10-26T05:05:12.480Z","event":"answer","bytes":721,"candidates":4}
+{"ts":"2026-10-26T05:05:12.480Z","event":"pc-state","label":"answer","state":"connecting"}
+{"ts":"2026-10-26T05:05:12.480Z","event":"ice-state","label":"answer","state":"checking"}
+{"ts":"2026-10-26T05:05:12.480Z","event":"gathering-state","label":"answer","state":"in-progress"}
+{"ts":"2026-10-26T05:05:12.482Z","event":"gathering-state","label":"answer","state":"complete"}
+{"ts":"2026-10-26T05:05:12.483Z","event":"local-candidate","label":"answer","mid":"4LX","candidate":"a=candidate:1 1 UDP 2114977791 192.0.2.225 64584 typ host"}
+{"ts":"2026-10-26T05:05:12.483Z","event":"local-candidate","label":"answer","mid":"4LX","candidate":"a=candidate:2 1 UDP 2114977535 198.51.100.1 64584 typ host"}
+{"ts":"2026-10-26T05:05:12.483Z","event":"local-candidate","label":"answer","mid":"4LX","candidate":"a=candidate:3 1 UDP 2114977279 100.64.0.1 64584 typ host"}
+{"ts":"2026-10-26T05:05:12.483Z","event":"local-candidate","label":"answer","mid":"4LX","candidate":"a=candidate:4 1 UDP 2114977023 100.64.0.2 64584 typ host"}
+{"ts":"2026-10-26T05:05:12.483Z","event":"local-description","label":"answer","type":"answer","bytes":448}
+{"ts":"2026-10-26T05:05:12.496Z","event":"ice-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T05:05:12.545Z","event":"ice-state","label":"answer","state":"completed"}
+{"ts":"2026-10-26T05:05:13.643Z","event":"pc-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T05:05:13.643Z","event":"data-channel","runId":"1792991112477-3","label":"pinomad-rtc-spike","maxMessageSize":262144}
+{"ts":"2026-10-26T05:05:13.646Z","event":"noise-peer-spawn","helperPath":"/Users/void/.lody/repos/local---9328531e0abe/worktrees/7a466aa0-98c3-40c1-953a-92b534df8bd9/spikes/345-rtc-ios/target/debug/rtc-noise-peer","seed":7}
+{"ts":"2026-10-26T05:05:13.646Z","event":"dc-open","pair":{"local":{"address":"192.0.2.225","port":64584,"type":"host"},"remote":{"address":"192.0.2.88","port":56626,"type":"host"}},"maxMessageSize":262144,"highWater":262144,"lowWater":65536}
+{"ts":"2026-10-26T05:05:13.733Z","event":"noise-peer","line":"noise-peer ready host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20"}
+{"ts":"2026-10-26T05:05:13.734Z","event":"noise-peer","line":"noise-peer msg1 client_hello={\"v\":1} device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"}
+{"ts":"2026-10-26T05:05:13.735Z","event":"noise-peer","line":"noise-peer msg2 55 bytes"}
+{"ts":"2026-10-26T05:05:13.897Z","event":"selected-pair","local":{"address":"192.0.2.225","port":64584,"type":"host"},"remote":{"address":"192.0.2.88","port":56626,"type":"host"}}
+{"ts":"2026-10-26T05:05:14.387Z","event":"noise-peer","line":"noise-peer bulk matched bytes=4194304 records_received=65"}
+{"ts":"2026-10-26T05:05:14.736Z","event":"noise-peer","line":"noise-peer echoing 65 records"}
+{"ts":"2026-10-26T05:05:14.881Z","event":"dc-buffered-low","bufferedAmount":0,"queued":43}
+{"ts":"2026-10-26T05:05:14.934Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":39}
+{"ts":"2026-10-26T05:05:14.968Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":37}
+{"ts":"2026-10-26T05:05:15.052Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":32}
+{"ts":"2026-10-26T05:05:15.249Z","event":"dc-send-drained","sent":66,"writeFalse":17,"bufferedAmount":0,"maxBuffered":327675}
+{"ts":"2026-10-26T05:05:15.249Z","event":"dc-run-summary","runId":"1792991112477-3","reason":"drained","sent":66,"writeFalse":17,"maxBuffered":327675,"maxQueue":44}

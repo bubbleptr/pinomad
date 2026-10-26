@@ -10,18 +10,19 @@
 只是没有立即写出。第一版 `peer.mjs` 在 false 时没有消费队列，下一轮又发同一份密文，
 于是制造了相邻重复记录（Noise 因此报 decrypt error）。错误在 Node 对端，不在 str0m。
 
-修正后只用模拟器和本机重跑：IPv4 5 次、IPv6 5 次、传输中进后台再回前台 3 次，共 13 次全部完成，
-0 次重复、0 次解密失败；Node 每次 `writeFalse` 7–12 次，全部按 bufferedAmount 背压正常排空。
-因此**撤回“转验证 Google WebRTC”的建议，str0m 可以锁定**。
+修正后在模拟器和 iPhone 17 Pro（iOS 27.0）上各跑：IPv4 5 次、IPv6 5 次、传输中进后台再回前台 3 次，
+共 26 次全部完成，0 次重复、0 次解密失败。模拟器 Node `writeFalse` 7–12 次/轮，真机 15–49 次/轮，
+全部按 bufferedAmount 背压正常排空。因此**撤回“转验证 Google WebRTC”的建议，str0m 可以锁定**。
 
 ## 结论摘要
 
-- `str0m 0.24.1` + `str0m-rust-crypto 0.6.0` 在 iOS 26.5 模拟器编译、建连、跑完 4 MiB 真实 Noise 记录；
-  首轮真机链路也建立成功，但按本轮要求**没有重跑真机**。
+- `str0m 0.24.1` + `str0m-rust-crypto 0.6.0` 在 iOS 26.5 模拟器和 iPhone 17 Pro（iOS 27.0）
+  真机都编译、建连、跑完 4 MiB 真实 Noise 记录。
 - 4 MiB 真实 Noise 业务帧 -> 65 条记录，逐字节校验 `matched=true`；iOS `Channel::write` 返回 false
-  约 1,737 次，仍按低水位逐批发完，没有重新 seal。
-- 模拟器 IPv4 / IPv6 各 5 次，全部 host-host；3 次传输中后台恢复也全部完成，没有重复记录。
-- Node 侧 `writeFalse` 7–12 次/次，最大 buffered amount 327,675 字节，最大队列 44 条；说明背压确实触发。
+  约 1,469–2,279 次（真机后台轮更高），仍按低水位逐批发完，没有重新 seal。
+- 模拟器 + 真机各 IPv4 5 次、IPv6 5 次、后台 3 次；全部 host-host，后台 3/3 均完成。
+- Node 侧 `writeFalse` 模拟器 7–12 次/轮，真机 15–49 次/轮；最大 buffered amount 327,675 字节，
+  最大队列 44 条；说明背压确实触发。
 - `node-datachannel` 的 false 必须当成“已入队”，**消费当前记录并前进**，不能重试；
   发送节奏由 `bufferedAmount()` 高水位（256 KiB）+ `onBufferedAmountLow`（64 KiB）控制。
 - iOS 侧 str0m `Channel::write` 的 false 是真正没接收，继续用同一份密文重试是对的，不需要改。
@@ -158,14 +159,14 @@ cargo build -p rtc-spike-core --bin rtc-probe
 
 ## 证据
 
-按本轮要求只跑模拟器和本机；**没有重跑真机**。`evidence/` 里是 13 次运行：
+`evidence/` 里是 26 次运行（模拟器 13 + 真机 13），每轮都有 iOS app log 和 Node log：
 
-- `summary.csv`：每轮的 result / duplicate / Node sent / writeFalse / maxBuffered / maxQueue。
-- `ipv4-1..5.app.log` / `.node.log`：模拟器 IPv4，5 次全部 COMPLETE，65 条，matched=true，host-host。
-- `ipv6-1..5.app.log` / `.node.log`：模拟器 IPv6，5 次全部 COMPLETE，65 条，matched=true，host-host。
-- `background-1..3.app.log` / `.node.log`：传输中（Node 回显阶段）进后台再回前台，3 次全部 COMPLETE，无重复/解密失败。
-- `host-probe-ipv4.log`：Mac 上用同一个 `Engine` + BSD socket 再跑一次 4 MiB，65 条 matched=true，iOS 侧 false=1,744。
-- Node 每轮 `writeFalse` 7–12 次，`maxBuffered=327,675`，`maxQueue` 42–44；这是真实触发背压的证据。
+- `summary.csv`：platform / result / duplicate / decrypt_error / matched / Node sent / writeFalse / maxBuffered / maxQueue。
+- 模拟器：IPv4 5 次、IPv6 5 次、后台 3 次；全部 COMPLETE，65 条，matched=true，host-host。
+- iPhone 17 Pro / iOS 27.0：IPv4 5 次、原生 IPv6 5 次、后台 3 次；全部 COMPLETE，65 条，matched=true，host-host。
+- 真机后台 3 次：用 Safari 压后台，再以前台 resume 返回（不重启 App）；0 重复、0 解密失败。
+- `host-probe-ipv4.log`：Mac 上用同一个 `Engine` + BSD socket 再跑一次 4 MiB，65 条 matched=true。
+- Node `writeFalse`：模拟器 7–12 次/轮，真机 15–49 次/轮；`maxBuffered=327,675`，`maxQueue` 42–44。
 - 对照：`node/bulk-probe.mjs` 在 IPv4 / IPv6 各跑 65 × 65,535 字节，接收端 0 重复；libdatachannel 自身收发正常。
 - 旧的第一版证据已从当前树删除；`evidence/README.md` 说明了错误归因和修正。
 
