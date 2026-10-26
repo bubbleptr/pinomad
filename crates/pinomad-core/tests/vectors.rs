@@ -36,6 +36,7 @@ fn as_text(value: &Json) -> String {
 fn variant(frame: &ServerFrame) -> &'static str {
     match frame {
         ServerFrame::Hello(_) => "hello",
+        ServerFrame::SignalHello(_) => "signalHello",
         ServerFrame::Snapshot { .. } => "snapshot",
         ServerFrame::Ops { .. } => "ops",
         ServerFrame::Ended { .. } => "ended",

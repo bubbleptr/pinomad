@@ -94,7 +94,9 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
   && a.acceptAccountDevices === b.acceptAccountDevices
   && a.defaultThinkingLevel === b.defaultThinkingLevel
   && sameModel(a.defaultModel, b.defaultModel)
-  && sameList(a.rtcStun, b.rtcStun, (x, y) => x === y)
+  && (a.rtcStun === undefined || b.rtcStun === undefined
+    ? a.rtcStun === b.rtcStun
+    : sameList(a.rtcStun, b.rtcStun, (x, y) => x === y))
   && a.hostName === b.hostName
   && sameList(a.custom, b.custom, (x, y) => x === y);
 

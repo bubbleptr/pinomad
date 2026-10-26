@@ -88,10 +88,11 @@ async function main(): Promise<void> {
     prologue: SIGNAL_PROLOGUE,
   });
 
+  if (signal.hello.type !== "signalHello") fail("signal connection did not get a signalHello");
   if (JSON.stringify(signal.hello.rtc) !== JSON.stringify({ stun: [], signalOnly: true })) {
     fail("signal hello did not carry the RTC capability");
   }
-  if (signal.hello.session !== undefined || signal.hello.models !== undefined) {
+  if ("session" in signal.hello || "models" in signal.hello) {
     fail("signal hello was not minimal");
   }
 

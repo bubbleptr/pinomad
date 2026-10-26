@@ -142,11 +142,12 @@ describe("host RTC signal path", () => {
     const host = await startFauxHost(defer);
     const token = await connectTo(defer, host);
     const { signal } = await pairAndSignal(token);
+    expect(signal.hello.type).toBe("signalHello");
     expect(signal.hello.protocol.minor).toBe(PROTOCOL.minor);
     expect(signal.hello.rtc).toBeDefined();
-    expect(signal.hello.session).toBeUndefined();
-    expect(signal.hello.models).toBeUndefined();
-    expect(signal.hello.docs).toBeUndefined();
+    expect("session" in signal.hello).toBe(false);
+    expect("models" in signal.hello).toBe(false);
+    expect("docs" in signal.hello).toBe(false);
 
     const ended = signal.nextFrame((frame) => frame.type === "ended");
     await signal.sendFrame({ type: "subscribe", stream: "conversations" });

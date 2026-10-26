@@ -541,12 +541,9 @@ class RemoteClient {
         : 0;
     this.#hostMinor = hostMinor;
     this.#helloReceived = true;
-    // A business hello always carries these; a signal-only hello does not,
-    // and this layer never sees one. Defaulting keeps a malformed host from
-    // crashing the client while still rendering nothing.
-    this.#docs = frame.docs ?? [];
-    this.#toolPresentations = frame.toolPresentations ?? {};
-    this.#helloModels = frame.models ?? [];
+    this.#docs = frame.docs;
+    this.#toolPresentations = frame.toolPresentations;
+    this.#helloModels = frame.models;
     this.#helloDefaults = frame.defaults ?? {};
     this.#hostVersion = frame.hostVersion;
     this.#fresh.clear();
@@ -592,8 +589,8 @@ class RemoteClient {
     }
     if (this.#state !== undefined) {
       this.#update({
-        ...(frame.session === undefined ? {} : { session: frame.session }),
-        ...(frame.toolPresentations === undefined ? {} : { toolPresentations: frame.toolPresentations }),
+        session: frame.session,
+        toolPresentations: frame.toolPresentations,
         connection: "reconnecting",
         host: this.#hostInfo(),
       });
@@ -627,16 +624,14 @@ class RemoteClient {
     this.#outageNoticed = false;
     if (this.#state === undefined) {
       this.#state = {
-        // Business hellos always have a session; this fallback is only for a
-        // host that omits it (the signal path never reaches this layer).
-        session: hello.session ?? { id: "", directory: "" },
+        session: hello.session,
         organized: { chats: [], projects: [], archived: [] },
-        models: this.#host("models") ?? hello.models ?? [],
+        models: this.#host("models") ?? hello.models,
         defaults: this.#effectiveDefaults(hello.defaults ?? {}),
         notices: [],
         connection: "connected",
         docs: [],
-        toolPresentations: hello.toolPresentations ?? {},
+        toolPresentations: hello.toolPresentations,
         devices: [],
         mcp: null,
         auth: null,
@@ -649,10 +644,7 @@ class RemoteClient {
       this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
       return;
     }
-    this.#update({
-      ...(hello.session === undefined ? {} : { session: hello.session }),
-      connection: "connected",
-    });
+    this.#update({ session: hello.session, connection: "connected" });
     this.#refresh();
   }
 

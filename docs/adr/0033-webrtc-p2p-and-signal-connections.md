@@ -20,7 +20,7 @@ ADR-0032 给了远程访问多候选：本机 loopback、relay、direct WebSocke
 
 1. **WebRTC DataChannel 作为第四种载体，宿主作答、客户端 offer，不引入 TURN。** 业务帧仍然先经过 Noise IK 和安全记录层，再放进 DataChannel；宿主把 DC 当成和 WebSocket 一样的载体交给同一个 IK 关口。SDP 被篡改只会导致连不上或 Noise 失败，冒充不了宿主。选 WebRTC 是因为浏览器原生支持且不需要第二套中继；iroh 的 QUIC 多路径在原生端更优雅，但浏览器没有直连能力，还要再跑一套中继，不取。TURN 明确不在本阶段。
 
-2. **信令走安全通道，信令连接有独立 prologue，不新增服务端信令接口。** `hello.rtc?: { stun, signalOnly: true }` 声明宿主能力；`rtcOffer { attempt, sdp } -> { sdp }` 在活动业务连接或信令连接上发起，不走串行命令队列。信令连接使用 `pinomad-signal/1`，业务连接仍是 `pinomad/1`。新宿主先按业务 prologue 解 msg1，失败再用同一条 msg1 和新的 responder 按信令 prologue 解；用途由握手决定，之后不可变。这样旧宿主会在注册任何连接之前认证失败并关闭，完整 hello 不会经过 relay；信令连接只拿到最小 hello（`protocol` + `rtc`），只接受 `rtcOffer` 和 `ping`，从不创建业务 `GatewayClient`、不订阅、不进入广播集合。设备准入与业务连接一致：只接受已登记、未吊销的设备，信令连接不接受配对。
+2. **信令走安全通道，信令连接有独立 prologue，不新增服务端信令接口。** `hello.rtc?: { stun, signalOnly: true }` 声明宿主能力；`rtcOffer { attempt, sdp } -> { sdp }` 在活动业务连接或信令连接上发起，不走串行命令队列。信令连接使用 `pinomad-signal/1`，业务连接仍是 `pinomad/1`。新宿主先按业务 prologue 解 msg1，失败再用同一条 msg1 和新的 responder 按信令 prologue 解；用途由握手决定，之后不可变。这样旧宿主会在注册任何连接之前认证失败并关闭，完整 hello 不会经过 relay；信令连接只拿到独立的 `signalHello` 帧（`protocol` + `rtc`），而不是一个字段可选的最小业务 hello——业务 `hello` 的必填字段保持不变。信令连接只接受 `rtcOffer` 和 `ping`，从不创建业务 `GatewayClient`、不订阅、不进入广播集合。设备准入与业务连接一致：只接受已登记、未吊销的设备，信令连接不接受配对。
 
 3. **载体契约按各库的真实语义定义，不假装返回值都一样。** 每连接一个 FIFO 发送器，一个业务帧 seal 出的多条记录连续入队，不得与其他帧交错。node-datachannel 的 `sendMessageBinary` 返回 false 表示**已入队**，照样算发出，绝不重发；str0m 的 `Channel::write` 返回 false 表示**未接收**，稍后用同一份密文重试，不得重新 seal；浏览器 `send()` 总是入队。背压以 `bufferedAmount` 高水位 256 KiB、低水位 64 KiB 驱动；不因队列总量关闭载体，只有持续 10s 没有任何泵送进展才关闭。DataChannel 必须 reliable + ordered。单条记录最多 65535 字节；建立时检查对端 SDP 的 `max-message-size`：缺失按 65536，0 表示不限，其它值必须 ≥ 65535，否则该载体失败。
 
@@ -48,7 +48,7 @@ ADR-0032 给了远程访问多候选：本机 loopback、relay、direct WebSocke
 
 ## 后果
 
-- 协议升 minor（5.23）：新增 `hello.rtc`、`rtcOffer`、`ping` 和 `SIGNAL_PROLOGUE`；业务 hello 的 `session` / `models` / `docs` / `toolPresentations` 在信令 hello 里缺席，客户端必须先知道通道用途再读这些字段。旧宿主不认识 `rtcOffer`，按 ADR-0018 回 unsupported；旧客户端忽略 `hello.rtc`。
+- 协议升 minor（5.23）：新增 `hello.rtc`、`signalHello`、`rtcOffer`、`ping` 和 `SIGNAL_PROLOGUE`；业务 `hello` 的 `session` / `models` / `docs` / `toolPresentations` 仍是必填，只有独立的 `signalHello` 把它们省掉。旧宿主不认识 `rtcOffer`，按 ADR-0018 回 unsupported；旧客户端忽略 `hello.rtc` 和不认识的 `signalHello` 帧。
 - 宿主多一个原生依赖和一条延迟加载路径；`--omit=optional` 安装仍能启动，只是没有 P2P。平台包体积约 9 MB（linux-x64），npm tgz 约 3.4 MB。
 - P2P 不是服务端故障时的独立恢复路径：冷启动仍要先有一条 relay 或 direct WebSocket 信令路径。Direct only 的承诺是业务数据不经过 PiNomad 服务端；外部 tailnet 是否自行中继（DERP）不在承诺内。
 - 客户端协调器（候补、屏障、存活发起方、冷却、模式）在后续 PR；本 PR 只定义协议、宿主应答端、信令连接和 ADR。Web/桌面与 iOS 的 RTC 载体也在后续 PR。

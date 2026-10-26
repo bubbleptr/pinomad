@@ -15,8 +15,9 @@ export interface HostSettings {
   /**
    * STUN servers the host advertises in `hello.rtc` and uses when it answers
    * an offer (5.23, ADR-0033). Empty means ICE runs on host candidates only.
+   * Absent on hosts before 5.23, like `hostName` before 5.12.
    */
-  readonly rtcStun: readonly string[];
+  readonly rtcStun?: readonly string[];
   /** The machine's display name (5.12): the settings override, else the cleaned hostname. Absent on older hosts. */
   readonly hostName?: string;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */

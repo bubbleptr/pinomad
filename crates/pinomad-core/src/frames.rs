@@ -425,7 +425,11 @@ pub fn doc_stream(kind: &U16String, id: u64) -> U16String {
 /// what the reference's untyped access does.
 #[derive(Clone, Debug)]
 pub enum ServerFrame {
+    /// The business hello (5.0+), with every business field.
     Hello(Json),
+    /// The minimal hello of a signal-only connection (5.23, ADR-0033 §1);
+    /// it carries only `protocol` and, when available, `rtc`.
+    SignalHello(Json),
     Snapshot { stream: Json, value: Json },
     Ops { stream: Json, ops: Json },
     Ended { stream: Json, reason: Json },
@@ -460,6 +464,7 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
     };
     match kind.as_str() {
         "hello" => ServerFrame::Hello(value),
+        "signalHello" => ServerFrame::SignalHello(value),
         "snapshot" => ServerFrame::Snapshot {
             stream: field(&value, "stream").clone(),
             value: field(&value, "value").clone(),

@@ -127,10 +127,13 @@ export interface RawSecureOptions {
   readonly pair?: { readonly secret: string; readonly name: string };
 }
 
+/** The business hello or the signal-only minimal hello (ADR-0033 §1). */
+export type SecureHello = Extract<ServerFrame, { type: "hello" | "signalHello" }>;
+
 /** A secure WebSocket that exposes hello/frames/calls without RemoteDurable. */
 export class RawSecureClient {
   readonly pump: FramePump;
-  readonly hello: Extract<ServerFrame, { type: "hello" }>;
+  readonly hello: SecureHello;
   readonly closed: Promise<number>;
   readonly #socket: WebSocket;
   #nextId = 1;
@@ -138,7 +141,7 @@ export class RawSecureClient {
   private constructor(
     socket: WebSocket,
     pump: FramePump,
-    hello: Extract<ServerFrame, { type: "hello" }>,
+    hello: SecureHello,
     closed: Promise<number>,
   ) {
     this.#socket = socket;
@@ -176,17 +179,12 @@ export class RawSecureClient {
         }),
       ]);
       const frame = await Promise.race([
-        pump.nextFrame((candidate) => candidate.type === "hello"),
+        pump.nextFrame((candidate) => candidate.type === "hello" || candidate.type === "signalHello"),
         closed.then(() => {
           throw new Error("the secure socket closed before its hello");
         }),
       ]);
-      return new RawSecureClient(
-        socket,
-        pump,
-        frame as Extract<ServerFrame, { type: "hello" }>,
-        closed,
-      );
+      return new RawSecureClient(socket, pump, frame as SecureHello, closed);
     } catch (error) {
       pump.close(error instanceof Error ? error : new Error(String(error)));
       socket.close();

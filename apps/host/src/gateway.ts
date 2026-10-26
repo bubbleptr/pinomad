@@ -67,7 +67,7 @@ import {
   SIGNAL_PROLOGUE,
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
-import type { RtcHello } from "@pinomad/protocol/rtc.ts";
+import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
 import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
 import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
@@ -486,7 +486,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   if (secure !== undefined) {
     rtc = await startRtcHost({
       ...options.rtc,
-      stun: () => options.settings.value.rtcStun,
+      stun: () => options.settings.value.rtcStun ?? RTC_DEFAULT_STUN,
       onChannel: (peer, channel) => {
         secureHandshake(channel.carrier, secure, admission, {
           client: register,
@@ -1546,7 +1546,7 @@ class SignalClient implements GatewayConnectionLifecycle {
     });
     const rtc = hooks.rtcHello();
     void this.send({
-      type: "hello",
+      type: "signalHello",
       protocol: PROTOCOL,
       ...(rtc === undefined ? {} : { rtc }),
     });

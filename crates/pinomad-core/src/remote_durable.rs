@@ -1480,6 +1480,9 @@ impl RemoteDurable {
                 self.notice(level, message);
                 Ok(())
             }
+            // A signal-only hello belongs to a connection this client never
+            // opens; ignoring it keeps a future host frame forward-compatible.
+            ServerFrame::SignalHello(_) => Ok(()),
             ServerFrame::Ignored => Ok(()),
         };
         if let Err(error) = result {

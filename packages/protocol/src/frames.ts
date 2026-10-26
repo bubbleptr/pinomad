@@ -440,19 +440,14 @@ export type ServerFrame =
       readonly protocol: ProtocolVersion;
       /** Packaged release version; absent in a source checkout. */
       readonly hostVersion?: string;
-      /**
-       * Business hellos carry these; a signal-only hello (ADR-0033 §1) carries
-       * only `protocol` and `rtc`, so the fields are absent there and a client
-       * must not read them before it knows which purpose the channel has.
-       */
-      readonly session?: SessionInfo;
-      readonly models?: readonly ModelSummary[];
+      readonly session: SessionInfo;
+      readonly models: readonly ModelSummary[];
       /** New-conversation defaults; absent means the host has none. */
       readonly defaults?: ConversationDefaults;
       /** The conversation documents offered as `doc:` streams, in host order. */
-      readonly docs?: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
+      readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
       /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
-      readonly toolPresentations?: Record<string, PresentationType>;
+      readonly toolPresentations: Record<string, PresentationType>;
       /**
        * The host's current remote candidates (5.22, ADR-0032). Absent means an
        * older host and never clears a stored set; a present valid set — including
@@ -464,6 +459,17 @@ export type ServerFrame =
        * (5.23, ADR-0033). Absent → the native module is not loaded, so P2P is
        * unavailable; the business hello is otherwise unchanged.
        */
+      readonly rtc?: RtcHello;
+    }
+  | {
+      /**
+       * The minimal hello of a signal-only connection (ADR-0033 §1). It is a
+       * separate frame, not a partially-filled business hello: different
+       * prologue, different lifecycle, and business clients never see it.
+       */
+      readonly type: "signalHello";
+      readonly protocol: ProtocolVersion;
+      /** Present when the native RTC module loaded, exactly like `hello.rtc`. */
       readonly rtc?: RtcHello;
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }

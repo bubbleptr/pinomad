@@ -20,6 +20,16 @@
       "expect": "hello"
     },
     {
+      "name": "signalHello",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":23},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "expect": "signalHello"
+    },
+    {
+      "name": "signalHello-no-rtc",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":23}}",
+      "expect": "signalHello"
+    },
+    {
       "name": "snapshot",
       "wire": "{\"type\":\"snapshot\",\"stream\":\"index\",\"value\":{\"device\":\"Workphone \\ud83d\",\"nested\":{\"keep\":[\"a\",\"b\"],\"n\":1e+21}}}",
       "expect": "snapshot",

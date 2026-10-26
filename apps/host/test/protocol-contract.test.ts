@@ -202,8 +202,8 @@ async function recordFrames(): Promise<ServerFrame[]> {
   // every chat cwd sit under it); its basename is the session id.
   const hello = frames.find((frame) => frame.type === "hello")!;
   const text = JSON.stringify(frames)
-    .replaceAll(hello.session!.directory, "<dataDir>")
-    .replaceAll(hello.session!.id, "<sessionId>");
+    .replaceAll(hello.session.directory, "<dataDir>")
+    .replaceAll(hello.session.id, "<sessionId>");
   return JSON.parse(text) as ServerFrame[];
 }
 

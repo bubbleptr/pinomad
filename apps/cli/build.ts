@@ -73,22 +73,6 @@ for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
   }
 }
 
-// pi-coding-agent 1.2.0 asks for ^1.2.0 of three adjacent packages. npm
-// resolves those to newer releases whose exact pi-ai does not exist on the
-// public registry (pi-ai is still at 1.3.0), so a clean npm install of this
-// package would fail with ETARGET. Pin the three to the versions the lockfile
-// and the bundle already use; move them together with the pi-coding-agent pin.
-const PI_TRANSITIVE_PINS: Record<string, string> = {
-  "@earendil-works/pi-agent-core": "1.2.0",
-  "@earendil-works/pi-ai": "1.2.0",
-  "@earendil-works/pi-tui": "1.2.0",
-};
-for (const [name, range] of Object.entries(PI_TRANSITIVE_PINS)) {
-  const existing = dependencies[name];
-  if (existing !== undefined && existing !== range) fail(`conflicting versions for ${name}: ${existing} vs ${range}`);
-  dependencies[name] = range;
-}
-
 await rm(out, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
 
