@@ -18,7 +18,7 @@ const BOLT_X = 664;
 
 type Phase = "idle" | "running" | "crashed" | "done";
 
-export function Durable({ t }: { t: LandingCopy["durable"] }) {
+export function DurableDemo({ t }: { t: LandingCopy["durable"] }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const clickRef = useRef<() => void>(undefined);
@@ -164,29 +164,20 @@ export function Durable({ t }: { t: LandingCopy["durable"] }) {
   }, [t]);
 
   return (
-    <section className="section" id="durable" aria-labelledby="durable-title">
-      <div className="wrap">
-        <div className="section-head">
-          <p className="eyebrow">{t.eyebrow}</p>
-          <h2 id="durable-title">{t.title}</h2>
-          <p className="section-lead">{t.lead}</p>
-        </div>
-        <div className="panel">
-          <div className="diagram-scroll" ref={scrollerRef}>
-            <DurableArt t={t} svgRef={svgRef} />
-          </div>
-          <p className="visually-hidden">{t.description}</p>
-          <div className="diagram-controls">
-            <Button size="sm" hidden={!ready} disabled={disabled} onClick={() => clickRef.current?.()}>
-              {label}
-            </Button>
-            <p className="diagram-status" aria-live="polite">
-              {status}
-            </p>
-          </div>
-        </div>
+    <div className="durable-demo">
+      <div className="diagram-scroll" ref={scrollerRef}>
+        <DurableArt t={t} svgRef={svgRef} />
       </div>
-    </section>
+      <p className="visually-hidden">{t.description}</p>
+      <div className="diagram-controls">
+        <Button size="sm" hidden={!ready} disabled={disabled} onClick={() => clickRef.current?.()}>
+          {label}
+        </Button>
+        <p className="diagram-status" aria-live="polite">
+          {status}
+        </p>
+      </div>
+    </div>
   );
 }
 

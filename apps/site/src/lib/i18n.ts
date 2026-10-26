@@ -21,3 +21,10 @@ export function langOf(pathname: string): Lang {
 export function localized(lang: Lang, path: string): string {
   return lang === "en" ? path : `/zh${path}`;
 }
+
+/** A content date (`2026-10-24`) the way the page's language writes it. */
+export function formatDate(lang: Lang, date: string): string {
+  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en", { dateStyle: "long", timeZone: "UTC" }).format(
+    new Date(date),
+  );
+}

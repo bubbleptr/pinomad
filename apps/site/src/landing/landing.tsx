@@ -1,11 +1,10 @@
 import { type RefObject, useEffect, useRef } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { copy } from "./copy.tsx";
-import { Durable } from "./durable.tsx";
 import landingCss from "./landing.css?url";
 import { landingHead } from "./meta.ts";
-import { QuickStart } from "./quick-start.tsx";
-import { Anywhere, Clients, Closing, Features, Hero } from "./sections.tsx";
+import { GetStarted, type LatestRelease } from "./get-started.tsx";
+import { Agents, Connection, Core, Hero, Next } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
 import { SiteHeader } from "./site-header.tsx";
 
@@ -14,7 +13,7 @@ export function landingRouteHead(lang: Lang) {
   return { ...head, links: [...head.links, { rel: "stylesheet", href: landingCss }] };
 }
 
-export function Landing({ lang }: { lang: Lang }) {
+export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }) {
   const t = copy[lang];
   const root = useRef<HTMLDivElement>(null);
   useReveal(root);
@@ -26,19 +25,18 @@ export function Landing({ lang }: { lang: Lang }) {
       <SiteHeader lang={lang} t={t} />
       <main id="main">
         <Hero lang={lang} t={t.hero} />
-        <Anywhere t={t.anywhere} />
-        <Durable t={t.durable} />
-        <Features lang={lang} t={t.features} />
-        <Clients t={t.clients} />
-        <QuickStart t={t.quickStart} />
-        <Closing t={t.closing} />
+        <Core lang={lang} t={t.core} durable={t.durable} />
+        <Agents lang={lang} t={t.agents} />
+        <Connection t={t.connection} />
+        <Next t={t.next} />
+        <GetStarted lang={lang} t={t.start} latest={latest} />
       </main>
       <SiteFooter lang={lang} t={t.footer} />
     </div>
   );
 }
 
-const revealed = ".section-head, .shot-phone, .panel, .feature-row > *, .more, .client, .code-card, .closing .wrap";
+const revealed = ".section-head, .cell, .split > .shot, .stack, .plan, .client, .code-card, .start-end";
 
 /**
  * Blocks that start below the first screen fade up once as they scroll in.
