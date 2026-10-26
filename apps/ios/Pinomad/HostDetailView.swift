@@ -39,6 +39,10 @@ struct HostDetailView: View {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         LabeledContent("Peer-to-peer", value: peerText)
                     }
+                    if let failure = status?.lastFailure {
+                        Divider()
+                        RtcFailureRow(failure: failure, stage: stageLabel(failure.stage))
+                    }
                 }
             }
 
@@ -109,9 +113,6 @@ struct HostDetailView: View {
         case "signal", "ice", "noise", "warm", "scheduled":
             return "Preparing…"
         default:
-            if let failure = status?.lastFailure {
-                return "Last failure: \(stageLabel(failure.stage)) — \(failure.reason)"
-            }
             return "Preparing…"
         }
     }
@@ -144,5 +145,40 @@ struct HostDetailView: View {
         case "liveness": "Liveness"
         default: stage.capitalized
         }
+    }
+}
+
+/// The status card's failure line. Kept separate so the cooldown state can
+/// show the last failure without replacing the Peer-to-peer value.
+struct RtcFailureRow: View {
+    let failure: RtcFailure
+    let stage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Last failure")
+                Spacer(minLength: 12)
+                Text(stage)
+                    .foregroundStyle(.secondary)
+            }
+            Text(failure.reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+#Preview("RTC last failure") {
+    List {
+        RtcFailureRow(
+            failure: RtcFailure(
+                stage: "ice",
+                reason: "ICE, DTLS, or the DataChannel did not open within 10s"
+            ),
+            stage: "ICE"
+        )
     }
 }
