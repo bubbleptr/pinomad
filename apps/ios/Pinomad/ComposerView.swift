@@ -274,7 +274,7 @@ struct ConversationComposer: View {
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
                     logo: conversation.agent.model,
-                    level: ModelCapsule.level(models: model.snapshot?.models ?? [], pick: modelPick),
+                    short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: modelPick),
                     prefix: agentPick?.current.map { "@\($0)" },
                     enabled: connected && sheetHasContent
                 ) {
@@ -703,13 +703,13 @@ struct Thumbnail: View {
 }
 
 struct ModelCapsule: View {
-    /// The model's name and level; shown only when the model has no logo,
-    /// otherwise read out by VoiceOver alone.
+    /// The model's full name and level: shown when the model has no logo,
+    /// and always what VoiceOver reads.
     let label: String
-    /// The picked model, whose logo stands in for its name.
+    /// The picked model, whose logo stands in for its brand.
     let logo: ModelRef?
-    /// The thinking level beside the logo, for models that have levels.
-    let level: String?
+    /// `label` without the brand the logo shows ("Opus 4.1 · High").
+    let short: String?
     /// The named agent (`@name`) the pick comes from, shown first.
     let prefix: String?
     let enabled: Bool
@@ -717,11 +717,13 @@ struct ModelCapsule: View {
     let problem: String?
     let action: () -> Void
 
-    init(label: String, logo: ModelRef?, level: String? = nil, prefix: String? = nil, enabled: Bool,
+    @ScaledMetric(relativeTo: .subheadline) private var logoSize: CGFloat = 18
+
+    init(label: String, logo: ModelRef?, short: String? = nil, prefix: String? = nil, enabled: Bool,
          problem: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.logo = logo
-        self.level = level
+        self.short = short
         self.prefix = prefix
         self.enabled = enabled
         self.problem = problem
@@ -738,7 +740,7 @@ struct ModelCapsule: View {
                 } else {
                     let logo = logo.flatMap { modelLogoAsset($0) == nil ? nil : $0 }
                     if let logo {
-                        ModelLogo(model: logo, size: 20)
+                        ModelLogo(model: logo, size: logoSize)
                             .padding(.trailing, 2)
                     }
                     if let prefix {
@@ -748,18 +750,18 @@ struct ModelCapsule: View {
                             // The model label truncates first.
                             .layoutPriority(1)
                     }
-                    if logo == nil {
-                        Text(label.isEmpty ? "Choose model" : label)
-                            .lineLimit(1)
-                    } else if let level {
-                        Text(level)
-                            .lineLimit(1)
+                    if let logo, let short {
+                        Text(short).lineLimit(1)
+                    } else {
+                        Text(label.isEmpty ? "Choose model" : label).lineLimit(1)
                     }
                 }
                 Image(.chevronDown)
                     .font(.caption2.weight(.semibold))
             }
-            .font(.footnote)
+            // The run lines in the transcript use this type and logo size,
+            // so the model reads the same in both places.
+            .font(.subheadline)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .frame(height: 34)
@@ -771,13 +773,16 @@ struct ModelCapsule: View {
             ?? "Model: \([prefix, label].compactMap { $0 }.joined(separator: " "))")
     }
 
-    /// The level the capsule shows beside a logo: only for a listed model
-    /// with levels to choose from, as `modelLabel` does.
-    static func level(models: [ModelSummary], pick: ModelPick) -> String? {
-        guard let summary = models.first(where: {
-            sameModel(a: ModelRef(provider: $0.provider, modelId: $0.modelId), b: pick.model)
-        }), summary.thinkingLevels.count > 1 else { return nil }
-        return thinkingLevelLabel(level: pick.level)
+    /// What the capsule reads beside a logo: the name as `modelLabel`
+    /// gives it, less the brand, with the level only for a listed model
+    /// that has levels to choose from.
+    static func short(models: [ModelSummary], pick: ModelPick) -> String? {
+        guard let ref = pick.model else { return nil }
+        let summary = models.first { sameModel(a: ModelRef(provider: $0.provider, modelId: $0.modelId), b: ref) }
+        let series = modelSeriesName(summary?.name ?? ref.modelId, model: ref)
+        guard let summary, summary.thinkingLevels.count > 1,
+              let level = thinkingLevelLabel(level: pick.level) else { return series }
+        return "\(series) · \(level)"
     }
 }
 

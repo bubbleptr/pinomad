@@ -230,7 +230,7 @@ struct NewConversationView: View {
                 ModelCapsule(
                     label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
                     logo: pick.model,
-                    level: ModelCapsule.level(models: model.snapshot?.models ?? [], pick: pick),
+                    short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: pick),
                     prefix: selectedAgent.map { "@\($0)" },
                     // The sheet is the only way to the agent, so roles or a
                     // stale pick open it even without models. Locked while

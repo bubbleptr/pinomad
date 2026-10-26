@@ -12,7 +12,7 @@ public struct AgentTraceView: View {
     let mark: Image?
     let onOpen: () -> Void
 
-    @ScaledMetric(relativeTo: .subheadline) private var markSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .subheadline) private var markSize: CGFloat = 18
 
     /// `mark` leads a settled run in place of its outcome icon — the
     /// model's logo, say. A template image takes the label's color.

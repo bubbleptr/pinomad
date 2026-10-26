@@ -578,6 +578,41 @@ public func modelLogoAsset(_ model: ModelRef) -> String? {
     return providerLogoAsset(id: model.provider)
 }
 
+/// Brand words a display name leads with, and the logo that is their own
+/// mark. A family drawn with its maker's logo (GPT with OpenAI's, Llama
+/// with Meta's, GLM with Z.ai's) or that is the series itself (Devstral,
+/// Phi) is not listed: the logo doesn't say it, so it stays in the name.
+private let brandOf: [(word: String, logo: String)] = [
+    ("claude", "claude-color"),
+    ("gemini", "gemini-color"),
+    ("gemma", "gemma-color"),
+    ("grok", "grok"),
+    ("qwen", "qwen-color"),
+    ("deepseek", "deepseek-color"),
+    ("kimi", "kimi-color"),
+    ("minimax", "minimax-color"),
+    ("mistral", "mistral-color"),
+    ("mimo", "xiaomimimo"),
+    ("hunyuan", "hunyuan-color"),
+    ("longcat", "longcat-color"),
+]
+
+/// A model's display name without the brand its logo already shows:
+/// "Claude Opus 4.1" beside Claude's logo reads "Opus 4.1", "Gemini 2.5 Pro"
+/// reads "2.5 Pro". The brand goes only as a whole leading word, and the
+/// name stays whole when nothing would be left or no matching logo is shown.
+public func modelSeriesName(_ name: String, model: ModelRef) -> String {
+    guard let logo = modelLogoAsset(model) else { return name }
+    let lowered = name.lowercased()
+    for brand in brandOf where logo == "provider-\(brand.logo)" && lowered.hasPrefix(brand.word) {
+        let rest = name.dropFirst(brand.word.count)
+        guard rest.first == " " || rest.first == "-" else { continue }
+        let series = rest.drop { $0 == " " || $0 == "-" }
+        if !series.isEmpty { return String(series) }
+    }
+    return name
+}
+
 /// Up to two initials for a provider without a logo.
 public func providerInitials(_ name: String) -> String {
     name.split(whereSeparator: \.isWhitespace).prefix(2).compactMap(\.first).map { $0.uppercased() }.joined()

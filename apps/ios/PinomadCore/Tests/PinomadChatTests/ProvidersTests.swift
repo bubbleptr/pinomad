@@ -430,3 +430,32 @@ private func flow(
         #expect(logo("custom-lab", "house-model") == nil)
     }
 }
+
+@Suite struct ModelSeriesNameTests {
+    private func series(_ name: String, _ provider: String, _ modelId: String) -> String {
+        modelSeriesName(name, model: ModelRef(provider: provider, modelId: modelId))
+    }
+
+    @Test func dropsTheBrandTheLogoAlreadyShows() {
+        #expect(series("Claude Opus 4.1", "amazon-bedrock", "us.anthropic.claude-opus-4-1-20250805-v1:0") == "Opus 4.1")
+        #expect(series("MiniMax M2", "minimax", "MiniMax-M2") == "M2")
+        #expect(series("Gemini 2.5 Pro", "openrouter", "google/gemini-2.5-pro") == "2.5 Pro")
+    }
+
+    /// A series that only starts like a brand, or a family whose maker's
+    /// logo is not its own (OpenAI's for GPT, Meta's for Llama), is the
+    /// name worth reading.
+    @Test func keepsSeriesNamesThatAreNotTheBrandWord() {
+        #expect(series("GPT-5.1 Codex", "openai", "gpt-5.1-codex") == "GPT-5.1 Codex")
+        #expect(series("Llama 4 Maverick", "groq", "llama-4-maverick") == "Llama 4 Maverick")
+        #expect(series("Qwen3 Coder", "openrouter", "qwen/qwen3-coder") == "Qwen3 Coder")
+        #expect(series("Devstral Medium", "mistral", "devstral-medium-latest") == "Devstral Medium")
+        #expect(series("o4-mini", "github-copilot", "o4-mini") == "o4-mini")
+    }
+
+    @Test func keepsTheWholeNameWhenNothingWouldBeLeftOrTheLogoDiffers() {
+        #expect(series("Claude", "anthropic", "claude") == "Claude")
+        // No logo beside it, so the brand is the only place it is said.
+        #expect(series("Claude Distill", "custom-lab", "house-model") == "Claude Distill")
+    }
+}
