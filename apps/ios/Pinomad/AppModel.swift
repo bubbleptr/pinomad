@@ -232,6 +232,12 @@ final class AppModel {
     /// it finishes uploading — the simulator end-to-end seam.
     var pendingAttachFile: String?
     var pendingAttachSend = false
+    /// A text file submitted once the carrier is P2P — the device
+    /// end-to-end seam for a multi-record business frame.
+    var pendingPromptFile: String?
+    /// Opens the current host's connection detail after the first view, so
+    /// a device run can screenshot the P2P status without a tap.
+    var openHostDetailAfterReady = false
     /// The agent demo opens the conversation's model sheet once the
     /// composer is on screen, so a screenshot can show it without a host.
     var devShowsModelSheet = false
@@ -587,6 +593,11 @@ final class AppModel {
             #if DEBUG
             consumeDevOpenRequest()
             consumeDevAttachRequest()
+            consumeDevPromptRequest()
+            if openHostDetailAfterReady, let key = sessionHost?.hostKey {
+                openHostDetailAfterReady = false
+                navPath = [.settings, .host(key)]
+            }
             #endif
             if let id = reopenAfterReady {
                 reopenAfterReady = nil

@@ -25,6 +25,12 @@ extension AppModel {
             pendingAttachFile = file
             pendingAttachSend = env["PINOMAD_AUTOSEND"] != nil
         }
+        if let file = env["PINOMAD_PROMPT_FILE"] {
+            pendingPromptFile = file
+        }
+        if env["PINOMAD_OPEN_HOST_DETAIL"] != nil {
+            openHostDetailAfterReady = true
+        }
         if env["PINOMAD_KEEPSCREEN"] != nil {
             // Perf runs: keep the phone awake so a scripted measurement
             // window isn't cut short by auto-lock.
@@ -137,6 +143,36 @@ extension AppModel {
             return true
         }
         return false
+    }
+
+    /// Send the injected text once the carrier reaches P2P. The file may be
+    /// absolute or relative to the app's Documents directory (files pushed
+    /// through `devicectl device copy to`). The prompt is deliberately
+    /// delayed: the 1s upgrade must win before the records go out.
+    func consumeDevPromptRequest() {
+        guard let path = pendingPromptFile else { return }
+        pendingPromptFile = nil
+        let url = path.hasPrefix("/")
+            ? URL(fileURLWithPath: path)
+            : FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(path)
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            showToast("Dev prompt file is unreadable", level: "error")
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for _ in 0..<300 {
+                if self.session?.rtcDiagnostics().path == "p2p" { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            self.drafts[Self.draftKey] = text
+            self.draftHome = .chat
+            self.navPath = [.newConversation]
+            await self.createConversation()
+        }
     }
 
     /// Attach the injected file once the session is ready, then (when
