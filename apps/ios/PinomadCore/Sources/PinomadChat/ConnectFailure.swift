@@ -11,6 +11,10 @@ public enum ConnectFailure: Equatable, Sendable {
     case appOutdated(hostMajor: Double, clientMajor: Double)
     /// The host speaks an older protocol major — upgrade the host.
     case hostOutdated(hostMajor: Double, clientMajor: Double)
+    /// Direct only: the relay is out of bounds for business data and the
+    /// peer-to-peer link did not come up. `reason` is the coordinator's last
+    /// preparation failure, shown verbatim as details.
+    case directUnavailable(reason: String)
     /// Couldn't reach the host (or set up the session) at all.
     case unreachable(String)
 
@@ -31,6 +35,8 @@ public enum ConnectFailure: Equatable, Sendable {
             self = pairing ? .pairingRefused : .revoked
         case .mismatch(let hostMajor, let clientMajor, let direction, _):
             self = Self.mismatch(hostMajor: hostMajor, clientMajor: clientMajor, direction: direction)
+        case .directUnavailable(let reason):
+            self = .directUnavailable(reason: reason)
         case .error(let message):
             self = .unreachable(message)
         }
