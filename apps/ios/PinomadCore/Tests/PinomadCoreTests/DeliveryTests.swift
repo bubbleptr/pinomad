@@ -109,6 +109,31 @@ struct SnapshotDeliveryTests {
 /// store failures ride along instead of being swallowed.
 @Suite("Host store")
 struct HostStoreTests {
+    /// The learned signal-only hint is written through the store's serialized
+    /// read-modify-write; the mode, name, key and active choice stay put.
+    @Test func signalOnlyHintPersistsWithoutTouchingOtherFields() async throws {
+        let store = StubHostStore()
+        store.stored = StoredHosts(
+            hosts: [
+                HostRecord(
+                    url: "ws://h/", hostKey: "host", privateKey: "key", name: "Desk",
+                    connectionMode: .relayOnly)
+            ],
+            activeHostKey: "host")
+        let (session, _, _, _) = try makeSession(hostStore: store)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([.rtcSignalOnly(hostKey: "host", signalOnly: true)]))
+        await session.waitForIdle()
+
+        #expect(store.stored.hosts[0].rtcSignalOnly == true)
+        #expect(store.stored.hosts[0].name == "Desk")
+        #expect(store.stored.hosts[0].connectionMode == .relayOnly)
+        #expect(store.stored.hosts[0].privateKey == "key")
+        #expect(store.stored.activeHostKey == "host")
+        session.close()
+    }
+
     @Test func pairedPersistsAndMarksActive() async throws {
         let (session, _, _, store) = try makeSession()
         let reader = UpdateReader(session)
