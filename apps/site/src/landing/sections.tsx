@@ -35,19 +35,32 @@ function Placeholder({ caption, className = "shot-diagram" }: { caption: string;
   );
 }
 
-/** Stands in for the iPhone mockup: deliberately abstract, never a fake UI. */
-function PhonePlaceholder({ caption, className }: { caption: string; className: string }) {
+/**
+ * An iPhone drawn in CSS: titanium edge, black bezel, Dynamic Island, side buttons.
+ * The screen holds an abstract skeleton until the app's screenshot replaces it.
+ */
+function Phone({ caption, className }: { caption: string; className: string }) {
   return (
-    <figure className={`shot shot-phone ${className}`}>
-      <div className="shot-skeleton sk-phone" aria-hidden="true">
-        <span className="sk-line w55" />
-        <div className="sk-main">
-          <span className="sk-line w85" />
-          <span className="sk-line w70" />
-          <span className="sk-line w85" />
-          <span className="sk-gap" />
-          <span className="sk-line w55" />
-          <span className="sk-line w70" />
+    <figure className={`phone ${className}`}>
+      <div className="phone-body">
+        <span className="phone-btn btn-action" />
+        <span className="phone-btn btn-volume-up" />
+        <span className="phone-btn btn-volume-down" />
+        <span className="phone-btn btn-side" />
+        <span className="phone-btn btn-camera" />
+        <div className="phone-screen">
+          <div className="shot-skeleton sk-phone" aria-hidden="true">
+            <span className="sk-line w55" />
+            <div className="sk-main">
+              <span className="sk-line w85" />
+              <span className="sk-line w70" />
+              <span className="sk-line w85" />
+              <span className="sk-gap" />
+              <span className="sk-line w55" />
+              <span className="sk-line w70" />
+            </div>
+          </div>
+          <span className="phone-island" />
         </div>
       </div>
       <figcaption className="shot-label">{caption}</figcaption>
@@ -70,21 +83,17 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             {t.github}
           </a>
         </div>
-        {/* The desktop window with the phone floating in front of it: the two screens people look at first. */}
-        <div className="hero-stage">
-          <figure className="shot shot-window hero-shot">
-            <img
-              src={image.src}
-              srcSet={image.srcSet}
-              sizes="(min-width: 72rem) 68rem, 100vw"
-              width="2400"
-              height="1500"
-              alt={t.shotAlt}
-              fetchPriority="high"
-            />
-          </figure>
-          <PhonePlaceholder caption={t.phonePlaceholder} className="hero-phone" />
-        </div>
+        <figure className="shot shot-window hero-shot">
+          <img
+            src={image.src}
+            srcSet={image.srcSet}
+            sizes="(min-width: 72rem) 68rem, 100vw"
+            width="2400"
+            height="1500"
+            alt={t.shotAlt}
+            fetchPriority="high"
+          />
+        </figure>
         <div className="models">
           <span className="models-label">{t.modelsLabel}</span>
           <ul>
@@ -102,7 +111,28 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
   );
 }
 
-/** The three things PiNomad is: on your machine, durable, reachable from any screen. */
+/** The phone gets a section of its own: drawn as a device, it doesn't sit well beside a flat screenshot. */
+export function Anywhere({ t }: { t: LandingCopy["anywhere"] }) {
+  return (
+    <section className="section section-showcase" id="anywhere" aria-labelledby="anywhere-title">
+      <div className="wrap split">
+        <div className="section-head">
+          <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
+          <ul className="chips">
+            {t.clients.map((client) => (
+              <li key={client} className="chip">
+                {client}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Phone caption={t.placeholder} className="showcase-phone" />
+      </div>
+    </section>
+  );
+}
+
+/** How it works: the durable run and the machine it runs on. */
 export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"]; durable: LandingCopy["durable"] }) {
   return (
     <section className="section" id="how-it-works" aria-labelledby="core-title">
@@ -120,17 +150,6 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
             <h3>{t.machine.title}</h3>
             <p>{t.machine.body}</p>
             <Placeholder caption={t.machine.placeholder} />
-          </article>
-          <article className="cell cell-anywhere">
-            <h3>{t.anywhere.title}</h3>
-            <p>{t.anywhere.body}</p>
-            <ul className="chips">
-              {t.anywhere.clients.map((client) => (
-                <li key={client} className="chip">
-                  {client}
-                </li>
-              ))}
-            </ul>
           </article>
         </div>
         <p className="section-link">

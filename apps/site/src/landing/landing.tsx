@@ -4,7 +4,7 @@ import { copy } from "./copy.tsx";
 import landingCss from "./landing.css?url";
 import { landingHead } from "./meta.ts";
 import { GetStarted, type LatestRelease } from "./get-started.tsx";
-import { Agents, Connection, Core, Hero, Next } from "./sections.tsx";
+import { Agents, Anywhere, Connection, Core, Hero, Next } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
 import { SiteHeader } from "./site-header.tsx";
 
@@ -25,6 +25,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
       <SiteHeader lang={lang} t={t} />
       <main id="main">
         <Hero lang={lang} t={t.hero} />
+        <Anywhere t={t.anywhere} />
         <Core lang={lang} t={t.core} durable={t.durable} />
         <Agents lang={lang} t={t.agents} />
         <Connection t={t.connection} />
@@ -36,7 +37,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
   );
 }
 
-const revealed = ".section-head, .cell, .split > .shot, .stack, .plan, .client, .code-card, .start-end";
+const revealed = ".section-head, .cell, .split > .shot, .split > .phone, .stack, .plan, .client, .code-card, .start-end";
 
 /**
  * Blocks that start below the first screen fade up once as they scroll in.
