@@ -52,6 +52,13 @@ final class AppModel {
     /// Every paired host and which one opens on launch, as last read from
     /// the keychain.
     private(set) var hosts = StoredHosts()
+    /// The RTC coordinator's status for the live session, refreshed with
+    /// every snapshot. The detail page counts the cooldown down locally;
+    /// path/phase changes arrive with the next snapshot.
+    private(set) var rtcStatus: RtcDiagnostics?
+    /// When `rtcStatus` was read, so the page can count a cooldown down
+    /// without asking the core on every tick.
+    private(set) var rtcStatusAt = Date()
     /// The host or pairing identity the connection is for. One value so a
     /// completed handshake consumes the one-time link before Retry reads it.
     private(set) var pairing = PairingAttempt()
@@ -360,8 +367,79 @@ final class AppModel {
         }
     }
 
+    /// The RTC status is only meaningful for the host this session is for;
+    /// a stale value from the previous host would label its rows wrongly.
+    private func refreshRtcStatus() {
+        guard let session, let key = sessionHost?.hostKey,
+              hosts.hosts.contains(where: { $0.hostKey == key }) || currentHostKey == key
+        else {
+            rtcStatus = nil
+            return
+        }
+        rtcStatus = session.rtcDiagnostics()
+        rtcStatusAt = Date()
+    }
+
+    /// Re-read the RTC status while its detail page is visible. The core
+    /// publishes snapshots for view changes; RTC phases move on timers and
+    /// datagrams that need not change the view, so the page polls this
+    /// cheap lock read once a second.
+    func refreshLiveRtcStatus() {
+        guard phase == .connected, let session, let key = sessionHost?.hostKey,
+              key == currentHostKey
+        else { return }
+        rtcStatus = session.rtcDiagnostics()
+        rtcStatusAt = Date()
+    }
+
+    /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the live host's
+    /// row; nil when nothing is connected.
+    var connectedSummary: String? {
+        guard phase == .connected, let snapshot, snapshot.connection == .connected,
+              !snapshot.unauthorized
+        else { return nil }
+        let path: String
+        switch rtcStatus?.path {
+        case "p2p": path = "P2P"
+        case "relay": path = "Relay"
+        case "direct": path = "Direct"
+        default: path = "Local"
+        }
+        return "Connected · \(path)"
+    }
+
+    /// One paired host by key, including the unsaved pairing target.
+    func hostRecord(for hostKey: String) -> HostRecord? {
+        hosts.hosts.first { $0.hostKey == hostKey }
+            ?? sessionHost.flatMap { $0.hostKey == hostKey ? $0 : nil }
+    }
+
+    func connectionMode(for hostKey: String) -> HostConnectionMode {
+        hostRecord(for: hostKey)?.connectionMode ?? .auto
+    }
+
+    /// Persist the mode choice first, then rebuild the session when this is
+    /// the host on screen — the coordinator's mode is fixed at construction,
+    /// so an in-place switch would keep the old candidates.
+    func setConnectionMode(_ mode: HostConnectionMode, for hostKey: String) {
+        do {
+            try store.update { stored in
+                if let next = stored.settingConnectionMode(mode, for: hostKey) {
+                    stored = next
+                }
+            }
+        } catch {
+            lastError = "Couldn't save this host's connection mode (\(describe(error)))."
+            return
+        }
+        reloadHosts()
+        guard hostKey == currentHostKey, let host = hostRecord(for: hostKey) else { return }
+        connect(host)
+    }
+
     func fail(_ failure: ConnectFailure) {
         phase = .failed(failure)
+        rtcStatus = nil
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
         // The failure screen replaces the list; pages pushed over it
@@ -486,6 +564,7 @@ final class AppModel {
             }
             phase = .connected
             hostBeforePairing = nil
+            refreshRtcStatus()
             push.currentConnectedHostKey = sessionHost?.hostKey
             #if DEBUG
             consumeDevOpenRequest()
@@ -532,6 +611,7 @@ final class AppModel {
                 markAccountRejected(host)
             }
             self.snapshot = snapshot
+            refreshRtcStatus()
             let freshEpoch = snapshot.conversation?.freshEpoch ?? 0
             if freshEpoch > lastConversationFreshEpoch { imageEpoch &+= 1 }
             lastConversationFreshEpoch = freshEpoch

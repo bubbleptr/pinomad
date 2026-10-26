@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var forgetting: HostRecord?
+    @State private var detailHostKey: String?
 
     var body: some View {
         List {
@@ -69,6 +70,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .navigationDestination(item: $detailHostKey) { hostKey in
+            HostDetailView(model: model, hostKey: hostKey)
+        }
         .alert(
             "Forget \(forgetting.map(label) ?? "this host")?",
             isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
@@ -100,30 +104,47 @@ struct SettingsView: View {
         host.hostKey == model.currentHostKey && model.connected
     }
 
-    /// Tap to switch — the only way to until the list groups by machine.
+    /// Tap to switch; the trailing ⓘ has its own hit area and opens the
+    /// connection page without changing hosts.
     private func pairedRow(_ host: HostRecord) -> some View {
-        Button {
-            guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
-            model.switchHost(host.hostKey)
-            // Switching resets the stack already; in the sheet this closes it.
-            dismiss()
-        } label: {
-            HStack(spacing: 10) {
-                MachineDot(live: isLive(host))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label(host))
-                        .foregroundStyle(.primary)
-                    Text(host.url)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        HStack(spacing: 4) {
+            Button {
+                guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
+                model.switchHost(host.hostKey)
+                // Switching resets the stack already; in the sheet this closes it.
+                dismiss()
+            } label: {
+                HStack(spacing: 10) {
+                    MachineDot(live: isLive(host))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(label(host))
+                            .foregroundStyle(.primary)
+                        Text(isLive(host) ? model.connectedSummary ?? host.url : host.url)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if host.hostKey == model.currentHostKey {
+                        Image(.check)
+                            .foregroundStyle(.blue)
+                    }
                 }
-                Spacer()
-                if host.hostKey == model.currentHostKey {
-                    Image(.check)
-                        .foregroundStyle(.blue)
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button {
+                detailHostKey = host.hostKey
+            } label: {
+                Image(.info)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Connection details for \(label(host))")
         }
         .swipeActions {
             Button("Forget", role: .destructive) { forgetting = host }

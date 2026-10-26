@@ -14,6 +14,8 @@ enum Route: Hashable {
     case settings
     /// One paired machine's settings, by host key.
     case machine(String)
+    /// A paired host's connection settings and RTC status, by host key.
+    case host(String)
     /// That machine's providers: what's connected, and ways to add one.
     case providers(String)
     // The pages under Providers carry the host they were opened for and act
@@ -42,6 +44,7 @@ struct RouteDestination: View {
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
+        case .host(let hostKey): HostDetailView(model: model, hostKey: hostKey)
         case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
         case .providerSubscriptions(let hostKey):
             ProvidersGate(model: model, hostKey: hostKey) { providers in
