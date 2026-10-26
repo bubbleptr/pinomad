@@ -5,7 +5,7 @@
 ## 布局
 
 - `AgentChatCore`：不依赖 SwiftUI。流式 Markdown 的增量解析和半截语法预判、agent trace 的数据模型和展示规则。解析交给 `swift-markdown`（cmark-gfm），流式这一层是自己写的。
-- `AgentChatKit`：SwiftUI 视图（`MarkdownView`、`StreamingMarkdown` + `StreamingMarkdownView`、`AgentTraceView`（胶囊）+ `AgentTraceSheet`、`TodoLineView`、`Transcript`、`UserMessageView`），只依赖 `AgentChatCore`。逐词淡入用 `TextRenderer`，只作用在还在流式输出的最后一段文字上，靠环境值 `tailFade` 沿最后一个子块往下传。
+- `AgentChatKit`：SwiftUI 视图（`MarkdownView`、`StreamingMarkdown` + `StreamingMarkdownView`、`AgentTraceView`（一行运行摘要）+ `AgentTraceSheet`、`TodoLineView`、`Transcript`、`UserMessageView`），只依赖 `AgentChatCore`。逐词淡入用 `TextRenderer`，只作用在还在流式输出的最后一段文字上，靠环境值 `tailFade` 沿最后一个子块往下传。
 - `Demo/`：iOS Demo App，回放一段脚本化的 agent 运行（`Replay.swift`），用来截图验证视图。Xcode 工程是手写的，用了同步文件夹（Xcode 16+），往 `Demo/AgentChatDemo/` 加文件不用改工程。
 
 trace 用本库自己的通用模型，不引用 PiNomad 的类型；语义对照 PiNomad 的 `packages/client/src/cot-view.ts`（phase、step），由使用方写适配层。流式 Markdown 的行为对照 MyGo 的规格：https://mygo.egoist.dev/docs/ui/markdown

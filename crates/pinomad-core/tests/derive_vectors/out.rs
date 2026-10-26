@@ -135,6 +135,7 @@ pub fn cot_json(cot: &CotView) -> Json {
         ("anchorMs", cot.anchor_ms.map(num)),
         ("elapsedMs", cot.elapsed_ms.map(num)),
         ("todoWrittenAtMs", cot.todo_written_at_ms.map(num)),
+        ("model", cot.model.as_ref().map(ModelRef::to_json)),
         ("steps", Some(Json::array(cot.steps.iter().map(step_json).collect()))),
         (
             "answer",

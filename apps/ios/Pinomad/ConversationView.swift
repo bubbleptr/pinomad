@@ -444,7 +444,7 @@ private struct RunRow: View, Equatable {
         let split = ChatAdapter.splitRun(cot, summaries: subagentSummaries)
         let trace = ChatAdapter.trace(cot: split.trace, interrupted: interrupted)
         VStack(alignment: .leading, spacing: 8) {
-            AgentTraceView(trace, onOpen: openTrace)
+            AgentTraceView(trace, mark: cot.model.flatMap(modelLogoAsset).map { Image($0) }, onOpen: openTrace)
             ForEach(split.cards) { card in
                 SubagentCardView(card: card, onOpen: openSubagent)
             }

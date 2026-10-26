@@ -172,9 +172,9 @@ private struct Row: View {
     }
 }
 
-/// A model's logo (its maker's, else its provider's) as a bare glyph beside
-/// its name; monochrome logos take the foreground style like text.
-/// Decorative: the name is always beside it. With no logo it draws nothing,
+/// A model's logo (its maker's, else its provider's) as a bare glyph;
+/// monochrome logos take the foreground style like text. Decorative: the
+/// name is always beside it or in the surrounding control's label. With no logo it draws nothing,
 /// or an empty slot of the same size when `reserve` keeps a list's titles
 /// aligned.
 struct ModelLogo: View {

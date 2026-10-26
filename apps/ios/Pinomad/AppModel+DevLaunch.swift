@@ -715,7 +715,8 @@ extension AppModel {
     /// another provider (Claude on Copilot and Bedrock) and one with no
     /// logo, so the capsule and the sheet's logos can be photographed
     /// without a live host. The capsule shows GPT-5, a monochrome logo
-    /// that takes the text's color; the sheet opens on Claude.
+    /// that takes the text's color; the sheet opens on Claude. The settled
+    /// run was Claude's, so its trace keeps Claude's logo.
     private func startModelsDemo(sheet: Bool) {
         navPath = [.conversation(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
@@ -746,8 +747,21 @@ extension AppModel {
             title: "Pick a model", status: nil, updatedAt: now,
             label: nil, role: nil, currentAgent: nil, activity: nil
         )
+        let read = ToolItem(
+            state: .outputAvailable, argsText: #"{"path":"src/parser.ts"}"#,
+            children: [], diffStat: nil, durationMs: nil, images: [],
+            output: "export function parse() {}", toolCallId: "c1", toolName: "read", pinomad: nil
+        )
+        let cot = CotView(
+            phase: .settled, failed: false,
+            anchorMs: now - 42_000, elapsedMs: 42_000, todoWrittenAtMs: nil,
+            model: ModelRef(provider: entries[0].provider, modelId: entries[0].modelId),
+            steps: [.tools(id: "s1", tools: [read], live: false, activeToolCallId: nil)],
+            answer: CotAnswer(text: "The parser change is small enough for any of them; GPT-5 is a good second opinion.", streaming: false)
+        )
         let chat: [ChatEntry] = [
             .user(id: "u1", text: "Which model should review the parser change?", images: []),
+            .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],

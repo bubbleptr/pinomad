@@ -5,7 +5,7 @@
 // Durable's ConversationView (pi.assistant / pi.tool-result entries plus the
 // pi.live doc) instead of Pace's session runtime model.
 
-import type { ConversationId, ConversationView, EntryRecord, LiveState, NestedToolSlot } from "@earendil-works/pi-durable";
+import type { ConversationId, ConversationView, EntryRecord, LiveState, ModelRef, NestedToolSlot } from "@earendil-works/pi-durable";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
@@ -55,6 +55,12 @@ export type CotView = {
    * the run entry because native clients match that variant positionally.
    */
   todoWrittenAtMs?: number;
+  /**
+   * The model the Run's latest Message came from, so a past Run keeps its
+   * own model after the conversation switches. Absent when that Message
+   * doesn't name one.
+   */
+  model?: ModelRef;
   /** Steps in Turn order; the last one may still be live. */
   steps: CotStep[];
   /** The answer bubble's text — final, or presumed final while answering. */
@@ -133,6 +139,8 @@ type AssistantMessageLike = {
   readonly stopReason?: string;
   readonly errorMessage?: string;
   readonly timestamp?: number;
+  readonly provider?: unknown;
+  readonly model?: unknown;
 };
 
 type ToolResultLike = {
@@ -483,6 +491,10 @@ function deriveRun(
   const interrupted = lastCommitted?.msg.stopReason === "aborted";
   const failed = settled && lastCommitted?.msg.stopReason === "error";
   const anchorMs = messages[0]?.msg.timestamp;
+  const model =
+    typeof latest?.msg.provider === "string" && typeof latest.msg.model === "string"
+      ? { provider: latest.msg.provider, modelId: latest.msg.model }
+      : undefined;
   let elapsedMs: number | undefined;
   if (settled && anchorMs !== undefined) {
     const endMs = answering ? latest?.msg.timestamp : (draft.lastTs ?? latest?.msg.timestamp);
@@ -498,6 +510,7 @@ function deriveRun(
       ...(anchorMs === undefined ? {} : { anchorMs }),
       ...(elapsedMs === undefined ? {} : { elapsedMs }),
       ...(todoWrittenAtMs === undefined ? {} : { todoWrittenAtMs }),
+      ...(model === undefined ? {} : { model }),
       steps,
       ...(answering ? { answer: { text: answerText, streaming: latest?.partial === true } } : {}),
     },

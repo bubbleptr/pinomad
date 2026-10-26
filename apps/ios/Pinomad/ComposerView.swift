@@ -272,8 +272,9 @@ struct ConversationComposer: View {
             HStack(spacing: 10) {
                 plusMenu
                 ModelCapsule(
-                    label: modelText,
+                    label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
                     logo: conversation.agent.model,
+                    level: ModelCapsule.level(models: model.snapshot?.models ?? [], pick: modelPick),
                     prefix: agentPick?.current.map { "@\($0)" },
                     enabled: connected && sheetHasContent
                 ) {
@@ -383,12 +384,8 @@ struct ConversationComposer: View {
         focused = true
     }
 
-    private var modelText: String {
-        let agent = conversation.agent
-        return modelLabel(
-            models: model.snapshot?.models ?? [],
-            selected: ModelPick(model: agent.model, level: agent.thinkingLevel ?? .off)
-        )
+    private var modelPick: ModelPick {
+        ModelPick(model: conversation.agent.model, level: conversation.agent.thinkingLevel ?? .off)
     }
 
     /// A recognised command runs at once whatever `mode` says; a held one
@@ -706,9 +703,13 @@ struct Thumbnail: View {
 }
 
 struct ModelCapsule: View {
+    /// The model's name and level; shown only when the model has no logo,
+    /// otherwise read out by VoiceOver alone.
     let label: String
-    /// The picked model, for its logo ahead of everything else.
+    /// The picked model, whose logo stands in for its name.
     let logo: ModelRef?
+    /// The thinking level beside the logo, for models that have levels.
+    let level: String?
     /// The named agent (`@name`) the pick comes from, shown first.
     let prefix: String?
     let enabled: Bool
@@ -716,10 +717,11 @@ struct ModelCapsule: View {
     let problem: String?
     let action: () -> Void
 
-    init(label: String, logo: ModelRef?, prefix: String? = nil, enabled: Bool,
+    init(label: String, logo: ModelRef?, level: String? = nil, prefix: String? = nil, enabled: Bool,
          problem: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.logo = logo
+        self.level = level
         self.prefix = prefix
         self.enabled = enabled
         self.problem = problem
@@ -734,8 +736,9 @@ struct ModelCapsule: View {
                         .lineLimit(1)
                         .foregroundStyle(.red)
                 } else {
+                    let logo = logo.flatMap { modelLogoAsset($0) == nil ? nil : $0 }
                     if let logo {
-                        ModelLogo(model: logo, size: 14)
+                        ModelLogo(model: logo, size: 20)
                             .padding(.trailing, 2)
                     }
                     if let prefix {
@@ -745,8 +748,13 @@ struct ModelCapsule: View {
                             // The model label truncates first.
                             .layoutPriority(1)
                     }
-                    Text(label.isEmpty ? "Choose model" : label)
-                        .lineLimit(1)
+                    if logo == nil {
+                        Text(label.isEmpty ? "Choose model" : label)
+                            .lineLimit(1)
+                    } else if let level {
+                        Text(level)
+                            .lineLimit(1)
+                    }
                 }
                 Image(.chevronDown)
                     .font(.caption2.weight(.semibold))
@@ -761,6 +769,15 @@ struct ModelCapsule: View {
         .disabled(!enabled)
         .accessibilityLabel(problem.map { "Model: \($0)" }
             ?? "Model: \([prefix, label].compactMap { $0 }.joined(separator: " "))")
+    }
+
+    /// The level the capsule shows beside a logo: only for a listed model
+    /// with levels to choose from, as `modelLabel` does.
+    static func level(models: [ModelSummary], pick: ModelPick) -> String? {
+        guard let summary = models.first(where: {
+            sameModel(a: ModelRef(provider: $0.provider, modelId: $0.modelId), b: pick.model)
+        }), summary.thinkingLevels.count > 1 else { return nil }
+        return thinkingLevelLabel(level: pick.level)
     }
 }
 
