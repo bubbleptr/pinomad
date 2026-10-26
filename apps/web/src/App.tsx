@@ -541,7 +541,17 @@ export function RemoteWorkbench({
       </Centered>
     );
   }
-  return <Workbench remote={state.remote} wsUrl={label} rejected={rejected} device={device} notice={notice} hostKey={hostKey} />;
+  return (
+    <Workbench
+      remote={state.remote}
+      wsUrl={label}
+      rejected={rejected}
+      device={device}
+      notice={notice}
+      hostKey={hostKey}
+      onReconnect={() => setAttempt(attempt + 1)}
+    />
+  );
 }
 
 /**
@@ -593,7 +603,23 @@ export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: 
   );
 }
 
-function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remote: RemoteDurable; wsUrl: string; rejected?: ReactNode; device?: KeyPair; notice?: ReactNode; hostKey?: string }) {
+function Workbench({
+  remote,
+  wsUrl,
+  rejected,
+  device,
+  notice,
+  hostKey,
+  onReconnect,
+}: {
+  remote: RemoteDurable;
+  wsUrl: string;
+  rejected?: ReactNode;
+  device?: KeyPair;
+  notice?: ReactNode;
+  hostKey?: string;
+  onReconnect?: () => void;
+}) {
   const view = useDurableView(remote);
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not the selected host.
@@ -714,6 +740,7 @@ function Workbench({ remote, wsUrl, rejected, device, notice, hostKey }: { remot
         remote={remote}
         device={device}
         hostKey={hostKey}
+        onReconnect={onReconnect}
         narrow={narrow}
         drafting={drafting}
         draftingChat={drafting && draft.kind === "chat"}

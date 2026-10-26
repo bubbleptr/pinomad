@@ -40,6 +40,7 @@ export function AppFrame({
   remote,
   device,
   hostKey,
+  onReconnect,
   narrow,
   drafting,
   draftingChat,
@@ -65,6 +66,8 @@ export function AppFrame({
   device?: KeyPair;
   /** The stored pairing this connection authenticates as — absent for token clients. */
   hostKey?: string;
+  /** Remount the connection after a terminal close (for example Direct only). */
+  onReconnect?: () => void;
   narrow: boolean;
   drafting: boolean;
   draftingChat: boolean;
@@ -248,7 +251,14 @@ export function AppFrame({
         />
       ) : null}
       {settingsOpen ? (
-        <SettingsDialog view={view} remote={remote} device={device} hostKey={hostKey} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog
+          view={view}
+          remote={remote}
+          device={device}
+          hostKey={hostKey}
+          onReconnect={onReconnect}
+          onClose={() => setSettingsOpen(false)}
+        />
       ) : null}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
       {/* Every notice the workbench learns about also lands as a toast —

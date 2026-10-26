@@ -70,6 +70,7 @@ export function SettingsDialog({
   remote,
   device,
   hostKey,
+  onReconnect,
   onClose,
 }: {
   view: DurableView;
@@ -78,6 +79,8 @@ export function SettingsDialog({
   device?: KeyPair;
   /** The stored host this connection is to — absent for token clients. */
   hostKey?: string;
+  /** Remount the connection after a terminal close (for example Direct only). */
+  onReconnect?: () => void;
   onClose: () => void;
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
@@ -185,7 +188,16 @@ export function SettingsDialog({
             {compact && section === undefined ? (
               sectionList
             ) : (
-              <SectionPage view={view} remote={remote} device={device} hostKey={hostKey} connected={connected} section={active} showTitle={!compact} />
+              <SectionPage
+                view={view}
+                remote={remote}
+                device={device}
+                hostKey={hostKey}
+                connected={connected}
+                onReconnect={onReconnect}
+                section={active}
+                showTitle={!compact}
+              />
             )}
           </LayoutContent>
         }
@@ -200,6 +212,7 @@ function SectionPage({
   device,
   hostKey,
   connected,
+  onReconnect,
   section,
   showTitle,
 }: {
@@ -208,10 +221,11 @@ function SectionPage({
   device?: KeyPair;
   hostKey?: string;
   connected: boolean;
+  onReconnect?: () => void;
   section: SectionId;
   showTitle: boolean;
 }) {
-  const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, section);
+  const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
   const headingId = `settings-${section}-heading`;
   return (
     <VStack
@@ -234,6 +248,7 @@ function sectionBody(
   device: KeyPair | undefined,
   hostKey: string | undefined,
   connected: boolean,
+  onReconnect: (() => void) | undefined,
   section: SectionId,
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
   switch (section) {
@@ -247,6 +262,7 @@ function sectionBody(
             connectedHostKey={hostKey}
             remote={remote}
             hostMinor={view.host?.protocol.minor}
+            onRetry={onReconnect}
           />
         ),
       };

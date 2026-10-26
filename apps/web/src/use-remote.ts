@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   connectRemoteDurable,
   ProtocolMismatchError,
+  type AppLifecycle,
   type NetworkChanges,
   type RemoteDurable,
   type RemoteDurableOptions,
@@ -44,6 +45,19 @@ const browserNetworkChanges: NetworkChanges = {
       window.removeEventListener("online", listener);
       window.removeEventListener("offline", listener);
     };
+  },
+};
+
+/**
+ * A hidden tab stops P2P liveness probing; becoming visible runs a fresh
+ * verification ping instead of trusting a timer that fired while suspended.
+ */
+const browserLifecycle: AppLifecycle = {
+  subscribe(listener) {
+    if (typeof document === "undefined") return () => {};
+    const onVisibility = (): void => listener(document.visibilityState === "hidden" ? "background" : "foreground");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   },
 };
 
@@ -136,6 +150,7 @@ export function useRemoteDurable(
           ...(options as Extract<RemoteDurableOptions, { candidates: unknown }>),
           signal: controller.signal,
           network: options.network ?? browserNetworkChanges,
+          lifecycle: options.lifecycle ?? browserLifecycle,
           ...(settings?.timeoutMs === undefined ? {} : { roundTimeoutMs: settings.timeoutMs }),
         }
       : {

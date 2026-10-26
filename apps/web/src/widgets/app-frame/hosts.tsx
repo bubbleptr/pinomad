@@ -250,11 +250,20 @@ export function HostsSection({
     setModeError(undefined);
     void setConnection(host.hostKey, { connectionMode: mode }).then(
       () => {
-        // Only the live host reconnects now; another host's preference is
-        // picked up the next time it is selected.
-        if (!paired.isCurrent(host)) return;
-        if (remote !== undefined) remote.setConnectionMode(mode);
-        else onRetry?.();
+        // Reconnect only the host this coordinator actually serves. A token
+        // connection has no stored host key, so changing a saved host must
+        // not tear that connection down.
+        const liveHost = connectedHostKey !== undefined && host.hostKey === connectedHostKey;
+        if (liveHost) {
+          // A closed coordinator cannot switch modes itself; remount it so
+          // the new preference is read by a fresh connection.
+          if (connection !== "closed" && remote !== undefined) remote.setConnectionMode(mode);
+          else onRetry?.();
+          return;
+        }
+        // The failure fallback has no coordinator and no connected key; the
+        // saved selection is then the host the page failed to reach.
+        if (connectedHostKey === undefined && remote === undefined && paired.isCurrent(host)) onRetry?.();
       },
       (error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);

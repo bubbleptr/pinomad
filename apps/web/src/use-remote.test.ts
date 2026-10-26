@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientFrame, ServerFrame } from "@pinomad/protocol/frames.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "@pinomad/protocol/transport.ts";
 import { useRemoteDurable } from "./use-remote.ts";
 
@@ -98,6 +98,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -182,6 +183,32 @@ describe("useRemoteDurable first-connect timeout", () => {
     // live connection takes a close.
     for (const entry of opened.slice(0, -1)) expect(entry.closeCalls).toBe(0);
     expect(opened.at(-1)!.closeCalls).toBe(1);
+  });
+
+  it("forwards page visibility to candidate connections", () => {
+    const connect = vi.fn((_options: RemoteDurableOptions) => new Promise<RemoteDurable>(() => {}));
+    const { unmount } = renderHook(() =>
+      useRemoteDurable(
+        { candidates: [], openTransport: () => fakeTransport().transport },
+        "key",
+        { connect },
+      ),
+    );
+    const options = connect.mock.calls[0]![0];
+    expect(options.lifecycle).toBeDefined();
+    const states: string[] = [];
+    const stop = options.lifecycle!.subscribe((state) => states.push(state));
+
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(states).toEqual(["background"]);
+
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(states).toEqual(["background", "foreground"]);
+
+    stop();
+    unmount();
   });
 
   it("a key change cancels the old timer and closes the old connection", async () => {
