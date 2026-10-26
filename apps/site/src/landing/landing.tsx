@@ -37,7 +37,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
   );
 }
 
-const revealed = ".section-head, .cell, .split > .shot, .split > .phone, .stack, .plan, .client, .code-card, .start-end";
+const revealed = ".section-head, .cell, .split > .diagram, .split > .phone, .stack, .plan, .client, .code-card, .start-end";
 
 /**
  * Blocks that start below the first screen fade up once as they scroll in.

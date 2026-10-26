@@ -3,6 +3,7 @@ import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { buttonVariants } from "@/components/ui/button.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
+import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram, MachineDiagram } from "./diagrams.tsx";
 import { DurableDemo } from "./durable.tsx";
 import { shot } from "./shots.ts";
 
@@ -16,22 +17,6 @@ export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow:
       <h2 id={id}>{title}</h2>
       {lead && <p className="section-lead">{lead}</p>}
     </>
-  );
-}
-
-/** A slot for a picture that isn't drawn yet: an abstract skeleton and a caption saying what goes here. */
-function Placeholder({ caption, className = "shot-diagram" }: { caption: string; className?: string }) {
-  return (
-    <figure className={`shot ${className}`}>
-      <div className="shot-skeleton" aria-hidden="true">
-        <div className="sk-main">
-          <span className="sk-line w55" />
-          <span className="sk-line w85" />
-          <span className="sk-line w70" />
-        </div>
-      </div>
-      <figcaption className="shot-label">{caption}</figcaption>
-    </figure>
   );
 }
 
@@ -149,7 +134,7 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
           <article className="cell cell-machine">
             <h3>{t.machine.title}</h3>
             <p>{t.machine.body}</p>
-            <Placeholder caption={t.machine.placeholder} />
+            <MachineDiagram t={t.machine.diagram} />
           </article>
         </div>
         <p className="section-link">
@@ -196,7 +181,7 @@ export function Agents({ lang, t }: { lang: Lang; t: LandingCopy["agents"] }) {
               decoding="async"
             />
           </figure>
-          <Placeholder caption={t.placeholder} />
+          <AgentsDiagram t={t.diagram} roles={t.roles.map((role) => role.name)} />
         </div>
       </div>
     </section>
@@ -218,7 +203,7 @@ export function Connection({ t }: { t: LandingCopy["connection"] }) {
             ))}
           </ul>
         </div>
-        <Placeholder caption={t.placeholder} />
+        <ConnectionDiagram t={t.diagram} />
       </div>
     </section>
   );
@@ -238,7 +223,7 @@ export function Next({ t }: { t: LandingCopy["next"] }) {
             <div>
               <PlanText item={lead!} />
             </div>
-            <Placeholder caption={t.placeholder} />
+            <EnvironmentsDiagram t={t.diagram} />
           </li>
           {rest.map((item) => (
             <li key={item.link.text} className="plan">

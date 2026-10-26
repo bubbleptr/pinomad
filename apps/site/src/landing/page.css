@@ -757,7 +757,7 @@ html[lang="zh-CN"] .hero h1 {
     column-gap: 3rem;
   }
 
-  .cell-machine .shot {
+  .cell-machine .diagram {
     grid-column: 2;
     grid-row: 1 / span 2;
     margin-top: 0;
@@ -781,13 +781,16 @@ html[lang="zh-CN"] .hero h1 {
   text-wrap: pretty;
 }
 
-.cell .shot {
+/* Inside a card the frame steps down to the page colour (and the boxes in it up to the card's). */
+.cell .diagram {
   margin-top: 0.75rem;
+  background: var(--bg);
 }
 
-.cell-machine .shot {
+.cell-machine .diagram {
+  display: grid;
   flex: 1;
-  min-height: 12rem;
+  align-content: center;
 }
 
 .section-link {
@@ -1099,9 +1102,109 @@ html[lang="zh-CN"] .hero h1 {
   gap: 1rem;
 }
 
-/* A diagram slot that isn't drawn yet. */
-.shot-diagram {
-  aspect-ratio: 4 / 3;
+/* —— Diagrams (diagrams.tsx). One frame per picture, the drawing capped so its labels
+   stay near body size on a desktop. SVG units are px here, so font sizes are in the
+   drawing's own units. —— */
+.diagram {
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.diagram svg {
+  display: block;
+  width: 100%;
+  max-width: 26rem;
+  height: auto;
+  margin-inline: auto;
+  overflow: visible;
+}
+
+.dg-box {
+  fill: var(--bg);
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+}
+
+.dg-box.is-main {
+  stroke: var(--fg-3);
+}
+
+.dg-line {
+  fill: none;
+  stroke: var(--fg-3);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dg-line.is-strong {
+  stroke: var(--fg-2);
+  stroke-width: 1.5;
+}
+
+/* Planned, not shipped: the same dashes as the roadmap cards. */
+.dg-planned {
+  stroke-dasharray: 5 4;
+}
+
+.dg-solid {
+  fill: var(--fg-2);
+}
+
+/* The disc under a padlock takes the colour of whatever is behind it. */
+.dg-cut {
+  fill: var(--surface);
+}
+
+.dg-cut.in-box {
+  fill: var(--bg);
+}
+
+.dg-name {
+  fill: var(--fg);
+  font-size: 15px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.dg-name.is-small {
+  font-size: 14px;
+}
+
+.dg-note {
+  fill: var(--fg-3);
+  font-size: 13px;
+  text-anchor: middle;
+}
+
+.dg-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.dg-start {
+  text-anchor: start;
+}
+
+.dg-end {
+  text-anchor: end;
+}
+
+.cell .dg-box,
+.cell .dg-cut {
+  fill: var(--surface);
+}
+
+/* On a phone a card is frame enough: the diagram in it takes the full width, so its labels stay legible. */
+@media (max-width: 40rem) {
+  .cell .diagram,
+  .plan .diagram {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
 }
 
 /* —— Coming next. Dashed edges say "not shipped" before the words do. —— */
