@@ -182,7 +182,10 @@ extension AppModel {
     func consumeDevAttachRequest() {
         guard let path = pendingAttachFile else { return }
         pendingAttachFile = nil
-        let url = URL(fileURLWithPath: path)
+        let url = path.hasPrefix("/")
+            ? URL(fileURLWithPath: path)
+            : FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(path)
         guard let data = try? Data(contentsOf: url) else {
             showToast("Dev attach file is unreadable", level: "error")
             return

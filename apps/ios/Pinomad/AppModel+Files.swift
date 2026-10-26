@@ -174,6 +174,14 @@ extension AppModel {
                 else {
                     throw FileAttachmentError.badReply
                 }
+                #if DEBUG
+                // Device recovery runs need the upload to still be in flight
+                // when the app is backgrounded; production never reads this.
+                if let ms = ProcessInfo.processInfo.environment["PINOMAD_ATTACH_DELAY_MS"].flatMap(Int.init),
+                   ms > 0 {
+                    try? await Task.sleep(for: .milliseconds(ms))
+                }
+                #endif
                 return AttachmentAppend(received: bytes, complete: complete)
             }
         )
