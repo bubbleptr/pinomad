@@ -35,19 +35,32 @@ function Placeholder({ caption, className = "shot-diagram" }: { caption: string;
   );
 }
 
-/** Stands in for the iPhone mockup: deliberately abstract, never a fake UI. */
-function PhonePlaceholder({ caption, className }: { caption: string; className: string }) {
+/**
+ * An iPhone drawn in CSS: titanium edge, black bezel, Dynamic Island, side buttons.
+ * The screen holds an abstract skeleton until the app's screenshot replaces it.
+ */
+function Phone({ caption, className }: { caption: string; className: string }) {
   return (
-    <figure className={`shot shot-phone ${className}`}>
-      <div className="shot-skeleton sk-phone" aria-hidden="true">
-        <span className="sk-line w55" />
-        <div className="sk-main">
-          <span className="sk-line w85" />
-          <span className="sk-line w70" />
-          <span className="sk-line w85" />
-          <span className="sk-gap" />
-          <span className="sk-line w55" />
-          <span className="sk-line w70" />
+    <figure className={`phone ${className}`}>
+      <div className="phone-body">
+        <span className="phone-btn btn-action" />
+        <span className="phone-btn btn-volume-up" />
+        <span className="phone-btn btn-volume-down" />
+        <span className="phone-btn btn-side" />
+        <span className="phone-btn btn-camera" />
+        <div className="phone-screen">
+          <div className="shot-skeleton sk-phone" aria-hidden="true">
+            <span className="sk-line w55" />
+            <div className="sk-main">
+              <span className="sk-line w85" />
+              <span className="sk-line w70" />
+              <span className="sk-line w85" />
+              <span className="sk-gap" />
+              <span className="sk-line w55" />
+              <span className="sk-line w70" />
+            </div>
+          </div>
+          <span className="phone-island" />
         </div>
       </div>
       <figcaption className="shot-label">{caption}</figcaption>
@@ -83,7 +96,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
               fetchPriority="high"
             />
           </figure>
-          <PhonePlaceholder caption={t.phonePlaceholder} className="hero-phone" />
+          <Phone caption={t.phonePlaceholder} className="hero-phone" />
         </div>
         <div className="models">
           <span className="models-label">{t.modelsLabel}</span>
