@@ -57,14 +57,19 @@ public struct MarkdownStream: Sendable {
 
     private mutating func reparseTail() {
         let tail = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
-        let children = Array(Document(parsing: String(tail)).blockChildren)
+        let protected = MathSyntax.protecting(String(tail))
+        let children = Array(Document(parsing: protected.text).blockChildren)
         // Until the last block's first line ends, it may still turn into an
         // item of the list before it ("3" becoming "3. "), so that block stays
         // open too.
         let lastStartLine = children.last?.range?.lowerBound.line ?? 1
         let lineBreaks = MarkdownLines.lineBreakCount(in: tail.utf8)
         let openCount = isFinished ? 0 : lineBreaks >= lastStartLine ? 1 : 2
-        let closedCount = max(children.count - openCount, 0)
+        var closedCount = max(children.count - openCount, 0)
+        // A formula still open may yet swallow every block from its first line on.
+        if !isFinished, let pending = protected.pendingLine {
+            closedCount = min(closedCount, children.prefix { ($0.range?.upperBound.line ?? pending) < pending }.count)
+        }
 
         var kept = blocks.prefix { $0.isClosed }
         for markup in children.prefix(closedCount) {
@@ -74,7 +79,7 @@ public struct MarkdownStream: Sendable {
         if closedCount < children.count, let line = children[closedCount].range?.lowerBound.line {
             tailOffset += MarkdownLines.offset(ofLine: line, in: tail.utf8)
             let open = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
-            for markup in Document(parsing: Speculation.complete(String(open))).blockChildren {
+            for markup in Document(parsing: Speculation.complete(MathSyntax.protect(String(open)))).blockChildren {
                 kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: false))
             }
         } else if children.isEmpty, !isFinished {

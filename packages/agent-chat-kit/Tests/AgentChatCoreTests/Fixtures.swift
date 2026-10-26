@@ -65,5 +65,27 @@ enum Fixtures {
 
         Done, see [the docs](https://example.com/docs "Docs").
         """,
+        #"""
+        对任意向量 $x\in\mathbb R^n$，拉普拉斯二次型是：
+
+        $$
+        x^\top L x=\sum_{(i,j)\in E}(x_i-x_j)^2
+        $$
+
+        - $L$ 半正定，且 $L\mathbf 1=0$；花了 $5 和 $10。
+        - 一行公式 $$\frac{\lambda_2}{2}\le h(G)$$ 也行，`$PATH$` 不是。
+
+        \[
+        \tau(G)=\det(L_{ii})
+        \]
+
+            echo $HOME/$USER
+
+        见 [下载](https://example.com/$release$/file)，$n$ 个文件：
+
+        > ```sh
+        > echo $a$
+        > ```
+        """#,
     ]
 }

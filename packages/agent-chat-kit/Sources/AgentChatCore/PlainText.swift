@@ -5,7 +5,7 @@ import Markdown
 /// code as written.
 public enum PlainText {
     public static func of(markdown: String) -> String {
-        blocks(Document(parsing: markdown).children, indent: "")
+        blocks(Document(parsing: MathSyntax.protect(markdown)).children, indent: "")
     }
 
     private static func blocks(_ children: MarkupChildren, indent: String) -> String {
@@ -14,6 +14,8 @@ public enum PlainText {
 
     private static func block(_ markup: any Markup, indent: String) -> String {
         switch markup {
+        case let code as CodeBlock where code.language == MathSyntax.fenceLanguage:
+            return indent + "$$" + code.code.trimmingCharacters(in: .newlines) + "$$"
         case let code as CodeBlock:
             return indented(code.code.hasSuffix("\n") ? String(code.code.dropLast()) : code.code, by: indent)
         case let list as UnorderedList:
@@ -49,7 +51,12 @@ public enum PlainText {
         case let text as Markdown.Text: text.string
         case is SoftBreak: " "
         case is LineBreak: "\n"
-        case let code as InlineCode: code.code
+        case let code as InlineCode:
+            switch code.code.first {
+            case MathSyntax.inlineMark?: "$" + code.code.dropFirst() + "$"
+            case MathSyntax.displayMark?: "$$" + code.code.dropFirst() + "$$"
+            default: code.code
+            }
         case let html as InlineHTML: html.rawHTML
         default: markup.children.map(inline).joined()
         }
