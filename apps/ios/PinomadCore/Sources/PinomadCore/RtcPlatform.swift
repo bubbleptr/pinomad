@@ -470,7 +470,9 @@ final class RtcUdpSocket {
     func receive() -> [(source: String, bytes: Data)] {
         guard fd >= 0 else { return [] }
         var out: [(source: String, bytes: Data)] = []
-        var buffer = [UInt8](repeating: 0, count: 65_536)
+        // A full 65,535-byte Noise record plus DTLS/SCTP framing can exceed
+        // 64 KiB; truncating it would stall the record stream silently.
+        var buffer = [UInt8](repeating: 0, count: 128 * 1024)
         while true {
             var storage = sockaddr_storage()
             var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
