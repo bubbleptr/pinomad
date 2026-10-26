@@ -164,7 +164,7 @@ struct ConversationView: View {
                 Button {
                     showingOverview = true
                 } label: {
-                    Image(.info)
+                    Image(.layoutGridCircles)
                 }
                 .accessibilityLabel("Overview")
             }
