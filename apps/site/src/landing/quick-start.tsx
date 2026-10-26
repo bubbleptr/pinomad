@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button.tsx";
 import type { LandingCopy } from "./copy.tsx";
 
 export function QuickStart({ t }: { t: LandingCopy["quickStart"] }) {
@@ -59,9 +60,9 @@ function CopyButton({ text, t }: { text: string; t: LandingCopy["quickStart"] })
 
   return (
     <>
-      <button className="copy-button" type="button" hidden={!ready} onClick={copy}>
+      <Button variant="outline" size="xs" hidden={!ready} onClick={copy}>
         {result ?? t.copy}
-      </button>
+      </Button>
       <span className="visually-hidden" role="status">
         {result}
       </span>

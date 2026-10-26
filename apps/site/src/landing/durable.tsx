@@ -1,4 +1,5 @@
 import { type Ref, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button.tsx";
 import type { LandingCopy } from "./copy.tsx";
 
 // One run as a track: each finished model or tool call plants a flag (a Pi
@@ -176,15 +177,9 @@ export function Durable({ t }: { t: LandingCopy["durable"] }) {
           </div>
           <p className="visually-hidden">{t.description}</p>
           <div className="diagram-controls">
-            <button
-              className="button button-small"
-              type="button"
-              hidden={!ready}
-              disabled={disabled}
-              onClick={() => clickRef.current?.()}
-            >
+            <Button size="sm" hidden={!ready} disabled={disabled} onClick={() => clickRef.current?.()}>
               {label}
-            </button>
+            </Button>
             <p className="diagram-status" aria-live="polite">
               {status}
             </p>

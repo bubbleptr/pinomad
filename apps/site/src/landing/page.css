@@ -1,0 +1,1116 @@
+/* Near-black and white, no accent colour: the product does the talking. Everything is in this
+   file — no style props and no <style> inside the SVGs — so the page runs under style-src 'self'. */
+
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: Montserrat;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  color-scheme: dark;
+  /* Neutral greys with a faint cool bias; surfaces step up in lightness as they rise. */
+  --bg: oklch(0.15 0.003 260);
+  --surface: oklch(0.185 0.003 260);
+  --surface-2: oklch(0.22 0.003 260);
+  --border: oklch(0.27 0.003 260);
+  --border-strong: oklch(0.36 0.003 260);
+  --fg: oklch(0.97 0 0);
+  --fg-2: oklch(0.76 0.003 260);
+  --fg-3: oklch(0.62 0.003 260);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --measure: 72rem;
+  --gutter: clamp(1rem, 4vw, 2rem);
+  --radius: 0.875rem;
+  --section-space: clamp(5rem, 12vw, 8.5rem);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--bg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+dl,
+dd,
+pre,
+figure {
+  margin: 0;
+}
+
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+:not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--gutter);
+  top: -4rem;
+  z-index: 30;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.6rem;
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.icon {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+}
+
+.icon-fill {
+  fill: currentColor;
+}
+
+.icon-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* —— Header ——
+   Matches the Fumadocs bar on docs, blog, and changelog: same width, height, and
+   brand size, links beside the brand, language and GitHub at the far end, so
+   following a header link leaves everything in place. */
+.site-header {
+  --pill-blur: 16px;
+  --pill-tint: 62%;
+  --pill-saturate: 160%;
+  --pill-offset: 8px;
+  --pill-enter: 450ms;
+  --pill-exit: 315ms;
+  --pill-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  color: var(--fg);
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  max-width: 87.5rem;
+  min-height: 3.5rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+/* SiteHeader turns stickiness on once hydrated; without JS the header stays at the top of the
+   page as a plain bar instead of a see-through one over the copy. */
+.site-header[data-sticky] {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+html:has(.site-header[data-sticky]) section[id] {
+  scroll-margin-top: 5rem;
+}
+
+/* Once the page moves, a frosted pill grows in behind the bar's own content,
+   reaching 10px past it, so nothing in the bar changes place. Fade and shape
+   share one duration and curve; a taller start or a faster fade read as a jump. */
+.site-header[data-sticky] .header-bar {
+  position: relative;
+  z-index: 0;
+}
+
+.site-header[data-sticky] .header-bar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: var(--pill-offset) 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--surface) var(--pill-tint), transparent);
+  -webkit-backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
+  backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 10px 30px rgb(0 0 0 / 0.35);
+  opacity: 0;
+  scale: 1.02 1;
+  pointer-events: none;
+  transition:
+    opacity var(--pill-exit) var(--pill-ease),
+    scale var(--pill-exit) var(--pill-ease);
+}
+
+.site-header.is-floating .header-bar::before {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity var(--pill-enter) var(--pill-ease),
+    scale var(--pill-enter) var(--pill-ease);
+}
+
+.brand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.625rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: 1.5rem;
+  font-size: 0.875rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  font-size: 0.875rem;
+}
+
+:is(.header-nav, .header-actions) a {
+  color: var(--fg-2);
+  line-height: 1.25rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+:is(.header-nav, .header-actions) a:not(.star-link) {
+  padding: 0.5rem;
+}
+
+:is(.header-nav, .header-actions) a:hover {
+  color: var(--fg);
+}
+
+/* —— Type —— */
+h1,
+h2 {
+  font-weight: 500;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.35rem, 6vw, 4.1rem);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+}
+
+h2 {
+  font-size: clamp(1.85rem, 4vw, 2.75rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+h3 {
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+html[lang="zh-CN"] :is(h1, h2, h3) {
+  letter-spacing: 0;
+}
+
+html[lang="zh-CN"] h1 {
+  font-size: clamp(2rem, 5.4vw, 3.75rem);
+  line-height: 1.2;
+}
+
+.lead,
+.section-lead {
+  color: var(--fg-2);
+  text-wrap: pretty;
+}
+
+.lead {
+  max-width: 40rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.175rem);
+}
+
+.section-lead {
+  max-width: 38rem;
+  margin-top: 1rem;
+  font-size: 1.05rem;
+}
+
+.eyebrow {
+  margin-bottom: 1rem;
+  color: var(--fg-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html[lang="zh-CN"] .eyebrow {
+  letter-spacing: 0.04em;
+}
+
+/* —— Buttons —— */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem 1.5rem;
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--fg-2);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.text-link:hover {
+  color: var(--fg);
+}
+
+/* The quiet star prompt: header pill and closing band. Never a count. */
+.star-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+
+.header-actions .star-link {
+  color: var(--fg);
+}
+
+.header-actions .star-link:hover {
+  border-color: var(--fg-3);
+}
+
+/* —— Hero —— */
+.hero {
+  padding-top: clamp(3rem, 8vw, 5.5rem);
+  text-align: center;
+}
+
+.hero h1 {
+  max-width: 16ch;
+  margin-inline: auto;
+}
+
+html[lang="zh-CN"] .hero h1 {
+  max-width: 13em;
+}
+
+.hero .lead {
+  margin: 1.5rem auto 0;
+}
+
+.hero .actions {
+  margin-top: 2.25rem;
+}
+
+/* Model providers: plain names, no marks. */
+.models {
+  max-width: 46rem;
+  margin: 2.25rem auto 0;
+  color: var(--fg-3);
+  font-size: 0.85rem;
+  text-wrap: balance;
+}
+
+.models-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--fg-2);
+}
+
+.models ul {
+  display: inline;
+}
+
+/* Each name stays whole; the separator rides on the name before it, so a line
+   never starts with one. */
+.models li {
+  display: inline;
+  white-space: nowrap;
+}
+
+.models li:not(:last-child)::after {
+  content: "·";
+  margin-inline: 0.4em 0.15em;
+}
+
+.models-more {
+  color: var(--fg-2);
+}
+
+.hero-shot {
+  margin-top: clamp(2.5rem, 6vw, 3.5rem);
+}
+
+/* Keeps the Chinese h1's first clause on one line — but only when it fits. The
+   clause is 10 characters at the h1's 2rem floor plus the gutters, about 23rem;
+   media-query rem follows the browser's default font size, so a larger default
+   (or a narrower phone) drops the rule and lets the clause wrap. */
+@media (min-width: 23rem) {
+  .nowrap {
+    white-space: nowrap;
+  }
+}
+
+/* —— Screenshots. Each slot keeps its image's aspect ratio, so the layout doesn't
+   move while it loads. A slot still waiting for its capture shows an abstract
+   skeleton: it should read as "screenshot goes here", never as the product. —— */
+.shot {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* The dark captures' edges would melt into the page; a hairline drawn over the
+   image (not a border around it) keeps them crisp. */
+.shot:has(> img) {
+  border: 0;
+}
+
+.shot > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.shot:has(> img)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  pointer-events: none;
+}
+
+.shot-window {
+  aspect-ratio: 16 / 10;
+}
+
+.shot-crop {
+  aspect-ratio: 4 / 3;
+}
+
+.shot-phone {
+  width: min(15.5rem, 100%);
+  aspect-ratio: 9 / 19.5;
+  margin-inline: auto;
+  border-radius: 2.5rem;
+}
+
+.shot-skeleton {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.sk-main {
+  display: grid;
+  align-content: start;
+  gap: 0.85rem;
+  padding: 1.75rem clamp(1rem, 6%, 4rem);
+}
+
+.sk-line {
+  display: block;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.sk-line.w40 {
+  width: 40%;
+}
+
+.sk-line.w55 {
+  width: 55%;
+}
+
+.sk-line.w70 {
+  width: 70%;
+}
+
+.sk-line.w85 {
+  width: 85%;
+}
+
+.sk-gap {
+  height: 0.75rem;
+}
+
+.sk-phone {
+  grid-template-rows: auto 1fr;
+  padding: 3rem 1.25rem 1.5rem;
+}
+
+.sk-phone .sk-main {
+  padding: 1.5rem 0 0;
+}
+
+.shot-label {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 1rem;
+  color: var(--fg-3);
+  font-size: 0.8rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* —— Sections —— */
+.section {
+  padding-top: var(--section-space);
+}
+
+.section-head {
+  max-width: 44rem;
+}
+
+/* Text beside a picture; stacks on phones. */
+.split {
+  display: grid;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+@media (min-width: 56rem) {
+  .split {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 4.5rem;
+  }
+}
+
+.split > * {
+  min-width: 0;
+}
+
+/* Phone section: the phone sits beside the copy, and on desktop takes less width. */
+@media (min-width: 56rem) {
+  .split-phone {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.75rem;
+}
+
+.chip {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+
+.chip strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* —— Durable diagram, in a panel —— */
+.panel {
+  margin-top: clamp(2rem, 5vw, 3rem);
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.diagram-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.diagram-scroll > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 44rem) {
+  .diagram-scroll > svg {
+    width: 44rem;
+    max-width: none;
+  }
+}
+
+.diagram-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.diagram-status {
+  min-height: 1.6em;
+  color: var(--fg-2);
+  font-size: 0.9rem;
+}
+
+.track {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2;
+}
+
+.start-cap {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+}
+
+.trail {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 840;
+  stroke-dashoffset: 0;
+}
+
+.trail.is-retracting {
+  transition: stroke-dashoffset 0.45s var(--ease-in-out);
+}
+
+.nodes circle {
+  fill: var(--surface);
+  stroke: var(--fg-3);
+  stroke-width: 2;
+}
+
+.finish circle {
+  fill: var(--fg);
+}
+
+.finish path {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.node-labels text {
+  fill: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-anchor: middle;
+}
+
+html[lang="zh-CN"] .node-labels text {
+  font-family: var(--font);
+}
+
+.flag {
+  transform-origin: 0% 100%;
+  transition: transform 0.35s var(--ease-out), opacity 0.2s ease;
+}
+
+.flag.is-down {
+  opacity: 0;
+  transform: scaleY(0);
+}
+
+.flag-pole {
+  fill: none;
+  stroke: var(--fg-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.flag-cloth {
+  fill: var(--fg);
+}
+
+.crash,
+.resume {
+  transition: opacity 0.25s ease;
+}
+
+.crash.is-hidden,
+.resume.is-hidden {
+  opacity: 0;
+}
+
+.crash:not(.is-hidden) .bolt {
+  animation: pop 0.4s var(--ease-out);
+}
+
+.bolt {
+  fill: var(--fg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.art-note {
+  fill: var(--fg-2);
+  font-size: 15px;
+  text-anchor: middle;
+}
+
+.resume-arc,
+.resume-head {
+  fill: none;
+  stroke: var(--fg-2);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.resume-arc {
+  stroke-dasharray: 0 7;
+}
+
+.runner {
+  transform: translateX(900px);
+  transition: opacity 0.3s ease;
+}
+
+.runner.is-down {
+  opacity: 0.2;
+}
+
+.runner-dot {
+  fill: var(--fg);
+}
+
+.runner-halo {
+  fill: none;
+  stroke: var(--fg);
+  stroke-opacity: 0.25;
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: halo 1.6s ease-out infinite;
+}
+
+/* —— Features —— */
+.feature-rows {
+  display: grid;
+  gap: clamp(3.5rem, 8vw, 5.5rem);
+  margin-top: clamp(3rem, 7vw, 4.5rem);
+}
+
+.feature-row h3 {
+  font-size: clamp(1.3rem, 2.4vw, 1.6rem);
+  letter-spacing: -0.02em;
+}
+
+.feature-row p {
+  max-width: 30rem;
+  margin-top: 0.75rem;
+  color: var(--fg-2);
+  text-wrap: pretty;
+}
+
+/* Alternate the picture's side on wide screens. */
+@media (min-width: 56rem) {
+  .feature-row:nth-child(even) .shot {
+    order: -1;
+  }
+
+  .feature-row:nth-child(even) {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  }
+}
+
+.more {
+  margin-top: clamp(4rem, 9vw, 6rem);
+}
+
+.more h3 {
+  color: var(--fg-2);
+  font-size: 0.95rem;
+}
+
+.more-list {
+  display: grid;
+  gap: 0 3rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .more-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.more-list div {
+  padding-block: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.more-list dt {
+  font-weight: 600;
+}
+
+.more-list dd {
+  margin-top: 0.3rem;
+  color: var(--fg-2);
+  font-size: 0.95rem;
+}
+
+/* —— Clients —— */
+.clients {
+  display: grid;
+  gap: 0 2rem;
+  margin-top: clamp(2rem, 5vw, 3rem);
+}
+
+@media (min-width: 40rem) {
+  .clients {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .clients {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.client {
+  padding-block: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.client p {
+  margin-top: 0.4rem;
+  color: var(--fg-2);
+  font-size: 0.95rem;
+}
+
+.client a {
+  color: var(--fg);
+  text-underline-offset: 0.2em;
+}
+
+.tag {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-3);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* —— Quick start —— */
+.note {
+  margin-top: 1.25rem;
+  color: var(--fg-3);
+  font-size: 0.9rem;
+}
+
+.code-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.code-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.5rem 0.4rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-3);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.code-card pre {
+  overflow-x: auto;
+  padding: 1.1rem 1.25rem 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.85;
+}
+
+.code-card code {
+  font-size: inherit;
+}
+
+.code-card .prompt,
+.code-card .comment {
+  color: var(--fg-3);
+}
+
+/* —— Closing band —— */
+.closing {
+  margin-top: var(--section-space);
+  padding-block: clamp(4.5rem, 10vw, 7rem);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.closing h2 {
+  max-width: 18ch;
+  margin-inline: auto;
+}
+
+.closing .lead {
+  margin: 1.25rem auto 0;
+}
+
+.closing .actions {
+  margin-top: 2rem;
+}
+
+.closing .star-note {
+  margin-top: 1.5rem;
+  color: var(--fg-3);
+  font-size: 0.875rem;
+}
+
+/* —— Footer —— */
+.site-footer {
+  border-top: 1px solid var(--border);
+  color: var(--fg-3);
+  font-size: 0.875rem;
+}
+
+.site-footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  padding-block: 2rem;
+}
+
+.footer-sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.footer-sign img {
+  width: 1.25rem;
+  height: 1.25rem;
+  opacity: 0.8;
+}
+
+.site-footer nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.site-footer a {
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.site-footer a:hover {
+  color: var(--fg);
+}
+
+/* —— Scroll reveal. useReveal adds .reveal only to blocks that start below the first
+   screen and only without reduced motion, so nothing is hidden without JS; print
+   always shows everything. The transition sits on .is-revealed so hiding is
+   instant and only the reveal animates. —— */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .reveal:not(.is-revealed) {
+    opacity: 0;
+    translate: 0 1rem;
+  }
+
+  .reveal.is-revealed {
+    transition: opacity 0.6s var(--ease-out), translate 0.6s var(--ease-out);
+  }
+}
+
+/* —— Keyframes —— */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes halo {
+  from {
+    transform: scale(0.6);
+    stroke-opacity: 0.5;
+  }
+  to {
+    transform: scale(1.4);
+    stroke-opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Brand and links on the left, language and star on the right: the star drops its
+   words before the two groups meet; on phones the optional links go and the star
+   keeps only its icon. */
+@media (max-width: 45rem) {
+  .star-text {
+    display: none;
+  }
+}
+
+@media (max-width: 40rem) {
+  .header-nav {
+    margin-inline-start: 1rem;
+  }
+
+  .header-nav .nav-optional {
+    display: none;
+  }
+
+  .header-actions .star-link {
+    padding-inline: 0.6rem;
+  }
+
+  .star-label {
+    display: none;
+  }
+}
+
+/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
+html:not([data-app-user]) .when-signed-in,
+html[data-app-user] .when-signed-out {
+  display: none;
+}
