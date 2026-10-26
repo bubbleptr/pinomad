@@ -19,6 +19,7 @@ import {
   type HostSettingsPatch,
   type QueueMode,
 } from "@pinomad/protocol/settings.ts";
+import { RTC_DEFAULT_STUN } from "@pinomad/protocol/rtc.ts";
 import type { ConversationDefaults, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { Published, sameList, type HostValue } from "./host-value.ts";
 
@@ -73,6 +74,11 @@ const fileValueError = (
       return isQueueMode(value) ? undefined : "malformed";
     case "acceptAccountDevices":
       return typeof value === "boolean" ? undefined : "malformed";
+    // An empty list is meaningful (host candidates only); an empty entry is not.
+    case "rtcStun":
+      return Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry !== "")
+        ? undefined
+        : "malformed";
     // Any string survives — cleaning happens on read, like the server (5.12).
     case "hostName":
       return typeof value === "string" ? undefined : "malformed";
@@ -88,6 +94,9 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
   && a.acceptAccountDevices === b.acceptAccountDevices
   && a.defaultThinkingLevel === b.defaultThinkingLevel
   && sameModel(a.defaultModel, b.defaultModel)
+  && (a.rtcStun === undefined || b.rtcStun === undefined
+    ? a.rtcStun === b.rtcStun
+    : sameList(a.rtcStun, b.rtcStun, (x, y) => x === y))
   && a.hostName === b.hostName
   && sameList(a.custom, b.custom, (x, y) => x === y);
 
@@ -150,6 +159,7 @@ export async function openHostSettings(options: {
       followUpMode: (fileValues.followUpMode as QueueMode | undefined) ?? fallback.followUpMode(),
       // No pi-side counterpart exists: the fallback chain ends at the built-in default.
       acceptAccountDevices: (fileValues.acceptAccountDevices as boolean | undefined) ?? true,
+      rtcStun: (fileValues.rtcStun as string[] | undefined) ?? RTC_DEFAULT_STUN,
       // The override or the machine name — both pass through the same cleaning
       // so `.local` suffixes, stray controls and oversize names never display.
       hostName: normalizeHostName((fileValues.hostName as string | undefined) ?? hostname()),

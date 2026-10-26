@@ -23,6 +23,7 @@ import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway, validatePublicUrl } from "./gateway.ts";
+import type { RtcOptions } from "./rtc.ts";
 import { AttachmentStore } from "./attachments.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -106,6 +107,11 @@ export interface OpenHostOptions {
     readonly reconnectDelayMs?: { readonly min: number; readonly max: number };
     readonly pingIntervalMs?: number;
   };
+  /**
+   * WebRTC answerer seams (ADR-0033). Absent loads node-datachannel normally;
+   * tests inject a failing loader or a fake peer factory.
+   */
+  readonly rtc?: RtcOptions;
 }
 
 export interface OpenedHost {
@@ -291,6 +297,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
             },
           }),
+      ...(options.rtc === undefined ? {} : { rtc: options.rtc }),
       secure: {
         hostKey,
         offers,

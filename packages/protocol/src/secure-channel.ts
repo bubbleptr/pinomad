@@ -7,6 +7,14 @@ import type { FrameConnection, FrameHandlers, FrameTransport } from "./transport
 
 export const SECURE_PROLOGUE = new TextEncoder().encode("pinomad/1");
 
+/**
+ * The prologue of a signal-only connection: a Noise channel that carries
+ * `rtcOffer` and `ping` but never business frames. A separate prologue is
+ * what lets an old host reject it during the handshake instead of registering
+ * a business connection first (ADR-0033 §2).
+ */
+export const SIGNAL_PROLOGUE = new TextEncoder().encode("pinomad-signal/1");
+
 /** Client → host handshake payload (UTF-8 JSON inside handshake message 1). */
 export type ClientHello = { readonly v: 1; readonly pair?: { readonly secret: string; readonly name: string } };
 /** Host → client handshake payload (inside handshake message 2). */
@@ -150,6 +158,8 @@ export function secureWebSocketTransport(options: {
   device: KeyPair;
   pairing?: { secret: string; name: string };
   onPaired?: () => void;
+  /** Defaults to the business channel; a signal connection passes SIGNAL_PROLOGUE. */
+  prologue?: Uint8Array;
 }): FrameTransport {
   let pairing = options.pairing;
   return {
@@ -158,7 +168,7 @@ export function secureWebSocketTransport(options: {
       const socket = new WebSocket(options.url);
       socket.binaryType = "arraybuffer";
       const handshake = initiateIK({
-        prologue: SECURE_PROLOGUE,
+        prologue: options.prologue ?? SECURE_PROLOGUE,
         static: options.device,
         remoteStatic: options.hostKey,
       });

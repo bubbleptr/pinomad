@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
 use pinomad_core::frames::{
     classify_server_frame, decode_server_frame, encode_client_frame, host_streams, host_supports_call,
-    host_supports_feature, CallMethod, ClientFrame, HostFeature, ServerFrame, PROTOCOL,
+    host_supports_feature, parse_host_rtc, parse_rtc_offer_args, CallMethod, ClientFrame, HostFeature,
+    ServerFrame, PROTOCOL,
 };
 use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, ParsedEndpointSet};
 use pinomad_core::json::Json;
@@ -35,6 +36,7 @@ fn as_text(value: &Json) -> String {
 fn variant(frame: &ServerFrame) -> &'static str {
     match frame {
         ServerFrame::Hello(_) => "hello",
+        ServerFrame::SignalHello(_) => "signalHello",
         ServerFrame::Snapshot { .. } => "snapshot",
         ServerFrame::Ops { .. } => "ops",
         ServerFrame::Ended { .. } => "ended",
@@ -116,6 +118,7 @@ fn feature_of(name: &str) -> HostFeature {
         "imageVariants" => HostFeature::ImageVariants,
         "boundSkills" => HostFeature::BoundSkills,
         "attachments" => HostFeature::Attachments,
+        "rtc" => HostFeature::Rtc,
         other => panic!("unknown feature {other}"),
     }
 }
@@ -198,6 +201,48 @@ fn protocol_and_version_gates_agree_with_the_reference() {
             host_supports_feature(minor, feature_of(&as_text(field(case, "feature"))))
         };
         assert_eq!(supported, expect, "{name}");
+    }
+}
+
+/// `hello.rtc` and `rtcOffer` args (ADR-0033): absent is not malformed, and
+/// every other shape decides exactly like the TS reference.
+#[test]
+fn rtc_schema_matches_the_reference() {
+    let file = load("rust-vectors/frames");
+    for case in field(&file, "rtcHello").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let expect = as_text(field(case, "expect"));
+        let hello = Json::parse(&as_text(field(case, "hello"))).unwrap();
+        let parsed = parse_host_rtc(&hello);
+        match expect.as_str() {
+            "none" => assert!(parsed.unwrap().is_none(), "{name}"),
+            "valid" => {
+                let rtc = parsed.unwrap_or_else(|error| panic!("{name}: {error}")).unwrap();
+                let stun: Vec<String> = field(case, "stun")
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|server| server.as_str().unwrap().to_string_lossy())
+                    .collect();
+                assert_eq!(rtc.stun, stun, "{name}");
+                assert!(rtc.signal_only, "{name}");
+            }
+            "invalid" => assert!(parsed.is_err(), "{name}: accepted"),
+            other => panic!("{name}: unknown expectation {other}"),
+        }
+    }
+    for case in field(&file, "rtcOfferArgs").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let expect = as_text(field(case, "expect"));
+        let args = Json::parse(&as_text(field(case, "args"))).unwrap();
+        let parsed = parse_rtc_offer_args(&args);
+        if expect == "valid" {
+            let offer = parsed.unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert_eq!(offer.attempt, as_text(field(case, "attempt")), "{name}");
+            assert_eq!(offer.sdp, as_text(field(case, "sdp")), "{name}");
+        } else {
+            assert!(parsed.is_err(), "{name}: accepted");
+        }
     }
 }
 
@@ -348,7 +393,7 @@ fn recorded_host_frames_parse_and_apply() {
     }
     assert_eq!(counts.get("hello"), Some(&1));
     assert_eq!(counts.get("ops"), Some(&19));
-    assert_eq!(counts.get("snapshot"), Some(&14));
+    assert_eq!(counts.get("snapshot"), Some(&15));
     assert_eq!(counts.get("result"), Some(&1));
     // The recorded conversation's final state is fully formed JSON — spot
     // check the shape the client relies on.

@@ -429,6 +429,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
       acceptAccountDevices: true,
+      rtcStun: ["stun:stun.cloudflare.com:3478"],
       hostName: "kieran-mbp",
       custom: ["defaultModel", "hostName"],
     },

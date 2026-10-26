@@ -16,7 +16,8 @@ import {
   type CallMethod,
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
-import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession } from "../src/secure-channel.ts";
+import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession, SIGNAL_PROLOGUE } from "../src/secure-channel.ts";
+import { isRtcHello, RTC_DEFAULT_STUN } from "../src/rtc.ts";
 import {
   ENDPOINT_SET_SCHEMA_VERSION,
   MAX_HOST_ENDPOINTS,
@@ -58,6 +59,8 @@ function framesVector(): VectorFile {
     { name: "hello", wire: wire({ type: "hello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, hostVersion: "1.2.3", session: { id: "s1", directory: "/data" }, models: [], docs: [], toolPresentations: { edit: "pinomad.diff" } }), expect: "hello" },
     { name: "hello-legacy-int-protocol", wire: wire({ type: "hello", protocol: 4, session: { id: "s", directory: "/d" }, models: [], docs: [], toolPresentations: {} }), expect: "hello" },
     { name: "hello-unknown-fields", wire: wire({ type: "hello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, session: { id: "s", directory: "/d" }, models: [], docs: [], toolPresentations: {}, future: { anything: [1, 2] } }), expect: "hello" },
+    { name: "signalHello", wire: wire({ type: "signalHello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, rtc: { stun: [...RTC_DEFAULT_STUN], signalOnly: true } }), expect: "signalHello" },
+    { name: "signalHello-no-rtc", wire: wire({ type: "signalHello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor } }), expect: "signalHello" },
     { name: "snapshot", wire: wire({ type: "snapshot", stream: "index", value: snapshotValue }), expect: "snapshot", stream: "index" },
     { name: "snapshot-nonstring-stream", wire: wire({ type: "snapshot", stream: 7, value: 1 }), expect: "snapshot" },
     { name: "ops", wire: wire({ type: "ops", stream: "index", ops: [["s", ["a", "b"], 1], ["a", ["s"], "x"]] }), expect: "ops", stream: "index" },
@@ -199,7 +202,44 @@ function framesVector(): VectorFile {
         : []),
     ]),
   ];
-  return write("frames", { protocol: PROTOCOL, serverFrames, badJson, clientFrames, gates, versionGates });
+  // ADR-0033's hello block and offer args: the Rust mirror parses the same
+  // shapes, and "absent" is not "malformed" (an older host has no RTC).
+  const rtcCases: readonly { name: string; value?: unknown }[] = [
+    { name: "absent" },
+    { name: "valid", value: { stun: [...RTC_DEFAULT_STUN], signalOnly: true } },
+    { name: "empty-stun", value: { stun: [], signalOnly: true } },
+    { name: "missing-signal-only", value: { stun: [...RTC_DEFAULT_STUN] } },
+    { name: "signal-only-false", value: { stun: [...RTC_DEFAULT_STUN], signalOnly: false } },
+    { name: "empty-stun-entry", value: { stun: [""], signalOnly: true } },
+    { name: "non-string-stun", value: { stun: [1], signalOnly: true } },
+    { name: "not-object", value: "rtc" },
+  ];
+  const rtcHello = rtcCases.map(({ name, value }) => {
+    const valid = value !== undefined && isRtcHello(value);
+    return {
+      name,
+      hello: wire(value === undefined ? {} : { rtc: value }),
+      expect: value === undefined ? "none" : valid ? "valid" : "invalid",
+      ...(valid ? { stun: value.stun, signalOnly: true } : {}),
+    };
+  });
+  const rtcOfferArgs = [
+    { name: "valid", args: { attempt: "attempt-1", sdp: "v=0\r\n" }, expect: "valid", attempt: "attempt-1", sdp: "v=0\r\n" },
+    { name: "empty-attempt", args: { attempt: "", sdp: "v=0" }, expect: "invalid" },
+    { name: "empty-sdp", args: { attempt: "a", sdp: "" }, expect: "invalid" },
+    { name: "missing", args: {}, expect: "invalid" },
+    { name: "non-string", args: { attempt: 1, sdp: "v=0" }, expect: "invalid" },
+  ].map(({ name, args, expect, ...rest }) => ({ name, args: wire(args), expect, ...rest }));
+  return write("frames", {
+    protocol: PROTOCOL,
+    serverFrames,
+    badJson,
+    clientFrames,
+    gates,
+    versionGates,
+    rtcHello,
+    rtcOfferArgs,
+  });
 }
 
 // ─── Delta ───────────────────────────────────────────────────────────────────
@@ -340,6 +380,21 @@ function recordsVector(): VectorFile {
   const client = new SecureSession(initiatorResult);
   const server = new SecureSession(responderResult);
 
+  // The signal prologue handshake (ADR-0033 §1): same keys, same hellos, a
+  // different transcript. The Rust side replays it with SIGNAL_PROLOGUE and
+  // also proves a business responder rejects it.
+  const signalInitiator = initiateIK({
+    prologue: SIGNAL_PROLOGUE,
+    static: deviceStatic,
+    remoteStatic: hostStatic.publicKey,
+    ephemeral: deviceEphemeral,
+  });
+  const signalResponder = respondIK({ prologue: SIGNAL_PROLOGUE, static: hostStatic, ephemeral: hostEphemeral });
+  const signalMessage1 = signalInitiator.writeMessage1(encodeClientHello({ v: 1 }));
+  const signalOpened = signalResponder.readMessage1(signalMessage1);
+  const signalMessage2 = signalResponder.writeMessage2(encodeHostHello({ v: 1 }));
+  const signalRead = signalInitiator.readMessage2(signalMessage2.message);
+
   // Long texts to hit the record boundary: 65518 body bytes is one record,
   // 65519 splits. The multibyte case straddles a 3-byte char across the
   // split — the chunks are bytes, the decoded text is whole.
@@ -367,6 +422,15 @@ function recordsVector(): VectorFile {
 
   return write("records", {
     prologue: hex(SECURE_PROLOGUE),
+    signalPrologue: hex(SIGNAL_PROLOGUE),
+    signalHandshake: {
+      message1: hex(signalMessage1),
+      clientPayload: hex(signalOpened.payload),
+      remoteStaticSeen: hex(signalOpened.remoteStatic),
+      message2: hex(signalMessage2.message),
+      hostPayload: hex(signalRead.payload),
+      handshakeHash: hex(signalRead.result.handshakeHash),
+    },
     keys: {
       deviceStatic: hex(deviceStatic.privateKey),
       deviceStaticPublic: hex(deviceStatic.publicKey),

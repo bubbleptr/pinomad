@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 18
+      "minor": 23
     },
     "session": {
       "id": "<sessionId>",
@@ -35,6 +35,12 @@
     "endpointSet": {
       "schemaVersion": 1,
       "endpoints": []
+    },
+    "rtc": {
+      "stun": [
+        "stun:stun.cloudflare.com:3478"
+      ],
+      "signalOnly": true
     }
   },
   {
@@ -82,6 +88,9 @@
       "steeringMode": "one-at-a-time",
       "followUpMode": "one-at-a-time",
       "acceptAccountDevices": true,
+      "rtcStun": [
+        "stun:stun.cloudflare.com:3478"
+      ],
       "hostName": "omarchy",
       "custom": []
     }
@@ -92,6 +101,14 @@
     "value": {
       "roles": [],
       "problems": []
+    }
+  },
+  {
+    "type": "snapshot",
+    "stream": "providers",
+    "value": {
+      "providers": [],
+      "logins": []
     }
   },
   {
@@ -133,7 +150,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1792746797763,
+            "createdAt": 1792993921597,
             "requestId": "contract-1"
           }
         ]
@@ -218,7 +235,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792746797766,
+        "updatedAt": 1792993921601,
         "currentAgent": null
       }
     ]
@@ -261,7 +278,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1792746797766
+              "timestamp": 1792993921601
             }
           ],
           "kind": "pi.user",
@@ -378,7 +395,7 @@
                   }
                 }
               ],
-              "timestamp": 1792746797770
+              "timestamp": 1792993921607
             }
           ],
           "kind": "pi.system",
@@ -411,7 +428,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a16809-3ac3-7246-b75f-5b003fb53fc1"
+          "sessionId": "01a176c4-0a3c-7720-a135-a36c10aeaab9"
         },
         "pi.usage": {
           "models": {},
@@ -482,7 +499,7 @@
         ],
         [
           {
-            "callId": "tool:1792746797733:bbp2li32mkv",
+            "callId": "tool:1792993921539:v5i9act3l3g",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -535,7 +552,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1792746797733:bbp2li32mkv",
+                    "id": "tool:1792993921539:v5i9act3l3g",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -543,7 +560,7 @@
                     }
                   }
                 ],
-                "api": "faux:1792746797734:xfu37tglbq",
+                "api": "faux:1792993921540:rguhfubgo2n",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -561,7 +578,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1792746797733
+                "timestamp": 1792993921539
               }
             ],
             "kind": "pi.assistant",
@@ -651,7 +668,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792746797733,
+        "updatedAt": 1792993921539,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -711,7 +728,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1792746797733:bbp2li32mkv",
+                "toolCallId": "tool:1792993921539:v5i9act3l3g",
                 "toolName": "write",
                 "content": [
                   {
@@ -723,8 +740,8 @@
                   "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
                 },
                 "isError": false,
-                "durationMs": 1,
-                "timestamp": 1792746797839
+                "durationMs": 2,
+                "timestamp": 1792993921678
               }
             ],
             "data": {
@@ -854,7 +871,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1792746797733,
+        "updatedAt": 1792993921539,
         "currentAgent": null
       }
     ]
@@ -1007,7 +1024,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1792746797734:xfu37tglbq",
+                "api": "faux:1792993921540:rguhfubgo2n",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1025,7 +1042,7 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1792746797734
+                "timestamp": 1792993921540
               }
             ],
             "kind": "pi.assistant",

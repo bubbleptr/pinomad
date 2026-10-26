@@ -64,8 +64,12 @@ import {
   encodeHostHello,
   SecureSession,
   SECURE_PROLOGUE,
+  SIGNAL_PROLOGUE,
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
+import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
+import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
+import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
@@ -244,6 +248,11 @@ export interface GatewayOptions {
   };
   /** Set to accept secure-channel clients, on LAN and/or via a relay. */
   readonly secure?: SecureGatewayOptions;
+  /**
+   * WebRTC answerer (ADR-0033). Absent or a failed lazy load leaves the host
+   * without hello.rtc; everything else keeps working.
+   */
+  readonly rtc?: RtcOptions;
 }
 
 export interface Gateway {
@@ -308,7 +317,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // A page this listener itself served is trusted by construction; the bound
   // port can be ephemeral, so the origin is computed after listen.
   const browserOrigins = [...(options.browserOrigins ?? []), `http://127.0.0.1:${port}`];
+  /** Every authenticated connection, business or signal-only (ADR-0033 §3). */
+  const connections = new Set<GatewayConnectionLifecycle>();
+  /** The business subset: broadcast fans out here and nowhere else. */
   const clients = new Set<GatewayClient>();
+  let rtc: RtcHost | undefined;
+  const rtcHello = (): RtcHello | undefined => rtc?.hello();
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
@@ -344,14 +358,27 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     }
     const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, imageVariants, {
       devicePublicKey,
+      rtcHello,
       closed: (self) => {
         clients.delete(self);
+        connections.delete(self);
+        // A business connection can own peers too: rtcOffer works there. Only
+        // its incomplete peers close with it; handed-off peers belong to the
+        // DataChannel's own connection (dureview P2).
+        rtc?.closeOwner(self);
         void self.dispose();
       },
       closeDevice: (publicKey) => {
-        for (const client of clients) {
-          if (client.devicePublicKey === publicKey) client.closeConnection(UNAUTHORIZED_CLOSE_CODE, "device revoked");
+        for (const connection of [...connections]) {
+          if (connection.devicePublicKey === publicKey) {
+            connection.closeConnection(UNAUTHORIZED_CLOSE_CODE, "device revoked");
+          }
         }
+        rtc?.closeDevice(publicKey);
+      },
+      rtcOffer: (owner, key, attempt, sdp) => {
+        if (rtc === undefined) throw new Error("WebRTC is not available on this host");
+        return rtc.offer({ owner, ...(key === undefined ? {} : { deviceKey: key }), attempt, sdp });
       },
       createPairing: () => {
         const spec = options.secure;
@@ -412,6 +439,26 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       endpointSet: currentEndpointSet,
     });
     clients.add(client);
+    connections.add(client);
+  };
+  /**
+   * A signal-only connection (ADR-0033 §1): authenticated like a business
+   * connection, but it gets the minimal hello and only rtcOffer/ping, and it
+   * is never in the broadcast set or the conversation machinery.
+   */
+  const registerSignal = (connection: GatewayConnection, devicePublicKey: string): void => {
+    const client = new SignalClient(connection, devicePublicKey, {
+      rtcHello,
+      rtcOffer: (owner, key, attempt, sdp) => {
+        if (rtc === undefined) throw new Error("WebRTC is not available on this host");
+        return rtc.offer({ owner, ...(key === undefined ? {} : { deviceKey: key }), attempt, sdp });
+      },
+      closed: (self) => {
+        connections.delete(self);
+        rtc?.closeOwner(self);
+      },
+    });
+    connections.add(client);
   };
   /**
    * The live reads `admitDevice` performs inside its commit (ADR-0022 §6):
@@ -427,6 +474,29 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     serverBinding: async (): Promise<string | undefined> =>
       await readServerBinding(options.dataDir).catch(() => undefined),
   };
+  const secure = options.secure;
+  const handshakeHandlers: SecureHandshakeHandlers = {
+    client: register,
+    signal: registerSignal,
+    prologues: "both",
+  };
+  // Lazily loaded before any socket can register: a host without the native
+  // module must know that before it sends its first hello, and a load failure
+  // must not take the gateway down (ADR-0033 §5).
+  if (secure !== undefined) {
+    rtc = await startRtcHost({
+      ...options.rtc,
+      stun: () => options.settings.value.rtcStun ?? RTC_DEFAULT_STUN,
+      onChannel: (peer, channel) => {
+        secureHandshake(channel.carrier, secure, admission, {
+          client: register,
+          prologues: "business",
+          ...(peer.deviceKey === undefined ? {} : { expectedDeviceKey: peer.deviceKey }),
+          onRegistered: () => peer.handOff(),
+        });
+      },
+    });
+  }
   server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     socket.on("error", () => socket.terminate());
     const url = new URL(request.url ?? "/", "ws://127.0.0.1");
@@ -438,7 +508,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
         return;
       }
-      secureHandshake(socket, secure, admission, register);
+      secureHandshake(webSocketCarrier(socket), secure, admission, handshakeHandlers);
       return;
     }
     const token = url.searchParams.get("token");
@@ -450,13 +520,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     register(tokenConnection(socket));
   });
 
-  remote = await startRemote(options, admission, register).catch(async (error: unknown) => {
+  remote = await startRemote(options, admission, handshakeHandlers).catch(async (error: unknown) => {
     // Startup fails, so nobody will call close(): free the loopback port here.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await new Promise<void>((resolve) => http.close(() => resolve()));
     throw error;
   });
-  const secure = options.secure;
   // Flipping the account switch off kills account offers still in flight —
   // they were minted under a grant that no longer stands (ADR-0022 §6).
   const detachSettingsWatch = options.settings.subscribe((settings) => {
@@ -471,7 +540,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       origin: relayOrigin,
       signingKey: secure.relay.signingKey,
       noisePublicKey: secure.hostKey.publicKey,
-      accept: (socket) => secureHandshake(socket, secure, admission, register),
+      accept: (socket) => secureHandshake(webSocketCarrier(socket), secure, admission, handshakeHandlers),
       // The name the control connection reports and keeps in sync (issue
       // #212): the settings stream's effective hostName. The shared type
       // marks it optional — absent only when describing pre-5.12 hosts —
@@ -567,7 +636,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       detachSettingsWatch();
       await detachPush?.close();
       conversations.dispose();
-      await Promise.all([...clients].map((client) => client.dispose()));
+      await rtc?.close();
+      await Promise.all([...connections].map((connection) => connection.dispose()));
       for (const socket of server.clients) socket.terminate();
       await remote?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -603,38 +673,6 @@ function tokenConnection(socket: WebSocket): GatewayConnection {
     close: (code, reason) => socket.close(code, reason),
     handle(handlers) {
       socket.on("message", (data) => handlers.message(String(data)));
-      socket.once("close", () => handlers.closed());
-    },
-  };
-}
-
-/** The remote listener's connection after IK: binary records sealed by the session. */
-function secureConnection(socket: WebSocket, session: SecureSession): GatewayConnection {
-  return {
-    get open() {
-      return socket.readyState === WebSocket.OPEN;
-    },
-    send: (text) =>
-      socket.readyState === WebSocket.OPEN
-        ? new Promise((resolve) => {
-            // Backpressure like the token connection: hold the next frame until
-            // the transport has accepted the last chunk of this one.
-            const chunks = session.seal(text);
-            chunks.forEach((chunk, index) =>
-              socket.send(chunk, index === chunks.length - 1 ? () => resolve() : undefined)
-            );
-          })
-        : Promise.resolve(),
-    close: (code, reason) => socket.close(code, reason),
-    handle(handlers) {
-      socket.on("message", (data: Buffer) => {
-        try {
-          const text = session.open(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-          if (text !== undefined) handlers.message(text);
-        } catch {
-          socket.close(1008, "corrupt secure record");
-        }
-      });
       socket.once("close", () => handlers.closed());
     },
   };
@@ -780,83 +818,202 @@ interface AdmissionPolicy {
 }
 
 /**
- * The IK handshake gate on a fresh secure socket — LAN listener or relay
- * accept. Anything but one binary message 1 — text frames, a second message
- * while admission is pending — is a protocol violation closed with 1008. Registered devices pass directly; new
- * devices must present a live pairing offer.
+ * How a settled handshake reaches the gateway: a business client or a
+ * signal-only one (ADR-0033 §1). The two carriers that carry both are the
+ * WebSocket listeners and the relay accept; a DataChannel is business-only.
+ */
+export interface SecureHandshakeHandlers {
+  readonly client: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void;
+  readonly signal?: (connection: GatewayConnection, devicePublicKey: string) => void;
+  /** `both` for WebSockets, `business` for a DataChannel. */
+  readonly prologues?: "both" | "business";
+  /** A DataChannel may only take over the device that was promised the offer. */
+  readonly expectedDeviceKey?: string;
+  /** Fired after registration; the RTC peer uses it to hand ownership over. */
+  readonly onRegistered?: () => void;
+}
+
+/** A connection that counts against revocation and shutdown, whatever its purpose. */
+interface GatewayConnectionLifecycle {
+  readonly devicePublicKey?: string;
+  closeConnection(code: number, reason: string): void;
+  dispose(): Promise<void> | void;
+}
+
+/**
+ * The IK handshake gate on a fresh record carrier — LAN listener, relay accept,
+ * or a DataChannel. Anything but one binary message 1 — text frames, a second
+ * message while admission is pending — is a protocol violation closed with
+ * 1008. Registered devices pass directly; new devices must present a live
+ * pairing offer.
+ *
+ * The first prologue tried is the business one. A new host then retries the
+ * same message 1 against the signal prologue with a fresh responder, so an old
+ * host (business only) rejects a signal connection before registering anything
+ * (ADR-0033 §1). The purpose is fixed by which prologue authenticated.
  */
 function secureHandshake(
-  socket: WebSocket,
+  carrier: RecordCarrier,
   secure: SecureGatewayOptions,
   policy: AdmissionPolicy,
-  register: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void,
+  handlers: SecureHandshakeHandlers,
 ): void {
-  socket.on("error", () => socket.terminate());
-  const responder = respondIK({ prologue: SECURE_PROLOGUE, static: secure.hostKey });
-  let settled = false;
-  let deciding = false;
-  const timeout = setTimeout(() => socket.close(1008, "handshake timeout"), secure.handshakeTimeoutMs ?? 10_000);
-  socket.once("close", () => clearTimeout(timeout));
+  let stage: "new" | "deciding" | "settled" = "new";
+  let session: SecureSession | undefined;
+  let pending: { message(text: string): void; closed(): void } | undefined;
+  let closed = false;
+  let sendTail: Promise<void> = Promise.resolve();
+  const timeout = setTimeout(
+    () => carrier.close(1008, "handshake timeout"),
+    secure.handshakeTimeoutMs ?? 10_000,
+  );
 
-  socket.on("message", (data: Buffer, isBinary: boolean) => {
-    if (settled) return;
-    if (deciding || !isBinary) {
-      socket.close(1008, "expected handshake");
-      return;
-    }
-    deciding = true;
-    void admit()
-      .then((admitted) => {
-        if (admitted === undefined) return;
-        settled = true;
-        // The deadline only governs the handshake; a settled session must not
-        // be killed ten seconds later.
-        clearTimeout(timeout);
-        const session = new SecureSession(admitted.result);
-        socket.send(admitted.message);
-        register(secureConnection(socket, session), admitted.deviceKey, admitted.joined);
-      })
-      .catch(() => socket.close(1011, "handshake failed"));
-    async function admit(): Promise<
-      { result: HandshakeResult; message: Uint8Array; deviceKey: string; joined?: DeviceEntry } | undefined
-    > {
-      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-      let hello;
-      let remoteStatic: Uint8Array;
-      try {
-        const opened = responder.readMessage1(bytes);
-        remoteStatic = opened.remoteStatic;
-        hello = decodeClientHello(opened.payload);
-      } catch {
-        socket.close(1008, "bad handshake");
-        return undefined;
+  const connection: GatewayConnection = {
+    get open() {
+      return !closed && carrier.open;
+    },
+    send(text) {
+      if (closed || session === undefined) return Promise.resolve();
+      // One frame's records stay contiguous: a split frame interleaved with
+      // another frame would decrypt into the wrong text (ADR-0033 §2).
+      const next = sendTail
+        .then(async () => {
+          if (closed || session === undefined) return;
+          for (const chunk of session.seal(text)) await carrier.send(chunk);
+        })
+        .catch(() => carrier.close(1011, "send failed"));
+      sendTail = next;
+      return next;
+    },
+    close: (code, reason) => carrier.close(code, reason ?? ""),
+    handle: (next) => {
+      pending = next;
+    },
+  };
+
+  carrier.handle({
+    binary(bytes) {
+      if (stage === "settled") {
+        try {
+          const text = session!.open(bytes);
+          if (text !== undefined) pending?.message(text);
+        } catch {
+          carrier.close(1008, "corrupt secure record");
+        }
+        return;
       }
-      const deviceKey = toBase64Url(remoteStatic);
-      const decision = await admitDevice(
-        policy.harness,
-        {
-          publicKey: deviceKey,
-          ...(hello.pair === undefined ? {} : { pair: hello.pair }),
-          offers: secure.offers,
-          acceptAccountDevices: policy.acceptAccountDevices,
-          serverBinding: policy.serverBinding,
-        },
-        context,
-      );
-      // A registered device with `pair` present still passes — a retry after a
-      // lost message 2 must not spend another offer.
-      if (decision.outcome === "refused") {
-        socket.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
-        return undefined;
+      if (stage === "deciding") {
+        carrier.close(1008, "expected handshake");
+        return;
       }
-      const { message, result } = responder.writeMessage2(encodeHostHello({ v: 1 }));
-      return {
-        result,
-        message,
-        deviceKey,
-        ...(decision.outcome === "admitted" ? { joined: decision.entry } : {}),
-      };
-    }
+      stage = "deciding";
+      void admit(bytes)
+        .then(async (admitted) => {
+          if (admitted === undefined) return;
+          // The socket may have timed out or closed while admission waited for
+          // its commit; registering a session on it would be a leak.
+          if (closed) return;
+          // The deadline only governs the handshake; a settled session must
+          // not be killed ten seconds later.
+          clearTimeout(timeout);
+          session = new SecureSession(admitted.result);
+          stage = "settled";
+          await carrier.send(admitted.message);
+          if (admitted.purpose === "signal") handlers.signal?.(connection, admitted.deviceKey);
+          else handlers.client(connection, admitted.deviceKey, admitted.joined);
+          handlers.onRegistered?.();
+        })
+        .catch(() => carrier.close(1011, "handshake failed"));
+
+      async function admit(bytes: Uint8Array): Promise<
+        | {
+            result: HandshakeResult;
+            message: Uint8Array;
+            deviceKey: string;
+            purpose: "business" | "signal";
+            joined?: DeviceEntry;
+          }
+        | undefined
+      > {
+        let purpose: "business" | "signal" = "business";
+        let opened: { payload: Uint8Array; remoteStatic: Uint8Array };
+        let responder = respondIK({ prologue: SECURE_PROLOGUE, static: secure.hostKey });
+        try {
+          opened = responder.readMessage1(bytes);
+        } catch {
+          if (handlers.prologues === "business") {
+            carrier.close(1008, "bad handshake");
+            return undefined;
+          }
+          // The same message 1, a fresh responder, the signal prologue: the
+          // first attempt already advanced the business handshake state.
+          responder = respondIK({ prologue: SIGNAL_PROLOGUE, static: secure.hostKey });
+          try {
+            opened = responder.readMessage1(bytes);
+            purpose = "signal";
+          } catch {
+            carrier.close(1008, "bad handshake");
+            return undefined;
+          }
+        }
+        let hello;
+        try {
+          hello = decodeClientHello(opened.payload);
+        } catch {
+          carrier.close(1008, "bad handshake");
+          return undefined;
+        }
+        // A signal connection never registers a device: pairing is a business
+        // handshake concern, and signal-only is for already-registered devices.
+        if (purpose === "signal" && hello.pair !== undefined) {
+          carrier.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+          return undefined;
+        }
+        const deviceKey = toBase64Url(opened.remoteStatic);
+        if (handlers.expectedDeviceKey !== undefined && deviceKey !== handlers.expectedDeviceKey) {
+          carrier.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+          return undefined;
+        }
+        const decision = await admitDevice(
+          policy.harness,
+          {
+            publicKey: deviceKey,
+            ...(hello.pair === undefined ? {} : { pair: hello.pair }),
+            offers: secure.offers,
+            acceptAccountDevices: policy.acceptAccountDevices,
+            serverBinding: policy.serverBinding,
+          },
+          context,
+        );
+        // A registered device with `pair` present still passes — a retry after a
+        // lost message 2 must not spend another offer.
+        if (decision.outcome === "refused") {
+          carrier.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+          return undefined;
+        }
+        if (purpose === "signal" && decision.outcome !== "registered") {
+          carrier.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
+          return undefined;
+        }
+        const { message, result } = responder.writeMessage2(encodeHostHello({ v: 1 }));
+        return {
+          result,
+          message,
+          deviceKey,
+          purpose,
+          ...(decision.outcome === "admitted" ? { joined: decision.entry } : {}),
+        };
+      }
+    },
+    text() {
+      carrier.close(1008, stage === "settled" ? "unexpected text record" : "expected handshake");
+    },
+    closed() {
+      if (closed) return;
+      closed = true;
+      clearTimeout(timeout);
+      pending?.closed();
+    },
   });
 }
 
@@ -872,7 +1029,7 @@ interface RemoteListener {
 async function startRemote(
   options: GatewayOptions,
   admission: AdmissionPolicy,
-  register: (connection: GatewayConnection, devicePublicKey: string, joined?: DeviceEntry) => void,
+  handlers: SecureHandshakeHandlers,
 ): Promise<RemoteListener | undefined> {
   const spec = options.secure;
   const remote = spec?.lan;
@@ -890,7 +1047,7 @@ async function startRemote(
   });
   // After listen, as on the loopback port: a listen error must reach reject.
   const secure = new WebSocketServer({ server: http });
-  secure.on("connection", (socket) => secureHandshake(socket, spec, admission, register));
+  secure.on("connection", (socket) => secureHandshake(webSocketCarrier(socket), spec, admission, handlers));
   const { port } = http.address() as AddressInfo;
   const url = `ws://127.0.0.1:${port}`;
   const currentAdvertiseUrl = (): string =>
@@ -1353,6 +1510,111 @@ interface ClientHooks {
   createPairing(): { url: string; expiresAt: number } | undefined;
   /** The host's current remote candidates; an empty set means loopback-only. */
   endpointSet(): EndpointSet;
+  /** The RTC capability for this hello, or undefined when the native module is absent. */
+  rtcHello(): RtcHello | undefined;
+  /** Answer an offer; `owner` is this connection, so only its pending peers close with it. */
+  rtcOffer(owner: object, deviceKey: string | undefined, attempt: string, sdp: string): Promise<{ sdp: string }>;
+}
+
+
+/** The hooks a signal-only connection needs; no streams, notices, or pairing. */
+interface SignalHooks {
+  rtcHello(): RtcHello | undefined;
+  rtcOffer(owner: object, deviceKey: string | undefined, attempt: string, sdp: string): Promise<{ sdp: string }>;
+  closed(client: SignalClient): void;
+}
+
+/**
+ * A signal-only connection (ADR-0033 §1): authenticated by the same IK gate,
+ * but it is not a GatewayClient. It gets the minimal hello (`protocol` and
+ * `rtc`), answers only `rtcOffer` and `ping`, and never subscribes to a
+ * stream or joins the broadcast set.
+ */
+class SignalClient implements GatewayConnectionLifecycle {
+  readonly devicePublicKey: string;
+  readonly #connection: GatewayConnection;
+  readonly #hooks: SignalHooks;
+  #disposed = false;
+
+  constructor(connection: GatewayConnection, devicePublicKey: string, hooks: SignalHooks) {
+    this.#connection = connection;
+    this.devicePublicKey = devicePublicKey;
+    this.#hooks = hooks;
+    connection.handle({
+      message: (text) => this.#receive(text),
+      closed: () => hooks.closed(this),
+    });
+    const rtc = hooks.rtcHello();
+    void this.send({
+      type: "signalHello",
+      protocol: PROTOCOL,
+      ...(rtc === undefined ? {} : { rtc }),
+    });
+  }
+
+  send(frame: ServerFrame): Promise<void> {
+    if (this.#disposed || !this.#connection.open) return Promise.resolve();
+    return this.#connection.send(JSON.stringify(frame));
+  }
+
+  closeConnection(code: number, reason: string): void {
+    this.#connection.close(code, reason);
+  }
+
+  dispose(): void {
+    this.#disposed = true;
+  }
+
+  #receive(text: string): void {
+    let parsed: ReturnType<typeof parseClientFrame>;
+    try {
+      parsed = parseClientFrame(JSON.parse(text));
+    } catch {
+      this.#connection.close(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
+      return;
+    }
+    switch (parsed.kind) {
+      case "frame":
+        if (parsed.frame.type === "subscribe" || parsed.frame.type === "unsubscribe") {
+          void this.send({ type: "ended", stream: parsed.frame.stream, reason: "Unsupported stream" });
+          return;
+        }
+        if (parsed.frame.method === "rtcOffer" || parsed.frame.method === "ping") {
+          void this.#answer(parsed.frame.id, parsed.frame.method, parsed.frame.args);
+          return;
+        }
+        void this.send({ type: "result", id: parsed.frame.id, ok: false, error: `Unsupported method: ${parsed.frame.method}` });
+        return;
+      case "unsupportedCall":
+        void this.send({ type: "result", id: parsed.id, ok: false, error: `Unsupported method: ${parsed.method}` });
+        return;
+      case "unsupportedStream":
+        if (parsed.type === "subscribe") {
+          void this.send({ type: "ended", stream: parsed.stream as StreamName, reason: "Unsupported stream" });
+        }
+        return;
+      case "unknownType":
+        return;
+      case "malformed":
+        this.#connection.close(INVALID_FRAME_CLOSE_CODE, "Invalid client frame");
+        return;
+    }
+  }
+
+  async #answer(id: number, method: "rtcOffer" | "ping", args: unknown): Promise<void> {
+    try {
+      let value: unknown;
+      if (method === "ping") {
+        value = { id: (args as CallMethods["ping"]["args"]).id };
+      } else {
+        const offer = args as CallMethods["rtcOffer"]["args"];
+        value = await this.#hooks.rtcOffer(this, this.devicePublicKey, offer.attempt, offer.sdp);
+      }
+      await this.send({ type: "result", id, ok: true, value });
+    } catch (error) {
+      await this.send({ type: "result", id, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 }
 
 class GatewayClient {
@@ -1425,6 +1687,7 @@ class GatewayClient {
       },
       closed: () => hooks.closed(this),
     });
+    const rtc = this.#hooks.rtcHello();
     void this.send({
       type: "hello",
       protocol: PROTOCOL,
@@ -1441,6 +1704,7 @@ class GatewayClient {
       // A loopback-only host publishes an explicit empty set so clients clear
       // stale remote candidates without ever seeing 127.0.0.1.
       endpointSet: this.#hooks.endpointSet(),
+      ...(rtc === undefined ? {} : { rtc }),
     });
   }
 
@@ -1766,9 +2030,17 @@ class GatewayClient {
       case "revokeDevice": {
         const { publicKey } = args as CallMethods["revokeDevice"]["args"];
         await revokeDevice(this.#options.harness, publicKey, context);
+        // Signal connections and pending peers have no device record of their
+        // own; closing the business clients is not enough (ADR-0033 §3).
         this.#hooks.closeDevice(publicKey);
         return null;
       }
+      case "rtcOffer": {
+        const { attempt, sdp } = args as CallMethods["rtcOffer"]["args"];
+        return this.#hooks.rtcOffer(this, this.devicePublicKey, attempt, sdp);
+      }
+      case "ping":
+        return { id: (args as CallMethods["ping"]["args"]).id };
       case "setPushToken": {
         const device = this.devicePublicKey;
         if (device === undefined) throw new Error("Push tokens register over the secure channel only");

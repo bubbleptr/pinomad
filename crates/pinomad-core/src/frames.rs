@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 22 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 23 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -113,6 +113,8 @@ pub enum CallMethod {
     RunCommand,
     BeginAttachment,
     AppendAttachment,
+    RtcOffer,
+    Ping,
 }
 
 impl CallMethod {
@@ -158,6 +160,8 @@ impl CallMethod {
             "runCommand" => Self::RunCommand,
             "beginAttachment" => Self::BeginAttachment,
             "appendAttachment" => Self::AppendAttachment,
+            "rtcOffer" => Self::RtcOffer,
+            "ping" => Self::Ping,
             _ => return None,
         })
     }
@@ -199,6 +203,7 @@ impl CallMethod {
             | Self::SaveCustomProvider
             | Self::RemoveCustomProvider
             | Self::ListEndpointModels => 21,
+            Self::RtcOffer | Self::Ping => 23,
         }
     }
 }
@@ -227,6 +232,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::BoundSkills => 16,
         HostFeature::Attachments => 19,
         HostFeature::ImageVariants => 20,
+        HostFeature::Rtc => 23,
     };
     host_minor >= since
 }
@@ -261,6 +267,81 @@ pub enum HostFeature {
     /// an older host calls the field malformed and 4400s the connection.
     Attachments,
     ImageVariants,
+    /// `hello.rtc` is present and the host answers `rtcOffer` (23, ADR-0033).
+    Rtc,
+}
+
+
+/// `hello.rtc` (ADR-0033): the host's STUN list and the signal-only
+/// capability. Absent/null means the native module is not loaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostRtc {
+    pub stun: Vec<String>,
+    pub signal_only: bool,
+}
+
+impl HostRtc {
+    /// The minimal hello's RTC block, encoded the way the TS host does.
+    pub fn to_json(&self) -> Json {
+        let mut object = JsonObject::new();
+        object.set(
+            U16String::from_str("stun"),
+            Json::array(self.stun.iter().map(|server| Json::from(server.clone())).collect()),
+        );
+        object.set(U16String::from_str("signalOnly"), Json::Bool(self.signal_only));
+        Json::Object(Arc::new(object))
+    }
+}
+
+/// Parse `hello.rtc`; a malformed block is a hello error, not a silently
+/// disabled feature. Absent or null is `None` (an older host or no module).
+pub fn parse_host_rtc(hello: &Json) -> Result<Option<HostRtc>, String> {
+    let Some(value) = hello.get("rtc") else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    if !value.is_object() {
+        return Err("hello.rtc is not an object".to_string());
+    }
+    let stun = value
+        .get("stun")
+        .and_then(Json::as_array)
+        .ok_or_else(|| "hello.rtc.stun is not an array".to_string())?;
+    let mut servers = Vec::with_capacity(stun.len());
+    for server in stun.iter() {
+        let text = server
+            .as_str()
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| "hello.rtc.stun has a non-string or empty entry".to_string())?;
+        servers.push(text.to_string_lossy());
+    }
+    if !matches!(value.get("signalOnly"), Some(Json::Bool(true))) {
+        return Err("hello.rtc.signalOnly is not true".to_string());
+    }
+    Ok(Some(HostRtc { stun: servers, signal_only: true }))
+}
+
+/// `rtcOffer` arguments (ADR-0033 §4); both fields are non-empty strings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RtcOfferArgs {
+    pub attempt: String,
+    pub sdp: String,
+}
+
+pub fn parse_rtc_offer_args(args: &Json) -> Result<RtcOfferArgs, String> {
+    let attempt = args
+        .get("attempt")
+        .and_then(Json::as_str)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| "rtcOffer.attempt is not a non-empty string".to_string())?;
+    let sdp = args
+        .get("sdp")
+        .and_then(Json::as_str)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| "rtcOffer.sdp is not a non-empty string".to_string())?;
+    Ok(RtcOfferArgs { attempt: attempt.to_string_lossy(), sdp: sdp.to_string_lossy() })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -344,7 +425,11 @@ pub fn doc_stream(kind: &U16String, id: u64) -> U16String {
 /// what the reference's untyped access does.
 #[derive(Clone, Debug)]
 pub enum ServerFrame {
+    /// The business hello (5.0+), with every business field.
     Hello(Json),
+    /// The minimal hello of a signal-only connection (5.23, ADR-0033 §1);
+    /// it carries only `protocol` and, when available, `rtc`.
+    SignalHello(Json),
     Snapshot { stream: Json, value: Json },
     Ops { stream: Json, ops: Json },
     Ended { stream: Json, reason: Json },
@@ -379,6 +464,7 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
     };
     match kind.as_str() {
         "hello" => ServerFrame::Hello(value),
+        "signalHello" => ServerFrame::SignalHello(value),
         "snapshot" => ServerFrame::Snapshot {
             stream: field(&value, "stream").clone(),
             value: field(&value, "value").clone(),

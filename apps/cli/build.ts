@@ -46,16 +46,30 @@ if (!existsSync(join(root, "apps/web/dist/index.html"))) fail("apps/web/dist is 
 
 // Third-party deps stay external and get installed by npm. workspace:* deps
 // (our own packages) are bundled instead. A name with two versions is a bug.
+// Optional dependencies are kept separate: a native package's platform
+// prebuilds must reach the published manifest as optional, or npm cannot pick
+// one by os/cpu (and --omit=optional cannot drop them cleanly).
 const dependencies: Record<string, string> = {};
+const optionalDependencies: Record<string, string> = {};
 for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
   const manifest = JSON.parse(await readFile(join(root, dir, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
   };
   for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
     if (range === "workspace:*") continue;
     const existing = dependencies[name];
     if (existing !== undefined && existing !== range) fail(`conflicting versions for ${name}: ${existing} vs ${range}`);
     dependencies[name] = range;
+  }
+  for (const [name, range] of Object.entries(manifest.optionalDependencies ?? {})) {
+    if (range === "workspace:*") continue;
+    if (dependencies[name] !== undefined) fail(`${name} is both a required and an optional dependency`);
+    const existing = optionalDependencies[name];
+    if (existing !== undefined && existing !== range) {
+      fail(`conflicting optional versions for ${name}: ${existing} vs ${range}`);
+    }
+    optionalDependencies[name] = range;
   }
 }
 
@@ -70,7 +84,7 @@ const result = await Bun.build({
   splitting: true,
   // Flat output — distribution.ts resolves ../web and ./pinomad.js next to chunks.
   naming: { entry: "[name].js", chunk: "chunk-[hash].js", asset: "asset-[hash].[ext]" },
-  external: Object.keys(dependencies).flatMap((name) => [name, `${name}/*`]),
+  external: [...Object.keys(dependencies), ...Object.keys(optionalDependencies)].flatMap((name) => [name, `${name}/*`]),
   define: { PINOMAD_VERSION: JSON.stringify(version) },
 });
 if (!result.success || result.logs.some((log) => log.level === "error")) {
@@ -105,6 +119,7 @@ await writeFile(
       repository: { type: "git", url: "git+https://github.com/bubbleptr/pinomad.git" },
       homepage: "https://github.com/bubbleptr/pinomad",
       dependencies,
+      ...(Object.keys(optionalDependencies).length === 0 ? {} : { optionalDependencies }),
     },
     null,
     2,

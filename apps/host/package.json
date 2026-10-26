@@ -18,6 +18,7 @@
     "@pinomad/client": "workspace:*",
     "@pinomad/protocol": "workspace:*",
     "diff": "8.0.4",
+    "node-datachannel": "0.33.4",
     "proper-lockfile": "4.1.2",
     "typebox": "1.3.27",
     "undici": "8.10.2",

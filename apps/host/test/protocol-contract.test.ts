@@ -175,7 +175,7 @@ async function recordFrames(): Promise<ServerFrame[]> {
     while (!predicate()) await once(socket, "message");
   };
 
-  const streams = ["conversations", "index", "devices", "mcp", "models", "auth", "settings", "agents", "tasks"];
+  const streams = ["conversations", "index", "devices", "mcp", "models", "auth", "settings", "agents", "providers", "tasks"];
   for (const stream of streams) send({ type: "subscribe", stream });
   await until(() => streams.every((stream) => latest.has(stream)));
 

@@ -12,6 +12,12 @@ export interface HostSettings {
   readonly followUpMode: QueueMode;
   /** Whether the joined server may vouch for new devices (ADR-0022 §6); PiNomad-only, defaults on. */
   readonly acceptAccountDevices: boolean;
+  /**
+   * STUN servers the host advertises in `hello.rtc` and uses when it answers
+   * an offer (5.23, ADR-0033). Empty means ICE runs on host candidates only.
+   * Absent on hosts before 5.23, like `hostName` before 5.12.
+   */
+  readonly rtcStun?: readonly string[];
   /** The machine's display name (5.12): the settings override, else the cleaned hostname. Absent on older hosts. */
   readonly hostName?: string;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */
@@ -27,6 +33,7 @@ const HOST_SETTING_KEY_SET = {
   steeringMode: true,
   followUpMode: true,
   acceptAccountDevices: true,
+  rtcStun: true,
   hostName: true,
 } satisfies Record<HostSettingKey, true>;
 export const HOST_SETTING_KEYS = Object.keys(HOST_SETTING_KEY_SET) as readonly HostSettingKey[];

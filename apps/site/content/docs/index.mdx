@@ -28,6 +28,20 @@ Scan the code with the iPhone app, or paste the link into the Mac app. The remot
 
 The pairing link always keeps a legacy socket URL and can carry the reachable relay and direct candidates. Without `--public-url` the direct address is the LAN address the host detects; on a tailnet or behind a tunnel, add `--public-url http://<tailnet-ip>:7422` so it points there. When the host is joined to a relay, older clients keep using the relay URL. To reach a host at home from anywhere, run the relay on a VPS: see [Remote access](/zh/docs/remote-access/) (Chinese).
 
+## WebRTC direct connections
+
+The host can answer WebRTC offers and carry the secure channel over a reliable, ordered DataChannel instead of a WebSocket. Client support for actually using P2P — and the connection-mode setting — ships in a later version; this release adds the host side and the protocol.
+
+The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json` and advertises the same list in `hello.rtc`:
+
+```json
+{
+  "rtcStun": ["stun:stun.cloudflare.com:3478"]
+}
+```
+
+The default is Cloudflare's public STUN server. Set it to `[]` to use only host candidates (no STUN), or list your own `stun:` URLs. There is no TURN; when P2P cannot connect, the existing relay/direct WebSocket path stays the fallback. If the host's `node-datachannel` native module is missing — for example after an npm install with `--omit=optional` — the host keeps running and simply does not advertise `hello.rtc`.
+
 ## Keep it running
 
 Install the host as a user service (LaunchAgent on macOS, systemd user unit on Linux) so it starts at boot and restarts on crash:
