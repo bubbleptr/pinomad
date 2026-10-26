@@ -196,16 +196,20 @@ describe("useRemoteDurable first-connect timeout", () => {
     );
     const options = connect.mock.calls[0]![0];
     expect(options.lifecycle).toBeDefined();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     const states: string[] = [];
     const stop = options.lifecycle!.subscribe((state) => states.push(state));
-
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
+    // A page opened in a background tab must start paused, not wait for the
+    // next visibilitychange.
     expect(states).toEqual(["background"]);
 
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     expect(states).toEqual(["background", "foreground"]);
+
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(states).toEqual(["background", "foreground", "background"]);
 
     stop();
     unmount();

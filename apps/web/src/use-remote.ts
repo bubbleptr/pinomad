@@ -57,6 +57,10 @@ const browserLifecycle: AppLifecycle = {
     if (typeof document === "undefined") return () => {};
     const onVisibility = (): void => listener(document.visibilityState === "hidden" ? "background" : "foreground");
     document.addEventListener("visibilitychange", onVisibility);
+    // The coordinator starts in the foreground; only an already-hidden page
+    // needs the initial state pushed. Sending a synthetic foreground here
+    // would restart its first round twice.
+    if (document.visibilityState === "hidden") listener("background");
     return () => document.removeEventListener("visibilitychange", onVisibility);
   },
 };
