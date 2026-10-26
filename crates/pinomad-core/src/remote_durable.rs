@@ -763,6 +763,7 @@ struct FirstView {
 }
 
 const RTC_STALL_MS: u64 = 10_000;
+const RTC_RETRY_MS: u64 = 50;
 const UPGRADE_DELAY_MS: u64 = 1_000;
 const UPGRADE_IDLE_MS: u64 = 300;
 const UPGRADE_IDLE_LIMIT_MS: u64 = 30_000;
@@ -808,6 +809,7 @@ struct RtcCarrier {
     pending: VecDeque<Vec<u8>>,
     in_flight: bool,
     stall_timer: Option<u32>,
+    retry_timer: Option<u32>,
     selected: Option<String>,
 }
 
@@ -821,6 +823,7 @@ impl RtcCarrier {
             pending: VecDeque::new(),
             in_flight: false,
             stall_timer: None,
+            retry_timer: None,
             selected: None,
         }
     }
@@ -877,7 +880,10 @@ pub struct RemoteDurable {
     liveness_ping_timer: Option<u32>,
     liveness_deadline_timer: Option<u32>,
     liveness_verify_timer: Option<u32>,
-    probe_call: Option<u64>,
+    /// Every outstanding probe id. Pongs can arrive out of order and more
+    /// than one can be in flight at once.
+    probes: HashSet<u64>,
+    verify_probe: Option<u64>,
     now_ms: u64,
     cooldown_until: u64,
     no_upgrade_until: u64,
@@ -1000,7 +1006,8 @@ impl RemoteDurable {
             liveness_ping_timer: None,
             liveness_deadline_timer: None,
             liveness_verify_timer: None,
-            probe_call: None,
+            probes: HashSet::new(),
+            verify_probe: None,
             now_ms: 0,
             cooldown_until: 0,
             no_upgrade_until: 0,
@@ -1229,11 +1236,17 @@ impl RemoteDurable {
         }
         if self.liveness_verify_timer == Some(timer) {
             self.liveness_verify_timer = None;
-            self.probe_call = None;
+            if let Some(id) = self.verify_probe.take() {
+                self.probes.remove(&id);
+            }
             self.fallback_from_p2p("the foreground verification ping did not answer within 3000ms");
             return;
         }
-        if self.standby_timer_fired(timer) || self.signal_timer_fired(timer) || self.rtc_stall_fired(timer) {
+        if self.standby_timer_fired(timer)
+            || self.signal_timer_fired(timer)
+            || self.rtc_stall_fired(timer)
+            || self.rtc_retry_fired(timer)
+        {
             return;
         }
         if self.round_timer == Some(timer) {
@@ -1560,7 +1573,9 @@ impl RemoteDurable {
         let mut send = None;
         let mut clear_stall = None;
         if let Some(carrier) = self.rtc_carrier_mut(peer) {
-            if !carrier.in_flight && !carrier.pending.is_empty() {
+            // A rejected record waits for low water or the bounded retry;
+            // pumping it again from the outcome callback would busy-loop.
+            if carrier.retry_timer.is_none() && !carrier.in_flight && !carrier.pending.is_empty() {
                 send = carrier.pending.front().cloned();
                 carrier.in_flight = send.is_some();
             }
@@ -1574,6 +1589,49 @@ impl RemoteDurable {
         if let Some(bytes) = send {
             self.out.push(Command::RtcSend { peer, bytes });
         }
+    }
+
+    fn rtc_schedule_retry(&mut self, peer: u32) {
+        let old = self.rtc_carrier_mut(peer).and_then(|carrier| carrier.retry_timer.take());
+        if let Some(timer) = old {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.retry_timer = Some(timer);
+        }
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: RTC_RETRY_MS,
+        });
+    }
+
+    fn rtc_cancel_retry(&mut self, peer: u32) {
+        let timer = self.rtc_carrier_mut(peer).and_then(|carrier| carrier.retry_timer.take());
+        if let Some(timer) = timer {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+    }
+
+    fn rtc_retry_fired(&mut self, timer: u32) -> bool {
+        let peer = self
+            .standby
+            .as_ref()
+            .filter(|s| s.carrier.retry_timer == Some(timer))
+            .map(|s| s.carrier.peer)
+            .or_else(|| {
+                self.active_rtc
+                    .as_ref()
+                    .filter(|c| c.retry_timer == Some(timer))
+                    .map(|c| c.peer)
+            });
+        let Some(peer) = peer else { return false };
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.retry_timer = None;
+        }
+        self.rtc_pump(peer);
+        true
     }
 
     fn rtc_send_text(&mut self, peer: u32, text: String) -> Result<(), String> {
@@ -1792,13 +1850,23 @@ impl RemoteDurable {
 
     fn rtc_send_result(&mut self, peer: u32, outcome: RtcSendOutcome) {
         let mut reset_stall = false;
+        let mut rejected = false;
         if let Some(carrier) = self.rtc_carrier_mut(peer) {
             carrier.in_flight = false;
-            if outcome != RtcSendOutcome::Rejected {
+            if outcome == RtcSendOutcome::Rejected {
+                rejected = true;
+            } else {
                 carrier.pending.pop_front();
                 reset_stall = true;
             }
         }
+        if rejected {
+            // The library did not take the record. Retry the same ciphertext
+            // only on low water or after a bounded delay.
+            self.rtc_schedule_retry(peer);
+            return;
+        }
+        self.rtc_cancel_retry(peer);
         if reset_stall {
             self.rtc_reset_stall(peer);
         }
@@ -1806,6 +1874,7 @@ impl RemoteDurable {
     }
 
     fn rtc_low_water(&mut self, peer: u32) {
+        self.rtc_cancel_retry(peer);
         self.rtc_pump(peer);
     }
 
@@ -2125,10 +2194,17 @@ impl RemoteDurable {
             }
         }
         if standby.signal_only {
-            if let Some(conn) = standby.signal_conn.take() {
-                self.out.push(Command::CloseSocket { conn });
-            }
-            self.signal_attempt = None;
+            self.close_signal_attempt();
+        }
+        for timer in [
+            standby.timer.take(),
+            standby.idle_timer.take(),
+            standby.verify_timer.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            self.out.push(Command::CancelDeadline { timer });
         }
         self.generation += 1;
         standby.carrier.phase = RtcPhase::Ready;
@@ -2157,10 +2233,7 @@ impl RemoteDurable {
             self.clear_standby_timers(&standby);
             self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
             if standby.signal_only {
-                if let Some(conn) = standby.signal_conn {
-                    self.out.push(Command::CloseSocket { conn });
-                }
-                self.signal_attempt = None;
+                self.close_signal_attempt();
             }
         }
         self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
@@ -2178,10 +2251,7 @@ impl RemoteDurable {
             self.clear_standby_timers(&standby);
             self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
             if standby.signal_only {
-                if let Some(conn) = standby.signal_conn {
-                    self.out.push(Command::CloseSocket { conn });
-                }
-                self.signal_attempt = None;
+                self.close_signal_attempt();
             }
         }
         if let Some(carrier) = self.active_rtc.take() {
@@ -2210,13 +2280,11 @@ impl RemoteDurable {
             standby.idle_timer,
             standby.verify_timer,
             standby.carrier.stall_timer,
+            standby.carrier.retry_timer,
         ]
         .into_iter()
         .flatten()
         {
-            self.out.push(Command::CancelDeadline { timer });
-        }
-        if let Some(timer) = self.liveness_ping_timer.take() {
             self.out.push(Command::CancelDeadline { timer });
         }
     }
@@ -2231,6 +2299,12 @@ impl RemoteDurable {
         };
         self.clear_standby_timers(&standby);
         self.out.push(Command::CloseRtcPeer { peer });
+        if standby.signal_only {
+            if let Some(conn) = standby.signal_conn {
+                self.out.push(Command::CloseSocket { conn });
+            }
+            self.close_signal_attempt();
+        }
         let stage = match standby.carrier.phase {
             RtcPhase::Signal => "signal",
             RtcPhase::Ice => "ice",
@@ -2259,6 +2333,12 @@ impl RemoteDurable {
         };
         self.clear_standby_timers(&standby);
         self.out.push(Command::CloseRtcPeer { peer });
+        if standby.signal_only {
+            if let Some(conn) = standby.signal_conn {
+                self.out.push(Command::CloseSocket { conn });
+            }
+            self.close_signal_attempt();
+        }
         self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
         self.schedule_upgrade(PREPARE_RETRY_MS);
     }
@@ -2329,7 +2409,8 @@ impl RemoteDurable {
         {
             self.out.push(Command::CancelDeadline { timer });
         }
-        self.probe_call = None;
+        self.probes.clear();
+        self.verify_probe = None;
     }
 
     fn liveness_tick(&mut self) {
@@ -2350,8 +2431,9 @@ impl RemoteDurable {
         let Some(peer) = self.active_rtc.as_ref().map(|carrier| carrier.peer) else { return };
         let id = self.next_call;
         self.next_call += 1;
-        self.probe_call = Some(id);
+        self.probes.insert(id);
         if verify {
+            self.verify_probe = Some(id);
             let timer = self.next_timer;
             self.next_timer += 1;
             self.liveness_verify_timer = Some(timer);
@@ -2373,17 +2455,20 @@ impl RemoteDurable {
     }
 
     fn fallback_from_p2p(&mut self, reason: &str) {
-        if self.active_rtc.is_none() {
+        if self.active_rtc.is_none() && self.handoff.is_none() && self.standby.is_none() {
             return;
         }
+        // A close during the handoff sync must fail the barrier's queued ops
+        // before the next round starts, never leave them parked forever.
+        if self.handoff.is_some() {
+            self.abort_handoff("Disconnected from host");
+        }
+        self.close_rtc_objects();
         self.p2p_failure = Some(("liveness".to_string(), reason.to_string()));
         self.no_upgrade_until = self.now_ms.saturating_add(FALLBACK_QUIET_MS);
         self.clear_liveness();
         if let Some(timer) = self.stable_timer.take() {
             self.out.push(Command::CancelDeadline { timer });
-        }
-        if let Some(carrier) = self.active_rtc.take() {
-            self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
         }
         if let Some(mut dial) = self.dial.take() {
             dial.done = true;
@@ -2441,10 +2526,7 @@ impl RemoteDurable {
             self.clear_standby_timers(&standby);
             self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
             if standby.signal_only {
-                if let Some(conn) = standby.signal_conn {
-                    self.out.push(Command::CloseSocket { conn });
-                }
-                self.signal_attempt = None;
+                self.close_signal_attempt();
             }
         }
         if let Some(carrier) = self.active_rtc.take() {
@@ -2562,6 +2644,16 @@ impl RemoteDurable {
                 delay_ms: self.timeouts.socket_open_ms + self.timeouts.noise_ms + self.timeouts.hello_ms,
             });
             return;
+        }
+    }
+
+    fn close_signal_attempt(&mut self) {
+        let Some(attempt) = self.signal_attempt.take() else { return };
+        if let Some(timer) = attempt.timer {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        if let Some(conn) = attempt.conn {
+            self.out.push(Command::CloseSocket { conn: conn.id });
         }
     }
 
@@ -2882,6 +2974,63 @@ impl RemoteDurable {
         self.clear_round_timer();
         self.clear_backoff();
         self.clear_dial_timer();
+        self.clear_upgrade_timer();
+        if let Some(timer) = self.stable_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        self.clear_liveness();
+        if let Some(standby) = &self.standby {
+            let mut timers = vec![
+                standby.timer,
+                standby.idle_timer,
+                standby.verify_timer,
+            ];
+            for timer in timers.drain(..).flatten() {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+        }
+        if let Some(timer) = self.signal_attempt.as_ref().and_then(|attempt| attempt.timer) {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let mut carrier_timers = Vec::new();
+        if let Some(standby) = &mut self.standby {
+            carrier_timers.push(standby.carrier.stall_timer.take());
+            carrier_timers.push(standby.carrier.retry_timer.take());
+        }
+        if let Some(carrier) = &mut self.active_rtc {
+            carrier_timers.push(carrier.stall_timer.take());
+            carrier_timers.push(carrier.retry_timer.take());
+        }
+        for timer in carrier_timers.into_iter().flatten() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+    }
+
+    fn close_rtc_objects(&mut self) {
+        if let Some(standby) = self.standby.take() {
+            self.clear_standby_timers(&standby);
+            self.out.push(Command::CloseRtcPeer {
+                peer: standby.carrier.peer,
+            });
+            if standby.signal_only {
+                self.close_signal_attempt();
+            }
+        }
+        self.close_signal_attempt();
+        if let Some(carrier) = self.active_rtc.take() {
+            self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
+        }
+        self.clear_liveness();
+    }
+
+    fn fail_sync_queue(&mut self, error: &str) {
+        if self.sync_gate || !self.sync_queue.is_empty() {
+            self.sync_gate = false;
+            let queued = std::mem::take(&mut self.sync_queue);
+            for (op, kind, _call) in queued {
+                self.finish_failed(op, kind, error);
+            }
+        }
     }
 
     /// Translate one connection's outcomes into commands and state changes.
@@ -3374,10 +3523,13 @@ impl RemoteDurable {
         else {
             return;
         };
-        if self.probe_call == Some(call_id) {
-            self.probe_call = None;
-            if let Some(timer) = self.liveness_verify_timer.take() {
-                self.out.push(Command::CancelDeadline { timer });
+        if self.probes.remove(&call_id) {
+            let verify = self.verify_probe == Some(call_id);
+            if verify {
+                self.verify_probe = None;
+                if let Some(timer) = self.liveness_verify_timer.take() {
+                    self.out.push(Command::CancelDeadline { timer });
+                }
             }
             if ok.truthy() {
                 self.reset_liveness_deadline();
@@ -3390,6 +3542,8 @@ impl RemoteDurable {
                         delay_ms: LIVENESS_INTERVAL_MS,
                     });
                 }
+            } else if verify {
+                self.fallback_from_p2p("the foreground verification ping failed");
             }
             return;
         }
@@ -3419,6 +3573,9 @@ impl RemoteDurable {
             return;
         }
         self.closed = true;
+        self.abort_handoff("Disconnected from host");
+        self.fail_sync_queue("Disconnected from host");
+        self.close_rtc_objects();
         self.clear_all_timers();
         self.set_field("connection", Json::from(CLOSED));
         if let Some(dial) = self.dial.take() {

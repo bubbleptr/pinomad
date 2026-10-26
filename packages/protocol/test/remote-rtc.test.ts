@@ -133,6 +133,10 @@ class FakeDc implements RtcDataChannel {
   sendOutcome: RtcSendOutcome = "accepted";
   onSend: ((record: Uint8Array) => void) | undefined;
 
+  get isClosed(): boolean {
+    return this.#closedFlag;
+  }
+
   readonly hostKey: KeyPair;
   readonly finish: () => Promise<ServerFrame> | undefined;
 
@@ -224,13 +228,20 @@ class FakeDc implements RtcDataChannel {
   }
 
   releaseHeldPings(): void {
-    for (const frame of this.heldPings.splice(0)) {
-      if (frame.type !== "call") continue;
-      queueMicrotask(() => {
-        const args = frame.args as { id: string };
-        this.sendFrame({ type: "result", id: frame.id, ok: true, value: { id: args.id } });
-      });
-    }
+    for (const frame of this.heldPings.splice(0)) this.releasePing(frame);
+  }
+
+  releaseFirstHeldPing(): void {
+    const frame = this.heldPings.shift();
+    if (frame !== undefined) this.releasePing(frame);
+  }
+
+  releasePing(frame: ClientFrame): void {
+    if (frame.type !== "call") return;
+    queueMicrotask(() => {
+      const args = frame.args as { id: string };
+      this.sendFrame({ type: "result", id: frame.id, ok: true, value: { id: args.id } });
+    });
   }
 
   close(reason?: string): void {
@@ -721,6 +732,98 @@ describe("RTC standby handoff", () => {
       expect(world.peers).toHaveLength(0);
       expect(network.opens).toHaveLength(1);
       expect(network.opens[0]!.frames.some((frame) => frame.type === "call" && frame.method === "rtcOffer")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("fails queued calls when the RTC carrier closes during the handoff sync", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      await remote.controller.switchConversation(id(1));
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await flush();
+      const dc = world.dc;
+      dc.holdStreams.add("index");
+      dc.holdPing = (count) => count === 2;
+      await vi.advanceTimersByTimeAsync(300);
+      await flush();
+      const changes = remote.controller.changes();
+      let failed: Error | undefined;
+      changes.catch((error: Error) => (failed = error));
+      dc.holdPing = () => false;
+      dc.releaseHeldPings();
+      await vi.advanceTimersByTimeAsync(10);
+      await flush();
+      // Installed, but the sync barrier is still waiting on index.
+      dc.close("closed during sync");
+      await flush();
+      expect(failed).toBeInstanceOf(DisconnectedError);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("closes the active RTC peer when the controller closes", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      const dc = await upgrade(remote, world, network);
+      expect(dc.isClosed).toBe(false);
+      remote.close();
+      expect(dc.isClosed).toBe(true);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("counts several outstanding pongs and ignores only unknown ids", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      const dc = await upgrade(remote, world, network);
+      const before = dc.pings.length;
+      dc.holdPing = () => true;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(dc.heldPings.length).toBeGreaterThanOrEqual(2);
+      dc.releaseFirstHeldPing();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(dc.pings.length).toBeGreaterThan(before + 1);
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(remote.rtcDiagnostics().path).toBe("p2p");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("closes a failed signal attempt and retries after a network change", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const signal = signalNetwork(world);
+    const listeners: (() => void)[] = [];
+    const base = options(network, world);
+    const remote = await ready(connectRemoteDurable({
+      ...base,
+      network: { subscribe: (listener) => { listeners.push(listener); return () => undefined; } },
+      candidates: [relay()],
+      rtc: { ...base.rtc!, openSignalTransport: signal.transport },
+    }));
+    try {
+      world.failCreate = "no peer";
+      remote.setConnectionMode("directOnly");
+      await flush();
+      expect(signal.opens).toHaveLength(1);
+      expect(remote.rtcDiagnostics().cooldownRemainingMs).toBeGreaterThan(0);
+      listeners[0]!();
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(signal.opens.length).toBeGreaterThan(1);
     } finally {
       remote.close();
     }

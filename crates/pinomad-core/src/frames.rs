@@ -569,3 +569,26 @@ pub fn encode_client_frame(frame: &ClientFrame) -> String {
     }
     Json::Object(Arc::new(object)).to_json()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{RtcMaxMessageSize, parse_rtc_max_message_size};
+
+    #[test]
+    fn rtc_max_message_size_matches_the_reference() {
+        assert_eq!(parse_rtc_max_message_size("v=0\r\n"), RtcMaxMessageSize::Bounded(65_536));
+        assert_eq!(parse_rtc_max_message_size("a=max-message-size:0\r\n"), RtcMaxMessageSize::Unlimited);
+        assert_eq!(
+            parse_rtc_max_message_size("a=max-message-size:65535\r\n"),
+            RtcMaxMessageSize::Bounded(65_535)
+        );
+        assert!(matches!(
+            parse_rtc_max_message_size("a=max-message-size:10\r\n"),
+            RtcMaxMessageSize::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_rtc_max_message_size("a=max-message-size:not-a-number\r\n"),
+            RtcMaxMessageSize::Invalid(_)
+        ));
+    }
+}

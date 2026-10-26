@@ -1,7 +1,8 @@
 // Deterministic Rust coordinator tests for the RTC standby path: a scripted
 // WebSocket host plus a fake DataChannel host driven through Event/Command.
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use pinomad_core::b64::to_base64url;
 use pinomad_core::connection_mode::ConnectionMode;
@@ -107,19 +108,34 @@ fn answer() -> Json {
     obj(&[("sdp", Json::from("v=0\r\na=max-message-size:65536\r\n"))])
 }
 
-struct ScriptSource;
+const DEFAULT_ANSWER: &str = "v=0\r\na=max-message-size:65536\r\n";
+
+struct ScriptSource {
+    hold_calls: Arc<Mutex<HashSet<String>>>,
+    answer_sdp: Arc<Mutex<String>>,
+}
 
 impl CandidateSource for ScriptSource {
     fn open(&mut self, _candidate: &RemoteCandidate) -> Box<dyn Connection> {
-        Box::new(FakeSocket { signal: false })
+        Box::new(FakeSocket {
+            signal: false,
+            hold_calls: self.hold_calls.clone(),
+            answer_sdp: self.answer_sdp.clone(),
+        })
     }
     fn open_signal(&mut self, _candidate: &RemoteCandidate) -> Box<dyn Connection> {
-        Box::new(FakeSocket { signal: true })
+        Box::new(FakeSocket {
+            signal: true,
+            hold_calls: self.hold_calls.clone(),
+            answer_sdp: self.answer_sdp.clone(),
+        })
     }
 }
 
 struct FakeSocket {
     signal: bool,
+    hold_calls: Arc<Mutex<HashSet<String>>>,
+    answer_sdp: Arc<Mutex<String>>,
 }
 
 impl Connection for FakeSocket {
@@ -149,7 +165,14 @@ impl Connection for FakeSocket {
         }
         let method = frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default();
         let id = frame.get("id").and_then(Json::as_number).unwrap_or(0.0);
-        let value = if method == "rtcOffer" { answer() } else { obj(&[]) };
+        if method != "rtcOffer" && self.hold_calls.lock().unwrap().contains(&method) {
+            return;
+        }
+        let value = if method == "rtcOffer" {
+            obj(&[("sdp", Json::from(self.answer_sdp.lock().unwrap().clone()))])
+        } else {
+            obj(&[])
+        };
         let result = obj(&[
             ("type", Json::from("result")),
             ("id", Json::Number(id)),
@@ -268,8 +291,29 @@ impl FakeRtcHost {
 
     fn release_held(&mut self) -> Vec<Event> {
         self.hold_from = None;
-        let mut events = Vec::new();
         let held = std::mem::take(&mut self.held);
+        self.release_pings(held)
+    }
+
+    fn release_first_held(&mut self) -> Vec<Event> {
+        if self.held.is_empty() {
+            return Vec::new();
+        }
+        let first = self.held.remove(0);
+        self.release_pings(vec![first])
+    }
+
+    fn send_frame(&mut self, frame: Json) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(session) = self.session.as_mut() else { return events };
+        for record in session.seal(&frame.to_json()).unwrap_or_default() {
+            events.push(Event::RtcData { peer: 0, bytes: record });
+        }
+        events
+    }
+
+    fn release_pings(&mut self, held: Vec<(u64, String)>) -> Vec<Event> {
+        let mut events = Vec::new();
         let Some(session) = self.session.as_mut() else { return events };
         for (id, probe) in held {
             let result = obj(&[
@@ -297,20 +341,37 @@ struct Harness {
     ready: Option<ReadyOutcome>,
     peers: Vec<u32>,
     closed_peers: Vec<u32>,
+    closed_sockets: Vec<u32>,
+    opens: Vec<String>,
+    open_conns: Vec<u32>,
     ops: HashMap<u64, Result<Option<Json>, String>>,
     fail_peers: bool,
+    rtc_outcome: Option<RtcSendOutcome>,
+    withhold_rtc_outcome: bool,
+    rtc_sends: usize,
+    hold_calls: Arc<Mutex<HashSet<String>>>,
+    answer_sdp: Arc<Mutex<String>>,
 }
 
 impl Harness {
     fn new(candidates: Vec<RemoteCandidate>, mode: ConnectionMode) -> Self {
+        Self::new_with(candidates, mode, false)
+    }
+
+    fn new_with(candidates: Vec<RemoteCandidate>, mode: ConnectionMode, fail_peers: bool) -> Self {
         let host = FakeRtcHost::new();
+        let hold_calls = Arc::new(Mutex::new(HashSet::new()));
+        let answer_sdp = Arc::new(Mutex::new(DEFAULT_ANSWER.to_string()));
         let rtc = RtcOptions {
             host_key: to_base64url(&host.host.public_key),
             device_private_key: to_base64url(&generate_keypair().expect("device key").private_key),
             signal_only_hint: true,
         };
         let remote = RemoteDurable::new(RemoteDurableOptions {
-            source: Box::new(ScriptSource),
+            source: Box::new(ScriptSource {
+                hold_calls: hold_calls.clone(),
+                answer_sdp: answer_sdp.clone(),
+            }),
             mode: pinomad_core::remote_durable::RemoteMode::Planned,
             reconnect_delay_ms: Some((10, 10)),
             request_id: None,
@@ -340,8 +401,16 @@ impl Harness {
             ready: None,
             peers: Vec::new(),
             closed_peers: Vec::new(),
+            closed_sockets: Vec::new(),
+            opens: Vec::new(),
+            open_conns: Vec::new(),
             ops: HashMap::new(),
-            fail_peers: false,
+            fail_peers,
+            rtc_outcome: None,
+            withhold_rtc_outcome: false,
+            rtc_sends: 0,
+            hold_calls,
+            answer_sdp,
         };
         let initial = harness.remote.take();
         harness.pump(initial);
@@ -359,7 +428,8 @@ impl Harness {
             match command {
                 Command::OpenConnection { conn, url } => {
                     self.ws_frames.clear();
-                    let _ = url;
+                    self.opens.push(url);
+                    self.open_conns.push(conn);
                     queue.extend(self.remote.handle(Event::SocketOpened { conn }));
                 }
                 Command::SendBytes { conn, bytes } => {
@@ -427,11 +497,23 @@ impl Harness {
                     queue.extend(self.remote.handle(Event::RtcChannelOpened { peer }));
                 }
                 Command::RtcSend { peer, bytes } => {
+                    self.rtc_sends += 1;
+                    assert!(self.rtc_sends <= 50, "RtcSend/RtcSendResult busy loop");
                     self.rtc_records.push(bytes.clone());
+                    if self.withhold_rtc_outcome {
+                        continue;
+                    }
+                    if self.rtc_outcome == Some(RtcSendOutcome::Rejected) {
+                        queue.extend(self.remote.handle(Event::RtcSendResult {
+                            peer,
+                            outcome: RtcSendOutcome::Rejected,
+                        }));
+                        continue;
+                    }
                     let events = self.host.process(&bytes);
                     queue.extend(self.remote.handle(Event::RtcSendResult {
                         peer,
-                        outcome: RtcSendOutcome::Accepted,
+                        outcome: self.rtc_outcome.unwrap_or(RtcSendOutcome::Accepted),
                     }));
                     for event in events {
                         match event {
@@ -443,7 +525,7 @@ impl Harness {
                     }
                 }
                 Command::CloseRtcPeer { peer } => self.closed_peers.push(peer),
-                Command::CloseSocket { .. } => {}
+                Command::CloseSocket { conn } => self.closed_sockets.push(conn),
                 Command::ScheduleDeadline { timer, delay_ms } => {
                     self.next_due += 1;
                     self.timers.insert(timer, self.now + delay_ms);
@@ -585,7 +667,10 @@ fn relay_only_never_creates_an_rtc_peer() {
 fn unsupported_rtc_emits_no_rtc_commands() {
     let host = FakeRtcHost::new();
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
-        source: Box::new(ScriptSource),
+        source: Box::new(ScriptSource {
+            hold_calls: Arc::new(Mutex::new(HashSet::new())),
+            answer_sdp: Arc::new(Mutex::new(DEFAULT_ANSWER.to_string())),
+        }),
         mode: pinomad_core::remote_durable::RemoteMode::Planned,
         reconnect_delay_ms: Some((10, 10)),
         request_id: None,
@@ -704,4 +789,253 @@ fn direct_only_reaches_p2p_through_a_signal_only_connection() {
         .calls
         .iter()
         .all(|frame| !matches!(frame, ClientFrame::Call { method, .. } if method.to_string_lossy() == "submit")));
+}
+
+#[test]
+fn rtc_close_during_handoff_sync_fails_queued_ops() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_100);
+    h.host.hold_streams.insert("index".to_string());
+    h.host.hold_from = Some(2);
+    h.advance(300);
+    h.feed(Event::Invoke {
+        op: 3,
+        call: pinomad_core::remote_durable::Call::Changes { target: Some(1) },
+    });
+    let events = h.host.release_held();
+    let peer = h.peers[0];
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    // The new carrier is installed but the sync barrier still holds the op.
+    h.feed(Event::RtcClosed {
+        peer,
+        reason: Some("closed during sync".to_string()),
+    });
+    assert!(
+        matches!(h.ops.get(&3), Some(Err(_))),
+        "queued op must fail: {:?}",
+        h.ops.get(&3)
+    );
+}
+
+#[test]
+fn close_retires_every_rtc_object_and_timer() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let peer = h.peers[0];
+    assert!(!h.timers.is_empty(), "liveness timers should be armed");
+    h.feed(Event::Close);
+    assert!(h.closed_peers.contains(&peer), "active RTC peer must close");
+    assert!(h.timers.is_empty(), "every RTC deadline must be canceled: {:?}", h.timers);
+}
+
+#[test]
+fn signal_standby_failure_closes_the_socket_and_allows_a_retry() {
+    let mut h = Harness::new(
+        vec![RemoteCandidate {
+            url: "wss://relay/".to_string(),
+            role: RemoteCandidateRole::Relay,
+            unsupported: None,
+        }],
+        ConnectionMode::Auto,
+    );
+    h.fail_peers = true;
+    h.feed(Event::SetConnectionMode { mode: ConnectionMode::DirectOnly });
+    assert_eq!(h.peers.len(), 1, "the signal path must create a peer");
+    let before = h.opens.len();
+    assert!(!h.closed_sockets.is_empty(), "failed signal socket must close");
+    h.feed(Event::NetworkChanged);
+    h.advance(1_100);
+    assert!(h.opens.len() > before, "Direct only must retry signaling");
+}
+
+#[test]
+fn rejected_send_waits_instead_of_repumping_immediately() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let before = h.rtc_sends;
+    h.rtc_outcome = Some(RtcSendOutcome::Rejected);
+    h.feed(Event::Invoke {
+        op: 4,
+        call: pinomad_core::remote_durable::Call::ListFiles {
+            scope: obj(&[("kind", Json::from("project")), ("path", Json::from("/tmp")), ("checkout", Json::from("project"))]),
+            query: String::new(),
+        },
+    });
+    assert_eq!(h.rtc_sends, before + 1, "rejected records wait for low water or the retry timer");
+    h.rtc_outcome = None;
+    let peer = h.peers[0];
+    h.feed(Event::RtcLowWater { peer });
+    h.advance(100);
+    assert!(h.rtc_sends > before + 1, "low water resumes the pump");
+}
+
+#[test]
+fn several_outstanding_probes_keep_the_liveness_deadline_alive() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let peer = h.peers[0];
+    let hold_from = h.host.pings.len() + 1;
+    h.host.hold_from = Some(hold_from);
+    h.advance(5_000);
+    h.advance(5_000);
+    assert!(h.host.held.len() >= 2, "two probes are outstanding: {:?}", h.host.pings);
+    let events = h.host.release_first_held();
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    // The second probe is still unanswered; the first pong must have moved
+    // the absolute deadline past this point.
+    h.advance(6_000);
+    assert_eq!(
+        h.remote.rtc_diagnostics().get("path").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("p2p"),
+        "a late first pong must still count"
+    );
+}
+
+#[test]
+fn old_carrier_close_during_handoff_does_not_start_a_reconnect() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let old = h.open_conns[0];
+    let opens = h.opens.len();
+    h.feed(Event::SocketClosed {
+        conn: old,
+        code: 1000,
+        reason: None,
+    });
+    h.advance(100);
+    assert_eq!(h.opens.len(), opens, "the retired WebSocket must be inert");
+}
+
+#[test]
+fn ended_stream_releases_the_handoff_queue() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_100);
+    h.host.hold_streams.insert("index".to_string());
+    h.host.hold_from = Some(2);
+    h.advance(300);
+    h.feed(Event::Invoke {
+        op: 5,
+        call: pinomad_core::remote_durable::Call::Changes { target: Some(1) },
+    });
+    let events = h.host.release_held();
+    let peer = h.peers[0];
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    assert!(h.ops.get(&5).is_none(), "the sync barrier still holds the op");
+    let events = h.host.send_frame(obj(&[
+        ("type", Json::from("ended")),
+        ("stream", Json::from("index")),
+        ("reason", Json::from("gone")),
+    ]));
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    assert!(matches!(h.ops.get(&5), Some(Ok(_))), "ended must satisfy the barrier");
+}
+
+#[test]
+fn network_change_probes_p2p_immediately_and_is_rate_limited() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let before = h.host.pings.len();
+    h.host.hold_from = Some(before + 1);
+    h.feed(Event::NetworkChanged);
+    assert!(h.host.pings.len() > before, "network change must probe at once");
+    // One minute must pass before another change clears the cooldown state.
+    h.feed(Event::Clock { now_ms: h.now + 1_000 });
+    h.feed(Event::NetworkChanged);
+    assert_eq!(
+        h.remote
+            .rtc_diagnostics()
+            .get("path")
+            .and_then(Json::as_str)
+            .map(|s| s.to_string_lossy())
+            .as_deref(),
+        Some("p2p")
+    );
+}
+
+#[test]
+fn mode_switch_filters_business_candidates_and_reconnects() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(200);
+    assert_eq!(h.opens[0], "wss://relay/");
+    h.feed(Event::SetConnectionMode { mode: ConnectionMode::DirectOnly });
+    h.advance(200);
+    assert_eq!(h.opens.last().map(String::as_str), Some("wss://direct/"));
+    h.feed(Event::SetConnectionMode { mode: ConnectionMode::RelayOnly });
+    h.advance(200);
+    assert_eq!(h.opens.last().map(String::as_str), Some("wss://relay/"));
+}
+
+#[test]
+fn stalled_rtc_send_fails_the_carrier_after_ten_seconds() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.withhold_rtc_outcome = true;
+    h.advance(1_100);
+    assert_eq!(h.peers.len(), 1);
+    h.advance(10_100);
+    assert!(h.closed_peers.contains(&h.peers[0]), "stalled peer must close");
+    assert!(h.remote.rtc_diagnostics().get("cooldownRemainingMs").and_then(Json::as_number).unwrap_or(0.0) > 0.0);
+}
+
+#[test]
+fn direct_only_signal_failure_reports_direct_unavailable() {
+    let h = Harness::new_with(
+        vec![RemoteCandidate {
+            url: "wss://relay/".to_string(),
+            role: RemoteCandidateRole::Relay,
+            unsupported: None,
+        }],
+        ConnectionMode::DirectOnly,
+        true,
+    );
+    assert!(
+        matches!(&h.ready, Some(ReadyOutcome::Error(message)) if message.contains("Direct connection unavailable")),
+        "ready={:?}",
+        h.ready
+    );
+    assert_eq!(h.peers.len(), 1);
+    assert!(h.closed_peers.contains(&h.peers[0]));
+}
+
+#[test]
+fn idle_timeout_defers_without_counting_a_failure() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.hold_calls.lock().unwrap().insert("listFiles".to_string());
+    h.feed(Event::Invoke {
+        op: 6,
+        call: pinomad_core::remote_durable::Call::ListFiles {
+            scope: obj(&[("kind", Json::from("project")), ("path", Json::from("/tmp")), ("checkout", Json::from("project"))]),
+            query: String::new(),
+        },
+    });
+    h.advance(1_500);
+    assert_eq!(h.peers.len(), 1);
+    h.advance(30_100);
+    assert_eq!(h.remote.rtc_diagnostics().get("cooldownRemainingMs").and_then(Json::as_number), Some(0.0));
+    h.advance(1_100);
+    assert!(h.peers.len() >= 2, "the deferred attempt retries without a failure");
+}
+
+#[test]
+fn invalid_answer_max_message_size_fails_the_candidate() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    *h.answer_sdp.lock().unwrap() = "v=0\r\na=max-message-size:10\r\n".to_string();
+    h.advance(1_100);
+    assert!(h.closed_peers.contains(&h.peers[0]));
+    assert!(h.remote.rtc_diagnostics().get("cooldownRemainingMs").and_then(Json::as_number).unwrap_or(0.0) > 0.0);
 }
