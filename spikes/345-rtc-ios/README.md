@@ -161,7 +161,7 @@ cargo build -p rtc-spike-core --bin rtc-probe
 - `device-ipv6-raw-duplicate.log`：真机原生 IPv6 的原始失败：记录 #37/#38 重复，Noise 毒化，失败识别并释放。**没有开后台**。
 - `simulator-background-mid-transfer.log`：`RTCSPIKE_DEDUPE=0`，传输中后台挂起，记录 #37/#38 重复，Noise 毒化，失败识别并释放。
 - `simulator-background-mid-transfer-deduped.log`：同一场景打开去重，完成 65 条，但抑制了 291 条重复记录。
-- `device-background-after-complete.log`：完成后进后台再回前台，连接未再报错。
+- `device-background-after-complete.log`：大帧收尾阶段进后台再回前台，连接未再报错。
 - `node-unthrottled-burst.log`：Node 不限速时只发出 16 条 log 后停止，对应 iOS 第 18 条记录解密失败。
 - `node-throttled-background.log`：20 ms 节流后同一路径可完成。
 - `host-probe-ipv4.log`：Mac 上用同一个 `Engine` + BSD socket 的联调，4 MiB / 65 记录，matched=true，deduped=0。
