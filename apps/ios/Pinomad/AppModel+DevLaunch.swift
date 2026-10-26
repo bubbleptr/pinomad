@@ -101,7 +101,7 @@ extension AppModel {
             return true
         }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
-            // The composer's context meter at a scripted usage, for
+            // The overview's context row at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.
             phase = .connected
             startContextDemo(context)
@@ -600,9 +600,8 @@ extension AppModel {
     }
 
     /// `PINOMAD_DEMO_CONTEXT=<used>/<window>` (anything else means nil)
-    /// settles one conversation so the composer's context meter can be
-    /// photographed without a host. The long model name also exercises the
-    /// "capsule truncates first" layout next to the meter.
+    /// settles one conversation so the overview's context row can be
+    /// photographed without a host.
     private func startContextDemo(_ spec: String) {
         navPath = [.conversation(1)]
         let parts = spec.split(separator: "/")

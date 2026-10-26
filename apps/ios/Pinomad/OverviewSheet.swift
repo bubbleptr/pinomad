@@ -86,10 +86,13 @@ struct OverviewSheet: View {
         let subagents = snapshot.flatMap {
             SubagentOverview.of(organized: $0.organized, conversation: conversationId)
         }
-        if workspace == nil && subagents == nil {
+        if conversation == nil && workspace == nil && subagents == nil {
             ContentUnavailableView { Label("No overview to show", image: .info) }
         } else {
             List {
+                if let conversation {
+                    Section("Context") { contextRow(ContextMeterReading(conversation.contextUsage)) }
+                }
                 if let workspace {
                     Section("Workspace") { workspaceRows(workspace) }
                 }
@@ -98,6 +101,25 @@ struct OverviewSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: Context
+
+    /// How full the model's window is: the ring, then the percent and
+    /// figures. Unknown usage keeps the row with an empty ring.
+    private func contextRow(_ reading: ContextMeterReading) -> some View {
+        LabeledContent {
+            Text(reading.detail)
+                .monospacedDigit()
+        } label: {
+            Label {
+                Text("Context window")
+            } icon: {
+                ContextRing(reading: reading)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(reading.accessibilityLabel)
     }
 
     // MARK: Workspace

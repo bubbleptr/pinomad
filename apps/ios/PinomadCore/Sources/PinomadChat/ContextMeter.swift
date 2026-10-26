@@ -1,7 +1,7 @@
 import Foundation
 import PinomadCore
 
-/// What the composer's context meter reads. The core already derives
+/// What the overview's context row reads. The core already derives
 /// `ContextUsage` from the last qualifying reply; this turns it into the
 /// percent, ring fill, and copy the view shows — nothing is re-counted here.
 public struct ContextMeterReading: Equatable, Sendable {
@@ -15,8 +15,7 @@ public struct ContextMeterReading: Equatable, Sendable {
     /// A fraction for the ring, capped at a full turn.
     public let fill: Double
     public let warning: Bool
-    /// The popover's figures, e.g. "42% · 84k / 200k" — the ring has no
-    /// number beside it, so the percent is read here.
+    /// The row's figures beside the ring, e.g. "42% · 84k / 200k".
     public let detail: String
     public let accessibilityLabel: String
 
