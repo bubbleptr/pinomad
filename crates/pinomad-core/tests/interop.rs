@@ -204,7 +204,7 @@ impl Driver {
                 Command::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
-                Command::OperationFailed { op, error } => {
+                Command::OperationFailed { op, error, .. } => {
                     self.ops.insert(op, Err(error));
                 }
                 Command::RtcSignalOnly { .. }
@@ -501,9 +501,14 @@ impl FacadeDriver {
                 FfiCommand::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
-                FfiCommand::OperationFailed { op, error } => {
+                FfiCommand::OperationFailed { op, error, .. } => {
                     self.ops.insert(op, Err(error));
                 }
+                FfiCommand::RtcSignalOnly { .. }
+                | FfiCommand::CreateRtcPeer { .. }
+                | FfiCommand::AcceptRtcAnswer { .. }
+                | FfiCommand::RtcSend { .. }
+                | FfiCommand::CloseRtcPeer { .. } => {}
             }
         }
     }

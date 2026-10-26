@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 getrandom = "=0.4.3"
+pinomad-rtc = { path = "../pinomad-rtc", optional = true }
 snow = "=0.10.0"
 uniffi = { version = "=0.32.2", optional = true }
 url = "=2.5.8"
@@ -17,4 +18,4 @@ serde_json = "=1.0.149"
 tungstenite = "=0.30.0"
 
 [features]
-ffi = ["dep:uniffi"]
+ffi = ["dep:uniffi", "dep:pinomad-rtc"]

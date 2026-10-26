@@ -516,6 +516,9 @@ pub struct SecureTransport {
     device: KeyPair,
     device_private_b64: String,
     pairing: PairingState,
+    /// Signal-only carriers use the separate prologue, so an old host rejects
+    /// them before registering a business device (ADR-0033 §1).
+    signal_prologue: bool,
 }
 
 impl SecureTransport {
@@ -546,7 +549,15 @@ impl SecureTransport {
             device,
             device_private_b64: device_private_key.to_string(),
             pairing,
+            signal_prologue: false,
         })
+    }
+
+    /// Open this carrier with `SIGNAL_PROLOGUE`. Only the coordinator's
+    /// signal attempt sets this.
+    pub fn with_signal_prologue(mut self) -> Self {
+        self.signal_prologue = true;
+        self
     }
 
     /// A fresh device identity for an unpaired connection — the app stores
@@ -568,7 +579,17 @@ impl Transport for SecureTransport {
 
     fn open(&mut self) -> Box<dyn Connection> {
         let pairing = self.pairing.current();
-        match SecureConnection::new(&self.device, self.host_key, pairing.as_ref()) {
+        let prologue = if self.signal_prologue {
+            SIGNAL_PROLOGUE
+        } else {
+            SECURE_PROLOGUE
+        };
+        match SecureConnection::new_with_prologue(
+            &self.device,
+            self.host_key,
+            pairing.as_ref(),
+            prologue,
+        ) {
             Ok(connection) => Box::new(connection),
             Err(_) => Box::new(DeadConnection),
         }

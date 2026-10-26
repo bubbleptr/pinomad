@@ -8,6 +8,7 @@
 use crate::ffi::calls::FfiCall;
 use crate::ffi::hosts::{CandidateFailure, EndpointSet, StoredHost};
 use crate::json::{Json, JsonObject};
+use crate::ffi::rtc::RtcSendOutcome;
 use crate::remote_durable::ReadyOutcome as CoreReadyOutcome;
 use crate::u16str::U16String;
 use std::sync::Arc;
@@ -58,6 +59,17 @@ pub enum FfiEvent {
     Foreground,
     Background,
     NetworkChanged,
+    /// Monotonic platform milliseconds. Sent before inputs (and timer
+    /// fires) whose decisions depend on time: cooldowns, idle windows, the
+    /// stall check, and diagnostics.
+    Clock { now_ms: u64 },
+    RtcPeerReady { peer: u64, sdp: String },
+    RtcChannelOpened { peer: u64 },
+    RtcData { peer: u64, bytes: Vec<u8> },
+    RtcSendResult { peer: u64, outcome: RtcSendOutcome },
+    RtcLowWater { peer: u64 },
+    RtcClosed { peer: u64, reason: Option<String> },
+    RtcSelectedCandidate { peer: u64, kind: String },
 }
 
 // ─── Commands out ───────────────────────────────────────────────────────────
@@ -87,8 +99,17 @@ pub enum FfiCommand {
     Paired { host: StoredHost },
     OperationSucceeded { op: u64, value: CallResult },
     /// Request-class calls only — commands and abort report their failure
-    /// as a view notice and still succeed.
-    OperationFailed { op: u64, error: String },
+    /// as a view notice and still succeed. `carrier_lost` means the
+    /// connection (or RTC Peer) that carried the call is gone, so the host
+    /// may have applied it before the reply was lost.
+    OperationFailed { op: u64, error: String, carrier_lost: bool },
+    /// Persist the learned `hello.rtc.signalOnly` hint.
+    RtcSignalOnly { host_key: String, signal_only: bool },
+    /// Create one Peer: offer plus the host-advertised STUN list.
+    CreateRtcPeer { peer: u64, stun: Vec<String> },
+    AcceptRtcAnswer { peer: u64, sdp: String },
+    RtcSend { peer: u64, bytes: Vec<u8> },
+    CloseRtcPeer { peer: u64 },
 }
 
 /// What the client reports when the first view arrives — or why it never
@@ -105,6 +126,9 @@ pub enum ReadyOutcome {
         direction: String,
         host_version: Option<String>,
     },
+    /// Direct only could not reach the host. `reason` is the last
+    /// preparation failure; the UI decides the wording.
+    DirectUnavailable { reason: String },
     Error { message: String },
 }
 
@@ -124,6 +148,9 @@ impl From<CoreReadyOutcome> for ReadyOutcome {
                 direction,
                 host_version,
             },
+            CoreReadyOutcome::DirectUnavailable { reason } => {
+                ReadyOutcome::DirectUnavailable { reason }
+            }
             CoreReadyOutcome::Error(message) => ReadyOutcome::Error { message },
         }
     }

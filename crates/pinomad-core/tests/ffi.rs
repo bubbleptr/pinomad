@@ -231,9 +231,14 @@ impl Harness {
                 FfiCommand::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
-                FfiCommand::OperationFailed { op, error } => {
+                FfiCommand::OperationFailed { op, error, .. } => {
                     self.ops.insert(op, Err(error));
                 }
+                FfiCommand::RtcSignalOnly { .. }
+                | FfiCommand::CreateRtcPeer { .. }
+                | FfiCommand::AcceptRtcAnswer { .. }
+                | FfiCommand::RtcSend { .. }
+                | FfiCommand::CloseRtcPeer { .. } => {}
             }
         }
     }
@@ -2545,4 +2550,24 @@ fn snapshot_providers_follows_stream_updates() {
             input: LoginInput::Secret { placeholder: Some("gsk_…".to_string()) },
         })
     );
+}
+
+#[test]
+fn rtc_peer_starts_closes_and_rejects_sends() {
+    use pinomad_core::ffi::{RtcAction, RtcPeer, RtcSendOutcome};
+
+    let peer = RtcPeer::new("127.0.0.1:41000".to_string(), Vec::new(), 1_000).unwrap();
+    let actions = peer.start(1_000);
+    assert!(
+        actions.iter().any(|action| matches!(action, RtcAction::LocalOffer { sdp } if sdp.contains("m=application"))),
+        "the engine must produce an offer immediately without STUN: {actions:?}"
+    );
+    assert_eq!(peer.send(1_000, b"before open".to_vec()).outcome, RtcSendOutcome::Rejected);
+    peer.close();
+    assert_eq!(peer.send(1_000, b"after close".to_vec()).outcome, RtcSendOutcome::Rejected);
+    assert!(peer.timeout(2_000).is_empty());
+    assert!(matches!(
+        RtcPeer::new("not-an-address".to_string(), Vec::new(), 1_000).err().expect("bad address"),
+        ClientError::RtcAddress { .. }
+    ));
 }
