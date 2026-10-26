@@ -1,0 +1,7 @@
+target/
+node/node_modules/
+ios/Vendor/
+ios/RTCSpike/Generated/
+*.xcuserstate
+xcuserdata/
+.DS_Store

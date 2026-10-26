@@ -1,0 +1,8 @@
+{
+  "name": "pinomad-rtc-spike-peer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "node-datachannel": "0.33.4"
+  }
+}

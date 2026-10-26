@@ -1,0 +1,359 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		136B512EAC3D1D9F2A9B58E2 /* RTCSpikeCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B4E83B26E8C45C1406F4AA26 /* RTCSpikeCore.xcframework */; };
+		31E334F293E9C2699EDFBC05 /* RTCSpikeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 925DD35060734B5287ECE330 /* RTCSpikeApp.swift */; };
+		558C2C877453F29067D797AE /* UDPSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6AF3F2B481EB3F6AF8C416 /* UDPSocket.swift */; };
+		6E496496DF7A30A149169138 /* Resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1648E4FCF267AB62F4162E /* Resolver.swift */; };
+		8B7E528987B28087E12DFAE9 /* FileLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3732ACE3B92E22D695973935 /* FileLogger.swift */; };
+		AB2A008F544BA78B3C15F6E4 /* SpikeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC095AA7F38E8DD217D4434 /* SpikeController.swift */; };
+		D90724E692D9DF2358D99914 /* rtc_spike_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE4917EB49E67BF7A53D028 /* rtc_spike_core.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		3586819B72B8F9D9A0202376 /* RTCSpike.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RTCSpike.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3732ACE3B92E22D695973935 /* FileLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLogger.swift; sourceTree = "<group>"; };
+		3DE4917EB49E67BF7A53D028 /* rtc_spike_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = rtc_spike_core.swift; sourceTree = "<group>"; };
+		3EC095AA7F38E8DD217D4434 /* SpikeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeController.swift; sourceTree = "<group>"; };
+		4D6AF3F2B481EB3F6AF8C416 /* UDPSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPSocket.swift; sourceTree = "<group>"; };
+		66C26D12659343BE637F0EAC /* rtc_spike_coreFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = rtc_spike_coreFFI.h; sourceTree = "<group>"; };
+		7A1648E4FCF267AB62F4162E /* Resolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Resolver.swift; sourceTree = "<group>"; };
+		925DD35060734B5287ECE330 /* RTCSpikeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RTCSpikeApp.swift; sourceTree = "<group>"; };
+		B4E83B26E8C45C1406F4AA26 /* RTCSpikeCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = RTCSpikeCore.xcframework; path = Vendor/RTCSpikeCore.xcframework; sourceTree = "<group>"; };
+		C08EADB0EFD54846C78542ED /* rtc_spike_coreFFI.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = rtc_spike_coreFFI.modulemap; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		72AF82996F909B8DB044C5C4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				136B512EAC3D1D9F2A9B58E2 /* RTCSpikeCore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7AA7A636FC1354A45EE6B6E6 = {
+			isa = PBXGroup;
+			children = (
+				83F18A107FF0E5EAD62B9DC7 /* RTCSpike */,
+				ECBDD047B6D5F052782C36EF /* Frameworks */,
+				E1FAA0488E4C089F89A63E6C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		83F18A107FF0E5EAD62B9DC7 /* RTCSpike */ = {
+			isa = PBXGroup;
+			children = (
+				3732ACE3B92E22D695973935 /* FileLogger.swift */,
+				7A1648E4FCF267AB62F4162E /* Resolver.swift */,
+				925DD35060734B5287ECE330 /* RTCSpikeApp.swift */,
+				3EC095AA7F38E8DD217D4434 /* SpikeController.swift */,
+				4D6AF3F2B481EB3F6AF8C416 /* UDPSocket.swift */,
+				B1ABC639A3DDB498E61E7288 /* Generated */,
+			);
+			path = RTCSpike;
+			sourceTree = "<group>";
+		};
+		B1ABC639A3DDB498E61E7288 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				3DE4917EB49E67BF7A53D028 /* rtc_spike_core.swift */,
+				66C26D12659343BE637F0EAC /* rtc_spike_coreFFI.h */,
+				C08EADB0EFD54846C78542ED /* rtc_spike_coreFFI.modulemap */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		E1FAA0488E4C089F89A63E6C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				3586819B72B8F9D9A0202376 /* RTCSpike.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		ECBDD047B6D5F052782C36EF /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B4E83B26E8C45C1406F4AA26 /* RTCSpikeCore.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		204ED9DFC36ED2B0D147580F /* RTCSpike */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4A1F26C1D2741E68DEA0C0A1 /* Build configuration list for PBXNativeTarget "RTCSpike" */;
+			buildPhases = (
+				F8BCE8FEB0845B66FF824151 /* Sources */,
+				72AF82996F909B8DB044C5C4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RTCSpike;
+			packageProductDependencies = (
+			);
+			productName = RTCSpike;
+			productReference = 3586819B72B8F9D9A0202376 /* RTCSpike.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E59C54B25F93625E3185CABE /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					204ED9DFC36ED2B0D147580F = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 22065B34858788B9744538EC /* Build configuration list for PBXProject "RTCSpike" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7AA7A636FC1354A45EE6B6E6;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				204ED9DFC36ED2B0D147580F /* RTCSpike */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F8BCE8FEB0845B66FF824151 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B7E528987B28087E12DFAE9 /* FileLogger.swift in Sources */,
+				31E334F293E9C2699EDFBC05 /* RTCSpikeApp.swift in Sources */,
+				6E496496DF7A30A149169138 /* Resolver.swift in Sources */,
+				AB2A008F544BA78B3C15F6E4 /* SpikeController.swift in Sources */,
+				558C2C877453F29067D797AE /* UDPSocket.swift in Sources */,
+				D90724E692D9DF2358D99914 /* rtc_spike_core.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		37DB6CE5E642A7E452F3F81A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		87DB2FAE3B713A4F6983B5D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RTCSpike/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad.rtcspike;
+				PRODUCT_NAME = RTCSpike;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A3B047637CCBCFE82101C038 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RTCSpike/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad.rtcspike;
+				PRODUCT_NAME = RTCSpike;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D2AB2062433CB07807F2AE4D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		22065B34858788B9744538EC /* Build configuration list for PBXProject "RTCSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				37DB6CE5E642A7E452F3F81A /* Debug */,
+				D2AB2062433CB07807F2AE4D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4A1F26C1D2741E68DEA0C0A1 /* Build configuration list for PBXNativeTarget "RTCSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87DB2FAE3B713A4F6983B5D3 /* Debug */,
+				A3B047637CCBCFE82101C038 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E59C54B25F93625E3185CABE /* Project object */;
+}

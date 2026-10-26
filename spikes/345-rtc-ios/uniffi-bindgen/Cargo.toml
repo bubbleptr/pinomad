@@ -1,0 +1,14 @@
+[package]
+name = "rtc-spike-uniffi-bindgen"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "main.rs"
+
+[dependencies]
+uniffi = { version = "=0.32.2", features = ["cli"] }
+

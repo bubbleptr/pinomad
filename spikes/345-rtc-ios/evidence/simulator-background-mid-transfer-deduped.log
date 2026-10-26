@@ -1,0 +1,558 @@
+1792986699.060 === RTC spike start 2026-10-26 03:51:39 +0000 ===
+1792986699.061 bundle=build.kieran.pinomad.rtcspike device=iPhone os=iOS 26.5
+1792986699.061 server=http://192.0.2.225:8765 family=ipv4 seed=7
+1792986699.061 env=["RTCSPIKE_HOLD_MS": "3000", "RTCSPIKE_FAMILY": "ipv4", "RTCSPIKE_SERVER": "http://192.0.2.225:8765"]
+1792986699.062 NSBonjourServices=absent
+1792986699.062 interface=en0 address=192.0.2.225 family=ipv4
+1792986699.062 udp bound 192.0.2.225:51525 fd receive loop ready
+1792986699.069 STUN config=stun.cloudflare.com:3478 resolved=["162.159.207.0:3478"]
+1792986699.069 dedupe_duplicates=true
+1792986699.098 engine created local=192.0.2.225:51525
+1792986699.099 start local=192.0.2.225:51525 stun=[162.159.207.0:3478]
+1792986699.099 sent #1 -> 162.159.207.0:3478 bytes=20
+1792986699.119 APP scene=active at 468757766ms
+1792986699.264 STUN mapped 203.0.113.10:22411 via 162.159.207.0:3478 rtt=166ms
+1792986701.101 gather complete in 2030ms; local candidates={203.0.113.10:22411: "srflx", 192.0.2.225:51525: "host"}
+1792986701.109 offer a=candidate:fffeff7e49d708c7d188daaf 1 udp 2130706175 192.0.2.225 51525 typ host ufrag AI4LYRaL8Pk2O8nV
+1792986701.109 offer a=candidate:fffe7f641ae7ecba9eddda2 1 udp 1686109951 203.0.113.10 22411 typ srflx raddr 0.0.0.0 rport 0 ufrag AI4LYRaL8Pk2O8nV
+1792986701.109 offer 720 bytes with m=application
+1792986701.110 offer ready bytes=701 candidates=2
+1792986701.110 offer a=candidate:fffeff7e49d708c7d188daaf 1 udp 2130706175 192.0.2.225 51525 typ host ufrag AI4LYRaL8Pk2O8nV
+1792986701.110 offer a=candidate:fffe7f641ae7ecba9eddda2 1 udp 1686109951 203.0.113.10 22411 typ srflx raddr 0.0.0.0 rport 0 ufrag AI4LYRaL8Pk2O8nV
+1792986701.110 POST http://192.0.2.225:8765/offer offerBytes=701
+1792986701.143 ICE state Checking
+1792986701.144 answer received status=200 bytes=699
+1792986701.145 answer accepted; ICE checks start
+1792986701.146 sent #2 -> 192.0.2.225:51828 bytes=64
+1792986701.148 Rtc rejected datagram from 192.0.2.225:51828
+1792986701.192 sent #3 -> 192.0.2.225:51828 bytes=100
+1792986701.193 ICE state Connected
+1792986702.143 selected candidate pair 192.0.2.225:51525/host -> 192.0.2.225:51828/host rtt=Some(2ms)
+1792986702.144 selected pair local=192.0.2.225:51525/host remote=192.0.2.225:51828/host
+1792986702.156 DTLS connected
+1792986702.159 buffered-amount-low, queued=0
+1792986702.160 DataChannel open id=ChannelId(0) label=pinomad-rtc-spike
+1792986702.161 DataChannel open label=pinomad-rtc-spike
+1792986702.161 Noise IK start device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13 host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20
+1792986702.161 queued Noise message1 (1 bytes)
+1792986702.161 pumped 1 records, queued=0, buffered=103, write_false=0
+1792986702.528 Noise message2 accepted host_hello_v=1 hash=41ab73e173f35de7a3d65340d96ea7384aef4779966bd241f1b2d9bcb0b85f37
+1792986702.528 Noise IK ready hash=41ab73e173f35de7a3d65340d96ea7384aef4779966bd241f1b2d9bcb0b85f37
+1792986702.528 sealed one 4194304 byte business frame into 65 records; pumping with 524288 byte SCTP buffer, 131072 byte low-water
+1792986702.528 pumped 8 records, queued=57, buffered=524280, write_false=1
+1792986702.531 sent #100 -> 192.0.2.225:51828 bytes=1129
+1792986702.532 pumped 1 records, queued=56, buffered=524280, write_false=32
+1792986702.533 sent #200 -> 192.0.2.225:51828 bytes=1129
+1792986702.535 pumped 1 records, queued=55, buffered=524280, write_false=63
+1792986702.535 sent #300 -> 192.0.2.225:51828 bytes=1129
+1792986702.538 pumped 1 records, queued=54, buffered=524280, write_false=94
+1792986702.538 sent #400 -> 192.0.2.225:51828 bytes=1129
+1792986702.541 sent #500 -> 192.0.2.225:51828 bytes=1129
+1792986702.542 pumped 1 records, queued=53, buffered=524280, write_false=125
+1792986702.544 sent #600 -> 192.0.2.225:51828 bytes=1129
+1792986702.546 pumped 1 records, queued=52, buffered=524280, write_false=156
+1792986702.548 sent #700 -> 192.0.2.225:51828 bytes=1129
+1792986702.550 pumped 1 records, queued=51, buffered=524280, write_false=187
+1792986702.551 sent #800 -> 192.0.2.225:51828 bytes=1129
+1792986702.554 pumped 1 records, queued=50, buffered=524280, write_false=218
+1792986702.555 sent #900 -> 192.0.2.225:51828 bytes=1129
+1792986702.558 pumped 1 records, queued=49, buffered=524280, write_false=249
+1792986702.559 sent #1000 -> 192.0.2.225:51828 bytes=1129
+1792986702.561 pumped 1 records, queued=48, buffered=524280, write_false=280
+1792986702.564 pumped 1 records, queued=47, buffered=524280, write_false=311
+1792986702.564 sent #1100 -> 192.0.2.225:51828 bytes=1129
+1792986702.567 pumped 1 records, queued=46, buffered=524280, write_false=342
+1792986702.570 pumped 1 records, queued=45, buffered=524280, write_false=373
+1792986702.570 sent #1200 -> 192.0.2.225:51828 bytes=1129
+1792986702.572 pumped 1 records, queued=44, buffered=524280, write_false=404
+1792986702.573 sent #1300 -> 192.0.2.225:51828 bytes=1129
+1792986702.575 pumped 1 records, queued=43, buffered=524280, write_false=435
+1792986702.578 pumped 1 records, queued=42, buffered=524280, write_false=466
+1792986702.578 sent #1400 -> 192.0.2.225:51828 bytes=1129
+1792986702.581 pumped 1 records, queued=41, buffered=524280, write_false=497
+1792986702.581 sent #1500 -> 192.0.2.225:51828 bytes=1129
+1792986702.583 pumped 1 records, queued=40, buffered=524280, write_false=528
+1792986702.587 pumped 1 records, queued=39, buffered=524280, write_false=559
+1792986702.587 sent #1600 -> 192.0.2.225:51828 bytes=1129
+1792986702.590 pumped 1 records, queued=38, buffered=524280, write_false=590
+1792986702.592 pumped 1 records, queued=37, buffered=524280, write_false=621
+1792986702.592 sent #1700 -> 192.0.2.225:51828 bytes=1129
+1792986702.595 pumped 1 records, queued=36, buffered=524280, write_false=652
+1792986702.596 sent #1800 -> 192.0.2.225:51828 bytes=1129
+1792986702.598 pumped 1 records, queued=35, buffered=524280, write_false=683
+1792986702.601 pumped 1 records, queued=34, buffered=524280, write_false=714
+1792986702.601 sent #1900 -> 192.0.2.225:51828 bytes=1129
+1792986702.604 pumped 1 records, queued=33, buffered=524280, write_false=745
+1792986702.604 sent #2000 -> 192.0.2.225:51828 bytes=1129
+1792986702.607 pumped 1 records, queued=32, buffered=524280, write_false=776
+1792986702.610 pumped 1 records, queued=31, buffered=524280, write_false=807
+1792986702.610 sent #2100 -> 192.0.2.225:51828 bytes=1129
+1792986702.613 pumped 1 records, queued=30, buffered=524280, write_false=838
+1792986702.616 pumped 1 records, queued=29, buffered=524280, write_false=869
+1792986702.616 sent #2200 -> 192.0.2.225:51828 bytes=1129
+1792986702.618 pumped 1 records, queued=28, buffered=524280, write_false=900
+1792986702.619 sent #2300 -> 192.0.2.225:51828 bytes=1129
+1792986702.621 pumped 1 records, queued=27, buffered=524280, write_false=931
+1792986702.624 pumped 1 records, queued=26, buffered=524280, write_false=962
+1792986702.624 sent #2400 -> 192.0.2.225:51828 bytes=1129
+1792986702.627 pumped 1 records, queued=25, buffered=524280, write_false=993
+1792986702.627 sent #2500 -> 192.0.2.225:51828 bytes=1129
+1792986702.629 pumped 1 records, queued=24, buffered=524280, write_false=1024
+1792986702.632 pumped 1 records, queued=23, buffered=524280, write_false=1055
+1792986702.632 sent #2600 -> 192.0.2.225:51828 bytes=1129
+1792986702.635 pumped 1 records, queued=22, buffered=524280, write_false=1086
+1792986702.638 pumped 1 records, queued=21, buffered=524280, write_false=1117
+1792986702.639 sent #2700 -> 192.0.2.225:51828 bytes=1129
+1792986702.641 pumped 1 records, queued=20, buffered=524280, write_false=1148
+1792986702.642 sent #2800 -> 192.0.2.225:51828 bytes=1129
+1792986702.644 pumped 1 records, queued=19, buffered=524280, write_false=1179
+1792986702.647 pumped 1 records, queued=18, buffered=524280, write_false=1210
+1792986702.647 sent #2900 -> 192.0.2.225:51828 bytes=1129
+1792986702.650 pumped 1 records, queued=17, buffered=524280, write_false=1241
+1792986702.653 pumped 1 records, queued=16, buffered=524280, write_false=1272
+1792986702.654 sent #3000 -> 192.0.2.225:51828 bytes=1129
+1792986702.657 pumped 1 records, queued=15, buffered=524280, write_false=1303
+1792986702.657 sent #3100 -> 192.0.2.225:51828 bytes=1129
+1792986702.659 pumped 1 records, queued=14, buffered=524280, write_false=1334
+1792986702.662 pumped 1 records, queued=13, buffered=524280, write_false=1365
+1792986702.662 sent #3200 -> 192.0.2.225:51828 bytes=1129
+1792986702.665 pumped 1 records, queued=12, buffered=524280, write_false=1396
+1792986702.665 sent #3300 -> 192.0.2.225:51828 bytes=1129
+1792986702.668 pumped 1 records, queued=11, buffered=524280, write_false=1427
+1792986702.671 pumped 1 records, queued=10, buffered=524280, write_false=1458
+1792986702.671 sent #3400 -> 192.0.2.225:51828 bytes=1129
+1792986702.674 pumped 1 records, queued=9, buffered=524280, write_false=1489
+1792986702.677 pumped 1 records, queued=8, buffered=524280, write_false=1520
+1792986702.677 sent #3500 -> 192.0.2.225:51828 bytes=1129
+1792986702.680 pumped 1 records, queued=7, buffered=524280, write_false=1551
+1792986702.681 sent #3600 -> 192.0.2.225:51828 bytes=1129
+1792986702.683 pumped 1 records, queued=6, buffered=524280, write_false=1582
+1792986702.686 pumped 1 records, queued=5, buffered=524280, write_false=1613
+1792986702.686 sent #3700 -> 192.0.2.225:51828 bytes=1129
+1792986702.689 pumped 1 records, queued=4, buffered=524280, write_false=1644
+1792986702.689 sent #3800 -> 192.0.2.225:51828 bytes=1129
+1792986702.692 pumped 1 records, queued=3, buffered=524280, write_false=1675
+1792986702.694 pumped 1 records, queued=2, buffered=524280, write_false=1706
+1792986702.695 sent #3900 -> 192.0.2.225:51828 bytes=1129
+1792986702.697 pumped 1 records, queued=1, buffered=524280, write_false=1737
+1792986702.698 pumped 1 records, queued=0, buffered=523325, write_false=1737
+1792986702.698 all bulk records accepted by SCTP; awaiting Noise echo
+1792986702.698 bulk sent records=65 bytes=4194304 writeFalse=1737 buffered=523325
+1792986702.703 buffered-amount-low, queued=0
+1792986702.704 APP scene=inactive at 468761351ms
+1792986703.239 sent #4000 -> 192.0.2.225:51828 bytes=65
+1792986703.247 Noise record #1 bytes=65535 first=ff4c768c286c8d8f
+1792986703.261 Noise record #2 bytes=65535 first=b8f40c043d0693ca
+1792986703.282 Noise record #3 bytes=65535 first=1deaff423eecabfd
+1792986703.302 sent #4100 -> 192.0.2.225:51828 bytes=65
+1792986703.387 sent #4200 -> 192.0.2.225:51828 bytes=65
+1792986703.390 Noise record #8 bytes=65535 first=8cc4fe01a6a9b120
+1792986703.424 APP scene=background at 468762070ms
+1792986703.427 APP paused timer, nextDeadline=Optional(468762256)
+1792986703.451 sent #4300 -> 192.0.2.225:51828 bytes=65
+1792986703.536 sent #4400 -> 192.0.2.225:51828 bytes=65
+1792986703.562 Noise record #16 bytes=65535 first=9f21170c76b5761f
+1792986703.605 sent #4500 -> 192.0.2.225:51828 bytes=65
+1792986703.691 sent #4600 -> 192.0.2.225:51828 bytes=65
+1792986703.739 Noise record #24 bytes=65535 first=8454feda02d08d02
+1792986706.821 sent #4700 -> 192.0.2.225:51828 bytes=65
+1792986706.822 APP scene=inactive at 468765469ms
+1792986706.828 sent #4800 -> 192.0.2.225:51828 bytes=65
+1792986706.834 sent #4900 -> 192.0.2.225:51828 bytes=65
+1792986706.835 Noise record #32 bytes=65535 first=8242e92bd5c4b0b6
+1792986706.840 sent #5000 -> 192.0.2.225:51828 bytes=65
+1792986706.845 sent #5100 -> 192.0.2.225:51828 bytes=65
+1792986706.847 Noise record #40 bytes=65535 first=05675a74500dc568
+1792986706.850 sent #5200 -> 192.0.2.225:51828 bytes=65
+1792986706.850 duplicate Noise record suppressed (#1, 65535 bytes)
+1792986706.852 duplicate Noise record suppressed (#2, 65535 bytes)
+1792986706.853 duplicate Noise record suppressed (#3, 65535 bytes)
+1792986706.855 duplicate Noise record suppressed (#4, 65535 bytes)
+1792986706.855 sent #5300 -> 192.0.2.225:51828 bytes=65
+1792986706.857 duplicate Noise record suppressed (#5, 65535 bytes)
+1792986706.858 duplicate Noise record suppressed (#6, 65535 bytes)
+1792986706.860 duplicate Noise record suppressed (#7, 65535 bytes)
+1792986706.861 sent #5400 -> 192.0.2.225:51828 bytes=65
+1792986706.862 duplicate Noise record suppressed (#8, 65535 bytes)
+1792986706.864 duplicate Noise record suppressed (#9, 65535 bytes)
+1792986706.865 duplicate Noise record suppressed (#10, 65535 bytes)
+1792986706.867 duplicate Noise record suppressed (#11, 65535 bytes)
+1792986706.868 sent #5500 -> 192.0.2.225:51828 bytes=65
+1792986706.869 duplicate Noise record suppressed (#12, 65535 bytes)
+1792986706.870 duplicate Noise record suppressed (#13, 65535 bytes)
+1792986706.872 duplicate Noise record suppressed (#14, 65535 bytes)
+1792986706.874 sent #5600 -> 192.0.2.225:51828 bytes=65
+1792986706.874 duplicate Noise record suppressed (#15, 65535 bytes)
+1792986706.876 duplicate Noise record suppressed (#16, 65535 bytes)
+1792986706.877 duplicate Noise record suppressed (#17, 65535 bytes)
+1792986706.879 duplicate Noise record suppressed (#18, 65535 bytes)
+1792986706.880 sent #5700 -> 192.0.2.225:51828 bytes=65
+1792986706.881 duplicate Noise record suppressed (#19, 65535 bytes)
+1792986706.882 duplicate Noise record suppressed (#20, 65535 bytes)
+1792986706.884 duplicate Noise record suppressed (#21, 65535 bytes)
+1792986706.885 sent #5800 -> 192.0.2.225:51828 bytes=65
+1792986706.886 duplicate Noise record suppressed (#22, 65535 bytes)
+1792986706.887 duplicate Noise record suppressed (#23, 65535 bytes)
+1792986706.889 duplicate Noise record suppressed (#24, 65535 bytes)
+1792986706.890 duplicate Noise record suppressed (#25, 65535 bytes)
+1792986706.891 sent #5900 -> 192.0.2.225:51828 bytes=65
+1792986706.892 duplicate Noise record suppressed (#26, 65535 bytes)
+1792986706.894 duplicate Noise record suppressed (#27, 65535 bytes)
+1792986706.895 duplicate Noise record suppressed (#28, 65535 bytes)
+1792986706.896 sent #6000 -> 192.0.2.225:51828 bytes=65
+1792986706.896 duplicate Noise record suppressed (#29, 65535 bytes)
+1792986706.898 duplicate Noise record suppressed (#30, 65535 bytes)
+1792986706.900 duplicate Noise record suppressed (#31, 65535 bytes)
+1792986706.901 duplicate Noise record suppressed (#32, 65535 bytes)
+1792986706.902 sent #6100 -> 192.0.2.225:51828 bytes=65
+1792986706.903 duplicate Noise record suppressed (#33, 65535 bytes)
+1792986706.904 duplicate Noise record suppressed (#34, 65535 bytes)
+1792986706.906 duplicate Noise record suppressed (#35, 65535 bytes)
+1792986706.907 sent #6200 -> 192.0.2.225:51828 bytes=65
+1792986706.907 duplicate Noise record suppressed (#36, 65535 bytes)
+1792986706.908 duplicate Noise record suppressed (#37, 65535 bytes)
+1792986706.910 duplicate Noise record suppressed (#38, 65535 bytes)
+1792986706.912 duplicate Noise record suppressed (#39, 65535 bytes)
+1792986706.912 sent #6300 -> 192.0.2.225:51828 bytes=65
+1792986706.913 duplicate Noise record suppressed (#40, 65535 bytes)
+1792986706.915 duplicate Noise record suppressed (#41, 65535 bytes)
+1792986706.916 duplicate Noise record suppressed (#42, 65535 bytes)
+1792986706.917 sent #6400 -> 192.0.2.225:51828 bytes=65
+1792986706.918 duplicate Noise record suppressed (#43, 65535 bytes)
+1792986706.920 duplicate Noise record suppressed (#44, 65535 bytes)
+1792986706.921 duplicate Noise record suppressed (#45, 65535 bytes)
+1792986706.923 duplicate Noise record suppressed (#46, 65535 bytes)
+1792986706.924 sent #6500 -> 192.0.2.225:51828 bytes=65
+1792986706.924 duplicate Noise record suppressed (#47, 65535 bytes)
+1792986706.926 duplicate Noise record suppressed (#48, 65535 bytes)
+1792986706.927 duplicate Noise record suppressed (#49, 65535 bytes)
+1792986706.929 sent #6600 -> 192.0.2.225:51828 bytes=65
+1792986706.929 duplicate Noise record suppressed (#50, 65535 bytes)
+1792986706.930 duplicate Noise record suppressed (#51, 65535 bytes)
+1792986706.932 duplicate Noise record suppressed (#52, 65535 bytes)
+1792986706.933 duplicate Noise record suppressed (#53, 65535 bytes)
+1792986706.934 sent #6700 -> 192.0.2.225:51828 bytes=65
+1792986706.935 duplicate Noise record suppressed (#54, 65535 bytes)
+1792986706.937 duplicate Noise record suppressed (#55, 65535 bytes)
+1792986706.938 duplicate Noise record suppressed (#56, 65535 bytes)
+1792986706.939 sent #6800 -> 192.0.2.225:51828 bytes=65
+1792986706.940 duplicate Noise record suppressed (#57, 65535 bytes)
+1792986706.941 duplicate Noise record suppressed (#58, 65535 bytes)
+1792986706.942 duplicate Noise record suppressed (#59, 65535 bytes)
+1792986706.944 duplicate Noise record suppressed (#60, 65535 bytes)
+1792986706.945 sent #6900 -> 192.0.2.225:51828 bytes=65
+1792986706.945 duplicate Noise record suppressed (#61, 65535 bytes)
+1792986706.947 duplicate Noise record suppressed (#62, 65535 bytes)
+1792986706.949 duplicate Noise record suppressed (#63, 65535 bytes)
+1792986706.950 duplicate Noise record suppressed (#64, 65535 bytes)
+1792986706.950 sent #7000 -> 192.0.2.225:51828 bytes=65
+1792986706.951 duplicate Noise record suppressed (#65, 65535 bytes)
+1792986706.953 duplicate Noise record suppressed (#66, 65535 bytes)
+1792986706.954 duplicate Noise record suppressed (#67, 65535 bytes)
+1792986706.955 sent #7100 -> 192.0.2.225:51828 bytes=65
+1792986706.956 duplicate Noise record suppressed (#68, 65535 bytes)
+1792986706.957 duplicate Noise record suppressed (#69, 65535 bytes)
+1792986706.959 duplicate Noise record suppressed (#70, 65535 bytes)
+1792986706.960 duplicate Noise record suppressed (#71, 65535 bytes)
+1792986706.960 sent #7200 -> 192.0.2.225:51828 bytes=65
+1792986706.962 duplicate Noise record suppressed (#72, 65535 bytes)
+1792986706.963 duplicate Noise record suppressed (#73, 65535 bytes)
+1792986706.964 duplicate Noise record suppressed (#74, 65535 bytes)
+1792986706.965 sent #7300 -> 192.0.2.225:51828 bytes=65
+1792986706.966 duplicate Noise record suppressed (#75, 65535 bytes)
+1792986706.967 duplicate Noise record suppressed (#76, 65535 bytes)
+1792986706.969 duplicate Noise record suppressed (#77, 65535 bytes)
+1792986706.972 duplicate Noise record suppressed (#78, 65535 bytes)
+1792986706.974 sent #7400 -> 192.0.2.225:51828 bytes=65
+1792986706.976 duplicate Noise record suppressed (#79, 65535 bytes)
+1792986706.978 duplicate Noise record suppressed (#80, 65535 bytes)
+1792986706.979 duplicate Noise record suppressed (#81, 65535 bytes)
+1792986706.980 sent #7500 -> 192.0.2.225:51828 bytes=65
+1792986706.981 duplicate Noise record suppressed (#82, 65535 bytes)
+1792986706.982 duplicate Noise record suppressed (#83, 65535 bytes)
+1792986706.983 duplicate Noise record suppressed (#84, 65535 bytes)
+1792986706.985 duplicate Noise record suppressed (#85, 65535 bytes)
+1792986706.985 sent #7600 -> 192.0.2.225:51828 bytes=65
+1792986706.987 duplicate Noise record suppressed (#86, 65535 bytes)
+1792986706.988 duplicate Noise record suppressed (#87, 65535 bytes)
+1792986706.990 duplicate Noise record suppressed (#88, 65535 bytes)
+1792986706.991 sent #7700 -> 192.0.2.225:51828 bytes=65
+1792986706.992 duplicate Noise record suppressed (#89, 65535 bytes)
+1792986706.993 duplicate Noise record suppressed (#90, 65535 bytes)
+1792986706.995 duplicate Noise record suppressed (#91, 65535 bytes)
+1792986706.996 duplicate Noise record suppressed (#92, 65535 bytes)
+1792986706.997 sent #7800 -> 192.0.2.225:51828 bytes=65
+1792986706.998 duplicate Noise record suppressed (#93, 65535 bytes)
+1792986706.999 duplicate Noise record suppressed (#94, 65535 bytes)
+1792986707.000 duplicate Noise record suppressed (#95, 65535 bytes)
+1792986707.001 sent #7900 -> 192.0.2.225:51828 bytes=65
+1792986707.002 duplicate Noise record suppressed (#96, 65535 bytes)
+1792986707.003 duplicate Noise record suppressed (#97, 65535 bytes)
+1792986707.005 duplicate Noise record suppressed (#98, 65535 bytes)
+1792986707.006 duplicate Noise record suppressed (#99, 65535 bytes)
+1792986707.006 sent #8000 -> 192.0.2.225:51828 bytes=65
+1792986707.008 duplicate Noise record suppressed (#100, 65535 bytes)
+1792986707.009 duplicate Noise record suppressed (#101, 65535 bytes)
+1792986707.011 duplicate Noise record suppressed (#102, 65535 bytes)
+1792986707.012 sent #8100 -> 192.0.2.225:51828 bytes=65
+1792986707.013 duplicate Noise record suppressed (#103, 65535 bytes)
+1792986707.014 duplicate Noise record suppressed (#104, 65535 bytes)
+1792986707.016 duplicate Noise record suppressed (#105, 65535 bytes)
+1792986707.017 duplicate Noise record suppressed (#106, 65535 bytes)
+1792986707.017 sent #8200 -> 192.0.2.225:51828 bytes=65
+1792986707.019 duplicate Noise record suppressed (#107, 65535 bytes)
+1792986707.020 duplicate Noise record suppressed (#108, 65535 bytes)
+1792986707.021 duplicate Noise record suppressed (#109, 65535 bytes)
+1792986707.022 sent #8300 -> 192.0.2.225:51828 bytes=65
+1792986707.023 duplicate Noise record suppressed (#110, 65535 bytes)
+1792986707.024 duplicate Noise record suppressed (#111, 65535 bytes)
+1792986707.026 duplicate Noise record suppressed (#112, 65535 bytes)
+1792986707.027 duplicate Noise record suppressed (#113, 65535 bytes)
+1792986707.028 sent #8400 -> 192.0.2.225:51828 bytes=65
+1792986707.029 duplicate Noise record suppressed (#114, 65535 bytes)
+1792986707.031 duplicate Noise record suppressed (#115, 65535 bytes)
+1792986707.032 duplicate Noise record suppressed (#116, 65535 bytes)
+1792986707.033 sent #8500 -> 192.0.2.225:51828 bytes=65
+1792986707.034 duplicate Noise record suppressed (#117, 65535 bytes)
+1792986707.035 duplicate Noise record suppressed (#118, 65535 bytes)
+1792986707.037 duplicate Noise record suppressed (#119, 65535 bytes)
+1792986707.038 duplicate Noise record suppressed (#120, 65535 bytes)
+1792986707.038 sent #8600 -> 192.0.2.225:51828 bytes=65
+1792986707.040 duplicate Noise record suppressed (#121, 65535 bytes)
+1792986707.041 duplicate Noise record suppressed (#122, 65535 bytes)
+1792986707.043 duplicate Noise record suppressed (#123, 65535 bytes)
+1792986707.044 sent #8700 -> 192.0.2.225:51828 bytes=65
+1792986707.045 duplicate Noise record suppressed (#124, 65535 bytes)
+1792986707.046 duplicate Noise record suppressed (#125, 65535 bytes)
+1792986707.048 duplicate Noise record suppressed (#126, 65535 bytes)
+1792986707.049 duplicate Noise record suppressed (#127, 65535 bytes)
+1792986707.049 sent #8800 -> 192.0.2.225:51828 bytes=65
+1792986707.051 duplicate Noise record suppressed (#128, 65535 bytes)
+1792986707.052 duplicate Noise record suppressed (#129, 65535 bytes)
+1792986707.053 duplicate Noise record suppressed (#130, 65535 bytes)
+1792986707.054 sent #8900 -> 192.0.2.225:51828 bytes=65
+1792986707.055 duplicate Noise record suppressed (#131, 65535 bytes)
+1792986707.056 duplicate Noise record suppressed (#132, 65535 bytes)
+1792986707.057 duplicate Noise record suppressed (#133, 65535 bytes)
+1792986707.059 duplicate Noise record suppressed (#134, 65535 bytes)
+1792986707.060 sent #9000 -> 192.0.2.225:51828 bytes=65
+1792986707.061 duplicate Noise record suppressed (#135, 65535 bytes)
+1792986707.063 duplicate Noise record suppressed (#136, 65535 bytes)
+1792986707.064 duplicate Noise record suppressed (#137, 65535 bytes)
+1792986707.065 sent #9100 -> 192.0.2.225:51828 bytes=65
+1792986707.066 duplicate Noise record suppressed (#138, 65535 bytes)
+1792986707.067 duplicate Noise record suppressed (#139, 65535 bytes)
+1792986707.069 duplicate Noise record suppressed (#140, 65535 bytes)
+1792986707.070 duplicate Noise record suppressed (#141, 65535 bytes)
+1792986707.071 sent #9200 -> 192.0.2.225:51828 bytes=65
+1792986707.072 duplicate Noise record suppressed (#142, 65535 bytes)
+1792986707.073 duplicate Noise record suppressed (#143, 65535 bytes)
+1792986707.075 duplicate Noise record suppressed (#144, 65535 bytes)
+1792986707.076 sent #9300 -> 192.0.2.225:51828 bytes=65
+1792986707.076 duplicate Noise record suppressed (#145, 65535 bytes)
+1792986707.078 duplicate Noise record suppressed (#146, 65535 bytes)
+1792986707.080 duplicate Noise record suppressed (#147, 65535 bytes)
+1792986707.082 duplicate Noise record suppressed (#148, 65535 bytes)
+1792986707.082 sent #9400 -> 192.0.2.225:51828 bytes=65
+1792986707.083 duplicate Noise record suppressed (#149, 65535 bytes)
+1792986707.084 duplicate Noise record suppressed (#150, 65535 bytes)
+1792986707.086 duplicate Noise record suppressed (#151, 65535 bytes)
+1792986707.087 sent #9500 -> 192.0.2.225:51828 bytes=65
+1792986707.088 duplicate Noise record suppressed (#152, 65535 bytes)
+1792986707.089 duplicate Noise record suppressed (#153, 65535 bytes)
+1792986707.090 duplicate Noise record suppressed (#154, 65535 bytes)
+1792986707.092 duplicate Noise record suppressed (#155, 65535 bytes)
+1792986707.092 sent #9600 -> 192.0.2.225:51828 bytes=65
+1792986707.094 duplicate Noise record suppressed (#156, 65535 bytes)
+1792986707.095 duplicate Noise record suppressed (#157, 65535 bytes)
+1792986707.097 duplicate Noise record suppressed (#158, 65535 bytes)
+1792986707.098 sent #9700 -> 192.0.2.225:51828 bytes=65
+1792986707.098 duplicate Noise record suppressed (#159, 65535 bytes)
+1792986707.099 duplicate Noise record suppressed (#160, 65535 bytes)
+1792986707.101 duplicate Noise record suppressed (#161, 65535 bytes)
+1792986707.102 duplicate Noise record suppressed (#162, 65535 bytes)
+1792986707.103 sent #9800 -> 192.0.2.225:51828 bytes=65
+1792986707.104 duplicate Noise record suppressed (#163, 65535 bytes)
+1792986707.105 duplicate Noise record suppressed (#164, 65535 bytes)
+1792986707.106 duplicate Noise record suppressed (#165, 65535 bytes)
+1792986707.107 sent #9900 -> 192.0.2.225:51828 bytes=65
+1792986707.108 duplicate Noise record suppressed (#166, 65535 bytes)
+1792986707.109 duplicate Noise record suppressed (#167, 65535 bytes)
+1792986707.111 duplicate Noise record suppressed (#168, 65535 bytes)
+1792986707.112 duplicate Noise record suppressed (#169, 65535 bytes)
+1792986707.113 sent #10000 -> 192.0.2.225:51828 bytes=65
+1792986707.114 duplicate Noise record suppressed (#170, 65535 bytes)
+1792986707.116 duplicate Noise record suppressed (#171, 65535 bytes)
+1792986707.117 duplicate Noise record suppressed (#172, 65535 bytes)
+1792986707.118 sent #10100 -> 192.0.2.225:51828 bytes=65
+1792986707.118 duplicate Noise record suppressed (#173, 65535 bytes)
+1792986707.120 duplicate Noise record suppressed (#174, 65535 bytes)
+1792986707.121 duplicate Noise record suppressed (#175, 65535 bytes)
+1792986707.123 duplicate Noise record suppressed (#176, 65535 bytes)
+1792986707.123 sent #10200 -> 192.0.2.225:51828 bytes=65
+1792986707.124 duplicate Noise record suppressed (#177, 65535 bytes)
+1792986707.126 duplicate Noise record suppressed (#178, 65535 bytes)
+1792986707.127 duplicate Noise record suppressed (#179, 65535 bytes)
+1792986707.128 sent #10300 -> 192.0.2.225:51828 bytes=65
+1792986707.129 duplicate Noise record suppressed (#180, 65535 bytes)
+1792986707.130 duplicate Noise record suppressed (#181, 65535 bytes)
+1792986707.132 duplicate Noise record suppressed (#182, 65535 bytes)
+1792986707.133 duplicate Noise record suppressed (#183, 65535 bytes)
+1792986707.134 sent #10400 -> 192.0.2.225:51828 bytes=65
+1792986707.135 duplicate Noise record suppressed (#184, 65535 bytes)
+1792986707.136 duplicate Noise record suppressed (#185, 65535 bytes)
+1792986707.138 duplicate Noise record suppressed (#186, 65535 bytes)
+1792986707.139 sent #10500 -> 192.0.2.225:51828 bytes=65
+1792986707.140 duplicate Noise record suppressed (#187, 65535 bytes)
+1792986707.141 duplicate Noise record suppressed (#188, 65535 bytes)
+1792986707.142 duplicate Noise record suppressed (#189, 65535 bytes)
+1792986707.144 duplicate Noise record suppressed (#190, 65535 bytes)
+1792986707.145 sent #10600 -> 192.0.2.225:51828 bytes=65
+1792986707.146 duplicate Noise record suppressed (#191, 65535 bytes)
+1792986707.147 duplicate Noise record suppressed (#192, 65535 bytes)
+1792986707.150 duplicate Noise record suppressed (#193, 65535 bytes)
+1792986707.151 sent #10700 -> 192.0.2.225:51828 bytes=65
+1792986707.151 duplicate Noise record suppressed (#194, 65535 bytes)
+1792986707.153 duplicate Noise record suppressed (#195, 65535 bytes)
+1792986707.154 duplicate Noise record suppressed (#196, 65535 bytes)
+1792986707.155 duplicate Noise record suppressed (#197, 65535 bytes)
+1792986707.156 sent #10800 -> 192.0.2.225:51828 bytes=65
+1792986707.157 duplicate Noise record suppressed (#198, 65535 bytes)
+1792986707.159 duplicate Noise record suppressed (#199, 65535 bytes)
+1792986707.161 duplicate Noise record suppressed (#200, 65535 bytes)
+1792986707.163 sent #10900 -> 192.0.2.225:51828 bytes=65
+1792986707.163 duplicate Noise record suppressed (#201, 65535 bytes)
+1792986707.165 duplicate Noise record suppressed (#202, 65535 bytes)
+1792986707.167 duplicate Noise record suppressed (#203, 65535 bytes)
+1792986707.168 duplicate Noise record suppressed (#204, 65535 bytes)
+1792986707.169 sent #11000 -> 192.0.2.225:51828 bytes=65
+1792986707.170 duplicate Noise record suppressed (#205, 65535 bytes)
+1792986707.172 duplicate Noise record suppressed (#206, 65535 bytes)
+1792986707.173 duplicate Noise record suppressed (#207, 65535 bytes)
+1792986707.175 sent #11100 -> 192.0.2.225:51828 bytes=65
+1792986707.176 duplicate Noise record suppressed (#208, 65535 bytes)
+1792986707.178 duplicate Noise record suppressed (#209, 65535 bytes)
+1792986707.179 duplicate Noise record suppressed (#210, 65535 bytes)
+1792986707.181 duplicate Noise record suppressed (#211, 65535 bytes)
+1792986707.182 sent #11200 -> 192.0.2.225:51828 bytes=65
+1792986707.182 duplicate Noise record suppressed (#212, 65535 bytes)
+1792986707.184 duplicate Noise record suppressed (#213, 65535 bytes)
+1792986707.186 duplicate Noise record suppressed (#214, 65535 bytes)
+1792986707.187 sent #11300 -> 192.0.2.225:51828 bytes=65
+1792986707.187 duplicate Noise record suppressed (#215, 65535 bytes)
+1792986707.188 duplicate Noise record suppressed (#216, 65535 bytes)
+1792986707.190 duplicate Noise record suppressed (#217, 65535 bytes)
+1792986707.191 duplicate Noise record suppressed (#218, 65535 bytes)
+1792986707.192 sent #11400 -> 192.0.2.225:51828 bytes=65
+1792986707.193 duplicate Noise record suppressed (#219, 65535 bytes)
+1792986707.195 duplicate Noise record suppressed (#220, 65535 bytes)
+1792986707.197 duplicate Noise record suppressed (#221, 65535 bytes)
+1792986707.198 sent #11500 -> 192.0.2.225:51828 bytes=65
+1792986707.199 duplicate Noise record suppressed (#222, 65535 bytes)
+1792986707.200 duplicate Noise record suppressed (#223, 65535 bytes)
+1792986707.201 duplicate Noise record suppressed (#224, 65535 bytes)
+1792986707.203 duplicate Noise record suppressed (#225, 65535 bytes)
+1792986707.203 sent #11600 -> 192.0.2.225:51828 bytes=65
+1792986707.204 duplicate Noise record suppressed (#226, 65535 bytes)
+1792986707.206 duplicate Noise record suppressed (#227, 65535 bytes)
+1792986707.207 duplicate Noise record suppressed (#228, 65535 bytes)
+1792986707.209 sent #11700 -> 192.0.2.225:51828 bytes=65
+1792986707.209 duplicate Noise record suppressed (#229, 65535 bytes)
+1792986707.211 duplicate Noise record suppressed (#230, 65535 bytes)
+1792986707.212 duplicate Noise record suppressed (#231, 65535 bytes)
+1792986707.214 duplicate Noise record suppressed (#232, 65535 bytes)
+1792986707.215 sent #11800 -> 192.0.2.225:51828 bytes=65
+1792986707.215 duplicate Noise record suppressed (#233, 65535 bytes)
+1792986707.217 duplicate Noise record suppressed (#234, 65535 bytes)
+1792986707.218 duplicate Noise record suppressed (#235, 65535 bytes)
+1792986707.220 sent #11900 -> 192.0.2.225:51828 bytes=65
+1792986707.220 duplicate Noise record suppressed (#236, 65535 bytes)
+1792986707.221 duplicate Noise record suppressed (#237, 65535 bytes)
+1792986707.223 duplicate Noise record suppressed (#238, 65535 bytes)
+1792986707.224 duplicate Noise record suppressed (#239, 65535 bytes)
+1792986707.225 sent #12000 -> 192.0.2.225:51828 bytes=65
+1792986707.226 duplicate Noise record suppressed (#240, 65535 bytes)
+1792986707.229 duplicate Noise record suppressed (#241, 65535 bytes)
+1792986707.231 duplicate Noise record suppressed (#242, 65535 bytes)
+1792986707.232 sent #12100 -> 192.0.2.225:51828 bytes=65
+1792986707.233 duplicate Noise record suppressed (#243, 65535 bytes)
+1792986707.234 duplicate Noise record suppressed (#244, 65535 bytes)
+1792986707.236 duplicate Noise record suppressed (#245, 65535 bytes)
+1792986707.238 duplicate Noise record suppressed (#246, 65535 bytes)
+1792986707.239 sent #12200 -> 192.0.2.225:51828 bytes=65
+1792986707.240 duplicate Noise record suppressed (#247, 65535 bytes)
+1792986707.241 duplicate Noise record suppressed (#248, 65535 bytes)
+1792986707.242 duplicate Noise record suppressed (#249, 65535 bytes)
+1792986707.245 sent #12300 -> 192.0.2.225:51828 bytes=65
+1792986707.245 duplicate Noise record suppressed (#250, 65535 bytes)
+1792986707.246 duplicate Noise record suppressed (#251, 65535 bytes)
+1792986707.248 duplicate Noise record suppressed (#252, 65535 bytes)
+1792986707.249 duplicate Noise record suppressed (#253, 65535 bytes)
+1792986707.250 sent #12400 -> 192.0.2.225:51828 bytes=65
+1792986707.250 duplicate Noise record suppressed (#254, 65535 bytes)
+1792986707.252 duplicate Noise record suppressed (#255, 65535 bytes)
+1792986707.253 duplicate Noise record suppressed (#256, 65535 bytes)
+1792986707.255 sent #12500 -> 192.0.2.225:51828 bytes=65
+1792986707.255 duplicate Noise record suppressed (#257, 65535 bytes)
+1792986707.256 duplicate Noise record suppressed (#258, 65535 bytes)
+1792986707.258 duplicate Noise record suppressed (#259, 65535 bytes)
+1792986707.259 duplicate Noise record suppressed (#260, 65535 bytes)
+1792986707.260 sent #12600 -> 192.0.2.225:51828 bytes=65
+1792986707.261 duplicate Noise record suppressed (#261, 65535 bytes)
+1792986707.263 duplicate Noise record suppressed (#262, 65535 bytes)
+1792986707.264 duplicate Noise record suppressed (#263, 65535 bytes)
+1792986707.266 duplicate Noise record suppressed (#264, 65535 bytes)
+1792986707.266 sent #12700 -> 192.0.2.225:51828 bytes=65
+1792986707.267 duplicate Noise record suppressed (#265, 65535 bytes)
+1792986707.269 duplicate Noise record suppressed (#266, 65535 bytes)
+1792986707.270 duplicate Noise record suppressed (#267, 65535 bytes)
+1792986707.271 sent #12800 -> 192.0.2.225:51828 bytes=65
+1792986707.272 duplicate Noise record suppressed (#268, 65535 bytes)
+1792986707.273 duplicate Noise record suppressed (#269, 65535 bytes)
+1792986707.274 duplicate Noise record suppressed (#270, 65535 bytes)
+1792986707.276 duplicate Noise record suppressed (#271, 65535 bytes)
+1792986707.276 sent #12900 -> 192.0.2.225:51828 bytes=65
+1792986707.277 duplicate Noise record suppressed (#272, 65535 bytes)
+1792986707.279 duplicate Noise record suppressed (#273, 65535 bytes)
+1792986707.280 duplicate Noise record suppressed (#274, 65535 bytes)
+1792986707.281 sent #13000 -> 192.0.2.225:51828 bytes=65
+1792986707.282 duplicate Noise record suppressed (#275, 65535 bytes)
+1792986707.283 duplicate Noise record suppressed (#276, 65535 bytes)
+1792986707.284 duplicate Noise record suppressed (#277, 65535 bytes)
+1792986707.286 duplicate Noise record suppressed (#278, 65535 bytes)
+1792986707.286 sent #13100 -> 192.0.2.225:51828 bytes=65
+1792986707.287 duplicate Noise record suppressed (#279, 65535 bytes)
+1792986707.288 duplicate Noise record suppressed (#280, 65535 bytes)
+1792986707.290 duplicate Noise record suppressed (#281, 65535 bytes)
+1792986707.290 sent #13200 -> 192.0.2.225:51828 bytes=65
+1792986707.291 duplicate Noise record suppressed (#282, 65535 bytes)
+1792986707.292 duplicate Noise record suppressed (#283, 65535 bytes)
+1792986707.294 duplicate Noise record suppressed (#284, 65535 bytes)
+1792986707.295 duplicate Noise record suppressed (#285, 65535 bytes)
+1792986707.296 sent #13300 -> 192.0.2.225:51828 bytes=65
+1792986707.297 duplicate Noise record suppressed (#286, 65535 bytes)
+1792986707.298 duplicate Noise record suppressed (#287, 65535 bytes)
+1792986707.300 duplicate Noise record suppressed (#288, 65535 bytes)
+1792986707.300 sent #13400 -> 192.0.2.225:51828 bytes=65
+1792986707.301 duplicate Noise record suppressed (#289, 65535 bytes)
+1792986707.302 duplicate Noise record suppressed (#290, 65535 bytes)
+1792986707.303 duplicate Noise record suppressed (#291, 65535 bytes)
+1792986707.306 APP scene=active at 468765953ms
+1792986707.331 sent #13500 -> 192.0.2.225:51828 bytes=65
+1792986707.397 sent #13600 -> 192.0.2.225:51828 bytes=65
+1792986707.439 Noise record #48 bytes=65535 first=07512c25619066dd
+1792986707.481 sent #13700 -> 192.0.2.225:51828 bytes=65
+1792986707.545 sent #13800 -> 192.0.2.225:51828 bytes=65
+1792986707.614 Noise record #56 bytes=65535 first=16cc87981a1e0873
+1792986707.635 sent #13900 -> 192.0.2.225:51828 bytes=65
+1792986707.704 sent #14000 -> 192.0.2.225:51828 bytes=65
+1792986707.788 sent #14100 -> 192.0.2.225:51828 bytes=65
+1792986707.789 Noise record #64 bytes=65535 first=57b2def26409a96a
+1792986707.811 Noise record #65 bytes=1169 first=29ad967a44b4a8c6
+1792986707.811 Noise frame complete received_bytes=4194304 expected_bytes=4194304 matched=true
+1792986707.811 bulk received records=65 bytes=4194304 matched=true
+1792986707.811 COMPLETE phase=Complete local=192.0.2.225:51525 local_kind={203.0.113.10:22411: "srflx", 192.0.2.225:51525: "host"} remote_kind={100.64.0.2:51828: "host", 198.51.100.1:51828: "host", 192.0.2.225:51828: "host", 100.64.0.1:51828: "host"} records_sent=65 records_received=65 deduped=291 bulk_bytes=4194304 write_false=1737 pair=Some("192.0.2.225:51525/host -> 192.0.2.225:51828/host")
+1792986707.812 COMPLETE phase=Complete local=192.0.2.225:51525 local_kind={203.0.113.10:22411: "srflx", 192.0.2.225:51525: "host"} remote_kind={100.64.0.2:51828: "host", 198.51.100.1:51828: "host", 192.0.2.225:51828: "host", 100.64.0.1:51828: "host"} records_sent=65 records_received=65 deduped=291 bulk_bytes=4194304 write_false=1737 pair=Some("192.0.2.225:51525/host -> 192.0.2.225:51828/host")
+1792986711.012 STOP complete + hold
+1792986711.014 stopped at 468769660; Rtc dropped with the engine
+1792986711.015 resources released: socket closed, timer cancelled, SpikePeer dropped, transmits=14126

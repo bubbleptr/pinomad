@@ -1,0 +1,105 @@
+PROBE local=192.0.2.225:58723 server=http://127.0.0.1:8765 stun=162.159.207.0:3478 seed=7
+LOG start local=192.0.2.225:58723 stun=[162.159.207.0:3478]
+LOG STUN mapped 203.0.113.10:23637 via 162.159.207.0:3478 rtt=206ms
+LOG gather complete in 2002ms; local candidates={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"}
+LOG offer a=candidate:fffeff7e49d708c7d188daaf 1 udp 2130706175 192.0.2.225 58723 typ host ufrag AthLfYNhLr2tDl9H
+LOG offer a=candidate:fffe7f641ae7ecba9eddda2 1 udp 1686109951 203.0.113.10 23637 typ srflx raddr 0.0.0.0 rport 0 ufrag AthLfYNhLr2tDl9H
+LOG offer 720 bytes with m=application
+PROBE answer 721 bytes
+LOG answer accepted; ICE checks start
+LOG ICE state Checking
+ICE Checking
+LOG ICE state Connected
+ICE Connected
+LOG DTLS connected
+LOG buffered-amount-low, queued=0
+LOG DataChannel open id=ChannelId(0) label=pinomad-rtc-spike
+CHANNEL pinomad-rtc-spike
+LOG Noise IK start device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13 host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20
+LOG queued Noise message1 (1 bytes)
+LOG pumped 1 records, queued=0, buffered=103, write_false=0
+LOG Noise message2 accepted host_hello_v=1 hash=193306be37cfb3a66286f20694a0642ac74daf2e23baf3c9b0f4f6b8ec97edca
+NOISE_READY 193306be37cfb3a66286f20694a0642ac74daf2e23baf3c9b0f4f6b8ec97edca
+LOG sealed one 4194304 byte business frame into 65 records; pumping with 524288 byte SCTP buffer, 131072 byte low-water
+LOG pumped 8 records, queued=57, buffered=524280, write_false=1
+LOG pumped 1 records, queued=56, buffered=524280, write_false=35
+LOG pumped 1 records, queued=55, buffered=524280, write_false=66
+LOG pumped 1 records, queued=54, buffered=524280, write_false=97
+LOG pumped 1 records, queued=53, buffered=524280, write_false=128
+LOG pumped 1 records, queued=52, buffered=524280, write_false=159
+LOG pumped 1 records, queued=51, buffered=524280, write_false=190
+LOG pumped 1 records, queued=50, buffered=524280, write_false=222
+LOG pumped 1 records, queued=49, buffered=524280, write_false=253
+LOG pumped 1 records, queued=48, buffered=524280, write_false=284
+LOG pumped 1 records, queued=47, buffered=524280, write_false=315
+LOG pumped 1 records, queued=46, buffered=524280, write_false=346
+LOG pumped 1 records, queued=45, buffered=524280, write_false=377
+LOG pumped 1 records, queued=44, buffered=524280, write_false=408
+LOG selected candidate pair 192.0.2.225:58723/host -> 192.0.2.225:64129/host rtt=Some(1ms)
+PAIR 192.0.2.225:58723/host -> 192.0.2.225:64129/host
+LOG pumped 1 records, queued=43, buffered=524280, write_false=440
+LOG pumped 1 records, queued=42, buffered=524280, write_false=471
+LOG pumped 1 records, queued=41, buffered=524280, write_false=502
+LOG pumped 1 records, queued=40, buffered=524280, write_false=533
+LOG pumped 1 records, queued=39, buffered=524280, write_false=564
+LOG pumped 1 records, queued=38, buffered=524280, write_false=595
+LOG pumped 1 records, queued=37, buffered=524280, write_false=626
+LOG pumped 1 records, queued=36, buffered=524280, write_false=657
+LOG pumped 1 records, queued=35, buffered=524280, write_false=688
+LOG pumped 1 records, queued=34, buffered=524280, write_false=719
+LOG pumped 1 records, queued=33, buffered=524280, write_false=750
+LOG pumped 1 records, queued=32, buffered=524280, write_false=781
+LOG pumped 1 records, queued=31, buffered=524280, write_false=812
+LOG pumped 1 records, queued=30, buffered=524280, write_false=843
+LOG pumped 1 records, queued=29, buffered=524280, write_false=874
+LOG pumped 1 records, queued=28, buffered=524280, write_false=905
+LOG pumped 1 records, queued=27, buffered=524280, write_false=936
+LOG pumped 1 records, queued=26, buffered=524280, write_false=967
+LOG pumped 1 records, queued=25, buffered=524280, write_false=998
+LOG pumped 1 records, queued=24, buffered=524280, write_false=1029
+LOG pumped 1 records, queued=23, buffered=524280, write_false=1060
+LOG pumped 1 records, queued=22, buffered=524280, write_false=1092
+LOG pumped 1 records, queued=21, buffered=524280, write_false=1123
+LOG pumped 1 records, queued=20, buffered=524280, write_false=1154
+LOG pumped 1 records, queued=19, buffered=524280, write_false=1185
+LOG pumped 1 records, queued=18, buffered=524280, write_false=1216
+LOG pumped 1 records, queued=17, buffered=524280, write_false=1248
+LOG pumped 1 records, queued=16, buffered=524280, write_false=1279
+LOG pumped 1 records, queued=15, buffered=524280, write_false=1310
+LOG pumped 1 records, queued=14, buffered=524280, write_false=1341
+LOG pumped 1 records, queued=13, buffered=524280, write_false=1372
+LOG pumped 1 records, queued=12, buffered=524280, write_false=1403
+LOG pumped 1 records, queued=11, buffered=524280, write_false=1434
+LOG pumped 1 records, queued=10, buffered=524280, write_false=1465
+LOG pumped 1 records, queued=9, buffered=524280, write_false=1496
+LOG pumped 1 records, queued=8, buffered=524280, write_false=1527
+LOG pumped 1 records, queued=7, buffered=524280, write_false=1558
+LOG pumped 1 records, queued=6, buffered=524280, write_false=1589
+LOG pumped 1 records, queued=5, buffered=524280, write_false=1620
+LOG pumped 1 records, queued=4, buffered=524280, write_false=1651
+LOG pumped 1 records, queued=3, buffered=524280, write_false=1682
+LOG pumped 1 records, queued=2, buffered=524280, write_false=1713
+LOG pumped 1 records, queued=1, buffered=524280, write_false=1744
+LOG pumped 1 records, queued=0, buffered=523325, write_false=1744
+LOG all bulk records accepted by SCTP; awaiting Noise echo
+BULK_SENT records=65 bytes=4194304 write_false=1744 buffered=523325
+LOG buffered-amount-low, queued=0
+PROBE waiting next=Some(5027) summary=phase=Bulk local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=0 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
+LOG Noise record #1 bytes=65535 first=c123048c8554a21b
+LOG Noise record #2 bytes=65535 first=b648b498d2943aaf
+LOG Noise record #3 bytes=65535 first=44aae2bb159b966b
+LOG Noise record #8 bytes=65535 first=fb2957deed393f90
+LOG Noise record #16 bytes=65535 first=33da091792cf79b3
+LOG Noise record #24 bytes=65535 first=be01e1b4faead551
+LOG Noise record #32 bytes=65535 first=f2fc1b2f3773ac57
+LOG Noise record #40 bytes=65535 first=638cdddb7d321641
+LOG Noise record #48 bytes=65535 first=ac3220747d5fb0ad
+LOG Noise record #56 bytes=65535 first=3ba1d997f5daeba5
+LOG Noise record #64 bytes=65535 first=9b32d44d512e5eb6
+LOG Noise record #65 bytes=1169 first=d3b96e66c9ba9e55
+LOG Noise frame complete received_bytes=4194304 expected_bytes=4194304 matched=true
+BULK_RECEIVED records=65 bytes=4194304 matched=true
+LOG COMPLETE phase=Complete local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
+COMPLETE phase=Complete local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
+STOP stopped at 6406; Rtc dropped with the engine
+SUMMARY phase=Closed local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
