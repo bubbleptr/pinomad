@@ -1,21 +1,18 @@
 import { createContext, type ReactNode, useContext, useEffect, useId, useRef } from "react";
 import type { LandingCopy } from "./copy.tsx";
 
-// The landing page's diagrams, drawn as miniature product UI on a hatched plate:
-// opaque cards lifted by a shadow, placeholder bars where a screen would show
-// text, and words only where something has a name. The motion carries the
-// explanation (work fanning out, packets crossing the relay), so there are no
-// captions; the card or section around each diagram has the prose.
+// The landing page's diagrams. Words appear only where something has a name: the
+// motion does the explaining, and the prose around each diagram says the rest.
 //
-// Coordinates are in a 360-unit-wide viewBox. The page's CSP allows no inline
-// styles, so colours and sizes are classes in page.css (the .dg-* rules, on the
-// --dg-* tokens). The motion is SMIL, which keeps it in step without script.
-// Under reduced motion the moving parts (.dg-motion) are hidden, a still frame
-// (.dg-still) shows the same state, and the clock holds; off screen it pauses.
+// The page's CSP allows no inline styles, so every colour and size is a class in
+// page.css (.dg-*, on the --dg-* tokens). Coordinates are in a 360-unit-wide
+// viewBox. Motion is SMIL, on one clock per figure (useMotion); under reduced
+// motion the moving parts (.dg-motion) are hidden and a still frame (.dg-still)
+// stands in.
 //
-// Shipped things are raised cards; planned ones are dashed outlines with no
-// shadow. Colour only carries meaning: window controls, green for running and
-// encrypted, violet for the model, and one hue per agent.
+// Shipped things are raised cards; planned ones are dashed outlines. Colour only
+// carries meaning: window controls, green for running and encrypted, violet for
+// the model, one hue per agent.
 
 const Shadow = createContext("");
 
@@ -24,8 +21,8 @@ const Shadow = createContext("");
  * figure first scrolls into view, paused while it's off screen. Under reduced
  * motion the clock holds at `still` seconds.
  */
-export function useMotion<T extends HTMLElement>(still = 0) {
-  const ref = useRef<T>(null);
+export function useMotion(still = 0) {
+  const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const figure = ref.current!;
     const svgs = [...figure.querySelectorAll("svg")];
@@ -36,7 +33,7 @@ export function useMotion<T extends HTMLElement>(still = 0) {
     }
     let started = false;
     const observer = new IntersectionObserver(([entry]) => {
-      if (!entry!.isIntersecting) {
+      if (!entry?.isIntersecting) {
         for (const svg of svgs) svg.pauseAnimations();
         return;
       }
@@ -53,7 +50,7 @@ export function useMotion<T extends HTMLElement>(still = 0) {
 }
 
 function Diagram({ label, height, children }: { label: string; height: number; children: ReactNode }) {
-  const ref = useMotion<HTMLElement>();
+  const ref = useMotion();
   return (
     <figure className="diagram" ref={ref}>
       <Drawing label={label} height={height}>
@@ -83,9 +80,8 @@ export function Drawing({ label, height, children }: { label?: string; height: n
   );
 }
 
-// —— Timing. Every loop in a diagram shares one duration; a part is on screen
-// for a window of it, given as fractions of the loop.
-
+// Every animated part of a diagram shares one loop duration; `from` and `to` below
+// are fractions of it.
 export type Loop = { dur: string };
 
 /** Opacity that is 1 between `from` and `to` of the loop and 0 otherwise, with short fades. */
@@ -102,9 +98,9 @@ export function Shown({ dur, from, to, fade = 0.03 }: Loop & { from: number; to:
 }
 
 /** A dot that travels `path` between `from` and `to` of the loop. */
-function Pulse({ path, dur, from, to, className = "dg-pulse" }: Loop & { path: string; from: number; to: number; className?: string }) {
+function Pulse({ path, dur, from, to }: Loop & { path: string; from: number; to: number }) {
   return (
-    <circle className={`${className} dg-motion`} r="3" opacity="0">
+    <circle className="dg-pulse dg-motion" r="3" opacity="0">
       <animateMotion
         path={path}
         dur={dur}
@@ -135,8 +131,6 @@ function Packet({ path, dur, from, to }: Loop & { path: string; from: number; to
   );
 }
 
-// —— Parts.
-
 /** An opaque raised card: shadow, hairline edge, and a faint highlight along the top. */
 export function Card({ x, y, w, h, r = 12, back }: { x: number; y: number; w: number; h: number; r?: number; back?: boolean }) {
   const shadow = useContext(Shadow);
@@ -150,8 +144,8 @@ export function Card({ x, y, w, h, r = 12, back }: { x: number; y: number; w: nu
 }
 
 /** A planned thing: dashed outline, nothing filled in yet. */
-function Ghost({ x, y, w, h, r = 10 }: { x: number; y: number; w: number; h: number; r?: number }) {
-  return <rect className="dg-ghost" x={x} y={y} width={w} height={h} rx={r} />;
+function Ghost({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  return <rect className="dg-ghost" x={x} y={y} width={w} height={h} rx="10" />;
 }
 
 /** A line of text on a miniature screen. */
@@ -199,7 +193,7 @@ const icons = {
   user: "M20 22H18V20C18 18.3431 16.6569 17 15 17H9C7.34315 17 6 18.3431 6 20V22H4V20C4 17.2386 6.23858 15 9 15H15C17.7614 15 20 17.2386 20 20V22ZM12 13C8.68629 13 6 10.3137 6 7C6 3.68629 8.68629 1 12 1C15.3137 1 18 3.68629 18 7C18 10.3137 15.3137 13 12 13ZM12 11C14.2091 11 16 9.20914 16 7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7C8 9.20914 9.79086 11 12 11Z",
 };
 
-/** A Remix icon with its top-left corner at (x, y); children animate it. */
+/** A Remix icon with its top-left corner at (x, y). With animation children it starts hidden and they show it. */
 export function Icon({
   name,
   x,
@@ -261,8 +255,6 @@ const QR = ["111010111", "101001101", "111010111", "000110100", "101011011", "01
 const qrPath = QR.flatMap((row, y) =>
   [...row].flatMap((bit, x) => (bit === "1" ? [`M${x * 5} ${y * 5}h4.4v4.4h-4.4z`] : [])),
 ).join("");
-
-// —— The diagrams.
 
 /** The host on your own machine sends work to the machine's shell, repositories, and credentials. */
 export function MachineDiagram({ t }: { t: LandingCopy["core"]["machine"]["diagram"] }) {
@@ -434,12 +426,7 @@ export function EnvironmentsDiagram({ t }: { t: LandingCopy["next"]["diagram"] }
           <text className="dg-name is-small is-planned" x={columns[i]!} y="192">
             {machine}
           </text>
-          <Pulse
-            {...loop}
-            path={`M180 80V116H${columns[i]}V140`}
-            from={0.08 + i * 0.12}
-            to={0.3 + i * 0.12}
-          />
+          <Pulse {...loop} path={`M180 80V116H${columns[i]}V140`} from={0.08 + i * 0.12} to={0.3 + i * 0.12} />
         </g>
       ))}
     </Diagram>

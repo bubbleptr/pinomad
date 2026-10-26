@@ -5,7 +5,6 @@ import { Card, Drawing, Icon, Shown, TitleBar, useMotion } from "./diagrams.tsx"
 // hits both. Pi Durable flags a checkpoint after every call; after the restart
 // the plain run's finished calls are struck out and it starts over, while the
 // Pi Durable run keeps its flagged calls and reruns only the one that was cut off.
-// No captions: the card's body text says what happens, the drawing shows it.
 //
 // One loop of LOOP seconds, times below in seconds. Rows appear when they start
 // and stay until END, then the windows empty and the story plays again. Under
@@ -46,7 +45,7 @@ const TOP = 42;
 const slot = (i: number) => TOP + (i < 4 ? i : i + 1) * ROW;
 
 export function DurableDiagram({ t }: { t: LandingCopy["durable"] }) {
-  const ref = useMotion<HTMLElement>(STILL);
+  const ref = useMotion(STILL);
   return (
     <figure className="diagram durable-diagram" ref={ref} role="img" aria-label={t.description}>
       <RunWindow t={t} title={t.plain} rows={PLAIN} />
