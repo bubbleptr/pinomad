@@ -3,9 +3,11 @@ import Testing
 import PinomadCore
 
 @Suite struct SendSlotTests {
-    @Test func emptyDraftWhileIdleShowsNothing() {
-        #expect(SendSlot(draft: "", connected: true, busy: false) == .hidden)
-        #expect(SendSlot(draft: "  \n ", connected: true, busy: false) == .hidden)
+    /// The slot never empties: idle with nothing to send, Send stays in
+    /// place, disabled, so the trailing edge always reads send or stop.
+    @Test func emptyDraftWhileIdleDisablesSend() {
+        #expect(SendSlot(draft: "", connected: true, busy: false) == .send(enabled: false, canSteer: false))
+        #expect(SendSlot(draft: "  \n ", connected: true, busy: false) == .send(enabled: false, canSteer: false))
     }
 
     @Test func emptyDraftWhileBusyOffersStop() {

@@ -2,12 +2,12 @@ import PinomadCore
 
 /// What the composer's trailing slot offers for the current draft.
 public enum SendSlot: Equatable, Sendable {
-    /// Empty draft, nothing running — nothing to do.
-    case hidden
     /// Empty draft while a run is going — interrupt it.
     case stop(enabled: Bool)
     /// A draft to send; `canSteer` while busy, where a tap queues a
-    /// follow-up and the long-press menu also offers steering.
+    /// follow-up and the long-press menu also offers steering. An empty
+    /// draft while idle keeps Send in place, disabled, so the slot never
+    /// empties.
     case send(enabled: Bool, canSteer: Bool)
 
     /// Offline calls still report success (the reason only becomes a
@@ -21,7 +21,7 @@ public enum SendSlot: Equatable, Sendable {
                 filesBlocked: Bool = false, command: Bool = false) {
         let hasContent = !draft.allSatisfy(\.isWhitespace) || hasImages || (hasFiles && !filesBlocked)
         if !hasContent && !preparing && !filesBlocked {
-            self = busy ? .stop(enabled: connected) : .hidden
+            self = busy ? .stop(enabled: connected) : .send(enabled: false, canSteer: false)
         } else if !hasContent && busy {
             self = .stop(enabled: connected)
         } else {

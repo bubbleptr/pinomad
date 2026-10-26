@@ -1,7 +1,7 @@
 import Foundation
 import PinomadCore
 
-/// What the composer's context meter reads. The core already derives
+/// What the overview's context row reads. The core already derives
 /// `ContextUsage` from the last qualifying reply; this turns it into the
 /// percent, ring fill, and copy the view shows — nothing is re-counted here.
 public struct ContextMeterReading: Equatable, Sendable {
@@ -15,8 +15,7 @@ public struct ContextMeterReading: Equatable, Sendable {
     /// A fraction for the ring, capped at a full turn.
     public let fill: Double
     public let warning: Bool
-    public let text: String
-    /// The popover's figures, e.g. "84k / 200k".
+    /// The row's figures beside the ring, e.g. "42% · 84k / 200k".
     public let detail: String
     public let accessibilityLabel: String
 
@@ -35,7 +34,6 @@ public struct ContextMeterReading: Equatable, Sendable {
             percent = nil
             fill = 0
             warning = false
-            text = "—"
             detail = "No usage data yet"
             accessibilityLabel = "Context usage unknown"
             return
@@ -43,12 +41,11 @@ public struct ContextMeterReading: Equatable, Sendable {
         let share = used / window
         let percent = Int((share * 100).rounded())
         self.percent = percent
-        // The text stays honest when a smaller model makes used exceed the
-        // window; only the ring saturates.
+        // The percent stays honest when a smaller model makes used exceed
+        // the window; only the ring saturates.
         fill = min(1, share)
         warning = percent >= Self.warningPercent
-        text = "\(percent)%"
-        detail = "\(Self.formatTokens(used)) / \(Self.formatTokens(window))"
+        detail = "\(percent)% · \(Self.formatTokens(used)) / \(Self.formatTokens(window))"
         accessibilityLabel =
             "Context \(percent)% used, \(Self.formatTokens(used)) of \(Self.formatTokens(window)) tokens"
     }

@@ -281,7 +281,6 @@ struct ConversationComposer: View {
                     showModels = true
                 }
                 Spacer(minLength: 0)
-                ContextMeterView(usage: conversation.contextUsage)
                 sendSlot
             }
             .frame(minHeight: 34)
@@ -415,8 +414,6 @@ struct ConversationComposer: View {
                         hasFiles: !fileTray.isEmpty || filesPreparing,
                         filesBlocked: !fileTray.canSend || filesPreparing,
                         command: submit != .message) {
-        case .hidden:
-            EmptyView()
         case .stop(let enabled):
             Button {
                 model.stop(conversation: conversation.id)
