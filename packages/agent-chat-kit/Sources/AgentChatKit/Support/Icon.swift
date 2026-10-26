@@ -8,6 +8,8 @@ enum Icon: String {
     case check
     case chevronRight = "chevron-right"
     case circle
+    case circleCheck = "circle-check"
+    case circleStop = "circle-stop"
     case circleX = "circle-x"
     case code
     case copy

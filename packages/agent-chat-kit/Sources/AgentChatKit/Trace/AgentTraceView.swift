@@ -23,11 +23,19 @@ public struct AgentTraceView: View {
                 let capsule = trace.capsule(at: isWorking ? context.date : .now)
                 HStack(spacing: 6) {
                     InlinePager(page: capsule.label) { label in
-                        Text(text(for: label))
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .shimmering(label.isLive)
+                        // The icon pages with the label, so a finished
+                        // run's outcome mark arrives with its headline.
+                        HStack(spacing: 5) {
+                            if case .finished(let headline) = label, let icon = TraceText.icon(headline) {
+                                Image(icon)
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            Text(text(for: label))
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .shimmering(label.isLive)
+                        }
                     }
                     // The clock and counts stay outside the pager: they
                     // change every second, the label only with the work.
@@ -45,7 +53,7 @@ public struct AgentTraceView: View {
                 .foregroundStyle(capsule.label == .finished(.failed) ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(.fill.tertiary, in: .capsule)
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .contentShape(.capsule)
             }
         }
@@ -171,6 +179,18 @@ enum TraceText {
         case .worked: String(localized: "Worked", bundle: .module)
         case .failed: String(localized: "Failed", bundle: .module)
         case .interrupted: String(localized: "Stopped", bundle: .module)
+        }
+    }
+
+    /// A settled run's outcome mark. Live headlines have none: their label
+    /// shimmers instead.
+    static func icon(_ headline: TraceSummary.Headline) -> Icon? {
+        switch headline {
+        case .thinking, .working: nil
+        case .thought: .brain
+        case .worked: .circleCheck
+        case .failed: .circleX
+        case .interrupted: .circleStop
         }
     }
 

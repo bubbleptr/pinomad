@@ -2,10 +2,10 @@ import PinomadChat
 import PinomadCore
 import SwiftUI
 
-/// The composer's context gauge: a small ring and the percent, opening a
-/// popover with the exact figures. `nil` usage keeps the empty ring and an
-/// em dash visible, so the meter doesn't appear and disappear between
-/// replies (or after a compaction).
+/// The composer's context gauge: a ring whose fill is the share used,
+/// opening a popover with the percent and exact figures. `nil` usage keeps
+/// the empty ring visible, so the meter doesn't appear and disappear
+/// between replies (or after a compaction).
 struct ContextMeterView: View {
     let usage: ContextUsage?
 
@@ -23,20 +23,16 @@ struct ContextMeterView: View {
         Button {
             showingDetail = true
         } label: {
-            HStack(spacing: 5) {
-                ring
-                Text(reading.text)
-                    .font(.footnote.monospacedDigit())
-            }
-            .foregroundStyle(tint)
-            .frame(height: 34)
-            // A 44pt touch target without growing the 34pt tool row: the
-            // negative padding gives the extra height back to the layout.
-            .padding(.vertical, 5)
+            ring
+                .frame(width: 34, height: 34)
+                // A 44pt touch target without growing the 34pt tool row:
+                // the negative padding gives the extra room back to the
+                // layout.
+                .padding(5)
             .contentShape(.rect)
         }
         .buttonStyle(.press)
-        .padding(.vertical, -5)
+        .padding(-5)
         // The meter keeps its width; a long model name truncates first.
         .fixedSize()
         .accessibilityLabel(reading.accessibilityLabel)
@@ -63,6 +59,6 @@ struct ContextMeterView: View {
                 .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 18, height: 18)
     }
 }

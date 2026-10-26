@@ -16,6 +16,7 @@ struct NewConversationView: View {
     @State private var mentions = MentionCoordinator()
     @State private var selection = NSRange()
     @State private var focused = false
+    @Namespace private var chips
 
     private let key = AppModel.draftKey
     private var tray: AttachmentTray { model.trays[key] ?? AttachmentTray() }
@@ -126,7 +127,10 @@ struct NewConversationView: View {
             } else if mentions.menu.isShowing {
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
             }
-            card
+            VStack(alignment: .leading, spacing: 8) {
+                location
+                card
+            }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -258,12 +262,6 @@ struct NewConversationView: View {
             }
             .frame(minHeight: 34)
             .sensoryFeedback(.impact(weight: .light), trigger: model.creating) { old, new in !old && new }
-            HStack(spacing: 8) {
-                projectMenu
-                if case .project = model.draftHome {
-                    checkoutMenu
-                }
-            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -343,6 +341,25 @@ struct NewConversationView: View {
         }
     }
 
+    /// Where the draft will run, floating above the card: one container so
+    /// the checkout chip melts out of the project chip when a project is
+    /// picked rather than popping in.
+    private var location: some View {
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                projectMenu
+                    .glassEffectID("home", in: chips)
+                if case .project = model.draftHome {
+                    // A long project name truncates; the checkout always reads.
+                    checkoutMenu
+                        .fixedSize()
+                        .glassEffectID("checkout", in: chips)
+                }
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: model.draftHome)
+    }
+
     private var projectMenu: some View {
         Menu {
             Button("No Project", image: .messageCircle) { model.draftHome = .chat }
@@ -385,18 +402,20 @@ struct NewConversationView: View {
     }
 }
 
-/// A small capsule naming where the draft will run.
+/// A glass capsule naming where the draft will run.
 private struct LocationChip: View {
     let icon: ImageResource
     let label: String
 
     var body: some View {
         Label(label, image: icon)
-            .font(.caption)
+            .font(.footnote)
             .lineLimit(1)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.fill.tertiary, in: .capsule)
+            // Concrete color: on glass the hierarchical styles pick up
+            // vibrancy and read as disabled grey.
+            .foregroundStyle(Color(uiColor: .secondaryLabel))
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .glassEffect(.regular.interactive(), in: .capsule)
     }
 }
