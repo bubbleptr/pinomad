@@ -376,8 +376,7 @@ final class AppModel {
             rtcStatus = nil
             return
         }
-        rtcStatus = session.rtcDiagnostics()
-        rtcStatusAt = Date()
+        setRtcStatus(session.rtcDiagnostics())
     }
 
     /// Re-read the RTC status while its detail page is visible. The core
@@ -388,8 +387,22 @@ final class AppModel {
         guard phase == .connected, let session, let key = sessionHost?.hostKey,
               key == currentHostKey
         else { return }
-        rtcStatus = session.rtcDiagnostics()
-        rtcStatusAt = Date()
+        setRtcStatus(session.rtcDiagnostics())
+    }
+
+    /// The poll re-reads the same core value until the next core clock tick.
+    /// Only a changed value starts a new local countdown; otherwise the page
+    /// would reset the baseline every second and show a frozen cooldown.
+    private func setRtcStatus(_ next: RtcDiagnostics) {
+        let previous = rtcStatus
+        rtcStatus = next
+        if previous == nil
+            || previous?.phase != next.phase
+            || previous?.path != next.path
+            || previous?.cooldownRemainingMs != next.cooldownRemainingMs
+        {
+            rtcStatusAt = Date()
+        }
     }
 
     /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the live host's
@@ -433,7 +446,12 @@ final class AppModel {
             return
         }
         reloadHosts()
-        guard hostKey == currentHostKey, let host = hostRecord(for: hostKey) else { return }
+        guard hostKey == currentHostKey else { return }
+        // A pairing whose keychain save failed is live but absent from the
+        // store; the choice still has to apply to this session, not be
+        // silently ignored.
+        pairing.connectionMode(mode, for: hostKey)
+        guard let host = hostRecord(for: hostKey) else { return }
         connect(host)
     }
 

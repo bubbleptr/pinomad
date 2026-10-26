@@ -184,6 +184,12 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         source.setEventHandler { [weak self] in
             self?.receive(peer: peer)
         }
+        // libdispatch only guarantees the descriptor is no longer used after
+        // the cancellation handler runs. Closing it at cancel() time could
+        // let a newly created Peer reuse the fd while the old source drains.
+        source.setCancelHandler { [socket] in
+            socket.close()
+        }
         source.resume()
         let actions = engine.start(nowMs: nowMs())
         handle(peer: peer, actions: actions)
@@ -266,7 +272,6 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         runtime.timer?.cancel()
         runtime.timer = nil
         runtime.source.cancel()
-        runtime.socket.close()
         runtime.engine.close()
         if let reason {
             runtime.sink(.rtcClosed(peer: peer, reason: reason))

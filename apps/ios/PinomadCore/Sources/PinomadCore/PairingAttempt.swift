@@ -45,6 +45,15 @@ public struct PairingAttempt: Equatable, Sendable {
         self.host = host
     }
 
+    /// The user changed this host's connection mode. The choice normally
+    /// lands in the keychain first; a live identity whose save failed keeps
+    /// it in memory so the reconnect uses what the picker shows.
+    public mutating func connectionMode(_ mode: HostConnectionMode, for hostKey: String) {
+        guard var host, host.hostKey == hostKey else { return }
+        host.connectionMode = mode
+        self.host = host
+    }
+
     public mutating func clear() {
         host = nil
         link = nil
