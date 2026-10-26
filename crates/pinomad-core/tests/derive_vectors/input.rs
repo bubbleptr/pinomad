@@ -158,6 +158,8 @@ pub fn stored_host(json: &Json) -> StoredHost {
         name: text(json.get("name")),
         account: None,
         endpoint_set: None,
+        connection_mode: None,
+        rtc_signal_only: None,
     }
 }
 

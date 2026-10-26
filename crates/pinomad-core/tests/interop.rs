@@ -207,6 +207,11 @@ impl Driver {
                 Command::OperationFailed { op, error } => {
                     self.ops.insert(op, Err(error));
                 }
+                Command::RtcSignalOnly { .. }
+                | Command::CreateRtcPeer { .. }
+                | Command::AcceptRtcAnswer { .. }
+                | Command::RtcSend { .. }
+                | Command::CloseRtcPeer { .. } => {}
             }
         }
     }
@@ -649,6 +654,8 @@ fn interop_facade_pairs_creates_and_reconnects() {
         name: None,
         account: None,
         endpoint_set: None,
+        connection_mode: None,
+        rtc_signal_only: None,
     })
     .expect("the emitted record validates");
     let client2 = PinomadClient::connect(stored).expect("connect to stored host");

@@ -432,6 +432,11 @@ impl Harness {
                 Command::OperationFailed { op, error } => {
                     self.ops.insert(op, Err(error));
                 }
+                Command::RtcSignalOnly { .. }
+                | Command::CreateRtcPeer { .. }
+                | Command::AcceptRtcAnswer { .. }
+                | Command::RtcSend { .. }
+                | Command::CloseRtcPeer { .. } => {}
             }
         }
     }

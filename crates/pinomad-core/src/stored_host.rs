@@ -6,6 +6,7 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::b64::from_base64url;
+use crate::connection_mode::ConnectionMode;
 use crate::endpoints::{parse_endpoint_set, EndpointSet, ParsedEndpointSet};
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -100,6 +101,10 @@ pub struct StoredHost {
     /// old records and when the stored set was unusable; an explicit empty set
     /// survives because it clears the remote list while preserving `url`.
     pub endpoint_set: Option<EndpointSet>,
+    /// How this client reaches the host (ADR-0033 §3). Absent means Auto.
+    pub connection_mode: Option<ConnectionMode>,
+    /// The host's last `hello.rtc.signalOnly` hint; absent means unknown.
+    pub rtc_signal_only: Option<bool>,
 }
 
 /// `parseStoredHost`: a validated stored host, or None.
@@ -137,6 +142,11 @@ pub fn parse_stored_host(value: &Json) -> Option<StoredHost> {
         name,
         account,
         endpoint_set,
+        connection_mode: ConnectionMode::parse(value.get("connectionMode")),
+        rtc_signal_only: match value.get("rtcSignalOnly") {
+            Some(Json::Bool(true)) => Some(true),
+            _ => None,
+        },
     })
 }
 
@@ -234,4 +244,38 @@ pub fn host_labels(hosts: &[StoredHost]) -> Vec<HostLabel> {
             label: label(&suffix, i),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::b64::to_base64url;
+    use crate::noise::generate_keypair;
+
+    fn host_json(extra: &str) -> Json {
+        let key = to_base64url(&generate_keypair().expect("key").private_key);
+        let text = format!(
+            "{{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"{key}\",\"privateKey\":\"{key}\"{extra}}}"
+        );
+        Json::parse(&text).expect("json")
+    }
+
+    #[test]
+    fn parses_a_known_mode_and_signal_only_hint() {
+        let host = parse_stored_host(&host_json(",\"connectionMode\":\"directOnly\",\"rtcSignalOnly\":true")).expect("host");
+        assert_eq!(host.connection_mode, Some(ConnectionMode::DirectOnly));
+        assert_eq!(host.rtc_signal_only, Some(true));
+
+        let relay = parse_stored_host(&host_json(",\"connectionMode\":\"relayOnly\"")).expect("host");
+        assert_eq!(relay.connection_mode, Some(ConnectionMode::RelayOnly));
+        assert_eq!(relay.rtc_signal_only, None);
+    }
+
+    #[test]
+    fn bad_preferences_cost_only_the_field() {
+        let host = parse_stored_host(&host_json(",\"connectionMode\":\"bogus\",\"rtcSignalOnly\":\"yes\"")).expect("host");
+        assert_eq!(host.connection_mode, None);
+        assert_eq!(host.rtc_signal_only, None);
+        assert_eq!(host.url, "ws://192.168.1.5:7422/secure");
+    }
 }

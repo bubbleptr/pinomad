@@ -126,6 +126,8 @@ impl PinomadClient {
                         name: None,
                         account: None,
                         endpoint_set: endpoint_set.as_ref().map(EndpointSet::from_core),
+                        connection_mode: None,
+                        rtc_signal_only: None,
                     },
                 },
                 Command::OperationSucceeded { op, value } => {
@@ -231,6 +233,16 @@ impl PinomadClient {
                     inner.result_kinds.remove(&op);
                     FfiCommand::OperationFailed { op, error }
                 }
+                // The FFI constructors declare RTC unsupported, so the core
+                // must never produce these. Reaching one is a bug, not a
+                // state the Swift layer could execute.
+                Command::RtcSignalOnly { .. }
+                | Command::CreateRtcPeer { .. }
+                | Command::AcceptRtcAnswer { .. }
+                | Command::RtcSend { .. }
+                | Command::CloseRtcPeer { .. } => {
+                    unreachable!("RTC commands are not exposed through FFI")
+                }
             })
             .collect()
     }
@@ -276,6 +288,10 @@ fn candidate_options(
         pairing_endpoint_set: endpoint_set.cloned(),
         candidate_timeouts: Default::default(),
         round_timeout_ms: None,
+        connection_mode: crate::connection_mode::ConnectionMode::Auto,
+        // The FFI surface does not expose RTC yet (PR4): declaring the
+        // platform unsupported guarantees no RTC command is ever produced.
+        rtc: None,
     }
 }
 

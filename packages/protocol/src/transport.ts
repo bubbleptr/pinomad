@@ -14,6 +14,11 @@ export interface FrameHandlers {
    */
   opened?(): void;
   /**
+   * The RTC signal phase finished: the host's answer was applied and ICE may
+   * start. Optional because only the RTC carrier distinguishes it.
+   */
+  signaled?(): void;
+  /**
    * The secure handshake completed. A plain carrier reports this with
    * `opened`; a Noise carrier reports it after message 2 verifies. Optional
    * for the same reason as `opened`.

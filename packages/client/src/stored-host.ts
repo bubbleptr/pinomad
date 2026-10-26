@@ -2,6 +2,7 @@
 // localStorage, iOS keychain, desktop's encrypted file). Validation lives
 // here so all three reject the same shapes: only ws/wss urls, and keys that
 // are base64url of exactly 32 bytes.
+import { parseConnectionMode, type ConnectionMode } from "@pinomad/protocol/connection-mode.ts";
 import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -31,6 +32,17 @@ export type StoredHost = {
    * survives because it clears the remote list while preserving `url`.
    */
   endpointSet?: EndpointSet;
+  /**
+   * How this client reaches the host (ADR-0033 §3). Missing means `auto`;
+   * an unknown value from a newer client costs only this field.
+   */
+  connectionMode?: ConnectionMode;
+  /**
+   * The host's last `hello.rtc.signalOnly` hint. Absent or false means the
+   * client must not open a signal-only connection before learning the
+   * capability again; Direct only uses it only as a try hint.
+   */
+  rtcSignalOnly?: boolean;
 };
 
 const isKey = (value: unknown): value is string => {
@@ -71,6 +83,10 @@ export function parseStoredHost(value: unknown): StoredHost | undefined {
   const name = typeof host.name === "string" && host.name !== "" ? host.name : undefined;
   // An unusable set costs only the set — identity, account and url stay.
   const parsedEndpoints = parseEndpointSet(host.endpointSet);
+  // Same tolerance for the two preferences: an unknown mode or a malformed
+  // hint drops only that field.
+  const connectionMode = parseConnectionMode(host.connectionMode);
+  const rtcSignalOnly = host.rtcSignalOnly === true ? true : undefined;
   return {
     url: host.url,
     hostKey: host.hostKey,
@@ -78,6 +94,8 @@ export function parseStoredHost(value: unknown): StoredHost | undefined {
     ...(name === undefined ? {} : { name }),
     ...(account === undefined ? {} : { account }),
     ...(parsedEndpoints.kind === "valid" ? { endpointSet: parsedEndpoints.endpointSet } : {}),
+    ...(connectionMode === undefined ? {} : { connectionMode }),
+    ...(rtcSignalOnly === undefined ? {} : { rtcSignalOnly }),
   };
 }
 
@@ -88,11 +106,15 @@ export function parseStoredHost(value: unknown): StoredHost | undefined {
  */
 export function mergeStoredHost(existing: StoredHost, incoming: StoredHost): StoredHost {
   const endpointSet = incoming.endpointSet ?? existing.endpointSet;
+  const connectionMode = incoming.connectionMode ?? existing.connectionMode;
+  const rtcSignalOnly = incoming.rtcSignalOnly ?? existing.rtcSignalOnly;
   return {
     ...incoming,
     ...(incoming.name === undefined && existing.name !== undefined ? { name: existing.name } : {}),
     ...(incoming.account === undefined && existing.account !== undefined ? { account: existing.account } : {}),
     ...(endpointSet === undefined ? {} : { endpointSet }),
+    ...(connectionMode === undefined ? {} : { connectionMode }),
+    ...(rtcSignalOnly === undefined ? {} : { rtcSignalOnly }),
   };
 }
 
@@ -104,6 +126,27 @@ export function mergeStoredHost(existing: StoredHost, incoming: StoredHost): Sto
  */
 export function updateStoredHostEndpoints(host: StoredHost, endpointSet: EndpointSet): StoredHost {
   return { ...host, endpointSet, url: preferredLegacyUrl(host.url, endpointSet) };
+}
+
+/**
+ * Persist the connection preference or the learned RTC hint. `undefined`
+ * clears the field, so a host that stops advertising `signalOnly` can be
+ * downgraded without inventing a false value.
+ */
+export function updateStoredHostConnection(
+  host: StoredHost,
+  change: { readonly connectionMode?: ConnectionMode; readonly rtcSignalOnly?: boolean },
+): StoredHost {
+  const next = { ...host };
+  if ("connectionMode" in change) {
+    if (change.connectionMode === undefined) delete next.connectionMode;
+    else next.connectionMode = change.connectionMode;
+  }
+  if ("rtcSignalOnly" in change) {
+    if (change.rtcSignalOnly === undefined) delete next.rtcSignalOnly;
+    else next.rtcSignalOnly = change.rtcSignalOnly;
+  }
+  return next;
 }
 
 /**

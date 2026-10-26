@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { EndpointSet, HostEndpoint } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { hostLabels, mergeStoredHost, parseStoredHost, updateStoredHostEndpoints } from "../src/stored-host.ts";
+import {
+  hostLabels,
+  mergeStoredHost,
+  parseStoredHost,
+  updateStoredHostConnection,
+  updateStoredHostEndpoints,
+} from "../src/stored-host.ts";
 import { HOST_CASES, HOST_KEY_A, HOST_KEY_B, HOST_KEY_C, HOST_LABEL_CASES, KEY_A, KEY_B } from "./misc-cases.ts";
 
 const key = () => toBase64Url(generateKeyPair().privateKey);
@@ -73,6 +79,46 @@ describe("parseStoredHost", () => {
     expect(parsed).toEqual({ url: "ws://192.168.1.5:7422/secure", hostKey: KEY_A, privateKey: KEY_B });
     const withAccount = parseStoredHost(CASE("account").value);
     expect(withAccount?.account).toEqual({ serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A });
+  });
+});
+
+describe("connection preferences", () => {
+  it("round-trips a known mode and the learned signal-only hint", () => {
+    const host = valid();
+    expect(parseStoredHost({ ...host, connectionMode: "directOnly", rtcSignalOnly: true })).toEqual({
+      ...host,
+      connectionMode: "directOnly",
+      rtcSignalOnly: true,
+    });
+    expect(parseStoredHost({ ...host, connectionMode: "relayOnly" })).toEqual({ ...host, connectionMode: "relayOnly" });
+    expect(parseStoredHost({ ...host, connectionMode: "auto" })).toEqual({ ...host, connectionMode: "auto" });
+  });
+
+  it("drops an unknown mode or a bad hint without losing the pairing", () => {
+    const host = valid();
+    for (const connectionMode of ["bogus", "", 42, null, { mode: "auto" }]) {
+      expect(parseStoredHost({ ...host, connectionMode })).toEqual(host);
+    }
+    for (const rtcSignalOnly of [false, "true", 1, null]) {
+      expect(parseStoredHost({ ...host, rtcSignalOnly })).toEqual(host);
+    }
+  });
+
+  it("merges preferences from the incoming record while preserving absent ones", () => {
+    const host = valid();
+    const existing = { ...host, connectionMode: "directOnly" as const, rtcSignalOnly: true };
+    expect(mergeStoredHost(existing, host)).toEqual(existing);
+    expect(mergeStoredHost(host, existing)).toEqual(existing);
+  });
+
+  it("clears a preference through the update helper", () => {
+    const base = valid();
+    const host = { ...base, connectionMode: "directOnly" as const, rtcSignalOnly: true };
+    expect(updateStoredHostConnection(host, { connectionMode: "relayOnly" })).toEqual({
+      ...host,
+      connectionMode: "relayOnly",
+    });
+    expect(updateStoredHostConnection(host, { connectionMode: undefined, rtcSignalOnly: undefined })).toEqual(base);
   });
 });
 

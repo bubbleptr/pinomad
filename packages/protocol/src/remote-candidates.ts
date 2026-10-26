@@ -3,6 +3,7 @@
 // supplies the page protocol so an HTTPS page can report mixed-content
 // candidates as unsupported instead of failing them as host outages.
 
+import type { ConnectionMode } from "./connection-mode.ts";
 import { isLoopbackUrl, type EndpointSet, type HostEndpoint } from "./endpoints.ts";
 
 /** Why a candidate cannot be dialed at all; reported as a skipped path, not a host failure. */
@@ -22,6 +23,35 @@ export interface CandidatePlanOptions {
   /** The page's protocol, for example `window.location.protocol`. */
   readonly pageProtocol?: string;
 }
+
+/**
+ * Business paths allowed by a connection mode (ADR-0033 §3):
+ * Direct only keeps local plus direct WebSocket, Relay only keeps local plus
+ * relay, and Auto keeps the existing order. A legacy URL has no role evidence;
+ * it is treated as relay for Relay only and dropped for Direct only.
+ */
+export function filterCandidatesForMode(
+  candidates: readonly RemoteCandidate[],
+  mode: ConnectionMode,
+): RemoteCandidate[] {
+  if (mode === "auto") return [...candidates];
+  if (mode === "relayOnly") {
+    return candidates.filter((candidate) => candidate.role === "loopback" || candidate.role === "relay" || candidate.role === "legacy");
+  }
+  return candidates.filter((candidate) => candidate.role === "loopback" || candidate.role === "direct");
+}
+
+/**
+ * The sockets a Direct-only client may use for a signal-only connection. Only
+ * relay paths qualify: a working direct WebSocket is already a business path,
+ * and P2P is the only way to turn a relay into business connectivity there.
+ */
+export function signalCandidates(candidates: readonly RemoteCandidate[]): RemoteCandidate[] {
+  return candidates.filter((candidate) => candidate.role === "relay" || candidate.role === "legacy");
+}
+
+export const DIRECT_UNAVAILABLE =
+  "Direct connection unavailable: this host cannot be reached without the relay and WebRTC did not connect.";
 
 const isInsecureRemote = (url: string): boolean => {
   try {

@@ -330,6 +330,50 @@ pub struct RtcOfferArgs {
     pub sdp: String,
 }
 
+/// The record layer never exceeds this; one record is one DataChannel message.
+pub const RTC_MAX_RECORD_BYTES: u64 = 65_535;
+/// Absent `a=max-message-size` means the browsers' 65536 default.
+pub const RTC_DEFAULT_MAX_MESSAGE_SIZE: u64 = 65_536;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RtcMaxMessageSize {
+    Bounded(u64),
+    Unlimited,
+    Invalid(String),
+}
+
+/// Parse the peer's SDP send limit (`a=max-message-size`), matching
+/// `parseRtcMaxMessageSize` in the TS reference: absent is 65536, 0 is
+/// unlimited, anything below one full record is invalid.
+pub fn parse_rtc_max_message_size(sdp: &str) -> RtcMaxMessageSize {
+    let mut line = None;
+    for entry in sdp.split('\n') {
+        let entry = entry.strip_suffix('\r').unwrap_or(entry);
+        if let Some(rest) = entry.strip_prefix("a=max-message-size:") {
+            line = Some(rest.trim());
+            break;
+        }
+    }
+    let Some(raw) = line else {
+        return RtcMaxMessageSize::Bounded(RTC_DEFAULT_MAX_MESSAGE_SIZE);
+    };
+    if raw.is_empty() || !raw.chars().all(|ch| ch.is_ascii_digit()) {
+        return RtcMaxMessageSize::Invalid(format!("malformed a=max-message-size: {raw}"));
+    }
+    let Ok(bytes) = raw.parse::<u64>() else {
+        return RtcMaxMessageSize::Invalid(format!("a=max-message-size is not a safe integer: {raw}"));
+    };
+    if bytes == 0 {
+        return RtcMaxMessageSize::Unlimited;
+    }
+    if bytes < RTC_MAX_RECORD_BYTES {
+        return RtcMaxMessageSize::Invalid(format!(
+            "a=max-message-size {bytes} cannot carry a {RTC_MAX_RECORD_BYTES}-byte record"
+        ));
+    }
+    RtcMaxMessageSize::Bounded(bytes)
+}
+
 pub fn parse_rtc_offer_args(args: &Json) -> Result<RtcOfferArgs, String> {
     let attempt = args
         .get("attempt")

@@ -620,6 +620,8 @@ fn validate_stored_host_accepts_good_and_drops_bad_account() {
             host_id: "bad".to_string(),
         }),
         endpoint_set: None,
+        connection_mode: None,
+        rtc_signal_only: None,
     };
     let validated = validate_stored_host(good).expect("valid host");
     assert!(validated.account.is_none(), "malformed link drops only the account");
@@ -680,6 +682,8 @@ fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
         name: None,
         account: None,
         endpoint_set: Some(set),
+        connection_mode: None,
+        rtc_signal_only: None,
     };
     let client = PinomadClient::connect(stored).expect("stored host");
     let commands = client.take();
@@ -708,6 +712,8 @@ fn an_explicit_empty_planned_set_never_dials_the_legacy_url() {
         name: None,
         account: None,
         endpoint_set: Some(EndpointSet { schema_version: 1, endpoints: vec![] }),
+        connection_mode: None,
+        rtc_signal_only: None,
     })
     .expect("empty planned set is a valid stored host");
     let commands = client.take();
@@ -743,6 +749,8 @@ fn stored_host_endpoint_set_boundary_is_lossy_only_for_the_set() {
                 },
             ],
         }),
+        connection_mode: None,
+        rtc_signal_only: None,
     };
     let validated = validate_stored_host(host.clone()).expect("valid host");
     assert_eq!(validated.endpoint_set, host.endpoint_set);
@@ -1865,6 +1873,8 @@ fn connect_rejects_bad_key_material() {
         name: None,
         account: None,
         endpoint_set: None,
+        connection_mode: None,
+        rtc_signal_only: None,
     });
     assert!(matches!(result, Err(ClientError::InvalidStoredHost { .. })));
 }
@@ -2067,6 +2077,8 @@ fn account_pairing_link_and_host_matching() {
             host_id: key.to_string(),
         }),
         endpoint_set: None,
+        connection_mode: None,
+        rtc_signal_only: None,
     };
     let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host.clone()], vec![linked]);
     assert_eq!(matches[0].status, AccountHostStatus::Paired);

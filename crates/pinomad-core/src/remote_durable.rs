@@ -15,18 +15,26 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
+use crate::connection_mode::ConnectionMode;
 use crate::delta::{apply_immutable, op_from_json};
 use crate::endpoints::{EndpointSet, ParsedEndpointSet, parse_endpoint_set};
 use crate::frames::{
-    ApnsPushToken, ClientFrame, HostFeature, ImageVariant, PROTOCOL, ServerFrame,
-    UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
+    ApnsPushToken, ClientFrame, HostFeature, HostRtc, ImageVariant, PROTOCOL, RtcMaxMessageSize,
+    ServerFrame, UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
+    parse_host_rtc, parse_rtc_max_message_size,
 };
 use crate::json::{Json, JsonObject};
 use crate::organization::{checkout_of, home_of, organize};
 use crate::remote_candidates::{
-    RemoteCandidate, RemoteCandidateRole, candidate_plan, preferred_legacy_url,
+    DIRECT_UNAVAILABLE, RemoteCandidate, RemoteCandidateRole, candidate_plan,
+    filter_candidates_for_mode, preferred_legacy_url, signal_candidates,
 };
+use crate::secure_channel::{
+    IkClientHandshake, SECURE_PROLOGUE, SecureSession, initiate_handshake_with_prologue,
+};
+use crate::b64::from_base64url;
+use crate::noise::{KeyPair, keypair_from_private};
 use crate::transport::{ConnOut, Connection, Transport};
 use crate::u16str::U16String;
 
@@ -98,6 +106,57 @@ impl CandidateFailureStage {
     }
 }
 
+/// What a WebRTC library did with one record (ADR-0033 §2). Node's `false`
+/// is already queued; str0m's `false` is not accepted and may be retried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RtcSendOutcome {
+    Accepted,
+    Queued,
+    Rejected,
+}
+
+/// The RTC capability handed to the coordinator. Its presence is the platform
+/// declaration; `None` means the core never creates a peer or a signal
+/// connection and emits no RTC command.
+#[derive(Clone, Debug)]
+pub struct RtcOptions {
+    /// base64url of the host's 32-byte Noise static key.
+    pub host_key: String,
+    /// base64url of this device's 32-byte Noise private key.
+    pub device_private_key: String,
+    /// The stored `hello.rtc.signalOnly` hint for Direct only.
+    pub signal_only_hint: bool,
+}
+
+impl RtcOptions {
+    fn keys(&self) -> Option<(KeyPair, [u8; 32])> {
+        let private = from_base64url(&self.device_private_key).ok()?;
+        let device = keypair_from_private(&private).ok()?;
+        let host = from_base64url(&self.host_key).ok()?;
+        let host: [u8; 32] = host.try_into().ok()?;
+        Some((device, host))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConnectionPath {
+    Loopback,
+    Relay,
+    Direct,
+    P2p,
+}
+
+impl ConnectionPath {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ConnectionPath::Loopback => "loopback",
+            ConnectionPath::Relay => "relay",
+            ConnectionPath::Direct => "direct",
+            ConnectionPath::P2p => "p2p",
+        }
+    }
+}
+
 /// One path's failure evidence. `unauthorized` is only true for a raw 4401
 /// close, which says nothing about the host's other paths until the round
 /// ends.
@@ -115,6 +174,12 @@ pub struct CandidateFailure {
 pub trait CandidateSource: Send {
     /// Open one carrier generation for `candidate`.
     fn open(&mut self, candidate: &RemoteCandidate) -> Box<dyn Connection>;
+    /// Open a signal-only carrier (SIGNAL_PROLOGUE) for a relay candidate.
+    /// Sources without RTC support never reach this; the default keeps the
+    /// old test carriers and non-RTC clients source-compatible.
+    fn open_signal(&mut self, candidate: &RemoteCandidate) -> Box<dyn Connection> {
+        self.open(candidate)
+    }
     /// The generation that just authenticated carried the invitation: spend
     /// the shared secret and report what the platform persists. Sources that
     /// never pair return None.
@@ -410,6 +475,24 @@ pub enum Event {
     /// Connectivity changed (ADR-0024 §3): same as Foreground — a pending
     /// reconnect backoff is skipped and the retry fires now.
     NetworkChanged,
+    /// Monotonic platform time for cooldown diagnostics and stall checks.
+    Clock { now_ms: u64 },
+    /// The platform created the offer and gathered candidates (its own 2s).
+    RtcPeerReady { peer: u32, sdp: String },
+    /// The reliable ordered DataChannel opened.
+    RtcChannelOpened { peer: u32 },
+    /// One inbound DataChannel record.
+    RtcData { peer: u32, bytes: Vec<u8> },
+    /// The library's verdict on the last `RtcSend`.
+    RtcSendResult { peer: u32, outcome: RtcSendOutcome },
+    /// The library's low-water callback; resume the record pump.
+    RtcLowWater { peer: u32 },
+    /// The DataChannel / ICE closed. Candidate-level, never unauthorized.
+    RtcClosed { peer: u32, reason: Option<String> },
+    /// The selected ICE candidate type, for diagnostics.
+    RtcSelectedCandidate { peer: u32, kind: String },
+    /// Switch connection mode; the whole client reconnects (ADR-0033 §3).
+    SetConnectionMode { mode: ConnectionMode },
 }
 
 /// Everything the platform layer executes — open/write/close a socket,
@@ -480,6 +563,17 @@ pub enum Command {
         op: u64,
         error: String,
     },
+    /// The host announced signal-only RTC (or a failed handshake disproved
+    /// it); persist the hint with the stored host.
+    RtcSignalOnly { host_key: String, signal_only: bool },
+    /// Create the offer and DataChannel; the platform reports `RtcPeerReady`.
+    CreateRtcPeer { peer: u32, stun: Vec<String> },
+    /// Apply the host's complete answer and start ICE.
+    AcceptRtcAnswer { peer: u32, sdp: String },
+    /// Hand one record to the DataChannel. One in flight at a time.
+    RtcSend { peer: u32, bytes: Vec<u8> },
+    /// Retire the Peer and its DataChannel.
+    CloseRtcPeer { peer: u32 },
 }
 
 /// What `RemoteDurable` reports when the first view arrives — or why it
@@ -519,6 +613,11 @@ pub struct RemoteDurableOptions {
     /// Cap a whole round; defaults to every candidate's stage budgets plus a
     /// small margin so a later candidate always gets its turn.
     pub round_timeout_ms: Option<u64>,
+    /// Defaults to Auto.
+    pub connection_mode: ConnectionMode,
+    /// Absent means the platform cannot do RTC; the core then behaves exactly
+    /// as before and never emits an RTC command.
+    pub rtc: Option<RtcOptions>,
 }
 
 impl RemoteDurableOptions {
@@ -539,6 +638,8 @@ impl RemoteDurableOptions {
             pairing_endpoint_set: None,
             candidate_timeouts: CandidateTimeouts::default(),
             round_timeout_ms: None,
+            connection_mode: ConnectionMode::Auto,
+            rtc: None,
         }
     }
 }
@@ -661,13 +762,127 @@ struct FirstView {
     hello: Json,
 }
 
+const RTC_STALL_MS: u64 = 10_000;
+const UPGRADE_DELAY_MS: u64 = 1_000;
+const UPGRADE_IDLE_MS: u64 = 300;
+const UPGRADE_IDLE_LIMIT_MS: u64 = 30_000;
+const UPGRADE_DEADLINE_MS: u64 = 25_000;
+const PREPARE_RETRY_MS: u64 = 1_000;
+const COOLDOWN_START_MS: u64 = 30_000;
+const COOLDOWN_MAX_MS: u64 = 600_000;
+const P2P_STABLE_MS: u64 = 600_000;
+const FALLBACK_QUIET_MS: u64 = 60_000;
+const COOLDOWN_CLEAR_INTERVAL_MS: u64 = 60_000;
+const LIVENESS_INTERVAL_MS: u64 = 5_000;
+const LIVENESS_BUDGET_MS: u64 = 15_000;
+const LIVENESS_VERIFY_MS: u64 = 3_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RtcPhase {
+    Signal,
+    Ice,
+    Noise,
+    Warm,
+    Ready,
+}
+
+impl RtcPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            RtcPhase::Signal => "signal",
+            RtcPhase::Ice => "ice",
+            RtcPhase::Noise => "noise",
+            RtcPhase::Warm => "warm",
+            RtcPhase::Ready => "active",
+        }
+    }
+}
+
+/// One Peer's record pump and Noise session. The core seals frames and hands
+/// the carrier one record at a time; the platform reports what the library did.
+struct RtcCarrier {
+    peer: u32,
+    phase: RtcPhase,
+    handshake: Option<IkClientHandshake>,
+    session: Option<SecureSession>,
+    pending: VecDeque<Vec<u8>>,
+    in_flight: bool,
+    stall_timer: Option<u32>,
+    selected: Option<String>,
+}
+
+impl RtcCarrier {
+    fn new(peer: u32) -> Self {
+        RtcCarrier {
+            peer,
+            phase: RtcPhase::Signal,
+            handshake: None,
+            session: None,
+            pending: VecDeque::new(),
+            in_flight: false,
+            stall_timer: None,
+            selected: None,
+        }
+    }
+}
+
+struct Standby {
+    carrier: RtcCarrier,
+    timer: Option<u32>,
+    idle_timer: Option<u32>,
+    hello: Option<Json>,
+    ping_call: Option<u64>,
+    verify_call: Option<u64>,
+    verify_timer: Option<u32>,
+    signal_conn: Option<u32>,
+    signal_only: bool,
+    offer_call: Option<u64>,
+    idle_since: Option<u64>,
+}
+
+struct Handoff {
+    entries: VecDeque<(u64, OpKind, Call)>,
+    standby_peer: u32,
+}
+
+struct SignalAttempt {
+    candidates: Vec<RemoteCandidate>,
+    index: usize,
+    conn: Option<Conn>,
+    timer: Option<u32>,
+    done: bool,
+}
+
 fn key(name: &str) -> Vec<u16> {
     name.encode_utf16().collect()
 }
 
 pub struct RemoteDurable {
     source: Box<dyn CandidateSource>,
+    full_candidates: Vec<RemoteCandidate>,
     candidates: Vec<RemoteCandidate>,
+    mode: ConnectionMode,
+    rtc: Option<RtcOptions>,
+    host_rtc: Option<HostRtc>,
+    signal_only_hint: bool,
+    standby: Option<Standby>,
+    signal_attempt: Option<SignalAttempt>,
+    handoff: Option<Handoff>,
+    active_rtc: Option<RtcCarrier>,
+    active_path: ConnectionPath,
+    p2p_failure: Option<(String, String)>,
+    next_peer: u32,
+    upgrade_timer: Option<u32>,
+    stable_timer: Option<u32>,
+    liveness_ping_timer: Option<u32>,
+    liveness_deadline_timer: Option<u32>,
+    liveness_verify_timer: Option<u32>,
+    probe_call: Option<u64>,
+    now_ms: u64,
+    cooldown_until: u64,
+    no_upgrade_until: u64,
+    upgrade_failures: u32,
+    last_cooldown_clear: Option<u64>,
     round_candidates: Vec<RemoteCandidate>,
     candidate_index: usize,
     failures: Vec<CandidateFailure>,
@@ -687,6 +902,10 @@ pub struct RemoteDurable {
     dial: Option<DialAttempt>,
     round_timer: Option<u32>,
     reconnect_remaining: Option<HashSet<Vec<u16>>>,
+    /// A reconnect's shell is visible, but calls wait for its conversation and
+    /// doc snapshots before entering a ciphertext FIFO.
+    sync_gate: bool,
+    sync_queue: VecDeque<(u64, OpKind, Call)>,
     next_conn: u32,
     wanted: BTreeSet<Vec<u16>>,
     values: HashMap<Vec<u16>, Json>,
@@ -757,9 +976,36 @@ impl RemoteDurable {
         } else {
             candidate_plan(&legacy_url, None, options.page_protocol.as_deref())
         };
+        let mode = options.connection_mode;
+        let signal_only_hint = options.rtc.as_ref().is_some_and(|rtc| rtc.signal_only_hint);
+        let full_candidates = candidates.clone();
+        let filtered = filter_candidates_for_mode(&candidates, mode);
         let mut this = RemoteDurable {
             source: options.source,
-            candidates,
+            full_candidates,
+            candidates: filtered,
+            mode,
+            rtc: options.rtc,
+            host_rtc: None,
+            signal_only_hint,
+            standby: None,
+            signal_attempt: None,
+            handoff: None,
+            active_rtc: None,
+            active_path: ConnectionPath::Loopback,
+            p2p_failure: None,
+            next_peer: 0,
+            upgrade_timer: None,
+            stable_timer: None,
+            liveness_ping_timer: None,
+            liveness_deadline_timer: None,
+            liveness_verify_timer: None,
+            probe_call: None,
+            now_ms: 0,
+            cooldown_until: 0,
+            no_upgrade_until: 0,
+            upgrade_failures: 0,
+            last_cooldown_clear: None,
             round_candidates: Vec::new(),
             candidate_index: 0,
             failures: Vec::new(),
@@ -779,6 +1025,8 @@ impl RemoteDurable {
             dial: None,
             round_timer: None,
             reconnect_remaining: None,
+            sync_gate: false,
+            sync_queue: VecDeque::new(),
             next_conn: 0,
             wanted: BTreeSet::new(),
             values: HashMap::new(),
@@ -863,7 +1111,9 @@ impl RemoteDurable {
         self.view_dirty = false;
         match event {
             Event::SocketOpened { conn } => {
-                if self.live_conn(conn) {
+                if self.signal_conn_is(conn) {
+                    self.signal_opened(conn);
+                } else if self.live_conn(conn) {
                     // The socket opened: Noise starts now. Outcomes below may
                     // advance straight to hello in a test harness, so arm
                     // this before draining rather than overwriting them.
@@ -876,7 +1126,9 @@ impl RemoteDurable {
                 }
             }
             Event::SocketData { conn, bytes } => {
-                if self.live_conn(conn) {
+                if self.signal_conn_is(conn) {
+                    self.signal_data(conn, &bytes);
+                } else if self.live_conn(conn) {
                     let mut conn_out = Vec::new();
                     if let Some(conn) = self.conn_mut() {
                         conn.inner.data(&bytes, &mut conn_out);
@@ -885,7 +1137,9 @@ impl RemoteDurable {
                 }
             }
             Event::SocketClosed { conn, code, reason } => {
-                if self.live_conn(conn) {
+                if self.signal_conn_is(conn) {
+                    self.signal_socket_closed(conn, code, reason);
+                } else if self.live_conn(conn) {
                     let mut conn_out = Vec::new();
                     if let Some(conn) = self.conn_mut() {
                         conn.inner.closed(code, reason.clone(), &mut conn_out);
@@ -902,7 +1156,9 @@ impl RemoteDurable {
                 }
             }
             Event::SendFailed { conn } => {
-                if self.live_conn(conn) {
+                if self.signal_conn_is(conn) {
+                    self.signal_socket_closed(conn, 1006, None);
+                } else if self.live_conn(conn) {
                     // A write failure means the socket is broken — tell the
                     // platform to close it, then treat it as an abnormal
                     // close so pending calls fail and the round moves on.
@@ -918,9 +1174,18 @@ impl RemoteDurable {
             Event::TimerFired { timer } => self.timer_fired(timer),
             Event::Invoke { op, call } => self.invoke(op, call),
             Event::Close => self.close(),
-            Event::Foreground => self.reconnect_now(false),
-            Event::NetworkChanged => self.reconnect_now(true),
-            Event::Background => {}
+            Event::Foreground => self.enter_foreground(),
+            Event::NetworkChanged => self.network_changed(),
+            Event::Background => self.enter_background(),
+            Event::Clock { now_ms } => self.now_ms = now_ms,
+            Event::RtcPeerReady { peer, sdp } => self.rtc_peer_ready(peer, sdp),
+            Event::RtcChannelOpened { peer } => self.rtc_channel_opened(peer),
+            Event::RtcData { peer, bytes } => self.rtc_data(peer, &bytes),
+            Event::RtcSendResult { peer, outcome } => self.rtc_send_result(peer, outcome),
+            Event::RtcLowWater { peer } => self.rtc_low_water(peer),
+            Event::RtcClosed { peer, reason } => self.rtc_closed(peer, reason),
+            Event::RtcSelectedCandidate { peer, kind } => self.rtc_selected(peer, kind),
+            Event::SetConnectionMode { mode } => self.set_connection_mode(mode),
         }
         if self.view_dirty {
             self.version += 1;
@@ -936,6 +1201,39 @@ impl RemoteDurable {
         if self.reconnect_timer == Some(timer) {
             self.reconnect_timer = None;
             self.begin_round();
+            return;
+        }
+        if self.upgrade_timer == Some(timer) {
+            self.upgrade_timer = None;
+            self.maybe_start_upgrade();
+            return;
+        }
+        if self.stable_timer == Some(timer) {
+            self.stable_timer = None;
+            if self.active_rtc.is_some() && self.dial.as_ref().is_some_and(|dial| dial.phase == Phase::Ready) {
+                self.upgrade_failures = 0;
+                self.cooldown_until = 0;
+                self.no_upgrade_until = 0;
+            }
+            return;
+        }
+        if self.liveness_ping_timer == Some(timer) {
+            self.liveness_ping_timer = None;
+            self.liveness_tick();
+            return;
+        }
+        if self.liveness_deadline_timer == Some(timer) {
+            self.liveness_deadline_timer = None;
+            self.fallback_from_p2p("no pong within 15000ms");
+            return;
+        }
+        if self.liveness_verify_timer == Some(timer) {
+            self.liveness_verify_timer = None;
+            self.probe_call = None;
+            self.fallback_from_p2p("the foreground verification ping did not answer within 3000ms");
+            return;
+        }
+        if self.standby_timer_fired(timer) || self.signal_timer_fired(timer) || self.rtc_stall_fired(timer) {
             return;
         }
         if self.round_timer == Some(timer) {
@@ -1133,6 +1431,1216 @@ impl RemoteDurable {
         });
     }
 
+    // ─── RTC standby, handoff, liveness and modes ───────────────────────
+
+    fn schedule_upgrade(&mut self, delay_ms: u64) {
+        if self.closed || self.rtc.is_none() || self.mode == ConnectionMode::RelayOnly {
+            return;
+        }
+        self.clear_upgrade_timer();
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.upgrade_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms });
+    }
+
+    fn clear_upgrade_timer(&mut self) {
+        let Some(timer) = self.upgrade_timer.take() else { return };
+        self.out.push(Command::CancelDeadline { timer });
+    }
+
+    fn maybe_start_upgrade(&mut self) {
+        if self.closed || self.rtc.is_none() || self.mode == ConnectionMode::RelayOnly {
+            return;
+        }
+        if self.standby.is_some() || self.handoff.is_some() || self.signal_attempt.is_some() {
+            return;
+        }
+        let blocked_until = self.cooldown_until.max(self.no_upgrade_until);
+        if self.now_ms < blocked_until {
+            self.schedule_upgrade(blocked_until - self.now_ms);
+            return;
+        }
+        if let Some(dial) = &self.dial {
+            if dial.phase == Phase::Ready && self.state.as_ref().is_some_and(|state| {
+                state
+                    .get(&key("connection"))
+                    .and_then(Json::as_str)
+                    .is_some_and(|s| s.to_string_lossy() == CONNECTED)
+            }) {
+                if self.active_path == ConnectionPath::P2p {
+                    return;
+                }
+                let host_rtc = self.host_rtc.clone();
+                if host_rtc.is_some() && dial.conn.is_some() {
+                    let signal_conn = dial.conn.as_ref().map(|conn| conn.id);
+                    if let Some(signal_conn) = signal_conn {
+                        self.start_standby(signal_conn, false);
+                    }
+                }
+                return;
+            }
+        }
+        if self.mode != ConnectionMode::DirectOnly {
+            return;
+        }
+        if self.host_rtc.is_none() && !self.signal_only_hint {
+            return;
+        }
+        self.open_signal_attempt();
+    }
+
+    fn start_standby(&mut self, signal_conn: u32, signal_only: bool) {
+        if self.rtc.is_none() || self.standby.is_some() || self.closed {
+            return;
+        }
+        self.next_peer += 1;
+        let peer = self.next_peer;
+        let mut standby = Standby {
+            carrier: RtcCarrier::new(peer),
+            timer: None,
+            idle_timer: None,
+            hello: None,
+            ping_call: None,
+            verify_call: None,
+            verify_timer: None,
+            signal_conn: Some(signal_conn),
+            signal_only,
+            offer_call: None,
+            idle_since: None,
+        };
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        standby.timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms: UPGRADE_DEADLINE_MS });
+        let stun = self.host_rtc.as_ref().map(|rtc| rtc.stun.clone()).unwrap_or_default();
+        self.out.push(Command::CreateRtcPeer { peer, stun });
+        self.standby = Some(standby);
+    }
+
+    fn rtc_carrier(&self, peer: u32) -> Option<&RtcCarrier> {
+        if let Some(standby) = self.standby.as_ref().filter(|s| s.carrier.peer == peer) {
+            return Some(&standby.carrier);
+        }
+        self.active_rtc.as_ref().filter(|carrier| carrier.peer == peer)
+    }
+
+    fn rtc_carrier_mut(&mut self, peer: u32) -> Option<&mut RtcCarrier> {
+        if let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) {
+            return Some(&mut standby.carrier);
+        }
+        self.active_rtc.as_mut().filter(|carrier| carrier.peer == peer)
+    }
+
+    fn rtc_enqueue(&mut self, peer: u32, records: Vec<Vec<u8>>) {
+        let Some(carrier) = self.rtc_carrier_mut(peer) else { return };
+        carrier.pending.extend(records);
+        self.rtc_reset_stall(peer);
+        self.rtc_pump(peer);
+    }
+
+    fn rtc_reset_stall(&mut self, peer: u32) {
+        let old = self.rtc_carrier_mut(peer).and_then(|carrier| carrier.stall_timer.take());
+        if let Some(timer) = old {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let has_pending = self.rtc_carrier(peer).is_some_and(|carrier| !carrier.pending.is_empty());
+        if !has_pending {
+            return;
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.stall_timer = Some(timer);
+        }
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms: RTC_STALL_MS });
+    }
+
+    fn rtc_pump(&mut self, peer: u32) {
+        let mut send = None;
+        let mut clear_stall = None;
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            if !carrier.in_flight && !carrier.pending.is_empty() {
+                send = carrier.pending.front().cloned();
+                carrier.in_flight = send.is_some();
+            }
+            if carrier.pending.is_empty() {
+                clear_stall = carrier.stall_timer.take();
+            }
+        }
+        if let Some(timer) = clear_stall {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        if let Some(bytes) = send {
+            self.out.push(Command::RtcSend { peer, bytes });
+        }
+    }
+
+    fn rtc_send_text(&mut self, peer: u32, text: String) -> Result<(), String> {
+        let Some(carrier) = self.rtc_carrier_mut(peer) else {
+            return Err("the RTC carrier is gone".to_string());
+        };
+        let Some(session) = carrier.session.as_mut() else {
+            return Err("the RTC carrier is not authenticated".to_string());
+        };
+        let records = session.seal(&text).map_err(|error| error.to_string())?;
+        self.rtc_enqueue(peer, records);
+        Ok(())
+    }
+
+    fn rtc_stall_fired(&mut self, timer: u32) -> bool {
+        let peer = self
+            .standby
+            .as_ref()
+            .filter(|s| s.carrier.stall_timer == Some(timer))
+            .map(|s| s.carrier.peer)
+            .or_else(|| {
+                self.active_rtc
+                    .as_ref()
+                    .filter(|c| c.stall_timer == Some(timer))
+                    .map(|c| c.peer)
+            });
+        let Some(peer) = peer else { return false };
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.stall_timer = None;
+        }
+        self.rtc_fail(peer, "the DataChannel made no progress for 10000ms");
+        true
+    }
+
+    fn rtc_fail(&mut self, peer: u32, reason: &str) {
+        if self.standby.as_ref().is_some_and(|s| s.carrier.peer == peer) {
+            self.fail_standby(peer, reason);
+        } else if self.active_rtc.as_ref().is_some_and(|c| c.peer == peer) {
+            self.fallback_from_p2p(reason);
+        }
+    }
+
+    fn rtc_peer_ready(&mut self, peer: u32, sdp: String) {
+        let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+            self.out.push(Command::CloseRtcPeer { peer });
+            return;
+        };
+        if standby.carrier.phase != RtcPhase::Signal {
+            return;
+        }
+        let Some(signal_conn) = standby.signal_conn else {
+            self.fail_standby(peer, "the signal connection is gone");
+            return;
+        };
+        let id = self.next_call;
+        self.next_call += 1;
+        if let Some(standby) = self.standby.as_mut() {
+            standby.offer_call = Some(id);
+        }
+        let attempt = format!("rtc-{peer}");
+        let mut args = JsonObject::new();
+        set(&mut args, "attempt", Json::from(attempt));
+        set(&mut args, "sdp", Json::from(sdp));
+        let text = encode_client_frame(&ClientFrame::Call {
+            id: id as f64,
+            method: U16String::from_str("rtcOffer"),
+            args: Json::Object(Arc::new(args)),
+        });
+        if !self.send_on_conn(signal_conn, text) {
+            self.fail_standby(peer, "the signal connection is gone");
+        }
+    }
+
+    fn send_on_conn(&mut self, conn_id: u32, text: String) -> bool {
+        if self.dial.as_ref().and_then(|d| d.conn.as_ref()).map(|c| c.id) == Some(conn_id) {
+            let mut out = Vec::new();
+            if let Some(conn) = self.conn_mut() {
+                conn.inner.send(text, &mut out);
+            }
+            self.drain_conn_out(out);
+            return true;
+        }
+        if self
+            .signal_attempt
+            .as_ref()
+            .and_then(|attempt| attempt.conn.as_ref())
+            .map(|conn| conn.id)
+            == Some(conn_id)
+        {
+            let mut out = Vec::new();
+            if let Some(attempt) = self.signal_attempt.as_mut() {
+                if let Some(conn) = attempt.conn.as_mut() {
+                    conn.inner.send(text, &mut out);
+                }
+            }
+            self.drain_signal_out(conn_id, out);
+            return true;
+        }
+        false
+    }
+
+    fn handle_rtc_result(&mut self, call_id: u64, ok: bool, value: Json, error: Json) -> bool {
+        let Some(standby) = self.standby.as_mut() else { return false };
+        if standby.offer_call == Some(call_id) {
+            standby.offer_call = None;
+            if !ok {
+                let reason = U16String::js_string(&error).to_string_lossy();
+                let peer = standby.carrier.peer;
+                self.fail_standby(peer, &reason);
+                return true;
+            }
+            let peer = standby.carrier.peer;
+            let Some(sdp) = value.get("sdp").and_then(Json::as_str).map(|s| s.to_string_lossy()) else {
+                self.fail_standby(peer, "the host returned a malformed rtcOffer answer");
+                return true;
+            };
+            match parse_rtc_max_message_size(&sdp) {
+                RtcMaxMessageSize::Invalid(reason) => {
+                    self.fail_standby(peer, &reason);
+                    return true;
+                }
+                _ => {}
+            }
+            if let Some(standby) = self.standby.as_mut() {
+                standby.carrier.phase = RtcPhase::Ice;
+            }
+            self.out.push(Command::AcceptRtcAnswer { peer, sdp });
+            return true;
+        }
+        if standby.verify_call == Some(call_id) {
+            standby.verify_call = None;
+            if let Some(timer) = standby.verify_timer.take() {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+            if ok {
+                self.install_standby();
+            } else {
+                let reason = U16String::js_string(&error).to_string_lossy();
+                self.release_to_old(&reason);
+            }
+            return true;
+        }
+        if standby.ping_call == Some(call_id) {
+            standby.ping_call = None;
+            let peer = standby.carrier.peer;
+            if !ok {
+                self.fail_standby(peer, "the warm ping failed");
+                return true;
+            }
+            self.standby_warm(peer);
+            return true;
+        }
+        false
+    }
+
+    fn rtc_channel_opened(&mut self, peer: u32) {
+        let Some((device, host_key)) = self.rtc.as_ref().and_then(RtcOptions::keys) else {
+            self.rtc_fail(peer, "the RTC key material is unusable");
+            return;
+        };
+        let Some(carrier) = self.rtc_carrier_mut(peer) else { return };
+        let Ok(handshake) = initiate_handshake_with_prologue(&device, host_key, None, SECURE_PROLOGUE) else {
+            self.rtc_fail(peer, "Noise IK could not start");
+            return;
+        };
+        let message = handshake.message1().to_vec();
+        carrier.handshake = Some(handshake);
+        carrier.phase = RtcPhase::Noise;
+        self.rtc_enqueue(peer, vec![message]);
+    }
+
+    fn rtc_data(&mut self, peer: u32, bytes: &[u8]) {
+        enum Routed {
+            None,
+            Standby(String),
+            Active(String),
+            Failed(String),
+        }
+        let mut routed = Routed::None;
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            if carrier.session.is_none() {
+                let Some(handshake) = carrier.handshake.take() else {
+                    carrier.phase = RtcPhase::Noise;
+                    return;
+                };
+                match handshake.read_message2(bytes) {
+                    Ok((_hello, session, _hash)) => {
+                        carrier.session = Some(session);
+                        carrier.phase = RtcPhase::Noise;
+                    }
+                    Err(error) => {
+                        routed = Routed::Failed(error.to_string());
+                    }
+                }
+            } else if let Some(session) = carrier.session.as_mut() {
+                match session.open(bytes) {
+                    Ok(Some(text)) => {
+                        if self.standby.as_ref().is_some_and(|s| s.carrier.peer == peer) {
+                            routed = Routed::Standby(text);
+                        } else {
+                            routed = Routed::Active(text);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => routed = Routed::Failed(error.to_string()),
+                }
+            }
+        }
+        match routed {
+            Routed::Standby(text) => self.standby_receive_text(peer, &text),
+            Routed::Active(text) => self.receive_text(&text),
+            Routed::Failed(reason) => self.rtc_fail(peer, &reason),
+            Routed::None => {}
+        }
+    }
+
+    fn rtc_send_result(&mut self, peer: u32, outcome: RtcSendOutcome) {
+        let mut reset_stall = false;
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.in_flight = false;
+            if outcome != RtcSendOutcome::Rejected {
+                carrier.pending.pop_front();
+                reset_stall = true;
+            }
+        }
+        if reset_stall {
+            self.rtc_reset_stall(peer);
+        }
+        self.rtc_pump(peer);
+    }
+
+    fn rtc_low_water(&mut self, peer: u32) {
+        self.rtc_pump(peer);
+    }
+
+    fn rtc_selected(&mut self, peer: u32, kind: String) {
+        if let Some(carrier) = self.rtc_carrier_mut(peer) {
+            carrier.selected = Some(kind);
+        }
+    }
+
+    fn rtc_closed(&mut self, peer: u32, reason: Option<String>) {
+        self.rtc_fail(peer, reason.as_deref().unwrap_or("the DataChannel closed"));
+    }
+
+    fn standby_receive_text(&mut self, peer: u32, text: &str) {
+        let Ok(frame) = Json::parse(text) else {
+            self.fail_standby(peer, "the DataChannel sent a frame that is not JSON");
+            return;
+        };
+        if frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() == Some("hello") {
+            let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+                return;
+            };
+            standby.hello = Some(frame);
+            if standby.ping_call.is_none() {
+                let id = self.next_call;
+                self.next_call += 1;
+                if let Some(standby) = self.standby.as_mut() {
+                    standby.ping_call = Some(id);
+                }
+                let mut args = JsonObject::new();
+                set(&mut args, "id", Json::from(format!("warm-{id}")));
+                let call = encode_client_frame(&ClientFrame::Call {
+                    id: id as f64,
+                    method: U16String::from_str("ping"),
+                    args: Json::Object(Arc::new(args)),
+                });
+                if let Err(error) = self.rtc_send_text(peer, call) {
+                    self.fail_standby(peer, &error);
+                }
+            }
+            return;
+        }
+        if frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() == Some("result") {
+            let Some(id) = frame
+                .get("id")
+                .and_then(Json::as_number)
+                .filter(|v| v.fract() == 0.0 && *v >= 0.0)
+                .map(|v| v as u64)
+            else {
+                return;
+            };
+            let ok = frame.get("ok").is_some_and(Json::truthy);
+            let value = frame.get("value").cloned().unwrap_or(Json::Null);
+            let error = frame.get("error").cloned().unwrap_or(Json::Null);
+            self.handle_rtc_result(id, ok, value, error);
+        }
+    }
+
+    fn standby_warm(&mut self, peer: u32) {
+        let active_ready = self.dial.as_ref().is_some_and(|dial| dial.phase == Phase::Ready);
+        let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+            return;
+        };
+        standby.carrier.phase = RtcPhase::Warm;
+        if let Some(timer) = standby.timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        standby.timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms: UPGRADE_IDLE_LIMIT_MS });
+        if !active_ready {
+            self.start_handoff();
+            return;
+        }
+        self.schedule_standby_poll(peer, 0);
+    }
+
+    fn schedule_standby_poll(&mut self, peer: u32, delay_ms: u64) {
+        let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+            return;
+        };
+        if let Some(timer) = standby.idle_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        standby.idle_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms });
+    }
+
+    fn standby_poll(&mut self, peer: u32) {
+        let active_ready = self.dial.as_ref().is_some_and(|dial| dial.phase == Phase::Ready);
+        if !active_ready {
+            self.start_handoff();
+            return;
+        }
+        let busy = !self.pending_calls.is_empty()
+            || self.active.iter().any(|op| matches!(op.waiting, Some(Wait::Snapshots(_))));
+        let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+            return;
+        };
+        if busy {
+            standby.idle_since = None;
+            self.schedule_standby_poll(peer, 100);
+            return;
+        }
+        let now = self.now_ms;
+        match standby.idle_since {
+            None => {
+                standby.idle_since = Some(now);
+                self.schedule_standby_poll(peer, 100);
+            }
+            Some(since) if now.saturating_sub(since) < UPGRADE_IDLE_MS => {
+                self.schedule_standby_poll(peer, 100);
+            }
+            Some(_) => {
+                if let Some(timer) = standby.idle_timer.take() {
+                    self.out.push(Command::CancelDeadline { timer });
+                }
+                self.start_handoff();
+            }
+        }
+    }
+
+    fn standby_timer_fired(&mut self, timer: u32) -> bool {
+        let Some(peer) = self.standby.as_ref().map(|s| s.carrier.peer) else {
+            return false;
+        };
+        let phase = self.standby.as_ref().map(|s| s.carrier.phase);
+        let mut matched = false;
+        if let Some(standby) = self.standby.as_mut() {
+            if standby.timer == Some(timer) {
+                standby.timer = None;
+                matched = true;
+            } else if standby.idle_timer == Some(timer) {
+                standby.idle_timer = None;
+                self.standby_poll(peer);
+                return true;
+            } else if standby.verify_timer == Some(timer) {
+                standby.verify_timer = None;
+                standby.verify_call = None;
+                self.release_to_old("the RTC preverify ping did not answer within 3000ms");
+                return true;
+            }
+        }
+        if !matched {
+            return false;
+        }
+        if phase == Some(RtcPhase::Warm) {
+            self.defer_standby(peer, "no idle window within 30000ms");
+        } else {
+            self.fail_standby(peer, "WebRTC preparation exceeded 25000ms");
+        }
+        true
+    }
+
+    fn signal_timer_fired(&mut self, timer: u32) -> bool {
+        let Some(attempt) = self.signal_attempt.as_mut() else {
+            return false;
+        };
+        if attempt.timer != Some(timer) {
+            return false;
+        }
+        attempt.timer = None;
+        attempt.done = true;
+        if let Some(conn) = attempt.conn.take() {
+            self.out.push(Command::CloseSocket { conn: conn.id });
+        }
+        attempt.done = false;
+        self.signal_next_candidate();
+        true
+    }
+
+    fn drain_signal_out(&mut self, conn_id: u32, outcomes: Vec<ConnOut>) {
+        for outcome in outcomes {
+            if self
+                .signal_attempt
+                .as_ref()
+                .and_then(|attempt| attempt.conn.as_ref())
+                .map(|conn| conn.id)
+                != Some(conn_id)
+            {
+                return;
+            }
+            match outcome {
+                ConnOut::SendBytes(bytes) => self.out.push(Command::SendBytes { conn: conn_id, bytes }),
+                ConnOut::Close => self.out.push(Command::CloseSocket { conn: conn_id }),
+                ConnOut::Text(text) => self.signal_receive_text(conn_id, &text),
+                ConnOut::Closed { code, reason } => {
+                    self.signal_closed(conn_id, code, reason);
+                    return;
+                }
+                ConnOut::Authenticated { paired: _ } => {}
+            }
+        }
+    }
+
+    fn signal_receive_text(&mut self, conn_id: u32, text: &str) {
+        let Ok(frame) = Json::parse(text) else { return };
+        let frame_type = frame
+            .get("type")
+            .and_then(Json::as_str)
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default();
+        if frame_type == "result" {
+            let Some(id) = frame
+                .get("id")
+                .and_then(Json::as_number)
+                .filter(|v| v.fract() == 0.0 && *v >= 0.0)
+                .map(|v| v as u64)
+            else {
+                return;
+            };
+            let ok = frame.get("ok").is_some_and(Json::truthy);
+            let value = frame.get("value").cloned().unwrap_or(Json::Null);
+            let error = frame.get("error").cloned().unwrap_or(Json::Null);
+            self.handle_rtc_result(id, ok, value, error);
+            return;
+        }
+        if frame_type != "signalHello" {
+            return;
+        }
+        match parse_host_rtc(&frame) {
+            Ok(Some(rtc)) => {
+                self.host_rtc = Some(rtc);
+                if !self.signal_only_hint {
+                    self.signal_only_hint = true;
+                    self.out.push(Command::RtcSignalOnly {
+                        host_key: self.host_key.clone(),
+                        signal_only: true,
+                    });
+                }
+                if let Some(attempt) = self.signal_attempt.as_mut() {
+                    attempt.done = true;
+                    if let Some(timer) = attempt.timer.take() {
+                        self.out.push(Command::CancelDeadline { timer });
+                    }
+                }
+                self.start_standby(conn_id, true);
+            }
+            Ok(None) => self.direct_unavailable("the host did not advertise WebRTC on its signal connection"),
+            Err(error) => self.direct_unavailable(&error),
+        }
+    }
+
+    fn signal_closed(&mut self, conn_id: u32, _code: u16, _reason: Option<String>) {
+        if let Some(standby) = self.standby.as_ref() {
+            if standby.signal_only && standby.signal_conn == Some(conn_id) {
+                let peer = standby.carrier.peer;
+                let phase = standby.carrier.phase;
+                if phase != RtcPhase::Noise && phase != RtcPhase::Warm {
+                    self.fail_standby(peer, "the signal-only connection closed");
+                }
+                return;
+            }
+        }
+        if self.signal_conn_is(conn_id) {
+            self.signal_next_candidate();
+        }
+    }
+
+    fn start_handoff(&mut self) {
+        if self.handoff.is_some() {
+            return;
+        }
+        let Some(peer) = self.standby.as_ref().map(|s| s.carrier.peer) else {
+            return;
+        };
+        if self.standby.as_ref().is_none_or(|s| s.hello.is_none()) {
+            return;
+        }
+        self.handoff = Some(Handoff {
+            entries: VecDeque::new(),
+            standby_peer: peer,
+        });
+        let active_ready = self.dial.as_ref().is_some_and(|dial| dial.phase == Phase::Ready);
+        if !active_ready {
+            self.install_standby();
+            return;
+        }
+        let id = self.next_call;
+        self.next_call += 1;
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        if let Some(standby) = self.standby.as_mut() {
+            standby.verify_call = Some(id);
+            standby.verify_timer = Some(timer);
+        }
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms: LIVENESS_VERIFY_MS });
+        let mut args = JsonObject::new();
+        set(&mut args, "id", Json::from(format!("preverify-{id}")));
+        let call = encode_client_frame(&ClientFrame::Call {
+            id: id as f64,
+            method: U16String::from_str("ping"),
+            args: Json::Object(Arc::new(args)),
+        });
+        if let Err(error) = self.rtc_send_text(peer, call) {
+            self.release_to_old(&error);
+        }
+    }
+
+    fn install_standby(&mut self) {
+        let Some(mut standby) = self.standby.take() else { return };
+        let Some(hello) = standby.hello.take() else {
+            self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
+            self.handoff = None;
+            return;
+        };
+        if let Some(mut old) = self.dial.take() {
+            old.done = true;
+            if let Some(timer) = old.timer.take() {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+            if let Some(conn) = old.conn.take() {
+                self.out.push(Command::CloseSocket { conn: conn.id });
+            }
+        }
+        if standby.signal_only {
+            if let Some(conn) = standby.signal_conn.take() {
+                self.out.push(Command::CloseSocket { conn });
+            }
+            self.signal_attempt = None;
+        }
+        self.generation += 1;
+        standby.carrier.phase = RtcPhase::Ready;
+        self.active_path = ConnectionPath::P2p;
+        self.active_rtc = Some(standby.carrier);
+        self.dial = Some(DialAttempt {
+            candidate: RemoteCandidate {
+                url: "webrtc".to_string(),
+                role: RemoteCandidateRole::Direct,
+                unsupported: None,
+            },
+            generation: self.generation,
+            conn: None,
+            phase: Phase::Sync,
+            timer: None,
+            done: false,
+        });
+        if let Err(error) = self.receive_hello(hello) {
+            self.fail_channel(&error);
+        }
+    }
+
+    fn release_to_old(&mut self, reason: &str) {
+        let Some(handoff) = self.handoff.take() else { return };
+        if let Some(standby) = self.standby.take() {
+            self.clear_standby_timers(&standby);
+            self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
+            if standby.signal_only {
+                if let Some(conn) = standby.signal_conn {
+                    self.out.push(Command::CloseSocket { conn });
+                }
+                self.signal_attempt = None;
+            }
+        }
+        self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
+        self.preparation_failed();
+        for (op, kind, call) in handoff.entries {
+            self.invoke(op, call);
+            let _ = kind;
+        }
+        self.schedule_upgrade(self.cooldown_remaining());
+    }
+
+    fn abort_handoff(&mut self, error: &str) {
+        let Some(handoff) = self.handoff.take() else { return };
+        if let Some(standby) = self.standby.take() {
+            self.clear_standby_timers(&standby);
+            self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
+            if standby.signal_only {
+                if let Some(conn) = standby.signal_conn {
+                    self.out.push(Command::CloseSocket { conn });
+                }
+                self.signal_attempt = None;
+            }
+        }
+        if let Some(carrier) = self.active_rtc.take() {
+            self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
+        }
+        self.clear_liveness();
+        for (op, kind, _call) in handoff.entries {
+            self.finish_failed(op, kind, error);
+        }
+    }
+
+    fn finish_handoff(&mut self) {
+        let Some(handoff) = self.handoff.take() else { return };
+        if self.standby.is_some() {
+            return;
+        }
+        for (op, _kind, call) in handoff.entries {
+            self.invoke(op, call);
+        }
+        self.start_stable_timer();
+    }
+
+    fn clear_standby_timers(&mut self, standby: &Standby) {
+        for timer in [
+            standby.timer,
+            standby.idle_timer,
+            standby.verify_timer,
+            standby.carrier.stall_timer,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        if let Some(timer) = self.liveness_ping_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+    }
+
+    fn fail_standby(&mut self, peer: u32, reason: &str) {
+        if self.handoff.as_ref().is_some_and(|h| h.standby_peer == peer) {
+            self.release_to_old(reason);
+            return;
+        }
+        let Some(standby) = self.standby.take().filter(|s| s.carrier.peer == peer) else {
+            return;
+        };
+        self.clear_standby_timers(&standby);
+        self.out.push(Command::CloseRtcPeer { peer });
+        let stage = match standby.carrier.phase {
+            RtcPhase::Signal => "signal",
+            RtcPhase::Ice => "ice",
+            RtcPhase::Noise => "noise",
+            RtcPhase::Warm | RtcPhase::Ready => "warm",
+        };
+        self.p2p_failure = Some((stage.to_string(), reason.to_string()));
+        if standby.signal_only && stage == "signal" {
+            self.signal_only_hint = false;
+            self.out.push(Command::RtcSignalOnly {
+                host_key: self.host_key.clone(),
+                signal_only: false,
+            });
+        }
+        self.preparation_failed();
+        if self.state.is_none() && self.mode == ConnectionMode::DirectOnly && self.dial.is_none() {
+            self.direct_unavailable(reason);
+            return;
+        }
+        self.schedule_upgrade(self.cooldown_remaining());
+    }
+
+    fn defer_standby(&mut self, peer: u32, reason: &str) {
+        let Some(standby) = self.standby.take().filter(|s| s.carrier.peer == peer) else {
+            return;
+        };
+        self.clear_standby_timers(&standby);
+        self.out.push(Command::CloseRtcPeer { peer });
+        self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
+        self.schedule_upgrade(PREPARE_RETRY_MS);
+    }
+
+    fn preparation_failed(&mut self) {
+        self.upgrade_failures = self.upgrade_failures.saturating_add(1);
+        let exponent = self.upgrade_failures.saturating_sub(1).min(8);
+        let delay = COOLDOWN_START_MS
+            .saturating_mul(1u64 << exponent)
+            .min(COOLDOWN_MAX_MS);
+        self.cooldown_until = self.now_ms.saturating_add(delay);
+    }
+
+    fn cooldown_remaining(&self) -> u64 {
+        self.cooldown_until
+            .max(self.no_upgrade_until)
+            .saturating_sub(self.now_ms)
+    }
+
+    fn clear_cooldown(&mut self) {
+        self.upgrade_failures = 0;
+        self.cooldown_until = 0;
+        self.no_upgrade_until = 0;
+    }
+
+    fn start_stable_timer(&mut self) {
+        if let Some(timer) = self.stable_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.stable_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline { timer, delay_ms: P2P_STABLE_MS });
+    }
+
+    fn start_liveness(&mut self) {
+        self.clear_liveness();
+        if self.active_rtc.is_none() || self.dial.as_ref().map(|dial| dial.phase) != Some(Phase::Ready) {
+            return;
+        }
+        let ping = self.next_timer;
+        self.next_timer += 1;
+        self.liveness_ping_timer = Some(ping);
+        self.out.push(Command::ScheduleDeadline {
+            timer: ping,
+            delay_ms: LIVENESS_INTERVAL_MS,
+        });
+        self.reset_liveness_deadline();
+    }
+
+    fn reset_liveness_deadline(&mut self) {
+        if let Some(timer) = self.liveness_deadline_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.liveness_deadline_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: LIVENESS_BUDGET_MS,
+        });
+    }
+
+    fn clear_liveness(&mut self) {
+        for timer in [self.liveness_ping_timer.take(), self.liveness_deadline_timer.take(), self.liveness_verify_timer.take()]
+            .into_iter()
+            .flatten()
+        {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        self.probe_call = None;
+    }
+
+    fn liveness_tick(&mut self) {
+        if self.active_rtc.is_none() || self.dial.as_ref().map(|dial| dial.phase) != Some(Phase::Ready) {
+            return;
+        }
+        self.send_probe(false);
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.liveness_ping_timer = Some(timer);
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: LIVENESS_INTERVAL_MS,
+        });
+    }
+
+    fn send_probe(&mut self, verify: bool) {
+        let Some(peer) = self.active_rtc.as_ref().map(|carrier| carrier.peer) else { return };
+        let id = self.next_call;
+        self.next_call += 1;
+        self.probe_call = Some(id);
+        if verify {
+            let timer = self.next_timer;
+            self.next_timer += 1;
+            self.liveness_verify_timer = Some(timer);
+            self.out.push(Command::ScheduleDeadline {
+                timer,
+                delay_ms: LIVENESS_VERIFY_MS,
+            });
+        }
+        let mut args = JsonObject::new();
+        set(&mut args, "id", Json::from(format!("probe-{id}")));
+        let call = encode_client_frame(&ClientFrame::Call {
+            id: id as f64,
+            method: U16String::from_str("ping"),
+            args: Json::Object(Arc::new(args)),
+        });
+        if let Err(error) = self.rtc_send_text(peer, call) {
+            self.fallback_from_p2p(&error);
+        }
+    }
+
+    fn fallback_from_p2p(&mut self, reason: &str) {
+        if self.active_rtc.is_none() {
+            return;
+        }
+        self.p2p_failure = Some(("liveness".to_string(), reason.to_string()));
+        self.no_upgrade_until = self.now_ms.saturating_add(FALLBACK_QUIET_MS);
+        self.clear_liveness();
+        if let Some(timer) = self.stable_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        if let Some(carrier) = self.active_rtc.take() {
+            self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
+        }
+        if let Some(mut dial) = self.dial.take() {
+            dial.done = true;
+            if let Some(timer) = dial.timer.take() {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+        }
+        self.reject_pending_calls();
+        self.set_field("connection", Json::from(RECONNECTING));
+        self.begin_round();
+    }
+
+    fn enter_background(&mut self) {
+        self.clear_liveness();
+    }
+
+    fn enter_foreground(&mut self) {
+        if self.active_rtc.is_some() && self.dial.as_ref().map(|dial| dial.phase) == Some(Phase::Ready) {
+            self.clear_liveness();
+            self.send_probe(true);
+            return;
+        }
+        self.reconnect_now(false);
+    }
+
+    fn network_changed(&mut self) {
+        let should_clear = self
+            .last_cooldown_clear
+            .is_none_or(|last| self.now_ms.saturating_sub(last) >= COOLDOWN_CLEAR_INTERVAL_MS);
+        if should_clear {
+            self.last_cooldown_clear = Some(self.now_ms);
+            self.clear_cooldown();
+        }
+        if self.active_rtc.is_some() && self.dial.as_ref().map(|dial| dial.phase) == Some(Phase::Ready) {
+            self.clear_liveness();
+            self.send_probe(true);
+            return;
+        }
+        self.reconnect_now(true);
+    }
+
+    fn set_connection_mode(&mut self, mode: ConnectionMode) {
+        if mode == self.mode {
+            return;
+        }
+        self.mode = mode;
+        self.candidates = filter_candidates_for_mode(&self.full_candidates, mode);
+        self.clear_upgrade_timer();
+        self.clear_liveness();
+        if let Some(timer) = self.stable_timer.take() {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        self.abort_handoff("Disconnected from host");
+        if let Some(standby) = self.standby.take() {
+            self.clear_standby_timers(&standby);
+            self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
+            if standby.signal_only {
+                if let Some(conn) = standby.signal_conn {
+                    self.out.push(Command::CloseSocket { conn });
+                }
+                self.signal_attempt = None;
+            }
+        }
+        if let Some(carrier) = self.active_rtc.take() {
+            self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
+        }
+        if let Some(attempt) = self.signal_attempt.take() {
+            if let Some(timer) = attempt.timer {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+            if let Some(conn) = attempt.conn {
+                self.out.push(Command::CloseSocket { conn: conn.id });
+            }
+        }
+        if self.closed {
+            return;
+        }
+        self.clear_round_timer();
+        self.clear_backoff();
+        self.abandon_dial();
+        self.reject_pending_calls();
+        if self.state.is_some() {
+            self.set_field("connection", Json::from(RECONNECTING));
+        }
+        self.begin_round();
+    }
+
+    fn direct_unavailable(&mut self, reason: &str) {
+        if self.closed {
+            return;
+        }
+        if self.state.is_none() {
+            self.closed = true;
+            self.clear_all_timers();
+            self.ready_sent = true;
+            self.out.push(Command::Ready {
+                outcome: ReadyOutcome::Error(format!("{DIRECT_UNAVAILABLE} ({reason})")),
+            });
+            return;
+        }
+        self.notice(
+            Json::from("error"),
+            Json::from(format!("{DIRECT_UNAVAILABLE} ({reason})")),
+        );
+        self.set_field("connection", Json::from(RECONNECTING));
+        self.schedule_backoff();
+    }
+
+    fn open_signal_attempt(&mut self) {
+        if self.rtc.is_none() || self.signal_attempt.is_some() || self.closed {
+            return;
+        }
+        let Some(attempts) = self.signal_attempt_candidates() else {
+            return;
+        };
+        if attempts.is_empty() {
+            self.direct_unavailable("no relay candidate is available for signaling");
+            return;
+        }
+        self.signal_attempt = Some(SignalAttempt {
+            candidates: attempts,
+            index: 0,
+            conn: None,
+            timer: None,
+            done: false,
+        });
+        self.signal_next_candidate();
+    }
+
+    fn signal_attempt_candidates(&self) -> Option<Vec<RemoteCandidate>> {
+        Some(signal_candidates(&self.full_candidates))
+    }
+
+    fn signal_next_candidate(&mut self) {
+        if let Some(timer) = self.signal_attempt.as_mut().and_then(|attempt| attempt.timer.take()) {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        loop {
+            let Some(attempt) = self.signal_attempt.as_mut() else { return };
+            if attempt.done || self.closed {
+                return;
+            }
+            let Some(candidate) = attempt.candidates.get(attempt.index).cloned() else {
+                let shutdown = self.signal_attempt.take();
+                if let Some(attempt) = shutdown {
+                    if let Some(timer) = attempt.timer {
+                        self.out.push(Command::CancelDeadline { timer });
+                    }
+                    if let Some(conn) = attempt.conn {
+                        self.out.push(Command::CloseSocket { conn: conn.id });
+                    }
+                }
+                self.direct_unavailable("every relay signal path failed");
+                return;
+            };
+            attempt.index += 1;
+            if candidate.unsupported.is_some() {
+                continue;
+            }
+            let inner = self.source.open_signal(&candidate);
+            self.next_conn += 1;
+            let conn_id = self.next_conn;
+            let conn = Conn { id: conn_id, inner };
+            let timer = self.next_timer;
+            self.next_timer += 1;
+            if let Some(attempt) = self.signal_attempt.as_mut() {
+                attempt.conn = Some(conn);
+                attempt.timer = Some(timer);
+            }
+            self.out.push(Command::OpenConnection {
+                conn: conn_id,
+                url: candidate.url,
+            });
+            self.out.push(Command::ScheduleDeadline {
+                timer,
+                delay_ms: self.timeouts.socket_open_ms + self.timeouts.noise_ms + self.timeouts.hello_ms,
+            });
+            return;
+        }
+    }
+
+    fn signal_conn_is(&self, conn: u32) -> bool {
+        self.signal_attempt
+            .as_ref()
+            .and_then(|attempt| attempt.conn.as_ref())
+            .map(|c| c.id)
+            == Some(conn)
+    }
+
+    fn signal_opened(&mut self, conn: u32) {
+        let mut out = Vec::new();
+        if let Some(attempt) = self.signal_attempt.as_mut() {
+            if let Some(c) = attempt.conn.as_mut().filter(|c| c.id == conn) {
+                c.inner.opened(&mut out);
+            }
+        }
+        self.drain_signal_out(conn, out);
+    }
+
+    fn signal_socket_closed(&mut self, conn: u32, code: u16, reason: Option<String>) {
+        let mut out = Vec::new();
+        if let Some(attempt) = self.signal_attempt.as_mut() {
+            if let Some(c) = attempt.conn.as_mut().filter(|c| c.id == conn) {
+                c.inner.closed(code, reason, &mut out);
+            }
+        }
+        self.drain_signal_out(conn, out);
+        self.signal_closed(conn, code, None);
+    }
+
+    fn signal_data(&mut self, conn: u32, bytes: &[u8]) {
+        let mut out = Vec::new();
+        if let Some(attempt) = self.signal_attempt.as_mut() {
+            if let Some(c) = attempt.conn.as_mut().filter(|c| c.id == conn) {
+                c.inner.data(bytes, &mut out);
+            }
+        }
+        self.drain_signal_out(conn, out);
+    }
+
+    /// Diagnostics for the connection-mode UI (ADR-0033 §5).
+    pub fn rtc_diagnostics(&self) -> Json {
+        let phase = if let Some(standby) = &self.standby {
+            standby.carrier.phase.as_str()
+        } else if self.active_rtc.is_some() && self.dial.as_ref().map(|dial| dial.phase) == Some(Phase::Ready) {
+            "active"
+        } else if self.cooldown_remaining() > 0 {
+            "cooldown"
+        } else if self.upgrade_timer.is_some() {
+            "scheduled"
+        } else {
+            "idle"
+        };
+        let mut object = JsonObject::new();
+        set(&mut object, "path", Json::from(self.active_path.as_str()));
+        set(&mut object, "phase", Json::from(phase));
+        if let Some((stage, reason)) = &self.p2p_failure {
+            let mut failure = JsonObject::new();
+            set(&mut failure, "stage", Json::from(stage.clone()));
+            set(&mut failure, "reason", Json::from(reason.clone()));
+            set(&mut object, "lastFailure", Json::Object(Arc::new(failure)));
+        }
+        if let Some(kind) = self
+            .active_rtc
+            .as_ref()
+            .and_then(|carrier| carrier.selected.clone())
+        {
+            set(&mut object, "selectedCandidateType", Json::from(kind));
+        }
+        set(
+            &mut object,
+            "cooldownRemainingMs",
+            Json::Number(self.cooldown_remaining() as f64),
+        );
+        Json::Object(Arc::new(object))
+    }
+
     fn clear_dial_timer(&mut self) {
         let Some(timer) = self.dial.as_mut().and_then(|dial| dial.timer.take()) else {
             return;
@@ -1189,11 +2697,24 @@ impl RemoteDurable {
             stage,
             code == Some(UNAUTHORIZED_CLOSE_CODE),
             code,
-            reason,
+            reason.clone(),
         );
         self.abandon_dial();
         self.reject_pending_calls();
         if self.closed {
+            return;
+        }
+        if self.active_rtc.is_some() {
+            if was_ready {
+                self.fallback_from_p2p(reason.as_deref().unwrap_or("the P2P carrier closed"));
+                return;
+            }
+            self.abort_handoff("Disconnected from host");
+            if let Some(carrier) = self.active_rtc.take() {
+                self.out.push(Command::CloseRtcPeer { peer: carrier.peer });
+            }
+            self.set_field("connection", Json::from(RECONNECTING));
+            self.begin_round();
             return;
         }
         if was_ready {
@@ -1216,6 +2737,13 @@ impl RemoteDurable {
             return;
         };
         dial.done = true;
+        if self.sync_gate || !self.sync_queue.is_empty() {
+            self.sync_gate = false;
+            let queued = std::mem::take(&mut self.sync_queue);
+            for (op, kind, _call) in queued {
+                self.finish_failed(op, kind, "Disconnected from host");
+            }
+        }
         if let Some(timer) = dial.timer.take() {
             self.out.push(Command::CancelDeadline { timer });
         }
@@ -1277,6 +2805,17 @@ impl RemoteDurable {
         let dialed = self.dialed_failures().len();
         let unauthorized = self.unauthorized_round();
         let empty_plan = self.round_candidates.is_empty();
+        if !unauthorized
+            && self.mode == ConnectionMode::DirectOnly
+            && self.rtc.is_some()
+            && (self.signal_only_hint || self.host_rtc.is_some())
+            && self.signal_attempt.is_none()
+            && self.standby.is_none()
+            && self.dial.is_none()
+        {
+            self.open_signal_attempt();
+            return;
+        }
         if !self.ever_ready {
             self.closed = true;
             self.clear_all_timers();
@@ -1425,6 +2964,12 @@ impl RemoteDurable {
 
     fn send(&mut self, frame: ClientFrame) {
         let text = encode_client_frame(&frame);
+        if let Some(peer) = self.active_rtc.as_ref().map(|carrier| carrier.peer) {
+            if let Err(error) = self.rtc_send_text(peer, text) {
+                self.fallback_from_p2p(&error);
+            }
+            return;
+        }
         if let Some(conn) = self.conn_mut() {
             let mut conn_out = Vec::new();
             conn.inner.send(text, &mut conn_out);
@@ -1581,6 +3126,16 @@ impl RemoteDurable {
             _ => 0,
         };
         self.host_minor = host_minor;
+        self.host_rtc = parse_host_rtc(&frame)?;
+        if self.host_rtc.as_ref().is_some_and(|rtc| rtc.signal_only) && !self.signal_only_hint {
+            self.signal_only_hint = true;
+            if self.rtc.is_some() {
+                self.out.push(Command::RtcSignalOnly {
+                    host_key: self.host_key.clone(),
+                    signal_only: true,
+                });
+            }
+        }
         self.hello_received = true;
         self.clear_dial_timer();
         if let Some(dial) = &mut self.dial {
@@ -1626,8 +3181,9 @@ impl RemoteDurable {
         if let Some(value) = frame.get("endpointSet") {
             if let ParsedEndpointSet::Valid(set) = parse_endpoint_set(Some(value)) {
                 if self.follows_host_endpoints {
-                    self.candidates =
+                    self.full_candidates =
                         candidate_plan(&self.legacy_url, Some(&set), self.page_protocol.as_deref());
+                    self.candidates = filter_candidates_for_mode(&self.full_candidates, self.mode);
                 }
                 let url = preferred_legacy_url(&self.legacy_url, &set);
                 self.out.push(Command::EndpointSet {
@@ -1637,10 +3193,28 @@ impl RemoteDurable {
                 });
             }
         }
-        let remaining: HashSet<Vec<u16>> = host_streams(host_minor)
+        let mut remaining: HashSet<Vec<u16>> = host_streams(host_minor)
             .into_iter()
             .map(|name| key(name))
+            .filter(|stream| !self.fresh.contains(stream))
             .collect();
+        // A sync barrier also waits for the shown conversations and their
+        // docs (ADR-0033 §3 step 8); this applies to ordinary reconnects and
+        // to the P2P handoff alike.
+        if let Some(id) = self.current {
+            for stream in self.conversation_streams(id) {
+                if !self.fresh.contains(&stream) {
+                    remaining.insert(stream);
+                }
+            }
+        }
+        if let Some(id) = self.side {
+            for stream in self.conversation_streams(id) {
+                if !self.fresh.contains(&stream) {
+                    remaining.insert(stream);
+                }
+            }
+        }
         if self.state.is_some() {
             self.set_or_clear("session", frame.get("session").cloned());
             self.set_or_clear("toolPresentations", frame.get("toolPresentations").cloned());
@@ -1648,6 +3222,7 @@ impl RemoteDurable {
             self.set_field("host", self.host_info());
             self.reconnect_remaining = Some(remaining);
             self.refresh()?;
+            self.maybe_reconnect_shell();
             if self
                 .reconnect_remaining
                 .as_ref()
@@ -1655,6 +3230,12 @@ impl RemoteDurable {
             {
                 self.finish_reconnect();
             }
+        } else if remaining.is_empty() {
+            self.first_view = Some(FirstView {
+                remaining,
+                hello: frame,
+            });
+            self.finish_first_view();
         } else {
             // First view waits for every covered host stream's snapshot.
             self.first_view = Some(FirstView {
@@ -1694,6 +3275,7 @@ impl RemoteDurable {
                 reconnect_ready = true;
             }
         }
+        self.maybe_reconnect_shell();
         for op in self.active.iter_mut() {
             if let Some(Wait::Snapshots(waiting)) = &mut op.waiting {
                 if waiting.remove(&units) && waiting.is_empty() {
@@ -1757,12 +3339,30 @@ impl RemoteDurable {
                 self.fail_op(index, &format!("Stream {stream_text} ended: {reason_text}"));
             }
         }
-        // A first-view wait on an ended stream never completes — the
-        // reference's Promise.all just never resolves.
-        if let Some(first) = &self.first_view {
-            if first.remaining.contains(&units) {
-                self.first_view = None;
+        // An ended stream satisfies a sync barrier: waiting forever would
+        // leave the handoff queue stuck after the host said there is nothing
+        // more (ADR-0033 §3 step 8).
+        let mut first_ready = false;
+        if let Some(first) = &mut self.first_view {
+            if first.remaining.remove(&units) && first.remaining.is_empty() {
+                first_ready = true;
             }
+        }
+        let mut reconnect_ready = false;
+        if let Some(remaining) = &mut self.reconnect_remaining {
+            if remaining.remove(&units) && remaining.is_empty() {
+                reconnect_ready = true;
+            }
+        }
+        if self.current.is_some_and(|id| self.conversation_streams(id).contains(&units)) {
+            self.unshow()?;
+        } else if self.side.is_some_and(|id| self.conversation_streams(id).contains(&units)) {
+            self.show_side(None)?;
+        }
+        if first_ready {
+            self.finish_first_view();
+        } else if reconnect_ready {
+            self.finish_reconnect();
         }
         self.refresh()
     }
@@ -1774,6 +3374,29 @@ impl RemoteDurable {
         else {
             return;
         };
+        if self.probe_call == Some(call_id) {
+            self.probe_call = None;
+            if let Some(timer) = self.liveness_verify_timer.take() {
+                self.out.push(Command::CancelDeadline { timer });
+            }
+            if ok.truthy() {
+                self.reset_liveness_deadline();
+                if self.liveness_ping_timer.is_none() {
+                    let timer = self.next_timer;
+                    self.next_timer += 1;
+                    self.liveness_ping_timer = Some(timer);
+                    self.out.push(Command::ScheduleDeadline {
+                        timer,
+                        delay_ms: LIVENESS_INTERVAL_MS,
+                    });
+                }
+            }
+            return;
+        }
+        let rtc_ok = ok.truthy();
+        if self.handle_rtc_result(call_id, rtc_ok, value.clone(), error.clone()) {
+            return;
+        }
         let Some(op_id) = self.pending_calls.remove(&call_id) else {
             return;
         };
@@ -1808,33 +3431,18 @@ impl RemoteDurable {
     // ─── Controller surface ─────────────────────────────────────────────
 
     fn invoke(&mut self, op: u64, call: Call) {
-        let kind = match &call {
-            Call::AddProject { .. }
-            | Call::ListFolders { .. }
-            | Call::RenameConversation { .. }
-            | Call::Changes { .. }
-            | Call::CreatePairing
-            | Call::CreateAgent { .. }
-            | Call::UpdateAgent { .. }
-            | Call::DeleteAgent { .. }
-            | Call::SetPushToken { .. }
-            | Call::WithdrawQueued { .. }
-            | Call::SteerQueued { .. }
-            | Call::BeginLogin { .. }
-            | Call::AnswerLogin { .. }
-            | Call::CancelLogin { .. }
-            | Call::SaveCustomProvider { .. }
-            | Call::RemoveCustomProvider { .. } => OpKind::Request,
-            Call::Abort { .. } => OpKind::Unqueued,
-            Call::ListFiles { .. }
-            | Call::ListSkills { .. }
-            | Call::Image { .. }
-            | Call::ListCommands { .. }
-            | Call::BeginAttachment { .. }
-            | Call::AppendAttachment { .. }
-            | Call::ListEndpointModels { .. } => OpKind::Direct,
-            _ => OpKind::Command,
-        };
+        let kind = op_kind(&call);
+        if let Some(handoff) = self.handoff.as_mut() {
+            // The atomic barrier closed the new-call entrance; the op waits
+            // here until sync releases it, so it never enters a ciphertext
+            // FIFO before the handoff verdict.
+            handoff.entries.push_back((op, kind, call));
+            return;
+        }
+        if self.sync_gate {
+            self.sync_queue.push_back((op, kind, call));
+            return;
+        }
         match kind {
             OpKind::Unqueued | OpKind::Direct => self.begin_op(op, kind, call, false),
             _ => {
@@ -2464,7 +4072,7 @@ impl RemoteDurable {
             .and_then(Json::as_str)
             .map(|s| s.to_string_lossy() == CONNECTED)
             .unwrap_or(false);
-        if self.conn().is_none() || !connected {
+        if (self.conn().is_none() && self.active_rtc.is_none()) || !connected {
             return Err("Not connected to the host".to_string());
         }
         let id = self.next_call;
@@ -2807,16 +4415,99 @@ impl RemoteDurable {
         self.attempt = 0;
         self.ever_ready = true;
         self.outage_noticed = false;
+        if self.active_rtc.is_some() {
+            self.finish_handoff();
+            self.start_liveness();
+            self.start_stable_timer();
+        } else {
+            if let Some(dial) = &self.dial {
+                self.active_path = match dial.candidate.role {
+                    RemoteCandidateRole::Loopback => ConnectionPath::Loopback,
+                    RemoteCandidateRole::Relay | RemoteCandidateRole::Legacy => ConnectionPath::Relay,
+                    RemoteCandidateRole::Direct => ConnectionPath::Direct,
+                };
+            }
+            self.schedule_upgrade(UPGRADE_DELAY_MS);
+        }
+    }
+
+    /// The shell becomes visible as soon as every host stream is fresh; the
+    /// extended sync (conversations/docs) keeps calls queued behind the gate.
+    fn maybe_reconnect_shell(&mut self) {
+        if self.reconnect_remaining.is_none() || self.state.is_none() {
+            return;
+        }
+        let host_ready = host_streams(self.host_minor)
+            .into_iter()
+            .all(|name| self.fresh.contains(&key(name)));
+        if !host_ready || self.connection_is_connected() {
+            return;
+        }
+        self.sync_gate = self
+            .reconnect_remaining
+            .as_ref()
+            .is_some_and(|remaining| !remaining.is_empty());
+        // The shell is visible; the per-dial sync deadline still bounds the
+        // conversation/doc barrier, so the round budget must not fire first.
+        self.clear_round_timer();
+        self.round_active = false;
+        if let Some(dial) = &mut self.dial {
+            dial.phase = Phase::Ready;
+        }
+        self.set_field("connection", Json::from(CONNECTED));
+    }
+
+    fn connection_is_connected(&self) -> bool {
+        self.state
+            .as_ref()
+            .and_then(|state| state.get(&key("connection")))
+            .and_then(Json::as_str)
+            .is_some_and(|value| value.to_string_lossy() == CONNECTED)
     }
 
     /// A reconnect's fresh snapshots arrived: the connection is usable again.
     fn finish_reconnect(&mut self) {
         self.reconnect_remaining = None;
+        self.sync_gate = false;
         self.set_field("connection", Json::from(CONNECTED));
         if let Err(error) = self.refresh() {
             return self.fail_channel(&error);
         }
         self.mark_dial_ready();
+        let queued = std::mem::take(&mut self.sync_queue);
+        for (op, _kind, call) in queued {
+            self.invoke(op, call);
+        }
+    }
+}
+
+fn op_kind(call: &Call) -> OpKind {
+    match call {
+        Call::AddProject { .. }
+        | Call::ListFolders { .. }
+        | Call::RenameConversation { .. }
+        | Call::Changes { .. }
+        | Call::CreatePairing
+        | Call::CreateAgent { .. }
+        | Call::UpdateAgent { .. }
+        | Call::DeleteAgent { .. }
+        | Call::SetPushToken { .. }
+        | Call::WithdrawQueued { .. }
+        | Call::SteerQueued { .. }
+        | Call::BeginLogin { .. }
+        | Call::AnswerLogin { .. }
+        | Call::CancelLogin { .. }
+        | Call::SaveCustomProvider { .. }
+        | Call::RemoveCustomProvider { .. } => OpKind::Request,
+        Call::Abort { .. } => OpKind::Unqueued,
+        Call::ListFiles { .. }
+        | Call::ListSkills { .. }
+        | Call::Image { .. }
+        | Call::ListCommands { .. }
+        | Call::BeginAttachment { .. }
+        | Call::AppendAttachment { .. }
+        | Call::ListEndpointModels { .. } => OpKind::Direct,
+        _ => OpKind::Command,
     }
 }
 

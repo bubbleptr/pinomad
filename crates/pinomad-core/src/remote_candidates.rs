@@ -10,12 +10,48 @@ use std::collections::HashSet;
 
 use url::{Host, Url};
 
+use crate::connection_mode::ConnectionMode;
 use crate::endpoints::{EndpointSet, HostEndpoint, HostEndpointRole};
 
 /// Why a candidate cannot be dialled at all; reported as a skipped path,
 /// never as a host outage.
 pub const MIXED_CONTENT_REASON: &str =
     "mixed content: this HTTPS page blocks the insecure ws:// connection";
+
+pub const DIRECT_UNAVAILABLE: &str =
+    "Direct connection unavailable: this host cannot be reached without the relay and WebRTC did not connect.";
+
+/// Business paths allowed by a mode (ADR-0033 §3). A legacy URL has no role
+/// evidence: Relay-only keeps it, Direct-only drops it.
+pub fn filter_candidates_for_mode(
+    candidates: &[RemoteCandidate],
+    mode: ConnectionMode,
+) -> Vec<RemoteCandidate> {
+    candidates
+        .iter()
+        .filter(|candidate| match mode {
+            ConnectionMode::Auto => true,
+            ConnectionMode::RelayOnly => matches!(
+                candidate.role,
+                RemoteCandidateRole::Loopback | RemoteCandidateRole::Relay | RemoteCandidateRole::Legacy
+            ),
+            ConnectionMode::DirectOnly => matches!(
+                candidate.role,
+                RemoteCandidateRole::Loopback | RemoteCandidateRole::Direct
+            ),
+        })
+        .cloned()
+        .collect()
+}
+
+/// The relay sockets a Direct-only client may use for a signal-only connection.
+pub fn signal_candidates(candidates: &[RemoteCandidate]) -> Vec<RemoteCandidate> {
+    candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.role, RemoteCandidateRole::Relay | RemoteCandidateRole::Legacy))
+        .cloned()
+        .collect()
+}
 
 /// The path role a candidate plays for this client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
