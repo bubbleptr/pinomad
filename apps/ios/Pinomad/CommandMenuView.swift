@@ -11,28 +11,8 @@ struct CommandMenuView: View {
     let menu: SlashCommandMenu
     let choose: (CommandEntry) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        Group {
-            if menu.commands.count > 6 {
-                ScrollView {
-                    rows
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollIndicators(.hidden)
-                .frame(height: 292)
-            } else {
-                rows
-            }
-        }
-        .padding(.vertical, 4)
-        .clipShape(.rect(cornerRadius: 22))
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        // A short menu already on screen does not re-resolve the material
-        // on an appearance switch without a new identity.
-        .id(colorScheme)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        ComposerMenuCard { rows }
     }
 
     private var rows: some View {

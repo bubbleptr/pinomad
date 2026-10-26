@@ -10,32 +10,8 @@ struct SkillMenuView: View {
     let menu: SkillMenu
     let choose: (SkillEntry) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var rowCount: Int {
-        menu.sections.reduce(0) { $0 + $1.skills.count + 1 }
-    }
-
     var body: some View {
-        Group {
-            if rowCount > 6 {
-                ScrollView {
-                    rows
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollIndicators(.hidden)
-                .frame(height: 292)
-            } else {
-                rows
-            }
-        }
-        .padding(.vertical, 4)
-        .clipShape(.rect(cornerRadius: 22))
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        // A short menu already on screen does not re-resolve the material
-        // on an appearance switch without a new identity.
-        .id(colorScheme)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        ComposerMenuCard { rows }
     }
 
     private var rows: some View {

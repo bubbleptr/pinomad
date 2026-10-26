@@ -117,15 +117,20 @@ struct NewConversationView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Spacer()
-            Text("What should Pi do?")
-                .font(.title2.weight(.semibold))
-                .multilineTextAlignment(.center)
-            Spacer()
+            // An open menu takes the title's place: with the keyboard up
+            // there is no room for the title, a full menu and the card.
             if mentions.skillMenu.isShowing {
+                Spacer(minLength: 0)
                 SkillMenuView(menu: mentions.skillMenu, choose: chooseSkill)
             } else if mentions.menu.isShowing {
+                Spacer(minLength: 0)
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
+            } else {
+                Spacer()
+                Text("What should Pi do?")
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                Spacer()
             }
             VStack(alignment: .leading, spacing: 8) {
                 location
