@@ -147,11 +147,23 @@ extension AppModel {
 
     /// Send the injected text once the carrier reaches P2P. The file may be
     /// absolute or relative to the app's Documents directory (files pushed
-    /// through `devicectl device copy to`). The prompt is deliberately
-    /// delayed: the 1s upgrade must win before the records go out.
+    /// through `devicectl device copy to`). `PINOMAD_PROMPT_HOST` is
+    /// mandatory: a suffix of the active host key, checked again just before
+    /// creating the conversation. The prompt is deliberately delayed: the
+    /// 1s upgrade must win before the records go out.
     func consumeDevPromptRequest() {
         guard let path = pendingPromptFile else { return }
         pendingPromptFile = nil
+        guard let suffix = ProcessInfo.processInfo.environment["PINOMAD_PROMPT_HOST"]?
+            .trimmingCharacters(in: .whitespaces), !suffix.isEmpty
+        else {
+            showToast("PINOMAD_PROMPT_FILE requires PINOMAD_PROMPT_HOST", level: "error")
+            return
+        }
+        guard currentHostKey?.hasSuffix(suffix) == true else {
+            showToast("Dev prompt target does not match the active host", level: "error")
+            return
+        }
         let url = path.hasPrefix("/")
             ? URL(fileURLWithPath: path)
             : FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -167,6 +179,23 @@ extension AppModel {
             for _ in 0..<300 {
                 if self.session?.rtcDiagnostics().path == "p2p" { break }
                 try? await Task.sleep(for: .milliseconds(100))
+            }
+            // Scripted runs pair a fresh host; a model remembered from a
+            // previous host would override this host's default.
+            self.draftAgent.reset()
+            if let wanted = ProcessInfo.processInfo.environment["PINOMAD_PROMPT_MODEL"],
+               let models = self.snapshot?.models,
+               let found = models.first(where: { "\($0.provider)/\($0.modelId)" == wanted }) {
+                self.draftAgent.setModel(
+                    ModelRef(provider: found.provider, modelId: found.modelId),
+                    models: models,
+                    defaults: self.snapshot?.defaults
+                )
+            }
+            // The active host may have changed while waiting for P2P.
+            guard self.currentHostKey?.hasSuffix(suffix) == true else {
+                self.showToast("Dev prompt target changed; nothing was sent", level: "error")
+                return
             }
             self.drafts[Self.draftKey] = text
             self.draftHome = .chat

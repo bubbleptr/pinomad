@@ -594,9 +594,20 @@ final class AppModel {
             consumeDevOpenRequest()
             consumeDevAttachRequest()
             consumeDevPromptRequest()
-            if openHostDetailAfterReady, let key = sessionHost?.hostKey {
+            if openHostDetailAfterReady {
                 openHostDetailAfterReady = false
-                navPath = [.settings, .host(key)]
+                Task { @MainActor [weak self] in
+                    // Ready can precede the pairing host record; wait for
+                    // the identity before pushing.
+                    for _ in 0..<50 {
+                        guard let self else { return }
+                        if let key = self.currentHostKey {
+                            self.navPath = [.settings, .host(key)]
+                            return
+                        }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
             }
             #endif
             if let id = reopenAfterReady {
