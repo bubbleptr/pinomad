@@ -272,8 +272,9 @@ struct ConversationComposer: View {
             HStack(spacing: 10) {
                 plusMenu
                 ModelCapsule(
-                    label: modelText,
+                    label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
                     logo: conversation.agent.model,
+                    short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: modelPick),
                     prefix: agentPick?.current.map { "@\($0)" },
                     enabled: connected && sheetHasContent
                 ) {
@@ -383,12 +384,8 @@ struct ConversationComposer: View {
         focused = true
     }
 
-    private var modelText: String {
-        let agent = conversation.agent
-        return modelLabel(
-            models: model.snapshot?.models ?? [],
-            selected: ModelPick(model: agent.model, level: agent.thinkingLevel ?? .off)
-        )
+    private var modelPick: ModelPick {
+        ModelPick(model: conversation.agent.model, level: conversation.agent.thinkingLevel ?? .off)
     }
 
     /// A recognised command runs at once whatever `mode` says; a held one
@@ -706,9 +703,13 @@ struct Thumbnail: View {
 }
 
 struct ModelCapsule: View {
+    /// The model's full name and level: shown when the model has no logo,
+    /// and always what VoiceOver reads.
     let label: String
-    /// The picked model, for its logo ahead of everything else.
+    /// The picked model, whose logo stands in for its brand.
     let logo: ModelRef?
+    /// `label` without the brand the logo shows ("Opus 4.1 · High").
+    let short: String?
     /// The named agent (`@name`) the pick comes from, shown first.
     let prefix: String?
     let enabled: Bool
@@ -716,10 +717,13 @@ struct ModelCapsule: View {
     let problem: String?
     let action: () -> Void
 
-    init(label: String, logo: ModelRef?, prefix: String? = nil, enabled: Bool,
+    @ScaledMetric(relativeTo: .subheadline) private var logoSize: CGFloat = 18
+
+    init(label: String, logo: ModelRef?, short: String? = nil, prefix: String? = nil, enabled: Bool,
          problem: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.logo = logo
+        self.short = short
         self.prefix = prefix
         self.enabled = enabled
         self.problem = problem
@@ -734,8 +738,9 @@ struct ModelCapsule: View {
                         .lineLimit(1)
                         .foregroundStyle(.red)
                 } else {
+                    let logo = logo.flatMap { modelLogoAsset($0) == nil ? nil : $0 }
                     if let logo {
-                        ModelLogo(model: logo, size: 14)
+                        ModelLogo(model: logo, size: logoSize)
                             .padding(.trailing, 2)
                     }
                     if let prefix {
@@ -745,13 +750,18 @@ struct ModelCapsule: View {
                             // The model label truncates first.
                             .layoutPriority(1)
                     }
-                    Text(label.isEmpty ? "Choose model" : label)
-                        .lineLimit(1)
+                    if let logo, let short {
+                        Text(short).lineLimit(1)
+                    } else {
+                        Text(label.isEmpty ? "Choose model" : label).lineLimit(1)
+                    }
                 }
                 Image(.chevronDown)
                     .font(.caption2.weight(.semibold))
             }
-            .font(.footnote)
+            // The run lines in the transcript use this type and logo size,
+            // so the model reads the same in both places.
+            .font(.subheadline)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .frame(height: 34)
@@ -761,6 +771,18 @@ struct ModelCapsule: View {
         .disabled(!enabled)
         .accessibilityLabel(problem.map { "Model: \($0)" }
             ?? "Model: \([prefix, label].compactMap { $0 }.joined(separator: " "))")
+    }
+
+    /// What the capsule reads beside a logo: the name as `modelLabel`
+    /// gives it, less the brand, with the level only for a listed model
+    /// that has levels to choose from.
+    static func short(models: [ModelSummary], pick: ModelPick) -> String? {
+        guard let ref = pick.model else { return nil }
+        let summary = models.first { sameModel(a: ModelRef(provider: $0.provider, modelId: $0.modelId), b: ref) }
+        let series = modelSeriesName(summary?.name ?? ref.modelId, model: ref)
+        guard let summary, summary.thinkingLevels.count > 1,
+              let level = thinkingLevelLabel(level: pick.level) else { return series }
+        return "\(series) · \(level)"
     }
 }
 

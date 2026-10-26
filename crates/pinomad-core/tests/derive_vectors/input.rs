@@ -115,6 +115,7 @@ pub fn cot(json: &Json) -> CotView {
         anchor_ms: num(json.get("anchorMs")),
         elapsed_ms: num(json.get("elapsedMs")),
         todo_written_at_ms: num(json.get("todoWrittenAtMs")),
+        model: json.get("model").and_then(ModelRef::from_json),
         steps: json
             .get("steps")
             .and_then(Json::as_array)

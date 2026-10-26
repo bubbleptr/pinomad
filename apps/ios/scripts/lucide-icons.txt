@@ -36,6 +36,7 @@ images
 inbox
 info
 key-round
+layout-grid-circles
 list-end
 message-circle
 monitor

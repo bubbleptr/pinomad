@@ -31,6 +31,16 @@ describe("deriveChat todo stamp", () => {
   });
 });
 
+describe("deriveChat run model", () => {
+  it("names the model of the run's latest message", () => {
+    expect(runs(derive("run-model"))[0]!.cot.model).toEqual({ provider: "anthropic", modelId: "claude-opus-5-5" });
+  });
+
+  it("leaves it out when the messages don't say", () => {
+    expect(runs(derive("settled-run"))[0]!.cot.model).toBeUndefined();
+  });
+});
+
 describe("deriveChat", () => {
   it("shows a user message without the skill blocks the host prepended", () => {
     const users = derive("user-skill-blocks").filter((item) => item.kind === "user");

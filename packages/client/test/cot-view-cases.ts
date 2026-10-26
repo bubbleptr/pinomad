@@ -63,6 +63,18 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
   },
   {
+    // The run reads as the model that answered last: a mid-run switch
+    // (retry on another model) shows the new one.
+    name: "run-model",
+    view: view([
+      user("go"),
+      assistant([call("c1", "read", { path: "a.ts" })], "toolUse", 0, { provider: "openai", model: "gpt-5" }),
+      result("c1", "read", "A"),
+      assistant([text("done")], "stop", 0, { provider: "anthropic", model: "claude-opus-5-5" }),
+    ]),
+    busy: false,
+  },
+  {
     name: "live-thinking",
     view: view([user("hi")], { run: {}, generation: { attempt: 1, message: { role: "assistant", content: [thinking("che")] } } }),
     busy: true,

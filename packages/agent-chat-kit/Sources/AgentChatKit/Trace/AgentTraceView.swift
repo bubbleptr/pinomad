@@ -1,17 +1,24 @@
 import AgentChatCore
 import SwiftUI
 
-/// A run's work as one capsule in the conversation, whatever its length.
+/// A run's work as one line in the conversation, whatever its length.
 /// While the agent works it names what the agent last said, or what it is
 /// doing, and how long it has been at it; done, it says how the run went.
 /// The steps never unfold in place — `onOpen` is for presenting them in an
-/// `AgentTraceSheet`.
+/// `AgentTraceSheet`. It has no background, so its leading mark lines up
+/// with the text around it.
 public struct AgentTraceView: View {
     let trace: AgentTrace
+    let mark: Image?
     let onOpen: () -> Void
 
-    public init(_ trace: AgentTrace, onOpen: @escaping () -> Void) {
+    @ScaledMetric(relativeTo: .subheadline) private var markSize: CGFloat = 18
+
+    /// `mark` leads a settled run in place of its outcome icon — the
+    /// model's logo, say. A template image takes the label's color.
+    public init(_ trace: AgentTrace, mark: Image? = nil, onOpen: @escaping () -> Void) {
         self.trace = trace
+        self.mark = mark
         self.onOpen = onOpen
     }
 
@@ -23,12 +30,20 @@ public struct AgentTraceView: View {
                 let capsule = trace.capsule(at: isWorking ? context.date : .now)
                 HStack(spacing: 6) {
                     InlinePager(page: capsule.label) { label in
-                        // The icon pages with the label, so a finished
-                        // run's outcome mark arrives with its headline.
+                        // The mark pages with the label, so a finished
+                        // run's mark arrives with its headline.
                         HStack(spacing: 5) {
-                            if case .finished(let headline) = label, let icon = TraceText.icon(headline) {
-                                Image(icon)
-                                    .font(.subheadline.weight(.medium))
+                            if case .finished(let headline) = label {
+                                if let mark {
+                                    mark
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: markSize, height: markSize)
+                                        .accessibilityHidden(true)
+                                } else if let icon = TraceText.icon(headline) {
+                                    Image(icon)
+                                        .font(.subheadline.weight(.medium))
+                                }
                             }
                             Text(text(for: label))
                                 .font(.subheadline.weight(.medium))
@@ -51,10 +66,8 @@ public struct AgentTraceView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(capsule.label == .finished(.failed) ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .contentShape(.capsule)
+                .contentShape(.rect)
             }
         }
         .buttonStyle(.plain)

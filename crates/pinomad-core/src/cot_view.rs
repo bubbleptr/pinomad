@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use crate::json::{js_strict_eq, JsKey, Json};
+use crate::model::ModelRef;
 use crate::presentation::{classify, ClassifiedDoc};
 use crate::skill_blocks::{strip_user_blocks, UserAttachment};
 use crate::text;
@@ -78,6 +79,11 @@ pub struct CotView {
     /// successful `todo_write` (the doc commits on execution). On the view, not
     /// the `Run` variant, because Swift matches that variant positionally.
     pub todo_written_at_ms: Option<f64>,
+    /// The model the run's latest message came from, so a past run keeps its
+    /// own model after the conversation switches; `None` when that message
+    /// doesn't name one.
+    #[cfg_attr(feature = "ffi", uniffi(default))]
+    pub model: Option<ModelRef>,
     /// Steps in turn order; the last one may still be live.
     pub steps: Vec<CotStep>,
     /// The answer bubble's text — final, or presumed final while answering.
@@ -643,6 +649,12 @@ fn derive_run(
         .first()
         .and_then(|m| m.msg.get("timestamp"))
         .map(|v| v.as_number().unwrap_or(f64::NAN));
+    let model = latest.and_then(|m| {
+        Some(ModelRef {
+            provider: m.msg.get("provider").and_then(Json::as_str)?.to_string_lossy(),
+            model_id: m.msg.get("model").and_then(Json::as_str)?.to_string_lossy(),
+        })
+    });
     let elapsed_ms = if settled && anchor_ms.is_some() {
         let end = if answering {
             latest.and_then(|m| m.msg.get("timestamp")).map(|v| v.as_number().unwrap_or(f64::NAN))
@@ -664,6 +676,7 @@ fn derive_run(
             anchor_ms,
             elapsed_ms,
             todo_written_at_ms,
+            model,
             steps,
             answer: if answering {
                 Some(CotAnswer {
