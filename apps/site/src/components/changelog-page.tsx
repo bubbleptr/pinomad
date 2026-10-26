@@ -1,7 +1,7 @@
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import type { loadChangelog } from "@/lib/content-data.ts";
-import type { Lang } from "@/lib/i18n.ts";
+import { formatDate, type Lang } from "@/lib/i18n.ts";
 import { releases } from "@/lib/source.ts";
 import { baseOptions, Shell } from "./shell.tsx";
 
@@ -14,12 +14,6 @@ type Entries = Awaited<ReturnType<typeof loadChangelog>>;
 
 export async function preloadChangelog(entries: Entries) {
   await Promise.all(entries.map((entry) => releases.get(entry.path)?.preload()));
-}
-
-function formatDate(lang: Lang, date: string) {
-  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en", { dateStyle: "long", timeZone: "UTC" }).format(
-    new Date(date),
-  );
 }
 
 function Release({ lang, entry }: { lang: Lang; entry: Entries[number] }) {

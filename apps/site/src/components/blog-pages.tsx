@@ -3,7 +3,7 @@ import defaultMdxComponents from "fumadocs-ui/mdx";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { Suspense } from "react";
 import { loadBlogPost, type loadBlogIndex } from "@/lib/content-data.ts";
-import type { Lang } from "@/lib/i18n.ts";
+import { formatDate, type Lang } from "@/lib/i18n.ts";
 import { blog, blogPosts } from "@/lib/source.ts";
 import { baseOptions, Shell } from "./shell.tsx";
 
@@ -11,12 +11,6 @@ const copy = {
   en: { title: "Blog", lead: "Releases, design notes, and what we're working on." },
   zh: { title: "博客", lead: "版本发布、设计记录和正在做的事。" },
 } as const;
-
-function formatDate(lang: Lang, date: string) {
-  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en", { dateStyle: "long", timeZone: "UTC" }).format(
-    new Date(date),
-  );
-}
 
 type BlogIndex = Awaited<ReturnType<typeof loadBlogIndex>>;
 
