@@ -1102,8 +1102,10 @@ html[lang="zh-CN"] .hero h1 {
 
 /* —— Diagrams (diagrams.tsx): miniature product UI on a hatched plate. Depth comes
    from lightness steps (plate < tile < card) plus a highlight along each card's top
-   edge; the SVG's own filter adds the shadow. The plate is the same colour in a card
-   or on the page. SVG units are px here, so sizes are in the drawing's own units. —— */
+   edge; the SVG's own filter adds the shadow. The page has no accent colour, and
+   colour here only carries meaning: window controls, green for running and
+   encrypted, violet for the model, one hue per agent. SVG units are px here, so
+   sizes are in the drawing's own units. —— */
 :root {
   --dg-plate: oklch(0.2 0.003 260);
   --dg-hatch: rgb(255 255 255 / 0.03);
@@ -1118,6 +1120,12 @@ html[lang="zh-CN"] .hero h1 {
   --dg-icon: oklch(0.66 0.004 260);
   --dg-line: rgb(255 255 255 / 0.2);
   --dg-line-strong: rgb(255 255 255 / 0.34);
+  --dg-green: oklch(0.76 0.15 155);
+  --dg-red: oklch(0.66 0.15 25);
+  --dg-amber: oklch(0.8 0.13 80);
+  --dg-violet: oklch(0.74 0.12 295);
+  --dg-blue: oklch(0.74 0.1 245);
+  --dg-rose: oklch(0.74 0.11 0);
 }
 
 .diagram {
@@ -1159,6 +1167,12 @@ html[lang="zh-CN"] .hero h1 {
   stroke-width: 1;
 }
 
+.dg-tile-lit {
+  fill: none;
+  stroke: var(--dg-line-strong);
+  stroke-width: 1;
+}
+
 .dg-screen {
   fill: var(--dg-screen);
 }
@@ -1189,17 +1203,52 @@ html[lang="zh-CN"] .hero h1 {
   fill: var(--bg);
 }
 
-.dg-qr,
-.dg-live {
+.dg-qr {
   fill: var(--fg-2);
 }
 
+/* Window controls, toned down so they read as a window rather than as signals. */
+.dg-light {
+  opacity: 0.85;
+}
+
+.dg-light.is-close {
+  fill: var(--dg-red);
+}
+
+.dg-light.is-min {
+  fill: var(--dg-amber);
+}
+
+.dg-light.is-max {
+  fill: var(--dg-green);
+}
+
+.dg-live,
+.dg-packet,
+.dg-scan {
+  fill: var(--dg-green);
+}
+
+.dg-pulse {
+  fill: var(--fg);
+}
+
+/* Remix icons are filled outlines. */
 .dg-icon {
-  fill: none;
-  stroke: var(--dg-icon);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  fill: var(--dg-icon);
+}
+
+.dg-icon.is-lit {
+  fill: var(--fg);
+}
+
+.dg-icon.is-secure {
+  fill: var(--dg-green);
+}
+
+.dg-icon.is-model {
+  fill: var(--dg-violet);
 }
 
 .dg-line {
@@ -1219,17 +1268,45 @@ html[lang="zh-CN"] .hero h1 {
   stroke-dasharray: 4 4;
 }
 
-/* The one bright thing in a diagram. */
-.dg-chip {
-  fill: var(--fg);
+/* Each agent keeps its hue: on its avatar, and on a mention of it. */
+.is-violet {
+  --hue: var(--dg-violet);
 }
 
-.dg-chip-text {
-  fill: var(--bg);
+.is-blue {
+  --hue: var(--dg-blue);
+}
+
+.is-amber {
+  --hue: var(--dg-amber);
+}
+
+.is-rose {
+  --hue: var(--dg-rose);
+}
+
+.dg-avatar.is-violet,
+.dg-avatar.is-blue,
+.dg-avatar.is-amber,
+.dg-avatar.is-rose,
+.dg-mention {
+  fill: color-mix(in oklch, var(--hue) 22%, transparent);
+}
+
+.dg-initial,
+.dg-mention-text {
+  fill: var(--hue);
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.dg-initial {
+  font-size: 11px;
+}
+
+.dg-mention-text {
   font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 600;
-  text-anchor: middle;
 }
 
 .dg-name {
@@ -1249,40 +1326,76 @@ html[lang="zh-CN"] .hero h1 {
 
 .dg-title {
   fill: var(--fg-2);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-anchor: middle;
 }
 
-.dg-initial {
-  fill: var(--fg);
-  font-size: 11px;
-  font-weight: 700;
-  text-anchor: middle;
-}
-
-.dg-note {
-  fill: var(--fg-3);
-  font-size: 12px;
-  text-anchor: middle;
-}
-
-.dg-mono,
 .dg-code {
+  fill: var(--fg);
   font-family: var(--font-mono);
+  font-size: 13px;
 }
 
-.dg-code {
-  fill: var(--fg);
-  font-size: 13px;
+.dg-code.is-dim {
+  fill: var(--fg-3);
+}
+
+.dg-cursor {
+  fill: var(--fg-2);
 }
 
 .dg-start {
   text-anchor: start;
 }
 
-.dg-end {
-  text-anchor: end;
+/* Motion. The SMIL parts are .dg-motion; under reduced motion they go and the
+   still frame (.dg-still) shows instead. The CSS loops only run with motion allowed. */
+.dg-still {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dg-motion {
+    display: none;
+  }
+
+  .dg-still {
+    display: inline;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dg-cursor {
+    animation: blink 1.1s steps(2, jump-none) infinite;
+  }
+
+  .dg-breathe {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: breathe 2.4s var(--ease-in-out) infinite;
+  }
+
+  .dg-think {
+    animation: think 1.6s var(--ease-in-out) infinite alternate;
+  }
+
+  .dg-think.is-late {
+    animation-delay: 0.4s;
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+    scale: 0.8;
+  }
+}
+
+@keyframes think {
+  to {
+    fill: var(--dg-bar-strong);
+  }
 }
 
 /* —— Coming next. Dashed edges say "not shipped" before the words do. —— */

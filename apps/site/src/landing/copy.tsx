@@ -35,7 +35,7 @@ export interface LandingCopy {
     machine: {
       title: string;
       body: string;
-      diagram: { label: string; machine: string; kinds: string; host: string; uses: { name: string; example: string }[] };
+      diagram: { label: string; machine: string; uses: string[] };
     };
     allFeatures: string;
   };
@@ -60,30 +60,21 @@ export interface LandingCopy {
     roles: { name: string; job: string }[];
     blog: string;
     shotAlt: string;
-    diagram: { label: string; you: string; own: string };
+    diagram: { label: string };
   };
   connection: {
     eyebrow: string;
     title: string;
     lead: string;
     chips: { name: string; text: string }[];
-    diagram: {
-      label: string;
-      device: string;
-      host: string;
-      pair: string;
-      direct: string;
-      directVia: string;
-      relay: string;
-      relayNote: string;
-    };
+    diagram: { label: string; host: string; relay: string };
   };
   next: {
     eyebrow: string;
     title: string;
     lead: string;
     items: { title: string; body: string; link: Link }[];
-    diagram: { label: string; host: string; hostNote: string; machines: string[]; machinesNote: string };
+    diagram: { label: string; host: string; machines: string[] };
   };
   start: {
     eyebrow: string;
@@ -146,13 +137,7 @@ export const copy: Record<Lang, LandingCopy> = {
           label:
             "The PiNomad host runs inside your own machine, a Mac mini, a Linux box, or a VPS, and uses that machine's shell, repositories, and credentials.",
           machine: "Your machine",
-          kinds: "Mac mini · Linux · VPS",
-          host: "Host",
-          uses: [
-            { name: "Shell", example: "zsh" },
-            { name: "Repos", example: "~/code" },
-            { name: "Credentials", example: "~/.ssh" },
-          ],
+          uses: ["Shell", "Repos", "Credentials"],
         },
       },
       allFeatures: "Everything the agent can do",
@@ -199,8 +184,6 @@ export const copy: Record<Lang, LandingCopy> = {
       diagram: {
         label:
           "You design the change with @planner, which hands the work to one or more @worker agents, @critic, and @writer, each with its own prompt, model, and thinking level.",
-        you: "You",
-        own: "Each with its own prompt, model, and thinking level",
       },
     },
     connection: {
@@ -214,13 +197,8 @@ export const copy: Record<Lang, LandingCopy> = {
       diagram: {
         label:
           "A device pairs with the host once by scanning its QR code. After that they talk over one end-to-end encrypted channel, either directly over the LAN or tailnet, or through a relay that passes it on without being able to read it.",
-        device: "Device",
         host: "Host",
-        pair: "QR to pair",
-        direct: "Direct",
-        directVia: "LAN · tailnet",
         relay: "Relay",
-        relayNote: "sees only ciphertext",
       },
     },
     next: {
@@ -253,9 +231,7 @@ export const copy: Record<Lang, LandingCopy> = {
         label:
           "Planned: the host keeps running the model and reaches Windows, macOS, Linux, and Android machines over SSH through pi-env; the tools run on those machines.",
         host: "Host",
-        hostNote: "runs the model",
         machines: ["Windows", "macOS", "Linux", "Android"],
-        machinesNote: "Tools run on these machines",
       },
     },
     start: {
@@ -346,13 +322,7 @@ export const copy: Record<Lang, LandingCopy> = {
         diagram: {
           label: "PiNomad 宿主跑在你自己的机器上（Mac mini、Linux 主机或 VPS），直接用那台机器的 shell、代码仓库和凭据。",
           machine: "你的机器",
-          kinds: "Mac mini · Linux · VPS",
-          host: "宿主",
-          uses: [
-            { name: "Shell", example: "zsh" },
-            { name: "代码仓库", example: "~/code" },
-            { name: "凭据", example: "~/.ssh" },
-          ],
+          uses: ["Shell", "代码仓库", "凭据"],
         },
       },
       allFeatures: "agent 能做的所有事",
@@ -397,8 +367,6 @@ export const copy: Record<Lang, LandingCopy> = {
       shotAlt: "同一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突",
       diagram: {
         label: "你和 @planner 一起定方案，@planner 再把活分给一个或多个 @worker、@critic 和 @writer；每个 agent 都有自己的提示词、模型和思考等级。",
-        you: "你",
-        own: "每个都有自己的提示词、模型和思考等级",
       },
     },
     connection: {
@@ -411,13 +379,8 @@ export const copy: Record<Lang, LandingCopy> = {
       ],
       diagram: {
         label: "设备扫一次宿主的二维码完成配对，之后两者之间只走一条端到端加密的通道：局域网或 tailnet 直连，或者经过中继；中继只转发，读不到内容。",
-        device: "设备",
         host: "宿主",
-        pair: "扫码配对",
-        direct: "直连",
-        directVia: "LAN · tailnet",
         relay: "中继",
-        relayNote: "只转发密文",
       },
     },
     next: {
@@ -449,9 +412,7 @@ export const copy: Record<Lang, LandingCopy> = {
       diagram: {
         label: "规划中：模型继续跑在宿主上，宿主通过 pi-env 用 SSH 连到 Windows、macOS、Linux 和 Android 机器，工具在这些机器上执行。",
         host: "宿主",
-        hostNote: "模型在这里跑",
         machines: ["Windows", "macOS", "Linux", "Android"],
-        machinesNote: "工具在这些机器上执行",
       },
     },
     start: {
