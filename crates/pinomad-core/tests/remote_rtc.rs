@@ -112,6 +112,7 @@ const DEFAULT_ANSWER: &str = "v=0\r\na=max-message-size:65536\r\n";
 
 struct ScriptSource {
     hold_calls: Arc<Mutex<HashSet<String>>>,
+    fail_calls: Arc<Mutex<HashSet<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -120,6 +121,7 @@ impl CandidateSource for ScriptSource {
         Box::new(FakeSocket {
             signal: false,
             hold_calls: self.hold_calls.clone(),
+            fail_calls: self.fail_calls.clone(),
             answer_sdp: self.answer_sdp.clone(),
         })
     }
@@ -127,6 +129,7 @@ impl CandidateSource for ScriptSource {
         Box::new(FakeSocket {
             signal: true,
             hold_calls: self.hold_calls.clone(),
+            fail_calls: self.fail_calls.clone(),
             answer_sdp: self.answer_sdp.clone(),
         })
     }
@@ -135,6 +138,7 @@ impl CandidateSource for ScriptSource {
 struct FakeSocket {
     signal: bool,
     hold_calls: Arc<Mutex<HashSet<String>>>,
+    fail_calls: Arc<Mutex<HashSet<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -166,6 +170,16 @@ impl Connection for FakeSocket {
         let method = frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default();
         let id = frame.get("id").and_then(Json::as_number).unwrap_or(0.0);
         if method != "rtcOffer" && self.hold_calls.lock().unwrap().contains(&method) {
+            return;
+        }
+        if method != "rtcOffer" && self.fail_calls.lock().unwrap().contains(&method) {
+            let result = obj(&[
+                ("type", Json::from("result")),
+                ("id", Json::Number(id)),
+                ("ok", Json::Bool(false)),
+                ("error", Json::from("refused")),
+            ]);
+            out.push(ConnOut::Text(result.to_json()));
             return;
         }
         let value = if method == "rtcOffer" {
@@ -345,11 +359,13 @@ struct Harness {
     opens: Vec<String>,
     open_conns: Vec<u32>,
     ops: HashMap<u64, Result<Option<Json>, String>>,
+    failed: Vec<(u64, String, bool)>,
     fail_peers: bool,
     rtc_outcome: Option<RtcSendOutcome>,
     withhold_rtc_outcome: bool,
     rtc_sends: usize,
     hold_calls: Arc<Mutex<HashSet<String>>>,
+    fail_calls: Arc<Mutex<HashSet<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -361,6 +377,7 @@ impl Harness {
     fn new_with(candidates: Vec<RemoteCandidate>, mode: ConnectionMode, fail_peers: bool) -> Self {
         let host = FakeRtcHost::new();
         let hold_calls = Arc::new(Mutex::new(HashSet::new()));
+        let fail_calls = Arc::new(Mutex::new(HashSet::new()));
         let answer_sdp = Arc::new(Mutex::new(DEFAULT_ANSWER.to_string()));
         let rtc = RtcOptions {
             host_key: to_base64url(&host.host.public_key),
@@ -370,6 +387,7 @@ impl Harness {
         let remote = RemoteDurable::new(RemoteDurableOptions {
             source: Box::new(ScriptSource {
                 hold_calls: hold_calls.clone(),
+                fail_calls: fail_calls.clone(),
                 answer_sdp: answer_sdp.clone(),
             }),
             mode: pinomad_core::remote_durable::RemoteMode::Planned,
@@ -405,11 +423,13 @@ impl Harness {
             opens: Vec::new(),
             open_conns: Vec::new(),
             ops: HashMap::new(),
+            failed: Vec::new(),
             fail_peers,
             rtc_outcome: None,
             withhold_rtc_outcome: false,
             rtc_sends: 0,
             hold_calls,
+            fail_calls,
             answer_sdp,
         };
         let initial = harness.remote.take();
@@ -549,7 +569,8 @@ impl Harness {
                 Command::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
-                Command::OperationFailed { op, error } => {
+                Command::OperationFailed { op, error, carrier_lost } => {
+                    self.failed.push((op, error.clone(), carrier_lost));
                     self.ops.insert(op, Err(error));
                 }
             }
@@ -669,6 +690,7 @@ fn unsupported_rtc_emits_no_rtc_commands() {
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
         source: Box::new(ScriptSource {
             hold_calls: Arc::new(Mutex::new(HashSet::new())),
+            fail_calls: Arc::new(Mutex::new(HashSet::new())),
             answer_sdp: Arc::new(Mutex::new(DEFAULT_ANSWER.to_string())),
         }),
         mode: pinomad_core::remote_durable::RemoteMode::Planned,
@@ -846,7 +868,12 @@ fn signal_standby_failure_closes_the_socket_and_allows_a_retry() {
     h.feed(Event::SetConnectionMode { mode: ConnectionMode::DirectOnly });
     assert_eq!(h.peers.len(), 1, "the signal path must create a peer");
     let before = h.opens.len();
-    assert!(!h.closed_sockets.is_empty(), "failed signal socket must close");
+    let signal_conn = *h.open_conns.last().expect("the signal connection");
+    assert_eq!(
+        h.closed_sockets.iter().filter(|conn| **conn == signal_conn).count(),
+        1,
+        "the failed signal socket must close exactly once (fail_standby used to close it twice)"
+    );
     h.feed(Event::NetworkChanged);
     h.advance(1_100);
     assert!(h.opens.len() > before, "Direct only must retry signaling");
@@ -1004,7 +1031,10 @@ fn direct_only_signal_failure_reports_direct_unavailable() {
         true,
     );
     assert!(
-        matches!(&h.ready, Some(ReadyOutcome::Error(message)) if message.contains("Direct connection unavailable")),
+        matches!(
+            &h.ready,
+            Some(ReadyOutcome::DirectUnavailable { reason }) if reason == "no candidates"
+        ),
         "ready={:?}",
         h.ready
     );
@@ -1038,4 +1068,48 @@ fn invalid_answer_max_message_size_fails_the_candidate() {
     h.advance(1_100);
     assert!(h.closed_peers.contains(&h.peers[0]));
     assert!(h.remote.rtc_diagnostics().get("cooldownRemainingMs").and_then(Json::as_number).unwrap_or(0.0) > 0.0);
+}
+
+
+#[test]
+fn a_host_refusal_on_a_live_carrier_is_not_a_lost_reply() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.fail_calls.lock().unwrap().insert("listFiles".to_string());
+    h.feed(Event::Invoke {
+        op: 7,
+        call: pinomad_core::remote_durable::Call::ListFiles {
+            scope: obj(&[
+                ("kind", Json::from("project")),
+                ("path", Json::from("/tmp")),
+                ("checkout", Json::from("project")),
+            ]),
+            query: String::new(),
+        },
+    });
+    h.advance(10);
+    assert_eq!(h.failed, vec![(7, "refused".to_string(), false)]);
+}
+
+#[test]
+fn closing_the_carrier_marks_an_in_flight_request_as_lost() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.hold_calls.lock().unwrap().insert("listFiles".to_string());
+    h.feed(Event::Invoke {
+        op: 8,
+        call: pinomad_core::remote_durable::Call::ListFiles {
+            scope: obj(&[
+                ("kind", Json::from("project")),
+                ("path", Json::from("/tmp")),
+                ("checkout", Json::from("project")),
+            ]),
+            query: String::new(),
+        },
+    });
+    h.advance(10);
+    let conn = *h.open_conns.last().unwrap();
+    h.feed(Event::SocketClosed { conn, code: 1006, reason: None });
+    assert_eq!(
+        h.failed,
+        vec![(8, "Disconnected from host".to_string(), true)]
+    );
 }

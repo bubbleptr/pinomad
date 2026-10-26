@@ -429,7 +429,7 @@ impl Harness {
                 Command::OperationSucceeded { op, value } => {
                     self.ops.insert(op, Ok(value));
                 }
-                Command::OperationFailed { op, error } => {
+                Command::OperationFailed { op, error, .. } => {
                     self.ops.insert(op, Err(error));
                 }
                 Command::RtcSignalOnly { .. }

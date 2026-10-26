@@ -562,6 +562,9 @@ pub enum Command {
     OperationFailed {
         op: u64,
         error: String,
+        /// The connection or Peer that carried the request is gone, so the
+        /// host may have applied it before the reply was lost.
+        carrier_lost: bool,
     },
     /// The host announced signal-only RTC (or a failed handshake disproved
     /// it); persist the hint with the stored host.
@@ -585,6 +588,11 @@ pub enum ReadyOutcome {
     Unauthorized,
     /// Host announced a protocol major we do not speak.
     Mismatch { host_major: f64, client_major: f64, direction: String, host_version: Option<String> },
+    /// Direct only could not reach the host: the relay is out of bounds for
+    /// business data and the peer-to-peer link did not come up. `reason` is
+    /// the last preparation failure, kept separate so the UI need not parse
+    /// the message string (the TS `DirectUnavailableError`).
+    DirectUnavailable { reason: String },
     Error(String),
 }
 
@@ -667,8 +675,19 @@ struct ActiveOp {
     holds_queue: bool,
     steps: VecDeque<Step>,
     waiting: Option<Wait>,
+    /// The carrier that actually took this op's call frame. A retirement of
+    /// any other connection must not turn its failure into "reply lost".
+    carrier: Option<CallCarrier>,
     /// The last call result (for follow-on steps like fork's submit).
     last_result: Option<Json>,
+}
+
+/// What a request's call frame went out on. One business carrier at a time:
+/// the dial connection, or the RTC Peer after the handoff.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CallCarrier {
+    Conn(u32),
+    Peer(u32),
 }
 
 enum Wait {
@@ -2259,7 +2278,9 @@ impl RemoteDurable {
         }
         self.clear_liveness();
         for (op, kind, _call) in handoff.entries {
-            self.finish_failed(op, kind, error);
+            // Nothing was sent on a carrier yet; the host definitely did not
+            // see these.
+            self.finish_failed(op, kind, error, None);
         }
     }
 
@@ -2300,9 +2321,8 @@ impl RemoteDurable {
         self.clear_standby_timers(&standby);
         self.out.push(Command::CloseRtcPeer { peer });
         if standby.signal_only {
-            if let Some(conn) = standby.signal_conn {
-                self.out.push(Command::CloseSocket { conn });
-            }
+            // The standby's signal connection is the signal attempt's conn;
+            // close_signal_attempt closes it, exactly once.
             self.close_signal_attempt();
         }
         let stage = match standby.carrier.phase {
@@ -2334,9 +2354,6 @@ impl RemoteDurable {
         self.clear_standby_timers(&standby);
         self.out.push(Command::CloseRtcPeer { peer });
         if standby.signal_only {
-            if let Some(conn) = standby.signal_conn {
-                self.out.push(Command::CloseSocket { conn });
-            }
             self.close_signal_attempt();
         }
         self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
@@ -2562,7 +2579,9 @@ impl RemoteDurable {
             self.clear_all_timers();
             self.ready_sent = true;
             self.out.push(Command::Ready {
-                outcome: ReadyOutcome::Error(format!("{DIRECT_UNAVAILABLE} ({reason})")),
+                outcome: ReadyOutcome::DirectUnavailable {
+                    reason: reason.to_string(),
+                },
             });
             return;
         }
@@ -2712,6 +2731,7 @@ impl RemoteDurable {
         let mut object = JsonObject::new();
         set(&mut object, "path", Json::from(self.active_path.as_str()));
         set(&mut object, "phase", Json::from(phase));
+        set(&mut object, "available", Json::Bool(self.host_rtc.is_some()));
         if let Some((stage, reason)) = &self.p2p_failure {
             let mut failure = JsonObject::new();
             set(&mut failure, "stage", Json::from(stage.clone()));
@@ -2833,7 +2853,7 @@ impl RemoteDurable {
             self.sync_gate = false;
             let queued = std::mem::take(&mut self.sync_queue);
             for (op, kind, _call) in queued {
-                self.finish_failed(op, kind, "Disconnected from host");
+                self.finish_failed(op, kind, "Disconnected from host", None);
             }
         }
         if let Some(timer) = dial.timer.take() {
@@ -3028,7 +3048,7 @@ impl RemoteDurable {
             self.sync_gate = false;
             let queued = std::mem::take(&mut self.sync_queue);
             for (op, kind, _call) in queued {
-                self.finish_failed(op, kind, error);
+                self.finish_failed(op, kind, error, None);
             }
         }
     }
@@ -3627,12 +3647,13 @@ impl RemoteDurable {
                     holds_queue,
                     steps,
                     waiting: None,
+                    carrier: None,
                     last_result: None,
                 });
                 let index = self.active.len() - 1;
                 self.drive(index);
             }
-            Err(error) => self.finish_failed(op_id, kind, &error),
+            Err(error) => self.finish_failed(op_id, kind, &error, None),
         }
     }
 
@@ -4234,8 +4255,13 @@ impl RemoteDurable {
         }
         let id = self.next_call;
         self.next_call += 1;
+        let carrier = match self.active_rtc.as_ref().map(|carrier| carrier.peer) {
+            Some(peer) => Some(CallCarrier::Peer(peer)),
+            None => self.conn().map(|conn| CallCarrier::Conn(conn.id)),
+        };
         self.pending_calls.insert(id, self.active[index].op_id);
         self.active[index].waiting = Some(Wait::Call);
+        self.active[index].carrier = carrier;
         self.send(ClientFrame::Call { id: id as f64, method: U16String::from_str(method), args });
         Ok(())
     }
@@ -4252,13 +4278,39 @@ impl RemoteDurable {
     /// the #command/#request split plus abort's `.then(()=>{}, notice)`.
     fn fail_op(&mut self, index: usize, error: &str) {
         let op = self.active.remove(index);
-        self.finish_failed(op.op_id, op.kind, error);
+        self.finish_failed(op.op_id, op.kind, error, op.carrier);
     }
 
-    fn finish_failed(&mut self, op_id: u64, kind: OpKind, error: &str) {
+    /// Whether the business carrier a request went out on is still the live
+    /// one. Retirement of a standby, signal, or older connection is not this
+    /// request's loss.
+    fn carrier_live(&self, carrier: CallCarrier) -> bool {
+        match carrier {
+            CallCarrier::Conn(id) => {
+                self.dial.as_ref().and_then(|dial| dial.conn.as_ref()).map(|conn| conn.id)
+                    == Some(id)
+            }
+            CallCarrier::Peer(peer) => {
+                self.active_rtc.as_ref().map(|carrier| carrier.peer) == Some(peer)
+            }
+        }
+    }
+
+    fn finish_failed(
+        &mut self,
+        op_id: u64,
+        kind: OpKind,
+        error: &str,
+        carrier: Option<CallCarrier>,
+    ) {
+        let carrier_lost = carrier.is_some_and(|carrier| !self.carrier_live(carrier));
         match kind {
             OpKind::Request | OpKind::Direct => {
-                self.out.push(Command::OperationFailed { op: op_id, error: error.to_string() });
+                self.out.push(Command::OperationFailed {
+                    op: op_id,
+                    error: error.to_string(),
+                    carrier_lost,
+                });
             }
             OpKind::Command | OpKind::Unqueued => {
                 self.notice(Json::from("error"), Json::from(error.to_string()));
