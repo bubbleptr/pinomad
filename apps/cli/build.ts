@@ -46,10 +46,15 @@ if (!existsSync(join(root, "apps/web/dist/index.html"))) fail("apps/web/dist is 
 
 // Third-party deps stay external and get installed by npm. workspace:* deps
 // (our own packages) are bundled instead. A name with two versions is a bug.
+// Optional dependencies are kept separate: a native package's platform
+// prebuilds must reach the published manifest as optional, or npm cannot pick
+// one by os/cpu (and --omit=optional cannot drop them cleanly).
 const dependencies: Record<string, string> = {};
+const optionalDependencies: Record<string, string> = {};
 for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
   const manifest = JSON.parse(await readFile(join(root, dir, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
   };
   for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
     if (range === "workspace:*") continue;
@@ -57,6 +62,31 @@ for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
     if (existing !== undefined && existing !== range) fail(`conflicting versions for ${name}: ${existing} vs ${range}`);
     dependencies[name] = range;
   }
+  for (const [name, range] of Object.entries(manifest.optionalDependencies ?? {})) {
+    if (range === "workspace:*") continue;
+    if (dependencies[name] !== undefined) fail(`${name} is both a required and an optional dependency`);
+    const existing = optionalDependencies[name];
+    if (existing !== undefined && existing !== range) {
+      fail(`conflicting optional versions for ${name}: ${existing} vs ${range}`);
+    }
+    optionalDependencies[name] = range;
+  }
+}
+
+// pi-coding-agent 1.2.0 asks for ^1.2.0 of three adjacent packages. npm
+// resolves those to newer releases whose exact pi-ai does not exist on the
+// public registry (pi-ai is still at 1.3.0), so a clean npm install of this
+// package would fail with ETARGET. Pin the three to the versions the lockfile
+// and the bundle already use; move them together with the pi-coding-agent pin.
+const PI_TRANSITIVE_PINS: Record<string, string> = {
+  "@earendil-works/pi-agent-core": "1.2.0",
+  "@earendil-works/pi-ai": "1.2.0",
+  "@earendil-works/pi-tui": "1.2.0",
+};
+for (const [name, range] of Object.entries(PI_TRANSITIVE_PINS)) {
+  const existing = dependencies[name];
+  if (existing !== undefined && existing !== range) fail(`conflicting versions for ${name}: ${existing} vs ${range}`);
+  dependencies[name] = range;
 }
 
 await rm(out, { recursive: true, force: true });
@@ -70,7 +100,7 @@ const result = await Bun.build({
   splitting: true,
   // Flat output — distribution.ts resolves ../web and ./pinomad.js next to chunks.
   naming: { entry: "[name].js", chunk: "chunk-[hash].js", asset: "asset-[hash].[ext]" },
-  external: Object.keys(dependencies).flatMap((name) => [name, `${name}/*`]),
+  external: [...Object.keys(dependencies), ...Object.keys(optionalDependencies)].flatMap((name) => [name, `${name}/*`]),
   define: { PINOMAD_VERSION: JSON.stringify(version) },
 });
 if (!result.success || result.logs.some((log) => log.level === "error")) {
@@ -105,6 +135,7 @@ await writeFile(
       repository: { type: "git", url: "git+https://github.com/bubbleptr/pinomad.git" },
       homepage: "https://github.com/bubbleptr/pinomad",
       dependencies,
+      ...(Object.keys(optionalDependencies).length === 0 ? {} : { optionalDependencies }),
     },
     null,
     2,

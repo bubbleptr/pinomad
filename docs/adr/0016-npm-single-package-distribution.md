@@ -1,6 +1,6 @@
 # ADR-0016：分发——单个 npm 包 `pinomad`，GitHub Actions 按 tag 发布
 
-- 状态：Accepted
+- 状态：Accepted（原生依赖的平台可选包由 ADR-0033 补充）
 - 日期：2026-10-09
 
 ## 背景

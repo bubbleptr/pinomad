@@ -1,6 +1,6 @@
 # ADR-0024：移动端改成原生，客户端协议核心用 Rust
 
-- 状态：Accepted
+- 状态：Accepted（WebRTC 载体和移动端 P2P 栈由 ADR-0033 补充）
 - 日期：2026-10-16
 - 取代 ADR-0017 §3（"移动端用 Expo……也不用 Swift 原生"）。ADR-0017 §4（`packages/protocol` 必须能在 Hermes 上运行）在 Expo 维护期内继续有效，删除 `apps/mobile` 后失效（已于 2026-10-19 失效）。
 - §5 由 ADR-0027 补充：快照里的图片按内容引用传，字节按需取。

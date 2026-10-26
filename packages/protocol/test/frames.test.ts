@@ -232,6 +232,21 @@ describe("parseClientFrame", () => {
     expect(call("listEndpointModels", { api: "anthropic-messages", baseUrl: "https://x/v1", providerId: "" })).toBe("malformed");
   });
 
+  it("introduces rtcOffer, ping, and hello.rtc at minor 23", () => {
+    expect(hostSupportsCall(22, "rtcOffer")).toBe(false);
+    expect(hostSupportsCall(23, "rtcOffer")).toBe(true);
+    expect(hostSupportsCall(22, "ping")).toBe(false);
+    expect(hostSupportsCall(23, "ping")).toBe(true);
+    expect(hostSupportsFeature(22, "rtc")).toBe(false);
+    expect(hostSupportsFeature(23, "rtc")).toBe(true);
+    const call = (method: string, args: unknown) => kinds({ type: "call", id: 1, method, args });
+    expect(call("rtcOffer", { attempt: "a", sdp: "v=0" })).toBe("frame");
+    expect(call("rtcOffer", { attempt: "", sdp: "v=0" })).toBe("malformed");
+    expect(call("rtcOffer", { attempt: "a", sdp: "" })).toBe("malformed");
+    expect(call("ping", { id: "probe-1" })).toBe("frame");
+    expect(call("ping", { id: "" })).toBe("malformed");
+  });
+
   it("accepts updateSettings patches; rejects unknown keys and bad values", () => {
     const call = (patch: unknown): unknown => ({ type: "call", id: 1, method: "updateSettings", args: { patch } });
     expect(kinds(call({}))).toBe("frame");
@@ -240,6 +255,11 @@ describe("parseClientFrame", () => {
     expect(kinds(call({ acceptAccountDevices: false }))).toBe("frame");
     expect(kinds(call({ acceptAccountDevices: null }))).toBe("frame");
     expect(kinds(call({ acceptAccountDevices: "yes" }))).toBe("malformed");
+    expect(kinds(call({ rtcStun: [] }))).toBe("frame");
+    expect(kinds(call({ rtcStun: ["stun:stun.cloudflare.com:3478"] }))).toBe("frame");
+    expect(kinds(call({ rtcStun: [""] }))).toBe("malformed");
+    expect(kinds(call({ rtcStun: "stun:one" }))).toBe("malformed");
+    expect(kinds(call({ rtcStun: null }))).toBe("frame");
     expect(kinds(call({ defaultThinkingLevel: "xhigh" }))).toBe("frame");
     expect(kinds(call({ custom: [] }))).toBe("malformed");
     expect(kinds(call({ bogus: 1 }))).toBe("malformed");

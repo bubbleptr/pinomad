@@ -60,6 +60,7 @@ async function fixture(options: Partial<GatewayOptions> = {}) {
         steeringMode: "one-at-a-time",
         followUpMode: "one-at-a-time",
         acceptAccountDevices: true,
+        rtcStun: [],
         custom: [],
       },
       subscribe: () => () => {},

@@ -113,6 +113,7 @@ export async function startFauxHost(
     push,
     images,
     agentsHome,
+    rtc,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -166,6 +167,8 @@ export async function startFauxHost(
     push?: OpenHostOptions["push"];
     /** Deterministic image-processor fake for derived-variant tests. */
     images?: OpenHostOptions["images"];
+    /** RTC loader/factory seams (ADR-0033); absent loads node-datachannel normally. */
+    rtc?: OpenHostOptions["rtc"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -221,6 +224,7 @@ export async function startFauxHost(
     ...(openStorage === undefined ? {} : { openStorage }),
     ...(push === undefined ? {} : { push }),
     ...(images === undefined ? {} : { images }),
+    ...(rtc === undefined ? {} : { rtc }),
   });
   defer(() => host.close());
   return host;

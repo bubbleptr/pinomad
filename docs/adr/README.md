@@ -55,6 +55,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |
 | [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（暂不开放注册），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上 |
 | [0032](0032-multi-endpoint-pairing-and-failover.md) | 远程访问携带多候选：配对邀请和 hello 发布 remote endpoint 集合，loopback 保持 client-local，Auto relay 优先、direct 兜底，候选级失败、整轮汇总，paired 与 ready 分离；不做服务端地址目录 |
+| [0033](0033-webrtc-p2p-and-signal-connections.md) | WebRTC DataChannel 作为第四种载体：独立信令 prologue、非 trickle 宿主作答、按库区分"已接收"的载体契约、简化切换（不回退双业务状态），不引入 TURN 和服务端信令接口；移动端锁 str0m |
 
 ## 遗留项的去向
 
@@ -87,4 +88,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0022 §4：账号 Pair 向宿主要一份邀请 | 由 0032 补充：邀请和配对响应 additive 携带候选，服务端只转发、不持久化 endpoint |
 | 0014 §2：复制来的组件尽量原样保留，便于对照 Pace 同步 | 由 0026 修订：思维链组件改成运行过程收成一行，和 Pace 分叉 |
 | 0006 §4：Skills 只进系统提示词；#143 的 `$name` 靠提示词规则让模型自己读 | 由 0028 补充：从 `$` 菜单选中的 skill 由宿主把全文展开进消息，提示词规则删掉；`disable-model-invocation` 只从提示词列表去掉 |
+| 0032 §3：长期 WebRTC 的并行建连由 #345 另定 | 由 0033 决定：WebRTC DataChannel 作为第四种载体，宿主作答、客户端 offer；协调器在 #345 后续 PR |
+| 0008 §1：安全通道的传输只有 WebSocket | 由 0033 补充 DataChannel 载体和只走信令的 Noise 连接 |
+| 0024 §3：平台层职责 | 由 0033 补充 WebRTC 载体：Node 宿主用 node-datachannel，iOS 用 str0m |
+| 0016：原生依赖的可选包分发 | 由 0033 补充：node-datachannel 的平台包走 optionalDependencies，`--omit=optional` 时宿主降级为无 `hello.rtc` |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |

@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 22
+    "minor": 23
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":22},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":23},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,7 +16,7 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":22},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":23},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
@@ -318,6 +318,10 @@
         "since": 1
       },
       {
+        "name": "ping",
+        "since": 23
+      },
+      {
         "name": "removeCustomProvider",
         "since": 21
       },
@@ -332,6 +336,10 @@
       {
         "name": "revokeDevice",
         "since": 0
+      },
+      {
+        "name": "rtcOffer",
+        "since": 23
       },
       {
         "name": "runCommand",
@@ -456,6 +464,10 @@
       {
         "name": "liveBranch",
         "since": 11
+      },
+      {
+        "name": "rtc",
+        "since": 23
       }
     ]
   },
@@ -683,6 +695,18 @@
       "expect": false
     },
     {
+      "name": "ping@23",
+      "minor": 23,
+      "call": "ping",
+      "expect": true
+    },
+    {
+      "name": "ping@22",
+      "minor": 22,
+      "call": "ping",
+      "expect": false
+    },
+    {
       "name": "removeCustomProvider@21",
       "minor": 21,
       "call": "removeCustomProvider",
@@ -717,6 +741,18 @@
       "minor": 0,
       "call": "revokeDevice",
       "expect": true
+    },
+    {
+      "name": "rtcOffer@23",
+      "minor": 23,
+      "call": "rtcOffer",
+      "expect": true
+    },
+    {
+      "name": "rtcOffer@22",
+      "minor": 22,
+      "call": "rtcOffer",
+      "expect": false
     },
     {
       "name": "runCommand@17",
@@ -951,6 +987,95 @@
       "minor": 10,
       "feature": "liveBranch",
       "expect": false
+    },
+    {
+      "name": "rtc@23",
+      "minor": 23,
+      "feature": "rtc",
+      "expect": true
+    },
+    {
+      "name": "rtc@22",
+      "minor": 22,
+      "feature": "rtc",
+      "expect": false
+    }
+  ],
+  "rtcHello": [
+    {
+      "name": "absent",
+      "hello": "{}",
+      "expect": "none"
+    },
+    {
+      "name": "valid",
+      "hello": "{\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "expect": "valid",
+      "stun": [
+        "stun:stun.cloudflare.com:3478"
+      ],
+      "signalOnly": true
+    },
+    {
+      "name": "empty-stun",
+      "hello": "{\"rtc\":{\"stun\":[],\"signalOnly\":true}}",
+      "expect": "valid",
+      "stun": [],
+      "signalOnly": true
+    },
+    {
+      "name": "missing-signal-only",
+      "hello": "{\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"]}}",
+      "expect": "invalid"
+    },
+    {
+      "name": "signal-only-false",
+      "hello": "{\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":false}}",
+      "expect": "invalid"
+    },
+    {
+      "name": "empty-stun-entry",
+      "hello": "{\"rtc\":{\"stun\":[\"\"],\"signalOnly\":true}}",
+      "expect": "invalid"
+    },
+    {
+      "name": "non-string-stun",
+      "hello": "{\"rtc\":{\"stun\":[1],\"signalOnly\":true}}",
+      "expect": "invalid"
+    },
+    {
+      "name": "not-object",
+      "hello": "{\"rtc\":\"rtc\"}",
+      "expect": "invalid"
+    }
+  ],
+  "rtcOfferArgs": [
+    {
+      "name": "valid",
+      "args": "{\"attempt\":\"attempt-1\",\"sdp\":\"v=0\\r\\n\"}",
+      "expect": "valid",
+      "attempt": "attempt-1",
+      "sdp": "v=0\r\n"
+    },
+    {
+      "name": "empty-attempt",
+      "args": "{\"attempt\":\"\",\"sdp\":\"v=0\"}",
+      "expect": "invalid"
+    },
+    {
+      "name": "empty-sdp",
+      "args": "{\"attempt\":\"a\",\"sdp\":\"\"}",
+      "expect": "invalid"
+    },
+    {
+      "name": "missing",
+      "args": "{}",
+      "expect": "invalid"
+    },
+    {
+      "name": "non-string",
+      "args": "{\"attempt\":1,\"sdp\":\"v=0\"}",
+      "expect": "invalid"
     }
   ]
 }

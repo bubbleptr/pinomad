@@ -28,6 +28,12 @@
         "major": "number",
         "minor": "number"
       },
+      "rtc": {
+        "signalOnly": "boolean",
+        "stun": [
+          "string"
+        ]
+      },
       "session": {
         "directory": "string",
         "id": "string"
@@ -441,6 +447,13 @@
       ],
       "ops": []
     },
+    "providers": {
+      "value": {
+        "logins": [],
+        "providers": []
+      },
+      "ops": []
+    },
     "settings": {
       "value": {
         "acceptAccountDevices": "boolean",
@@ -452,6 +465,9 @@
         "defaultThinkingLevel": "null",
         "followUpMode": "string",
         "hostName": "string",
+        "rtcStun": [
+          "string"
+        ],
         "steeringMode": "string"
       },
       "ops": []

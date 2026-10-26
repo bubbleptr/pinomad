@@ -27,6 +27,10 @@ use snow::TransportState;
 /// cross-protocol replay (secure-channel.ts SECURE_PROLOGUE).
 pub const SECURE_PROLOGUE: &[u8] = b"pinomad/1";
 
+/// The prologue of a signal-only connection (ADR-0033 §1). A host that only
+/// knows `pinomad/1` fails this handshake before it registers anything.
+pub const SIGNAL_PROLOGUE: &[u8] = b"pinomad-signal/1";
+
 /// One byte of flags per record; a ciphertext is one flag byte plus a Noise
 /// message under the 65535 bound.
 const MAX_CIPHERTEXT: usize = MAX_MESSAGE;
@@ -265,9 +269,20 @@ pub fn initiate_handshake(
     remote_static: [u8; KEY_LENGTH],
     pairing: Option<&Pairing>,
 ) -> Result<IkClientHandshake, ChannelError> {
+    initiate_handshake_with_prologue(device, remote_static, pairing, SECURE_PROLOGUE)
+}
+
+/// `initiate_handshake` with an explicit prologue; signal-only connections
+/// pass `SIGNAL_PROLOGUE` (ADR-0033 §1).
+pub fn initiate_handshake_with_prologue(
+    device: &KeyPair,
+    remote_static: [u8; KEY_LENGTH],
+    pairing: Option<&Pairing>,
+    prologue: &[u8],
+) -> Result<IkClientHandshake, ChannelError> {
     let hello_text = encode_client_hello(pairing);
     let inner = initiate_ik(InitiateOptions {
-        prologue: SECURE_PROLOGUE,
+        prologue,
         device,
         remote_static,
         payload: hello_text.as_bytes(),
@@ -292,7 +307,16 @@ pub struct IkServerHandshake {
 }
 
 pub fn respond_handshake(host: &KeyPair) -> Result<IkServerHandshake, ChannelError> {
-    let inner = respond_ik(RespondOptions { prologue: SECURE_PROLOGUE, host, ephemeral: None })
+    respond_handshake_with_prologue(host, SECURE_PROLOGUE)
+}
+
+/// The responder side with an explicit prologue; used by the tests that prove
+/// a signal handshake cannot be mistaken for a business one.
+pub fn respond_handshake_with_prologue(
+    host: &KeyPair,
+    prologue: &[u8],
+) -> Result<IkServerHandshake, ChannelError> {
+    let inner = respond_ik(RespondOptions { prologue, host, ephemeral: None })
         .map_err(|error| ChannelError::Noise(error.to_string()))?;
     Ok(IkServerHandshake { inner: Some(inner), remote_static: None, client_payload: None })
 }
@@ -382,7 +406,18 @@ pub struct SecureConnection {
 
 impl SecureConnection {
     pub fn new(device: &KeyPair, remote_static: [u8; KEY_LENGTH], pairing: Option<&Pairing>) -> Result<Self, ChannelError> {
-        let handshake = initiate_handshake(device, remote_static, pairing)?;
+        Self::new_with_prologue(device, remote_static, pairing, SECURE_PROLOGUE)
+    }
+
+    /// A connection whose handshake uses `prologue`; the signal channel is the
+    /// reason this is parameterized (ADR-0033 §1).
+    pub fn new_with_prologue(
+        device: &KeyPair,
+        remote_static: [u8; KEY_LENGTH],
+        pairing: Option<&Pairing>,
+        prologue: &[u8],
+    ) -> Result<Self, ChannelError> {
+        let handshake = initiate_handshake_with_prologue(device, remote_static, pairing, prologue)?;
         Ok(SecureConnection {
             stage: Stage::Handshaking(handshake),
             queue: Vec::new(),

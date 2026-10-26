@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
+import { RTC_DEFAULT_STUN } from "@pinomad/protocol/rtc.ts";
 import { normalizeHostName, type HostSettings } from "@pinomad/protocol/settings.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { constantValue, Published } from "../src/host-value.ts";
@@ -42,6 +43,7 @@ describe("openHostSettings", () => {
       steeringMode: "one-at-a-time",
       followUpMode: "all",
       acceptAccountDevices: true,
+      rtcStun: RTC_DEFAULT_STUN,
       hostName: normalizeHostName(hostname()),
       custom: [],
     });
@@ -151,6 +153,25 @@ describe("openHostSettings", () => {
     expect(settings.value.acceptAccountDevices).toBe(true);
     expect(settings.value.custom).toEqual([]);
     expect(seen).toEqual([false, true]);
+  });
+
+  it("advertises the default STUN list, persists an override, and resets to the default", async () => {
+    const path = await settingsPath();
+    const settings = await openHostSettings({ path, fallback, models });
+    expect(settings.value.rtcStun).toEqual(RTC_DEFAULT_STUN);
+    expect(settings.value.custom).toEqual([]);
+
+    await settings.update({ rtcStun: ["stun:stun.example.com:3478"] });
+    expect(settings.value.rtcStun).toEqual(["stun:stun.example.com:3478"]);
+    expect(settings.value.custom).toEqual(["rtcStun"]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ rtcStun: ["stun:stun.example.com:3478"] });
+
+    await settings.update({ rtcStun: [] });
+    expect(settings.value.rtcStun).toEqual([]);
+
+    await settings.update({ rtcStun: null });
+    expect(settings.value.rtcStun).toEqual(RTC_DEFAULT_STUN);
+    expect(settings.value.custom).toEqual([]);
   });
 
   it("names the host after its machine name until a device overrides it (5.12)", async () => {

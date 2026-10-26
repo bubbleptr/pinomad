@@ -6,6 +6,7 @@ import type { EndpointSet } from "./endpoints.ts";
 import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
+import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { CommandListing } from "./commands.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -92,7 +93,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 22 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 23 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -321,6 +322,19 @@ export interface CallMethods {
    * §7). Malformed shapes close with 4400.
    */
   setPushToken: { args: { token: PushToken | null }; result: null };
+  /**
+   * Answer a client's WebRTC offer (5.23, ADR-0033): the host is always the
+   * answerer. Available on a business connection and on a signal-only
+   * connection; a duplicate `attempt` on the same device answers the same
+   * Peer instead of creating a second one.
+   */
+  rtcOffer: { args: RtcOfferArgs; result: RtcAnswer };
+  /**
+   * Application-level liveness probe (5.23). The answer is the pong: the host
+   * echoes `id` so a late reply can be bound to the connection generation
+   * that sent it. Signal-only connections accept it too.
+   */
+  ping: { args: { id: string }; result: { id: string } };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -384,6 +398,8 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   image: 15,
   beginAttachment: 19,
   appendAttachment: 19,
+  rtcOffer: 23,
+  ping: 23,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -408,6 +424,8 @@ export const FEATURE_SINCE = {
   attachments: 19,
   /** `image` accepts derived variants and reports the actual variant (20); older hosts return original. */
   imageVariants: 20,
+  /** `hello.rtc` is present and the host answers `rtcOffer` (23, ADR-0033). */
+  rtc: 23,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -422,20 +440,31 @@ export type ServerFrame =
       readonly protocol: ProtocolVersion;
       /** Packaged release version; absent in a source checkout. */
       readonly hostVersion?: string;
-      readonly session: SessionInfo;
-      readonly models: readonly ModelSummary[];
+      /**
+       * Business hellos carry these; a signal-only hello (ADR-0033 §1) carries
+       * only `protocol` and `rtc`, so the fields are absent there and a client
+       * must not read them before it knows which purpose the channel has.
+       */
+      readonly session?: SessionInfo;
+      readonly models?: readonly ModelSummary[];
       /** New-conversation defaults; absent means the host has none. */
       readonly defaults?: ConversationDefaults;
       /** The conversation documents offered as `doc:` streams, in host order. */
-      readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
+      readonly docs?: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
       /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
-      readonly toolPresentations: Record<string, PresentationType>;
+      readonly toolPresentations?: Record<string, PresentationType>;
       /**
        * The host's current remote candidates (5.22, ADR-0032). Absent means an
        * older host and never clears a stored set; a present valid set — including
        * an empty one — replaces it.
        */
       readonly endpointSet?: EndpointSet;
+      /**
+       * WebRTC capability and the STUN servers a client should offer with
+       * (5.23, ADR-0033). Absent → the native module is not loaded, so P2P is
+       * unavailable; the business hello is otherwise unchanged.
+       */
+      readonly rtc?: RtcHello;
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
@@ -531,6 +560,8 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   steeringMode: (value) => value === null || isQueueMode(value),
   followUpMode: (value) => value === null || isQueueMode(value),
   acceptAccountDevices: (value) => value === null || typeof value === "boolean",
+  // Shape only — the host normalizes and checks the STUN URLs it will dial.
+  rtcStun: (value) => value === null || (Array.isArray(value) && value.every(nonempty)),
   // Shape only — the host re-checks content anyway (cleanHostName).
   hostName: (value) => value === null || typeof value === "string",
 };
@@ -671,6 +702,12 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId() && typeof args.title === "string";
     case "createPairing":
       return Object.keys(args).length === 0;
+    case "rtcOffer":
+      // Shape only — SDP validity and candidate filtering are the host's
+      // answerer (ADR-0033 §4), and an unusable offer is an `ok:false`.
+      return nonempty(args.attempt) && nonempty(args.sdp);
+    case "ping":
+      return nonempty(args.id);
     case "revokeDevice":
       return nonempty(args.publicKey) && /^[A-Za-z0-9_-]+$/.test(args.publicKey);
     case "logout":
