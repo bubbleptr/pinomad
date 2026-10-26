@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   connectRemoteDurable,
+  DirectUnavailableError,
   ProtocolMismatchError,
+  type AppLifecycle,
   type NetworkChanges,
   type RemoteDurable,
   type RemoteDurableOptions,
@@ -17,7 +19,14 @@ export type RemoteState =
    * `mismatch` = the host speaks a protocol this bundle doesn't; carries the
    * error so the host's version can key the reload-once guard.
    */
-  | { readonly status: "failed"; readonly error: string; readonly unauthorized: boolean; readonly mismatch?: ProtocolMismatchError }
+  | {
+      readonly status: "failed";
+      readonly error: string;
+      readonly unauthorized: boolean;
+      readonly mismatch?: ProtocolMismatchError;
+      /** Present only when Direct only exhausted its paths; `reason` is the last stage failure. */
+      readonly direct?: DirectUnavailableError;
+    }
   | { readonly status: "ready"; readonly remote: RemoteDurable };
 
 /**
@@ -44,6 +53,23 @@ const browserNetworkChanges: NetworkChanges = {
       window.removeEventListener("online", listener);
       window.removeEventListener("offline", listener);
     };
+  },
+};
+
+/**
+ * A hidden tab stops P2P liveness probing; becoming visible runs a fresh
+ * verification ping instead of trusting a timer that fired while suspended.
+ */
+const browserLifecycle: AppLifecycle = {
+  subscribe(listener) {
+    if (typeof document === "undefined") return () => {};
+    const onVisibility = (): void => listener(document.visibilityState === "hidden" ? "background" : "foreground");
+    document.addEventListener("visibilitychange", onVisibility);
+    // The coordinator starts in the foreground; only an already-hidden page
+    // needs the initial state pushed. Sending a synthetic foreground here
+    // would restart its first round twice.
+    if (document.visibilityState === "hidden") listener("background");
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   },
 };
 
@@ -136,6 +162,7 @@ export function useRemoteDurable(
           ...(options as Extract<RemoteDurableOptions, { candidates: unknown }>),
           signal: controller.signal,
           network: options.network ?? browserNetworkChanges,
+          lifecycle: options.lifecycle ?? browserLifecycle,
           ...(settings?.timeoutMs === undefined ? {} : { roundTimeoutMs: settings.timeoutMs }),
         }
       : {
@@ -170,6 +197,7 @@ export function useRemoteDurable(
             error: error instanceof Error ? error.message : String(error),
             unauthorized: error instanceof UnauthorizedError,
             ...(error instanceof ProtocolMismatchError ? { mismatch: error } : {}),
+            ...(error instanceof DirectUnavailableError ? { direct: error } : {}),
           });
       },
     );

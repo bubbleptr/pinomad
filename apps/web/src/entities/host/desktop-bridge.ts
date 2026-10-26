@@ -1,3 +1,4 @@
+import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { UpdateStatus } from "../app-update/update-protocol.ts";
 import type { StoredHost } from "./host-store.ts";
@@ -17,6 +18,8 @@ export interface DesktopBridge {
     setName(hostKey: string, name: string): Promise<void>;
     /** Apply a secure-channel remote set; writes nothing when the entry is gone. */
     updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
+    /** Persist a connection preference or learned RTC hint; writes nothing when the entry is gone. */
+    updateConnection(hostKey: string, change: StoredHostConnectionChange): Promise<void>;
   };
   /**
    * The bearer credential for the server-accounts API, kept in main's

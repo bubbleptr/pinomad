@@ -150,6 +150,10 @@ async function stubDesktopBridge(context: BrowserContext): Promise<void> {
           write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
           return Promise.resolve();
         },
+        updateConnection: (hostKey: string, change: Record<string, unknown>) => {
+          write(read().map((each) => (each.hostKey === hostKey ? { ...each, ...change } : each)));
+          return Promise.resolve();
+        },
       },
       // The real preload answers this from main; the stub stands in for it.
       deviceName: () => Promise.resolve("Linux Desktop (test-box)"),
@@ -3120,6 +3124,10 @@ it("warns and retries when saving a pairing fails on the desktop bridge", async 
           write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
           return Promise.resolve();
         },
+        updateConnection: (hostKey: string, change: Record<string, unknown>) => {
+          write(read().map((each) => (each.hostKey === hostKey ? { ...each, ...change } : each)));
+          return Promise.resolve();
+        },
       },
     };
     (window as unknown as { testAllowSaves: () => void }).testAllowSaves = () => {
@@ -3199,6 +3207,10 @@ const fakeUpdatesBridge = `{
       },
       updateEndpoints: (hostKey, endpointSet) => {
         write(read().map((each) => (each.hostKey === hostKey ? { ...each, endpointSet } : each)));
+        return Promise.resolve();
+      },
+      updateConnection: (hostKey, change) => {
+        write(read().map((each) => (each.hostKey === hostKey ? { ...each, ...change } : each)));
         return Promise.resolve();
       },
     },

@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientFrame, ServerFrame } from "@pinomad/protocol/frames.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { DirectUnavailableError, type RemoteDurable, type RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "@pinomad/protocol/transport.ts";
 import { useRemoteDurable } from "./use-remote.ts";
 
@@ -98,6 +98,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -148,6 +149,21 @@ describe("useRemoteDurable first-connect timeout", () => {
     expect(remote.close).toHaveBeenCalled();
   });
 
+  it("keeps a typed DirectUnavailableError for the failure screen", async () => {
+    const error = new DirectUnavailableError("the ICE connection failed");
+    const { result } = renderHook(() =>
+      useRemoteDurable({ transport: fakeTransport().transport }, "key", {
+        timeoutMs: TIMEOUT_MS,
+        connect: () => Promise.reject(error),
+      }),
+    );
+    await act(async () => {});
+    const state = result.current;
+    expect(state.status).toBe("failed");
+    if (state.status !== "failed") throw new Error("unreachable");
+    expect(state.direct).toBe(error);
+  });
+
   it("returns to connecting when the key changes after a failure", async () => {
     const first = fakeTransport({ silent: true });
     const second = fakeTransport({ silent: true });
@@ -182,6 +198,36 @@ describe("useRemoteDurable first-connect timeout", () => {
     // live connection takes a close.
     for (const entry of opened.slice(0, -1)) expect(entry.closeCalls).toBe(0);
     expect(opened.at(-1)!.closeCalls).toBe(1);
+  });
+
+  it("forwards page visibility to candidate connections", () => {
+    const connect = vi.fn((_options: RemoteDurableOptions) => new Promise<RemoteDurable>(() => {}));
+    const { unmount } = renderHook(() =>
+      useRemoteDurable(
+        { candidates: [], openTransport: () => fakeTransport().transport },
+        "key",
+        { connect },
+      ),
+    );
+    const options = connect.mock.calls[0]![0];
+    expect(options.lifecycle).toBeDefined();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const states: string[] = [];
+    const stop = options.lifecycle!.subscribe((state) => states.push(state));
+    // A page opened in a background tab must start paused, not wait for the
+    // next visibilitychange.
+    expect(states).toEqual(["background"]);
+
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(states).toEqual(["background", "foreground"]);
+
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(states).toEqual(["background", "foreground", "background"]);
+
+    stop();
+    unmount();
   });
 
   it("a key change cancels the old timer and closes the old connection", async () => {

@@ -8,9 +8,12 @@ import { isSecureServerOrigin, normalizeServerOrigin } from "@pinomad/client/acc
 import {
   mergeStoredHost,
   parseStoredHost,
+  updateStoredHostConnection,
   updateStoredHostEndpoints,
   type StoredHost,
+  type StoredHostConnectionChange,
 } from "@pinomad/client/stored-host.ts";
+import { parseConnectionMode } from "@pinomad/protocol/connection-mode.ts";
 import { parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 
 export type { StoredHost };
@@ -47,6 +50,8 @@ export interface HostStore {
    * queue: only endpoint fields move, and a forgotten host is not resurrected.
    */
   updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
+  /** Persist the connection mode or signal-only hint without touching any other field. */
+  updateConnection(hostKey: string, change: StoredHostConnectionChange): Promise<void>;
   account(): Promise<StoredAccount | undefined>;
   saveAccount(account: StoredAccount): Promise<void>;
   clearAccount(): Promise<void>;
@@ -151,6 +156,23 @@ export function createHostStore(dir: string, cipher: Cipher): HostStore {
         const index = blob.hosts.findIndex((each) => each.hostKey === hostKey);
         if (index === -1) return;
         blob.hosts[index] = updateStoredHostEndpoints(blob.hosts[index]!, parsed.endpointSet);
+        await writeBlob(blob);
+      }),
+    updateConnection: (hostKey, change) =>
+      enqueue(async () => {
+        // The renderer crosses IPC here, so validate both fields before they
+        // reach the stored record.
+        if (change === null || typeof change !== "object") throw new Error("invalid connection payload");
+        if (change.connectionMode !== undefined && parseConnectionMode(change.connectionMode) === undefined) {
+          throw new Error("invalid connection mode");
+        }
+        if (change.rtcSignalOnly !== undefined && typeof change.rtcSignalOnly !== "boolean") {
+          throw new Error("invalid signal-only hint");
+        }
+        const blob = await readBlob();
+        const index = blob.hosts.findIndex((each) => each.hostKey === hostKey);
+        if (index === -1) return;
+        blob.hosts[index] = updateStoredHostConnection(blob.hosts[index]!, change);
         await writeBlob(blob);
       }),
     account: () => enqueue(async () => (await readBlob()).account),

@@ -136,6 +136,20 @@ export class ConnectionFailedError extends Error {
   }
 }
 
+/**
+ * Direct only could not reach the host: no direct business candidate worked
+ * and the relay-backed P2P link failed too. `reason` is the last preparation
+ * failure; the message stays the text the coordinator already reports.
+ */
+export class DirectUnavailableError extends Error {
+  readonly reason: string;
+  constructor(reason: string) {
+    super(`${DIRECT_UNAVAILABLE} (${reason})`);
+    this.name = "DirectUnavailableError";
+    this.reason = reason;
+  }
+}
+
 const REMOTE_ACCESS_UNAVAILABLE =
   "Remote access is unavailable: the host published no remote path and this device has no local entry.";
 
@@ -1751,7 +1765,7 @@ class RemoteClient {
       this.#stopListeners();
       this.#rejectPending();
       this.#rejectSnapshotWaiters(new DisconnectedError());
-      this.#rejectReady(new Error(`${DIRECT_UNAVAILABLE} (${reason})`));
+      this.#rejectReady(new DirectUnavailableError(reason));
       return;
     }
     this.#notice("error", `${DIRECT_UNAVAILABLE} (${reason})`);

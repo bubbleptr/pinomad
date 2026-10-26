@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect } from "react";
 import {
   mergeStoredHost,
   parseStoredHost,
+  updateStoredHostConnection,
   updateStoredHostEndpoints,
+  type StoredHostConnectionChange,
 } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";
@@ -38,6 +40,11 @@ export interface HostStore {
    * read-modify-write on the store.
    */
   updateEndpoints(hostKey: string, endpointSet: EndpointSet): Promise<void>;
+  /**
+   * Persist the connection mode or the learned signal-only hint in place.
+   * Writes nothing when the host is gone, so a late hello cannot resurrect it.
+   */
+  updateConnection(hostKey: string, change: StoredHostConnectionChange): Promise<void>;
 }
 
 const readHosts = (): StoredHost[] => {
@@ -116,6 +123,15 @@ const browserStore: HostStore = {
     writeHosts(next);
     return Promise.resolve();
   },
+  updateConnection: (hostKey, change) => {
+    const hosts = migrated();
+    const index = hosts.findIndex((each) => each.hostKey === hostKey);
+    if (index === -1) return Promise.resolve();
+    const next = [...hosts];
+    next[index] = updateStoredHostConnection(hosts[index]!, change);
+    writeHosts(next);
+    return Promise.resolve();
+  },
 };
 
 function desktopStore(bridge: DesktopBridge): HostStore {
@@ -150,6 +166,7 @@ function desktopStore(bridge: DesktopBridge): HostStore {
     remove: (hostKey) => bridge.hosts.remove(hostKey),
     setName: (hostKey, name) => bridge.hosts.setName(hostKey, name),
     updateEndpoints: (hostKey, endpointSet) => bridge.hosts.updateEndpoints(hostKey, endpointSet),
+    updateConnection: (hostKey, change) => bridge.hosts.updateConnection(hostKey, change),
   };
 }
 
@@ -169,6 +186,8 @@ export type HostsState = {
   readonly setName: (hostKey: string, name: string) => Promise<void>;
   /** Persist a host-published remote set and update the in-memory list in place. */
   readonly endpoints: (hostKey: string, endpointSet: EndpointSet) => Promise<void>;
+  /** Persist a connection preference or RTC hint and update the in-memory list in place. */
+  readonly setConnection: (hostKey: string, change: StoredHostConnectionChange) => Promise<void>;
 };
 
 const defaultState: HostsState = {
@@ -178,6 +197,7 @@ const defaultState: HostsState = {
   paired: (host) => browserStore.save(host),
   setName: (hostKey, name) => browserStore.setName(hostKey, name),
   endpoints: (hostKey, endpointSet) => browserStore.updateEndpoints(hostKey, endpointSet),
+  setConnection: (hostKey, change) => browserStore.updateConnection(hostKey, change),
 };
 
 // Deep components — the sidebar footer, the connection-failure screens — read
