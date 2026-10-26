@@ -23,6 +23,13 @@ struct QuestionCards: View {
     }
 }
 
+extension EnvironmentValues {
+    /// The tallest a question page shows before it scrolls inside the
+    /// card, so a question with long option descriptions can't push the
+    /// conversation off screen. The conversation sets it from its height.
+    @Entry var questionPageMaxHeight: CGFloat = 320
+}
+
 /// Solid label color: `Color.primary` turns into a vibrant gray on glass.
 private let ink = Color(uiColor: .label)
 
@@ -30,6 +37,9 @@ private let ink = Color(uiColor: .label)
 private let advanceDelay = Duration.milliseconds(250)
 
 private enum FooterAction { case submit, next, skip }
+
+private let otherFieldID = "other"
+
 
 private struct QuestionCard: View {
     let model: AppModel
@@ -42,6 +52,8 @@ private struct QuestionCard: View {
     /// Scroll offset in pages (1.5 = halfway from the second to the third).
     @State private var position: CGFloat = 0
     @State private var pageHeights: [Int: CGFloat] = [:]
+    /// Which edges of each page have content scrolled past them.
+    @State private var pageEdges: [Int: HiddenEdges] = [:]
     @State private var scrolling = false
     /// Off for the first layout, so the card doesn't ease in from the
     /// tallest page's height.
@@ -54,6 +66,7 @@ private struct QuestionCard: View {
     @State private var sending = false
     @FocusState private var otherFocus: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.questionPageMaxHeight) private var maxPageHeight
 
     private var request: QuestionRequest { question.request }
     private var count: Int { request.questions.count }
@@ -96,12 +109,7 @@ private struct QuestionCard: View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(request.questions.enumerated()), id: \.offset) { index, item in
-                    questionPage(index, item)
-                        .padding(.horizontal, 16)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                            pageHeights[index] = $0
-                        }
+                    pageScroll(index, item)
                         .containerRelativeFrame(.horizontal)
                         .accessibilityHidden(index != current)
                         .id(index)
@@ -144,8 +152,44 @@ private struct QuestionCard: View {
     private var pagerHeight: CGFloat? {
         let at = min(max(position, 0), CGFloat(max(count - 1, 0)))
         let lower = Int(at.rounded(.down))
-        guard let a = pageHeights[lower], let b = pageHeights[min(lower + 1, count - 1)] else { return nil }
+        guard let a = shownHeight(lower), let b = shownHeight(min(lower + 1, count - 1)) else { return nil }
         return a + (b - a) * (at - CGFloat(lower))
+    }
+
+    /// A page's height in the card: all of it, up to the cap.
+    private func shownHeight(_ index: Int) -> CGFloat? {
+        pageHeights[index].map { min($0, maxPageHeight) }
+    }
+
+    /// A page taller than the cap scrolls on its own, inside the pager.
+    /// Other's field opens at the bottom, so opening it scrolls it in.
+    private func pageScroll(_ index: Int, _ item: QuestionItem) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                questionPage(index, item)
+                    .padding(.horizontal, 16)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                        pageHeights[index] = $0
+                    }
+            }
+            .frame(height: shownHeight(index))
+            .scrollBounceBehavior(.basedOnSize)
+            .onScrollGeometryChange(for: HiddenEdges.self) { geometry in
+                let top = geometry.contentOffset.y + geometry.contentInsets.top
+                return HiddenEdges(
+                    top: top > 1,
+                    bottom: top + geometry.containerSize.height < geometry.contentSize.height - 1)
+            } action: { _, edges in
+                pageEdges[index] = edges
+            }
+            .mask { EdgeFade(edges: pageEdges[index] ?? HiddenEdges()) }
+            .scrollIndicatorsFlash(onAppear: true)
+            .onChange(of: draft.isOtherOn(question: index)) { _, on in
+                guard on else { return }
+                withAnimation(Motion.settle) { proxy.scrollTo(otherFieldID, anchor: .bottom) }
+            }
+        }
     }
 
     /// Mid-scroll the height follows the offset frame by frame; otherwise
@@ -192,6 +236,7 @@ private struct QuestionCard: View {
                 .background(.fill.tertiary, in: .rect(cornerRadius: 10))
                 .padding(.leading, OptionRow.labelInset)
                 .padding(.top, 2)
+                .id(otherFieldID)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -309,6 +354,28 @@ private struct QuestionCard: View {
         Task {
             await model.answer(question, conversation: conversationId)
             sending = false
+        }
+    }
+}
+
+private struct HiddenEdges: Equatable {
+    var top = false
+    var bottom = false
+}
+
+/// Fades a scrolling page out at an edge that has more content past it,
+/// instead of slicing a line of text in half.
+private struct EdgeFade: View {
+    let edges: HiddenEdges
+    private let depth: CGFloat = 24
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(edges.top ? 0 : 1), .black], startPoint: .top, endPoint: .bottom)
+                .frame(height: depth)
+            Color.black
+            LinearGradient(colors: [.black, .black.opacity(edges.bottom ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                .frame(height: depth)
         }
     }
 }

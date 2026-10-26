@@ -28,6 +28,9 @@ struct ConversationView: View {
     /// than from the row: a lazy row can be recycled while the sheet is up,
     /// and the sheet reads the run from each new snapshot to stay live.
     @State private var tracedRun: TracedRun?
+    /// The page's height inside the bars; caps how tall a question card's
+    /// page grows. Measured outside the bottom bar, whose height depends on it.
+    @State private var pageHeight: CGFloat?
 
     private var conversation: ConversationSnapshot? {
         model.snapshot?.conversation.flatMap { $0.id == conversationId ? $0 : nil }
@@ -149,6 +152,8 @@ struct ConversationView: View {
                     }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
+        .environment(\.questionPageMaxHeight, max((pageHeight ?? 800) * 0.4, 160))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .conversationSubtitle(subtitle)
@@ -447,9 +452,7 @@ private struct RunRow: View, Equatable {
                 ReplyBody(answer: cot.answer!, stream: stream)
             }
             if let failure {
-                Text(failure)
-                    .font(.callout)
-                    .foregroundStyle(.red)
+                RunFailureView(raw: failure)
             }
             if let retry {
                 Button("Retry", image: .rotateCw, action: retry)
@@ -468,6 +471,51 @@ private struct RunRow: View, Equatable {
             && lhs.todo == rhs.todo
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
+    }
+}
+
+/// Why a run died: the provider's status and message, with the raw error
+/// one tap away for a bug report or a closer look.
+private struct RunFailureView: View {
+    let raw: String
+    @State private var showsDetails = false
+
+    var body: some View {
+        let text = RunFailureText(raw)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(text.summary)
+                .font(.callout)
+                .foregroundStyle(.red)
+            if text.hasDetails {
+                HStack(spacing: 16) {
+                    Button {
+                        withAnimation(Motion.settle) { showsDetails.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(showsDetails ? "Hide details" : "Details")
+                            Image(.chevronDown)
+                                .imageScale(.small)
+                                .rotationEffect(.degrees(showsDetails ? 180 : 0))
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(.rect)
+                    }
+                    Button("Copy error", image: .copy) {
+                        UIPasteboard.general.string = raw
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                if showsDetails {
+                    Text(raw)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
     }
 }
 

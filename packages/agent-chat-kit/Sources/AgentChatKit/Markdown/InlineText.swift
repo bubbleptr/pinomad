@@ -5,7 +5,9 @@ import SwiftUI
 /// Inline Markdown as one attributed string, so a paragraph stays a single
 /// `Text`: it wraps, selects and scales with Dynamic Type as one.
 enum InlineText {
-    static func attributed(_ inline: MarkdownInline) -> AttributedString {
+    /// `font` is the text's own font, resolved: CJK quotes take its size
+    /// and weight in a CJK typeface.
+    static func attributed(_ inline: MarkdownInline, font: Font.Resolved) -> AttributedString {
         var result = AttributedString()
         for run in inline.runs {
             var string = AttributedString(run.text)
@@ -18,6 +20,10 @@ enum InlineText {
             if let link = run.link { string.link = link }
             if run.isCode { string.backgroundColor = Color.secondary.opacity(0.12) }
             if run.isPendingLink { string.foregroundColor = .accentColor }
+            if run.isCJKQuote {
+                string.font = .custom("PingFang SC", fixedSize: font.pointSize)
+                    .weight(run.isStrong ? .bold : font.weight)
+            }
             result += string
         }
         return result
