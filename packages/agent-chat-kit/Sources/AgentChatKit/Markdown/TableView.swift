@@ -29,7 +29,7 @@ struct TableView: View {
 
     private func cellText(_ inline: MarkdownInline, column: Int, header: Bool) -> some View {
         let base = font ?? .body
-        return SwiftUI.Text(InlineText.attributed(inline, font: (header ? base.weight(.semibold) : base).resolve(in: fontContext)))
+        return InlineText.text(inline, font: (header ? base.weight(.semibold) : base).resolve(in: fontContext))
             .gridColumnAlignment(alignment(of: column))
     }
 

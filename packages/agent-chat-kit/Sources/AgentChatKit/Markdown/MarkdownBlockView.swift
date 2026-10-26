@@ -10,11 +10,11 @@ struct MarkdownBlockView: View {
     var body: some View {
         switch content {
         case let .paragraph(inline):
-            SwiftUI.Text(InlineText.attributed(inline, font: (font ?? .body).resolve(in: fontContext)))
+            InlineText.text(inline, font: (font ?? .body).resolve(in: fontContext))
                 .fixedSize(horizontal: false, vertical: true)
                 .fadingTail()
         case let .heading(level, inline):
-            SwiftUI.Text(InlineText.attributed(inline, font: Self.font(ofHeading: level).resolve(in: fontContext)))
+            InlineText.text(inline, font: Self.font(ofHeading: level).resolve(in: fontContext))
                 .font(Self.font(ofHeading: level))
                 .fadingTail()
                 .padding(.top, level <= 2 ? 6 : 2)
@@ -39,6 +39,8 @@ struct MarkdownBlockView: View {
             SwiftUI.Text(html.trimmingCharacters(in: .newlines))
                 .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
+        case let .math(latex):
+            MathBlockView(latex: latex)
         case let .group(children):
             BlockStack(contents: children)
         }

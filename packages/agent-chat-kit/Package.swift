@@ -12,6 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.9.0"),
+        .package(url: "https://github.com/mgriebling/SwiftMath.git", exact: "1.7.3"),
     ],
     targets: [
         .target(
@@ -20,7 +21,7 @@ let package = Package(
         ),
         .target(
             name: "AgentChatKit",
-            dependencies: ["AgentChatCore"],
+            dependencies: ["AgentChatCore", .product(name: "SwiftMath", package: "SwiftMath")],
             resources: [.process("Resources")]
         ),
         .testTarget(name: "AgentChatCoreTests", dependencies: ["AgentChatCore"]),

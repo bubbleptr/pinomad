@@ -145,7 +145,7 @@ private func tree(of markup: any Markup) -> String {
 }
 
 private func trees(parsing text: String) -> [String] {
-    Document(parsing: text).blockChildren.map { tree(of: $0) }
+    Document(parsing: MathSyntax.protect(text)).blockChildren.map { tree(of: $0) }
 }
 
 /// Splits text into chunks of 1–8 characters; seed 0 means one character at a time.

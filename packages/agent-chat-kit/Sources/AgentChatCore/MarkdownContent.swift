@@ -13,15 +13,26 @@ public indirect enum MarkdownContent: Sendable, Equatable {
     case table(MarkdownTable)
     case thematicBreak
     case html(String)
+    /// A display formula, as TeX.
+    case math(String)
     /// A container whose children are all the block structure it has.
     case group([MarkdownContent])
 
     init(_ markup: any Markup) {
         switch markup {
         case let paragraph as Paragraph:
-            self = .paragraph(MarkdownInline(paragraph))
+            let inline = MarkdownInline(paragraph)
+            // A paragraph that is only `$$…$$` is the formula on its own line.
+            let shown = inline.runs.filter { !$0.text.allSatisfy(\.isWhitespace) }
+            if shown.count == 1, shown[0].math == .display {
+                self = .math(shown[0].text)
+            } else {
+                self = .paragraph(inline)
+            }
         case let heading as Heading:
             self = .heading(level: heading.level, text: MarkdownInline(heading))
+        case let code as CodeBlock where code.language == MathSyntax.fenceLanguage:
+            self = .math(code.code.trimmingCharacters(in: .newlines))
         case let code as CodeBlock:
             self = .codeBlock(language: code.language, code: code.code)
         case let list as UnorderedList:
@@ -63,7 +74,13 @@ public struct MarkdownInline: Sendable, Equatable {
         pendingLink: Bool = false,
         to runs: inout [MarkdownInlineRun]
     ) {
-        func run(_ text: String, code textIsCode: Bool = false, link runLink: URL? = link, pending pendingLink: Bool = pendingLink) {
+        func run(
+            _ text: String,
+            code textIsCode: Bool = false,
+            math: MarkdownMath? = nil,
+            link runLink: URL? = link,
+            pending pendingLink: Bool = pendingLink
+        ) {
             runs.append(MarkdownInlineRun(
                 text: text,
                 isStrong: strong,
@@ -72,7 +89,8 @@ public struct MarkdownInline: Sendable, Equatable {
                 isCode: textIsCode,
                 link: runLink,
                 isPendingLink: pendingLink,
-                isCJKQuote: false
+                isCJKQuote: false,
+                math: math
             ))
         }
 
@@ -84,7 +102,14 @@ public struct MarkdownInline: Sendable, Equatable {
         case is LineBreak:
             run("\n")
         case let codeMarkup as InlineCode:
-            run(codeMarkup.code, code: true)
+            switch codeMarkup.code.first {
+            case MathSyntax.inlineMark?:
+                run(String(codeMarkup.code.dropFirst()).trimmingCharacters(in: .whitespaces), math: .inline)
+            case MathSyntax.displayMark?:
+                run(String(codeMarkup.code.dropFirst()).trimmingCharacters(in: .whitespaces), math: .display)
+            default:
+                run(codeMarkup.code, code: true)
+            }
         case let html as InlineHTML:
             run(html.rawHTML)
         case let image as Markdown.Image:
@@ -139,11 +164,20 @@ public struct MarkdownInlineRun: Sendable, Equatable {
     /// font: the Latin font has these glyphs too, so fallback never picks
     /// the full-width ones on its own.
     public let isCJKQuote: Bool
+    /// A formula in the text, its TeX in `text`.
+    public let math: MarkdownMath?
 
     func with(text: String, isCJKQuote: Bool) -> Self {
         Self(text: text, isStrong: isStrong, isEmphasized: isEmphasized, isStrikethrough: isStrikethrough,
-             isCode: isCode, link: link, isPendingLink: isPendingLink, isCJKQuote: isCJKQuote)
+             isCode: isCode, link: link, isPendingLink: isPendingLink, isCJKQuote: isCJKQuote, math: math)
     }
+}
+
+public enum MarkdownMath: Sendable, Equatable {
+    /// `$…$`: set in text style, on the line.
+    case inline
+    /// `$$…$$` in the middle of a paragraph: display style, still on the line.
+    case display
 }
 
 /// Finds the quotation marks of Chinese and Japanese text: a quote next to
@@ -159,7 +193,8 @@ enum CJKQuotes {
     private static let singleQuotes: Set<Character> = ["\u{2018}", "\u{2019}"]
 
     static func mark(_ runs: [MarkdownInlineRun]) -> [MarkdownInlineRun] {
-        guard runs.contains(where: { !$0.isCode && $0.text.contains(where: quotes.contains) }) else { return runs }
+        guard runs.contains(where: { !$0.isCode && $0.math == nil && $0.text.contains(where: quotes.contains) })
+        else { return runs }
         // Neighbors cross run boundaries: `是**"组合"**` quotes inside bold.
         let characters = runs.map { Array($0.text) }
         let flat = characters.flatMap { $0 }
@@ -194,7 +229,7 @@ enum CJKQuotes {
         var result: [MarkdownInlineRun] = []
         for (run, chars) in zip(runs, characters) {
             defer { offset += chars.count }
-            guard !run.isCode else {
+            guard !run.isCode, run.math == nil else {
                 result.append(run)
                 continue
             }

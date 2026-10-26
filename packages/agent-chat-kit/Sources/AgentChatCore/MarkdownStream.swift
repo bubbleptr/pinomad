@@ -57,7 +57,7 @@ public struct MarkdownStream: Sendable {
 
     private mutating func reparseTail() {
         let tail = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
-        let children = Array(Document(parsing: String(tail)).blockChildren)
+        let children = Array(Document(parsing: MathSyntax.protect(String(tail))).blockChildren)
         // Until the last block's first line ends, it may still turn into an
         // item of the list before it ("3" becoming "3. "), so that block stays
         // open too.
@@ -74,7 +74,7 @@ public struct MarkdownStream: Sendable {
         if closedCount < children.count, let line = children[closedCount].range?.lowerBound.line {
             tailOffset += MarkdownLines.offset(ofLine: line, in: tail.utf8)
             let open = source[source.utf8.index(source.startIndex, offsetBy: tailOffset)...]
-            for markup in Document(parsing: Speculation.complete(String(open))).blockChildren {
+            for markup in Document(parsing: Speculation.complete(MathSyntax.protect(String(open)))).blockChildren {
                 kept.append(MarkdownBlock(id: kept.count, markup: markup, isClosed: false))
             }
         } else if children.isEmpty, !isFinished {
