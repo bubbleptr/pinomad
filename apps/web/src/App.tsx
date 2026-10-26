@@ -537,7 +537,7 @@ export function RemoteWorkbench({
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        <HostsFallback onRetry={() => setAttempt(attempt + 1)} />
+        <HostsFallback {...(hostKey === undefined ? {} : { onRetry: () => setAttempt(attempt + 1) })} />
       </Centered>
     );
   }
