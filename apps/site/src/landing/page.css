@@ -174,17 +174,17 @@ code {
 }
 
 /* —— Header ——
-   Matches the Fumadocs bar on docs, blog, and changelog: same width, height, and
-   brand size, links beside the brand, language and GitHub at the far end, so
-   following a header link leaves everything in place. */
+   A plain sticky bar, laid out like the Fumadocs bar on blog and changelog: same
+   width, height, and brand size, links beside the brand, language, GitHub and the
+   app link at the far end, so following a header link leaves everything in place. */
 .site-header {
-  --pill-blur: 16px;
-  --pill-tint: 62%;
-  --pill-saturate: 160%;
-  --pill-offset: 8px;
-  --pill-enter: 450ms;
-  --pill-exit: 315ms;
-  --pill-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
   color: var(--fg);
 }
 
@@ -197,52 +197,8 @@ code {
   padding-inline: 1rem;
 }
 
-/* SiteHeader turns stickiness on once hydrated; without JS the header stays at the top of the
-   page as a plain bar instead of a see-through one over the copy. */
-.site-header[data-sticky] {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-html:has(.site-header[data-sticky]) section[id] {
+section[id] {
   scroll-margin-top: 5rem;
-}
-
-/* Once the page moves, a frosted pill grows in behind the bar's own content,
-   reaching 10px past it, so nothing in the bar changes place. Fade and shape
-   share one duration and curve; a taller start or a faster fade read as a jump. */
-.site-header[data-sticky] .header-bar {
-  position: relative;
-  z-index: 0;
-}
-
-.site-header[data-sticky] .header-bar::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: var(--pill-offset) 6px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--surface) var(--pill-tint), transparent);
-  -webkit-backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
-  backdrop-filter: blur(var(--pill-blur)) saturate(var(--pill-saturate));
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 10px 30px rgb(0 0 0 / 0.35);
-  opacity: 0;
-  scale: 1.02 1;
-  pointer-events: none;
-  transition:
-    opacity var(--pill-exit) var(--pill-ease),
-    scale var(--pill-exit) var(--pill-ease);
-}
-
-.site-header.is-floating .header-bar::before {
-  opacity: 1;
-  scale: 1;
-  transition:
-    opacity var(--pill-enter) var(--pill-ease),
-    scale var(--pill-enter) var(--pill-ease);
 }
 
 .brand {
@@ -283,8 +239,34 @@ html:has(.site-header[data-sticky]) section[id] {
   transition: color 0.15s ease;
 }
 
-:is(.header-nav, .header-actions) a:not(.star-link) {
+:is(.header-nav, .header-actions) a:not(.app-link) {
   padding: 0.5rem;
+}
+
+.icon-link {
+  display: inline-flex;
+}
+
+.icon-link .icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* The one bordered item in the bar: where a returning visitor goes next. */
+.header-actions .app-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  margin-inline-start: 0.25rem;
+  padding: 0.35rem 0.95rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.header-actions .app-link:hover {
+  border-color: var(--fg-3);
 }
 
 :is(.header-nav, .header-actions) a:hover {
@@ -379,25 +361,6 @@ html[lang="zh-CN"] .eyebrow {
 
 .text-link:hover {
   color: var(--fg);
-}
-
-/* The quiet star prompt in the header. Never a count. */
-.star-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 2.25rem;
-  padding: 0.35rem 0.85rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-}
-
-.header-actions .star-link {
-  color: var(--fg);
-}
-
-.header-actions .star-link:hover {
-  border-color: var(--fg-3);
 }
 
 /* —— Hero —— */
@@ -1427,29 +1390,9 @@ html[lang="zh-CN"] .hero h1 {
   }
 }
 
-/* Brand and links on the left, language and star on the right: the star drops its
-   words before the two groups meet; on phones the optional links go and the star
-   keeps only its icon. */
-@media (max-width: 45rem) {
-  .star-text {
-    display: none;
-  }
-}
-
+/* On phones the page links go; brand on the left, language, GitHub and the app on the right. */
 @media (max-width: 40rem) {
   .header-nav {
-    margin-inline-start: 1rem;
-  }
-
-  .header-nav .nav-optional {
-    display: none;
-  }
-
-  .header-actions .star-link {
-    padding-inline: 0.6rem;
-  }
-
-  .star-label {
     display: none;
   }
 }
