@@ -458,8 +458,53 @@ html[lang="zh-CN"] .hero h1 {
   color: var(--fg-2);
 }
 
-.hero-shot {
+/* The window and the phone share one grid cell: the window leaves room at the right
+   and bottom, the phone sits in that corner and overlaps it. The margins are
+   percentages of the stage's width, so the composition scales as one picture. */
+.hero-stage {
+  display: grid;
   margin-top: clamp(2.5rem, 6vw, 3.5rem);
+}
+
+.hero-stage > * {
+  grid-area: 1 / 1;
+}
+
+.hero-shot {
+  margin: 0 7% 11% 0;
+}
+
+/* Doubled class: .shot-phone, later in the file, sets its own width and margins. */
+.hero-phone.shot-phone {
+  z-index: 1;
+  align-self: end;
+  justify-self: end;
+  width: 30%;
+  margin: 0;
+  border-color: var(--border-strong);
+  border-radius: 17% / 7.8%;
+  box-shadow: 0 2rem 4rem -1.5rem rgb(0 0 0 / 0.8);
+}
+
+@media (min-width: 40rem) {
+  .hero-phone.shot-phone {
+    width: 21%;
+  }
+}
+
+.hero-phone .sk-phone {
+  padding: 22% 9% 10%;
+}
+
+.hero-phone .shot-label {
+  padding: 0.75rem;
+  font-size: clamp(0.65rem, 1.2vw, 0.8rem);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-phone {
+    animation: float 7s var(--ease-in-out) infinite;
+  }
 }
 
 /* Keeps the Chinese h1's first clause on one line — but only when it fits. The
@@ -627,7 +672,7 @@ html[lang="zh-CN"] .hero h1 {
 }
 
 /* —— How it works: a bento of the three core claims. The durable demo needs the
-   full width; the machine and the phone share the row below it. —— */
+   full width; the machine diagram and the clients share the row below it. —— */
 .bento {
   display: grid;
   gap: 1rem;
@@ -643,7 +688,7 @@ html[lang="zh-CN"] .hero h1 {
     grid-column: 1 / -1;
   }
 
-  .cell-anywhere {
+  .cell-machine {
     grid-column: span 2;
   }
 }
@@ -669,55 +714,278 @@ html[lang="zh-CN"] .hero h1 {
   margin-top: 0.75rem;
 }
 
-/* The placeholder grows to the height the phone gives the row. */
 .cell-machine .shot {
   flex: 1;
   min-height: 12rem;
 }
 
-.cell-anywhere {
-  display: grid;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.cell-anywhere .shot-phone {
-  width: min(12.5rem, 100%);
-  margin-top: 0;
-}
-
-/* A fixed phone column: a percentage width can't size an auto track. */
-@media (min-width: 40rem) {
-  .cell-anywhere {
-    grid-template-columns: minmax(0, 1fr) 12.5rem;
-    gap: 2rem;
-  }
-}
-
-.durable-demo {
-  margin-top: 0.75rem;
+.cell .chips {
+  margin-top: auto;
+  padding-top: 0.75rem;
 }
 
 .section-link {
   margin-top: 1.75rem;
 }
 
-.diagram-scroll {
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
+/* —— The durable demo: one task, two runs, one crash. Row states are classes the
+   effect swaps (durable.tsx); every row is always in the layout, so nothing moves
+   while it plays. —— */
+.durable-demo {
+  margin-top: 0.75rem;
 }
 
-.diagram-scroll > svg {
-  display: block;
-  width: 100%;
-  height: auto;
+.run-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+  color: var(--fg-2);
+  font-size: 0.8rem;
 }
 
-@media (max-width: 44rem) {
-  .diagram-scroll > svg {
-    width: 44rem;
-    max-width: none;
+.host-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1.5px solid var(--fg);
+  border-radius: 50%;
+  background: var(--fg);
+  transition: background-color 0.2s ease;
+}
+
+.host-down,
+.is-offline .host-up {
+  display: none;
+}
+
+.is-offline .host-down {
+  display: inline;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.is-offline .host-dot {
+  background: transparent;
+  animation: blink 0.5s steps(2, jump-none) 3;
+}
+
+.runs {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* The crash itself: one badge across both runs, because it's the same host. */
+.run-crash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  translate: -50% -50%;
+  scale: 0.85;
+  transition: opacity 0.2s ease, scale 0.2s ease;
+  pointer-events: none;
+}
+
+.run-crash svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+.is-offline .run-crash {
+  opacity: 1;
+  scale: 1;
+  animation: shake 0.4s var(--ease-out);
+}
+
+@media (min-width: 44rem) {
+  .runs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.run-pane {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 0.25rem);
+  background: var(--bg);
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.run-durable {
+  border-color: var(--border-strong);
+}
+
+.is-offline .run-pane {
+  opacity: 0.4;
+}
+
+.run-label {
+  margin-bottom: 0.6rem;
+  color: var(--fg-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.run-durable .run-label {
+  color: var(--fg);
+}
+
+.run-rows {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-row {
+  display: grid;
+  grid-template-columns: 1rem 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  transition: opacity 0.3s ease, background-color 0.4s ease, color 0.4s ease;
+}
+
+.run-tool {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.run-detail {
+  overflow: hidden;
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-tag {
+  display: none;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--fg-2);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.is-lost .tag-lost,
+.is-kept .tag-kept,
+.is-cut .tag-cut,
+.run-row:not(.is-pending) .tag-rerun {
+  display: inline-block;
+}
+
+.run-mark {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.run-mark > * {
+  display: none;
+}
+
+.is-running .mark-spin {
+  display: inline;
+  stroke-dasharray: 26 12;
+  transform-origin: center;
+  animation: spin 0.9s linear infinite;
+}
+
+.is-done .mark-done,
+.is-kept .mark-done,
+.is-lost .mark-done {
+  display: inline;
+}
+
+.is-cut .mark-cut {
+  display: inline;
+}
+
+.run-row.is-pending {
+  opacity: 0;
+}
+
+.run-row.is-cut,
+.run-row.is-cut .run-detail {
+  color: var(--fg-3);
+}
+
+.is-cut .run-mark {
+  stroke: var(--fg-3);
+}
+
+/* Lost work fades and is struck through; kept work is the bright part of the picture. */
+.run-row.is-lost {
+  opacity: 0.45;
+}
+
+.is-lost .run-tool,
+.is-lost .run-detail {
+  text-decoration: line-through;
+}
+
+.is-lost .run-mark {
+  stroke: var(--fg-3);
+}
+
+.run-row.is-kept {
+  background: var(--surface-2);
+  animation: kept 1.4s var(--ease-out);
+}
+
+.is-kept .tag-kept {
+  border-color: var(--fg-2);
+  color: var(--fg);
+}
+
+.run-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 1.9rem;
+  color: var(--fg-3);
+  font-size: 0.75rem;
+  transition: opacity 0.3s ease;
+}
+
+.run-divider::before,
+.run-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.run-durable .run-divider {
+  color: var(--fg-2);
+}
+
+.run-divider.is-pending {
+  opacity: 0;
 }
 
 .diagram-controls {
@@ -731,146 +999,10 @@ html[lang="zh-CN"] .hero h1 {
 }
 
 .diagram-status {
+  flex: 1 1 16rem;
   min-height: 1.6em;
   color: var(--fg-2);
   font-size: 0.9rem;
-}
-
-.track {
-  fill: none;
-  stroke: var(--border-strong);
-  stroke-width: 2;
-}
-
-.start-cap {
-  fill: var(--surface);
-  stroke: var(--border-strong);
-  stroke-width: 2;
-}
-
-.trail {
-  fill: none;
-  stroke: var(--fg);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 840;
-  stroke-dashoffset: 0;
-}
-
-.trail.is-retracting {
-  transition: stroke-dashoffset 0.45s var(--ease-in-out);
-}
-
-.nodes circle {
-  fill: var(--surface);
-  stroke: var(--fg-3);
-  stroke-width: 2;
-}
-
-.finish circle {
-  fill: var(--fg);
-}
-
-.finish path {
-  fill: none;
-  stroke: var(--bg);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.node-labels text {
-  fill: var(--fg-3);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  text-anchor: middle;
-}
-
-html[lang="zh-CN"] .node-labels text {
-  font-family: var(--font);
-}
-
-.flag {
-  transform-origin: 0% 100%;
-  transition: transform 0.35s var(--ease-out), opacity 0.2s ease;
-}
-
-.flag.is-down {
-  opacity: 0;
-  transform: scaleY(0);
-}
-
-.flag-pole {
-  fill: none;
-  stroke: var(--fg-2);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-}
-
-.flag-cloth {
-  fill: var(--fg);
-}
-
-.crash,
-.resume {
-  transition: opacity 0.25s ease;
-}
-
-.crash.is-hidden,
-.resume.is-hidden {
-  opacity: 0;
-}
-
-.crash:not(.is-hidden) .bolt {
-  animation: pop 0.4s var(--ease-out);
-}
-
-.bolt {
-  fill: var(--fg);
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.art-note {
-  fill: var(--fg-2);
-  font-size: 15px;
-  text-anchor: middle;
-}
-
-.resume-arc,
-.resume-head {
-  fill: none;
-  stroke: var(--fg-2);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.resume-arc {
-  stroke-dasharray: 0 7;
-}
-
-.runner {
-  transform: translateX(900px);
-  transition: opacity 0.3s ease;
-}
-
-.runner.is-down {
-  opacity: 0.2;
-}
-
-.runner-dot {
-  fill: var(--fg);
-}
-
-.runner-halo {
-  fill: none;
-  stroke: var(--fg);
-  stroke-opacity: 0.25;
-  stroke-width: 2;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: halo 1.6s ease-out infinite;
 }
 
 /* —— Named agents —— */
@@ -1138,24 +1270,47 @@ html[lang="zh-CN"] .node-labels text {
 }
 
 /* —— Keyframes —— */
-@keyframes pop {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.6);
-  }
-  60% {
-    transform: scale(1.05);
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
   }
 }
 
-@keyframes halo {
-  from {
-    transform: scale(0.6);
-    stroke-opacity: 0.5;
+@keyframes shake {
+  25% {
+    translate: calc(-50% - 6px) -50%;
   }
+  50% {
+    translate: calc(-50% + 5px) -50%;
+  }
+  75% {
+    translate: calc(-50% - 3px) -50%;
+  }
+}
+
+/* A kept row lights up as the run comes back, then settles. */
+@keyframes kept {
+  from {
+    background-color: var(--border-strong);
+  }
+}
+
+@keyframes blink {
   to {
-    transform: scale(1.4);
-    stroke-opacity: 0;
+    opacity: 0.2;
+  }
+}
+
+/* A slow bob with a hint of tilt, so the phone reads as held rather than pasted on. */
+@keyframes float {
+  0%,
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  50% {
+    translate: 0 -0.6rem;
+    rotate: -0.6deg;
   }
 }
 

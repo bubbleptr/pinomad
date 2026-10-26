@@ -35,10 +35,10 @@ function Placeholder({ caption, className = "shot-diagram" }: { caption: string;
   );
 }
 
-/** Stands in for an iPhone screenshot: deliberately abstract, never a fake UI. */
-function PhonePlaceholder({ caption }: { caption: string }) {
+/** Stands in for the iPhone mockup: deliberately abstract, never a fake UI. */
+function PhonePlaceholder({ caption, className }: { caption: string; className: string }) {
   return (
-    <figure className="shot shot-phone">
+    <figure className={`shot shot-phone ${className}`}>
       <div className="shot-skeleton sk-phone" aria-hidden="true">
         <span className="sk-line w55" />
         <div className="sk-main">
@@ -70,17 +70,21 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             {t.github}
           </a>
         </div>
-        <figure className="shot shot-window hero-shot">
-          <img
-            src={image.src}
-            srcSet={image.srcSet}
-            sizes="(min-width: 72rem) 68rem, 100vw"
-            width="2400"
-            height="1500"
-            alt={t.shotAlt}
-            fetchPriority="high"
-          />
-        </figure>
+        {/* The desktop window with the phone floating in front of it: the two screens people look at first. */}
+        <div className="hero-stage">
+          <figure className="shot shot-window hero-shot">
+            <img
+              src={image.src}
+              srcSet={image.srcSet}
+              sizes="(min-width: 72rem) 68rem, 100vw"
+              width="2400"
+              height="1500"
+              alt={t.shotAlt}
+              fetchPriority="high"
+            />
+          </figure>
+          <PhonePlaceholder caption={t.phonePlaceholder} className="hero-phone" />
+        </div>
         <div className="models">
           <span className="models-label">{t.modelsLabel}</span>
           <ul>
@@ -118,11 +122,15 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
             <Placeholder caption={t.machine.placeholder} />
           </article>
           <article className="cell cell-anywhere">
-            <div>
-              <h3>{t.anywhere.title}</h3>
-              <p>{t.anywhere.body}</p>
-            </div>
-            <PhonePlaceholder caption={t.anywhere.placeholder} />
+            <h3>{t.anywhere.title}</h3>
+            <p>{t.anywhere.body}</p>
+            <ul className="chips">
+              {t.anywhere.clients.map((client) => (
+                <li key={client} className="chip">
+                  {client}
+                </li>
+              ))}
+            </ul>
           </article>
         </div>
         <p className="section-link">

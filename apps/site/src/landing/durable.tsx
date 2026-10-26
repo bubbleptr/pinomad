@@ -1,239 +1,207 @@
-import { type Ref, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button.tsx";
 import type { LandingCopy } from "./copy.tsx";
 
-// One run as a track: each finished model or tool call plants a flag (a Pi
-// Durable checkpoint). The markup is the finished story, a crash between two
-// steps and the run resuming from the last flag, so it reads before hydration;
-// the effect turns it into a run the visitor can start and pull the plug on.
-// The run resumes from the last flag it planted, never from the crash point and
-// never from the start once a flag is down: that's the claim the diagram makes.
+// The same task run twice, side by side, and one host crash that hits both. The
+// run without checkpoints loses its finished calls and starts over; the Pi
+// Durable run keeps them and redoes only the call that was cut off. The point is
+// what survives, so the kept calls are what lights up after the restart.
+//
+// The markup is the finished story (after the restart, Pi Durable done, the other
+// run back at step 2), so it reads before hydration and with reduced motion. When
+// the demo starts below the first screen, the effect clears it and plays the
+// story once it scrolls into view; Replay plays it again.
 
-const FLAGS = [120, 240, 360, 480, 600, 720, 840];
-const STEPS = ["model", "bash", "model", "edit", "model", "bash", "model"] as const;
-const START = 60;
-const END = 900;
-const SPEED = 0.11; // viewBox units per ms: about 7.6 s for the whole run
-const BOLT_X = 664;
+type Row = { step: number; end: "lost" | "kept" | "cut" | "done" | "running"; tag?: keyof LandingCopy["durable"]["tags"] };
 
-type Phase = "idle" | "running" | "crashed" | "done";
+// Rows before the divider are the first attempt, rows after it the second.
+const BEFORE: Row["end"][] = ["done", "done", "done", "cut"];
+const PLAIN: Row[] = [
+  { step: 0, end: "lost", tag: "lost" },
+  { step: 1, end: "lost", tag: "lost" },
+  { step: 2, end: "lost", tag: "lost" },
+  { step: 3, end: "cut", tag: "cut" },
+  { step: 0, end: "done" },
+  { step: 1, end: "running" },
+];
+const DURABLE: Row[] = [
+  { step: 0, end: "kept", tag: "kept" },
+  { step: 1, end: "kept", tag: "kept" },
+  { step: 2, end: "kept", tag: "kept" },
+  { step: 3, end: "cut", tag: "cut" },
+  { step: 3, end: "done", tag: "rerun" },
+  { step: 4, end: "done" },
+];
+const STATES = ["is-pending", "is-running", "is-done", "is-cut", "is-lost", "is-kept"] as const;
+const BEAT = 850; // ms from a call starting to the next one starting
+
+type Phase = "running" | "crashed" | "restarted" | "done";
 
 export function DurableDemo({ t }: { t: LandingCopy["durable"] }) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const clickRef = useRef<() => void>(undefined);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const playRef = useRef<() => void>(undefined);
   const [ready, setReady] = useState(false);
-  const [label, setLabel] = useState(t.start);
-  const [status, setStatus] = useState("");
-  const [disabled, setDisabled] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [phase, setPhase] = useState<Phase>("done");
 
-  // Everything below writes through classes, SVG attributes, and the CSSOM
-  // (el.style.x = …): allowed under the page's style-src 'self', unlike a
-  // style prop, which the prerender would write out as style="".
+  // Everything below writes through classes, never a style prop, so the
+  // prerendered page keeps its hash-only style-src.
   useEffect(() => {
-    const svg = svgRef.current!;
-    const scroller = scrollerRef.current!;
-    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
-    const find = <T extends Element>(selector: string) => svg.querySelector<T>(selector)!;
-    const runner = find<SVGGElement>(".runner");
-    const trail = find<SVGPathElement>(".trail");
-    const crash = find<SVGGElement>(".crash");
-    const resume = find<SVGGElement>(".resume");
-    const resumeArc = find<SVGPathElement>(".resume-arc");
-    const resumeHead = find<SVGPathElement>(".resume-head");
-    const resumeNote = find<SVGTextElement>(".resume .art-note");
-    const flags = [...svg.querySelectorAll<SVGGElement>(".flag")].map((el, i) => ({ el, x: FLAGS[i]! }));
-
-    let phase: Phase = "idle";
-    let x = END;
-    let planted = 0;
-    let crashes = 0;
-    let last = 0;
-    let frame = 0;
+    const root = rootRef.current!;
+    const panes = [...root.querySelectorAll<HTMLElement>(".run-pane")];
+    const rows = panes.map((pane) => [...pane.querySelectorAll<HTMLElement>(".run-row")]);
+    const dividers = panes.map((pane) => pane.querySelector<HTMLElement>(".run-divider")!);
     const timers = new Set<ReturnType<typeof setTimeout>>();
-    const later = (fn: () => void, ms: number) => {
+    const at = (ms: number, fn: () => void) => {
       const id = setTimeout(() => {
         timers.delete(id);
         fn();
       }, ms);
       timers.add(id);
     };
-
-    // Keep the runner in view when the diagram is wider than its scroller (phones).
-    function follow(at: number) {
-      if (scroller.scrollWidth <= scroller.clientWidth) return;
-      const box = svg.viewBox.baseVal;
-      scroller.scrollLeft = (at / box.width) * svg.clientWidth - scroller.clientWidth / 2;
-    }
-
-    function lastFlagX() {
-      return planted ? flags[planted - 1]!.x : START;
-    }
-
-    // With reduced motion the runner steps from flag to flag instead of gliding.
-    function place() {
-      const shown = reduceMotion.matches && x < END ? lastFlagX() : x;
-      runner.style.transform = `translateX(${shown}px)`;
-      trail.style.strokeDashoffset = String(END - shown);
-      follow(shown);
-    }
-
-    function tick(now: number) {
-      x = Math.min(END, x + (now - last) * SPEED);
-      last = now;
-      while (planted < flags.length && x >= flags[planted]!.x) {
-        flags[planted]!.el.classList.remove("is-down");
-        planted += 1;
-      }
-      place();
-      if (x >= END) finish();
-      else frame = requestAnimationFrame(tick);
-    }
-
-    function run() {
-      phase = "running";
-      setLabel(t.pull);
-      setDisabled(false);
-      setStatus(t.running);
-      last = performance.now();
-      frame = requestAnimationFrame(tick);
-    }
-
-    function start() {
-      x = START;
-      planted = 0;
-      crashes = 0;
-      for (const flag of flags) flag.el.classList.add("is-down");
-      crash.classList.add("is-hidden");
-      resume.classList.add("is-hidden");
-      runner.classList.remove("is-down");
-      place();
-      run();
-    }
-
-    function pull() {
-      cancelAnimationFrame(frame);
-      phase = "crashed";
-      crashes += 1;
-      setDisabled(true);
-      setStatus(t.crashed);
-
-      const crashX = x;
-      const resumeX = lastFlagX();
-      crash.style.transform = `translateX(${crashX - BOLT_X}px)`;
-      crash.classList.remove("is-hidden");
-      resume.classList.add("is-hidden");
-      runner.classList.add("is-down");
-      trail.classList.add("is-retracting");
-      trail.style.strokeDashoffset = String(END - resumeX);
-
-      later(() => {
-        trail.classList.remove("is-retracting");
-        resumeArc.setAttribute("d", `M${crashX} 232 C ${crashX - 8} 270, ${resumeX + 8} 270, ${resumeX + 2} 236`);
-        resumeHead.setAttribute("d", `M${resumeX - 4} 244 L ${resumeX + 2} 233 L ${resumeX + 11} 242`);
-        resumeNote.setAttribute("x", String((crashX + resumeX) / 2));
-        resume.classList.toggle("is-hidden", crashX - resumeX < 4);
-        x = resumeX;
-        place();
-        runner.classList.remove("is-down");
-        setStatus(planted ? t.resumed(planted) : t.restartedEmpty);
-        later(run, 900);
-      }, 1100);
-    }
-
-    function finish() {
-      phase = "done";
-      setLabel(t.again);
-      setStatus(crashes ? t.done : t.doneClean);
-    }
-
-    clickRef.current = () => {
-      if (phase === "running") pull();
-      else if (phase !== "crashed") start();
+    const set = (row: HTMLElement, state: (typeof STATES)[number]) => {
+      row.classList.remove(...STATES);
+      row.classList.add(state);
     };
-    follow(640); // phones: open on the crash, the point of the story
+    // The same row index in both panes: the first attempt is identical in both.
+    const both = (i: number, state: (typeof STATES)[number]) => {
+      for (const pane of rows) set(pane[i]!, state);
+    };
+
+    function play() {
+      for (const id of timers) clearTimeout(id);
+      timers.clear();
+      for (const pane of rows) for (const row of pane) set(row, "is-pending");
+      for (const divider of dividers) divider.classList.add("is-pending");
+      root.classList.remove("is-offline");
+      setPlaying(true);
+      setPhase("running");
+
+      // First attempt: three calls finish, the fourth is in flight when the host dies.
+      BEFORE.forEach((end, i) => {
+        at(300 + i * BEAT, () => both(i, "is-running"));
+        if (end === "done") at(300 + i * BEAT + BEAT * 0.7, () => both(i, "is-done"));
+      });
+      const crash = 300 + 3 * BEAT + BEAT;
+      at(crash, () => {
+        both(3, "is-cut");
+        root.classList.add("is-offline");
+        setPhase("crashed");
+      });
+
+      // Restart: the plain run's finished calls are gone, Pi Durable's are still there.
+      const restart = crash + 1600;
+      at(restart, () => {
+        root.classList.remove("is-offline");
+        for (const divider of dividers) divider.classList.remove("is-pending");
+        for (let i = 0; i < 3; i += 1) {
+          set(rows[0]![i]!, "is-lost");
+          set(rows[1]![i]!, "is-kept");
+        }
+        setPhase("restarted");
+      });
+
+      // Second attempt, both panes in step: rows 4 and 5.
+      const resume = restart + 1100;
+      for (let i = 4; i < 6; i += 1) {
+        const start = resume + (i - 4) * BEAT;
+        at(start, () => both(i, "is-running"));
+        for (const [p, pane] of [PLAIN, DURABLE].entries()) {
+          if (pane[i]!.end === "done") at(start + BEAT * 0.7, () => set(rows[p]![i]!, "is-done"));
+        }
+      }
+      at(resume + 2 * BEAT, () => {
+        setPhase("done");
+        setPlaying(false);
+      });
+    }
+
+    playRef.current = play;
     setReady(true);
-    setLabel(t.start);
-    setDisabled(false);
-    setStatus(t.idle);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    // Only clear the finished story while it's off screen, so nothing visible jumps.
+    let observer: IntersectionObserver | undefined;
+    if (root.getBoundingClientRect().top >= innerHeight) {
+      for (const pane of rows) for (const row of pane) set(row, "is-pending");
+      for (const divider of dividers) divider.classList.add("is-pending");
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (!entry?.isIntersecting) return;
+          observer?.disconnect();
+          play();
+        },
+        { threshold: 0.5 },
+      );
+      // The Pi Durable pane: beside the other on wide screens, below it on phones,
+      // so once it's half in view the whole story is.
+      observer.observe(panes[1]!);
+    }
 
     return () => {
-      cancelAnimationFrame(frame);
+      observer?.disconnect();
       for (const id of timers) clearTimeout(id);
     };
-  }, [t]);
+  }, []);
 
   return (
-    <div className="durable-demo">
-      <div className="diagram-scroll" ref={scrollerRef}>
-        <DurableArt t={t} svgRef={svgRef} />
-      </div>
+    <div className="durable-demo" ref={rootRef}>
       <p className="visually-hidden">{t.description}</p>
+      <div className="run-host" aria-hidden="true">
+        <span className="host-dot" />
+        <span className="host-state host-up">{t.host.up}</span>
+        <span className="host-state host-down">{t.host.down}</span>
+      </div>
+      <div className="runs" aria-hidden="true">
+        <RunPane t={t} label={t.plain} rows={PLAIN} restart={t.restartPlain} />
+        <RunPane t={t} label={t.durable} rows={DURABLE} restart={t.restartDurable} durable />
+        <p className="run-crash">
+          <svg viewBox="0 0 16 16" focusable="false">
+            <path d="M9.5 1 L3 9 H7.5 L6.5 15 L13 7 H8.5 Z" />
+          </svg>
+          {t.host.down}
+        </p>
+      </div>
       <div className="diagram-controls">
-        <Button size="sm" hidden={!ready} disabled={disabled} onClick={() => clickRef.current?.()}>
-          {label}
+        <Button size="sm" variant="quiet" hidden={!ready} disabled={playing} onClick={() => playRef.current?.()}>
+          {t.replay}
         </Button>
         <p className="diagram-status" aria-live="polite">
-          {status}
+          {t.status[phase]}
         </p>
       </div>
     </div>
   );
 }
 
-function DurableArt({ t, svgRef }: { t: LandingCopy["durable"]; svgRef: Ref<SVGSVGElement> }) {
+function RunPane({ t, label, rows, restart, durable }: { t: LandingCopy["durable"]; label: string; rows: Row[]; restart: string; durable?: boolean }) {
   return (
-    <svg ref={svgRef} className="durable-art" viewBox="0 56 960 248" aria-hidden="true" focusable="false">
-      <path className="track" d="M60 180 H 900" />
-      <circle className="start-cap" cx="60" cy="180" r="6" />
-      <path className="trail" d="M60 180 H 900" />
-
-      <g className="flags">
-        {FLAGS.map((x) => (
-          <g key={x} className="flag">
-            <path className="flag-pole" d={`M${x} 170 V 118`} />
-            <path className="flag-cloth" d={`M${x} 118 L ${x + 26} 127 L ${x} 136 Z`} />
-          </g>
+    <figure className={durable ? "run-pane run-durable" : "run-pane"}>
+      <figcaption className="run-label">{label}</figcaption>
+      <ol className="run-rows">
+        {rows.map((row, i) => (
+          <Fragment key={i}>
+            {i === 4 && <li className="run-divider">{restart}</li>}
+            <li className={`run-row is-${row.end}`}>
+              <RunMark />
+              <span className="run-tool">{t.steps[row.step]!.tool}</span>
+              <span className="run-detail">{t.steps[row.step]!.detail}</span>
+              {row.tag && <span className={`run-tag tag-${row.tag}`}>{t.tags[row.tag]}</span>}
+            </li>
+          </Fragment>
         ))}
-      </g>
+      </ol>
+    </figure>
+  );
+}
 
-      <g className="nodes">
-        {FLAGS.map((x) => (
-          <circle key={x} cx={x} cy="180" r="7" />
-        ))}
-      </g>
-      <g className="finish">
-        <circle cx="900" cy="180" r="12" />
-        <path d="M894 180 l4.5 4.5 l8 -9" />
-      </g>
-
-      <g className="node-labels">
-        {FLAGS.map((x, i) => (
-          <text key={x} x={x} y="214">
-            {STEPS[i] === "model" ? t.model : STEPS[i]}
-          </text>
-        ))}
-      </g>
-
-      {/* Crash mark and resume arc; the effect moves them to where the plug was pulled. */}
-      <g className="crash">
-        <path className="bolt" d="M668 96 L 650 134 L 662 134 L 646 172 L 682 124 L 669 124 L 682 96 Z" />
-        <text className="art-note" x="664" y="80">
-          {t.crash}
-        </text>
-      </g>
-      <g className="resume">
-        <path className="resume-arc" d="M660 232 C 652 270, 610 270, 602 236" />
-        <path className="resume-head" d="M596 244 L 602 233 L 611 242" />
-        <text className="art-note" x="630" y="294">
-          {t.resume}
-        </text>
-      </g>
-
-      <g className="runner">
-        <circle className="runner-halo" cx="0" cy="180" r="15" />
-        <circle className="runner-dot" cx="0" cy="180" r="8" />
-      </g>
+/** All three marks are drawn; the row's state class shows one. */
+function RunMark() {
+  return (
+    <svg className="run-mark" viewBox="0 0 16 16" focusable="false">
+      <circle className="mark-spin" cx="8" cy="8" r="6" />
+      <path className="mark-done" d="M3.5 8.5 L6.5 11.5 L12.5 4.5" />
+      <path className="mark-cut" d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5" />
     </svg>
   );
 }
