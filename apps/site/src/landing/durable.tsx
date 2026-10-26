@@ -43,6 +43,9 @@ export function DurableDemo({ t }: { t: LandingCopy["durable"] }) {
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [phase, setPhase] = useState<Phase>("done");
+  // Autoplay changes the status four times while someone scrolls past; only a
+  // run the visitor asked for (Replay) is announced.
+  const [announce, setAnnounce] = useState(false);
 
   // Everything below writes through classes, never a style prop, so the
   // prerendered page keeps its hash-only style-src.
@@ -122,7 +125,7 @@ export function DurableDemo({ t }: { t: LandingCopy["durable"] }) {
 
     // Only clear the finished story while it's off screen, so nothing visible jumps.
     let observer: IntersectionObserver | undefined;
-    if (root.getBoundingClientRect().top >= innerHeight) {
+    if (panes[1]!.getBoundingClientRect().top >= innerHeight) {
       for (const pane of rows) for (const row of pane) set(row, "is-pending");
       for (const divider of dividers) divider.classList.add("is-pending");
       observer = new IntersectionObserver(
@@ -155,18 +158,27 @@ export function DurableDemo({ t }: { t: LandingCopy["durable"] }) {
       <div className="runs" aria-hidden="true">
         <RunPane t={t} label={t.plain} rows={PLAIN} restart={t.restartPlain} />
         <RunPane t={t} label={t.durable} rows={DURABLE} restart={t.restartDurable} durable />
-        <p className="run-crash">
+        <div className="run-crash">
           <svg viewBox="0 0 16 16" focusable="false">
             <path d="M9.5 1 L3 9 H7.5 L6.5 15 L13 7 H8.5 Z" />
           </svg>
           {t.host.down}
-        </p>
+        </div>
       </div>
       <div className="diagram-controls">
-        <Button size="sm" variant="quiet" hidden={!ready} disabled={playing} onClick={() => playRef.current?.()}>
+        <Button
+          size="sm"
+          variant="quiet"
+          hidden={!ready}
+          disabled={playing}
+          onClick={() => {
+            setAnnounce(true);
+            playRef.current?.();
+          }}
+        >
           {t.replay}
         </Button>
-        <p className="diagram-status" aria-live="polite">
+        <p className="diagram-status" aria-live={announce ? "polite" : "off"}>
           {t.status[phase]}
         </p>
       </div>
