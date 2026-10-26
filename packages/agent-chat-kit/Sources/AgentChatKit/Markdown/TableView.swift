@@ -3,20 +3,22 @@ import SwiftUI
 
 struct TableView: View {
     let table: MarkdownTable
+    @Environment(\.font) private var font
+    @Environment(\.fontResolutionContext) private var fontContext
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     ForEach(Array(table.header.enumerated()), id: \.offset) { column, inline in
-                        cellText(inline, column: column).fontWeight(.semibold)
+                        cellText(inline, column: column, header: true).fontWeight(.semibold)
                     }
                 }
                 Divider()
                 ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { column, inline in
-                            cellText(inline, column: column)
+                            cellText(inline, column: column, header: false)
                         }
                     }
                 }
@@ -25,8 +27,9 @@ struct TableView: View {
         }
     }
 
-    private func cellText(_ inline: MarkdownInline, column: Int) -> some View {
-        SwiftUI.Text(InlineText.attributed(inline))
+    private func cellText(_ inline: MarkdownInline, column: Int, header: Bool) -> some View {
+        let base = font ?? .body
+        return SwiftUI.Text(InlineText.attributed(inline, font: (header ? base.weight(.semibold) : base).resolve(in: fontContext)))
             .gridColumnAlignment(alignment(of: column))
     }
 

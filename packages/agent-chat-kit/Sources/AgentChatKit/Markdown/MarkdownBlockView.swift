@@ -4,15 +4,17 @@ import SwiftUI
 /// One block of Markdown, recursing into lists and quotes.
 struct MarkdownBlockView: View {
     let content: MarkdownContent
+    @Environment(\.font) private var font
+    @Environment(\.fontResolutionContext) private var fontContext
 
     var body: some View {
         switch content {
         case let .paragraph(inline):
-            SwiftUI.Text(InlineText.attributed(inline))
+            SwiftUI.Text(InlineText.attributed(inline, font: (font ?? .body).resolve(in: fontContext)))
                 .fixedSize(horizontal: false, vertical: true)
                 .fadingTail()
         case let .heading(level, inline):
-            SwiftUI.Text(InlineText.attributed(inline))
+            SwiftUI.Text(InlineText.attributed(inline, font: Self.font(ofHeading: level).resolve(in: fontContext)))
                 .font(Self.font(ofHeading: level))
                 .fadingTail()
                 .padding(.top, level <= 2 ? 6 : 2)

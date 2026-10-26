@@ -50,7 +50,7 @@ public struct MarkdownInline: Sendable, Equatable {
     init(_ markup: any Markup) {
         var runs: [MarkdownInlineRun] = []
         Self.append(markup, to: &runs)
-        self.runs = runs
+        self.runs = CJKQuotes.mark(runs)
     }
 
     private static func append(
@@ -71,7 +71,8 @@ public struct MarkdownInline: Sendable, Equatable {
                 isStrikethrough: strikethrough,
                 isCode: textIsCode,
                 link: runLink,
-                isPendingLink: pendingLink
+                isPendingLink: pendingLink,
+                isCJKQuote: false
             ))
         }
 
@@ -134,6 +135,101 @@ public struct MarkdownInlineRun: Sendable, Equatable {
     public let link: URL?
     /// A link whose destination has not fully arrived: styled, not tappable.
     public let isPendingLink: Bool
+    /// A quotation mark set in Chinese or Japanese text, drawn with a CJK
+    /// font: the Latin font has these glyphs too, so fallback never picks
+    /// the full-width ones on its own.
+    public let isCJKQuote: Bool
+
+    func with(text: String, isCJKQuote: Bool) -> Self {
+        Self(text: text, isStrong: isStrong, isEmphasized: isEmphasized, isStrikethrough: isStrikethrough,
+             isCode: isCode, link: link, isPendingLink: isPendingLink, isCJKQuote: isCJKQuote)
+    }
+}
+
+/// Finds the quotation marks of Chinese and Japanese text: a quote next to
+/// a Han or kana character, or CJK punctuation, and the other end of its
+/// pair.
+///
+/// cmark's smart punctuation tells an opening quote from a closing one by
+/// the spaces around it, which CJK text doesn't have: `于是"组合"变成`
+/// comes out with two closing quotes. Double quotes found here take their
+/// direction from pairing the paragraph's quotes in order instead.
+enum CJKQuotes {
+    private static let quotes: Set<Character> = ["\"", "\u{201C}", "\u{201D}", "\u{2018}", "\u{2019}"]
+    private static let singleQuotes: Set<Character> = ["\u{2018}", "\u{2019}"]
+
+    static func mark(_ runs: [MarkdownInlineRun]) -> [MarkdownInlineRun] {
+        guard runs.contains(where: { !$0.isCode && $0.text.contains(where: quotes.contains) }) else { return runs }
+        // Neighbors cross run boundaries: `是**"组合"**` quotes inside bold.
+        let characters = runs.map { Array($0.text) }
+        let flat = characters.flatMap { $0 }
+        let inCode = zip(runs, characters).flatMap { run, chars in Array(repeating: run.isCode, count: chars.count) }
+        var shown: [Int: Character] = [:]
+        var cjk = Set<Int>()
+        // Pairing follows every double quote, so a pair cmark already got
+        // right keeps its direction and the ones after it stay in step. Only
+        // a quote touching CJK, where cmark has no spaces to go by, takes
+        // its direction from the pairing; the CJK font goes to both ends of
+        // a pair if either touches CJK.
+        var open: Int?
+        for at in flat.indices where !inCode[at] && quotes.contains(flat[at]) {
+            let character = flat[at]
+            let nearCJK = (at > 0 && isCJK(flat[at - 1])) || (at + 1 < flat.count && isCJK(flat[at + 1]))
+            guard !singleQuotes.contains(character) else {
+                if nearCJK { cjk.insert(at) }
+                continue
+            }
+            let opens = (nearCJK || character == "\"") ? open == nil : character == "\u{201C}"
+            if nearCJK { shown[at] = opens ? "\u{201C}" : "\u{201D}" }
+            if opens {
+                open = at
+                if nearCJK { cjk.insert(at) }
+            } else {
+                if let start = open, nearCJK || cjk.contains(start) { cjk.formUnion([start, at]) }
+                open = nil
+            }
+        }
+
+        var offset = 0
+        var result: [MarkdownInlineRun] = []
+        for (run, chars) in zip(runs, characters) {
+            defer { offset += chars.count }
+            guard !run.isCode else {
+                result.append(run)
+                continue
+            }
+            var segment = ""
+            var segmentIsQuote = false
+            func flush() {
+                if !segment.isEmpty { result.append(run.with(text: segment, isCJKQuote: segmentIsQuote)) }
+                segment = ""
+            }
+            for (index, character) in chars.enumerated() {
+                let at = offset + index
+                let isQuote = cjk.contains(at)
+                if isQuote != segmentIsQuote {
+                    flush()
+                    segmentIsQuote = isQuote
+                }
+                segment.append(shown[at] ?? character)
+            }
+            flush()
+        }
+        return result
+    }
+
+    /// Han, kana and the CJK and full-width punctuation around them. Hangul
+    /// is left out: Korean sets these quotes proportionally.
+    static func isCJK(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        switch scalar {
+        case 0x2E80...0x2FDF, 0x3000...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF,
+             0xF900...0xFAFF, 0xFF00...0xFFEF, 0x20000...0x323AF:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public struct MarkdownList: Sendable, Equatable {
