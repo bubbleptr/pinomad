@@ -99,6 +99,16 @@ fn to_core(host: &StoredHost) -> crate::stored_host::StoredHost {
             )
         }),
         endpoint_set: host.endpoint_set.as_ref().and_then(EndpointSet::to_core),
+        connection_mode: host
+            .connection_mode
+            .as_deref()
+            .and_then(|mode| match mode {
+                "directOnly" => Some(crate::connection_mode::ConnectionMode::DirectOnly),
+                "relayOnly" => Some(crate::connection_mode::ConnectionMode::RelayOnly),
+                "auto" => Some(crate::connection_mode::ConnectionMode::Auto),
+                _ => None,
+            }),
+        rtc_signal_only: host.rtc_signal_only.filter(|hint| *hint),
     }
 }
 
@@ -113,6 +123,8 @@ fn from_core(host: &crate::stored_host::StoredHost) -> StoredHost {
             host_id: link.host_id.clone(),
         }),
         endpoint_set: host.endpoint_set.as_ref().map(EndpointSet::from_core),
+        connection_mode: host.connection_mode.map(|mode| mode.as_str().to_string()),
+        rtc_signal_only: host.rtc_signal_only,
     }
 }
 

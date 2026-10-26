@@ -388,6 +388,8 @@ impl Harness {
             pairing_endpoint_set: None,
             candidate_timeouts,
             round_timeout_ms,
+            connection_mode: pinomad_core::connection_mode::ConnectionMode::Auto,
+            rtc: None,
         });
         let mut harness = Harness {
             remote,
@@ -489,7 +491,12 @@ impl Harness {
                 }
                 Command::ViewChanged
                 | Command::OperationSucceeded { .. }
-                | Command::OperationFailed { .. } => {}
+                | Command::OperationFailed { .. }
+                | Command::RtcSignalOnly { .. }
+                | Command::CreateRtcPeer { .. }
+                | Command::AcceptRtcAnswer { .. }
+                | Command::RtcSend { .. }
+                | Command::CloseRtcPeer { .. } => {}
             }
         }
     }

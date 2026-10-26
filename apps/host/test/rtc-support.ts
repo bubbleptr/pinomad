@@ -18,6 +18,11 @@ import {
   sdpCandidates,
   withRtcCandidates,
 } from "@pinomad/protocol/rtc.ts";
+import type {
+  RtcDataChannel,
+  RtcPeer,
+  RtcSendOutcome,
+} from "@pinomad/protocol/rtc-carrier.ts";
 
 const DEFAULT_FRAME_TIMEOUT_MS = 30_000;
 
@@ -374,6 +379,123 @@ export class RtcDataPeer {
       // The event may have fired between the check and the registration.
       if (this.#dc.bufferedAmount() < 256 * 1024) done();
     });
+  }
+}
+
+/** A node-datachannel Peer behind the platform RTC seam (coordinator E2E). */
+export class NodeRtcPeer implements RtcPeer {
+  readonly channel: RtcDataChannel;
+  readonly offerSdp: string;
+  readonly #pc: PeerConnection;
+  #closed = false;
+
+  private constructor(pc: PeerConnection, dc: DataChannel, offerSdp: string) {
+    this.#pc = pc;
+    this.offerSdp = offerSdp;
+    this.channel = new NodeRtcChannel(dc);
+  }
+
+  static async create(stun: readonly string[]): Promise<NodeRtcPeer> {
+    const pc = new ndc.PeerConnection(`pinomad-coordinator-${Math.random().toString(16).slice(2)}`, {
+      iceServers: [...stun],
+    });
+    try {
+      const gathered = await gatherOffer(pc, () => pc.createDataChannel(RTC_DATA_CHANNEL_LABEL));
+      gathered.dc.setBufferedAmountLowThreshold(64 * 1024);
+      return new NodeRtcPeer(pc, gathered.dc, gathered.offerSdp);
+    } catch (error) {
+      try {
+        pc.close();
+      } catch {
+        // already closed
+      }
+      throw error;
+    }
+  }
+
+  acceptAnswer(sdp: string): void {
+    this.#pc.setRemoteDescription(sdp, "answer");
+  }
+
+  selectedCandidateType(): string | undefined {
+    return this.#pc.getSelectedCandidatePair()?.local.type;
+  }
+
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.channel.close();
+    try {
+      this.#pc.close();
+    } catch {
+      // already closed
+    }
+  }
+}
+
+class NodeRtcChannel implements RtcDataChannel {
+  readonly #dc: DataChannel;
+  #opened = false;
+  #closed = false;
+  readonly #openListeners: (() => void)[] = [];
+  readonly #closeListeners: ((reason?: string) => void)[] = [];
+  readonly #messageListeners: ((record: Uint8Array) => void)[] = [];
+  readonly #lowListeners: (() => void)[] = [];
+
+  constructor(dc: DataChannel) {
+    this.#dc = dc;
+    dc.onOpen(() => {
+      this.#opened = true;
+      for (const listener of this.#openListeners.splice(0)) listener();
+    });
+    dc.onClosed(() => {
+      this.#closed = true;
+      for (const listener of this.#closeListeners.splice(0)) listener();
+    });
+    dc.onMessage((message) => {
+      const record = typeof message === "string"
+        ? new TextEncoder().encode(message)
+        : message instanceof ArrayBuffer
+          ? new Uint8Array(message)
+          : new Uint8Array(message.buffer, message.byteOffset, message.byteLength);
+      for (const listener of this.#messageListeners) listener(record);
+    });
+    dc.onBufferedAmountLow(() => {
+      for (const listener of this.#lowListeners) listener();
+    });
+  }
+
+  send(record: Uint8Array): RtcSendOutcome {
+    // node-datachannel false means "already queued", never "rejected".
+    return this.#dc.sendMessageBinary(record) ? "accepted" : "queued";
+  }
+
+  get bufferedAmount(): number {
+    return this.#dc.bufferedAmount();
+  }
+
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#dc.close();
+  }
+
+  onOpen(listener: () => void): void {
+    if (this.#opened) queueMicrotask(listener);
+    else this.#openListeners.push(listener);
+  }
+
+  onMessage(listener: (record: Uint8Array) => void): void {
+    this.#messageListeners.push(listener);
+  }
+
+  onClosed(listener: (reason?: string) => void): void {
+    if (this.#closed) queueMicrotask(() => listener());
+    else this.#closeListeners.push(listener);
+  }
+
+  onBufferedAmountLow(listener: () => void): void {
+    this.#lowListeners.push(listener);
   }
 }
 

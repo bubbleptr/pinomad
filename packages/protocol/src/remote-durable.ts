@@ -3,6 +3,7 @@ import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@e
 import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.ts";
 import type { ImageVariant, OutgoingImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
+import type { KeyPair } from "./noise.ts";
 import type { PresentationType } from "./presentation.ts";
 import {
   type CallMethod,
@@ -21,8 +22,22 @@ import {
   type StreamName,
   UNAUTHORIZED_CLOSE_CODE,
 } from "./frames.ts";
+import type { ConnectionMode } from "./connection-mode.ts";
 import { parseEndpointSet, type EndpointSet } from "./endpoints.ts";
-import { candidatePlan, type RemoteCandidate } from "./remote-candidates.ts";
+import {
+  candidatePlan,
+  DIRECT_UNAVAILABLE,
+  filterCandidatesForMode,
+  type RemoteCandidate,
+  signalCandidates,
+} from "./remote-candidates.ts";
+import {
+  rtcTransport,
+  type RtcClock,
+  type RtcPlatform,
+  SYSTEM_RTC_CLOCK,
+} from "./rtc-carrier.ts";
+import { isRtcHello, type RtcHello } from "./rtc.ts";
 import { type FrameConnection, type FrameHandlers, type FrameTransport, webSocketTransport } from "./transport.ts";
 import type {
   ConversationDefaults,
@@ -72,6 +87,45 @@ export interface CandidateFailure {
   readonly reason?: string;
 }
 
+/** The carrier actually carrying business frames right now. */
+export type ConnectionPath = "loopback" | "relay" | "direct" | "p2p";
+
+/** Where a P2P preparation attempt stopped; diagnostics only, never a 4401. */
+export type P2PFailureStage = "signal" | "ice" | "noise" | "warm" | "commit" | "liveness";
+
+export interface P2PFailure {
+  readonly stage: P2PFailureStage;
+  readonly reason?: string;
+}
+
+/** Live diagnostics for the connection-mode UI (ADR-0033 §5). */
+export interface RtcDiagnostics {
+  readonly path: ConnectionPath;
+  readonly phase: "idle" | "scheduled" | "signal" | "ice" | "noise" | "warm" | "active" | "cooldown";
+  readonly lastFailure?: P2PFailure;
+  readonly selectedCandidateType?: string;
+  /** Milliseconds until the next preparation attempt is allowed; 0 when ready. */
+  readonly cooldownRemainingMs: number;
+}
+
+/**
+ * The platform half of the RTC carrier (ADR-0033 §2). Supplying it is the
+ * capability declaration: a coordinator without `rtc` never creates a Peer,
+ * never sends `rtcOffer`, and never opens a signal-only connection.
+ */
+export interface RtcCoordinatorOptions {
+  readonly platform: RtcPlatform;
+  readonly hostKey: Uint8Array;
+  readonly device: KeyPair;
+  /** The stored `hello.rtc.signalOnly` hint; Direct only tries signaling only when true. */
+  readonly signalOnlyHint?: boolean;
+  /** Builds a signal-only WebSocket transport (SIGNAL_PROLOGUE) for Direct only. */
+  readonly openSignalTransport?: (candidate: RemoteCandidate) => FrameTransport;
+  /** The host announced, or a failed signal handshake disproved, `signalOnly`; PR3/PR4 persist it. */
+  readonly onSignalOnly?: (signalOnly: boolean) => void | Promise<void>;
+  readonly onSignalOnlyError?: (error: Error) => void;
+}
+
 /** Every applicable candidate failed; `failures` carries one entry per path. */
 export class ConnectionFailedError extends Error {
   readonly failures: readonly CandidateFailure[];
@@ -84,6 +138,22 @@ export class ConnectionFailedError extends Error {
 
 const REMOTE_ACCESS_UNAVAILABLE =
   "Remote access is unavailable: the host published no remote path and this device has no local entry.";
+
+/** P2P liveness: a pong every 5s, dead after 15s of absolute silence. */
+const LIVENESS_INTERVAL_MS = 5_000;
+const LIVENESS_BUDGET_MS = 15_000;
+/** A foreground/network-change verification ping must answer inside 3s. */
+const LIVENESS_VERIFY_MS = 3_000;
+const UPGRADE_DELAY_MS = 1_000;
+const UPGRADE_IDLE_MS = 300;
+const UPGRADE_IDLE_LIMIT_MS = 30_000;
+const UPGRADE_DEADLINE_MS = 25_000;
+const PREPARE_RETRY_MS = 1_000;
+const COOLDOWN_START_MS = 30_000;
+const COOLDOWN_MAX_MS = 10 * 60_000;
+const P2P_STABLE_MS = 10 * 60_000;
+const FALLBACK_QUIET_MS = 60_000;
+const COOLDOWN_CLEAR_INTERVAL_MS = 60_000;
 
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -98,6 +168,11 @@ const describeFailure = (failure: CandidateFailure): string => {
 /** A source of network-change events; web and desktop wrap their platform's. */
 export interface NetworkChanges {
   subscribe(listener: () => void): () => void;
+}
+
+/** Foreground/background transitions; PR3/PR4 wire the platform's source. */
+export interface AppLifecycle {
+  subscribe(listener: (state: "foreground" | "background") => void): () => void;
 }
 
 export type RemoteDurableOptions = (
@@ -134,6 +209,7 @@ export type RemoteDurableOptions = (
   /** Abort a connection attempt before ready; after ready, close the durable instead. */
   readonly signal?: AbortSignal;
   readonly network?: NetworkChanges;
+  readonly lifecycle?: AppLifecycle;
   /** Message 2 verified: persist the device identity now, independently of ready. */
   readonly onPaired?: () => void | Promise<void>;
   /** Persisting after paired failed; the pairing itself stays valid and ready continues. */
@@ -142,11 +218,21 @@ export type RemoteDurableOptions = (
   readonly onEndpointSet?: (endpointSet: EndpointSet) => void | Promise<void>;
   readonly onEndpointSetError?: (error: Error) => void;
   readonly onCandidateFailure?: (failure: CandidateFailure) => void;
+  /** Defaults to `auto`; switching it through `setConnectionMode` reconnects the whole client. */
+  readonly connectionMode?: ConnectionMode;
+  /** Absent means this platform cannot do RTC; the coordinator then behaves exactly as before. */
+  readonly rtc?: RtcCoordinatorOptions;
+  /** Injectable monotonic clock for P2P timers; defaults to platform timers. */
+  readonly clock?: RtcClock;
 };
 
 export interface RemoteDurable {
   readonly view: DurableViewSource;
   readonly controller: DurableController;
+  /** Switching mode reconnects the whole client (ADR-0033 §3). */
+  setConnectionMode(mode: ConnectionMode): void;
+  /** Current path, P2P phase, last failure, selected ICE type, cooldown. */
+  rtcDiagnostics(): RtcDiagnostics;
   close(): void;
 }
 
@@ -234,6 +320,72 @@ interface DialAttempt {
   phase: "open" | "noise" | "hello" | "sync" | "ready";
   timer?: ReturnType<typeof setTimeout>;
   done: boolean;
+  /** This dial runs over the RTC DataChannel; its path is P2P, not a socket role. */
+  p2p?: boolean;
+}
+
+type HelloFrame = Extract<ServerFrame, { type: "hello" }>;
+
+/**
+ * At most one background RTC carrier. It is not a `#dial`: it never
+ * subscribes or sends business calls, and its hello is cached until the
+ * commit hands the connection over.
+ */
+interface Standby {
+  readonly generation: number;
+  phase: "signal" | "ice" | "noise" | "warm";
+  connection?: FrameConnection;
+  /** The connection carrying `rtcOffer` (the active dial or a signal-only socket). */
+  signal?: FrameConnection;
+  readonly signalOnly: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+  hello?: HelloFrame;
+  pingId?: number;
+  pingTimer?: ReturnType<typeof setTimeout>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  idleSince?: number;
+  warmAt?: number;
+  candidateType?: string;
+  /** Pre-commit 3s ping on the RTC carrier before the barrier commits. */
+  verify?: {
+    readonly id: number;
+    readonly resolve: () => void;
+    readonly reject: (error: Error) => void;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+  installed: boolean;
+}
+
+interface DeferredCall {
+  readonly id: number;
+  readonly frame: ClientFrame;
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (error: Error) => void;
+}
+
+interface SyncGate {
+  readonly entries: DeferredCall[];
+}
+
+interface Handoff {
+  readonly standby: Standby;
+  readonly old: DialAttempt | undefined;
+  readonly entries: DeferredCall[];
+  timer?: ReturnType<typeof setTimeout>;
+  idleSince?: number;
+  warmAt: number;
+  prepared: boolean;
+  released: boolean;
+}
+
+interface SignalAttempt {
+  readonly generation: number;
+  index: number;
+  connection?: FrameConnection;
+  timer?: ReturnType<typeof setTimeout>;
+  /** Bumped per candidate so a late close from the previous socket is inert. */
+  token: number;
+  done: boolean;
 }
 
 class RemoteClient {
@@ -250,9 +402,39 @@ class RemoteClient {
   readonly #fresh = new Set<StreamName>();
   #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
   #toolPresentations: Record<string, PresentationType> = {};
-  readonly #snapshotWaiters = new Map<StreamName, { resolve(): void; reject(error: Error): void }[]>();
+  readonly #snapshotWaiters = new Map<
+    StreamName,
+    { resolve(): void; reject(error: Error): void; endSatisfies: boolean }[]
+  >();
   readonly #pending = new Map<number, Pending>();
+  /** Every role, including relays that Direct only keeps only for signaling. */
+  #fullCandidates: RemoteCandidate[];
   #candidates: RemoteCandidate[];
+  #mode: ConnectionMode;
+  readonly #rtc: RtcCoordinatorOptions | undefined;
+  readonly #clock: RtcClock;
+  #hostRtc: RtcHello | undefined;
+  #signalOnlyHint: boolean;
+  #standby: Standby | undefined;
+  #signalAttempt: SignalAttempt | undefined;
+  #handoff: Handoff | undefined;
+  /** Calls that arrived after a reconnect's shell was visible but before its conversation/docs synced. */
+  #syncGate: SyncGate | undefined;
+  #upgradeTimer: ReturnType<typeof setTimeout> | undefined;
+  #upgradeSeq = 0;
+  #upgradeFailures = 0;
+  #cooldownUntil = 0;
+  #noUpgradeUntil = 0;
+  #lastCooldownClear = Number.NEGATIVE_INFINITY;
+  #stableTimer: ReturnType<typeof setTimeout> | undefined;
+  #activePath: ConnectionPath = "loopback";
+  #p2pFailure: P2PFailure | undefined;
+  #selectedCandidateType: string | undefined;
+  #livenessTimer: ReturnType<typeof setTimeout> | undefined;
+  #livenessDeadline = 0;
+  #livenessNext = 0;
+  #background = false;
+  readonly #probes = new Map<number, { generation: number; timer?: ReturnType<typeof setTimeout> }>();
   /** The list this round walks; a hello's newer set applies from the next round. */
   #roundCandidates: RemoteCandidate[] = [];
   readonly #openTransport: (candidate: RemoteCandidate, pairing: PairingContext | undefined) => FrameTransport;
@@ -271,6 +453,7 @@ class RemoteClient {
   #backoffTimer: ReturnType<typeof setTimeout> | undefined;
   #backoffGeneration = 0;
   #networkUnsubscribe: (() => void) | undefined;
+  #lifecycleUnsubscribe: (() => void) | undefined;
   #signalCleanup: (() => void) | undefined;
   #roundExpired = false;
   #roundActive = false;
@@ -304,24 +487,29 @@ class RemoteClient {
 
   constructor(options: RemoteDurableOptions) {
     this.#options = options;
+    this.#mode = options.connectionMode ?? "auto";
+    this.#rtc = options.rtc;
+    this.#clock = options.clock ?? SYSTEM_RTC_CLOCK;
+    this.#signalOnlyHint = options.rtc?.signalOnlyHint === true;
     this.#followsHostEndpoints = "candidates" in options;
     if ("candidates" in options) {
-      this.#candidates = [...options.candidates];
+      this.#fullCandidates = [...options.candidates];
       this.#openTransport = options.openTransport;
       this.#pairing = options.pairing;
       this.#baseUrl = options.legacyUrl ?? options.candidates[0]?.url ?? "";
       this.#pageProtocol = options.pageProtocol;
     } else if ("transport" in options) {
-      this.#candidates = [{ url: options.transport.label, role: "legacy" }];
+      this.#fullCandidates = [{ url: options.transport.label, role: "legacy" }];
       this.#openTransport = () => options.transport;
       this.#baseUrl = options.transport.label;
       this.#pageProtocol = undefined;
     } else {
-      this.#candidates = candidatePlan(options.url, undefined);
+      this.#fullCandidates = candidatePlan(options.url, undefined);
       this.#openTransport = () => webSocketTransport(options.url, options.token);
       this.#baseUrl = options.url;
       this.#pageProtocol = undefined;
     }
+    this.#candidates = filterCandidatesForMode(this.#fullCandidates, this.#mode);
     this.#timeouts = { ...DEFAULT_CANDIDATE_TIMEOUTS, ...options.candidateTimeouts };
     this.#roundTimeoutMs = options.roundTimeoutMs;
     this.ready = new Promise((resolve, reject) => {
@@ -339,6 +527,10 @@ class RemoteClient {
       }
     }
     this.#networkUnsubscribe = options.network?.subscribe(() => this.#networkChanged());
+    this.#lifecycleUnsubscribe = options.lifecycle?.subscribe((state) => {
+      if (state === "background") this.#enterBackground();
+      else this.#enterForeground();
+    });
     if (!initiallyAborted) this.#beginRound();
   }
 
@@ -512,6 +704,7 @@ class RemoteClient {
       );
       this.#closed = true;
       this.#clearTimers();
+      this.#stopCoordination();
       this.#stopListeners();
       this.#abandonDial();
       if (this.#state === undefined) {
@@ -541,6 +734,11 @@ class RemoteClient {
         : 0;
     this.#hostMinor = hostMinor;
     this.#helloReceived = true;
+    this.#hostRtc = frame.rtc !== undefined && isRtcHello(frame.rtc) ? frame.rtc : undefined;
+    if (this.#hostRtc?.signalOnly === true && !this.#signalOnlyHint) {
+      this.#signalOnlyHint = true;
+      this.#reportSignalOnly();
+    }
     this.#docs = frame.docs;
     this.#toolPresentations = frame.toolPresentations;
     this.#helloModels = frame.models;
@@ -569,7 +767,8 @@ class RemoteClient {
       // next round's remote list.
       if (parsed.kind === "valid") {
         if (this.#followsHostEndpoints) {
-          this.#candidates = candidatePlan(this.#baseUrl, parsed.endpointSet, { pageProtocol: this.#pageProtocol });
+          this.#fullCandidates = candidatePlan(this.#baseUrl, parsed.endpointSet, { pageProtocol: this.#pageProtocol });
+          this.#candidates = filterCandidatesForMode(this.#fullCandidates, this.#mode);
         }
         if (this.#options.onEndpointSet !== undefined) {
           const report = (error: unknown): void => {
@@ -606,9 +805,31 @@ class RemoteClient {
   ): Promise<void> {
     try {
       // A snapshot may already have landed between the hello and this call;
-      // only the streams still missing one need a waiter.
-      const missing = hostStreams(hostMinor).filter((stream) => !this.#fresh.has(stream));
-      await Promise.all(missing.map((stream) => this.#snapshot(stream)));
+      // only the streams still missing one need a waiter. `ended` satisfies
+      // the barrier and clears the affected slot.
+      const all = this.#syncStreams(hostMinor);
+      const hostOnly = new Set<StreamName>(hostStreams(hostMinor));
+      const missingHost = all.filter((stream) => hostOnly.has(stream) && !this.#fresh.has(stream));
+      await Promise.all(missingHost.map((stream) => this.#snapshot(stream, true)));
+      // A reconnect keeps its historical "connected" moment — the host's own
+      // streams are enough to show the shell — but calls queue behind a sync
+      // gate until the shown conversations and docs caught up. `connected`
+      // must not mean "calls reject": the composer retries on that signal.
+      if (this.#state !== undefined && dial.p2p !== true) {
+        this.#update({ connection: "connected" });
+        this.#refresh();
+        // The shell is visible; the per-dial sync deadline still bounds the
+        // conversation/doc barrier, so the whole-round budget must not fire
+        // first.
+        this.#clearRoundTimer();
+        this.#roundActive = false;
+        dial.phase = "ready";
+      }
+      const missing = all.filter((stream) => !this.#fresh.has(stream));
+      if (this.#state !== undefined && dial.p2p !== true && missing.length > 0) {
+        this.#syncGate = { entries: [] };
+      }
+      await Promise.all(missing.map((stream) => this.#snapshot(stream, true)));
     } catch {
       // The candidate was retired or the host ended a stream; its sync timer
       // decides whether another candidate gets a turn.
@@ -622,6 +843,7 @@ class RemoteClient {
     this.#attempt = 0;
     this.#everReady = true;
     this.#outageNoticed = false;
+    this.#activePath = this.#pathOf(dial.candidate, dial.p2p === true);
     if (this.#state === undefined) {
       this.#state = {
         session: hello.session,
@@ -641,11 +863,33 @@ class RemoteClient {
         host: this.#hostInfo(),
       };
       this.#refresh();
-      this.#resolveReady({ view: this.#viewSource(), controller: this.#controller(), close: () => this.#close() });
+      this.#resolveReady({
+        view: this.#viewSource(),
+        controller: this.#controller(),
+        setConnectionMode: (mode) => this.setConnectionMode(mode),
+        rtcDiagnostics: () => this.rtcDiagnostics(),
+        close: () => this.#close(),
+      });
+      this.#finishSyncGate();
+      this.#afterCarrierReady(dial);
       return;
     }
     this.#update({ session: hello.session, connection: "connected" });
     this.#refresh();
+    this.#finishSyncGate();
+    this.#afterCarrierReady(dial);
+  }
+
+  /** Start liveness on P2P, or schedule the next upgrade on a WebSocket path. */
+  #afterCarrierReady(dial: DialAttempt): void {
+    if (dial.p2p === true) {
+      this.#finishHandoff();
+      this.#startLiveness();
+      this.#startStableTimer();
+      return;
+    }
+    this.#stopLiveness();
+    this.#scheduleUpgrade(this.#upgradeDelayMs());
   }
 
   #recordFailure(
@@ -673,10 +917,32 @@ class RemoteClient {
   #failDial(dial: DialAttempt, stage: CandidateFailureStage, code?: number, reason?: string): void {
     if (!this.#isActive(dial)) return;
     const wasReady = dial.phase === "ready";
+    if (wasReady && dial.p2p === true) {
+      // A lost DataChannel is a candidate-level failure: never a 4401.
+      this.#p2pFailure = { stage: "liveness", ...(reason === undefined ? {} : { reason }) };
+      this.#noUpgradeUntil = this.#now() + FALLBACK_QUIET_MS;
+      this.#stopLiveness();
+      this.#clearStableTimer();
+    }
     this.#recordFailure(dial.candidate, stage, code === UNAUTHORIZED_CLOSE_CODE, code, reason);
     this.#abandonDial(dial);
     this.#rejectPending();
+    // A handoff that lost either side must fail what it queued and never
+    // carry those calls into the next reconnect round (ADR-0033 §3 step 9).
+    if (
+      this.#handoff !== undefined
+      && (this.#handoff.old === dial || (this.#handoff.standby.installed && this.#handoff.standby === this.#standby))
+    ) {
+      this.#abortHandoff(new DisconnectedError());
+    }
     if (this.#closed) return;
+    if (dial.p2p === true && !wasReady) {
+      // A handoff/first P2P sync failure goes through the ordinary reconnect
+      // round; it never walks the WebSocket candidate that was retired.
+      this.#update({ connection: "reconnecting" });
+      this.#beginRound();
+      return;
+    }
     // A live connection was lost: the next round starts from the first path.
     // During a reconnect round, keep walking the remaining candidates.
     if (wasReady) {
@@ -698,6 +964,10 @@ class RemoteClient {
     this.#dial = undefined;
     dial.done = true;
     this.#clearTimer(dial);
+    if (this.#syncGate !== undefined) {
+      for (const entry of this.#syncGate.entries.splice(0)) entry.reject(new DisconnectedError());
+      this.#syncGate = undefined;
+    }
     this.#rejectSnapshotWaiters(new DisconnectedError());
     dial.connection?.close();
   }
@@ -732,12 +1002,31 @@ class RemoteClient {
     this.#roundActive = false;
     this.#clearRoundTimers();
     this.#clearBackoff();
+    if (this.#syncGate !== undefined) {
+      for (const entry of this.#syncGate.entries.splice(0)) entry.reject(new DisconnectedError());
+      this.#syncGate = undefined;
+    }
     this.#dial = undefined;
     if (this.#closed) return;
     const failures = [...this.#failures];
     const dialed = this.#dialedFailures(failures);
     const unauthorized = this.#unauthorizedRound(failures);
     const emptyPlan = this.#roundCandidates.length === 0;
+    // Direct only has no business relay fallback: a failed direct round opens
+    // a signal-only relay connection and tries P2P instead of surfacing the
+    // relay as a business path.
+    if (
+      !unauthorized
+      && this.#mode === "directOnly"
+      && this.#rtc !== undefined
+      && (this.#signalOnlyHint || this.#hostRtc !== undefined)
+      && this.#signalAttempt === undefined
+      && this.#standby === undefined
+      && this.#dial === undefined
+    ) {
+      this.#openSignalAttempt();
+      return;
+    }
     if (!this.#everReady) {
       this.#closed = true;
       this.#clearTimers();
@@ -798,7 +1087,15 @@ class RemoteClient {
 
   #networkChanged(): void {
     if (this.#closed) return;
-    // A live connection is not re-dialed on an interface change; only a
+    // Cooldown clearing is rate-limited; liveness is not.
+    this.#clearCooldownRateLimited();
+    if (this.#dial?.p2p === true && this.#dial.phase === "ready") {
+      // A P2P path may have changed interfaces under a still-"satisfied"
+      // network; probe it at once instead of waiting for the next tick.
+      this.#verifyLiveness();
+      return;
+    }
+    // A live WebSocket is not re-dialed on an interface change; only a
     // pending round or backoff restarts immediately.
     if (this.#dial?.phase === "ready") return;
     this.#clearBackoff();
@@ -806,6 +1103,847 @@ class RemoteClient {
     this.#abandonDial();
     this.#attempt = 0;
     this.#beginRound();
+  }
+
+
+  // ─── P2P standby, handoff, liveness and modes ─────────────────────────
+
+  #now(): number {
+    return this.#clock.now();
+  }
+
+  #upgradeDelayMs(): number {
+    return UPGRADE_DELAY_MS;
+  }
+
+  #pathOf(candidate: RemoteCandidate, p2p = false): ConnectionPath {
+    if (p2p) return "p2p";
+    return candidate.role === "legacy" ? "relay" : candidate.role;
+  }
+
+  #reportSignalOnly(signalOnly = true): void {
+    const report = (error: unknown): void => {
+      try {
+        this.#rtc?.onSignalOnlyError?.(asError(error));
+      } catch {
+        // A diagnostic callback must not break the connection.
+      }
+    };
+    try {
+      void Promise.resolve(this.#rtc?.onSignalOnly?.(signalOnly)).catch(report);
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  #hasSnapshotWaiters(): boolean {
+    for (const waiters of this.#snapshotWaiters.values()) if (waiters.length > 0) return true;
+    return false;
+  }
+
+  #scheduleUpgrade(delayMs: number): void {
+    if (this.#closed || this.#rtc === undefined || this.#mode === "relayOnly") return;
+    this.#clearUpgradeTimer();
+    const seq = ++this.#upgradeSeq;
+    this.#upgradeTimer = this.#clock.setTimeout(() => {
+      this.#upgradeTimer = undefined;
+      if (seq !== this.#upgradeSeq) return;
+      this.#maybeStartUpgrade();
+    }, Math.max(0, delayMs));
+  }
+
+  #clearUpgradeTimer(): void {
+    if (this.#upgradeTimer === undefined) return;
+    this.#clock.clearTimeout(this.#upgradeTimer);
+    this.#upgradeTimer = undefined;
+  }
+
+  #maybeStartUpgrade(): void {
+    if (this.#closed || this.#rtc === undefined || this.#mode === "relayOnly") return;
+    if (this.#standby !== undefined || this.#handoff !== undefined || this.#signalAttempt !== undefined) return;
+    const now = this.#now();
+    const blockedUntil = Math.max(this.#cooldownUntil, this.#noUpgradeUntil);
+    if (now < blockedUntil) {
+      this.#scheduleUpgrade(blockedUntil - now);
+      return;
+    }
+    const active = this.#dial;
+    if (active?.phase === "ready" && active.connection !== undefined && this.#state?.connection === "connected") {
+      if (this.#hostRtc === undefined) return;
+      this.#beginRtcStandby(active.connection, false);
+      return;
+    }
+    if (this.#mode !== "directOnly") return;
+    if (this.#hostRtc === undefined && !this.#signalOnlyHint) return;
+    this.#openSignalAttempt();
+  }
+
+  #beginRtcStandby(signal: FrameConnection, signalOnly: boolean): void {
+    const rtc = this.#rtc;
+    if (rtc === undefined || this.#standby !== undefined || this.#closed) return;
+    const generation = ++this.#upgradeSeq;
+    const standby: Standby = {
+      generation,
+      phase: "signal",
+      signal,
+      signalOnly,
+      installed: false,
+    };
+    this.#standby = standby;
+    this.#p2pFailure = undefined;
+    standby.timer = this.#clock.setTimeout(() => {
+      if (this.#standby !== standby || this.#handoff !== undefined) return;
+      this.#failStandby(standby, "warm", `WebRTC preparation exceeded ${UPGRADE_DEADLINE_MS}ms`);
+    }, UPGRADE_DEADLINE_MS);
+    const attempt = `rtc-${generation}`;
+    const transport = rtcTransport({
+      platform: rtc.platform,
+      stun: this.#hostRtc?.stun ?? [],
+      hostKey: rtc.hostKey,
+      device: rtc.device,
+      clock: this.#clock,
+      offer: (sdp) => this.#rtcOfferOn(signal, attempt, sdp),
+      onCandidateType: (type) => {
+        standby.candidateType = type;
+      },
+    });
+    const handlers: FrameHandlers = {
+      signaled: () => {
+        if (this.#standby === standby) standby.phase = "ice";
+      },
+      opened: () => {
+        if (this.#standby === standby) standby.phase = "noise";
+      },
+      authenticated: () => {
+        if (this.#standby !== standby) return;
+        standby.phase = "noise";
+        // After Noise the host's Peer belongs to the DataChannel; the
+        // signal-only socket may close without killing the candidate.
+        if (standby.signalOnly) {
+          try {
+            standby.signal?.close();
+          } catch {
+            // Already gone.
+          }
+          standby.signal = undefined;
+        }
+      },
+      message: (data) => {
+        if (standby.installed) {
+          const dial = standby.installed && this.#dial?.connection === standby.connection ? this.#dial : undefined;
+          if (dial !== undefined && this.#isActive(dial)) this.#message(dial, data);
+          return;
+        }
+        this.#standbyMessage(standby, data);
+      },
+      closed: (code, reason) => {
+        if (standby.installed) {
+          const dial = this.#dial?.connection === standby.connection ? this.#dial : undefined;
+          if (dial !== undefined && this.#isActive(dial)) {
+            this.#failDial(dial, dial.phase === "ready" ? "closed" : dial.phase, code, reason);
+          }
+          return;
+        }
+        if (this.#standby === standby) this.#failStandby(standby, standby.phase, reason ?? `DataChannel closed (${code})`);
+      },
+    };
+    try {
+      standby.connection = transport.open(handlers);
+    } catch (error) {
+      this.#failStandby(standby, "signal", asError(error).message);
+    }
+  }
+
+  #rtcOfferOn(connection: FrameConnection, attempt: string, sdp: string): Promise<string> {
+    const id = this.#nextCall++;
+    return new Promise<string>((resolve, reject) => {
+      this.#pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      try {
+        connection.send(JSON.stringify({ type: "call", id, method: "rtcOffer", args: { attempt, sdp } }));
+      } catch (error) {
+        this.#pending.delete(id);
+        reject(asError(error));
+      }
+    }).then((value) => {
+      const answer = value as { sdp?: unknown } | null;
+      if (answer === null || typeof answer !== "object" || typeof answer.sdp !== "string") {
+        throw new Error("the host returned a malformed rtcOffer answer");
+      }
+      return answer.sdp;
+    });
+  }
+
+  #standbyMessage(standby: Standby, data: string): void {
+    if (this.#standby !== standby) return;
+    let frame: ServerFrame;
+    try {
+      frame = JSON.parse(data) as ServerFrame;
+    } catch {
+      this.#failStandby(standby, "noise", "the DataChannel sent a frame that is not JSON");
+      return;
+    }
+    if (frame === null || typeof frame !== "object") return;
+    if (frame.type === "hello") {
+      standby.hello = frame;
+      if (standby.pingId === undefined) this.#warmStandby(standby);
+      return;
+    }
+    if (frame.type === "result" && standby.verify?.id === frame.id) {
+      const verify = standby.verify;
+      standby.verify = undefined;
+      if (verify.timer !== undefined) this.#clock.clearTimeout(verify.timer);
+      if (frame.ok) verify.resolve();
+      else verify.reject(new Error(frame.error));
+      return;
+    }
+  }
+
+  #warmStandby(standby: Standby): void {
+    if (this.#standby !== standby || standby.hello === undefined) return;
+    const id = this.#nextCall++;
+    standby.pingId = id;
+    this.#probeStandby(standby, id, 5_000).then(
+      () => {
+        if (this.#standby !== standby || standby.installed) return;
+        standby.phase = "warm";
+        standby.warmAt = this.#now();
+        if (standby.timer !== undefined) this.#clock.clearTimeout(standby.timer);
+        // Warm means "ready to commit"; waiting for an idle window is
+        // bounded separately and never counts as a preparation failure.
+        standby.timer = this.#clock.setTimeout(() => {
+          if (this.#standby === standby && this.#handoff === undefined) {
+            this.#deferStandby(standby, `no idle window within ${UPGRADE_IDLE_LIMIT_MS}ms`);
+          }
+        }, UPGRADE_IDLE_LIMIT_MS);
+        this.#pollStandby(standby);
+      },
+      (error: unknown) => {
+        if (this.#standby === standby) this.#failStandby(standby, "warm", asError(error).message);
+      },
+    );
+  }
+
+  #probeStandby(standby: Standby, id: number, timeoutMs: number): Promise<void> {
+    if (this.#standby !== standby || standby.connection === undefined) {
+      return Promise.reject(new Error("the RTC carrier is gone"));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const timer = this.#clock.setTimeout(() => {
+        if (standby.verify?.id !== id) return;
+        standby.verify = undefined;
+        reject(new Error(`the RTC carrier did not answer a ping within ${timeoutMs}ms`));
+      }, timeoutMs);
+      standby.verify = { id, resolve, reject, timer };
+      try {
+        standby.connection!.send(
+          JSON.stringify({ type: "call", id, method: "ping", args: { id: `rtc-${id}` } } satisfies ClientFrame),
+        );
+      } catch (error) {
+        this.#clock.clearTimeout(timer);
+        standby.verify = undefined;
+        reject(asError(error));
+      }
+    });
+  }
+
+  #pollStandby(standby: Standby): void {
+    if (this.#standby !== standby || standby.phase !== "warm" || standby.installed) return;
+    if (this.#handoff !== undefined) return;
+    // With no active business carrier there is no in-flight work to drain;
+    // switch as soon as the RTC carrier is warm.
+    if (this.#dial?.phase !== "ready") {
+      this.#beginHandoff(standby);
+      return;
+    }
+    const busy = this.#pending.size > 0 || this.#hasSnapshotWaiters();
+    if (busy) {
+      standby.idleSince = undefined;
+    } else {
+      const now = this.#now();
+      standby.idleSince ??= now;
+      if (now - standby.idleSince >= UPGRADE_IDLE_MS) {
+        this.#beginHandoff(standby);
+        return;
+      }
+    }
+    if (standby.idleTimer !== undefined) this.#clock.clearTimeout(standby.idleTimer);
+    standby.idleTimer = this.#clock.setTimeout(() => this.#pollStandby(standby), 100);
+  }
+
+  #beginHandoff(standby: Standby): void {
+    if (this.#standby !== standby || this.#handoff !== undefined || standby.hello === undefined) return;
+    if (standby.idleTimer !== undefined) this.#clock.clearTimeout(standby.idleTimer);
+    standby.idleTimer = undefined;
+    const handoff: Handoff = {
+      standby,
+      old: this.#dial,
+      entries: [],
+      warmAt: standby.warmAt ?? this.#now(),
+      prepared: false,
+      released: false,
+    };
+    this.#handoff = handoff;
+    if (handoff.old?.phase === "ready" && handoff.old.connection !== undefined) {
+      const id = this.#nextCall++;
+      standby.verify = undefined;
+      this.#probeStandby(standby, id, 3_000).then(
+        () => {
+          if (this.#handoff !== handoff || handoff.released) return;
+          handoff.prepared = true;
+          this.#installStandby(handoff);
+        },
+        (error: unknown) => {
+          if (this.#handoff !== handoff || handoff.released) return;
+          this.#releaseToOld(handoff, asError(error).message);
+        },
+      );
+    } else {
+      handoff.prepared = true;
+      this.#installStandby(handoff);
+    }
+  }
+
+  #installStandby(handoff: Handoff): void {
+    if (this.#handoff !== handoff || handoff.released) return;
+    const standby = handoff.standby;
+    const hello = standby.hello;
+    if (hello === undefined || standby.connection === undefined) {
+      this.#abortHandoff(new Error("the RTC carrier lost its hello before handoff"));
+      return;
+    }
+    const old = handoff.old;
+    if (old !== undefined) {
+      old.done = true;
+      try {
+        old.connection?.close();
+      } catch {
+        // Retiring the old carrier is not a reconnect trigger.
+      }
+    }
+    const dial: DialAttempt = {
+      candidate: { url: "webrtc", role: "direct" },
+      generation: ++this.#generation,
+      phase: "sync",
+      connection: standby.connection,
+      done: false,
+      p2p: true,
+    };
+    this.#dial = dial;
+    standby.installed = true;
+    this.#activePath = "p2p";
+    this.#selectedCandidateType = standby.candidateType;
+    if (standby.signalOnly) standby.signal = undefined;
+    // The cached hello now runs the ordinary hello → sync path. Until its
+    // barrier releases, #call keeps queueing into the handoff.
+    this.#onHello(dial, hello);
+  }
+
+  #releaseToOld(handoff: Handoff, reason: string): void {
+    this.#handoff = undefined;
+    this.#standby = undefined;
+    this.#clearStandbyTimers(handoff.standby);
+    try {
+      handoff.standby.connection?.close();
+    } catch {
+      // Already gone.
+    }
+    if (handoff.standby.signalOnly && handoff.standby.signal !== undefined) {
+      try {
+        handoff.standby.signal.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    this.#p2pFailure = { stage: "commit", reason };
+    this.#preparationFailed();
+    const old = handoff.old;
+    for (const entry of handoff.entries.splice(0)) {
+      if (old === undefined) entry.reject(new Error("Not connected to the host"));
+      else this.#deliverDeferred(old, entry);
+    }
+    this.#scheduleUpgrade(this.#cooldownRemainingMs());
+  }
+
+  #abortHandoff(error: Error): void {
+    const handoff = this.#handoff;
+    if (handoff === undefined) return;
+    this.#handoff = undefined;
+    this.#standby = undefined;
+    this.#clearStandbyTimers(handoff.standby);
+    try {
+      handoff.standby.connection?.close();
+    } catch {
+      // Already gone.
+    }
+    if (handoff.standby.signalOnly && handoff.standby.signal !== undefined) {
+      try {
+        handoff.standby.signal.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    for (const entry of handoff.entries.splice(0)) entry.reject(error);
+  }
+
+  #finishSyncGate(): void {
+    const gate = this.#syncGate;
+    if (gate === undefined) return;
+    this.#syncGate = undefined;
+    const dial = this.#dial;
+    for (const entry of gate.entries.splice(0)) {
+      if (dial === undefined) entry.reject(new DisconnectedError());
+      else this.#deliverDeferred(dial, entry);
+    }
+  }
+
+  #finishHandoff(): void {
+    const handoff = this.#handoff;
+    if (handoff === undefined || !handoff.standby.installed) return;
+    this.#handoff = undefined;
+    this.#standby = undefined;
+    const dial = this.#dial;
+    for (const entry of handoff.entries.splice(0)) {
+      if (dial === undefined) entry.reject(new Error("Not connected to the host"));
+      else this.#deliverDeferred(dial, entry);
+    }
+    this.#startStableTimer();
+  }
+
+  #deliverDeferred(dial: DialAttempt, entry: DeferredCall): void {
+    if (!this.#isActive(dial) || dial.phase !== "ready" || dial.connection === undefined) {
+      entry.reject(new Error("Not connected to the host"));
+      return;
+    }
+    this.#pending.set(entry.id, { resolve: entry.resolve, reject: entry.reject });
+    try {
+      dial.connection.send(JSON.stringify(entry.frame));
+    } catch (error) {
+      this.#pending.delete(entry.id);
+      entry.reject(asError(error));
+    }
+  }
+
+  #clearStandbyTimers(standby: Standby): void {
+    for (const timer of [standby.timer, standby.pingTimer, standby.idleTimer, standby.verify?.timer]) {
+      if (timer !== undefined) this.#clock.clearTimeout(timer);
+    }
+    standby.timer = undefined;
+    standby.pingTimer = undefined;
+    standby.idleTimer = undefined;
+    standby.verify = undefined;
+  }
+
+  #failStandby(standby: Standby, stage: P2PFailureStage, reason: string): void {
+    if (this.#standby !== standby) return;
+    const handoff = this.#handoff;
+    if (handoff !== undefined && handoff.standby === standby) {
+      // A pre-commit failure must release the barrier and hand the queued
+      // calls back to the still-usable old carrier.
+      this.#releaseToOld(handoff, reason);
+      return;
+    }
+    this.#standby = undefined;
+    this.#clearStandbyTimers(standby);
+    try {
+      standby.connection?.close();
+    } catch {
+      // Already gone.
+    }
+    if (standby.signalOnly && standby.signal !== undefined) {
+      try {
+        standby.signal.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    this.#p2pFailure = { stage, reason };
+    if (standby.signalOnly && stage === "signal") {
+      this.#signalOnlyHint = false;
+      this.#reportSignalOnly(false);
+    }
+    this.#preparationFailed();
+    if (this.#state === undefined && this.#mode === "directOnly" && this.#dial === undefined) {
+      this.#directUnavailable(reason);
+      return;
+    }
+    this.#scheduleUpgrade(this.#cooldownRemainingMs());
+  }
+
+  #deferStandby(standby: Standby, reason: string): void {
+    if (this.#standby !== standby) return;
+    this.#standby = undefined;
+    this.#clearStandbyTimers(standby);
+    try {
+      standby.connection?.close();
+    } catch {
+      // Already gone.
+    }
+    if (standby.signalOnly && standby.signal !== undefined) {
+      try {
+        standby.signal.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    this.#p2pFailure = { stage: "commit", reason };
+    this.#scheduleUpgrade(PREPARE_RETRY_MS);
+  }
+
+  #preparationFailed(): void {
+    this.#upgradeFailures += 1;
+    const delay = Math.min(COOLDOWN_MAX_MS, COOLDOWN_START_MS * 2 ** (this.#upgradeFailures - 1));
+    this.#cooldownUntil = this.#now() + delay;
+  }
+
+  #cooldownRemainingMs(): number {
+    return Math.max(0, Math.max(this.#cooldownUntil, this.#noUpgradeUntil) - this.#now());
+  }
+
+  #startStableTimer(): void {
+    if (this.#stableTimer !== undefined) this.#clock.clearTimeout(this.#stableTimer);
+    this.#stableTimer = this.#clock.setTimeout(() => {
+      this.#stableTimer = undefined;
+      if (this.#activePath === "p2p" && this.#dial?.phase === "ready") {
+        this.#upgradeFailures = 0;
+        this.#cooldownUntil = 0;
+        this.#noUpgradeUntil = 0;
+      }
+    }, P2P_STABLE_MS);
+  }
+
+  #clearCooldown(): void {
+    this.#upgradeFailures = 0;
+    this.#cooldownUntil = 0;
+    this.#noUpgradeUntil = 0;
+  }
+
+  #openSignalAttempt(): void {
+    const rtc = this.#rtc;
+    if (rtc === undefined || this.#signalAttempt !== undefined || this.#closed) return;
+    if (rtc.openSignalTransport === undefined) {
+      this.#directUnavailable("the platform has no signal-only transport");
+      return;
+    }
+    const candidates = signalCandidates(this.#fullCandidates);
+    if (candidates.length === 0) {
+      this.#directUnavailable("no relay candidate is available for signaling");
+      return;
+    }
+    const attempt: SignalAttempt = { generation: ++this.#upgradeSeq, index: 0, token: 0, done: false };
+    this.#signalAttempt = attempt;
+    this.#openSignalCandidate(attempt, candidates);
+  }
+
+  #openSignalCandidate(attempt: SignalAttempt, candidates: readonly RemoteCandidate[]): void {
+    if (this.#signalAttempt !== attempt || attempt.done || this.#closed) return;
+    if (attempt.timer !== undefined) {
+      this.#clock.clearTimeout(attempt.timer);
+      attempt.timer = undefined;
+    }
+    while (attempt.index < candidates.length) {
+      const candidate = candidates[attempt.index++]!;
+      if (candidate.unsupported !== undefined) continue;
+      const openSignal = this.#rtc?.openSignalTransport;
+      if (openSignal === undefined) {
+        this.#failSignalAttempt(attempt, "the platform has no signal-only transport");
+        return;
+      }
+      let transport: FrameTransport;
+      try {
+        transport = openSignal(candidate);
+      } catch (error) {
+        this.#failSignalAttempt(attempt, asError(error).message);
+        return;
+      }
+      const token = ++attempt.token;
+      const timeoutMs = this.#timeouts.socketOpenMs + this.#timeouts.noiseMs + this.#timeouts.helloMs;
+      attempt.timer = this.#clock.setTimeout(() => {
+        if (this.#signalAttempt !== attempt || attempt.done || attempt.token !== token) return;
+        attempt.done = true;
+        attempt.token += 1;
+        try {
+          attempt.connection?.close();
+        } catch {
+          // Already gone.
+        }
+        attempt.connection = undefined;
+        attempt.done = false;
+        this.#openSignalCandidate(attempt, candidates);
+      }, timeoutMs);
+      const handlers: FrameHandlers = {
+        message: (data) => this.#receiveSignalFrame(attempt, data),
+        closed: (_code, _reason) => {
+          if (attempt.token !== token) return;
+          if (this.#signalAttempt !== attempt || attempt.done) {
+            const standby = this.#standby;
+            if (standby?.signalOnly === true && standby.signal === attempt.connection && !standby.installed
+              && standby.phase !== "noise" && standby.phase !== "warm") {
+              this.#failStandby(standby, standby.phase, "the signal-only connection closed");
+            }
+            return;
+          }
+          attempt.done = true;
+          attempt.connection = undefined;
+          attempt.done = false;
+          this.#openSignalCandidate(attempt, candidates);
+        },
+      };
+      try {
+        attempt.connection = transport.open(handlers);
+      } catch {
+        continue;
+      }
+      return;
+    }
+    this.#failSignalAttempt(attempt, "every relay signal path failed");
+  }
+
+  #receiveSignalFrame(attempt: SignalAttempt, data: string): void {
+    let frame: ServerFrame;
+    try {
+      frame = JSON.parse(data) as ServerFrame;
+    } catch {
+      return;
+    }
+    if (frame === null || typeof frame !== "object") return;
+    if (frame.type === "result") {
+      const pending = this.#pending.get(frame.id);
+      this.#pending.delete(frame.id);
+      if (frame.ok) pending?.resolve(frame.value);
+      else pending?.reject(new Error(frame.error));
+      return;
+    }
+    if (frame.type !== "signalHello") return;
+    if (this.#signalAttempt !== attempt || attempt.done) return;
+    attempt.done = true;
+    this.#signalAttempt = undefined;
+    if (attempt.timer !== undefined) this.#clock.clearTimeout(attempt.timer);
+    attempt.timer = undefined;
+    if (frame.rtc === undefined) {
+      this.#directUnavailable("the host did not advertise WebRTC on its signal connection");
+      return;
+    }
+    this.#hostRtc = frame.rtc;
+    if (frame.rtc.signalOnly) this.#reportSignalOnly();
+    const connection = attempt.connection;
+    if (connection === undefined) {
+      this.#directUnavailable("the signal-only connection vanished before its offer");
+      return;
+    }
+    this.#beginRtcStandby(connection, true);
+  }
+
+  #failSignalAttempt(attempt: SignalAttempt, reason: string): void {
+    if (this.#signalAttempt !== attempt) return;
+    this.#signalAttempt = undefined;
+    if (attempt.timer !== undefined) this.#clock.clearTimeout(attempt.timer);
+    attempt.timer = undefined;
+    this.#p2pFailure = { stage: "signal", reason };
+    this.#signalOnlyHint = false;
+    this.#directUnavailable(reason);
+  }
+
+  #directUnavailable(reason: string): void {
+    if (this.#closed) return;
+    if (this.#state === undefined) {
+      this.#closed = true;
+      this.#clearTimers();
+      this.#stopListeners();
+      this.#rejectPending();
+      this.#rejectSnapshotWaiters(new DisconnectedError());
+      this.#rejectReady(new Error(`${DIRECT_UNAVAILABLE} (${reason})`));
+      return;
+    }
+    this.#notice("error", `${DIRECT_UNAVAILABLE} (${reason})`);
+    this.#update({ connection: "reconnecting" });
+    this.#scheduleBackoff();
+  }
+
+  #enterBackground(): void {
+    if (this.#closed) return;
+    this.#background = true;
+    this.#stopLiveness();
+  }
+
+  #enterForeground(): void {
+    if (this.#closed) return;
+    this.#background = false;
+    if (this.#dial?.p2p === true && this.#dial.phase === "ready") {
+      this.#verifyLiveness();
+      return;
+    }
+    if (this.#dial?.phase === "ready") return;
+    this.#networkChanged();
+  }
+
+  #startLiveness(): void {
+    this.#stopLiveness();
+    if (this.#closed || this.#background || this.#dial?.p2p !== true || this.#dial.phase !== "ready") return;
+    const now = this.#now();
+    this.#livenessDeadline = now + LIVENESS_BUDGET_MS;
+    this.#livenessNext = now + LIVENESS_INTERVAL_MS;
+    this.#scheduleLiveness();
+  }
+
+  #scheduleLiveness(): void {
+    if (this.#closed || this.#background || this.#dial?.p2p !== true || this.#dial.phase !== "ready") return;
+    const delay = Math.max(0, this.#livenessNext - this.#now());
+    this.#livenessTimer = this.#clock.setTimeout(() => {
+      this.#livenessTimer = undefined;
+      this.#livenessTick();
+    }, delay);
+  }
+
+  #stopLiveness(): void {
+    if (this.#livenessTimer !== undefined) this.#clock.clearTimeout(this.#livenessTimer);
+    this.#livenessTimer = undefined;
+    for (const probe of this.#probes.values()) {
+      if (probe.timer !== undefined) this.#clock.clearTimeout(probe.timer);
+    }
+    this.#probes.clear();
+  }
+
+  #livenessTick(): void {
+    const dial = this.#dial;
+    if (this.#closed || this.#background || dial?.p2p !== true || dial.phase !== "ready") return;
+    const now = this.#now();
+    if (now >= this.#livenessDeadline) {
+      this.#fallbackFromP2P("no pong within 15000ms");
+      return;
+    }
+    this.#sendProbe(false);
+    // Fixed 5s rhythm: late callbacks do not shift later probes.
+    this.#livenessNext += LIVENESS_INTERVAL_MS;
+    if (this.#livenessNext <= now) this.#livenessNext = now + LIVENESS_INTERVAL_MS;
+    this.#scheduleLiveness();
+  }
+
+  #verifyLiveness(): void {
+    this.#stopLiveness();
+    if (this.#dial?.p2p !== true || this.#dial.phase !== "ready") return;
+    const probe = this.#sendProbe(true);
+    if (probe === undefined) return;
+    this.#livenessNext = this.#now() + LIVENESS_INTERVAL_MS;
+    this.#scheduleLiveness();
+  }
+
+  #sendProbe(verify: boolean): number | undefined {
+    const dial = this.#dial;
+    if (dial?.connection === undefined || dial.p2p !== true) return undefined;
+    const id = this.#nextCall++;
+    const entry: { generation: number; timer?: ReturnType<typeof setTimeout> } = { generation: dial.generation };
+    this.#probes.set(id, entry);
+    if (verify) {
+      entry.timer = this.#clock.setTimeout(() => {
+        if (!this.#probes.has(id)) return;
+        this.#probes.delete(id);
+        this.#fallbackFromP2P("the foreground verification ping did not answer within 3000ms");
+      }, LIVENESS_VERIFY_MS);
+    }
+    try {
+      dial.connection.send(JSON.stringify({ type: "call", id, method: "ping", args: { id: `probe-${id}` } } satisfies ClientFrame));
+    } catch (error) {
+      this.#probes.delete(id);
+      if (entry.timer !== undefined) this.#clock.clearTimeout(entry.timer);
+      this.#fallbackFromP2P(asError(error).message);
+      return undefined;
+    }
+    return id;
+  }
+
+  #fallbackFromP2P(reason: string): void {
+    const dial = this.#dial;
+    if (dial?.p2p !== true) return;
+    this.#p2pFailure = { stage: "liveness", reason };
+    this.#noUpgradeUntil = this.#now() + FALLBACK_QUIET_MS;
+    this.#stopLiveness();
+    this.#clearStableTimer();
+    dial.done = true;
+    try {
+      dial.connection?.close();
+    } catch {
+      // Already gone.
+    }
+    if (this.#dial === dial) this.#dial = undefined;
+    this.#rejectPending();
+    this.#rejectSnapshotWaiters(new DisconnectedError());
+    this.#clearRoundTimers();
+    this.#update({ connection: "reconnecting" });
+    this.#beginRound();
+  }
+
+  #clearStableTimer(): void {
+    if (this.#stableTimer === undefined) return;
+    this.#clock.clearTimeout(this.#stableTimer);
+    this.#stableTimer = undefined;
+  }
+
+  #livenessBudgetMs(): number {
+    return LIVENESS_BUDGET_MS;
+  }
+
+  #clearCooldownRateLimited(): void {
+    const now = this.#now();
+    if (now - this.#lastCooldownClear < COOLDOWN_CLEAR_INTERVAL_MS) return;
+    this.#lastCooldownClear = now;
+    this.#clearCooldown();
+  }
+
+  setConnectionMode(mode: ConnectionMode): void {
+    if (mode === this.#mode) return;
+    this.#mode = mode;
+    this.#candidates = filterCandidatesForMode(this.#fullCandidates, mode);
+    this.#clearUpgradeTimer();
+    this.#stopLiveness();
+    this.#clearStableTimer();
+    if (this.#handoff !== undefined) this.#abortHandoff(new DisconnectedError());
+    if (this.#standby !== undefined) {
+      const standby = this.#standby;
+      this.#standby = undefined;
+      this.#clearStandbyTimers(standby);
+      try {
+        standby.connection?.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    if (this.#signalAttempt !== undefined) {
+      const attempt = this.#signalAttempt;
+      this.#signalAttempt = undefined;
+      if (attempt.timer !== undefined) this.#clock.clearTimeout(attempt.timer);
+      try {
+        attempt.connection?.close();
+      } catch {
+        // Already gone.
+      }
+    }
+    if (this.#closed) return;
+    this.#clearRoundTimers();
+    this.#clearBackoff();
+    this.#abandonDial();
+    this.#rejectPending();
+    this.#rejectSnapshotWaiters(new DisconnectedError());
+    if (this.#state !== undefined) this.#update({ connection: "reconnecting" });
+    this.#beginRound();
+  }
+
+  rtcDiagnostics(): RtcDiagnostics {
+    const standby = this.#standby;
+    const cooldownRemainingMs = this.#cooldownRemainingMs();
+    let phase: RtcDiagnostics["phase"];
+    if (standby !== undefined) phase = standby.phase;
+    else if (this.#dial?.p2p === true && this.#dial.phase === "ready") phase = "active";
+    else if (this.#handoff !== undefined) phase = "warm";
+    else if (cooldownRemainingMs > 0) phase = "cooldown";
+    else if (this.#upgradeTimer !== undefined) phase = "scheduled";
+    else phase = "idle";
+    return {
+      path: this.#activePath,
+      phase,
+      ...(this.#p2pFailure === undefined ? {} : { lastFailure: this.#p2pFailure }),
+      ...(this.#selectedCandidateType === undefined ? {} : { selectedCandidateType: this.#selectedCandidateType }),
+      cooldownRemainingMs,
+    };
   }
 
   #clearTimerDial(): void {
@@ -833,12 +1971,52 @@ class RemoteClient {
   #clearTimers(): void {
     this.#clearRoundTimer();
     this.#clearBackoff();
+    this.#clearUpgradeTimer();
+    this.#stopLiveness();
+    this.#clearStableTimer();
     if (this.#dial !== undefined) this.#clearTimer(this.#dial);
+  }
+
+  /** Tear down every background P2P object without touching business state. */
+  #stopCoordination(): void {
+    this.#clearUpgradeTimer();
+    this.#stopLiveness();
+    this.#clearStableTimer();
+    if (this.#handoff !== undefined) this.#abortHandoff(new DisconnectedError());
+    if (this.#standby !== undefined) {
+      const standby = this.#standby;
+      this.#standby = undefined;
+      this.#clearStandbyTimers(standby);
+      try {
+        standby.connection?.close();
+      } catch {
+        // Already gone.
+      }
+      if (standby.signalOnly && standby.signal !== undefined) {
+        try {
+          standby.signal.close();
+        } catch {
+          // Already gone.
+        }
+      }
+    }
+    if (this.#signalAttempt !== undefined) {
+      const attempt = this.#signalAttempt;
+      this.#signalAttempt = undefined;
+      if (attempt.timer !== undefined) this.#clock.clearTimeout(attempt.timer);
+      try {
+        attempt.connection?.close();
+      } catch {
+        // Already gone.
+      }
+    }
   }
 
   #stopListeners(): void {
     this.#networkUnsubscribe?.();
     this.#networkUnsubscribe = undefined;
+    this.#lifecycleUnsubscribe?.();
+    this.#lifecycleUnsubscribe = undefined;
     this.#signalCleanup?.();
     this.#signalCleanup = undefined;
   }
@@ -847,6 +2025,7 @@ class RemoteClient {
     if (this.#closed) return;
     this.#closed = true;
     this.#clearTimers();
+    this.#stopCoordination();
     this.#stopListeners();
     this.#abandonDial();
     this.#rejectPending();
@@ -878,20 +2057,43 @@ class RemoteClient {
         this.#values.set(frame.stream, applyImmutable(this.#values.get(frame.stream), frame.ops));
         this.#refresh();
         return;
-      case "ended":
+      case "ended": {
         this.#wanted.delete(frame.stream);
         this.#values.delete(frame.stream);
         this.#fresh.delete(frame.stream);
+        const ended = new Error(`Stream ${frame.stream} ended: ${frame.reason}`);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
-          waiter.reject(new Error(`Stream ${frame.stream} ended: ${frame.reason}`));
+          if (waiter.endSatisfies) waiter.resolve();
+          else waiter.reject(ended);
+        }
+        // A sync barrier treats an ended selection as settled — never wait
+        // forever — and drops the slot whose data can no longer be shown.
+        if (this.#current !== undefined && this.#conversationStreams(this.#current).includes(frame.stream)) {
+          this.#unshow();
+        } else if (this.#side !== undefined && this.#conversationStreams(this.#side).includes(frame.stream)) {
+          this.#side = undefined;
         }
         this.#refresh();
         return;
+      }
       case "result": {
+        const probe = this.#probes.get(frame.id);
+        if (probe !== undefined) {
+          this.#probes.delete(frame.id);
+          if (probe.timer !== undefined) this.#clock.clearTimeout(probe.timer);
+          // A late or wrong-generation pong carries no evidence about the
+          // current carrier and is dropped (ADR-0033 §3).
+          if (frame.ok && this.#dial?.generation === probe.generation) {
+            this.#livenessDeadline = Math.max(this.#livenessDeadline, this.#clock.now() + this.#livenessBudgetMs());
+          }
+          if (this.#standby?.phase === "warm") this.#pollStandby(this.#standby);
+          return;
+        }
         const pending = this.#pending.get(frame.id);
         this.#pending.delete(frame.id);
         if (frame.ok) pending?.resolve(frame.value);
         else pending?.reject(new Error(frame.error));
+        if (this.#standby?.phase === "warm") this.#pollStandby(this.#standby);
         return;
       }
       case "notice":
@@ -901,12 +2103,26 @@ class RemoteClient {
   }
 
   /** Resolve at the stream's next snapshot; reject if the host ends it instead. */
-  #snapshot(stream: StreamName): Promise<void> {
+  #snapshot(stream: StreamName, endSatisfies = false): Promise<void> {
     return new Promise((resolve, reject) => {
       const waiters = this.#snapshotWaiters.get(stream) ?? [];
-      waiters.push({ resolve, reject });
+      waiters.push({ resolve, reject, endSatisfies });
       this.#snapshotWaiters.set(stream, waiters);
     });
+  }
+
+  /**
+   * The sync barrier's streams: every host stream plus the shown and side
+   * conversations with their docs (ADR-0033 §3 step 8). This applies to an
+   * ordinary reconnect too, not just the P2P handoff.
+   */
+  #syncStreams(hostMinor: number): StreamName[] {
+    const streams = new Set<StreamName>(hostStreams(hostMinor));
+    for (const id of [this.#current, this.#side]) {
+      if (id === undefined) continue;
+      for (const stream of this.#conversationStreams(id)) streams.add(stream);
+    }
+    return [...streams];
   }
 
   /** The streams that show one conversation: its view and its documents. */
@@ -1073,13 +2289,42 @@ class RemoteClient {
   }
 
   #call<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
+    const handoff = this.#handoff;
+    if (handoff !== undefined || this.#syncGate !== undefined) {
+      // The atomic barrier (handoff) or an ordinary reconnect's sync gate
+      // closed the new-call entrance. Calls wait here and can still be
+      // cancelled without ever entering a ciphertext FIFO.
+      const id = this.#nextCall++;
+      const frame = { type: "call", id, method, args } as ClientFrame;
+      const entries = handoff?.entries ?? this.#syncGate!.entries;
+      return new Promise((resolve, reject) => {
+        entries.push({ id, frame, resolve: resolve as (value: unknown) => void, reject });
+      });
+    }
     if (this.#dial?.phase !== "ready" || this.#state?.connection !== "connected") {
       return Promise.reject(new Error("Not connected to the host"));
     }
-    const id = this.#nextCall++;
+    return this.#deliverCall(this.#dial, this.#nextCall++, method, args);
+  }
+
+  /** Put a call on one ready dial; used by the normal path and the handoff queue. */
+  #deliverCall<M extends CallMethod>(
+    dial: DialAttempt,
+    id: number,
+    method: M,
+    args: CallMethods[M]["args"],
+  ): Promise<CallMethods[M]["result"]> {
+    if (!this.#isActive(dial) || dial.phase !== "ready" || dial.connection === undefined) {
+      return Promise.reject(new Error("Not connected to the host"));
+    }
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-      this.#send({ type: "call", id, method, args } as ClientFrame);
+      try {
+        dial.connection!.send(JSON.stringify({ type: "call", id, method, args } as ClientFrame));
+      } catch (error) {
+        this.#pending.delete(id);
+        reject(asError(error));
+      }
     });
   }
 
@@ -1487,6 +2732,7 @@ class RemoteClient {
     if (this.#closed) return;
     this.#closed = true;
     this.#clearTimers();
+    this.#stopCoordination();
     this.#stopListeners();
     this.#abandonDial();
     this.#rejectPending();

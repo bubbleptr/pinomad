@@ -8,6 +8,7 @@ pub mod account;
 pub mod b64;
 pub mod chat;
 pub mod command_input;
+pub mod connection_mode;
 pub mod context_usage;
 pub mod cot_view;
 pub mod delta;

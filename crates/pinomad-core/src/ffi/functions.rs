@@ -310,6 +310,8 @@ pub fn host_labels(hosts: Vec<StoredHost>) -> Vec<HostLabel> {
             // and endpoint set are irrelevant here.
             account: None,
             endpoint_set: None,
+            connection_mode: None,
+            rtc_signal_only: None,
         })
         .collect();
     crate::stored_host::host_labels(&cores)

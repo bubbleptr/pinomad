@@ -130,6 +130,13 @@ pub struct StoredHost {
     /// The host's last published remote candidates (5.22, ADR-0032).
     #[uniffi(default = None)]
     pub endpoint_set: Option<EndpointSet>,
+    /// `auto` | `directOnly` | `relayOnly`; None means Auto. The default
+    /// keeps existing Swift initializers compiling.
+    #[uniffi(default = None)]
+    pub connection_mode: Option<String>,
+    /// The learned `hello.rtc.signalOnly` hint; None means unknown.
+    #[uniffi(default = None)]
+    pub rtc_signal_only: Option<bool>,
 }
 
 /// One failed candidate path, for connection diagnostics.
@@ -211,6 +218,12 @@ pub fn validate_stored_host(host: StoredHost) -> Result<StoredHost, StoredHostEr
     if !is_key(&host.private_key) {
         return Err(StoredHostError::InvalidPrivateKey);
     }
+    let connection_mode = match host.connection_mode.as_deref() {
+        None | Some("auto") => None,
+        Some("directOnly") => Some("directOnly".to_string()),
+        Some("relayOnly") => Some("relayOnly".to_string()),
+        Some(_) => None,
+    };
     Ok(StoredHost {
         // Like the reference parse: an empty name is no name.
         name: host.name.filter(|name| !name.is_empty()),
@@ -220,6 +233,8 @@ pub fn validate_stored_host(host: StoredHost) -> Result<StoredHost, StoredHostEr
             .as_ref()
             .and_then(EndpointSet::to_core)
             .map(|set| EndpointSet::from_core(&set)),
+        connection_mode,
+        rtc_signal_only: host.rtc_signal_only.filter(|hint| *hint),
         ..host
     })
 }
