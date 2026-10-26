@@ -458,39 +458,8 @@ html[lang="zh-CN"] .hero h1 {
   color: var(--fg-2);
 }
 
-/* The window and the phone share one grid cell: the window leaves room at the right
-   and bottom, the phone sits in that corner and overlaps it. The margins are
-   percentages of the stage's width, so the composition scales as one picture. */
-.hero-stage {
-  display: grid;
-  margin-top: clamp(2.5rem, 6vw, 3.5rem);
-}
-
-.hero-stage > * {
-  grid-area: 1 / 1;
-}
-
 .hero-shot {
-  margin: 0 7% 11% 0;
-}
-
-.hero-phone {
-  z-index: 1;
-  align-self: end;
-  justify-self: end;
-  width: 30%;
-}
-
-@media (min-width: 40rem) {
-  .hero-phone {
-    width: 21%;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .hero-phone {
-    animation: float 7s var(--ease-in-out) infinite;
-  }
+  margin-top: clamp(2.5rem, 6vw, 3.5rem);
 }
 
 /* Keeps the Chinese h1's first clause on one line — but only when it fits. The
@@ -629,6 +598,40 @@ html[lang="zh-CN"] .hero h1 {
 }
 
 /* The bezel is the black ring between the titanium and the screen. */
+/* The light behind the phone is wider than a phone screen; clip it, not the page. */
+.section-showcase {
+  overflow-x: clip;
+}
+
+/* In its section: centred in the picture column, with a soft pool of light behind it. */
+.showcase-phone {
+  isolation: isolate;
+  justify-self: center;
+  width: min(17rem, 72%);
+}
+
+@media (min-width: 56rem) {
+  .showcase-phone {
+    width: min(19.5rem, 70%);
+  }
+}
+
+.showcase-phone::before {
+  content: "";
+  position: absolute;
+  inset: -12% -45%;
+  z-index: -1;
+  background: radial-gradient(closest-side, oklch(0.32 0.004 260 / 0.55), transparent);
+  pointer-events: none;
+}
+
+/* The float sits on the body, so the figure stays free for the scroll reveal's translate. */
+@media (prefers-reduced-motion: no-preference) {
+  .showcase-phone .phone-body {
+    animation: float 7s var(--ease-in-out) infinite;
+  }
+}
+
 .phone-screen {
   position: relative;
   height: 100%;
@@ -774,25 +777,27 @@ html[lang="zh-CN"] .hero h1 {
   font-weight: 600;
 }
 
-/* —— How it works: a bento of the three core claims. The durable demo needs the
-   full width; the machine diagram and the clients share the row below it. —— */
+/* —— How it works: the durable demo, then the machine it runs on, each full width;
+   the machine cell puts its diagram beside the text on wide screens. —— */
 .bento {
   display: grid;
   gap: 1rem;
   margin-top: clamp(2rem, 5vw, 3rem);
 }
 
+/* Doubled class: .cell, later in the file, makes every cell a flex column. */
 @media (min-width: 56rem) {
-  .bento {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .cell.cell-machine {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-rows: auto 1fr;
+    column-gap: 3rem;
   }
 
-  .cell-wide {
-    grid-column: 1 / -1;
-  }
-
-  .cell-machine {
-    grid-column: span 2;
+  .cell-machine .shot {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin-top: 0;
   }
 }
 
@@ -820,11 +825,6 @@ html[lang="zh-CN"] .hero h1 {
 .cell-machine .shot {
   flex: 1;
   min-height: 12rem;
-}
-
-.cell .chips {
-  margin-top: auto;
-  padding-top: 0.75rem;
 }
 
 .section-link {

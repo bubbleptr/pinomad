@@ -83,21 +83,17 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             {t.github}
           </a>
         </div>
-        {/* The desktop window with the phone floating in front of it: the two screens people look at first. */}
-        <div className="hero-stage">
-          <figure className="shot shot-window hero-shot">
-            <img
-              src={image.src}
-              srcSet={image.srcSet}
-              sizes="(min-width: 72rem) 68rem, 100vw"
-              width="2400"
-              height="1500"
-              alt={t.shotAlt}
-              fetchPriority="high"
-            />
-          </figure>
-          <Phone caption={t.phonePlaceholder} className="hero-phone" />
-        </div>
+        <figure className="shot shot-window hero-shot">
+          <img
+            src={image.src}
+            srcSet={image.srcSet}
+            sizes="(min-width: 72rem) 68rem, 100vw"
+            width="2400"
+            height="1500"
+            alt={t.shotAlt}
+            fetchPriority="high"
+          />
+        </figure>
         <div className="models">
           <span className="models-label">{t.modelsLabel}</span>
           <ul>
@@ -115,7 +111,28 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
   );
 }
 
-/** The three things PiNomad is: on your machine, durable, reachable from any screen. */
+/** The phone gets a section of its own: drawn as a device, it doesn't sit well beside a flat screenshot. */
+export function Anywhere({ t }: { t: LandingCopy["anywhere"] }) {
+  return (
+    <section className="section section-showcase" id="anywhere" aria-labelledby="anywhere-title">
+      <div className="wrap split">
+        <div className="section-head">
+          <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
+          <ul className="chips">
+            {t.clients.map((client) => (
+              <li key={client} className="chip">
+                {client}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Phone caption={t.placeholder} className="showcase-phone" />
+      </div>
+    </section>
+  );
+}
+
+/** How it works: the durable run and the machine it runs on. */
 export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"]; durable: LandingCopy["durable"] }) {
   return (
     <section className="section" id="how-it-works" aria-labelledby="core-title">
@@ -133,17 +150,6 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
             <h3>{t.machine.title}</h3>
             <p>{t.machine.body}</p>
             <Placeholder caption={t.machine.placeholder} />
-          </article>
-          <article className="cell cell-anywhere">
-            <h3>{t.anywhere.title}</h3>
-            <p>{t.anywhere.body}</p>
-            <ul className="chips">
-              {t.anywhere.clients.map((client) => (
-                <li key={client} className="chip">
-                  {client}
-                </li>
-              ))}
-            </ul>
           </article>
         </div>
         <p className="section-link">

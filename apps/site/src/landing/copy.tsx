@@ -21,13 +21,18 @@ export interface LandingCopy {
     models: string[];
     modelsMore: string;
     shotAlt: string;
-    phonePlaceholder: string;
+  };
+  anywhere: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    clients: string[];
+    placeholder: string;
   };
   core: {
     eyebrow: string;
     title: string;
     machine: { title: string; body: string; placeholder: string };
-    anywhere: { title: string; body: string; clients: string[] };
     allFeatures: string;
   };
   durable: {
@@ -110,7 +115,13 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsMore: "17 more",
       shotAlt:
         "The PiNomad web client mid-run: conversations in the sidebar; the agent has answered, been asked for more, and is now reading and editing files and running commands",
-      phonePlaceholder: "Screenshot coming: the same run on iPhone.",
+    },
+    anywhere: {
+      eyebrow: "Any screen",
+      title: "Step away from your desk",
+      lead: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
+      clients: ["Mac app", "Web", "iPhone"],
+      placeholder: "Screenshot coming: the same run on iPhone.",
     },
     core: {
       eyebrow: "How it works",
@@ -119,11 +130,6 @@ export const copy: Record<Lang, LandingCopy> = {
         title: "Your machine does the work",
         body: "The host runs on a Mac mini, a Linux box, or a VPS, and the agent uses that machine's shell, repositories, and credentials.",
         placeholder: "Diagram coming: the host on your own machine.",
-      },
-      anywhere: {
-        title: "Step away from your desk",
-        body: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
-        clients: ["Mac app", "Web", "iPhone"],
       },
       allFeatures: "Everything the agent can do",
     },
@@ -277,7 +283,13 @@ export const copy: Record<Lang, LandingCopy> = {
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是对话列表，agent 答完上一轮后，正顺着追问改测试、跑测试",
-      phonePlaceholder: "截图待补：在 iPhone 上接着看同一个任务。",
+    },
+    anywhere: {
+      eyebrow: "多端接力",
+      title: "离开电脑也能接着管",
+      lead: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
+      clients: ["Mac App", "Web", "iPhone"],
+      placeholder: "截图待补：在 iPhone 上接着看同一个任务。",
     },
     core: {
       eyebrow: "工作方式",
@@ -286,11 +298,6 @@ export const copy: Record<Lang, LandingCopy> = {
         title: "活在你自己的机器上干",
         body: "宿主可以跑在 Mac mini、Linux 主机或 VPS 上，agent 直接用那台机器的 shell、代码仓库和凭据。",
         placeholder: "示意图待补：宿主跑在你自己的机器上。",
-      },
-      anywhere: {
-        title: "离开电脑也能接着管",
-        body: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
-        clients: ["Mac App", "Web", "iPhone"],
       },
       allFeatures: "agent 能做的所有事",
     },
