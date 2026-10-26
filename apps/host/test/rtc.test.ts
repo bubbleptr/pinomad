@@ -42,6 +42,11 @@ class FakeConnection implements RtcPeerConnection {
     this.closed = true;
     this.#onClosed();
   }
+
+  /** Simulate a native close/error notification without closing the connection. */
+  emitClosed(): void {
+    this.#onClosed();
+  }
 }
 
 class FakeFactory implements RtcPeerFactory {
@@ -195,6 +200,20 @@ describe("host RTC signal path", () => {
     expect(() => oldHost.readMessage1(message1)).toThrow();
   });
 
+  it("closes a business connection's incomplete peer when that connection disconnects", async () => {
+    const factory = new FakeFactory();
+    const host = await startFauxHost(defer, { rtc: { factory, peerTimeoutMs: 60_000 } });
+    const token = await connectTo(defer, host);
+    const { business } = await pairAndSignal(token);
+    await expect(
+      business.call("rtcOffer", { attempt: "business-close", sdp: SDP }),
+    ).resolves.toEqual({ sdp: SDP });
+    expect(factory.connections[0]!.connection.closed).toBe(false);
+
+    business.close();
+    await expect.poll(() => factory.connections[0]!.connection.closed).toBe(true);
+  });
+
   it("closes the signal connection and the incomplete peer when the device is revoked", async () => {
     const factory = new FakeFactory();
     const host = await startFauxHost(defer, { rtc: { factory, peerTimeoutMs: 60_000 } });
@@ -265,6 +284,19 @@ describe("Peer limits and timeouts", () => {
     host.closeOwner(owner);
     expect(factory.connections.every(({ connection }) => connection.closed)).toBe(true);
     await expect(host.offer({ owner, deviceKey: "d5", attempt: "d5-0", sdp: SDP })).resolves.toEqual({ sdp: SDP });
+  });
+
+  it("releases the native connection when the factory reports the close", async () => {
+    const { host, factory } = await rtcHost();
+    await host.offer({ owner, deviceKey: "d1", attempt: "factory-close", sdp: SDP });
+    // A real DataChannel close/error reaches the manager through the factory's
+    // onClosed, not through closeOwner; the PeerConnection must still be freed.
+    factory.connections[0]!.connection.emitClosed();
+    expect(factory.connections[0]!.connection.closed).toBe(true);
+    await expect(host.offer({ owner, deviceKey: "d1", attempt: "factory-close", sdp: SDP })).resolves.toEqual({
+      sdp: SDP,
+    });
+    expect(factory.connections).toHaveLength(2);
   });
 
   it("closes a Peer that never completes Noise after the injected timeout", async () => {

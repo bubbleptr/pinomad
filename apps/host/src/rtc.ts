@@ -277,7 +277,11 @@ class PeerHost implements RtcHost {
     for (const [key, candidate] of this.#byAttempt) {
       if (candidate === peer) this.#byAttempt.delete(key);
     }
-    peer.markClosed();
+    // Removal can come from the factory's close/error callback, not only from
+    // peer.close(): the underlying PeerConnection and carrier still need to be
+    // released (dureview P1). teardown is idempotent and does not re-enter the
+    // manager.
+    peer.teardown();
   }
 
   closeOwner(owner: object): void {
@@ -345,6 +349,7 @@ class ManagedPeer implements RtcPeerHandle {
   }
 
   arm(timeoutMs: number): void {
+    if (this.closed) return;
     this.#timer = this.timers.setTimeout(() => {
       this.#timer = undefined;
       if (this.closed || this.handedOff) return;
@@ -364,6 +369,15 @@ class ManagedPeer implements RtcPeerHandle {
   }
 
   close(): void {
+    this.#host.remove(this);
+  }
+
+  /**
+   * Release the native connection and carrier without touching the manager's
+   * indexes. Called from #remove, which can be entered by a factory callback
+   * or by close(); both paths must be safe to run twice.
+   */
+  teardown(): void {
     if (this.closed) return;
     this.closed = true;
     if (this.#timer !== undefined) {
@@ -377,16 +391,6 @@ class ManagedPeer implements RtcPeerHandle {
       // Closing an already-closed PeerConnection is not an error here.
     }
     this.channel?.carrier.close(1008, "peer closed");
-    this.#host.remove(this);
-  }
-
-  markClosed(): void {
-    this.closed = true;
-    if (this.#timer !== undefined) {
-      this.timers.clearTimeout(this.#timer);
-      this.#timer = undefined;
-    }
-    this.#rejectClosed(new Error(this.failure ?? "WebRTC peer closed"));
   }
 }
 

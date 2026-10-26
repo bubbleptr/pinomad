@@ -362,6 +362,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       closed: (self) => {
         clients.delete(self);
         connections.delete(self);
+        // A business connection can own peers too: rtcOffer works there. Only
+        // its incomplete peers close with it; handed-off peers belong to the
+        // DataChannel's own connection (dureview P2).
+        rtc?.closeOwner(self);
         void self.dispose();
       },
       closeDevice: (publicKey) => {

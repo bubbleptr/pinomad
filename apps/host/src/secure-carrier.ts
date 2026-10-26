@@ -24,6 +24,10 @@ export interface RecordCarrier {
 
 /** A WebSocket carrier: one binary frame is one record. */
 export function webSocketCarrier(socket: WebSocket): RecordCarrier {
+  // ws emits "error" for malformed frames before Noise ever runs; an
+  // unhandled error event would take the whole host down (dureview P1). The
+  // loopback listener installs its own handler too; terminating twice is safe.
+  socket.on("error", () => socket.terminate());
   return {
     get open() {
       return socket.readyState === WebSocket.OPEN;
