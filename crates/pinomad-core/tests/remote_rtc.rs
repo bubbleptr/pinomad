@@ -113,6 +113,7 @@ const DEFAULT_ANSWER: &str = "v=0\r\na=max-message-size:65536\r\n";
 struct ScriptSource {
     hold_calls: Arc<Mutex<HashSet<String>>>,
     fail_calls: Arc<Mutex<HashSet<String>>>,
+    attempts: Arc<Mutex<Vec<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -122,6 +123,7 @@ impl CandidateSource for ScriptSource {
             signal: false,
             hold_calls: self.hold_calls.clone(),
             fail_calls: self.fail_calls.clone(),
+            attempts: self.attempts.clone(),
             answer_sdp: self.answer_sdp.clone(),
         })
     }
@@ -130,6 +132,7 @@ impl CandidateSource for ScriptSource {
             signal: true,
             hold_calls: self.hold_calls.clone(),
             fail_calls: self.fail_calls.clone(),
+            attempts: self.attempts.clone(),
             answer_sdp: self.answer_sdp.clone(),
         })
     }
@@ -139,6 +142,7 @@ struct FakeSocket {
     signal: bool,
     hold_calls: Arc<Mutex<HashSet<String>>>,
     fail_calls: Arc<Mutex<HashSet<String>>>,
+    attempts: Arc<Mutex<Vec<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -169,6 +173,11 @@ impl Connection for FakeSocket {
         }
         let method = frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()).unwrap_or_default();
         let id = frame.get("id").and_then(Json::as_number).unwrap_or(0.0);
+        if method == "rtcOffer" {
+            if let Some(attempt) = frame.get("args").and_then(|args| args.get("attempt")).and_then(Json::as_str) {
+                self.attempts.lock().unwrap().push(attempt.to_string_lossy());
+            }
+        }
         if method != "rtcOffer" && self.hold_calls.lock().unwrap().contains(&method) {
             return;
         }
@@ -366,6 +375,7 @@ struct Harness {
     rtc_sends: usize,
     hold_calls: Arc<Mutex<HashSet<String>>>,
     fail_calls: Arc<Mutex<HashSet<String>>>,
+    attempts: Arc<Mutex<Vec<String>>>,
     answer_sdp: Arc<Mutex<String>>,
 }
 
@@ -378,6 +388,7 @@ impl Harness {
         let host = FakeRtcHost::new();
         let hold_calls = Arc::new(Mutex::new(HashSet::new()));
         let fail_calls = Arc::new(Mutex::new(HashSet::new()));
+        let attempts = Arc::new(Mutex::new(Vec::new()));
         let answer_sdp = Arc::new(Mutex::new(DEFAULT_ANSWER.to_string()));
         let rtc = RtcOptions {
             host_key: to_base64url(&host.host.public_key),
@@ -388,6 +399,7 @@ impl Harness {
             source: Box::new(ScriptSource {
                 hold_calls: hold_calls.clone(),
                 fail_calls: fail_calls.clone(),
+                attempts: attempts.clone(),
                 answer_sdp: answer_sdp.clone(),
             }),
             mode: pinomad_core::remote_durable::RemoteMode::Planned,
@@ -430,6 +442,7 @@ impl Harness {
             rtc_sends: 0,
             hold_calls,
             fail_calls,
+            attempts,
             answer_sdp,
         };
         let initial = harness.remote.take();
@@ -691,6 +704,7 @@ fn unsupported_rtc_emits_no_rtc_commands() {
         source: Box::new(ScriptSource {
             hold_calls: Arc::new(Mutex::new(HashSet::new())),
             fail_calls: Arc::new(Mutex::new(HashSet::new())),
+            attempts: Arc::new(Mutex::new(Vec::new())),
             answer_sdp: Arc::new(Mutex::new(DEFAULT_ANSWER.to_string())),
         }),
         mode: pinomad_core::remote_durable::RemoteMode::Planned,
@@ -1112,4 +1126,16 @@ fn closing_the_carrier_marks_an_in_flight_request_as_lost() {
         h.failed,
         vec![(8, "Disconnected from host".to_string(), true)]
     );
+}
+
+#[test]
+fn every_session_uses_a_unique_rtc_attempt() {
+    let mut first = Harness::new(candidates(), ConnectionMode::Auto);
+    first.advance(1_500);
+    let mut second = Harness::new(candidates(), ConnectionMode::Auto);
+    second.advance(1_500);
+    let one = first.attempts.lock().unwrap().last().cloned().expect("first attempt");
+    let two = second.attempts.lock().unwrap().last().cloned().expect("second attempt");
+    assert_ne!(one, two, "a restarted app must not reuse the host's cached answer");
+    assert!(one.starts_with("rtc-"));
 }

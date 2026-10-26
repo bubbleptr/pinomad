@@ -117,6 +117,10 @@ impl Engine {
         let provider: Arc<CryptoProvider> = Arc::new(str0m_rust_crypto::default_provider());
         let mut rtc = RtcConfig::new()
             .set_crypto_provider(provider)
+            // PeerStats carries the selected ICE pair; the UI's path label
+            // (`P2P (host ↔ host)`) reads it, so ask str0m for it once a
+            // second.
+            .set_stats_interval(Some(Duration::from_secs(1)))
             .set_sctp_max_buffered_amount(SCTP_BUFFER)
             .build(base);
         let mut local_kind = HashMap::new();

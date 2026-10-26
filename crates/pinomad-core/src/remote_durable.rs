@@ -916,6 +916,10 @@ pub struct RemoteDurable {
     follows_host_endpoints: bool,
     host_key: String,
     pairing_endpoint_set: Option<EndpointSet>,
+    /// One random suffix per session: the host keys answered peers by
+    /// `device + attempt`, and a restarted app must not receive the cached
+    /// answer for a previous session's offer (its mid would not match).
+    rtc_attempt_nonce: u64,
     timeouts: CandidateTimeouts,
     round_timeout_ms: Option<u64>,
     round: u64,
@@ -1040,6 +1044,11 @@ impl RemoteDurable {
             follows_host_endpoints,
             host_key: options.host_key,
             pairing_endpoint_set: options.pairing_endpoint_set,
+            rtc_attempt_nonce: {
+                let mut bytes = [0u8; 8];
+                getrandom::fill(&mut bytes).expect("system random source");
+                u64::from_le_bytes(bytes)
+            },
             timeouts: options.candidate_timeouts,
             round_timeout_ms: options.round_timeout_ms,
             round: 0,
@@ -1710,7 +1719,7 @@ impl RemoteDurable {
         if let Some(standby) = self.standby.as_mut() {
             standby.offer_call = Some(id);
         }
-        let attempt = format!("rtc-{peer}");
+        let attempt = format!("rtc-{:016x}-{peer}", self.rtc_attempt_nonce);
         let mut args = JsonObject::new();
         set(&mut args, "attempt", Json::from(attempt));
         set(&mut args, "sdp", Json::from(sdp));
