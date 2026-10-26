@@ -21,31 +21,28 @@ export interface LandingCopy {
     models: string[];
     modelsMore: string;
     shotAlt: string;
+    phonePlaceholder: string;
   };
   core: {
     eyebrow: string;
     title: string;
     machine: { title: string; body: string; placeholder: string };
-    anywhere: { title: string; body: string; placeholder: string };
+    anywhere: { title: string; body: string; clients: string[] };
     allFeatures: string;
   };
   durable: {
     title: string;
     body: string;
     description: string;
-    model: string;
-    crash: string;
-    resume: string;
-    start: string;
-    pull: string;
-    again: string;
-    idle: string;
-    running: string;
-    crashed: string;
-    resumed: (flag: number) => string;
-    restartedEmpty: string;
-    done: string;
-    doneClean: string;
+    plain: string;
+    durable: string;
+    steps: { tool: string; detail: string }[];
+    tags: { lost: string; kept: string; cut: string; rerun: string };
+    restartPlain: string;
+    restartDurable: string;
+    host: { up: string; down: string };
+    replay: string;
+    status: { running: string; crashed: string; restarted: string; done: string };
   };
   agents: {
     eyebrow: string;
@@ -113,6 +110,7 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsMore: "17 more",
       shotAlt:
         "The PiNomad web client mid-run: conversations in the sidebar; the agent has answered, been asked for more, and is now reading and editing files and running commands",
+      phonePlaceholder: "Screenshot coming: the same run on iPhone.",
     },
     core: {
       eyebrow: "How it works",
@@ -125,7 +123,7 @@ export const copy: Record<Lang, LandingCopy> = {
       anywhere: {
         title: "Step away from your desk",
         body: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
-        placeholder: "Screenshot coming: the same run on iPhone.",
+        clients: ["Mac app", "Web", "iPhone"],
       },
       allFeatures: "Everything the agent can do",
     },
@@ -133,20 +131,27 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "Runs survive crashes and restarts",
       body: "Pi Durable writes a checkpoint after every model call and tool call. After a restart the run continues from the last one; only the call that was in flight runs again.",
       description:
-        "A run drawn as a track of model and tool calls. Each finished call plants a flag. The host crashes between two calls; after the restart the run continues from the last flag, and only the half-finished call is redone.",
-      model: "model",
-      crash: "host crashes",
-      resume: "picks up at this flag",
-      start: "Start a run",
-      pull: "Pull the plug",
-      again: "Run it again",
-      idle: "Start a run, then pull the plug while it's going.",
-      running: "Running. Each finished call plants a flag: a checkpoint.",
-      crashed: "The host is gone. Only the half-finished call is lost.",
-      resumed: (flag) => `Restarted. Picking up from flag ${flag}.`,
-      restartedEmpty: "Restarted. No flag yet, so it starts from the top.",
-      done: "Done. No call behind a flag ran twice.",
-      doneClean: "Done. Next time, pull the plug while it runs.",
+        "The same task run twice, with and without checkpoints. Three calls finish, then the host crashes during the fourth. After the restart, the run without checkpoints has lost all three and starts over from step 1. The Pi Durable run still has them, reruns only the call that was cut off, and finishes.",
+      plain: "Without checkpoints",
+      durable: "With Pi Durable",
+      steps: [
+        { tool: "model", detail: "plan the fix" },
+        { tool: "bash", detail: "bun test" },
+        { tool: "edit", detail: "src/auth.ts" },
+        { tool: "bash", detail: "bun test" },
+        { tool: "model", detail: "write it up" },
+      ],
+      tags: { lost: "lost", kept: "kept", cut: "cut off", rerun: "rerun" },
+      restartPlain: "Restarted · back to step 1",
+      restartDurable: "Restarted · picks up at step 4",
+      host: { up: "Host running", down: "Host crashed" },
+      replay: "Replay",
+      status: {
+        running: "Same task, two runs.",
+        crashed: "The host crashes during the fourth call.",
+        restarted: "Back up. One run lost everything; Pi Durable kept the three finished calls.",
+        done: "Pi Durable is done, rerunning only the call that was cut off. The other run is still redoing step 2.",
+      },
     },
     agents: {
       eyebrow: "Named agents",
@@ -272,6 +277,7 @@ export const copy: Record<Lang, LandingCopy> = {
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是对话列表，agent 答完上一轮后，正顺着追问改测试、跑测试",
+      phonePlaceholder: "截图待补：在 iPhone 上接着看同一个任务。",
     },
     core: {
       eyebrow: "工作方式",
@@ -284,7 +290,7 @@ export const copy: Record<Lang, LandingCopy> = {
       anywhere: {
         title: "离开电脑也能接着管",
         body: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
-        placeholder: "截图待补：在 iPhone 上接着看同一个任务。",
+        clients: ["Mac App", "Web", "iPhone"],
       },
       allFeatures: "agent 能做的所有事",
     },
@@ -292,20 +298,27 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "步步存检查点，重启不用从头来",
       body: "每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。",
       description:
-        "示意图：一条任务路线串联起多次模型调用和工具调用，每完成一步就插一面旗。宿主在两步中途崩溃，重启后直接从上一面旗恢复，只重做中断的那一步。",
-      model: "模型",
-      crash: "宿主崩溃",
-      resume: "从这面旗接着跑",
-      start: "开始运行",
-      pull: "拔掉电源",
-      again: "再来一次",
-      idle: "点「开始运行」，趁它跑到半路把电源拔了。",
-      running: "正在跑。每完成一步插一面旗，代表存了一个检查点。",
-      crashed: "宿主挂了。只有卡在半路的那一步作废。",
-      resumed: (flag) => `宿主重启，直接从第 ${flag} 面旗接着跑。`,
-      restartedEmpty: "宿主重启。还没来得及插旗，这次从头跑。",
-      done: "跑完了，插过旗的步骤一步都没重跑。",
-      doneClean: "跑完了。再试一次，趁它在跑时拔掉电源看看。",
+        "同一个任务跑两遍，一边没有检查点，一边用 Pi Durable。前三步跑完，第四步跑到一半宿主崩溃。重启后，没有检查点的那边三步全丢，从第一步重来；Pi Durable 这边三步都还在，只重跑被打断的那一步，然后跑完。",
+      plain: "没有检查点",
+      durable: "用 Pi Durable",
+      steps: [
+        { tool: "模型", detail: "定修复方案" },
+        { tool: "bash", detail: "bun test" },
+        { tool: "edit", detail: "src/auth.ts" },
+        { tool: "bash", detail: "bun test" },
+        { tool: "模型", detail: "写总结" },
+      ],
+      tags: { lost: "丢了", kept: "保留", cut: "被打断", rerun: "重跑" },
+      restartPlain: "重启 · 回到第 1 步",
+      restartDurable: "重启 · 从第 4 步接着跑",
+      host: { up: "宿主运行中", down: "宿主崩溃" },
+      replay: "再看一遍",
+      status: {
+        running: "同一个任务，跑两遍。",
+        crashed: "第四步跑到一半，宿主崩溃。",
+        restarted: "宿主重启。一边全丢了，Pi Durable 这边跑完的三步都在。",
+        done: "Pi Durable 跑完了，只重跑了被打断的那一步；另一边还在重做第 2 步。",
+      },
     },
     agents: {
       eyebrow: "具名 Agent",
