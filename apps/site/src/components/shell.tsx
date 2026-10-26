@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { i18n, localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl, siteNav } from "@/lib/nav.ts";
 import { counterpart } from "@/lib/pages.ts";
+import { GitHubIcon } from "@/landing/icons.tsx";
 import appCss from "@/styles/app.css?url";
 import favicon from "../../../web/public/favicon.svg?url";
 
@@ -64,10 +65,14 @@ export function baseOptions(lang: Lang): BaseLayoutProps {
       ),
       url: localized(lang, "/"),
     },
-    githubUrl,
+    // GitHub and the app link sit at the far end, as on the landing header; listing the
+    // icon here instead of passing githubUrl keeps the app link last.
     links: [
       ...nav.links.map((link) => ({ ...link, active: "nested-url" as const })),
+      { type: "icon", label: "GitHub", icon: <GitHubIcon />, text: "GitHub", url: githubUrl, external: true },
       {
+        type: "button",
+        secondary: true,
         text: (
           <>
             <span className="when-signed-out">{nav.app.signedOut}</span>
