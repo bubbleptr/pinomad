@@ -16,7 +16,11 @@ class Channel implements RtcDataChannel {
   #host: ReturnType<typeof respondIK> | undefined;
   #session: SecureSession | undefined;
 
-  constructor(readonly hostKey: ReturnType<typeof generateKeyPair>) {}
+  readonly hostKey: ReturnType<typeof generateKeyPair>;
+
+  constructor(hostKey: ReturnType<typeof generateKeyPair>) {
+    this.hostKey = hostKey;
+  }
 
   onOpen(listener: () => void): void { this.#open = listener; }
   onMessage(listener: (record: Uint8Array) => void): void { this.#message = listener; }
