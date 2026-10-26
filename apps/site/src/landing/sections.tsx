@@ -20,11 +20,9 @@ export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow:
   );
 }
 
-/**
- * An iPhone drawn in CSS: titanium edge, black bezel, Dynamic Island, side buttons.
- * The screen holds an abstract skeleton until the app's screenshot replaces it.
- */
-function Phone({ caption, className }: { caption: string; className: string }) {
+/** An iPhone drawn in CSS around a screenshot: titanium edge, black bezel, Dynamic Island, side buttons. */
+function Phone({ lang, alt, className }: { lang: Lang; alt: string; className: string }) {
+  const image = shot(lang, "phone", 603, 1206);
   return (
     <figure className={`phone ${className}`}>
       <div className="phone-body">
@@ -34,21 +32,18 @@ function Phone({ caption, className }: { caption: string; className: string }) {
         <span className="phone-btn btn-side" />
         <span className="phone-btn btn-camera" />
         <div className="phone-screen">
-          <div className="shot-skeleton sk-phone" aria-hidden="true">
-            <span className="sk-line w55" />
-            <div className="sk-main">
-              <span className="sk-line w85" />
-              <span className="sk-line w70" />
-              <span className="sk-line w85" />
-              <span className="sk-gap" />
-              <span className="sk-line w55" />
-              <span className="sk-line w70" />
-            </div>
-          </div>
+          <img
+            src={image.src}
+            srcSet={image.srcSet}
+            sizes="(min-width: 56rem) 18rem, 16rem"
+            width="1206"
+            height="2622"
+            alt={alt}
+            loading="lazy"
+          />
           <span className="phone-island" />
         </div>
       </div>
-      <figcaption className="shot-label">{caption}</figcaption>
     </figure>
   );
 }
@@ -97,7 +92,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
 }
 
 /** The phone gets a section of its own: drawn as a device, it doesn't sit well beside a flat screenshot. */
-export function Anywhere({ t }: { t: LandingCopy["anywhere"] }) {
+export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }) {
   return (
     <section className="section section-showcase" id="anywhere" aria-labelledby="anywhere-title">
       <div className="wrap split">
@@ -111,7 +106,7 @@ export function Anywhere({ t }: { t: LandingCopy["anywhere"] }) {
             ))}
           </ul>
         </div>
-        <Phone caption={t.placeholder} className="showcase-phone" />
+        <Phone lang={lang} alt={t.shotAlt} className="showcase-phone" />
       </div>
     </section>
   );

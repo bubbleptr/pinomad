@@ -9,8 +9,6 @@ const copy = {
       "PiNomad is a self-hosted coding agent built on Pi Durable. It checkpoints every model and tool call, so a crash or restart picks up where it stopped; the Mac app, the web client, and the iPhone app all attach to the same runs.",
     social:
       "Runs on your machine and checkpoints every model and tool call; the Mac app, the web client, and the iPhone app all attach to the same runs.",
-    imageAlt:
-      "One PiNomad run in the web client: conversations in the sidebar, the agent mid-run with thinking and tool calls",
     locale: "en_US",
     altLocale: "zh_CN",
   },
@@ -20,7 +18,6 @@ const copy = {
       "PiNomad 是基于 Pi Durable 的自托管 coding agent，跑在你自己的机器上。每一步模型和工具调用都会存下检查点，崩溃或重启后从断处接着跑；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。",
     social:
       "跑在你自己的机器上，每一步模型和工具调用都存检查点；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。",
-    imageAlt: "PiNomad Web 客户端运行画面：左侧是对话列表，右侧 agent 正在思考并调用工具",
     locale: "zh_CN",
     altLocale: "en_US",
   },
@@ -29,7 +26,6 @@ const copy = {
 export function landingHead(lang: Lang) {
   const c = copy[lang];
   const url = lang === "zh" ? `${ORIGIN}/zh/` : `${ORIGIN}/`;
-  const image = `${ORIGIN}/og-image.jpg`;
   return {
     meta: [
       { title: c.title },
@@ -43,14 +39,9 @@ export function landingHead(lang: Lang) {
       { property: "og:url", content: url },
       { property: "og:title", content: c.title },
       { property: "og:description", content: c.social },
-      { property: "og:image", content: image },
-      { property: "og:image:width", content: "1920" },
-      { property: "og:image:height", content: "1200" },
-      { property: "og:image:alt", content: c.imageAlt },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: c.title },
       { name: "twitter:description", content: c.social },
-      { name: "twitter:image", content: image },
     ],
     links: [
       { rel: "canonical", href: url },
