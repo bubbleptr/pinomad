@@ -110,13 +110,6 @@ struct MentionMenuView: View {
     let menu: MentionMenu
     let choose: (MentionChoice) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var rowCount: Int {
-        menu.agents.count + menu.files.count + (menu.filesTruncated ? 1 : 0)
-            + (showsLoading ? 1 : 0) + (showsDivider ? 1 : 0)
-    }
-
     private var showsLoading: Bool {
         menu.filesLoading && menu.agents.isEmpty && menu.files.isEmpty
     }
@@ -126,26 +119,7 @@ struct MentionMenuView: View {
     }
 
     var body: some View {
-        Group {
-            if rowCount > 6 {
-                ScrollView {
-                    rows
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollIndicators(.hidden)
-                // About six rows; the rest scrolls.
-                .frame(height: 292)
-            } else {
-                rows
-            }
-        }
-        .padding(.vertical, 4)
-        .clipShape(.rect(cornerRadius: 22))
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        // The material does not pick up a system appearance switch while a
-        // short menu is already on screen; a new identity re-resolves it.
-        .id(colorScheme)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        ComposerMenuCard { rows }
     }
 
     private var rows: some View {
@@ -255,6 +229,57 @@ private struct FileMentionRow: View {
     private var folder: String {
         guard let slash = path.lastIndex(of: "/") else { return "./" }
         return String(path[..<slash]) + "/"
+    }
+}
+
+/// The glass card a composer menu sits in. Its rows show at their own
+/// height when they fit; otherwise they scroll in the room the page has
+/// left, at most about six rows. The menu takes that room before anything
+/// beside it, so with the keyboard up it shrinks instead of pushing the
+/// composer card under the keyboard.
+struct ComposerMenuCard<Rows: View>: View {
+    @ViewBuilder let rows: Rows
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HeightLimit(limit: 292) {
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView {
+                    rows
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(.hidden)
+            }
+        }
+        .padding(.vertical, 4)
+        .clipShape(.rect(cornerRadius: 22))
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        // The material does not pick up a system appearance switch while a
+        // short menu is already on screen; a new identity re-resolves it.
+        .id(colorScheme)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .layoutPriority(1)
+    }
+}
+
+/// Offers its content at most `limit` points of height. Unlike
+/// `.frame(maxHeight:)` it never grows to that limit, so a short menu
+/// keeps its own height.
+private struct HeightLimit: Layout {
+    let limit: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width, height: min(proposal.height ?? limit, limit))
     }
 }
 
