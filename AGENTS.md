@@ -56,11 +56,13 @@ xcrun simctl launch "iPhone 17 Pro" build.kieran.pinomad \
 
 ```sh
 # 构建要签名：DEVELOPMENT_TEAM 用开发者证书所属团队，pbxproj 里保持为空。
+# derivedDataPath 写 /private/tmp 而不是 /tmp：/tmp 是软链，重跑 build-core.sh 后
+# 增量构建会报 pinomad_coreFFI.h "has been modified since the module file"。
 xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad \
-  -destination 'id=00008150-001608822678401C' -derivedDataPath /tmp/pinomad-device-dd \
+  -destination 'id=00008150-001608822678401C' -derivedDataPath /private/tmp/pinomad-device-dd \
   DEVELOPMENT_TEAM=9KZ32XLVQW -allowProvisioningUpdates build
 xcrun devicectl device install app --device 00008150-001608822678401C \
-  /tmp/pinomad-device-dd/Build/Products/Debug-iphoneos/Pinomad.app
+  /private/tmp/pinomad-device-dd/Build/Products/Debug-iphoneos/Pinomad.app
 
 # devicectl 会把 -xxx 应用参数当成自己的短选项簇解析（-autoPair → -a -u -t …），
 # 所以启动参数走 DEVICECTL_CHILD_ 环境变量（App 也读 PINOMAD_* env）：
