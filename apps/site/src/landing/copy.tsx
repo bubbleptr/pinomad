@@ -27,7 +27,7 @@ export interface LandingCopy {
     title: string;
     lead: string;
     clients: string[];
-    placeholder: string;
+    shotAlt: string;
   };
   core: {
     eyebrow: string;
@@ -112,14 +112,15 @@ export const copy: Record<Lang, LandingCopy> = {
       models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "17 more",
       shotAlt:
-        "The PiNomad web client mid-run: conversations in the sidebar; the agent has answered, been asked for more, and is now reading and editing files and running commands",
+        "The PiNomad web client mid-run: the slugkit project's conversations in the sidebar; the agent has folded accented letters in slugs, been asked to document the rules in the README, edited it, and is running the tests again",
     },
     anywhere: {
       eyebrow: "Any screen",
       title: "Step away from your desk",
       lead: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
       clients: ["Mac app", "Web", "iPhone"],
-      placeholder: "Screenshot coming: the same run on iPhone.",
+      shotAlt:
+        "The same run in the PiNomad iPhone app: the agent's summary of the accent folding, the README request below it, and the run still going at the bottom with a stop button",
     },
     core: {
       eyebrow: "How it works",
@@ -287,14 +288,14 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsLabel: "pi 支持的模型都能用",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
-      shotAlt: "PiNomad Web 客户端运行画面：左侧是对话列表，agent 答完上一轮后，正顺着追问改测试、跑测试",
+      shotAlt: "PiNomad Web 客户端运行画面：左侧是 slugkit 项目的对话列表；agent 改好了重音字母的折叠，又被要求在 README 里写明规则，改完 README 后正在重跑测试",
     },
     anywhere: {
       eyebrow: "多端接力",
       title: "离开电脑也能接着管",
       lead: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
       clients: ["Mac App", "Web", "iPhone"],
-      placeholder: "截图待补：在 iPhone 上接着看同一个任务。",
+      shotAlt: "同一个任务在 PiNomad iPhone App 里：上面是 agent 对重音字母折叠的总结，下面是写 README 的追问，最底下任务还在跑，旁边是停止按钮",
     },
     core: {
       eyebrow: "工作方式",

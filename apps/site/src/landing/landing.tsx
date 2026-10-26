@@ -25,7 +25,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
       <SiteHeader lang={lang} t={t} />
       <main id="main">
         <Hero lang={lang} t={t.hero} />
-        <Anywhere t={t.anywhere} />
+        <Anywhere lang={lang} t={t.anywhere} />
         <Core lang={lang} t={t.core} durable={t.durable} />
         <Agents lang={lang} t={t.agents} />
         <Connection t={t.connection} />
