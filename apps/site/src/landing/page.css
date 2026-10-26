@@ -795,283 +795,6 @@ html[lang="zh-CN"] .hero h1 {
   margin-top: 1.75rem;
 }
 
-/* —— The durable demo: one task, two runs, one crash. Row states are classes the
-   effect swaps (durable.tsx); every row is always in the layout, so nothing moves
-   while it plays. —— */
-.durable-demo {
-  margin-top: 0.75rem;
-}
-
-.run-host {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-  color: var(--fg-2);
-  font-size: 0.8rem;
-}
-
-.host-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border: 1.5px solid var(--fg);
-  border-radius: 50%;
-  background: var(--fg);
-  transition: background-color 0.2s ease;
-}
-
-.host-down,
-.is-offline .host-up {
-  display: none;
-}
-
-.is-offline .host-down {
-  display: inline;
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.is-offline .host-dot {
-  background: transparent;
-  animation: blink 0.5s steps(2, jump-none) 3;
-}
-
-.runs {
-  position: relative;
-  display: grid;
-  gap: 0.75rem;
-}
-
-/* The crash itself: one badge across both runs, because it's the same host. */
-.run-crash {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1.1rem;
-  border-radius: 999px;
-  background: var(--fg);
-  color: var(--bg);
-  font-size: 0.95rem;
-  font-weight: 700;
-  white-space: nowrap;
-  opacity: 0;
-  translate: -50% -50%;
-  scale: 0.85;
-  transition: opacity 0.2s ease, scale 0.2s ease;
-  pointer-events: none;
-}
-
-.run-crash svg {
-  width: 1rem;
-  height: 1rem;
-  fill: currentColor;
-}
-
-.is-offline .run-crash {
-  opacity: 1;
-  scale: 1;
-  animation: shake 0.4s var(--ease-out);
-}
-
-@media (min-width: 44rem) {
-  .runs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.run-pane {
-  min-width: 0;
-  padding: 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 0.25rem);
-  background: var(--bg);
-  transition: opacity 0.25s ease, border-color 0.25s ease;
-}
-
-.run-durable {
-  border-color: var(--border-strong);
-}
-
-.is-offline .run-pane {
-  opacity: 0.4;
-}
-
-.run-label {
-  margin-bottom: 0.6rem;
-  color: var(--fg-3);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.run-durable .run-label {
-  color: var(--fg);
-}
-
-.run-rows {
-  display: grid;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.run-row {
-  display: grid;
-  grid-template-columns: 1rem 2.75rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 2.1rem;
-  padding: 0.3rem 0.55rem;
-  border-radius: 0.5rem;
-  font-size: 0.85rem;
-  transition: opacity 0.3s ease, background-color 0.4s ease, color 0.4s ease;
-}
-
-.run-tool {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-}
-
-.run-detail {
-  overflow: hidden;
-  color: var(--fg-2);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.run-tag {
-  display: none;
-  padding: 0.05rem 0.5rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  color: var(--fg-2);
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.is-lost .tag-lost,
-.is-kept .tag-kept,
-.is-cut .tag-cut,
-.run-row:not(.is-pending) .tag-rerun {
-  display: inline-block;
-}
-
-.run-mark {
-  width: 1rem;
-  height: 1rem;
-  fill: none;
-  stroke: var(--fg);
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.run-mark > * {
-  display: none;
-}
-
-.is-running .mark-spin {
-  display: inline;
-  stroke-dasharray: 26 12;
-  transform-origin: center;
-  animation: spin 0.9s linear infinite;
-}
-
-.is-done .mark-done,
-.is-kept .mark-done,
-.is-lost .mark-done {
-  display: inline;
-}
-
-.is-cut .mark-cut {
-  display: inline;
-}
-
-.run-row.is-pending {
-  opacity: 0;
-}
-
-.run-row.is-cut,
-.run-row.is-cut .run-detail {
-  color: var(--fg-3);
-}
-
-.is-cut .run-mark {
-  stroke: var(--fg-3);
-}
-
-/* Lost work fades and is struck through; kept work is the bright part of the picture. */
-.run-row.is-lost {
-  opacity: 0.45;
-}
-
-.is-lost .run-tool,
-.is-lost .run-detail {
-  text-decoration: line-through;
-}
-
-.is-lost .run-mark {
-  stroke: var(--fg-3);
-}
-
-.run-row.is-kept {
-  background: var(--surface-2);
-  animation: kept 1.4s var(--ease-out);
-}
-
-.is-kept .tag-kept {
-  border-color: var(--fg-2);
-  color: var(--fg);
-}
-
-.run-divider {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 1.9rem;
-  color: var(--fg-3);
-  font-size: 0.75rem;
-  transition: opacity 0.3s ease;
-}
-
-.run-divider::before,
-.run-divider::after {
-  content: "";
-  flex: 1;
-  border-top: 1px dashed var(--border-strong);
-}
-
-.run-durable .run-divider {
-  color: var(--fg-2);
-}
-
-.run-divider.is-pending {
-  opacity: 0;
-}
-
-.diagram-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1.25rem;
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--border);
-}
-
-.diagram-status {
-  flex: 1 1 16rem;
-  min-height: 1.6em;
-  color: var(--fg-2);
-  font-size: 0.9rem;
-}
-
 /* —— Named agents —— */
 .roles {
   display: grid;
@@ -1347,6 +1070,67 @@ html[lang="zh-CN"] .hero h1 {
 
 .dg-start {
   text-anchor: start;
+}
+
+/* The durable demo (durable.tsx): two run windows side by side, stacked on phones. */
+.durable-diagram {
+  display: grid;
+  gap: 1rem 0.5rem;
+}
+
+@media (min-width: 44rem) {
+  .durable-diagram {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.dg-row-tool,
+.dg-row-detail {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dg-row-tool {
+  fill: var(--fg);
+}
+
+.dg-row-detail {
+  fill: var(--fg-3);
+}
+
+/* A checkpointed call that survived the crash. */
+.dg-kept {
+  fill: color-mix(in oklch, var(--dg-green) 14%, transparent);
+}
+
+/* Lost work: dimmed and struck out. */
+.dg-veil {
+  fill: var(--dg-card);
+  fill-opacity: 0.6;
+}
+
+.dg-veil.is-heavy {
+  fill-opacity: 0.75;
+}
+
+.dg-strike {
+  fill: none;
+  stroke: var(--fg-3);
+  stroke-width: 1.25;
+}
+
+.dg-down {
+  fill: var(--dg-red);
+}
+
+/* Mixed in sRGB: OKLCH would swing the hue through violet on its way to the grey. */
+.dg-alarm {
+  fill: color-mix(in srgb, var(--dg-red) 22%, var(--dg-card));
+  stroke: color-mix(in srgb, var(--dg-red) 45%, transparent);
+}
+
+.dg-icon.is-alarm {
+  fill: var(--dg-red);
 }
 
 /* Motion. The SMIL parts are .dg-motion; under reduced motion they go and the
@@ -1626,32 +1410,6 @@ html[lang="zh-CN"] .hero h1 {
 
   .reveal.is-revealed {
     transition: opacity 0.6s var(--ease-out), translate 0.6s var(--ease-out);
-  }
-}
-
-/* —— Keyframes —— */
-@keyframes spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-@keyframes shake {
-  25% {
-    translate: calc(-50% - 6px) -50%;
-  }
-  50% {
-    translate: calc(-50% + 5px) -50%;
-  }
-  75% {
-    translate: calc(-50% - 3px) -50%;
-  }
-}
-
-/* A kept row lights up as the run comes back, then settles. */
-@keyframes kept {
-  from {
-    background-color: var(--border-strong);
   }
 }
 

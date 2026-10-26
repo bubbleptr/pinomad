@@ -4,7 +4,7 @@ import { githubUrl } from "@/lib/nav.ts";
 import { buttonVariants } from "@/components/ui/button.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram, MachineDiagram } from "./diagrams.tsx";
-import { DurableDemo } from "./durable.tsx";
+import { DurableDiagram } from "./durable.tsx";
 import { shot } from "./shots.ts";
 
 // The landing page's sections. The interactive parts (the durable diagram, the
@@ -129,7 +129,7 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
           <article className="cell cell-wide" aria-labelledby="durable-title">
             <h3 id="durable-title">{durable.title}</h3>
             <p>{durable.body}</p>
-            <DurableDemo t={durable} />
+            <DurableDiagram t={durable} />
           </article>
           <article className="cell cell-machine">
             <h3>{t.machine.title}</h3>

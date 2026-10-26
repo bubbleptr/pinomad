@@ -10,8 +10,8 @@ import type { LandingCopy } from "./copy.tsx";
 // Coordinates are in a 360-unit-wide viewBox. The page's CSP allows no inline
 // styles, so colours and sizes are classes in page.css (the .dg-* rules, on the
 // --dg-* tokens). The motion is SMIL, which keeps it in step without script.
-// Under reduced motion the moving parts (.dg-motion) are hidden and a still
-// frame (.dg-still) shows the same state; off screen the animations pause.
+// Under reduced motion the moving parts (.dg-motion) are hidden, a still frame
+// (.dg-still) shows the same state, and the clock holds; off screen it pauses.
 //
 // Shipped things are raised cards; planned ones are dashed outlines with no
 // shadow. Colour only carries meaning: window controls, green for running and
@@ -19,42 +19,77 @@ import type { LandingCopy } from "./copy.tsx";
 
 const Shadow = createContext("");
 
-function Diagram({ label, height, children }: { label: string; height: number; children: ReactNode }) {
-  const id = `dg-shadow${useId().replace(/[^\w-]/g, "")}`;
-  const svg = useRef<SVGSVGElement>(null);
+/**
+ * Runs the SMIL clock of every drawing in a figure as one: from the start when the
+ * figure first scrolls into view, paused while it's off screen. Under reduced
+ * motion the clock holds at `still` seconds.
+ */
+export function useMotion<T extends HTMLElement>(still = 0) {
+  const ref = useRef<T>(null);
   useEffect(() => {
-    const element = svg.current!;
-    element.pauseAnimations();
+    const figure = ref.current!;
+    const svgs = [...figure.querySelectorAll("svg")];
+    for (const svg of svgs) svg.pauseAnimations();
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      for (const svg of svgs) svg.setCurrentTime(still);
+      return;
+    }
+    let started = false;
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry!.isIntersecting) element.unpauseAnimations();
-      else element.pauseAnimations();
+      if (!entry!.isIntersecting) {
+        for (const svg of svgs) svg.pauseAnimations();
+        return;
+      }
+      for (const svg of svgs) {
+        if (!started) svg.setCurrentTime(0);
+        svg.unpauseAnimations();
+      }
+      started = true;
     });
-    observer.observe(element);
+    observer.observe(figure);
     return () => observer.disconnect();
-  }, []);
+  }, [still]);
+  return ref;
+}
+
+function Diagram({ label, height, children }: { label: string; height: number; children: ReactNode }) {
+  const ref = useMotion<HTMLElement>();
   return (
-    <figure className="diagram">
-      <svg ref={svg} viewBox={`0 0 360 ${height}`} role="img" aria-label={label} focusable="false">
-        <defs>
-          {/* In user space, sized to the whole drawing, so no shadow is clipped at its element's edge. */}
-          <filter id={id} filterUnits="userSpaceOnUse" x="-20" y="-20" width="400" height={height + 40}>
-            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000" floodOpacity="0.5" />
-          </filter>
-        </defs>
-        <Shadow.Provider value={`url(#${id})`}>{children}</Shadow.Provider>
-      </svg>
+    <figure className="diagram" ref={ref}>
+      <Drawing label={label} height={height}>
+        {children}
+      </Drawing>
     </figure>
+  );
+}
+
+/** One SVG drawing with its shadow filter. Without a label it's decoration, and the figure around it is labelled. */
+export function Drawing({ label, height, children }: { label?: string; height: number; children: ReactNode }) {
+  const id = `dg-shadow${useId().replace(/[^\w-]/g, "")}`;
+  return (
+    <svg
+      viewBox={`0 0 360 ${height}`}
+      focusable="false"
+      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
+    >
+      <defs>
+        {/* In user space, sized to the whole drawing, so no shadow is clipped at its element's edge. */}
+        <filter id={id} filterUnits="userSpaceOnUse" x="-20" y="-20" width="400" height={height + 40}>
+          <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000" floodOpacity="0.5" />
+        </filter>
+      </defs>
+      <Shadow.Provider value={`url(#${id})`}>{children}</Shadow.Provider>
+    </svg>
   );
 }
 
 // —— Timing. Every loop in a diagram shares one duration; a part is on screen
 // for a window of it, given as fractions of the loop.
 
-type Loop = { dur: string };
+export type Loop = { dur: string };
 
 /** Opacity that is 1 between `from` and `to` of the loop and 0 otherwise, with short fades. */
-function Shown({ dur, from, to }: Loop & { from: number; to: number }) {
-  const fade = 0.03;
+export function Shown({ dur, from, to, fade = 0.03 }: Loop & { from: number; to: number; fade?: number }) {
   return (
     <animate
       attributeName="opacity"
@@ -103,7 +138,7 @@ function Packet({ path, dur, from, to }: Loop & { path: string; from: number; to
 // —— Parts.
 
 /** An opaque raised card: shadow, hairline edge, and a faint highlight along the top. */
-function Card({ x, y, w, h, r = 12, back }: { x: number; y: number; w: number; h: number; r?: number; back?: boolean }) {
+export function Card({ x, y, w, h, r = 12, back }: { x: number; y: number; w: number; h: number; r?: number; back?: boolean }) {
   const shadow = useContext(Shadow);
   if (back) return <rect className="dg-card is-back" x={x} y={y} width={w} height={h} rx={r} />;
   return (
@@ -125,7 +160,7 @@ function Bar({ x, y, w, strong }: { x: number; y: number; w: number; strong?: bo
 }
 
 /** A window's title bar: the three window controls, a title, and a hairline under them. */
-function TitleBar({ x, y, w, title }: { x: number; y: number; w: number; title: string }) {
+export function TitleBar({ x, y, w, title }: { x: number; y: number; w: number; title: string }) {
   return (
     <>
       {["close", "min", "max"].map((name, i) => (
@@ -152,11 +187,20 @@ const icons = {
     "M5 11H19V5H5V11ZM21 4V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V4C3 3.44772 3.44772 3 4 3H20C20.5523 3 21 3.44772 21 4ZM19 13H5V19H19V13ZM7 15H10V17H7V15ZM7 7H10V9H7V7Z",
   sparkles:
     "M17.0007 1.20825 18.3195 3.68108 20.7923 4.99992 18.3195 6.31876 17.0007 8.79159 15.6818 6.31876 13.209 4.99992 15.6818 3.68108 17.0007 1.20825ZM10.6673 9.33325 15.6673 11.9999 10.6673 14.6666 8.00065 19.6666 5.33398 14.6666.333984 11.9999 5.33398 9.33325 8.00065 4.33325 10.6673 9.33325ZM11.4173 11.9999 9.18905 10.8115 8.00065 8.58325 6.81224 10.8115 4.58398 11.9999 6.81224 13.1883 8.00065 15.4166 9.18905 13.1883 11.4173 11.9999ZM19.6673 16.3333 18.0007 13.2083 16.334 16.3333 13.209 17.9999 16.334 19.6666 18.0007 22.7916 19.6673 19.6666 22.7923 17.9999 19.6673 16.3333Z",
+  check:
+    "M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12ZM12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM17.4571 9.45711L16.0429 8.04289L11 13.0858L8.20711 10.2929L6.79289 11.7071L11 15.9142L17.4571 9.45711Z",
+  cut: "M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM12 10.5858L14.8284 7.75736L16.2426 9.17157L13.4142 12L16.2426 14.8284L14.8284 16.2426L12 13.4142L9.17157 16.2426L7.75736 14.8284L10.5858 12L7.75736 9.17157L9.17157 7.75736L12 10.5858Z",
+  loader:
+    "M18.364 5.63604L16.9497 7.05025C15.683 5.7835 13.933 5 12 5C8.13401 5 5 8.13401 5 12C5 15.866 8.13401 19 12 19C15.866 19 19 15.866 19 12H21C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C14.4853 3 16.7353 4.00736 18.364 5.63604Z",
+  bolt: "M13 9H21L11 24V15H4L13 0V9ZM11 11V7.22063L7.53238 13H13V17.3944L17.263 11H11Z",
+  restart:
+    "M18.5374 19.5674C16.7844 21.0831 14.4993 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 14.1361 21.3302 16.1158 20.1892 17.7406L17 12H20C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20C14.1502 20 16.1022 19.1517 17.5398 17.7716L18.5374 19.5674Z",
+  flag: "M21.1384 3C21.4146 3 21.6385 3.22386 21.6385 3.5C21.6385 3.58701 21.6157 3.67252 21.5725 3.74807L18 10L21.5725 16.2519C21.7095 16.4917 21.6262 16.7971 21.3865 16.9341C21.3109 16.9773 21.2254 17 21.1384 17H4V22H2V3H21.1384ZM18.5536 5H4V15H18.5536L15.6965 10L18.5536 5Z",
   user: "M20 22H18V20C18 18.3431 16.6569 17 15 17H9C7.34315 17 6 18.3431 6 20V22H4V20C4 17.2386 6.23858 15 9 15H15C17.7614 15 20 17.2386 20 20V22ZM12 13C8.68629 13 6 10.3137 6 7C6 3.68629 8.68629 1 12 1C15.3137 1 18 3.68629 18 7C18 10.3137 15.3137 13 12 13ZM12 11C14.2091 11 16 9.20914 16 7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7C8 9.20914 9.79086 11 12 11Z",
 };
 
 /** A Remix icon with its top-left corner at (x, y); children animate it. */
-function Icon({
+export function Icon({
   name,
   x,
   y,

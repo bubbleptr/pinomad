@@ -46,12 +46,6 @@ export interface LandingCopy {
     plain: string;
     durable: string;
     steps: { tool: string; detail: string }[];
-    tags: { lost: string; kept: string; cut: string; rerun: string };
-    restartPlain: string;
-    restartDurable: string;
-    host: { up: string; down: string };
-    replay: string;
-    status: { running: string; crashed: string; restarted: string; done: string };
   };
   agents: {
     eyebrow: string;
@@ -156,17 +150,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { tool: "bash", detail: "bun test" },
         { tool: "model", detail: "write it up" },
       ],
-      tags: { lost: "lost", kept: "kept", cut: "cut off", rerun: "rerun" },
-      restartPlain: "Restarted · back to step 1",
-      restartDurable: "Restarted · picks up at step 4",
-      host: { up: "Host running", down: "Host crashed" },
-      replay: "Replay",
-      status: {
-        running: "Same task, two runs.",
-        crashed: "The host crashes during the fourth call.",
-        restarted: "Back up. One run lost everything; Pi Durable kept the three finished calls.",
-        done: "Pi Durable is done, rerunning only the call that was cut off. The other run is still redoing step 2.",
-      },
     },
     agents: {
       eyebrow: "Named agents",
@@ -341,17 +324,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { tool: "bash", detail: "bun test" },
         { tool: "模型", detail: "写总结" },
       ],
-      tags: { lost: "丢了", kept: "保留", cut: "被打断", rerun: "重跑" },
-      restartPlain: "重启 · 回到第 1 步",
-      restartDurable: "重启 · 从第 4 步接着跑",
-      host: { up: "宿主运行中", down: "宿主崩溃" },
-      replay: "再看一遍",
-      status: {
-        running: "同一个任务，跑两遍。",
-        crashed: "第四步跑到一半，宿主崩溃。",
-        restarted: "宿主重启。一边全丢了，Pi Durable 这边跑完的三步都在。",
-        done: "Pi Durable 跑完了，只重跑了被打断的那一步；另一边还在重做第 2 步。",
-      },
     },
     agents: {
       eyebrow: "具名 Agent",
