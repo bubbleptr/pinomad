@@ -13,8 +13,8 @@ import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
-import { mergeStoredHost, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
-import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
+import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
+import { candidatePlan, DIRECT_UNAVAILABLE, preferredLegacyUrl, type RemoteCandidate } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
@@ -29,7 +29,7 @@ import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remo
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
-import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { fromBase64Url, secureWebSocketTransport, SIGNAL_PROLOGUE, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
 import { useAppUpdate } from "./entities/app-update/use-app-update.ts";
@@ -41,6 +41,7 @@ import { AccountPanel } from "./widgets/account/account-panel.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { hostWindowChrome } from "./shared/host-chrome.ts";
+import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 
 const page: CSSProperties = {
   height: "100dvh",
@@ -107,6 +108,7 @@ export function App() {
             paired: () => Promise.resolve(),
             setName: () => Promise.resolve(),
             endpoints: () => Promise.resolve(),
+            setConnection: () => Promise.resolve(),
           }
         : {
             store,
@@ -155,6 +157,22 @@ export function App() {
                         each.hostKey === hostKey
                           ? updateStoredHostEndpoints(each, endpointSet)
                           : each,
+                      ),
+                    },
+              );
+            },
+            // A connection preference is device-local and address-free: the
+            // stored entry moves in place, and a forgotten host is never
+            // resurrected by a late write.
+            setConnection: async (hostKey, change) => {
+              await store.updateConnection(hostKey, change);
+              setLoaded((prev) =>
+                prev === undefined
+                  ? prev
+                  : {
+                      ...prev,
+                      hosts: prev.hosts.map((each) =>
+                        each.hostKey === hostKey ? updateStoredHostConnection(each, change) : each,
                       ),
                     },
               );
@@ -268,7 +286,7 @@ export function SecureClient({
   /** Test seam, matching useRemoteDurable's connect override. */
   connect?: RemoteConnect;
 }) {
-  const { store, hosts, paired, endpoints } = useHosts();
+  const { store, hosts, paired, endpoints, setConnection } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   // A pairing whose save failed (e.g. locked keychain): the device key would
   // die with the process, and the spent invite can't pair again — surface it
@@ -318,19 +336,44 @@ export function SecureClient({
     address.kind === "pair" && !pairedOnce && pairName !== undefined
       ? { secret: address.secret, name: pairName }
       : undefined;
+  // The renderer owns the browser half of RTC; a window without WebRTC (an
+  // old Electron shell, a test DOM) omits the option entirely and the
+  // coordinator behaves exactly as before.
+  const rtcPlatform = useMemo(() => createBrowserRtcPlatform(), []);
   const options = useMemo<RemoteDurableOptions | undefined>(() => {
     // A pair address holds off opening the socket until the label resolves —
     // the name travels inside the first handshake.
     if (address.kind === "pair" && pairName === undefined) return undefined;
+    const hostKey = fromBase64Url(address.hostKey);
+    const rtc =
+      rtcPlatform === undefined
+        ? undefined
+        : {
+            platform: rtcPlatform,
+            hostKey,
+            device,
+            signalOnlyHint: stored?.rtcSignalOnly === true,
+            openSignalTransport: (candidate: RemoteCandidate) =>
+              secureWebSocketTransport({
+                url: candidate.url,
+                hostKey,
+                device,
+                prologue: SIGNAL_PROLOGUE,
+              }),
+            onSignalOnly: (signalOnly: boolean) => setConnection(address.hostKey, { rtcSignalOnly: signalOnly }),
+            onSignalOnlyError: (error: Error) => console.error("Could not store the host's RTC hint", error),
+          };
     return {
       candidates,
       legacyUrl: target.url,
       pageProtocol: window.location.protocol,
+      ...(stored?.connectionMode === undefined ? {} : { connectionMode: stored.connectionMode }),
+      ...(rtc === undefined ? {} : { rtc }),
       ...(pairing === undefined ? {} : { pairing }),
       openTransport: (candidate, currentPairing) =>
         secureWebSocketTransport({
           url: candidate.url,
-          hostKey: fromBase64Url(address.hostKey),
+          hostKey,
           device,
           ...(currentPairing === undefined ? {} : { pairing: currentPairing }),
         }),
@@ -361,7 +404,7 @@ export function SecureClient({
         );
       },
     };
-  }, [address, candidates, device, endpoints, paired, pairName, pairing, stored, target]);
+  }, [address, candidates, device, endpoints, paired, pairName, pairing, rtcPlatform, setConnection, stored, target]);
   if (options === undefined) return <Centered>{null}</Centered>;
   const rejected =
     address.kind === "pair" ? (
@@ -481,11 +524,20 @@ export function RemoteWorkbench({
           rejected
         ) : (
           <VStack gap={4} hAlign="center">
-            <Banner status="error" title="Could not connect to the host" description={state.error} />
+            <Banner
+              status="error"
+              title={state.error.startsWith(DIRECT_UNAVAILABLE) ? "Direct connection unavailable" : "Could not connect to the host"}
+              description={state.error}
+            />
+            {state.error.startsWith(DIRECT_UNAVAILABLE) ? (
+              <Text type="supporting" style={{ textAlign: "center" }}>
+                Change this host's connection mode under Hosts below, then retry.
+              </Text>
+            ) : null}
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        <HostsFallback />
+        <HostsFallback onRetry={() => setAttempt(attempt + 1)} />
       </Centered>
     );
   }

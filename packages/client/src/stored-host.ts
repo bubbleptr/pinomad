@@ -128,6 +128,12 @@ export function updateStoredHostEndpoints(host: StoredHost, endpointSet: Endpoin
   return { ...host, endpointSet, url: preferredLegacyUrl(host.url, endpointSet) };
 }
 
+/** The two preference fields a connection write may move. */
+export interface StoredHostConnectionChange {
+  readonly connectionMode?: ConnectionMode;
+  readonly rtcSignalOnly?: boolean;
+}
+
 /**
  * Persist the connection preference or the learned RTC hint. `undefined`
  * clears the field, so a host that stops advertising `signalOnly` can be
@@ -135,7 +141,7 @@ export function updateStoredHostEndpoints(host: StoredHost, endpointSet: Endpoin
  */
 export function updateStoredHostConnection(
   host: StoredHost,
-  change: { readonly connectionMode?: ConnectionMode; readonly rtcSignalOnly?: boolean },
+  change: StoredHostConnectionChange,
 ): StoredHost {
   const next = { ...host };
   if ("connectionMode" in change) {

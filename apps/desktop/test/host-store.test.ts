@@ -222,6 +222,45 @@ describe("createHostStore", () => {
     expect(raw.hosts).toEqual([]);
   });
 
+  it("updateConnection rewrites only the preference fields inside the serialized queue", async () => {
+    const { store } = await tempStore();
+    const account = { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) };
+    const a = { ...host("wss://old.example/secure"), name: "Desk", account };
+    const b = host("ws://127.0.0.1:7420/secure");
+    await store.save(a);
+    await store.save(b);
+
+    await store.updateConnection(a.hostKey, { connectionMode: "directOnly", rtcSignalOnly: true });
+    expect(await store.list()).toEqual([{ ...a, connectionMode: "directOnly", rtcSignalOnly: true }, b]);
+
+    await store.updateConnection(a.hostKey, { connectionMode: "relayOnly" });
+    expect(await store.list()).toEqual([{ ...a, connectionMode: "relayOnly", rtcSignalOnly: true }, b]);
+  });
+
+  it("updateConnection writes nothing for a forgotten host", async () => {
+    const { store, dir } = await tempStore();
+    const a = host();
+    await store.save(a);
+    await store.remove(a.hostKey);
+    await store.updateConnection(a.hostKey, { connectionMode: "auto", rtcSignalOnly: false });
+    expect(await store.list()).toEqual([]);
+    const raw = JSON.parse(cipher.decrypt(await readFile(join(dir, "hosts.bin"))));
+    expect(raw.hosts).toEqual([]);
+  });
+
+  it("rejects malformed connection payloads from the renderer", async () => {
+    const { store } = await tempStore();
+    const a = host();
+    await store.save(a);
+    await expect(store.updateConnection(a.hostKey, { connectionMode: "bogus" as never })).rejects.toThrow(
+      "invalid connection mode",
+    );
+    await expect(store.updateConnection(a.hostKey, { rtcSignalOnly: "yes" as never })).rejects.toThrow(
+      "invalid signal-only hint",
+    );
+    expect(await store.list()).toEqual([a]);
+  });
+
   it("re-saving keeps the stored name, account and endpoint set when the write omits them", async () => {
     const { store } = await tempStore();
     const account = { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) };

@@ -530,12 +530,14 @@ export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST
       remove: fn(async () => {}),
       setName: fn(async () => {}),
       updateEndpoints: fn(async () => {}),
+      updateConnection: fn(async () => {}),
     },
     hosts,
     activeHostKey,
     paired: fn(async () => {}),
     setName: fn(async () => {}),
     endpoints: fn(async () => {}),
+    setConnection: fn(async () => {}),
   };
 }
 

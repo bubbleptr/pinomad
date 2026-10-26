@@ -2,7 +2,7 @@
 // a stand-in for the preload bridge.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
+import { updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";
@@ -43,6 +43,11 @@ const fakeBridge = ({ failSaves = false }: { failSaves?: boolean } = {}): Deskto
       updateEndpoints: (hostKey, endpointSet) => {
         const index = saved.findIndex((each) => each.hostKey === hostKey);
         if (index !== -1) saved[index] = updateStoredHostEndpoints(saved[index]!, endpointSet);
+        return Promise.resolve();
+      },
+      updateConnection: (hostKey, change) => {
+        const index = saved.findIndex((each) => each.hostKey === hostKey);
+        if (index !== -1) saved[index] = updateStoredHostConnection(saved[index]!, change);
         return Promise.resolve();
       },
     },
@@ -193,6 +198,36 @@ describe("browser host store", () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it("updates the connection preference in place and keeps identity, name, account and endpoints", async () => {
+    const store = hostStore();
+    const entry: StoredHost = {
+      ...host("wss://old.example/secure"),
+      name: "Desk",
+      account: { serverOrigin: "https://relay.example.com", hostId: toBase64Url(generateKeyPair().publicKey) },
+      endpointSet: {
+        schemaVersion: 1 as const,
+        endpoints: [{ transport: "webSocket" as const, role: "relay" as const, url: "wss://relay.example/secure" }],
+      },
+    };
+    await store.save(entry);
+
+    await store.updateConnection(entry.hostKey, { connectionMode: "directOnly", rtcSignalOnly: true });
+    expect(await store.list()).toEqual([{ ...entry, connectionMode: "directOnly", rtcSignalOnly: true }]);
+
+    // A later write changes only the fields it names.
+    await store.updateConnection(entry.hostKey, { connectionMode: "relayOnly" });
+    expect(await store.list()).toEqual([{ ...entry, connectionMode: "relayOnly", rtcSignalOnly: true }]);
+  });
+
+  it("does not resurrect a forgotten host with a late connection write", async () => {
+    const store = hostStore();
+    const entry = host();
+    await store.save(entry);
+    await store.remove(entry.hostKey);
+    await store.updateConnection(entry.hostKey, { connectionMode: "auto", rtcSignalOnly: false });
+    expect(await store.list()).toEqual([]);
+  });
+
   it("ignores malformed localStorage content", async () => {
     localStorage.setItem(HOSTS_KEY, "not json");
     expect(await hostStore().list()).toEqual([]);
@@ -307,6 +342,17 @@ describe("desktop host store", () => {
     await store.updateEndpoints(a.hostKey, endpointSet);
     expect(bridge.saved).toEqual([{ ...a, url: "wss://relay.example/secure", endpointSet }]);
   });
+
+  it("updateConnection goes through the bridge and leaves every other field alone", async () => {
+    const bridge = fakeBridge();
+    window.pinomadDesktop = bridge;
+    const a = { ...host("wss://old.example/secure"), name: "Desk" };
+    bridge.saved.push(a);
+
+    const store = hostStore();
+    await store.updateConnection(a.hostKey, { connectionMode: "directOnly", rtcSignalOnly: true });
+    expect(bridge.saved).toEqual([{ ...a, connectionMode: "directOnly", rtcSignalOnly: true }]);
+  });
 });
 
 describe("useHostNameSync", () => {
@@ -334,6 +380,7 @@ describe("useHostNameSync", () => {
       paired: () => Promise.resolve(),
       setName,
       endpoints: () => Promise.resolve(),
+      setConnection: () => Promise.resolve(),
     };
     return { state, setName };
   };

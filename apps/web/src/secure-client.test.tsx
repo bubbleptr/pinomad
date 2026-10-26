@@ -4,7 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { updateStoredHostEndpoints, type StoredHost } from "@pinomad/client/stored-host.ts";
+import { updateStoredHostConnection, updateStoredHostEndpoints, type StoredHost } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
@@ -41,6 +41,7 @@ const store: HostStore = {
   remove: async () => {},
   setName: async () => {},
   updateEndpoints: async () => {},
+  updateConnection: async () => {},
 };
 
 interface Observed {
@@ -81,6 +82,13 @@ function Harness({
     endpoints: async (key, endpointSet) => {
       const next = hosts.map((each) =>
         each.hostKey === key ? updateStoredHostEndpoints(each, endpointSet) : each,
+      );
+      observed.hosts = next;
+      setHosts(next);
+    },
+    setConnection: async (key, change) => {
+      const next = hosts.map((each) =>
+        each.hostKey === key ? updateStoredHostConnection(each, change) : each,
       );
       observed.hosts = next;
       setHosts(next);

@@ -241,7 +241,14 @@ function sectionBody(
       return {
         title: "Hosts",
         supporting: <Text as="p" type="supporting">The hosts this device has paired with. It connects to one at a time.</Text>,
-        body: <HostsSection connection={view.connection} connectedHostKey={hostKey} />,
+        body: (
+          <HostsSection
+            connection={view.connection}
+            connectedHostKey={hostKey}
+            remote={remote}
+            hostMinor={view.host?.protocol.minor}
+          />
+        ),
       };
     case "updates":
       return { title: "Updates", body: <UpdatesSection /> };

@@ -16,6 +16,8 @@ const bridge: DesktopBridge = {
     setName: (hostKey, name) => ipcRenderer.invoke("pinomad:hosts:setName", { hostKey, name }),
     updateEndpoints: (hostKey, endpointSet) =>
       ipcRenderer.invoke("pinomad:hosts:updateEndpoints", { hostKey, endpointSet }),
+    updateConnection: (hostKey, change) =>
+      ipcRenderer.invoke("pinomad:hosts:updateConnection", { hostKey, change }),
   },
   account: {
     get: () => ipcRenderer.invoke("pinomad:account:get"),

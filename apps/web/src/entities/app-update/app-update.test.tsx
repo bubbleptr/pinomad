@@ -38,6 +38,7 @@ const installBridge = (updates: ReturnType<typeof fakeUpdates>) => {
       remove: async () => {},
       setName: async () => {},
       updateEndpoints: async () => {},
+      updateConnection: async () => {},
     },
   } satisfies DesktopBridge;
 };
