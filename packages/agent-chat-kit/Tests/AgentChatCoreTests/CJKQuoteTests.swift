@@ -31,6 +31,14 @@ import Testing
         #expect(result.cjk == "“”")
     }
 
+    // Only one end touches Chinese: the pair keeps its direction, both ends
+    // take the CJK font, and the quotes after it pair up as before.
+    @Test func aPairWithOneEndInChineseStaysAPair() {
+        let result = inline(#""Hello 中文"，然后"再见"。"#)
+        #expect(result.text == "“Hello 中文”，然后“再见”。")
+        #expect(result.cjk == "“”“”")
+    }
+
     @Test func curlyQuotesTheModelWroteStay() {
         let result = inline("于是“组合问题”变成‘特征值’")
         #expect(result.text == "于是“组合问题”变成‘特征值’")
