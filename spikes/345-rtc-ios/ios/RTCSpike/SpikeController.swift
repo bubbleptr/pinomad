@@ -88,13 +88,10 @@ final class SpikeController: ObservableObject {
         let rendered = local.address.contains(":")
             ? "[\(local.address)]:\(port)"
             : "\(local.address):\(port)"
-        let dedupe = environment["RTCSPIKE_DEDUPE"] != "0"
-        log("dedupe_duplicates=\(dedupe)")
         let config = SpikeConfig(
             localAddr: rendered,
             stunServers: stunServers,
-            seed: seed,
-            dedupeDuplicates: dedupe)
+            seed: seed)
         let peer = SpikePeer(config: config, nowMs: nowMs())
         engine = peer
         log("engine created local=\(rendered)")

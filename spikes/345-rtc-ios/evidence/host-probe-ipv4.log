@@ -1,9 +1,9 @@
-PROBE local=192.0.2.225:58723 server=http://127.0.0.1:8765 stun=162.159.207.0:3478 seed=7
-LOG start local=192.0.2.225:58723 stun=[162.159.207.0:3478]
-LOG STUN mapped 203.0.113.10:23637 via 162.159.207.0:3478 rtt=206ms
-LOG gather complete in 2002ms; local candidates={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"}
-LOG offer a=candidate:fffeff7e49d708c7d188daaf 1 udp 2130706175 192.0.2.225 58723 typ host ufrag AthLfYNhLr2tDl9H
-LOG offer a=candidate:fffe7f641ae7ecba9eddda2 1 udp 1686109951 203.0.113.10 23637 typ srflx raddr 0.0.0.0 rport 0 ufrag AthLfYNhLr2tDl9H
+PROBE local=192.0.2.225:56725 server=http://127.0.0.1:8765 stun=162.159.207.0:3478 seed=7
+LOG start local=192.0.2.225:56725 stun=[162.159.207.0:3478]
+LOG STUN mapped 203.0.113.10:23534 via 162.159.207.0:3478 rtt=214ms
+LOG gather complete in 2011ms; local candidates={192.0.2.225:56725: "host", 203.0.113.10:23534: "srflx"}
+LOG offer a=candidate:fffeff7e49d708c7d188daaf 1 udp 2130706175 192.0.2.225 56725 typ host ufrag 6Ofh2X5nOf15Cma0
+LOG offer a=candidate:fffe7f641ae7ecba9eddda2 1 udp 1686109951 203.0.113.10 23534 typ srflx raddr 0.0.0.0 rport 0 ufrag 6Ofh2X5nOf15Cma0
 LOG offer 720 bytes with m=application
 PROBE answer 721 bytes
 LOG answer accepted; ICE checks start
@@ -18,8 +18,8 @@ CHANNEL pinomad-rtc-spike
 LOG Noise IK start device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13 host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20
 LOG queued Noise message1 (1 bytes)
 LOG pumped 1 records, queued=0, buffered=103, write_false=0
-LOG Noise message2 accepted host_hello_v=1 hash=193306be37cfb3a66286f20694a0642ac74daf2e23baf3c9b0f4f6b8ec97edca
-NOISE_READY 193306be37cfb3a66286f20694a0642ac74daf2e23baf3c9b0f4f6b8ec97edca
+LOG Noise message2 accepted host_hello_v=1 hash=2e97c364d98512cd2bc569d58c45486f2c736f9451597e748c9e4f67d7644576
+NOISE_READY 2e97c364d98512cd2bc569d58c45486f2c736f9451597e748c9e4f67d7644576
 LOG sealed one 4194304 byte business frame into 65 records; pumping with 524288 byte SCTP buffer, 131072 byte low-water
 LOG pumped 8 records, queued=57, buffered=524280, write_false=1
 LOG pumped 1 records, queued=56, buffered=524280, write_false=35
@@ -35,8 +35,8 @@ LOG pumped 1 records, queued=47, buffered=524280, write_false=315
 LOG pumped 1 records, queued=46, buffered=524280, write_false=346
 LOG pumped 1 records, queued=45, buffered=524280, write_false=377
 LOG pumped 1 records, queued=44, buffered=524280, write_false=408
-LOG selected candidate pair 192.0.2.225:58723/host -> 192.0.2.225:64129/host rtt=Some(1ms)
-PAIR 192.0.2.225:58723/host -> 192.0.2.225:64129/host
+LOG selected candidate pair 192.0.2.225:56725/host -> 192.0.2.225:53551/host rtt=Some(1ms)
+PAIR 192.0.2.225:56725/host -> 192.0.2.225:53551/host
 LOG pumped 1 records, queued=43, buffered=524280, write_false=440
 LOG pumped 1 records, queued=42, buffered=524280, write_false=471
 LOG pumped 1 records, queued=41, buffered=524280, write_false=502
@@ -84,22 +84,22 @@ LOG pumped 1 records, queued=0, buffered=523325, write_false=1744
 LOG all bulk records accepted by SCTP; awaiting Noise echo
 BULK_SENT records=65 bytes=4194304 write_false=1744 buffered=523325
 LOG buffered-amount-low, queued=0
-PROBE waiting next=Some(5027) summary=phase=Bulk local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=0 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
-LOG Noise record #1 bytes=65535 first=c123048c8554a21b
-LOG Noise record #2 bytes=65535 first=b648b498d2943aaf
-LOG Noise record #3 bytes=65535 first=44aae2bb159b966b
-LOG Noise record #8 bytes=65535 first=fb2957deed393f90
-LOG Noise record #16 bytes=65535 first=33da091792cf79b3
-LOG Noise record #24 bytes=65535 first=be01e1b4faead551
-LOG Noise record #32 bytes=65535 first=f2fc1b2f3773ac57
-LOG Noise record #40 bytes=65535 first=638cdddb7d321641
-LOG Noise record #48 bytes=65535 first=ac3220747d5fb0ad
-LOG Noise record #56 bytes=65535 first=3ba1d997f5daeba5
-LOG Noise record #64 bytes=65535 first=9b32d44d512e5eb6
-LOG Noise record #65 bytes=1169 first=d3b96e66c9ba9e55
+PROBE waiting next=Some(5036) summary=phase=Bulk local=192.0.2.225:56725 local_kind={192.0.2.225:56725: "host", 203.0.113.10:23534: "srflx"} remote_kind={100.64.0.1:53551: "host", 192.0.2.225:53551: "host", 100.64.0.2:53551: "host", 198.51.100.1:53551: "host"} records_sent=65 records_received=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:56725/host -> 192.0.2.225:53551/host")
+LOG Noise record #1 bytes=65535 first=9d15258eac7bf90f
+LOG Noise record #2 bytes=65535 first=5ae0cbce1609d88c
+LOG Noise record #3 bytes=65535 first=81af4ca4bb8e1d32
+LOG Noise record #8 bytes=65535 first=70695b931c0556b6
+LOG Noise record #16 bytes=65535 first=5b8454fd520cc598
+LOG Noise record #24 bytes=65535 first=615a899dc0ac398c
+LOG Noise record #32 bytes=65535 first=9e6f2f951cc02130
+LOG Noise record #40 bytes=65535 first=887c4035be9df819
+LOG Noise record #48 bytes=65535 first=5ea7df5eafab20f0
+LOG Noise record #56 bytes=65535 first=dcfda3c3763fb2b3
+LOG Noise record #64 bytes=65535 first=8dfcc76b448eda10
+LOG Noise record #65 bytes=1169 first=a9a1cb087a2f88ee
 LOG Noise frame complete received_bytes=4194304 expected_bytes=4194304 matched=true
 BULK_RECEIVED records=65 bytes=4194304 matched=true
-LOG COMPLETE phase=Complete local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
-COMPLETE phase=Complete local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
-STOP stopped at 6406; Rtc dropped with the engine
-SUMMARY phase=Closed local=192.0.2.225:58723 local_kind={203.0.113.10:23637: "srflx", 192.0.2.225:58723: "host"} remote_kind={192.0.2.225:64129: "host", 198.51.100.1:64129: "host", 100.64.0.1:64129: "host", 100.64.0.2:64129: "host"} records_sent=65 records_received=65 deduped=0 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:58723/host -> 192.0.2.225:64129/host")
+LOG COMPLETE phase=Complete local=192.0.2.225:56725 local_kind={192.0.2.225:56725: "host", 203.0.113.10:23534: "srflx"} remote_kind={100.64.0.1:53551: "host", 192.0.2.225:53551: "host", 100.64.0.2:53551: "host", 198.51.100.1:53551: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:56725/host -> 192.0.2.225:53551/host")
+COMPLETE phase=Complete local=192.0.2.225:56725 local_kind={192.0.2.225:56725: "host", 203.0.113.10:23534: "srflx"} remote_kind={100.64.0.1:53551: "host", 192.0.2.225:53551: "host", 100.64.0.2:53551: "host", 198.51.100.1:53551: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:56725/host -> 192.0.2.225:53551/host")
+STOP stopped at 5530; Rtc dropped with the engine
+SUMMARY phase=Closed local=192.0.2.225:56725 local_kind={192.0.2.225:56725: "host", 203.0.113.10:23534: "srflx"} remote_kind={100.64.0.1:53551: "host", 192.0.2.225:53551: "host", 100.64.0.2:53551: "host", 198.51.100.1:53551: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1744 pair=Some("192.0.2.225:56725/host -> 192.0.2.225:53551/host")

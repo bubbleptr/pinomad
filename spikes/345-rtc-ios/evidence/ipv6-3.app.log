@@ -1,0 +1,183 @@
+1792987529.295 === RTC spike start 2026-10-26 04:05:29 +0000 ===
+1792987529.296 bundle=build.kieran.pinomad.rtcspike device=iPhone os=iOS 26.5
+1792987529.296 server=http://[2001:db8:345::225]:8766 family=ipv6 seed=7
+1792987529.296 env=["RTCSPIKE_FAMILY": "ipv6", "RTCSPIKE_HOLD_MS": "1000", "RTCSPIKE_STUN": "stun.cloudflare.com:3478", "RTCSPIKE_SERVER": "http://[2001:db8:345::225]:8766"]
+1792987529.296 NSBonjourServices=absent
+1792987529.296 interface=en0 address=2001:db8:345::225 family=ipv6
+1792987529.296 udp bound [2001:db8:345::225]:55970 fd receive loop ready
+1792987529.299 STUN config=stun.cloudflare.com:3478 resolved=["[2606:4700:49::]:3478"]
+1792987529.319 engine created local=[2001:db8:345::225]:55970
+1792987529.319 start local=[2001:db8:345::225]:55970 stun=[[2606:4700:49::]:3478]
+1792987529.320 socket: sendto [2606:4700:49::]:3478 failed: errno=65
+1792987529.320 send failed #1 -> [2606:4700:49::]:3478 bytes=20
+1792987529.361 APP scene=active at 469588008ms
+1792987529.570 socket: sendto [2606:4700:49::]:3478 failed: errno=65
+1792987529.570 send failed #2 -> [2606:4700:49::]:3478 bytes=20
+1792987530.072 socket: sendto [2606:4700:49::]:3478 failed: errno=65
+1792987530.080 send failed #3 -> [2606:4700:49::]:3478 bytes=20
+1792987531.071 socket: sendto [2606:4700:49::]:3478 failed: errno=65
+1792987531.071 send failed #4 -> [2606:4700:49::]:3478 bytes=20
+1792987531.319 gather complete in 2020ms; local candidates={[2001:db8:345::225]:55970: "host"}
+1792987531.320 offer a=candidate:ffffff7ea33ed7cc573f705a 1 udp 2130706431 2001:db8:345::225 55970 typ host ufrag BJNGL0GXI3zAvc6K
+1792987531.320 offer 613 bytes with m=application
+1792987531.322 offer ready bytes=595 candidates=1
+1792987531.323 offer a=candidate:ffffff7ea33ed7cc573f705a 1 udp 2130706431 2001:db8:345::225 55970 typ host ufrag BJNGL0GXI3zAvc6K
+1792987531.323 POST http://[2001:db8:345::225]:8766/offer offerBytes=595
+1792987531.349 ICE state Checking
+1792987531.350 answer received status=200 bytes=983
+1792987531.351 answer accepted; ICE checks start
+1792987531.353 Rtc rejected datagram from [2001:db8:345::225]:64919
+1792987531.401 ICE state Connected
+1792987532.349 selected candidate pair [2001:db8:345::225]:55970/host -> [2001:db8:345::225]:64919/host rtt=Some(1ms)
+1792987532.350 selected pair local=[2001:db8:345::225]:55970/host remote=[2001:db8:345::225]:64919/host
+1792987532.363 DTLS connected
+1792987532.364 buffered-amount-low, queued=0
+1792987532.364 DataChannel open id=ChannelId(0) label=pinomad-rtc-spike
+1792987532.364 DataChannel open label=pinomad-rtc-spike
+1792987532.364 Noise IK start device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13 host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20
+1792987532.364 queued Noise message1 (1 bytes)
+1792987532.364 pumped 1 records, queued=0, buffered=103, write_false=0
+1792987532.479 Noise message2 accepted host_hello_v=1 hash=a061bff7de5d5bf19c9d63e51f2609c94a5b4e953d3b1fe36d17e6aa88d979d7
+1792987532.479 Noise IK ready hash=a061bff7de5d5bf19c9d63e51f2609c94a5b4e953d3b1fe36d17e6aa88d979d7
+1792987532.479 sealed one 4194304 byte business frame into 65 records; pumping with 524288 byte SCTP buffer, 131072 byte low-water
+1792987532.479 pumped 8 records, queued=57, buffered=524280, write_false=1
+1792987532.482 sent #100 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.483 pumped 1 records, queued=56, buffered=524280, write_false=32
+1792987532.484 sent #200 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.486 pumped 1 records, queued=55, buffered=524280, write_false=63
+1792987532.487 sent #300 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.489 sent #400 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.489 pumped 1 records, queued=54, buffered=524280, write_false=94
+1792987532.492 sent #500 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.493 pumped 1 records, queued=53, buffered=524280, write_false=125
+1792987532.495 sent #600 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.497 pumped 1 records, queued=52, buffered=524280, write_false=156
+1792987532.498 sent #700 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.501 pumped 1 records, queued=51, buffered=524280, write_false=187
+1792987532.502 sent #800 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.505 pumped 1 records, queued=50, buffered=524280, write_false=218
+1792987532.506 sent #900 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.509 pumped 1 records, queued=49, buffered=524280, write_false=249
+1792987532.510 sent #1000 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.512 pumped 1 records, queued=48, buffered=524280, write_false=280
+1792987532.515 pumped 1 records, queued=47, buffered=524280, write_false=311
+1792987532.515 sent #1100 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.518 pumped 1 records, queued=46, buffered=524280, write_false=342
+1792987532.519 sent #1200 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.521 pumped 1 records, queued=45, buffered=524280, write_false=373
+1792987532.524 pumped 1 records, queued=44, buffered=524280, write_false=404
+1792987532.524 sent #1300 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.527 pumped 1 records, queued=43, buffered=524280, write_false=435
+1792987532.530 pumped 1 records, queued=42, buffered=524280, write_false=466
+1792987532.530 sent #1400 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.533 pumped 1 records, queued=41, buffered=524280, write_false=497
+1792987532.533 sent #1500 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.536 pumped 1 records, queued=40, buffered=524280, write_false=528
+1792987532.539 pumped 1 records, queued=39, buffered=524280, write_false=559
+1792987532.539 sent #1600 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.542 pumped 1 records, queued=38, buffered=524280, write_false=590
+1792987532.545 pumped 1 records, queued=37, buffered=524280, write_false=621
+1792987532.545 sent #1700 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.548 pumped 1 records, queued=36, buffered=524280, write_false=652
+1792987532.548 sent #1800 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.551 pumped 1 records, queued=35, buffered=524280, write_false=683
+1792987532.554 pumped 1 records, queued=34, buffered=524280, write_false=714
+1792987532.554 sent #1900 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.556 pumped 1 records, queued=33, buffered=524280, write_false=745
+1792987532.557 sent #2000 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.559 pumped 1 records, queued=32, buffered=524280, write_false=776
+1792987532.562 pumped 1 records, queued=31, buffered=524280, write_false=807
+1792987532.562 sent #2100 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.565 pumped 1 records, queued=30, buffered=524280, write_false=838
+1792987532.568 pumped 1 records, queued=29, buffered=524280, write_false=869
+1792987532.568 sent #2200 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.571 pumped 1 records, queued=28, buffered=524280, write_false=900
+1792987532.571 sent #2300 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.573 pumped 1 records, queued=27, buffered=524280, write_false=931
+1792987532.576 pumped 1 records, queued=26, buffered=524280, write_false=962
+1792987532.576 sent #2400 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.579 pumped 1 records, queued=25, buffered=524280, write_false=993
+1792987532.580 sent #2500 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.582 pumped 1 records, queued=24, buffered=524280, write_false=1024
+1792987532.585 pumped 1 records, queued=23, buffered=524280, write_false=1055
+1792987532.586 sent #2600 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.588 pumped 1 records, queued=22, buffered=524280, write_false=1086
+1792987532.591 pumped 1 records, queued=21, buffered=524280, write_false=1117
+1792987532.591 sent #2700 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.594 pumped 1 records, queued=20, buffered=524280, write_false=1148
+1792987532.594 sent #2800 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.597 pumped 1 records, queued=19, buffered=524280, write_false=1179
+1792987532.600 pumped 1 records, queued=18, buffered=524280, write_false=1210
+1792987532.600 sent #2900 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.603 pumped 1 records, queued=17, buffered=524280, write_false=1241
+1792987532.604 sent #3000 -> [2001:db8:345::225]:64919 bytes=821
+1792987532.606 pumped 1 records, queued=16, buffered=524280, write_false=1272
+1792987532.609 pumped 1 records, queued=15, buffered=524280, write_false=1303
+1792987532.610 sent #3100 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.612 pumped 1 records, queued=14, buffered=524280, write_false=1334
+1792987532.615 pumped 1 records, queued=13, buffered=524280, write_false=1365
+1792987532.615 sent #3200 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.618 pumped 1 records, queued=12, buffered=524280, write_false=1396
+1792987532.619 sent #3300 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.622 pumped 1 records, queued=11, buffered=524280, write_false=1427
+1792987532.624 pumped 1 records, queued=10, buffered=524280, write_false=1458
+1792987532.625 sent #3400 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.627 pumped 1 records, queued=9, buffered=524280, write_false=1489
+1792987532.630 pumped 1 records, queued=8, buffered=524280, write_false=1520
+1792987532.631 sent #3500 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.634 pumped 1 records, queued=7, buffered=524280, write_false=1551
+1792987532.634 sent #3600 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.636 pumped 1 records, queued=6, buffered=524280, write_false=1582
+1792987532.639 pumped 1 records, queued=5, buffered=524280, write_false=1613
+1792987532.640 sent #3700 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.642 pumped 1 records, queued=4, buffered=524280, write_false=1644
+1792987532.643 sent #3800 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.645 pumped 1 records, queued=3, buffered=524280, write_false=1675
+1792987532.648 pumped 1 records, queued=2, buffered=524280, write_false=1706
+1792987532.648 sent #3900 -> [2001:db8:345::225]:64919 bytes=1129
+1792987532.651 pumped 1 records, queued=1, buffered=524280, write_false=1737
+1792987532.652 pumped 1 records, queued=0, buffered=523325, write_false=1737
+1792987532.652 all bulk records accepted by SCTP; awaiting Noise echo
+1792987532.652 bulk sent records=65 bytes=4194304 writeFalse=1737 buffered=523325
+1792987532.657 buffered-amount-low, queued=0
+1792987533.182 sent #4000 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.189 Noise record #1 bytes=65535 first=e7073051f5d6186f
+1792987533.192 Noise record #2 bytes=65535 first=cb2b8068728b516a
+1792987533.194 Noise record #3 bytes=65535 first=f18c6e9c43ba2433
+1792987533.195 sent #4100 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.201 sent #4200 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.203 Noise record #8 bytes=65535 first=db526c7f8f68c932
+1792987533.208 sent #4300 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.213 sent #4400 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.216 Noise record #16 bytes=65535 first=11b4cc28e64707df
+1792987533.219 sent #4500 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.224 sent #4600 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.228 Noise record #24 bytes=65535 first=bb3c327d03ffde28
+1792987533.229 sent #4700 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.234 sent #4800 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.237 sent #4900 -> [2001:db8:345::225]:64919 bytes=181
+1792987533.241 sent #5000 -> [2001:db8:345::225]:64919 bytes=281
+1792987533.244 sent #5100 -> [2001:db8:345::225]:64919 bytes=281
+1792987533.248 sent #5200 -> [2001:db8:345::225]:64919 bytes=133
+1792987533.248 Noise record #32 bytes=65535 first=c01cc2b93415a8e7
+1792987533.253 sent #5300 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.257 sent #5400 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.262 sent #5500 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.262 Noise record #40 bytes=65535 first=61165538949f125e
+1792987533.267 sent #5600 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.291 sent #5700 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.293 Noise record #48 bytes=65535 first=e3c54ef2aa75c46b
+1792987533.296 sent #5800 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.302 sent #5900 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.305 Noise record #56 bytes=65535 first=fe89570457229d36
+1792987533.307 sent #6000 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.312 sent #6100 -> [2001:db8:345::225]:64919 bytes=65
+1792987533.343 Noise record #64 bytes=65535 first=7069335ddd80d2a6
+1792987533.345 Noise record #65 bytes=1169 first=b3673ce151ea65da
+1792987533.345 Noise frame complete received_bytes=4194304 expected_bytes=4194304 matched=true
+1792987533.345 bulk received records=65 bytes=4194304 matched=true
+1792987533.345 COMPLETE phase=Complete local=[2001:db8:345::225]:55970 local_kind={[2001:db8:345::225]:55970: "host"} remote_kind={192.0.2.225:64919: "host", 100.64.0.1:64919: "host", 100.64.0.2:64919: "host", [fd00::1]:64919: "host", [fd00::3]:64919: "host", 198.51.100.1:64919: "host", [2001:db8:345::225]:64919: "host", [fd00::2]:64919: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1737 pair=Some("[2001:db8:345::225]:55970/host -> [2001:db8:345::225]:64919/host")
+1792987533.346 COMPLETE phase=Complete local=[2001:db8:345::225]:55970 local_kind={[2001:db8:345::225]:55970: "host"} remote_kind={192.0.2.225:64919: "host", 100.64.0.1:64919: "host", 100.64.0.2:64919: "host", [fd00::1]:64919: "host", [fd00::3]:64919: "host", 198.51.100.1:64919: "host", [2001:db8:345::225]:64919: "host", [fd00::2]:64919: "host"} records_sent=65 records_received=65 bulk_bytes=4194304 write_false=1737 pair=Some("[2001:db8:345::225]:55970/host -> [2001:db8:345::225]:64919/host")
+1792987534.411 STOP complete + hold
+1792987534.411 stopped at 469593058; Rtc dropped with the engine
+1792987534.412 resources released: socket closed, timer cancelled, SpikePeer dropped, transmits=6190

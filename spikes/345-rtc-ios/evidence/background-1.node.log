@@ -1,0 +1,27 @@
+{"ts":"2026-10-26T04:06:00.191Z","event":"offer","runId":"1792987560191-7","bytes":720,"remoteAddress":"192.0.2.225"}
+{"ts":"2026-10-26T04:06:00.192Z","event":"answer","bytes":721,"candidates":4}
+{"ts":"2026-10-26T04:06:00.193Z","event":"pc-state","label":"answer","state":"connecting"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"ice-state","label":"answer","state":"checking"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"gathering-state","label":"answer","state":"in-progress"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"gathering-state","label":"answer","state":"complete"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"local-candidate","label":"answer","mid":"je6","candidate":"a=candidate:1 1 UDP 2114977791 192.0.2.225 54283 typ host"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"local-candidate","label":"answer","mid":"je6","candidate":"a=candidate:2 1 UDP 2114977535 198.51.100.1 54283 typ host"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"local-candidate","label":"answer","mid":"je6","candidate":"a=candidate:3 1 UDP 2114977279 100.64.0.1 54283 typ host"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"local-candidate","label":"answer","mid":"je6","candidate":"a=candidate:4 1 UDP 2114977023 100.64.0.2 54283 typ host"}
+{"ts":"2026-10-26T04:06:00.193Z","event":"local-description","label":"answer","type":"answer","bytes":448}
+{"ts":"2026-10-26T04:06:00.196Z","event":"ice-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T04:06:00.244Z","event":"ice-state","label":"answer","state":"completed"}
+{"ts":"2026-10-26T04:06:01.202Z","event":"pc-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T04:06:01.202Z","event":"data-channel","runId":"1792987560191-7","label":"pinomad-rtc-spike","maxMessageSize":262144}
+{"ts":"2026-10-26T04:06:01.204Z","event":"noise-peer-spawn","helperPath":"/Users/void/.lody/repos/local---9328531e0abe/worktrees/7a466aa0-98c3-40c1-953a-92b534df8bd9/spikes/345-rtc-ios/target/debug/rtc-noise-peer","seed":7}
+{"ts":"2026-10-26T04:06:01.205Z","event":"dc-open","pair":{"local":{"address":"192.0.2.225","port":54283,"type":"host"},"remote":{"address":"192.0.2.225","port":49698,"type":"host"}},"maxMessageSize":262144,"highWater":262144,"lowWater":65536}
+{"ts":"2026-10-26T04:06:01.295Z","event":"noise-peer","line":"noise-peer ready host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20"}
+{"ts":"2026-10-26T04:06:01.295Z","event":"noise-peer","line":"noise-peer msg1 client_hello={\"v\":1} device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"}
+{"ts":"2026-10-26T04:06:01.296Z","event":"noise-peer","line":"noise-peer msg2 55 bytes"}
+(node:50074) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 drain listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+{"ts":"2026-10-26T04:06:01.455Z","event":"selected-pair","local":{"address":"192.0.2.225","port":54283,"type":"host"},"remote":{"address":"192.0.2.225","port":49698,"type":"host"}}
+{"ts":"2026-10-26T04:06:01.672Z","event":"noise-peer","line":"noise-peer bulk matched bytes=4194304 records_received=65"}
+{"ts":"2026-10-26T04:06:02.017Z","event":"noise-peer","line":"noise-peer echoing 65 records"}
+{"ts":"2026-10-26T04:06:04.956Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":44}
+{"ts":"2026-10-26T04:06:05.079Z","event":"dc-send-drained","sent":66,"writeFalse":8,"bufferedAmount":0,"maxBuffered":327675}
+{"ts":"2026-10-26T04:06:05.079Z","event":"dc-run-summary","runId":"1792987560191-7","reason":"drained","sent":66,"writeFalse":8,"maxBuffered":327675,"maxQueue":44}

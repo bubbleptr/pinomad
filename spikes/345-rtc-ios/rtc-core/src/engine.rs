@@ -38,10 +38,6 @@ pub struct SpikeConfig {
     pub local_addr: String,
     pub stun_servers: Vec<String>,
     pub seed: u64,
-    /// Experimental: drop an exact repeat of the immediately preceding Noise
-    /// ciphertext. A reliable channel must not need this; the spike exposes it
-    /// so the workaround can be measured instead of hidden.
-    pub dedupe_duplicates: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -161,10 +157,8 @@ struct NoiseState {
     bulk_bytes: u64,
     records_sent: u64,
     records_received: u64,
-    deduped: u64,
     handshake_hash: String,
     last_record_first: String,
-    last_record_cipher: Vec<u8>,
 }
 
 impl Default for NoiseState {
@@ -176,10 +170,8 @@ impl Default for NoiseState {
             bulk_bytes: 0,
             records_sent: 0,
             records_received: 0,
-            deduped: 0,
             handshake_hash: String::new(),
             last_record_first: String::new(),
-            last_record_cipher: Vec::new(),
         }
     }
 }
@@ -613,14 +605,13 @@ impl Engine {
 
     pub fn summary(&self) -> String {
         format!(
-            "phase={:?} local={} local_kind={:?} remote_kind={:?} records_sent={} records_received={} deduped={} bulk_bytes={} write_false={} pair={:?}",
+            "phase={:?} local={} local_kind={:?} remote_kind={:?} records_sent={} records_received={} bulk_bytes={} write_false={} pair={:?}",
             self.inner.phase,
             self.inner.destination,
             self.inner.local_kind,
             self.inner.remote_kind,
             self.inner.noise.records_sent,
             self.inner.noise.records_received,
-            self.inner.noise.deduped,
             self.inner.noise.bulk_bytes,
             self.inner.write_false,
             self.inner.last_pair,
@@ -866,26 +857,9 @@ impl Engine {
                 Err(error) => Err(format!("Noise message2 rejected: {error}")),
             },
             NoiseStage::Ready(mut session) => {
-                if self.inner.config.dedupe_duplicates
-                    && !self.inner.noise.last_record_cipher.is_empty()
-                    && self.inner.noise.last_record_cipher == bytes
-                {
-                    self.inner.noise.stage = NoiseStage::Ready(session);
-                    self.inner.noise.deduped += 1;
-                    let n = self.inner.noise.deduped;
-                    self.log(
-                        actions,
-                        format!(
-                            "duplicate Noise record suppressed (#{n}, {} bytes)",
-                            bytes.len()
-                        ),
-                    );
-                    return Ok(());
-                }
                 let current_first = hex(&bytes[..bytes.len().min(8)]);
                 let previous_first = self.inner.noise.last_record_first.clone();
                 let opened = session.open(&bytes);
-                self.inner.noise.last_record_cipher = bytes.clone();
                 self.inner.noise.stage = NoiseStage::Ready(session);
                 self.inner.noise.records_received += 1;
                 self.inner.noise.last_record_first = current_first.clone();

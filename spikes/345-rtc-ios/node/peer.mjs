@@ -10,6 +10,7 @@ const seed = Number(process.env.RTC_SPIKE_SEED ?? "7");
 const port = Number(process.env.RTC_SPIKE_PORT ?? "8765");
 const bindAddress = process.env.RTC_SPIKE_BIND ?? "0.0.0.0";
 const sessionId = new Date().toISOString().replaceAll(":", "-");
+let runCounter = 0;
 
 function log(event, fields = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields }));
@@ -43,9 +44,9 @@ function selectedPair(pc) {
   };
 }
 
-function noiseBridge(dc, pc) {
-  log("data-channel", { label: dc.getLabel(), maxMessageSize: dc.maxMessageSize() });
-  dc.setBufferedAmountLowThreshold(128 * 1024);
+function noiseBridge(dc, pc, runId) {
+  log("data-channel", { runId, label: dc.getLabel(), maxMessageSize: dc.maxMessageSize() });
+  dc.setBufferedAmountLowThreshold(64 * 1024);
   const child = spawn(helperPath, [], {
     env: { ...process.env, RTC_SPIKE_SEED: String(seed) },
     stdio: ["pipe", "pipe", "pipe"],
@@ -55,8 +56,8 @@ function noiseBridge(dc, pc) {
   let dcPumping = false;
   let dcWriteFalse = 0;
   let dcSent = 0;
-  let dcTimer = null;
-  let nextSendAt = 0;
+  let maxBuffered = 0;
+  let maxQueue = 0;
   let helperInput = [];
   let helperWriting = false;
   let open = false;
@@ -86,52 +87,77 @@ function noiseBridge(dc, pc) {
     pumpHelperInput();
   }
 
-  // libdatachannel 0.33.4 accepted a 4 MiB burst (observed past ~1 MiB) but
-  // the receive side then failed on record #18. Pacing one record per 20 ms
-  // is the spike's evidence-preserving workaround; production should drive
-  // this from the host adapter's real buffer accounting.
+  // node-datachannel 0.33.4 returns false after it has ALREADY enqueued the
+  // message (libdatachannel SctpTransport::send pushes first and returns
+  // false when it could not flush immediately). Retrying the same index would
+  // duplicate a Noise record; consume the queue slot unconditionally.
+  // Backpressure is driven only by bufferedAmount()/onBufferedAmountLow, with a
+  // 50 ms fallback poll for a missed callback.
+  const HIGH_WATER = 256 * 1024;
+  // One Noise message2 plus 65 records for the fixed 4 MiB frame.
+  const EXPECTED_ECHO = Number(process.env.RTC_SPIKE_EXPECTED_RECORDS ?? 65) + 1;
+  let dcPollTimer = null;
+  let runSummaryLogged = false;
+  function summary(reason) {
+    if (runSummaryLogged) return;
+    runSummaryLogged = true;
+    log("dc-run-summary", {
+      runId,
+      reason,
+      sent: dcSent,
+      writeFalse: dcWriteFalse,
+      maxBuffered: maxBuffered,
+      maxQueue: maxQueue,
+    });
+  }
+  function schedulePoll() {
+    if (dcPollTimer) return;
+    dcPollTimer = setTimeout(() => { dcPollTimer = null; pumpDc(); }, 50);
+  }
   function pumpDc() {
     if (dcPumping || !open) return;
     if (!dc.isOpen()) {
       open = false;
       dcQueue = [];
-      if (dcTimer) { clearTimeout(dcTimer); dcTimer = null; }
+      if (dcPollTimer) { clearTimeout(dcPollTimer); dcPollTimer = null; }
       log("dc-send-stopped", { reason: "channel not open" });
       return;
     }
-    const now = Date.now();
-    if (now < nextSendAt) {
-      if (!dcTimer) dcTimer = setTimeout(() => { dcTimer = null; pumpDc(); }, nextSendAt - now);
-      return;
-    }
     dcPumping = true;
-    let burst = 0;
-    while (dcQueue.length > 0 && burst < 1) {
-      const frame = dcQueue[0];
+    while (dcQueue.length > 0 && dc.bufferedAmount() < HIGH_WATER) {
+      const frame = dcQueue.shift();
       let accepted;
       try {
         accepted = dc.sendMessageBinary(frame);
       } catch (error) {
         open = false;
         dcQueue = [];
-        log("dc-send-stopped", { reason: String(error), queued: dcQueue.length });
+        log("dc-send-stopped", { reason: String(error), sent: dcSent, writeFalse: dcWriteFalse });
         break;
       }
+      dcSent += 1;
+      const buffered = dc.bufferedAmount();
+      maxBuffered = Math.max(maxBuffered, buffered);
+      maxQueue = Math.max(maxQueue, dcQueue.length + 1);
       if (!accepted) {
         dcWriteFalse += 1;
+        // false means the record is in the native queue; do not retry it.
         break;
       }
-      dcQueue.shift();
-      dcSent += 1;
-      burst += 1;
-      nextSendAt = Date.now() + 20; // SEND_SPACING_MS keeps the native queue small
-      log("dc-sent", { count: dcSent, bytes: frame.length, bufferedAmount: dc.bufferedAmount() });
     }
     dcPumping = false;
     if (dcQueue.length === 0) {
-      log("dc-send-drained", { bufferedAmount: dc.bufferedAmount(), writeFalse: dcWriteFalse });
-    } else if (!dcTimer) {
-      dcTimer = setTimeout(() => { dcTimer = null; pumpDc(); }, 10);
+      if (dcSent >= EXPECTED_ECHO) {
+        log("dc-send-drained", {
+          sent: dcSent,
+          writeFalse: dcWriteFalse,
+          bufferedAmount: dc.bufferedAmount(),
+          maxBuffered,
+        });
+        summary("drained");
+      }
+    } else {
+      schedulePoll();
     }
   }
 
@@ -142,7 +168,7 @@ function noiseBridge(dc, pc) {
 
   dc.onOpen(() => {
     open = true;
-    log("dc-open", { pair: selectedPair(pc), maxMessageSize: dc.maxMessageSize() });
+    log("dc-open", { pair: selectedPair(pc), maxMessageSize: dc.maxMessageSize(), highWater: HIGH_WATER, lowWater: 64 * 1024 });
     pumpDc();
     const timer = setInterval(() => {
       if (!open) { clearInterval(timer); return; }
@@ -162,8 +188,9 @@ function noiseBridge(dc, pc) {
   dc.onClosed(() => {
     open = false;
     dcQueue = [];
-    if (dcTimer) { clearTimeout(dcTimer); dcTimer = null; }
-    log("dc-closed", { queued: dcQueue.length });
+    if (dcPollTimer) { clearTimeout(dcPollTimer); dcPollTimer = null; }
+    summary("closed");
+    log("dc-closed", { runId, queued: dcQueue.length, sent: dcSent, writeFalse: dcWriteFalse });
     child.kill("SIGTERM");
   });
   dc.onError((error) => log("dc-error", { error }));
@@ -176,6 +203,7 @@ function noiseBridge(dc, pc) {
       const frame = helperBuffer.subarray(4, 4 + length);
       helperBuffer = helperBuffer.subarray(4 + length);
       dcQueue.push(Buffer.from(frame));
+      maxQueue = Math.max(maxQueue, dcQueue.length);
       pumpDc();
     }
   });
@@ -186,7 +214,7 @@ function noiseBridge(dc, pc) {
   });
   child.on("exit", (code, signal) => {
     open = false;
-    log("noise-peer-exit", { code, signal, queued: dcQueue.length, writeFalse: dcWriteFalse });
+    log("noise-peer-exit", { runId, code, signal, queued: dcQueue.length, writeFalse: dcWriteFalse });
   });
   child.stdin.on("error", (error) => log("helper-stdin-error", { error: String(error) }));
   log("noise-peer-spawn", { helperPath, seed });
@@ -208,14 +236,16 @@ const server = http.createServer((request, response) => {
   request.on("end", async () => {
     try {
       const offer = Buffer.concat(chunks).toString("utf8");
-      log("offer", { bytes: offer.length, remoteAddress: request.socket.remoteAddress });
-      const pc = new ndc.PeerConnection(`answer-${sessionId}`, {
+      runCounter += 1;
+      const runId = `${Date.now()}-${runCounter}`;
+      log("offer", { runId, bytes: offer.length, remoteAddress: request.socket.remoteAddress });
+      const pc = new ndc.PeerConnection(`answer-${sessionId}-${runId}`, {
         iceServers: [],
         bindAddress,
         maxMessageSize: 262144,
       });
       attachPeer(pc, "answer");
-      pc.onDataChannel((dc) => noiseBridge(dc, pc));
+      pc.onDataChannel((dc) => noiseBridge(dc, pc, runId));
       pc.setRemoteDescription(offer, "offer");
       await waitForGathering(pc);
       const answer = pc.localDescription();

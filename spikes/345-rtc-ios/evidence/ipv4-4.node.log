@@ -1,0 +1,34 @@
+{"ts":"2026-10-26T04:04:52.827Z","event":"offer","runId":"1792987492827-5","bytes":720,"remoteAddress":"192.0.2.225"}
+{"ts":"2026-10-26T04:04:52.828Z","event":"answer","bytes":721,"candidates":4}
+{"ts":"2026-10-26T04:04:52.828Z","event":"pc-state","label":"answer","state":"connecting"}
+{"ts":"2026-10-26T04:04:52.828Z","event":"ice-state","label":"answer","state":"checking"}
+{"ts":"2026-10-26T04:04:52.828Z","event":"gathering-state","label":"answer","state":"in-progress"}
+{"ts":"2026-10-26T04:04:52.828Z","event":"gathering-state","label":"answer","state":"complete"}
+{"ts":"2026-10-26T04:04:52.828Z","event":"local-candidate","label":"answer","mid":"fIQ","candidate":"a=candidate:1 1 UDP 2114977791 192.0.2.225 64186 typ host"}
+{"ts":"2026-10-26T04:04:52.829Z","event":"local-candidate","label":"answer","mid":"fIQ","candidate":"a=candidate:2 1 UDP 2114977535 198.51.100.1 64186 typ host"}
+{"ts":"2026-10-26T04:04:52.829Z","event":"local-candidate","label":"answer","mid":"fIQ","candidate":"a=candidate:3 1 UDP 2114977279 100.64.0.1 64186 typ host"}
+{"ts":"2026-10-26T04:04:52.829Z","event":"local-candidate","label":"answer","mid":"fIQ","candidate":"a=candidate:4 1 UDP 2114977023 100.64.0.2 64186 typ host"}
+{"ts":"2026-10-26T04:04:52.829Z","event":"local-description","label":"answer","type":"answer","bytes":448}
+{"ts":"2026-10-26T04:04:52.831Z","event":"ice-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T04:04:52.879Z","event":"ice-state","label":"answer","state":"completed"}
+{"ts":"2026-10-26T04:04:53.839Z","event":"pc-state","label":"answer","state":"connected"}
+{"ts":"2026-10-26T04:04:53.840Z","event":"data-channel","runId":"1792987492827-5","label":"pinomad-rtc-spike","maxMessageSize":262144}
+{"ts":"2026-10-26T04:04:53.842Z","event":"noise-peer-spawn","helperPath":"/Users/void/.lody/repos/local---9328531e0abe/worktrees/7a466aa0-98c3-40c1-953a-92b534df8bd9/spikes/345-rtc-ios/target/debug/rtc-noise-peer","seed":7}
+{"ts":"2026-10-26T04:04:53.842Z","event":"dc-open","pair":{"local":{"address":"192.0.2.225","port":64186,"type":"host"},"remote":{"address":"192.0.2.225","port":53182,"type":"host"}},"maxMessageSize":262144,"highWater":262144,"lowWater":65536}
+{"ts":"2026-10-26T04:04:53.935Z","event":"noise-peer","line":"noise-peer ready host_pub=0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20"}
+{"ts":"2026-10-26T04:04:53.936Z","event":"noise-peer","line":"noise-peer msg1 client_hello={\"v\":1} device_pub=7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"}
+{"ts":"2026-10-26T04:04:53.937Z","event":"noise-peer","line":"noise-peer msg2 55 bytes"}
+{"ts":"2026-10-26T04:04:53.965Z","event":"pc-state","label":"answer","state":"failed"}
+{"ts":"2026-10-26T04:04:53.965Z","event":"pc-state","label":"answer","state":"closed"}
+{"ts":"2026-10-26T04:04:53.966Z","event":"dc-closed","runId":"1792987463960-2","queued":0,"sent":66,"writeFalse":7}
+{"ts":"2026-10-26T04:04:53.967Z","event":"noise-peer-exit","runId":"1792987463960-2","code":null,"signal":"SIGTERM","queued":0,"writeFalse":7}
+(node:50074) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 drain listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+{"ts":"2026-10-26T04:04:54.093Z","event":"selected-pair","local":{"address":"192.0.2.225","port":64186,"type":"host"},"remote":{"address":"192.0.2.225","port":53182,"type":"host"}}
+{"ts":"2026-10-26T04:04:54.309Z","event":"noise-peer","line":"noise-peer bulk matched bytes=4194304 records_received=65"}
+{"ts":"2026-10-26T04:04:54.654Z","event":"noise-peer","line":"noise-peer echoing 65 records"}
+{"ts":"2026-10-26T04:04:54.672Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":44}
+{"ts":"2026-10-26T04:04:54.672Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":43}
+{"ts":"2026-10-26T04:04:54.684Z","event":"dc-buffered-low","bufferedAmount":65535,"queued":42}
+{"ts":"2026-10-26T04:04:54.785Z","event":"dc-send-drained","sent":66,"writeFalse":9,"bufferedAmount":0,"maxBuffered":327675}
+{"ts":"2026-10-26T04:04:54.785Z","event":"dc-run-summary","runId":"1792987492827-5","reason":"drained","sent":66,"writeFalse":9,"maxBuffered":327675,"maxQueue":44}
+{"ts":"2026-10-26T04:04:58.212Z","event":"answer-idle","state":"connected","pair":{"local":{"address":"192.0.2.225","port":52919,"type":"host"},"remote":{"address":"192.0.2.225","port":60137,"type":"host"}}}

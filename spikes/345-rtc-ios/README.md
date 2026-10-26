@@ -3,23 +3,30 @@
 这是 #345 的 0b 可行性实验，不是产品实现：**不开 PR、不合入、不作为后续产品 PR 的底座**。
 目标是回答 iOS 的 WebRTC 栈选型：候选 str0m，备选 Google WebRTC xcframework。
 
+## 更正（2026-10-26，重要）
+
+第一版 PR0b 评论把“DataChannel 重复交付”归因给 str0m，这是错的。核对 PR0a 和
+`node-datachannel` 0.33.4 的语义后确认：`sendMessageBinary` 返回 false 表示**消息已经入队**，
+只是没有立即写出。第一版 `peer.mjs` 在 false 时没有消费队列，下一轮又发同一份密文，
+于是制造了相邻重复记录（Noise 因此报 decrypt error）。错误在 Node 对端，不在 str0m。
+
+修正后只用模拟器和本机重跑：IPv4 5 次、IPv6 5 次、传输中进后台再回前台 3 次，共 13 次全部完成，
+0 次重复、0 次解密失败；Node 每次 `writeFalse` 7–12 次，全部按 bufferedAmount 背压正常排空。
+因此**撤回“转验证 Google WebRTC”的建议，str0m 可以锁定**。
+
 ## 结论摘要
 
-- `str0m 0.24.1` + `str0m-rust-crypto 0.6.0` 在 iOS 26.5 模拟器和 iPhone 17 Pro（iOS 27.0）真机都能编译；
-  `Swift UDP -> Rust STUN/str0m (UniFFI) -> node-datachannel(0.33.4)/libdatachannel` 能建立 DataChannel。
-- 正常路径下 4 MiB 真实 Noise 业务帧被 seal 成 65 条记录，逐字节校验通过；`Channel::write` 在背压下返回 false
-  1737 次，记录仍全部发完，没有重新 seal。同一 Wi-Fi 选中的是 host-host；IPv4 和 IPv6 都通。
-- **阻断性问题**：可靠有序的 DataChannel 上观察到了**重复交付**。后台恢复时记录密文连续重复，
-  正常 IPv6 真机也复现过一次（记录 #38 与 #37 首 8 字节完全相同），Noise 接收方向因此永久毒化。
-- 一个相邻密文去重保护能把这次后台传输跑完，但它抑制了 **291 次**重复记录；这说明不是偶发单包，
-  而是挂起/恢复后的 SCTP 重传风暴。去重只能作为实验保护，不能当作产品保证。
-- `node-datachannel` 作为 answerer 时不能无节制地连续 `sendMessageBinary`：一次灌 4 MiB 会在约 18 条记录后
-  损坏/丢失消息。Node 侧以 20 ms/条节奏发送后通过；这是宿主侧适配项。
-- iOS 不需要 `NSBonjourServices`，也不需要 multicast entitlement：实验只发单播 UDP + HTTP，没有 mDNS / multicast。
-  `NSLocalNetworkUsageDescription` 已在 Info.plist 中。iOS 27 首次联网还会弹“使用无线数据”的权限。
-- **建议：暂不锁定 str0m，转去验证 Google WebRTC xcframework**。基础链路和 sans-I/O 形状都成立，但
-  “可靠通道重复交付”直接违反 Noise 记录层的载体契约，且尚未定位到是 str0m/sctp-proto 还是本驱动；
-  在这个问题有上游修复或可证明的去重/断线策略之前，不应把它作为 PR4 的产品栈。详细判断见 #345 的 PR0b 评论。
+- `str0m 0.24.1` + `str0m-rust-crypto 0.6.0` 在 iOS 26.5 模拟器编译、建连、跑完 4 MiB 真实 Noise 记录；
+  首轮真机链路也建立成功，但按本轮要求**没有重跑真机**。
+- 4 MiB 真实 Noise 业务帧 -> 65 条记录，逐字节校验 `matched=true`；iOS `Channel::write` 返回 false
+  约 1,737 次，仍按低水位逐批发完，没有重新 seal。
+- 模拟器 IPv4 / IPv6 各 5 次，全部 host-host；3 次传输中后台恢复也全部完成，没有重复记录。
+- Node 侧 `writeFalse` 7–12 次/次，最大 buffered amount 327,675 字节，最大队列 44 条；说明背压确实触发。
+- `node-datachannel` 的 false 必须当成“已入队”，**消费当前记录并前进**，不能重试；
+  发送节奏由 `bufferedAmount()` 高水位（256 KiB）+ `onBufferedAmountLow`（64 KiB）控制。
+- iOS 侧 str0m `Channel::write` 的 false 是真正没接收，继续用同一份密文重试是对的，不需要改。
+- iOS 不需要 `NSBonjourServices`，也不需要 multicast entitlement；`NSLocalNetworkUsageDescription` 已在 Info.plist。
+- **建议：锁定 str0m；不需要转 Google WebRTC**。重复问题已归因并修正，PR4 的主要剩余工作是平台层和生命周期，不是协议正确性。
 
 ## 组成
 
@@ -43,7 +50,7 @@ SwiftUI App (iOS)                          Node answerer (macOS)
 - `node/peer.mjs`：只做一次性 HTTP 信令 + libdatachannel answerer；Noise 不在这里重写，
   而是通过长度前缀管道交给 `rtc-noise-peer`，确保 DataChannel 里跑的是 `pinomad-core` 的真实记录。
 - `rtc-core/src/bin/rtc-probe.rs`：在 Mac 上用同一 `Engine` + BSD socket 的主机侧联调工具。
-- `node/bulk-probe.mjs`：Node-to-Node 的 65×65,535 字节对照；IPv4/IPv6 均无重复，用来把问题收敛到 str0m 接收侧。
+- `node/bulk-probe.mjs`：Node-to-Node 的 65×65,535 字节对照；IPv4/IPv6 均无重复，证明 libdatachannel 自身收发正常。
 
 ## 锁定的版本
 
@@ -84,7 +91,7 @@ cd node
 RTC_SPIKE_BIND=0.0.0.0 RTC_SPIKE_PORT=8765 RTC_SPIKE_SEED=7 node peer.mjs
 ```
 
-`RTC_SPIKE_BIND=::` + `RTC_SPIKE_PORT=8766` 可跑 IPv6 版本。Node 侧固定 20 ms/条节流，原因见上。
+`RTC_SPIKE_BIND=::` + `RTC_SPIKE_PORT=8766` 可跑 IPv6 版本。Node 侧不按时间节流：`bufferedAmount()` 达到 256 KiB 时暂停，`onBufferedAmountLow`（64 KiB）唤醒；`sendMessageBinary` 返回 false 时该记录已经入队，必须前进而不是重试。
 
 ### 3. 模拟器
 
@@ -144,7 +151,6 @@ cargo build -p rtc-spike-core --bin rtc-probe
 | `RTCSPIKE_FAMILY` | `auto` | `ipv4` / `ipv6` / `auto` |
 | `RTCSPIKE_BIND` | 自动选 en0 | 强制本地 IP |
 | `RTCSPIKE_HOLD_MS` | `5000` | 完成后保持连接的毫秒数，便于观察释放 |
-| `RTCSPIKE_DEDUPE` | `1` | 设为 `0` 关闭相邻重复密文抑制，用于复现原始失败 |
 
 本机 DNS 会把 `stun.cloudflare.com` 解析到 `198.18.0.0/15`，那里没有 STUN 服务。
 `Resolver.swift` 检测到该网段后回退到 Cloudflare 发布的 `162.159.207.0` / `2606:4700:49::`；
@@ -152,20 +158,16 @@ cargo build -p rtc-spike-core --bin rtc-probe
 
 ## 证据
 
-`evidence/` 里是实际运行日志（时间戳为 Unix 秒）：
+按本轮要求只跑模拟器和本机；**没有重跑真机**。`evidence/` 里是 13 次运行：
 
-- `simulator-ipv4.log`：iOS 26.5 模拟器，4 MiB / 65 记录，matched=true，host-host；`RTCSPIKE_DEDUPE=1` 下 0 次重复。
-- `device-ipv4.log`：iPhone 17 Pro / iOS 27.0，srflx 已收集，选中 host-host，matched=true。
-- `simulator-ipv6.log`：模拟器 IPv6；STUN v6 因 Mac 路由不可达，host-host 仍通。
-- `device-ipv6-success.log`：真机原生 IPv6 成功路径；映射地址等于 host，最终 host-host。
-- `device-ipv6-raw-duplicate.log`：真机原生 IPv6 的原始失败：记录 #37/#38 重复，Noise 毒化，失败识别并释放。**没有开后台**。
-- `simulator-background-mid-transfer.log`：`RTCSPIKE_DEDUPE=0`，传输中后台挂起，记录 #37/#38 重复，Noise 毒化，失败识别并释放。
-- `simulator-background-mid-transfer-deduped.log`：同一场景打开去重，完成 65 条，但抑制了 291 条重复记录。
-- `device-background-after-complete.log`：大帧收尾阶段进后台再回前台，连接未再报错。
-- `node-unthrottled-burst.log`：Node 不限速时只发出 16 条 log 后停止，对应 iOS 第 18 条记录解密失败。
-- `node-throttled-background.log`：20 ms 节流后同一路径可完成。
-- `host-probe-ipv4.log`：Mac 上用同一个 `Engine` + BSD socket 的联调，4 MiB / 65 记录，matched=true，deduped=0。
-- 对照：`node/bulk-probe.mjs` 在 IPv4 / IPv6 各跑 65 × 65,535 字节，接收端 0 重复；说明 libdatachannel 自身的收发不是重复来源。
+- `summary.csv`：每轮的 result / duplicate / Node sent / writeFalse / maxBuffered / maxQueue。
+- `ipv4-1..5.app.log` / `.node.log`：模拟器 IPv4，5 次全部 COMPLETE，65 条，matched=true，host-host。
+- `ipv6-1..5.app.log` / `.node.log`：模拟器 IPv6，5 次全部 COMPLETE，65 条，matched=true，host-host。
+- `background-1..3.app.log` / `.node.log`：传输中（Node 回显阶段）进后台再回前台，3 次全部 COMPLETE，无重复/解密失败。
+- `host-probe-ipv4.log`：Mac 上用同一个 `Engine` + BSD socket 再跑一次 4 MiB，65 条 matched=true，iOS 侧 false=1,744。
+- Node 每轮 `writeFalse` 7–12 次，`maxBuffered=327,675`，`maxQueue` 42–44；这是真实触发背压的证据。
+- 对照：`node/bulk-probe.mjs` 在 IPv4 / IPv6 各跑 65 × 65,535 字节，接收端 0 重复；libdatachannel 自身收发正常。
+- 旧的第一版证据已从当前树删除；`evidence/README.md` 说明了错误归因和修正。
 
 ## 体积
 
@@ -190,11 +192,12 @@ cargo build -p rtc-spike-core --bin rtc-probe
 ## 设计影响
 
 1. `str0m` 的 sans-I/O 形状和 ADR-0024 的平台层契约吻合；Swift 只需一个串行队列、一个 UDP fd、一个 timer。
-2. 产品化必须补：`Channel::write` 低水位泵送的实测参数（本次 128 KiB 低水位 + 512 KiB SCTP buffer 可用，
-   但 false 次数偏高）；`max-message-size` 检查；Node 宿主的发送节流。
-3. **重复交付是当前 Go/No-Go 的核心**：正常 IPv6 真机也出现过一次重复，后台挂起后是重传风暴。
-   相邻密文去重能跑完，但不能证明一般情况；应把挂起/网络切换当成连接代际结束，重新走 ICE/Noise，
-   且把“载体 exactly-once”列为上游必须修复项。
-4. 如果 PR4 前不能定位/修复重复来源，按备选方案验证 Google WebRTC xcframework 的 DataChannel + 4 MiB 大帧，
-   再决定产品栈；在当前证据下建议**不要锁定 str0m**。
-5. 不需要 Bonjour 或 multicast entitlement；但 iOS 27 的“无线数据”权限是首次启动的硬前置。
+2. **Node 宿主的载体适配器语义是 PR1 的必改项**：`sendMessageBinary` 的 false 是“已入队”，必须消费并前进；
+   用 `bufferedAmount()` 高水位 + `onBufferedAmountLow` 控制，不能按时间节流，也不能重试同一记录。
+3. **iOS 侧不要改**：str0m `Channel::write` 的 false 是“未接收”，同一份密文重试是正确的；本次 13/13 证明
+   iOS 发送路径和 Noise 记录层在背压下保持一致。iOS `write_false` 约 1,737 次，属于正常低水位行为。
+4. 后台/恢复 3/3 完成且无重复；产品仍按现有协调器代际规则处理更长的挂起和网络切换，但不再需要
+   把“可靠通道重复交付”当成 str0m 的阻断项，也不需要密文去重。
+5. 建议锁定 str0m；不需要转 Google WebRTC。PR4 约 3–4 周，主要工作量在 Swift 平台层、生命周期、
+   设置界面和网络切换测试，而不是协议正确性。
+6. 不需要 Bonjour 或 multicast entitlement；但 iOS 27 的“无线数据”权限是首次启动的硬前置。

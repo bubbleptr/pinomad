@@ -1,0 +1,14 @@
+run,result,duplicate,node_sent,node_write_false,max_buffered,max_queue
+ipv4-1,COMPLETE,no,66,7,327675,44
+ipv4-2,COMPLETE,no,66,7,327675,44
+ipv4-3,COMPLETE,no,66,8,327675,44
+ipv4-4,COMPLETE,no,66,9,327675,44
+ipv4-5,COMPLETE,no,66,8,327675,44
+ipv6-1,COMPLETE,no,66,9,327675,44
+ipv6-2,COMPLETE,no,66,11,327675,44
+ipv6-3,COMPLETE,no,66,8,327675,44
+ipv6-4,COMPLETE,no,66,8,327675,42
+ipv6-5,COMPLETE,no,66,9,327675,44
+background-1,COMPLETE,no,66,8,327675,44
+background-2,COMPLETE,no,66,12,327675,44
+background-3,COMPLETE,no,66,8,327675,44

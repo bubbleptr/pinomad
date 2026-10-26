@@ -42,7 +42,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             local_addr: local.to_string(),
             stun_servers,
             seed,
-            dedupe_duplicates: true,
         },
         now,
     );
