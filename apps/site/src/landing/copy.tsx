@@ -32,7 +32,11 @@ export interface LandingCopy {
   core: {
     eyebrow: string;
     title: string;
-    machine: { title: string; body: string; placeholder: string };
+    machine: {
+      title: string;
+      body: string;
+      diagram: { label: string; machine: string; uses: string[] };
+    };
     allFeatures: string;
   };
   durable: {
@@ -42,12 +46,6 @@ export interface LandingCopy {
     plain: string;
     durable: string;
     steps: { tool: string; detail: string }[];
-    tags: { lost: string; kept: string; cut: string; rerun: string };
-    restartPlain: string;
-    restartDurable: string;
-    host: { up: string; down: string };
-    replay: string;
-    status: { running: string; crashed: string; restarted: string; done: string };
   };
   agents: {
     eyebrow: string;
@@ -56,21 +54,21 @@ export interface LandingCopy {
     roles: { name: string; job: string }[];
     blog: string;
     shotAlt: string;
-    placeholder: string;
+    diagram: { label: string };
   };
   connection: {
     eyebrow: string;
     title: string;
     lead: string;
     chips: { name: string; text: string }[];
-    placeholder: string;
+    diagram: { label: string; host: string; relay: string };
   };
   next: {
     eyebrow: string;
     title: string;
     lead: string;
     items: { title: string; body: string; link: Link }[];
-    placeholder: string;
+    diagram: { label: string; host: string; machines: string[] };
   };
   start: {
     eyebrow: string;
@@ -129,7 +127,12 @@ export const copy: Record<Lang, LandingCopy> = {
       machine: {
         title: "Your machine does the work",
         body: "The host runs on a Mac mini, a Linux box, or a VPS, and the agent uses that machine's shell, repositories, and credentials.",
-        placeholder: "Diagram coming: the host on your own machine.",
+        diagram: {
+          label:
+            "The PiNomad host runs inside your own machine, a Mac mini, a Linux box, or a VPS, and uses that machine's shell, repositories, and credentials.",
+          machine: "Your machine",
+          uses: ["Shell", "Repos", "Credentials"],
+        },
       },
       allFeatures: "Everything the agent can do",
     },
@@ -147,17 +150,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { tool: "bash", detail: "bun test" },
         { tool: "model", detail: "write it up" },
       ],
-      tags: { lost: "lost", kept: "kept", cut: "cut off", rerun: "rerun" },
-      restartPlain: "Restarted · back to step 1",
-      restartDurable: "Restarted · picks up at step 4",
-      host: { up: "Host running", down: "Host crashed" },
-      replay: "Replay",
-      status: {
-        running: "Same task, two runs.",
-        crashed: "The host crashes during the fourth call.",
-        restarted: "Back up. One run lost everything; Pi Durable kept the three finished calls.",
-        done: "Pi Durable is done, rerunning only the call that was cut off. The other run is still redoing step 2.",
-      },
     },
     agents: {
       eyebrow: "Named agents",
@@ -172,7 +164,10 @@ export const copy: Record<Lang, LandingCopy> = {
       blog: "How the author splits a week's work across five named agents (in Chinese)",
       shotAlt:
         "One turn running three subagents: German titles is done, Vietnamese titles is still running a script, and the @reviewer agent is checking the fold map for collisions",
-      placeholder: "Diagram coming: a planner handing work to workers, a critic, and a writer.",
+      diagram: {
+        label:
+          "You design the change with @planner, which hands the work to one or more @worker agents, @critic, and @writer, each with its own prompt, model, and thinking level.",
+      },
     },
     connection: {
       eyebrow: "Connection",
@@ -182,7 +177,12 @@ export const copy: Record<Lang, LandingCopy> = {
         { name: "Direct", text: " over your LAN or tailnet" },
         { name: "Relay", text: " that only sees ciphertext" },
       ],
-      placeholder: "Diagram coming: a device, the encrypted channel, and the host.",
+      diagram: {
+        label:
+          "A device pairs with the host once by scanning its QR code. After that they talk over one end-to-end encrypted channel, either directly over the LAN or tailnet, or through a relay that passes it on without being able to read it.",
+        host: "Host",
+        relay: "Relay",
+      },
     },
     next: {
       eyebrow: "Coming next",
@@ -210,7 +210,12 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "ADR-0004", href: adr4 },
         },
       ],
-      placeholder: "Diagram coming: one host driving Windows, macOS, Linux, and Android machines.",
+      diagram: {
+        label:
+          "Planned: the host keeps running the model and reaches Windows, macOS, Linux, and Android machines over SSH through pi-env; the tools run on those machines.",
+        host: "Host",
+        machines: ["Windows", "macOS", "Linux", "Android"],
+      },
     },
     start: {
       eyebrow: "Get started",
@@ -297,7 +302,11 @@ export const copy: Record<Lang, LandingCopy> = {
       machine: {
         title: "活在你自己的机器上干",
         body: "宿主可以跑在 Mac mini、Linux 主机或 VPS 上，agent 直接用那台机器的 shell、代码仓库和凭据。",
-        placeholder: "示意图待补：宿主跑在你自己的机器上。",
+        diagram: {
+          label: "PiNomad 宿主跑在你自己的机器上（Mac mini、Linux 主机或 VPS），直接用那台机器的 shell、代码仓库和凭据。",
+          machine: "你的机器",
+          uses: ["Shell", "代码仓库", "凭据"],
+        },
       },
       allFeatures: "agent 能做的所有事",
     },
@@ -315,17 +324,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { tool: "bash", detail: "bun test" },
         { tool: "模型", detail: "写总结" },
       ],
-      tags: { lost: "丢了", kept: "保留", cut: "被打断", rerun: "重跑" },
-      restartPlain: "重启 · 回到第 1 步",
-      restartDurable: "重启 · 从第 4 步接着跑",
-      host: { up: "宿主运行中", down: "宿主崩溃" },
-      replay: "再看一遍",
-      status: {
-        running: "同一个任务，跑两遍。",
-        crashed: "第四步跑到一半，宿主崩溃。",
-        restarted: "宿主重启。一边全丢了，Pi Durable 这边跑完的三步都在。",
-        done: "Pi Durable 跑完了，只重跑了被打断的那一步；另一边还在重做第 2 步。",
-      },
     },
     agents: {
       eyebrow: "具名 Agent",
@@ -339,7 +337,9 @@ export const copy: Record<Lang, LandingCopy> = {
       ],
       blog: "看作者一周的开发记录：五个具名 Agent 怎么分工",
       shotAlt: "同一轮里并行跑着三个子代理：德语标题已完成，越南语标题还在跑脚本，@reviewer 正在检查转换表里有没有冲突",
-      placeholder: "示意图待补：Planner 把活分给 Worker、Critic 和 Writer。",
+      diagram: {
+        label: "你和 @planner 一起定方案，@planner 再把活分给一个或多个 @worker、@critic 和 @writer；每个 agent 都有自己的提示词、模型和思考等级。",
+      },
     },
     connection: {
       eyebrow: "连接",
@@ -349,7 +349,11 @@ export const copy: Record<Lang, LandingCopy> = {
         { name: "直连", text: "：局域网或 tailnet" },
         { name: "中继", text: "：只转发密文" },
       ],
-      placeholder: "示意图待补：设备、加密通道和宿主。",
+      diagram: {
+        label: "设备扫一次宿主的二维码完成配对，之后两者之间只走一条端到端加密的通道：局域网或 tailnet 直连，或者经过中继；中继只转发，读不到内容。",
+        host: "宿主",
+        relay: "中继",
+      },
     },
     next: {
       eyebrow: "接下来",
@@ -377,7 +381,11 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "ADR-0004", href: adr4 },
         },
       ],
-      placeholder: "示意图待补：一台宿主驱动 Windows、macOS、Linux 和 Android 机器。",
+      diagram: {
+        label: "规划中：模型继续跑在宿主上，宿主通过 pi-env 用 SSH 连到 Windows、macOS、Linux 和 Android 机器，工具在这些机器上执行。",
+        host: "宿主",
+        machines: ["Windows", "macOS", "Linux", "Android"],
+      },
     },
     start: {
       eyebrow: "开始使用",
