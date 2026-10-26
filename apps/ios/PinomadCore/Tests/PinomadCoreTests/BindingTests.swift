@@ -51,7 +51,7 @@ struct BindingTests {
         // Request-class ops reject with OperationFailed when not connected.
         let commands = client.handle(event: .invoke(
             op: 7, call: .renameConversation(id: 1, title: "改名 🍂")))
-        guard case .operationFailed(let op, let error) = commands.last else {
+        guard case .operationFailed(let op, let error, _) = commands.last else {
             Issue.record("expected OperationFailed, got \(commands)")
             return
         }

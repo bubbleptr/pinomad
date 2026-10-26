@@ -28,6 +28,14 @@ struct SessionOrderingTests {
                 case .foreground: "foreground"
                 case .background: "background"
                 case .networkChanged: "network"
+                case .clock: "clock"
+                case .rtcPeerReady: "rtcReady"
+                case .rtcChannelOpened: "rtcOpened"
+                case .rtcData: "rtcData"
+                case .rtcSendResult: "rtcSend"
+                case .rtcLowWater: "rtcLow"
+                case .rtcClosed: "rtcClosed"
+                case .rtcSelectedCandidate: "rtcSelected"
                 }
             }
         }
@@ -121,48 +129,98 @@ struct SessionOrderingTests {
         session.close()
     }
 
-    /// A local CloseSocket (invalid ciphertext, malformed secure record)
-    /// retires the epoch exactly once, so a later OperationFailed is a lost
-    /// reply rather than the host refusing the call.
-    @Test func localCloseAdvancesTheEpochExactlyOnce() async throws {
+    /// A request's failure classification follows the carrier the core
+    /// actually used. A standby/signal connection retiring must not move it,
+    /// which is why the session no longer keeps a global epoch counter.
+    @Test func standbyCloseDoesNotChangeAHealthyRequestsFailure() async throws {
         let (session, factory, _, _) = try makeSession()
         await session.waitForIdle()
         let socket = try #require(factory.socket(conn: 1))
-        let started = session.currentConnectionGeneration
-
         socket.deliverOpened()
         await session.waitForIdle()
-        socket.deliverData(Data([9, 9, 9, 9]))
-        await session.waitForIdle()
-        let after = session.currentConnectionGeneration
-        #expect(after == started + 1)
-        #expect(socket.isClosed)
-        #expect(PinomadSession.requestFailure(
-            startedOn: started, current: after, message: "host said no") == .connectionLost)
 
-        // A second core close for the retired id must not move it again.
-        session.enqueue(.commands([.closeSocket(conn: 1)]))
+        let result = await beginRequest(session, op: 41)
+        session.enqueue(.commands([.openConnection(conn: 2, url: "ws://standby/")]))
         await session.waitForIdle()
-        #expect(session.currentConnectionGeneration == after)
+        let standby = try #require(factory.socket(conn: 2))
+        standby.deliverClosed(code: 1006)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .operationFailed(op: 41, error: "host said no", carrierLost: false),
+        ]))
+        await session.waitForIdle()
+        await #expect(throws: SessionError.operationFailed("host said no")) {
+            _ = try await result.value
+        }
         session.close()
     }
 
-    @Test func sendFailureAndCoreCloseBumpTheEpochOnlyOnce() async throws {
+    @Test func anOldConnectionsLateCloseDoesNotChangeTheNewOnesFailure() async throws {
         let (session, factory, _, _) = try makeSession()
         await session.waitForIdle()
         let socket = try #require(factory.socket(conn: 1))
-        let started = session.currentConnectionGeneration
+        socket.deliverOpened()
+        await session.waitForIdle()
 
-        socket.policy = .hold
-        session.enqueue(.commands([.sendBytes(conn: 1, bytes: Data([1]))]))
+        let result = await beginRequest(session, op: 42)
+        session.enqueue(.commands([.openConnection(conn: 2, url: "ws://new/")]))
         await session.waitForIdle()
-        await spinUntil({ socket.calls.count == 1 }, "send in flight")
-        socket.releaseHeld(fail: true)
-        await spinUntil(
-            { session.currentConnectionGeneration == started + 1 },
-            "send failure retires the epoch")
+        // The old connection's close arrives after the new one is live.
+        socket.deliverClosed(code: 1006)
         await session.waitForIdle()
-        #expect(session.currentConnectionGeneration == started + 1)
+
+        session.enqueue(.commands([
+            .operationFailed(op: 42, error: "host said no", carrierLost: false),
+        ]))
+        await session.waitForIdle()
+        await #expect(throws: SessionError.operationFailed("host said no")) {
+            _ = try await result.value
+        }
+        session.close()
+    }
+
+    @Test func aStandbySendFailureDoesNotChangeAHealthyRequestsFailure() async throws {
+        let (session, factory, _, _) = try makeSession()
+        await session.waitForIdle()
+        let socket = try #require(factory.socket(conn: 1))
+        socket.deliverOpened()
+        await session.waitForIdle()
+
+        let result = await beginRequest(session, op: 43)
+        session.enqueue(.commands([.openConnection(conn: 2, url: "ws://standby/")]))
+        await session.waitForIdle()
+        let standby = try #require(factory.socket(conn: 2))
+        standby.policy = .hold
+        session.enqueue(.commands([.sendBytes(conn: 2, bytes: Data([9]))]))
+        await session.waitForIdle()
+        await spinUntil({ standby.calls.count == 1 }, "standby send in flight")
+        standby.releaseHeld(fail: true)
+        await session.waitForIdle()
+
+        session.enqueue(.commands([
+            .operationFailed(op: 43, error: "host said no", carrierLost: false),
+        ]))
+        await session.waitForIdle()
+        await #expect(throws: SessionError.operationFailed("host said no")) {
+            _ = try await result.value
+        }
+        session.close()
+    }
+
+    @Test func aLostCarrierTurnsTheFailureIntoConnectionLost() async throws {
+        let (session, factory, _, _) = try makeSession()
+        await session.waitForIdle()
+        let socket = try #require(factory.socket(conn: 1))
+        socket.deliverOpened()
+        await session.waitForIdle()
+
+        let result = await beginRequest(session, op: 44)
+        session.enqueue(.commands([
+            .operationFailed(op: 44, error: "Disconnected from host", carrierLost: true),
+        ]))
+        await session.waitForIdle()
+        await #expect(throws: SessionError.connectionLost) { _ = try await result.value }
         session.close()
     }
 
@@ -351,6 +409,23 @@ struct SessionOrderingTests {
         await session.waitForIdle()
     }
 
+    /// Start a request whose continuation the test controls; the op is
+    /// enqueued through the real loop so dispatch sees it in order.
+    private func beginRequest(_ session: PinomadSession, op: UInt64) async -> Task<CallResult, any Error> {
+        let captured = OSAllocatedUnfairLock<CheckedContinuation<CallResult, any Error>?>(
+            initialState: nil)
+        let result = Task<CallResult, any Error> {
+            try await withCheckedThrowingContinuation { reply in
+                captured.withLock { $0 = reply }
+            }
+        }
+        await spinUntil({ captured.withLock { $0 != nil } }, "reply captured")
+        // The core never sees this op; the test drives OperationFailed
+        // directly, which is what the classification depends on.
+        session.enqueue(.pendingRequest(op: op, reply: captured.withLock { $0! }))
+        return result
+    }
+
     @Test func invokeRejectsRequestClassCallsWhenDisconnected() async throws {
         let (session, _, _, _) = try makeSession()
         await session.waitForIdle()
@@ -362,26 +437,18 @@ struct SessionOrderingTests {
 
 }
 
-/// The epoch rule behind request failures. It is split out because the
-/// session tests cannot complete a real Noise handshake: a request still in
-/// flight when its socket dies cannot be told apart from one the host
-/// applied before the reply was lost, while a failure on the same epoch is
-/// the host's refusal.
+/// How a request failure is classified. The core knows which carrier took
+/// the call and reports whether that carrier is gone; deciding "reply lost"
+/// is not a session-local counter's job.
 @Suite struct SessionFailureTests {
-    @Test func aFailureAfterTheConnectionEpochMovedIsLost() {
+    @Test func aLostCarrierIsConnectionLost() {
         #expect(PinomadSession.requestFailure(
-            startedOn: 3, current: 4, message: "Disconnected from host") == .connectionLost)
+            carrierLost: true, message: "Disconnected from host") == .connectionLost)
     }
 
-    @Test func aFailureOnTheSameEpochStaysTheHostRefusal() {
+    @Test func aLiveCarrierStaysTheHostRefusal() {
         #expect(PinomadSession.requestFailure(
-            startedOn: 3, current: 3, message: "host said no")
-            == .operationFailed("host said no"))
-    }
-
-    @Test func anUntrackedRequestKeepsTheOldOperationFailure() {
-        #expect(PinomadSession.requestFailure(
-            startedOn: nil, current: 3, message: "host said no")
+            carrierLost: false, message: "host said no")
             == .operationFailed("host said no"))
     }
 }

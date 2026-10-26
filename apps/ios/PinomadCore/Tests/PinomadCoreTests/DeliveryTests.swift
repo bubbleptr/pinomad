@@ -379,7 +379,6 @@ struct HostStoreTests {
             return
         }
         #expect(message.contains("updated addresses"))
-        #expect(session.currentConnectionGeneration == 0)
         session.close()
     }
 
