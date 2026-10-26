@@ -13,7 +13,9 @@ XCFW="$PKG/Vendor/PinomadCoreFFI.xcframework"
 cd "$ROOT"
 
 # Device and simulator slices, release. staticlib keeps the Swift side
-# free of dylib embedding; --crate-type overrides the rlib default.
+# free of dylib embedding; --crate-type overrides the rlib default. The ffi
+# feature also pulls in pinomad-rtc, so the RTC engine and the protocol core
+# ship as one archive and one xcframework (no second Rust staticlib).
 cargo rustc -p pinomad-core --features ffi --crate-type staticlib --release \
   --target aarch64-apple-ios
 cargo rustc -p pinomad-core --features ffi --crate-type staticlib --release \
