@@ -1,0 +1,14 @@
+# node-datachannel version / license / binary size (checked 2026-10-26)
+version: 0.33.4
+published: 2026-09-12T12:57:11.285Z (44 days before this check, > 7 days)
+license: MPL-2.0 (node-datachannel and every @node-datachannel/* package)
+bundled libdatachannel: 0.24.5 (ndc.getLibraryVersion())
+binary ABI: N-API 10 (Node 26.8.2, process.versions.modules=147)
+main package: unpacked 683,085 bytes; npm tgz 109 KB
+@node-datachannel/linux-x64-gnu@0.33.4:
+  unpacked 9,061,249 bytes; npm tgz 3.4 MB
+  node_datachannel.node 8.7 MiB, ELF 64-bit x86-64, not stripped
+  sha256 936d991f99cc07a48a8327199ca5ba098411f8b873dfe1a456069f09d64c52ff
+@node-datachannel/darwin-arm64@0.33.4:
+  unpacked 8,656,388 bytes; npm tgz 3.5 MB
+pin: exact 0.33.4 for node-datachannel and all @node-datachannel/* platform packages.

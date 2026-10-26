@@ -1,0 +1,2877 @@
+{
+  "name": "maxmsg-sdp-missing",
+  "options": {
+    "name": "maxmsg-sdp-missing",
+    "mode": "maxmsg",
+    "host": "local",
+    "browser": "local",
+    "stun": [],
+    "mdns": true,
+    "sdpMaxMessageSize": "missing",
+    "sizes": [
+      65535,
+      65536,
+      65537,
+      131072,
+      262144,
+      262145
+    ]
+  },
+  "pageUrl": "http://127.0.0.1:42767/",
+  "browser": {
+    "startedAt": 1792985917695,
+    "config": {
+      "wsUrl": "ws://127.0.0.1:42767/ws?role=browser&token=<redacted>",
+      "mode": "maxmsg",
+      "stun": [],
+      "hostPublicKey": "7tWi0WtUmFadsk5IPUR35xciWsf6OZiH1tQUR9HlqWY",
+      "sizes": [
+        65535,
+        65536,
+        65537,
+        131072,
+        262144,
+        262145
+      ],
+      "testId": "maxmsg-sdp-missing-mvopis40-9eb47e"
+    },
+    "done": true,
+    "result": {
+      "side": "browser",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+      "platform": "Linux x86_64",
+      "config": {
+        "wsUrl": "ws://127.0.0.1:42767/ws?role=browser&token=<redacted>",
+        "mode": "maxmsg",
+        "stun": [],
+        "hostPublicKey": "7tWi0WtUmFadsk5IPUR35xciWsf6OZiH1tQUR9HlqWY",
+        "sizes": [
+          65535,
+          65536,
+          65537,
+          131072,
+          262144,
+          262145
+        ],
+        "testId": "maxmsg-sdp-missing-mvopis40-9eb47e"
+      },
+      "startedAt": 1792985917695,
+      "finishedAt": 1792985918017,
+      "localCandidates": [
+        {
+          "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+          "foundation": "3857954863",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+          "port": "42256",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+          "foundation": "215317434",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+          "port": "55524",
+          "type": "host",
+          "isMdns": true
+        }
+      ],
+      "remoteCandidates": [
+        {
+          "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+          "foundation": "a=candidate:6",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025087",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+          "foundation": "a=candidate:7",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024831",
+          "address": "fdfe:dcba:9876::1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+          "foundation": "a=candidate:8",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024575",
+          "address": "fd7a:xxxx:xxxx::x",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+          "foundation": "a=candidate:1",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977791",
+          "address": "192.168.0.24",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+          "foundation": "a=candidate:2",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977535",
+          "address": "172.19.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+          "foundation": "a=candidate:3",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977279",
+          "address": "100.x.x.x",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+          "foundation": "a=candidate:4",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977023",
+          "address": "172.18.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+          "foundation": "a=candidate:5",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976767",
+          "address": "172.20.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        }
+      ],
+      "localSdp": {
+        "bytes": 715,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:3857954863",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+            "port": "42256",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:215317434",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+            "port": "55524",
+            "type": "host",
+            "isMdns": true
+          }
+        ],
+        "full": "v=0\r\no=- 7436905487194486593 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999\r\na=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999\r\na=ice-ufrag:XmWZ\r\na=ice-pwd:P7oZC9G3H/9eJqg5AnBqXLF0\r\na=ice-options:trickle\r\na=fingerprint:sha-256 E1:F2:EB:FE:99:AC:D0:89:0A:4E:D4:3D:1A:0C:62:2C:42:28:F2:FA:E4:8D:37:94:C8:F0:F6:4B:FA:5C:1A:FB\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+      },
+      "remoteSdp": {
+        "bytes": 402,
+        "maxMessageSize": [],
+        "candidates": [],
+        "full": "v=0\r\no=- 2303598458 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:RVyd\r\na=ice-pwd:ZVBBfQ++hPMUvpV6QLYhUg\r\na=ice-options:ice2,trickle\r\na=fingerprint:sha-256 27:AD:3A:B1:20:43:79:78:5D:92:4B:85:72:D8:E6:5D:02:DC:28:72:08:5C:97:C1:3F:AD:4D:7C:17:15:2C:BB\r\na=setup:active\r\na=mid:0\r\na=sctp-port:5000\r\n"
+      },
+      "maxMessageSize": 65536,
+      "stats": {
+        "at": 1792985918016,
+        "connectionState": "connected",
+        "iceConnectionState": "connected",
+        "iceGatheringState": "complete",
+        "transport": {
+          "dtlsState": "connected",
+          "iceState": "connected",
+          "selectedCandidatePairId": "CPUa5HbZPt_BGaEv+MD",
+          "bytesSent": 156239,
+          "bytesReceived": 627175,
+          "packetsSent": 405,
+          "packetsReceived": 602
+        },
+        "selectedPair": {
+          "state": "in-progress",
+          "nominated": true,
+          "bytesSent": 156239,
+          "bytesReceived": 627175,
+          "packetsSent": 405,
+          "packetsReceived": 602,
+          "currentRoundTripTime": 0,
+          "requestsSent": 3,
+          "responsesReceived": 2,
+          "consentRequestsSent": 2
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 55524,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "2256936943",
+          "networkType": "unknown",
+          "usernameFragment": "XmWZ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2116025087,
+          "foundation": "6",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        "candidates": [
+          {
+            "candidateType": "host",
+            "address": "172.20.0.1",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2114976767,
+            "foundation": "5",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "192.168.0.24",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2114977791,
+            "foundation": "1",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "",
+            "port": 55524,
+            "protocol": "udp",
+            "priority": 2113942271,
+            "foundation": "215317434",
+            "networkType": "unknown",
+            "usernameFragment": "XmWZ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2116025087,
+            "foundation": "6",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "172.19.0.1",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2114977535,
+            "foundation": "2",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "fdfe:dcba:9876::1",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2116024831,
+            "foundation": "7",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "100.x.x.x",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2114977279,
+            "foundation": "3",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 55524,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "2256936943",
+            "networkType": "unknown",
+            "usernameFragment": "XmWZ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "",
+            "port": 42256,
+            "protocol": "udp",
+            "priority": 2113937151,
+            "foundation": "3857954863",
+            "networkType": "unknown",
+            "usernameFragment": "XmWZ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "172.18.0.1",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2114977023,
+            "foundation": "4",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "fd7a:xxxx:xxxx::x",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2116024575,
+            "foundation": "8",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          }
+        ],
+        "configuration": {
+          "alwaysNegotiateDataChannels": false,
+          "bundlePolicy": "balanced",
+          "certificates": [],
+          "encodedInsertableStreams": false,
+          "iceCandidatePoolSize": 0,
+          "iceServers": [],
+          "iceTransportPolicy": "all",
+          "rtcpMuxPolicy": "require"
+        },
+        "maxMessageSize": 65536
+      },
+      "sizeResults": [
+        {
+          "type": "size-result",
+          "size": 65535,
+          "ok": true,
+          "h2b": true,
+          "b2h": true,
+          "phase": "complete",
+          "echoBytes": 65535
+        },
+        {
+          "type": "size-result",
+          "size": 65536,
+          "ok": true,
+          "h2b": true,
+          "b2h": true,
+          "phase": "complete",
+          "echoBytes": 65536
+        },
+        {
+          "type": "size-result",
+          "size": 65537,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+        },
+        {
+          "type": "size-result",
+          "size": 131072,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "skipped: browser send limit already exceeded"
+        },
+        {
+          "type": "size-result",
+          "size": 262144,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "skipped: browser send limit already exceeded"
+        },
+        {
+          "type": "size-result",
+          "size": 262145,
+          "ok": false,
+          "h2b": false,
+          "b2h": false,
+          "phase": "host-send",
+          "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+        }
+      ],
+      "receivedSizes": [
+        {
+          "size": 65535,
+          "patternOk": true,
+          "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e",
+          "at": 1792985917794
+        },
+        {
+          "size": 65536,
+          "patternOk": true,
+          "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2",
+          "at": 1792985917799
+        },
+        {
+          "size": 65537,
+          "patternOk": true,
+          "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617",
+          "at": 1792985917802
+        },
+        {
+          "size": 131072,
+          "patternOk": true,
+          "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850",
+          "at": 1792985917806
+        },
+        {
+          "size": 262144,
+          "patternOk": true,
+          "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9",
+          "at": 1792985917814
+        }
+      ],
+      "noise": null,
+      "errors": [],
+      "log": [
+        {
+          "t": 1792985917697,
+          "event": "pc-created",
+          "stun": [],
+          "mode": "maxmsg"
+        },
+        {
+          "t": 1792985917703,
+          "event": "local-sdp",
+          "bytes": 458,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": []
+        },
+        {
+          "t": 1792985917703,
+          "event": "offer-sent",
+          "bytes": 458
+        },
+        {
+          "t": 1792985917703,
+          "event": "ice-gathering-state",
+          "state": "gathering"
+        },
+        {
+          "t": 1792985917704,
+          "event": "ws-open"
+        },
+        {
+          "t": 1792985917705,
+          "event": "local-candidate",
+          "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+          "foundation": "3857954863",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+          "port": "42256",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "t": 1792985917705,
+          "event": "local-candidate",
+          "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+          "foundation": "215317434",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+          "port": "55524",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "t": 1792985917715,
+          "event": "answer-received",
+          "maxMessageSize": [],
+          "candidates": []
+        },
+        {
+          "t": 1792985917725,
+          "event": "remote-candidate",
+          "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+          "foundation": "a=candidate:6",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025087",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917726,
+          "event": "remote-candidate",
+          "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+          "foundation": "a=candidate:7",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024831",
+          "address": "fdfe:dcba:9876::1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+          "foundation": "a=candidate:8",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024575",
+          "address": "fd7a:xxxx:xxxx::x",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+          "foundation": "a=candidate:1",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977791",
+          "address": "192.168.0.24",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+          "foundation": "a=candidate:2",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977535",
+          "address": "172.19.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+          "foundation": "a=candidate:3",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977279",
+          "address": "100.x.x.x",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+          "foundation": "a=candidate:4",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977023",
+          "address": "172.18.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917727,
+          "event": "remote-candidate",
+          "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+          "foundation": "a=candidate:5",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976767",
+          "address": "172.20.0.1",
+          "port": "52709",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985917728,
+          "event": "answer-applied",
+          "maxMessageSize": 65536
+        },
+        {
+          "t": 1792985917728,
+          "event": "remote-sdp",
+          "bytes": 402,
+          "maxMessageSize": [],
+          "candidates": []
+        },
+        {
+          "t": 1792985917730,
+          "event": "pc-ice-state",
+          "state": "checking"
+        },
+        {
+          "t": 1792985917731,
+          "event": "pc-ice-state",
+          "state": "connected"
+        },
+        {
+          "t": 1792985917731,
+          "event": "pc-connection-state",
+          "state": "connecting"
+        },
+        {
+          "t": 1792985917731,
+          "event": "ice-gathering-state",
+          "state": "complete"
+        },
+        {
+          "t": 1792985917732,
+          "event": "local-sdp",
+          "bytes": 715,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": [
+            {
+              "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:3857954863",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113937151",
+              "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+              "port": "42256",
+              "type": "host",
+              "isMdns": true
+            },
+            {
+              "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:215317434",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113942271",
+              "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+              "port": "55524",
+              "type": "host",
+              "isMdns": true
+            }
+          ]
+        },
+        {
+          "t": 1792985917732,
+          "event": "ice-gathering-complete"
+        },
+        {
+          "t": 1792985917732,
+          "event": "local-sdp",
+          "bytes": 715,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": [
+            {
+              "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:3857954863",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113937151",
+              "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+              "port": "42256",
+              "type": "host",
+              "isMdns": true
+            },
+            {
+              "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:215317434",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113942271",
+              "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+              "port": "55524",
+              "type": "host",
+              "isMdns": true
+            }
+          ]
+        },
+        {
+          "t": 1792985917782,
+          "event": "pc-connection-state",
+          "state": "connected"
+        },
+        {
+          "t": 1792985917784,
+          "event": "dc-open",
+          "maxMessageSize": 65536
+        },
+        {
+          "t": 1792985917784,
+          "event": "maxmsg-ready",
+          "maxMessageSize": 65536
+        },
+        {
+          "t": 1792985917785,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 65535
+        },
+        {
+          "t": 1792985917794,
+          "event": "maxmsg-binary-received",
+          "size": 65535,
+          "patternOk": true,
+          "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e"
+        },
+        {
+          "t": 1792985917794,
+          "event": "maxmsg-echo-sent",
+          "size": 65535
+        },
+        {
+          "t": 1792985917797,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 65535,
+          "ok": true,
+          "h2b": true,
+          "b2h": true,
+          "phase": "complete",
+          "echoBytes": 65535
+        },
+        {
+          "t": 1792985917797,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 65536
+        },
+        {
+          "t": 1792985917799,
+          "event": "maxmsg-binary-received",
+          "size": 65536,
+          "patternOk": true,
+          "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2"
+        },
+        {
+          "t": 1792985917799,
+          "event": "maxmsg-echo-sent",
+          "size": 65536
+        },
+        {
+          "t": 1792985917800,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 65536,
+          "ok": true,
+          "h2b": true,
+          "b2h": true,
+          "phase": "complete",
+          "echoBytes": 65536
+        },
+        {
+          "t": 1792985917800,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 65537
+        },
+        {
+          "t": 1792985917802,
+          "event": "maxmsg-binary-received",
+          "size": 65537,
+          "patternOk": true,
+          "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617"
+        },
+        {
+          "t": 1792985917802,
+          "event": "maxmsg-echo-failed",
+          "size": 65537,
+          "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+        },
+        {
+          "t": 1792985917803,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 65537,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+        },
+        {
+          "t": 1792985917803,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 131072
+        },
+        {
+          "t": 1792985917806,
+          "event": "maxmsg-binary-received",
+          "size": 131072,
+          "patternOk": true,
+          "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850"
+        },
+        {
+          "t": 1792985917806,
+          "event": "maxmsg-echo-skipped",
+          "size": 131072
+        },
+        {
+          "t": 1792985917807,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 131072,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "skipped: browser send limit already exceeded"
+        },
+        {
+          "t": 1792985917807,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 262144
+        },
+        {
+          "t": 1792985917814,
+          "event": "maxmsg-binary-received",
+          "size": 262144,
+          "patternOk": true,
+          "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9"
+        },
+        {
+          "t": 1792985917814,
+          "event": "maxmsg-echo-skipped",
+          "size": 262144
+        },
+        {
+          "t": 1792985917814,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 262144,
+          "ok": false,
+          "h2b": true,
+          "b2h": false,
+          "phase": "complete",
+          "error": "skipped: browser send limit already exceeded"
+        },
+        {
+          "t": 1792985917814,
+          "event": "maxmsg-control",
+          "type": "size-start",
+          "size": 262145
+        },
+        {
+          "t": 1792985917815,
+          "event": "maxmsg-control",
+          "type": "size-result",
+          "size": 262145,
+          "ok": false,
+          "h2b": false,
+          "b2h": false,
+          "phase": "host-send",
+          "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+        },
+        {
+          "t": 1792985917815,
+          "event": "maxmsg-control",
+          "type": "done",
+          "results": [
+            {
+              "size": 65535,
+              "ok": true,
+              "h2b": true,
+              "b2h": true,
+              "phase": "complete",
+              "echoBytes": 65535
+            },
+            {
+              "size": 65536,
+              "ok": true,
+              "h2b": true,
+              "b2h": true,
+              "phase": "complete",
+              "echoBytes": 65536
+            },
+            {
+              "size": 65537,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+            },
+            {
+              "size": 131072,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "skipped: browser send limit already exceeded"
+            },
+            {
+              "size": 262144,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "skipped: browser send limit already exceeded"
+            },
+            {
+              "size": 262145,
+              "ok": false,
+              "h2b": false,
+              "b2h": false,
+              "phase": "host-send",
+              "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+            }
+          ]
+        },
+        {
+          "t": 1792985917816,
+          "event": "dc-error",
+          "message": "User-Initiated Abort, reason="
+        },
+        {
+          "t": 1792985917816,
+          "event": "dc-close",
+          "done": false,
+          "completing": true
+        },
+        {
+          "t": 1792985918016,
+          "event": "stats-collected",
+          "selectedPair": {
+            "state": "in-progress",
+            "nominated": true,
+            "bytesSent": 156239,
+            "bytesReceived": 627175,
+            "packetsSent": 405,
+            "packetsReceived": 602,
+            "currentRoundTripTime": 0,
+            "requestsSent": 3,
+            "responsesReceived": 2,
+            "consentRequestsSent": 2
+          },
+          "localCandidate": {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 55524,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "2256936943",
+            "networkType": "unknown",
+            "usernameFragment": "XmWZ",
+            "isRemote": false
+          },
+          "remoteCandidate": {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+            "port": 52709,
+            "protocol": "udp",
+            "priority": 2116025087,
+            "foundation": "6",
+            "usernameFragment": "RVyd",
+            "isRemote": true
+          },
+          "maxMessageSize": 65536
+        },
+        {
+          "t": 1792985918017,
+          "event": "done"
+        }
+      ]
+    },
+    "log": [
+      {
+        "t": 1792985917697,
+        "event": "pc-created",
+        "stun": [],
+        "mode": "maxmsg"
+      },
+      {
+        "t": 1792985917703,
+        "event": "local-sdp",
+        "bytes": 458,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985917703,
+        "event": "offer-sent",
+        "bytes": 458
+      },
+      {
+        "t": 1792985917703,
+        "event": "ice-gathering-state",
+        "state": "gathering"
+      },
+      {
+        "t": 1792985917704,
+        "event": "ws-open"
+      },
+      {
+        "t": 1792985917705,
+        "event": "local-candidate",
+        "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "3857954863",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+        "port": "42256",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985917705,
+        "event": "local-candidate",
+        "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "215317434",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+        "port": "55524",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985917715,
+        "event": "answer-received",
+        "maxMessageSize": [],
+        "candidates": []
+      },
+      {
+        "t": 1792985917725,
+        "event": "remote-candidate",
+        "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917726,
+        "event": "remote-candidate",
+        "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024831",
+        "address": "fdfe:dcba:9876::1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fd7a:xxxx:xxxx::x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "172.19.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "100.x.x.x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977023",
+        "address": "172.18.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917727,
+        "event": "remote-candidate",
+        "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "172.20.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985917728,
+        "event": "answer-applied",
+        "maxMessageSize": 65536
+      },
+      {
+        "t": 1792985917728,
+        "event": "remote-sdp",
+        "bytes": 402,
+        "maxMessageSize": [],
+        "candidates": []
+      },
+      {
+        "t": 1792985917730,
+        "event": "pc-ice-state",
+        "state": "checking"
+      },
+      {
+        "t": 1792985917731,
+        "event": "pc-ice-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985917731,
+        "event": "pc-connection-state",
+        "state": "connecting"
+      },
+      {
+        "t": 1792985917731,
+        "event": "ice-gathering-state",
+        "state": "complete"
+      },
+      {
+        "t": 1792985917732,
+        "event": "local-sdp",
+        "bytes": 715,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:3857954863",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+            "port": "42256",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:215317434",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+            "port": "55524",
+            "type": "host",
+            "isMdns": true
+          }
+        ]
+      },
+      {
+        "t": 1792985917732,
+        "event": "ice-gathering-complete"
+      },
+      {
+        "t": 1792985917732,
+        "event": "local-sdp",
+        "bytes": 715,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:3857954863",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+            "port": "42256",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:215317434",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+            "port": "55524",
+            "type": "host",
+            "isMdns": true
+          }
+        ]
+      },
+      {
+        "t": 1792985917782,
+        "event": "pc-connection-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985917784,
+        "event": "dc-open",
+        "maxMessageSize": 65536
+      },
+      {
+        "t": 1792985917784,
+        "event": "maxmsg-ready",
+        "maxMessageSize": 65536
+      },
+      {
+        "t": 1792985917785,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 65535
+      },
+      {
+        "t": 1792985917794,
+        "event": "maxmsg-binary-received",
+        "size": 65535,
+        "patternOk": true,
+        "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e"
+      },
+      {
+        "t": 1792985917794,
+        "event": "maxmsg-echo-sent",
+        "size": 65535
+      },
+      {
+        "t": 1792985917797,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 65535,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65535
+      },
+      {
+        "t": 1792985917797,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 65536
+      },
+      {
+        "t": 1792985917799,
+        "event": "maxmsg-binary-received",
+        "size": 65536,
+        "patternOk": true,
+        "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2"
+      },
+      {
+        "t": 1792985917799,
+        "event": "maxmsg-echo-sent",
+        "size": 65536
+      },
+      {
+        "t": 1792985917800,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 65536,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65536
+      },
+      {
+        "t": 1792985917800,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 65537
+      },
+      {
+        "t": 1792985917802,
+        "event": "maxmsg-binary-received",
+        "size": 65537,
+        "patternOk": true,
+        "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617"
+      },
+      {
+        "t": 1792985917802,
+        "event": "maxmsg-echo-failed",
+        "size": 65537,
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "t": 1792985917803,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 65537,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "t": 1792985917803,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 131072
+      },
+      {
+        "t": 1792985917806,
+        "event": "maxmsg-binary-received",
+        "size": 131072,
+        "patternOk": true,
+        "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850"
+      },
+      {
+        "t": 1792985917806,
+        "event": "maxmsg-echo-skipped",
+        "size": 131072
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 131072,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 262144
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-binary-received",
+        "size": 262144,
+        "patternOk": true,
+        "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-echo-skipped",
+        "size": 262144
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 262144,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-control",
+        "type": "size-start",
+        "size": 262145
+      },
+      {
+        "t": 1792985917815,
+        "event": "maxmsg-control",
+        "type": "size-result",
+        "size": 262145,
+        "ok": false,
+        "h2b": false,
+        "b2h": false,
+        "phase": "host-send",
+        "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+      },
+      {
+        "t": 1792985917815,
+        "event": "maxmsg-control",
+        "type": "done",
+        "results": [
+          {
+            "size": 65535,
+            "ok": true,
+            "h2b": true,
+            "b2h": true,
+            "phase": "complete",
+            "echoBytes": 65535
+          },
+          {
+            "size": 65536,
+            "ok": true,
+            "h2b": true,
+            "b2h": true,
+            "phase": "complete",
+            "echoBytes": 65536
+          },
+          {
+            "size": 65537,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+          },
+          {
+            "size": 131072,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "skipped: browser send limit already exceeded"
+          },
+          {
+            "size": 262144,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "skipped: browser send limit already exceeded"
+          },
+          {
+            "size": 262145,
+            "ok": false,
+            "h2b": false,
+            "b2h": false,
+            "phase": "host-send",
+            "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+          }
+        ]
+      },
+      {
+        "t": 1792985917816,
+        "event": "dc-error",
+        "message": "User-Initiated Abort, reason="
+      },
+      {
+        "t": 1792985917816,
+        "event": "dc-close",
+        "done": false,
+        "completing": true
+      },
+      {
+        "t": 1792985918016,
+        "event": "stats-collected",
+        "selectedPair": {
+          "state": "in-progress",
+          "nominated": true,
+          "bytesSent": 156239,
+          "bytesReceived": 627175,
+          "packetsSent": 405,
+          "packetsReceived": 602,
+          "currentRoundTripTime": 0,
+          "requestsSent": 3,
+          "responsesReceived": 2,
+          "consentRequestsSent": 2
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 55524,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "2256936943",
+          "networkType": "unknown",
+          "usernameFragment": "XmWZ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2116025087,
+          "foundation": "6",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        "maxMessageSize": 65536
+      },
+      {
+        "t": 1792985918017,
+        "event": "done"
+      }
+    ],
+    "errors": [],
+    "localCandidates": [
+      {
+        "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "3857954863",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+        "port": "42256",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "215317434",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+        "port": "55524",
+        "type": "host",
+        "isMdns": true
+      }
+    ],
+    "remoteCandidates": [
+      {
+        "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024831",
+        "address": "fdfe:dcba:9876::1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fd7a:xxxx:xxxx::x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "172.19.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "100.x.x.x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977023",
+        "address": "172.18.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "172.20.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      }
+    ],
+    "localSdp": {
+      "bytes": 715,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": [
+        {
+          "raw": "a=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999",
+          "foundation": "a=candidate:3857954863",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+          "port": "42256",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "raw": "a=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999",
+          "foundation": "a=candidate:215317434",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+          "port": "55524",
+          "type": "host",
+          "isMdns": true
+        }
+      ],
+      "full": "v=0\r\no=- 7436905487194486593 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 network-cost 999\r\na=candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 network-cost 999\r\na=ice-ufrag:XmWZ\r\na=ice-pwd:P7oZC9G3H/9eJqg5AnBqXLF0\r\na=ice-options:trickle\r\na=fingerprint:sha-256 E1:F2:EB:FE:99:AC:D0:89:0A:4E:D4:3D:1A:0C:62:2C:42:28:F2:FA:E4:8D:37:94:C8:F0:F6:4B:FA:5C:1A:FB\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+    },
+    "remoteSdp": {
+      "bytes": 402,
+      "maxMessageSize": [],
+      "candidates": [],
+      "full": "v=0\r\no=- 2303598458 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:RVyd\r\na=ice-pwd:ZVBBfQ++hPMUvpV6QLYhUg\r\na=ice-options:ice2,trickle\r\na=fingerprint:sha-256 27:AD:3A:B1:20:43:79:78:5D:92:4B:85:72:D8:E6:5D:02:DC:28:72:08:5C:97:C1:3F:AD:4D:7C:17:15:2C:BB\r\na=setup:active\r\na=mid:0\r\na=sctp-port:5000\r\n"
+    },
+    "stats": {
+      "at": 1792985918016,
+      "connectionState": "connected",
+      "iceConnectionState": "connected",
+      "iceGatheringState": "complete",
+      "transport": {
+        "dtlsState": "connected",
+        "iceState": "connected",
+        "selectedCandidatePairId": "CPUa5HbZPt_BGaEv+MD",
+        "bytesSent": 156239,
+        "bytesReceived": 627175,
+        "packetsSent": 405,
+        "packetsReceived": 602
+      },
+      "selectedPair": {
+        "state": "in-progress",
+        "nominated": true,
+        "bytesSent": 156239,
+        "bytesReceived": 627175,
+        "packetsSent": 405,
+        "packetsReceived": 602,
+        "currentRoundTripTime": 0,
+        "requestsSent": 3,
+        "responsesReceived": 2,
+        "consentRequestsSent": 2
+      },
+      "localCandidate": {
+        "candidateType": "prflx",
+        "address": "",
+        "port": 55524,
+        "protocol": "udp",
+        "priority": 1845506815,
+        "foundation": "2256936943",
+        "networkType": "unknown",
+        "usernameFragment": "XmWZ",
+        "isRemote": false
+      },
+      "remoteCandidate": {
+        "candidateType": "host",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+        "port": 52709,
+        "protocol": "udp",
+        "priority": 2116025087,
+        "foundation": "6",
+        "usernameFragment": "RVyd",
+        "isRemote": true
+      },
+      "candidates": [
+        {
+          "candidateType": "host",
+          "address": "172.20.0.1",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2114976767,
+          "foundation": "5",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "192.168.0.24",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2114977791,
+          "foundation": "1",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "",
+          "port": 55524,
+          "protocol": "udp",
+          "priority": 2113942271,
+          "foundation": "215317434",
+          "networkType": "unknown",
+          "usernameFragment": "XmWZ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2116025087,
+          "foundation": "6",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "172.19.0.1",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2114977535,
+          "foundation": "2",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "fdfe:dcba:9876::1",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2116024831,
+          "foundation": "7",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "100.x.x.x",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2114977279,
+          "foundation": "3",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 55524,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "2256936943",
+          "networkType": "unknown",
+          "usernameFragment": "XmWZ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "",
+          "port": 42256,
+          "protocol": "udp",
+          "priority": 2113937151,
+          "foundation": "3857954863",
+          "networkType": "unknown",
+          "usernameFragment": "XmWZ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "172.18.0.1",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2114977023,
+          "foundation": "4",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "fd7a:xxxx:xxxx::x",
+          "port": 52709,
+          "protocol": "udp",
+          "priority": 2116024575,
+          "foundation": "8",
+          "usernameFragment": "RVyd",
+          "isRemote": true
+        }
+      ],
+      "configuration": {
+        "alwaysNegotiateDataChannels": false,
+        "bundlePolicy": "balanced",
+        "certificates": [],
+        "encodedInsertableStreams": false,
+        "iceCandidatePoolSize": 0,
+        "iceServers": [],
+        "iceTransportPolicy": "all",
+        "rtcpMuxPolicy": "require"
+      },
+      "maxMessageSize": 65536
+    },
+    "maxMessageSize": 65536,
+    "sizeResults": [
+      {
+        "type": "size-result",
+        "size": 65535,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65535
+      },
+      {
+        "type": "size-result",
+        "size": 65536,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65536
+      },
+      {
+        "type": "size-result",
+        "size": 65537,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "type": "size-result",
+        "size": 131072,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "type": "size-result",
+        "size": 262144,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "type": "size-result",
+        "size": 262145,
+        "ok": false,
+        "h2b": false,
+        "b2h": false,
+        "phase": "host-send",
+        "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+      }
+    ],
+    "receivedSizes": [
+      {
+        "size": 65535,
+        "patternOk": true,
+        "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e",
+        "at": 1792985917794
+      },
+      {
+        "size": 65536,
+        "patternOk": true,
+        "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2",
+        "at": 1792985917799
+      },
+      {
+        "size": 65537,
+        "patternOk": true,
+        "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617",
+        "at": 1792985917802
+      },
+      {
+        "size": 131072,
+        "patternOk": true,
+        "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850",
+        "at": 1792985917806
+      },
+      {
+        "size": 262144,
+        "patternOk": true,
+        "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9",
+        "at": 1792985917814
+      }
+    ],
+    "noise": null,
+    "localDescriptionAt": null,
+    "lastSignal": "candidate",
+    "dcOpenAt": 1792985917784,
+    "echoBroken": true,
+    "stoppedAt": 262145,
+    "completing": true,
+    "pageErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ]
+  },
+  "host": {
+    "logs": [
+      {
+        "t": 1792985917477,
+        "event": "environment",
+        "node": "v26.8.2",
+        "platform": "linux",
+        "arch": "x64",
+        "libdatachannel": "0.24.5",
+        "platformPackage": "@node-datachannel/linux-x64-gnu",
+        "platformPackagePath": "/home/kieran/.lody/repos/local---75142f7761a3/worktrees/459f3c00-a1eb-482d-9a4c-920e97482055/spikes/345-rtc-web/node_modules/@node-datachannel/linux-x64-gnu/package.json",
+        "cwd": "/home/kieran/.lody/repos/local---75142f7761a3/worktrees/459f3c00-a1eb-482d-9a4c-920e97482055/spikes/345-rtc-web",
+        "mode": "maxmsg",
+        "stun": [],
+        "sdpMaxMessageSize": "missing",
+        "bindAddress": null
+      },
+      {
+        "t": 1792985917534,
+        "event": "ws-open"
+      },
+      {
+        "t": 1792985917708,
+        "event": "offer-received",
+        "sdpBytes": 458,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985917710,
+        "event": "answer-generated",
+        "type": "answer",
+        "sdpBytes": 444,
+        "originalMaxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "sentMaxMessageSize": [],
+        "candidates": []
+      },
+      {
+        "t": 1792985917711,
+        "event": "local-candidate",
+        "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917711,
+        "event": "local-candidate",
+        "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024831",
+        "address": "fdfe:dcba:9876::1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917711,
+        "event": "local-candidate",
+        "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fd7a:xxxx:xxxx::x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917711,
+        "event": "local-candidate",
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917711,
+        "event": "local-candidate",
+        "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "172.19.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917712,
+        "event": "local-candidate",
+        "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "100.x.x.x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917712,
+        "event": "local-candidate",
+        "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977023",
+        "address": "172.18.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917712,
+        "event": "local-candidate",
+        "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "172.20.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985917712,
+        "event": "pc-state",
+        "state": "connecting"
+      },
+      {
+        "t": 1792985917712,
+        "event": "ice-state",
+        "state": "checking"
+      },
+      {
+        "t": 1792985917712,
+        "event": "gathering-state",
+        "state": "in-progress"
+      },
+      {
+        "t": 1792985917712,
+        "event": "gathering-state",
+        "state": "complete"
+      },
+      {
+        "t": 1792985917712,
+        "event": "remote-candidate",
+        "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "3857954863",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+        "port": "42256",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985917712,
+        "event": "mdns-resolution-start",
+        "host": "33d9ef92-2550-4908-985a-71802e70d078.local",
+        "via": "node:dns.lookup (getaddrinfo/nsswitch)"
+      },
+      {
+        "t": 1792985917719,
+        "event": "remote-candidate",
+        "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "215317434",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+        "port": "55524",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985917719,
+        "event": "mdns-resolution-start",
+        "host": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+        "via": "node:dns.lookup (getaddrinfo/nsswitch)"
+      },
+      {
+        "t": 1792985917780,
+        "event": "ice-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985917780,
+        "event": "ice-state",
+        "state": "completed"
+      },
+      {
+        "t": 1792985917784,
+        "event": "pc-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985917784,
+        "event": "datachannel",
+        "label": "spike-345",
+        "id": 1,
+        "protocol": "",
+        "ordered": true
+      },
+      {
+        "t": 1792985917784,
+        "event": "dc-open",
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144,
+        "bufferedAmount": 0
+      },
+      {
+        "t": 1792985917784,
+        "event": "maxmsg-waiting-for-browser"
+      },
+      {
+        "t": 1792985917785,
+        "event": "dc-text",
+        "type": "maxmsg-ready",
+        "testId": "maxmsg-sdp-missing-mvopis40-9eb47e",
+        "maxMessageSize": 65536
+      },
+      {
+        "t": 1792985917785,
+        "event": "maxmsg-browser-ready",
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917785,
+        "event": "maxmsg-size-start",
+        "size": 65535,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917795,
+        "event": "dc-text",
+        "type": "size-received",
+        "size": 65535,
+        "patternOk": true,
+        "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e"
+      },
+      {
+        "t": 1792985917795,
+        "event": "maxmsg-browser-received",
+        "type": "size-received",
+        "size": 65535,
+        "patternOk": true,
+        "sha256": "5f1bf999bcba5e05d4c34a13710d2e4bff005877874dcce49ac87af61076231e"
+      },
+      {
+        "t": 1792985917796,
+        "event": "maxmsg-echo-received",
+        "size": 65535,
+        "patternOk": true
+      },
+      {
+        "t": 1792985917796,
+        "event": "maxmsg-size-result",
+        "size": 65535,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65535
+      },
+      {
+        "t": 1792985917797,
+        "event": "maxmsg-size-start",
+        "size": 65536,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917799,
+        "event": "dc-text",
+        "type": "size-received",
+        "size": 65536,
+        "patternOk": true,
+        "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2"
+      },
+      {
+        "t": 1792985917799,
+        "event": "maxmsg-browser-received",
+        "type": "size-received",
+        "size": 65536,
+        "patternOk": true,
+        "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2"
+      },
+      {
+        "t": 1792985917800,
+        "event": "maxmsg-echo-received",
+        "size": 65536,
+        "patternOk": true
+      },
+      {
+        "t": 1792985917800,
+        "event": "maxmsg-size-result",
+        "size": 65536,
+        "ok": true,
+        "h2b": true,
+        "b2h": true,
+        "phase": "complete",
+        "echoBytes": 65536
+      },
+      {
+        "t": 1792985917800,
+        "event": "maxmsg-size-start",
+        "size": 65537,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917802,
+        "event": "dc-text",
+        "type": "size-received",
+        "size": 65537,
+        "patternOk": true,
+        "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617"
+      },
+      {
+        "t": 1792985917802,
+        "event": "maxmsg-browser-received",
+        "type": "size-received",
+        "size": 65537,
+        "patternOk": true,
+        "sha256": "2deb0bd2129a9d3aed91e3cff58b3993752be549642890a3e853ec1065f9b617"
+      },
+      {
+        "t": 1792985917802,
+        "event": "dc-text",
+        "type": "size-error",
+        "size": 65537,
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "t": 1792985917802,
+        "event": "maxmsg-browser-send-error",
+        "type": "size-error",
+        "size": 65537,
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "t": 1792985917802,
+        "event": "maxmsg-size-result",
+        "size": 65537,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+      },
+      {
+        "t": 1792985917803,
+        "event": "maxmsg-size-start",
+        "size": 131072,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917807,
+        "event": "dc-text",
+        "type": "size-received",
+        "size": 131072,
+        "patternOk": true,
+        "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850"
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-browser-received",
+        "type": "size-received",
+        "size": 131072,
+        "patternOk": true,
+        "sha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850"
+      },
+      {
+        "t": 1792985917807,
+        "event": "dc-text",
+        "type": "size-skip",
+        "size": 131072,
+        "reason": "browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-browser-skip-echo",
+        "type": "size-skip",
+        "size": 131072,
+        "reason": "browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-size-result",
+        "size": 131072,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917807,
+        "event": "maxmsg-size-start",
+        "size": 262144,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917814,
+        "event": "dc-text",
+        "type": "size-received",
+        "size": 262144,
+        "patternOk": true,
+        "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-browser-received",
+        "type": "size-received",
+        "size": 262144,
+        "patternOk": true,
+        "sha256": "2312394bd99545d9de131c24efb781e765ac1aec243f2ed9347597a793a415e9"
+      },
+      {
+        "t": 1792985917814,
+        "event": "dc-text",
+        "type": "size-skip",
+        "size": 262144,
+        "reason": "browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-browser-skip-echo",
+        "type": "size-skip",
+        "size": 262144,
+        "reason": "browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-size-result",
+        "size": 262144,
+        "ok": false,
+        "h2b": true,
+        "b2h": false,
+        "phase": "complete",
+        "error": "skipped: browser send limit already exceeded"
+      },
+      {
+        "t": 1792985917814,
+        "event": "maxmsg-size-start",
+        "size": 262145,
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917815,
+        "event": "maxmsg-host-send-error",
+        "size": 262145,
+        "message": "libdatachannel error while sending data channel message: Message size exceeds limit"
+      },
+      {
+        "t": 1792985917815,
+        "event": "maxmsg-size-result",
+        "size": 262145,
+        "ok": false,
+        "h2b": false,
+        "b2h": false,
+        "phase": "host-send",
+        "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+      },
+      {
+        "t": 1792985917815,
+        "event": "maxmsg-complete",
+        "results": [
+          {
+            "size": 65535,
+            "ok": true,
+            "h2b": true,
+            "b2h": true,
+            "phase": "complete",
+            "echoBytes": 65535
+          },
+          {
+            "size": 65536,
+            "ok": true,
+            "h2b": true,
+            "b2h": true,
+            "phase": "complete",
+            "echoBytes": 65536
+          },
+          {
+            "size": 65537,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+          },
+          {
+            "size": 131072,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "skipped: browser send limit already exceeded"
+          },
+          {
+            "size": 262144,
+            "ok": false,
+            "h2b": true,
+            "b2h": false,
+            "phase": "complete",
+            "error": "skipped: browser send limit already exceeded"
+          },
+          {
+            "size": 262145,
+            "ok": false,
+            "h2b": false,
+            "b2h": false,
+            "phase": "host-send",
+            "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+          }
+        ],
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985917815,
+        "event": "finish",
+        "code": 0,
+        "error": null,
+        "selectedPair": {
+          "local": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+            "port": 52709,
+            "type": "host",
+            "transportType": "UDP",
+            "candidate": "candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+            "mid": "0",
+            "priority": 2116025087
+          },
+          "remote": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+            "port": 55524,
+            "type": "prflx",
+            "transportType": "UDP",
+            "candidate": "candidate:1 1 UDP 1845506815 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 55524 typ prflx",
+            "mid": "0",
+            "priority": 1845506815
+          }
+        },
+        "maxMessageSize": 262144,
+        "dcMaxMessageSize": 262144,
+        "maxmsg": {
+          "results": [
+            {
+              "size": 65535,
+              "ok": true,
+              "h2b": true,
+              "b2h": true,
+              "phase": "complete",
+              "echoBytes": 65535
+            },
+            {
+              "size": 65536,
+              "ok": true,
+              "h2b": true,
+              "b2h": true,
+              "phase": "complete",
+              "echoBytes": 65536
+            },
+            {
+              "size": 65537,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "Failed to execute 'send' on 'RTCDataChannel': Trying to send message larger than max-message-size"
+            },
+            {
+              "size": 131072,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "skipped: browser send limit already exceeded"
+            },
+            {
+              "size": 262144,
+              "ok": false,
+              "h2b": true,
+              "b2h": false,
+              "phase": "complete",
+              "error": "skipped: browser send limit already exceeded"
+            },
+            {
+              "size": 262145,
+              "ok": false,
+              "h2b": false,
+              "b2h": false,
+              "phase": "host-send",
+              "error": "libdatachannel error while sending data channel message: Message size exceeds limit"
+            }
+          ],
+          "maxMessageSize": 262144,
+          "pcMaxMessageSize": 262144
+        }
+      },
+      {
+        "t": 1792985917815,
+        "event": "pc-state",
+        "state": "closed"
+      },
+      {
+        "t": 1792985917815,
+        "event": "dc-closed",
+        "done": true,
+        "connectAcked": false
+      }
+    ],
+    "stderr": "(node:527545) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+    "exitCode": 0,
+    "signal": null
+  },
+  "relay": [
+    {
+      "at": 1792985917421,
+      "event": "listening",
+      "port": 42767
+    },
+    {
+      "at": 1792985917530,
+      "event": "connected",
+      "role": "host",
+      "remote": ""
+    },
+    {
+      "at": 1792985917704,
+      "event": "connected",
+      "role": "browser",
+      "remote": ""
+    },
+    {
+      "at": 1792985917704,
+      "event": "paired"
+    },
+    {
+      "at": 1792985917706,
+      "event": "browser-offer",
+      "sdpBytes": 458,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": []
+    },
+    {
+      "at": 1792985917711,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:3857954863 1 udp 2113937151 33d9ef92-2550-4908-985a-71802e70d078.local 42256 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "3857954863",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "33d9ef92-2550-4908-985a-71802e70d078.local",
+        "port": "42256",
+        "type": "host",
+        "isMdns": true
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917711,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:215317434 1 udp 2113942271 ab570597-1d98-47ee-8732-feede6bedf88.local 55524 typ host generation 0 ufrag XmWZ network-cost 999",
+        "foundation": "215317434",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ab570597-1d98-47ee-8732-feede6bedf88.local",
+        "port": "55524",
+        "type": "host",
+        "isMdns": true
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917714,
+      "event": "host-answer",
+      "sdpBytes": 417,
+      "maxMessageSize": [],
+      "candidates": []
+    },
+    {
+      "at": 1792985917714,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:6 1 UDP 2116025087 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e 52709 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:11e",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917714,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:7 1 UDP 2116024831 fdfe:dcba:9876::1 52709 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024831",
+        "address": "fdfe:dcba:9876::1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:8 1 UDP 2116024575 fd7a:xxxx:xxxx::x 52709 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fd7a:xxxx:xxxx::x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 52709 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:2 1 UDP 2114977535 172.19.0.1 52709 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "172.19.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:3 1 UDP 2114977279 100.x.x.x 52709 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "100.x.x.x",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:4 1 UDP 2114977023 172.18.0.1 52709 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977023",
+        "address": "172.18.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985917715,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:5 1 UDP 2114976767 172.20.0.1 52709 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "172.20.0.1",
+        "port": "52709",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985918048,
+      "event": "closed",
+      "role": "browser",
+      "code": 1001,
+      "reason": ""
+    },
+    {
+      "at": 1792985927737,
+      "event": "closed",
+      "role": "host",
+      "code": 1006,
+      "reason": ""
+    }
+  ],
+  "stderr": ""
+}

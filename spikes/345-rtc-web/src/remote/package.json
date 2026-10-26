@@ -1,0 +1,9 @@
+{
+  "name": "pinomad-spike-345-remote",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "node-datachannel": "0.33.4",
+    "playwright-core": "1.63.0"
+  }
+}

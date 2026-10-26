@@ -1,0 +1,2225 @@
+{
+  "name": "connect-mbp-local",
+  "options": {
+    "name": "connect-mbp-local",
+    "mode": "connect",
+    "host": "mbp",
+    "browser": "mbp",
+    "stun": [],
+    "mdns": true
+  },
+  "pageUrl": "http://100.x.x.x:38779/",
+  "browser": {
+    "startedAt": 1792985627833,
+    "config": {
+      "wsUrl": "ws://100.x.x.x:38779/ws?role=browser&token=<redacted>",
+      "mode": "connect",
+      "stun": [],
+      "hostPublicKey": "0cDj6C84td1KbYjRpQqU9BtFVXVhSsRzFz_bVfyxEXo",
+      "testId": "connect-mbp-local-mvopcj6s-a8ebcc"
+    },
+    "done": true,
+    "result": {
+      "side": "browser",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "platform": "MacIntel",
+      "config": {
+        "wsUrl": "ws://100.x.x.x:38779/ws?role=browser&token=<redacted>",
+        "mode": "connect",
+        "stun": [],
+        "hostPublicKey": "0cDj6C84td1KbYjRpQqU9BtFVXVhSsRzFz_bVfyxEXo",
+        "testId": "connect-mbp-local-mvopcj6s-a8ebcc"
+      },
+      "startedAt": 1792985627833,
+      "finishedAt": 1792985636315,
+      "localCandidates": [
+        {
+          "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+          "foundation": "1087527971",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+          "port": "49636",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+          "foundation": "2851381174",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+          "port": "53039",
+          "type": "host",
+          "isMdns": true
+        }
+      ],
+      "remoteCandidates": [
+        {
+          "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+          "foundation": "a=candidate:1",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116026367",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+          "foundation": "a=candidate:4",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025599",
+          "address": "fdfe:dcba:9876::1",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+          "foundation": "a=candidate:6",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025087",
+          "address": "fd7a:115c:a1e0::c235:3e30",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+          "foundation": "a=candidate:8",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024575",
+          "address": "fde9:8d0f:889a::2",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+          "foundation": "a=candidate:2",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977535",
+          "address": "192.168.0.225",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+          "foundation": "a=candidate:3",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977279",
+          "address": "172.19.0.1",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+          "foundation": "a=candidate:5",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976767",
+          "address": "100.x.x.x",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+          "foundation": "a=candidate:7",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976255",
+          "address": "100.70.144.122",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        }
+      ],
+      "localSdp": {
+        "bytes": 716,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:1087527971",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+            "port": "49636",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:2851381174",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+            "port": "53039",
+            "type": "host",
+            "isMdns": true
+          }
+        ],
+        "full": "v=0\r\no=- 7769968754124239816 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999\r\na=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999\r\na=ice-ufrag:eGzQ\r\na=ice-pwd:Sravx1WmKmGvMkCgDQwtmirS\r\na=ice-options:trickle\r\na=fingerprint:sha-256 29:A8:10:39:57:08:B8:3A:ED:E8:6A:74:88:BE:1D:A6:DC:D8:30:05:82:5F:C9:33:48:C7:63:D2:C8:12:96:0F\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+      },
+      "remoteSdp": {
+        "bytes": 429,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [],
+        "full": "v=0\r\no=- 2562060488 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:/XoN\r\na=ice-pwd:5J9OE1VgZCNEgJyxeifnDW\r\na=ice-options:ice2,trickle\r\na=fingerprint:sha-256 97:40:19:BB:FB:E0:34:70:4F:14:A9:B3:6B:C8:EE:B1:4F:70:D5:8D:45:3F:B7:92:C0:AE:81:84:0A:B0:B3:FD\r\na=setup:active\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+      },
+      "maxMessageSize": 262144,
+      "stats": {
+        "at": 1792985636315,
+        "connectionState": "connected",
+        "iceConnectionState": "connected",
+        "iceGatheringState": "complete",
+        "transport": {
+          "dtlsState": "connected",
+          "iceState": "connected",
+          "selectedCandidatePairId": "CPe4T3MwmD_oCpK1kOt",
+          "bytesSent": 1624,
+          "bytesReceived": 2241,
+          "packetsSent": 10,
+          "packetsReceived": 9
+        },
+        "selectedPair": {
+          "state": "succeeded",
+          "nominated": true,
+          "bytesSent": 1624,
+          "bytesReceived": 2241,
+          "packetsSent": 10,
+          "packetsReceived": 9,
+          "currentRoundTripTime": 0.001,
+          "requestsSent": 7,
+          "responsesReceived": 7,
+          "consentRequestsSent": 6
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "598211555",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116026367,
+          "foundation": "1",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        "candidates": [
+          {
+            "candidateType": "host",
+            "address": "fdfe:dcba:9876::1",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116025599,
+            "foundation": "4",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "172.19.0.1",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2114977279,
+            "foundation": "3",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "fd7a:115c:a1e0::c235:3e30",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116025087,
+            "foundation": "6",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "192.168.0.225",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2114977535,
+            "foundation": "2",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "fde9:8d0f:889a::2",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116024575,
+            "foundation": "8",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "100.70.144.122",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2114976255,
+            "foundation": "7",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 49636,
+            "protocol": "udp",
+            "priority": 1845501695,
+            "foundation": "212740593",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "",
+            "port": 53039,
+            "protocol": "udp",
+            "priority": 2113942271,
+            "foundation": "2851381174",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 49636,
+            "protocol": "udp",
+            "priority": 1845501695,
+            "foundation": "212740593",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 53039,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "598211555",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "",
+            "port": 49636,
+            "protocol": "udp",
+            "priority": 2113937151,
+            "foundation": "1087527971",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116026367,
+            "foundation": "1",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          {
+            "candidateType": "host",
+            "address": "100.x.x.x",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2114976767,
+            "foundation": "5",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          }
+        ],
+        "configuration": {
+          "alwaysNegotiateDataChannels": false,
+          "bundlePolicy": "balanced",
+          "certificates": [],
+          "encodedInsertableStreams": false,
+          "iceCandidatePoolSize": 0,
+          "iceServers": [],
+          "iceTransportPolicy": "all",
+          "rtcpMuxPolicy": "require"
+        },
+        "maxMessageSize": 262144
+      },
+      "sizeResults": [],
+      "receivedSizes": [],
+      "noise": null,
+      "errors": [],
+      "log": [
+        {
+          "t": 1792985627900,
+          "event": "pc-created",
+          "stun": [],
+          "mode": "connect"
+        },
+        {
+          "t": 1792985627903,
+          "event": "local-sdp",
+          "bytes": 458,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": []
+        },
+        {
+          "t": 1792985627903,
+          "event": "offer-sent",
+          "bytes": 458
+        },
+        {
+          "t": 1792985627903,
+          "event": "ice-gathering-state",
+          "state": "gathering"
+        },
+        {
+          "t": 1792985627906,
+          "event": "local-candidate",
+          "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+          "foundation": "1087527971",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+          "port": "49636",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "t": 1792985627906,
+          "event": "local-candidate",
+          "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+          "foundation": "2851381174",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+          "port": "53039",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "t": 1792985627913,
+          "event": "ws-open"
+        },
+        {
+          "t": 1792985627947,
+          "event": "answer-received",
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": []
+        },
+        {
+          "t": 1792985627948,
+          "event": "answer-applied",
+          "maxMessageSize": 262144
+        },
+        {
+          "t": 1792985627948,
+          "event": "remote-sdp",
+          "bytes": 429,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": []
+        },
+        {
+          "t": 1792985627951,
+          "event": "remote-candidate",
+          "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+          "foundation": "a=candidate:1",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116026367",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627951,
+          "event": "remote-candidate",
+          "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+          "foundation": "a=candidate:4",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025599",
+          "address": "fdfe:dcba:9876::1",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627951,
+          "event": "remote-candidate",
+          "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+          "foundation": "a=candidate:6",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116025087",
+          "address": "fd7a:115c:a1e0::c235:3e30",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627951,
+          "event": "remote-candidate",
+          "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+          "foundation": "a=candidate:8",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2116024575",
+          "address": "fde9:8d0f:889a::2",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627952,
+          "event": "remote-candidate",
+          "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+          "foundation": "a=candidate:2",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977535",
+          "address": "192.168.0.225",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627952,
+          "event": "pc-ice-state",
+          "state": "checking"
+        },
+        {
+          "t": 1792985627952,
+          "event": "remote-candidate",
+          "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+          "foundation": "a=candidate:3",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114977279",
+          "address": "172.19.0.1",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627952,
+          "event": "remote-candidate",
+          "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+          "foundation": "a=candidate:5",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976767",
+          "address": "100.x.x.x",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627952,
+          "event": "remote-candidate",
+          "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+          "foundation": "a=candidate:7",
+          "component": "1",
+          "transport": "UDP",
+          "priority": "2114976255",
+          "address": "100.70.144.122",
+          "port": "54789",
+          "type": "host",
+          "isMdns": false
+        },
+        {
+          "t": 1792985627952,
+          "event": "pc-ice-state",
+          "state": "connected"
+        },
+        {
+          "t": 1792985627952,
+          "event": "pc-connection-state",
+          "state": "connecting"
+        },
+        {
+          "t": 1792985627952,
+          "event": "ice-gathering-state",
+          "state": "complete"
+        },
+        {
+          "t": 1792985627952,
+          "event": "local-sdp",
+          "bytes": 716,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": [
+            {
+              "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:1087527971",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113937151",
+              "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+              "port": "49636",
+              "type": "host",
+              "isMdns": true
+            },
+            {
+              "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:2851381174",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113942271",
+              "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+              "port": "53039",
+              "type": "host",
+              "isMdns": true
+            }
+          ]
+        },
+        {
+          "t": 1792985627952,
+          "event": "ice-gathering-complete"
+        },
+        {
+          "t": 1792985627952,
+          "event": "local-sdp",
+          "bytes": 716,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": [
+            {
+              "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:1087527971",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113937151",
+              "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+              "port": "49636",
+              "type": "host",
+              "isMdns": true
+            },
+            {
+              "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:2851381174",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113942271",
+              "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+              "port": "53039",
+              "type": "host",
+              "isMdns": true
+            }
+          ]
+        },
+        {
+          "t": 1792985628009,
+          "event": "pc-connection-state",
+          "state": "connected"
+        },
+        {
+          "t": 1792985628011,
+          "event": "dc-open",
+          "maxMessageSize": 262144
+        },
+        {
+          "t": 1792985628012,
+          "event": "dc-message",
+          "type": "hello-ack",
+          "testId": "connect-mbp-local-mvopcj6s-a8ebcc",
+          "maxMessageSize": 262144,
+          "selectedPair": {
+            "local": {
+              "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+              "port": 54789,
+              "type": "host",
+              "transportType": "UDP",
+              "candidate": "candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+              "mid": "0",
+              "priority": 2116026367
+            },
+            "remote": {
+              "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+              "port": 53039,
+              "type": "prflx",
+              "transportType": "UDP",
+              "candidate": "candidate:2 1 UDP 1845506815 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 53039 typ prflx",
+              "mid": "0",
+              "priority": 1845506815
+            }
+          }
+        },
+        {
+          "t": 1792985628815,
+          "event": "stats-collected",
+          "selectedPair": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 1624,
+            "bytesReceived": 2241,
+            "packetsSent": 10,
+            "packetsReceived": 9,
+            "currentRoundTripTime": 0.001,
+            "requestsSent": 3,
+            "responsesReceived": 3,
+            "consentRequestsSent": 2
+          },
+          "localCandidate": {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 53039,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "598211555",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          "remoteCandidate": {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116026367,
+            "foundation": "1",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          "maxMessageSize": 262144
+        },
+        {
+          "t": 1792985628954,
+          "event": "stats-collected",
+          "selectedPair": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 1624,
+            "bytesReceived": 2241,
+            "packetsSent": 10,
+            "packetsReceived": 9,
+            "currentRoundTripTime": 0.001,
+            "requestsSent": 3,
+            "responsesReceived": 3,
+            "consentRequestsSent": 2
+          },
+          "localCandidate": {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 53039,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "598211555",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          "remoteCandidate": {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116026367,
+            "foundation": "1",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          "maxMessageSize": 262144
+        },
+        {
+          "t": 1792985630404,
+          "event": "local-sdp",
+          "bytes": 716,
+          "maxMessageSize": [
+            "a=max-message-size:262144"
+          ],
+          "candidates": [
+            {
+              "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:1087527971",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113937151",
+              "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+              "port": "49636",
+              "type": "host",
+              "isMdns": true
+            },
+            {
+              "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+              "foundation": "a=candidate:2851381174",
+              "component": "1",
+              "transport": "udp",
+              "priority": "2113942271",
+              "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+              "port": "53039",
+              "type": "host",
+              "isMdns": true
+            }
+          ]
+        },
+        {
+          "t": 1792985636315,
+          "event": "stats-collected",
+          "selectedPair": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 1624,
+            "bytesReceived": 2241,
+            "packetsSent": 10,
+            "packetsReceived": 9,
+            "currentRoundTripTime": 0.001,
+            "requestsSent": 7,
+            "responsesReceived": 7,
+            "consentRequestsSent": 6
+          },
+          "localCandidate": {
+            "candidateType": "prflx",
+            "address": "",
+            "port": 53039,
+            "protocol": "udp",
+            "priority": 1845506815,
+            "foundation": "598211555",
+            "networkType": "unknown",
+            "usernameFragment": "eGzQ",
+            "isRemote": false
+          },
+          "remoteCandidate": {
+            "candidateType": "host",
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "protocol": "udp",
+            "priority": 2116026367,
+            "foundation": "1",
+            "usernameFragment": "/XoN",
+            "isRemote": true
+          },
+          "maxMessageSize": 262144
+        },
+        {
+          "t": 1792985636315,
+          "event": "done"
+        }
+      ]
+    },
+    "log": [
+      {
+        "t": 1792985627900,
+        "event": "pc-created",
+        "stun": [],
+        "mode": "connect"
+      },
+      {
+        "t": 1792985627903,
+        "event": "local-sdp",
+        "bytes": 458,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985627903,
+        "event": "offer-sent",
+        "bytes": 458
+      },
+      {
+        "t": 1792985627903,
+        "event": "ice-gathering-state",
+        "state": "gathering"
+      },
+      {
+        "t": 1792985627906,
+        "event": "local-candidate",
+        "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "1087527971",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "port": "49636",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985627906,
+        "event": "local-candidate",
+        "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "2851381174",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "port": "53039",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985627913,
+        "event": "ws-open"
+      },
+      {
+        "t": 1792985627947,
+        "event": "answer-received",
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985627948,
+        "event": "answer-applied",
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985627948,
+        "event": "remote-sdp",
+        "bytes": 429,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985627951,
+        "event": "remote-candidate",
+        "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116026367",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627951,
+        "event": "remote-candidate",
+        "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025599",
+        "address": "fdfe:dcba:9876::1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627951,
+        "event": "remote-candidate",
+        "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "fd7a:115c:a1e0::c235:3e30",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627951,
+        "event": "remote-candidate",
+        "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fde9:8d0f:889a::2",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627952,
+        "event": "remote-candidate",
+        "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "192.168.0.225",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627952,
+        "event": "pc-ice-state",
+        "state": "checking"
+      },
+      {
+        "t": 1792985627952,
+        "event": "remote-candidate",
+        "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "172.19.0.1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627952,
+        "event": "remote-candidate",
+        "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "100.x.x.x",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627952,
+        "event": "remote-candidate",
+        "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976255",
+        "address": "100.70.144.122",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985627952,
+        "event": "pc-ice-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985627952,
+        "event": "pc-connection-state",
+        "state": "connecting"
+      },
+      {
+        "t": 1792985627952,
+        "event": "ice-gathering-state",
+        "state": "complete"
+      },
+      {
+        "t": 1792985627952,
+        "event": "local-sdp",
+        "bytes": 716,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:1087527971",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+            "port": "49636",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:2851381174",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+            "port": "53039",
+            "type": "host",
+            "isMdns": true
+          }
+        ]
+      },
+      {
+        "t": 1792985627952,
+        "event": "ice-gathering-complete"
+      },
+      {
+        "t": 1792985627952,
+        "event": "local-sdp",
+        "bytes": 716,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:1087527971",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+            "port": "49636",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:2851381174",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+            "port": "53039",
+            "type": "host",
+            "isMdns": true
+          }
+        ]
+      },
+      {
+        "t": 1792985628009,
+        "event": "pc-connection-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985628011,
+        "event": "dc-open",
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985628012,
+        "event": "dc-message",
+        "type": "hello-ack",
+        "testId": "connect-mbp-local-mvopcj6s-a8ebcc",
+        "maxMessageSize": 262144,
+        "selectedPair": {
+          "local": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "type": "host",
+            "transportType": "UDP",
+            "candidate": "candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+            "mid": "0",
+            "priority": 2116026367
+          },
+          "remote": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 53039,
+            "type": "prflx",
+            "transportType": "UDP",
+            "candidate": "candidate:2 1 UDP 1845506815 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 53039 typ prflx",
+            "mid": "0",
+            "priority": 1845506815
+          }
+        }
+      },
+      {
+        "t": 1792985628815,
+        "event": "stats-collected",
+        "selectedPair": {
+          "state": "succeeded",
+          "nominated": true,
+          "bytesSent": 1624,
+          "bytesReceived": 2241,
+          "packetsSent": 10,
+          "packetsReceived": 9,
+          "currentRoundTripTime": 0.001,
+          "requestsSent": 3,
+          "responsesReceived": 3,
+          "consentRequestsSent": 2
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "598211555",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116026367,
+          "foundation": "1",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985628954,
+        "event": "stats-collected",
+        "selectedPair": {
+          "state": "succeeded",
+          "nominated": true,
+          "bytesSent": 1624,
+          "bytesReceived": 2241,
+          "packetsSent": 10,
+          "packetsReceived": 9,
+          "currentRoundTripTime": 0.001,
+          "requestsSent": 3,
+          "responsesReceived": 3,
+          "consentRequestsSent": 2
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "598211555",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116026367,
+          "foundation": "1",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985630404,
+        "event": "local-sdp",
+        "bytes": 716,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": [
+          {
+            "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:1087527971",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113937151",
+            "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+            "port": "49636",
+            "type": "host",
+            "isMdns": true
+          },
+          {
+            "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+            "foundation": "a=candidate:2851381174",
+            "component": "1",
+            "transport": "udp",
+            "priority": "2113942271",
+            "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+            "port": "53039",
+            "type": "host",
+            "isMdns": true
+          }
+        ]
+      },
+      {
+        "t": 1792985636315,
+        "event": "stats-collected",
+        "selectedPair": {
+          "state": "succeeded",
+          "nominated": true,
+          "bytesSent": 1624,
+          "bytesReceived": 2241,
+          "packetsSent": 10,
+          "packetsReceived": 9,
+          "currentRoundTripTime": 0.001,
+          "requestsSent": 7,
+          "responsesReceived": 7,
+          "consentRequestsSent": 6
+        },
+        "localCandidate": {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "598211555",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        "remoteCandidate": {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116026367,
+          "foundation": "1",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985636315,
+        "event": "done"
+      }
+    ],
+    "errors": [],
+    "localCandidates": [
+      {
+        "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "1087527971",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "port": "49636",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "2851381174",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "port": "53039",
+        "type": "host",
+        "isMdns": true
+      }
+    ],
+    "remoteCandidates": [
+      {
+        "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116026367",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025599",
+        "address": "fdfe:dcba:9876::1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "fd7a:115c:a1e0::c235:3e30",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fde9:8d0f:889a::2",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "192.168.0.225",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "172.19.0.1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "100.x.x.x",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976255",
+        "address": "100.70.144.122",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      }
+    ],
+    "localSdp": {
+      "bytes": 716,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": [
+        {
+          "raw": "a=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999",
+          "foundation": "a=candidate:1087527971",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113937151",
+          "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+          "port": "49636",
+          "type": "host",
+          "isMdns": true
+        },
+        {
+          "raw": "a=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999",
+          "foundation": "a=candidate:2851381174",
+          "component": "1",
+          "transport": "udp",
+          "priority": "2113942271",
+          "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+          "port": "53039",
+          "type": "host",
+          "isMdns": true
+        }
+      ],
+      "full": "v=0\r\no=- 7769968754124239816 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 network-cost 999\r\na=candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 network-cost 999\r\na=ice-ufrag:eGzQ\r\na=ice-pwd:Sravx1WmKmGvMkCgDQwtmirS\r\na=ice-options:trickle\r\na=fingerprint:sha-256 29:A8:10:39:57:08:B8:3A:ED:E8:6A:74:88:BE:1D:A6:DC:D8:30:05:82:5F:C9:33:48:C7:63:D2:C8:12:96:0F\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+    },
+    "remoteSdp": {
+      "bytes": 429,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": [],
+      "full": "v=0\r\no=- 2562060488 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:/XoN\r\na=ice-pwd:5J9OE1VgZCNEgJyxeifnDW\r\na=ice-options:ice2,trickle\r\na=fingerprint:sha-256 97:40:19:BB:FB:E0:34:70:4F:14:A9:B3:6B:C8:EE:B1:4F:70:D5:8D:45:3F:B7:92:C0:AE:81:84:0A:B0:B3:FD\r\na=setup:active\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+    },
+    "stats": {
+      "at": 1792985636315,
+      "connectionState": "connected",
+      "iceConnectionState": "connected",
+      "iceGatheringState": "complete",
+      "transport": {
+        "dtlsState": "connected",
+        "iceState": "connected",
+        "selectedCandidatePairId": "CPe4T3MwmD_oCpK1kOt",
+        "bytesSent": 1624,
+        "bytesReceived": 2241,
+        "packetsSent": 10,
+        "packetsReceived": 9
+      },
+      "selectedPair": {
+        "state": "succeeded",
+        "nominated": true,
+        "bytesSent": 1624,
+        "bytesReceived": 2241,
+        "packetsSent": 10,
+        "packetsReceived": 9,
+        "currentRoundTripTime": 0.001,
+        "requestsSent": 7,
+        "responsesReceived": 7,
+        "consentRequestsSent": 6
+      },
+      "localCandidate": {
+        "candidateType": "prflx",
+        "address": "",
+        "port": 53039,
+        "protocol": "udp",
+        "priority": 1845506815,
+        "foundation": "598211555",
+        "networkType": "unknown",
+        "usernameFragment": "eGzQ",
+        "isRemote": false
+      },
+      "remoteCandidate": {
+        "candidateType": "host",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+        "port": 54789,
+        "protocol": "udp",
+        "priority": 2116026367,
+        "foundation": "1",
+        "usernameFragment": "/XoN",
+        "isRemote": true
+      },
+      "candidates": [
+        {
+          "candidateType": "host",
+          "address": "fdfe:dcba:9876::1",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116025599,
+          "foundation": "4",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "172.19.0.1",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2114977279,
+          "foundation": "3",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "fd7a:115c:a1e0::c235:3e30",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116025087,
+          "foundation": "6",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "192.168.0.225",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2114977535,
+          "foundation": "2",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "fde9:8d0f:889a::2",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116024575,
+          "foundation": "8",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "100.70.144.122",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2114976255,
+          "foundation": "7",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 49636,
+          "protocol": "udp",
+          "priority": 1845501695,
+          "foundation": "212740593",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 2113942271,
+          "foundation": "2851381174",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 49636,
+          "protocol": "udp",
+          "priority": 1845501695,
+          "foundation": "212740593",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "prflx",
+          "address": "",
+          "port": 53039,
+          "protocol": "udp",
+          "priority": 1845506815,
+          "foundation": "598211555",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "",
+          "port": 49636,
+          "protocol": "udp",
+          "priority": 2113937151,
+          "foundation": "1087527971",
+          "networkType": "unknown",
+          "usernameFragment": "eGzQ",
+          "isRemote": false
+        },
+        {
+          "candidateType": "host",
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2116026367,
+          "foundation": "1",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        },
+        {
+          "candidateType": "host",
+          "address": "100.x.x.x",
+          "port": 54789,
+          "protocol": "udp",
+          "priority": 2114976767,
+          "foundation": "5",
+          "usernameFragment": "/XoN",
+          "isRemote": true
+        }
+      ],
+      "configuration": {
+        "alwaysNegotiateDataChannels": false,
+        "bundlePolicy": "balanced",
+        "certificates": [],
+        "encodedInsertableStreams": false,
+        "iceCandidatePoolSize": 0,
+        "iceServers": [],
+        "iceTransportPolicy": "all",
+        "rtcpMuxPolicy": "require"
+      },
+      "maxMessageSize": 262144
+    },
+    "maxMessageSize": 262144,
+    "sizeResults": [],
+    "receivedSizes": [],
+    "noise": null,
+    "localDescriptionAt": null,
+    "lastSignal": "candidate",
+    "dcOpenAt": 1792985628011
+  },
+  "host": {
+    "logs": [
+      {
+        "t": 1792985627045,
+        "event": "environment",
+        "node": "v25.9.0",
+        "platform": "darwin",
+        "arch": "arm64",
+        "libdatachannel": "0.24.5",
+        "platformPackage": "@node-datachannel/darwin-arm64",
+        "platformPackagePath": "/private/tmp/pinomad-spike-345/node_modules/@node-datachannel/darwin-arm64/package.json",
+        "cwd": "/private/tmp/pinomad-spike-345",
+        "mode": "connect",
+        "stun": [],
+        "sdpMaxMessageSize": "default",
+        "bindAddress": null
+      },
+      {
+        "t": 1792985627107,
+        "event": "ws-open"
+      },
+      {
+        "t": 1792985627921,
+        "event": "offer-received",
+        "sdpBytes": 458,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985627926,
+        "event": "remote-candidate",
+        "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "1087527971",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "port": "49636",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985627926,
+        "event": "mdns-resolution-start",
+        "host": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "via": "node:dns.lookup (getaddrinfo/nsswitch)"
+      },
+      {
+        "t": 1792985627933,
+        "event": "remote-candidate",
+        "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "2851381174",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "port": "53039",
+        "type": "host",
+        "isMdns": true
+      },
+      {
+        "t": 1792985627934,
+        "event": "mdns-resolution-start",
+        "host": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "via": "node:dns.lookup (getaddrinfo/nsswitch)"
+      },
+      {
+        "t": 1792985627942,
+        "event": "answer-generated",
+        "type": "answer",
+        "sdpBytes": 444,
+        "originalMaxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "sentMaxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985627944,
+        "event": "local-candidate",
+        "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116026367",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627944,
+        "event": "local-candidate",
+        "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025599",
+        "address": "fdfe:dcba:9876::1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627944,
+        "event": "local-candidate",
+        "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "fd7a:115c:a1e0::c235:3e30",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "local-candidate",
+        "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fde9:8d0f:889a::2",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "local-candidate",
+        "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "192.168.0.225",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "local-candidate",
+        "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "172.19.0.1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "local-candidate",
+        "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "100.x.x.x",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "local-candidate",
+        "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976255",
+        "address": "100.70.144.122",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985627945,
+        "event": "pc-state",
+        "state": "connecting"
+      },
+      {
+        "t": 1792985627945,
+        "event": "ice-state",
+        "state": "checking"
+      },
+      {
+        "t": 1792985627945,
+        "event": "gathering-state",
+        "state": "in-progress"
+      },
+      {
+        "t": 1792985627945,
+        "event": "gathering-state",
+        "state": "complete"
+      },
+      {
+        "t": 1792985627952,
+        "event": "mdns-resolution",
+        "host": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "ok": true,
+        "addresses": [
+          {
+            "address": "172.19.0.1",
+            "family": 4
+          }
+        ],
+        "durationMs": 26
+      },
+      {
+        "t": 1792985628003,
+        "event": "ice-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985628007,
+        "event": "ice-state",
+        "state": "completed"
+      },
+      {
+        "t": 1792985628011,
+        "event": "pc-state",
+        "state": "connected"
+      },
+      {
+        "t": 1792985628011,
+        "event": "datachannel",
+        "label": "spike-345",
+        "id": 1,
+        "protocol": "",
+        "ordered": true
+      },
+      {
+        "t": 1792985628012,
+        "event": "dc-open",
+        "maxMessageSize": 262144,
+        "pcMaxMessageSize": 262144,
+        "bufferedAmount": 0
+      },
+      {
+        "t": 1792985628012,
+        "event": "dc-text",
+        "type": "hello",
+        "testId": "connect-mbp-local-mvopcj6s-a8ebcc",
+        "at": 1792985628011
+      },
+      {
+        "t": 1792985628094,
+        "event": "selected-pair",
+        "local": {
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 54789,
+          "type": "host",
+          "transportType": "UDP",
+          "candidate": "candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+          "mid": "0",
+          "priority": 2116026367
+        },
+        "remote": {
+          "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+          "port": 53039,
+          "type": "prflx",
+          "transportType": "UDP",
+          "candidate": "candidate:2 1 UDP 1845506815 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 53039 typ prflx",
+          "mid": "0",
+          "priority": 1845506815
+        },
+        "localCandidateType": "host",
+        "remoteCandidateType": "prflx",
+        "maxMessageSize": 262144
+      },
+      {
+        "t": 1792985629914,
+        "event": "mdns-resolution",
+        "host": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "ok": true,
+        "addresses": [
+          {
+            "address": "fdfe:dcba:9876::1",
+            "family": 6
+          }
+        ],
+        "durationMs": 1980
+      },
+      {
+        "t": 1792985637014,
+        "event": "finish",
+        "code": 0,
+        "error": null,
+        "selectedPair": {
+          "local": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 54789,
+            "type": "host",
+            "transportType": "UDP",
+            "candidate": "candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+            "mid": "0",
+            "priority": 2116026367
+          },
+          "remote": {
+            "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+            "port": 53039,
+            "type": "prflx",
+            "transportType": "UDP",
+            "candidate": "candidate:2 1 UDP 1845506815 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 53039 typ prflx",
+            "mid": "0",
+            "priority": 1845506815
+          }
+        },
+        "maxMessageSize": 262144,
+        "dcMaxMessageSize": 262144
+      },
+      {
+        "t": 1792985637014,
+        "event": "pc-state",
+        "state": "closed"
+      },
+      {
+        "t": 1792985637014,
+        "event": "dc-closed",
+        "done": true,
+        "connectAcked": true
+      }
+    ],
+    "stderr": "",
+    "exitCode": 0,
+    "signal": null
+  },
+  "relay": [
+    {
+      "at": 1792985626721,
+      "event": "listening",
+      "port": 38779
+    },
+    {
+      "at": 1792985627252,
+      "event": "connected",
+      "role": "host",
+      "remote": ""
+    },
+    {
+      "at": 1792985628060,
+      "event": "connected",
+      "role": "browser",
+      "remote": ""
+    },
+    {
+      "at": 1792985628060,
+      "event": "paired"
+    },
+    {
+      "at": 1792985628067,
+      "event": "browser-offer",
+      "sdpBytes": 458,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": []
+    },
+    {
+      "at": 1792985628068,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:1087527971 1 udp 2113937151 04c47c50-eb76-4b10-a9b5-ad161822687a.local 49636 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "1087527971",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "04c47c50-eb76-4b10-a9b5-ad161822687a.local",
+        "port": "49636",
+        "type": "host",
+        "isMdns": true
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628068,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:2851381174 1 udp 2113942271 ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local 53039 typ host generation 0 ufrag eGzQ network-cost 999",
+        "foundation": "2851381174",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "ed7605fd-f28c-4ecb-9cf2-fccded7ccd2a.local",
+        "port": "53039",
+        "type": "host",
+        "isMdns": true
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628096,
+      "event": "host-answer",
+      "sdpBytes": 444,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": []
+    },
+    {
+      "at": 1792985628096,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:1 1 UDP 2116026367 240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f 54789 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116026367",
+        "address": "240e:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:3a3f",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628097,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:4 1 UDP 2116025599 fdfe:dcba:9876::1 54789 typ host",
+        "foundation": "a=candidate:4",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025599",
+        "address": "fdfe:dcba:9876::1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628097,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:6 1 UDP 2116025087 fd7a:115c:a1e0::c235:3e30 54789 typ host",
+        "foundation": "a=candidate:6",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116025087",
+        "address": "fd7a:115c:a1e0::c235:3e30",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628097,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:8 1 UDP 2116024575 fde9:8d0f:889a::2 54789 typ host",
+        "foundation": "a=candidate:8",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2116024575",
+        "address": "fde9:8d0f:889a::2",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628097,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:2 1 UDP 2114977535 192.168.0.225 54789 typ host",
+        "foundation": "a=candidate:2",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977535",
+        "address": "192.168.0.225",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628098,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:3 1 UDP 2114977279 172.19.0.1 54789 typ host",
+        "foundation": "a=candidate:3",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977279",
+        "address": "172.19.0.1",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628098,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:5 1 UDP 2114976767 100.x.x.x 54789 typ host",
+        "foundation": "a=candidate:5",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976767",
+        "address": "100.x.x.x",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985628098,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:7 1 UDP 2114976255 100.70.144.122 54789 typ host",
+        "foundation": "a=candidate:7",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114976255",
+        "address": "100.70.144.122",
+        "port": "54789",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985636496,
+      "event": "closed",
+      "role": "browser",
+      "code": 1001,
+      "reason": ""
+    },
+    {
+      "at": 1792985637577,
+      "event": "closed",
+      "role": "host",
+      "code": 1006,
+      "reason": ""
+    }
+  ],
+  "stderr": "PAGE_CONSOLE_ERROR Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+}

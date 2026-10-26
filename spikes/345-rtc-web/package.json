@@ -1,0 +1,23 @@
+{
+  "name": "@pinomad/spike-345-rtc-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike #345 0a: Chromium ↔ node-datachannel (libdatachannel) DataChannel, Noise records, backpressure, npm packaging",
+  "scripts": {
+    "build:browser": "bun build src/browser/main.ts --target=browser --outfile=dist/browser.js",
+    "build:peer": "bun build src/peer/main.ts --target=node --format=esm --external node-datachannel --outfile=dist/node-peer.mjs",
+    "build": "bun run build:browser && bun run build:peer",
+    "connect": "node src/run-connect.ts",
+    "noise": "node src/run-noise.ts",
+    "maxmsg": "node src/run-max-message.ts"
+  },
+  "dependencies": {
+    "node-datachannel": "0.33.4",
+    "ws": "8.22.0",
+    "@noble/hashes": "2.4.0"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

@@ -1,0 +1,29 @@
+# darwin-arm64 packaging smoke (spike #345 0a)
+# Machine: void@mbp, macOS 27.0.1, arm64, Node 25.9.0, system Chrome 155.0.8059.85.
+# The same temporary pi overrides as the linux test were used: on 2026-10-26
+# pi-coding-agent@1.2.0's caret deps resolve pi-agent-core/pi-tui 1.4.0, which
+# require unpublished pi-ai@1.4.0. This is unrelated to node-datachannel.
+#
+# Reproduce (from the repo root, after building the tgz):
+#   scp apps/cli/out/pinomad-0.0.0-spike345.1.tgz void@mbp:/tmp/pinomad-spike-345/
+#   scp spikes/345-rtc-web/src/rtc-preflight.mjs void@mbp:/tmp/pinomad-spike-345/
+#   scp spikes/345-rtc-web/scripts/mbp-package-smoke.sh void@mbp:/tmp/pinomad-spike-345/
+#   ssh void@mbp 'bash /tmp/pinomad-spike-345/mbp-package-smoke.sh'
+#
+# Output:
+===== default install exit=0 =====
+added 129 packages in 9s
+version: 0.0.0-spike345.1
+platform prebuild: @node-datachannel/darwin-arm64/package.json
+rtc: available (libdatachannel 0.24.5)
+host: ready web_http=200 port=54298
+server: ready web_http=200 port=54307
+===== omit install exit=0 =====
+added 128 packages in 2s
+version: 0.0.0-spike345.1
+platform prebuild:
+rtc: unavailable: Cannot load native addon for node-datachannel on darwin (arm64). Attempted to require "@node-datachannel/darwin-arm64". Please ensure optionalDependencies are installed (avoid --no-optional / --omit=optional) or compile locally with "npm run compile". (Error: Cannot find module '@node-datachannel/darwin-arm64'
+rtc: install without --omit=optional, or build node-datachannel locally; host continues without hello.rtc
+host: ready web_http=200 port=54316
+server: ready web_http=200 port=54320
+DONE

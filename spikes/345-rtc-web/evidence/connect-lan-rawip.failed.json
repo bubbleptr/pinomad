@@ -1,0 +1,238 @@
+{
+  "name": "connect-lan-rawip",
+  "options": {
+    "name": "connect-lan-rawip",
+    "mode": "connect",
+    "host": "local",
+    "browser": "mbp",
+    "stun": [],
+    "mdns": false,
+    "bindAddress": "192.168.0.24",
+    "timeoutMs": 30000
+  },
+  "error": "remote browser produced no result (exit 1):\n\nPAGE_CONSOLE_ERROR Failed to load resource: the server responded with a status of 404 (Not Found)\nREMOTE_BROWSER_ERROR page.waitForFunction: Timeout 30000ms exceeded.\n",
+  "stack": "Error: remote browser produced no result (exit 1):\n\nPAGE_CONSOLE_ERROR Failed to load resource: the server responded with a status of 404 (Not Found)\nREMOTE_BROWSER_ERROR page.waitForFunction: Timeout 30000ms exceeded.\n\n    at file:///home/kieran/.lody/repos/local---75142f7761a3/worktrees/459f3c00-a1eb-482d-9a4c-920e97482055/spikes/345-rtc-web/src/server/run.ts:286:17\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+  "browser": null,
+  "host": {
+    "logs": [
+      {
+        "t": 1792985541532,
+        "event": "environment",
+        "node": "v26.8.2",
+        "platform": "linux",
+        "arch": "x64",
+        "libdatachannel": "0.24.5",
+        "platformPackage": "@node-datachannel/linux-x64-gnu",
+        "platformPackagePath": "/home/kieran/.lody/repos/local---75142f7761a3/worktrees/459f3c00-a1eb-482d-9a4c-920e97482055/spikes/345-rtc-web/node_modules/@node-datachannel/linux-x64-gnu/package.json",
+        "cwd": "/home/kieran/.lody/repos/local---75142f7761a3/worktrees/459f3c00-a1eb-482d-9a4c-920e97482055/spikes/345-rtc-web",
+        "mode": "connect",
+        "stun": [],
+        "sdpMaxMessageSize": "default",
+        "bindAddress": "192.168.0.24"
+      },
+      {
+        "t": 1792985541647,
+        "event": "ws-open"
+      },
+      {
+        "t": 1792985542635,
+        "event": "offer-received",
+        "sdpBytes": 458,
+        "maxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985542637,
+        "event": "remote-candidate",
+        "raw": "candidate:2445982293 1 udp 2113937151 172.19.0.1 55199 typ host generation 0 ufrag 7chL network-cost 999",
+        "foundation": "2445982293",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "172.19.0.1",
+        "port": "55199",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985542638,
+        "event": "remote-candidate",
+        "raw": "candidate:2028763584 1 udp 2113942271 fdfe:dcba:9876::1 62859 typ host generation 0 ufrag 7chL network-cost 999",
+        "foundation": "2028763584",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "fdfe:dcba:9876::1",
+        "port": "62859",
+        "type": "host",
+        "isMdns": false
+      },
+      {
+        "t": 1792985542638,
+        "event": "answer-generated",
+        "type": "answer",
+        "sdpBytes": 444,
+        "originalMaxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "sentMaxMessageSize": [
+          "a=max-message-size:262144"
+        ],
+        "candidates": []
+      },
+      {
+        "t": 1792985542640,
+        "event": "local-candidate",
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 40316 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "40316",
+        "type": "host",
+        "isMdns": false,
+        "mid": "0"
+      },
+      {
+        "t": 1792985542640,
+        "event": "pc-state",
+        "state": "connecting"
+      },
+      {
+        "t": 1792985542640,
+        "event": "ice-state",
+        "state": "checking"
+      },
+      {
+        "t": 1792985542640,
+        "event": "gathering-state",
+        "state": "in-progress"
+      },
+      {
+        "t": 1792985542640,
+        "event": "gathering-state",
+        "state": "complete"
+      },
+      {
+        "t": 1792985582178,
+        "event": "pc-state",
+        "state": "failed"
+      },
+      {
+        "t": 1792985582178,
+        "event": "pc-state",
+        "state": "closed"
+      }
+    ],
+    "stderr": "(node:486601) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+    "exitCode": null,
+    "signal": "SIGTERM"
+  },
+  "relay": [
+    {
+      "at": 1792985541456,
+      "event": "listening",
+      "port": 36791
+    },
+    {
+      "at": 1792985541638,
+      "event": "connected",
+      "role": "host",
+      "remote": ""
+    },
+    {
+      "at": 1792985542626,
+      "event": "connected",
+      "role": "browser",
+      "remote": ""
+    },
+    {
+      "at": 1792985542626,
+      "event": "paired"
+    },
+    {
+      "at": 1792985542632,
+      "event": "browser-offer",
+      "sdpBytes": 458,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": []
+    },
+    {
+      "at": 1792985542633,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:2445982293 1 udp 2113937151 172.19.0.1 55199 typ host generation 0 ufrag 7chL network-cost 999",
+        "foundation": "2445982293",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113937151",
+        "address": "172.19.0.1",
+        "port": "55199",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985542633,
+      "event": "browser-candidate",
+      "candidate": {
+        "raw": "candidate:2028763584 1 udp 2113942271 fdfe:dcba:9876::1 62859 typ host generation 0 ufrag 7chL network-cost 999",
+        "foundation": "2028763584",
+        "component": "1",
+        "transport": "udp",
+        "priority": "2113942271",
+        "address": "fdfe:dcba:9876::1",
+        "port": "62859",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985542640,
+      "event": "host-answer",
+      "sdpBytes": 444,
+      "maxMessageSize": [
+        "a=max-message-size:262144"
+      ],
+      "candidates": []
+    },
+    {
+      "at": 1792985542640,
+      "event": "host-candidate",
+      "candidate": {
+        "raw": "a=candidate:1 1 UDP 2114977791 192.168.0.24 40316 typ host",
+        "foundation": "a=candidate:1",
+        "component": "1",
+        "transport": "UDP",
+        "priority": "2114977791",
+        "address": "192.168.0.24",
+        "port": "40316",
+        "type": "host",
+        "isMdns": false
+      },
+      "mid": "0"
+    },
+    {
+      "at": 1792985572633,
+      "event": "closed",
+      "role": "browser",
+      "code": 1001,
+      "reason": ""
+    },
+    {
+      "at": 1792985582668,
+      "event": "closed",
+      "role": "host",
+      "code": 1006,
+      "reason": ""
+    }
+  ],
+  "stderr": "PAGE_CONSOLE_ERROR Failed to load resource: the server responded with a status of 404 (Not Found)\nREMOTE_BROWSER_ERROR page.waitForFunction: Timeout 30000ms exceeded.\n"
+}

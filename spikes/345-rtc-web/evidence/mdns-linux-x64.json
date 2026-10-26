@@ -1,0 +1,67 @@
+{
+  "at": "2026-10-26T03:28:22.991Z",
+  "platform": "linux",
+  "arch": "x64",
+  "node": "v26.8.2",
+  "chromium": "153.0.8010.12",
+  "sdpCandidates": [
+    "a=candidate:2022320101 1 udp 2113937151 6e044574-fbbd-4965-a7c9-a466cd9e4595.local 41971 typ host generation 0 network-cost 999",
+    "a=candidate:2444026992 1 udp 2113942271 dc97eb95-19cf-4256-a245-c56fa84b83f6.local 56599 typ host generation 0 network-cost 999"
+  ],
+  "names": [
+    "6e044574-fbbd-4965-a7c9-a466cd9e4595.local",
+    "dc97eb95-19cf-4256-a245-c56fa84b83f6.local"
+  ],
+  "results": [
+    {
+      "name": "6e044574-fbbd-4965-a7c9-a466cd9e4595.local",
+      "lookup": {
+        "ok": true,
+        "addresses": [
+          {
+            "address": "172.19.0.1",
+            "family": 4
+          }
+        ],
+        "durationMs": 5022
+      },
+      "cli": {
+        "getent": {
+          "ok": true,
+          "stdout": "172.19.0.1      6e044574-fbbd-4965-a7c9-a466cd9e4595.local",
+          "stderr": ""
+        },
+        "avahi-resolve": {
+          "ok": true,
+          "stdout": "6e044574-fbbd-4965-a7c9-a466cd9e4595.local\t172.19.0.1",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "name": "dc97eb95-19cf-4256-a245-c56fa84b83f6.local",
+      "lookup": {
+        "ok": true,
+        "addresses": [
+          {
+            "address": "fdfe:dcba:9876::1",
+            "family": 6
+          }
+        ],
+        "durationMs": 5014
+      },
+      "cli": {
+        "getent": {
+          "ok": true,
+          "stdout": "fdfe:dcba:9876::1 dc97eb95-19cf-4256-a245-c56fa84b83f6.local",
+          "stderr": ""
+        },
+        "avahi-resolve": {
+          "ok": true,
+          "stdout": "dc97eb95-19cf-4256-a245-c56fa84b83f6.local\tfdfe:dcba:9876::1",
+          "stderr": ""
+        }
+      }
+    }
+  ]
+}
