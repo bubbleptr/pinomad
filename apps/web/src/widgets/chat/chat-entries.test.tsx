@@ -86,6 +86,14 @@ describe("message times", () => {
     expect(time).toHaveAttribute("title", expect.stringContaining("2026"));
   });
 
+  it("keeps a user's Copy action above the time row", () => {
+    const { container } = renderUser(userEntry(new Date(2026, 9, 28, 14, 31).getTime()));
+    const actions = container.querySelector('[data-slot="chat-message-actions"]')!;
+    const time = container.querySelector('[data-slot="chat-message-time"]')!;
+
+    expect(actions.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("puts an assistant's time first in its actions row", () => {
     const endedAt = new Date(2026, 9, 28, 14, 31).getTime();
     const { container } = renderRun(

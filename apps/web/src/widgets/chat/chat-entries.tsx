@@ -40,6 +40,7 @@ export function ChatEntryView({
   summaryOf,
   onRetry,
   todo,
+  today,
 }: {
   entry: ChatEntry;
   connected: boolean;
@@ -56,6 +57,8 @@ export function ChatEntryView({
   onRetry?: () => Promise<void>;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
+  /** Local start of today, shared by the transcript's midnight clock. */
+  today?: number;
 }) {
   switch (entry.kind) {
     case "user":
@@ -65,25 +68,25 @@ export function ChatEntryView({
             {entry.attachments.length === 0 ? null : <MessageAttachments attachments={entry.attachments} />}
             {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
             {entry.text === "" ? null : (
-              <ChatMessage.Bubble>
-                <ChatMessage.Content>
-                  <SkillMentionText text={entry.text} names={entry.skills} />
-                </ChatMessage.Content>
-              </ChatMessage.Bubble>
+              <>
+                <ChatMessage.Bubble>
+                  <ChatMessage.Content>
+                    <SkillMentionText text={entry.text} names={entry.skills} />
+                  </ChatMessage.Content>
+                </ChatMessage.Bubble>
+                <ChatMessageActions className="shrink-0">
+                  <ChatMessageActions.Copy
+                    aria-label="Copy"
+                    tooltip="Copy"
+                    onPress={() => {
+                      void navigator.clipboard?.writeText(entry.text);
+                    }}
+                  />
+                </ChatMessageActions>
+              </>
             )}
             {entry.timestamp === undefined ? null : (
-              <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={entry.timestamp} />} />
-            )}
-            {entry.text === "" ? null : (
-              <ChatMessageActions className="shrink-0">
-                <ChatMessageActions.Copy
-                  aria-label="Copy"
-                  tooltip="Copy"
-                  onPress={() => {
-                    void navigator.clipboard?.writeText(entry.text);
-                  }}
-                />
-              </ChatMessageActions>
+              <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={entry.timestamp} today={today} />} />
             )}
           </div>
         </ChatMessage.User>
@@ -100,6 +103,7 @@ export function ChatEntryView({
           summaryOf={summaryOf}
           onRetry={onRetry}
           todo={todo}
+          today={today}
         />
       );
     case "compaction":
@@ -109,8 +113,8 @@ export function ChatEntryView({
   }
 }
 
-function ChatMessageTime({ timestamp }: { timestamp: number }) {
-  const value = messageTime(timestamp);
+function ChatMessageTime({ timestamp, today }: { timestamp: number; today?: number }) {
+  const value = messageTime(timestamp, today);
   if (value === undefined) return null;
   return (
     <time
@@ -134,6 +138,7 @@ function RunEntry({
   summaryOf,
   onRetry,
   todo,
+  today,
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
@@ -144,6 +149,7 @@ function RunEntry({
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   onRetry?: () => Promise<void>;
   todo?: RunTodo;
+  today?: number;
 }) {
   // Subagent calls anchor cards under the run instead of rows in the CoT.
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
@@ -184,7 +190,9 @@ function RunEntry({
         {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} onRetry={onRetry} />}
         {!showActions ? null : (
           <ChatMessageActions className="chat-message__actions--persist">
-            {endedAt === undefined ? null : <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={endedAt} />} />}
+            {endedAt === undefined ? null : (
+              <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={endedAt} today={today} />} />
+            )}
             {answer === undefined ? null : (
               <ChatMessageActions.Copy
                 aria-label="Copy"

@@ -12,6 +12,7 @@ import type { ViewImage } from "@pinomad/protocol/images.ts";
 import type { ConversationSummary, ExtensionDocView } from "@pinomad/protocol/view.ts";
 import { lastTodoWriteMs } from "@/entities/todo/todo-card";
 import { ChatEntryView } from "./chat-entries.tsx";
+import { useToday } from "./use-today.ts";
 
 export function ConversationTranscript({
   conversation,
@@ -62,6 +63,7 @@ export function ConversationTranscript({
   docs?: readonly ExtensionDocView[];
 }) {
   const busy = isBusy(conversation);
+  const today = useToday();
   const view = useMemo(
     () =>
       ownOnly
@@ -99,6 +101,7 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
+            today={today}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={
               onRetry !== undefined && connected && retry !== undefined && index === items.length - 1
