@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     if (typeof created.url !== "string" || created.url === "") throw new Error("createPairing did not return a url");
     const settings = remote.view.current().settings;
     if (settings === null) throw new Error("the P2P connection did not receive the settings stream");
-    const selected = remote.rtcDiagnostics().selectedCandidateType;
+    const selected = remote.rtcDiagnostics().selectedPair;
     const peer = platform.last;
     if (peer === undefined) throw new Error("no DataChannel peer was created");
     peer.close();
@@ -107,7 +107,9 @@ async function main(): Promise<void> {
       ok: true,
       models: models.length,
       pairingUrl: created.url.startsWith("http") || created.url.startsWith("pinomad://"),
-      selectedCandidateType: selected ?? null,
+      selectedCandidateType: selected === undefined
+        ? null
+        : `${selected.local.type ?? "unknown"} ↔ ${selected.remote.type ?? "unknown"}`,
       fallbackPath: remote.rtcDiagnostics().path,
       connection: remote.view.current().connection,
     }));

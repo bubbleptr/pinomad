@@ -37,7 +37,13 @@ import {
   type RtcPlatform,
   SYSTEM_RTC_CLOCK,
 } from "./rtc-carrier.ts";
-import { isRtcHello, type RtcHello } from "./rtc.ts";
+import {
+  isRtcHello,
+  rtcSelectedPair,
+  type RtcCandidatePair,
+  type RtcHello,
+  type RtcSelectedPair,
+} from "./rtc.ts";
 import { type FrameConnection, type FrameHandlers, type FrameTransport, webSocketTransport } from "./transport.ts";
 import type {
   ConversationDefaults,
@@ -96,6 +102,10 @@ export type P2PFailureStage = "signal" | "ice" | "noise" | "warm" | "commit" | "
 export interface P2PFailure {
   readonly stage: P2PFailureStage;
   readonly reason?: string;
+  /** Milliseconds since the failure, on the same monotonic clock as the cooldown. */
+  readonly agoMs: number;
+  /** The selected pair at the moment of failure; absent before ICE picked one. */
+  readonly pair?: RtcSelectedPair;
 }
 
 /** Live diagnostics for the connection-mode UI (ADR-0033 §5). */
@@ -103,7 +113,7 @@ export interface RtcDiagnostics {
   readonly path: ConnectionPath;
   readonly phase: "idle" | "scheduled" | "signal" | "ice" | "noise" | "warm" | "active" | "cooldown";
   readonly lastFailure?: P2PFailure;
-  readonly selectedCandidateType?: string;
+  readonly selectedPair?: RtcSelectedPair;
   /** Milliseconds until the next preparation attempt is allowed; 0 when ready. */
   readonly cooldownRemainingMs: number;
 }
@@ -363,7 +373,7 @@ interface Standby {
   idleTimer?: ReturnType<typeof setTimeout>;
   idleSince?: number;
   warmAt?: number;
-  candidateType?: string;
+  selectedPair?: RtcSelectedPair;
   /** Pre-commit 3s ping on the RTC carrier before the barrier commits. */
   verify?: {
     readonly id: number;
@@ -372,6 +382,14 @@ interface Standby {
     timer?: ReturnType<typeof setTimeout>;
   };
   installed: boolean;
+}
+
+/** A failure plus the monotonic instant it happened; agoMs is computed on read. */
+interface RecordedP2PFailure {
+  readonly stage: P2PFailureStage;
+  readonly reason?: string;
+  readonly atMs: number;
+  readonly pair?: RtcSelectedPair;
 }
 
 interface DeferredCall {
@@ -446,8 +464,8 @@ class RemoteClient {
   #lastCooldownClear = Number.NEGATIVE_INFINITY;
   #stableTimer: ReturnType<typeof setTimeout> | undefined;
   #activePath: ConnectionPath = "loopback";
-  #p2pFailure: P2PFailure | undefined;
-  #selectedCandidateType: string | undefined;
+  #p2pFailure: RecordedP2PFailure | undefined;
+  #selectedPair: RtcSelectedPair | undefined;
   #livenessTimer: ReturnType<typeof setTimeout> | undefined;
   #livenessDeadline = 0;
   #livenessNext = 0;
@@ -941,12 +959,15 @@ class RemoteClient {
   #failDial(dial: DialAttempt, stage: CandidateFailureStage, code?: number, reason?: string): void {
     if (!this.#isActive(dial)) return;
     const wasReady = dial.phase === "ready";
-    if (wasReady && dial.p2p === true) {
-      // A lost DataChannel is a candidate-level failure: never a 4401.
-      this.#p2pFailure = { stage: "liveness", ...(reason === undefined ? {} : { reason }) };
-      this.#noUpgradeUntil = this.#now() + FALLBACK_QUIET_MS;
-      this.#stopLiveness();
-      this.#clearStableTimer();
+    if (dial.p2p === true) {
+      // A lost DataChannel is a candidate-level failure: never a 4401. A
+      // failure before ready is the commit/sync half of the same switch.
+      this.#recordP2PFailure(wasReady ? "liveness" : "commit", reason, this.#selectedPair);
+      if (wasReady) {
+        this.#noUpgradeUntil = this.#now() + FALLBACK_QUIET_MS;
+        this.#stopLiveness();
+        this.#clearStableTimer();
+      }
     }
     this.#recordFailure(dial.candidate, stage, code === UNAUTHORIZED_CLOSE_CODE, code, reason);
     this.#abandonDial(dial);
@@ -985,6 +1006,7 @@ class RemoteClient {
   #abandonDial(expected?: DialAttempt): void {
     const dial = this.#dial;
     if (dial === undefined || (expected !== undefined && dial !== expected)) return;
+    if (dial.p2p === true) this.#selectedPair = undefined;
     this.#dial = undefined;
     dial.done = true;
     this.#clearTimer(dial);
@@ -1227,8 +1249,8 @@ class RemoteClient {
       device: rtc.device,
       clock: this.#clock,
       offer: (sdp) => this.#rtcOfferOn(signal, attempt, sdp),
-      onCandidateType: (type) => {
-        standby.candidateType = type;
+      onSelectedPair: (pair: RtcCandidatePair | undefined) => {
+        if (pair !== undefined) standby.selectedPair = rtcSelectedPair(pair.local, pair.remote);
       },
     });
     const handlers: FrameHandlers = {
@@ -1455,7 +1477,7 @@ class RemoteClient {
     this.#dial = dial;
     standby.installed = true;
     this.#activePath = "p2p";
-    this.#selectedCandidateType = standby.candidateType;
+    this.#selectedPair = standby.selectedPair;
     if (standby.signalOnly) standby.signal = undefined;
     // The cached hello now runs the ordinary hello → sync path. Until its
     // barrier releases, #call keeps queueing into the handoff.
@@ -1478,7 +1500,7 @@ class RemoteClient {
         // Already gone.
       }
     }
-    this.#p2pFailure = { stage: "commit", reason };
+    this.#recordP2PFailure("commit", reason, handoff.standby.selectedPair);
     this.#preparationFailed();
     const old = handoff.old;
     for (const entry of handoff.entries.splice(0)) {
@@ -1580,7 +1602,7 @@ class RemoteClient {
         // Already gone.
       }
     }
-    this.#p2pFailure = { stage, reason };
+    this.#recordP2PFailure(stage, reason, standby.selectedPair);
     if (standby.signalOnly && stage === "signal") {
       this.#signalOnlyHint = false;
       this.#reportSignalOnly(false);
@@ -1609,8 +1631,17 @@ class RemoteClient {
         // Already gone.
       }
     }
-    this.#p2pFailure = { stage: "commit", reason };
+    this.#recordP2PFailure("commit", reason, standby.selectedPair);
     this.#scheduleUpgrade(PREPARE_RETRY_MS);
+  }
+
+  #recordP2PFailure(stage: P2PFailureStage, reason?: string, pair?: RtcSelectedPair): void {
+    this.#p2pFailure = {
+      stage,
+      ...(reason === undefined ? {} : { reason }),
+      atMs: this.#now(),
+      ...(pair === undefined ? {} : { pair }),
+    };
   }
 
   #preparationFailed(): void {
@@ -1762,7 +1793,7 @@ class RemoteClient {
     this.#signalAttempt = undefined;
     if (attempt.timer !== undefined) this.#clock.clearTimeout(attempt.timer);
     attempt.timer = undefined;
-    this.#p2pFailure = { stage: "signal", reason };
+    this.#recordP2PFailure("signal", reason);
     this.#signalOnlyHint = false;
     this.#directUnavailable(reason);
   }
@@ -1878,7 +1909,8 @@ class RemoteClient {
   #fallbackFromP2P(reason: string): void {
     const dial = this.#dial;
     if (dial?.p2p !== true) return;
-    this.#p2pFailure = { stage: "liveness", reason };
+    this.#recordP2PFailure("liveness", reason, this.#selectedPair);
+    this.#selectedPair = undefined;
     this.#noUpgradeUntil = this.#now() + FALLBACK_QUIET_MS;
     this.#stopLiveness();
     this.#clearStableTimer();
@@ -1961,11 +1993,21 @@ class RemoteClient {
     else if (cooldownRemainingMs > 0) phase = "cooldown";
     else if (this.#upgradeTimer !== undefined) phase = "scheduled";
     else phase = "idle";
+    const failure = this.#p2pFailure;
     return {
       path: this.#activePath,
       phase,
-      ...(this.#p2pFailure === undefined ? {} : { lastFailure: this.#p2pFailure }),
-      ...(this.#selectedCandidateType === undefined ? {} : { selectedCandidateType: this.#selectedCandidateType }),
+      ...(failure === undefined
+        ? {}
+        : {
+            lastFailure: {
+              stage: failure.stage,
+              ...(failure.reason === undefined ? {} : { reason: failure.reason }),
+              agoMs: Math.max(0, this.#now() - failure.atMs),
+              ...(failure.pair === undefined ? {} : { pair: failure.pair }),
+            },
+          }),
+      ...(this.#selectedPair === undefined ? {} : { selectedPair: this.#selectedPair }),
       cooldownRemainingMs,
     };
   }

@@ -54,7 +54,15 @@ export const SectionP2P: Story = {
     connectedHostKey: STUDIO_HOST.hostKey,
     hostMinor: 23,
     rtcAvailable: true,
-    remote: diagnostics({ path: "p2p", phase: "active", selectedCandidateType: "host", cooldownRemainingMs: 0 }),
+    remote: diagnostics({
+      path: "p2p",
+      phase: "active",
+      cooldownRemainingMs: 0,
+      selectedPair: {
+        local: { type: "host", scope: "unknown" },
+        remote: { type: "srflx", scope: "public" },
+      },
+    }),
   },
   play: ({ canvasElement }) => openConnection(canvasElement),
 };
@@ -68,9 +76,16 @@ export const SectionCoolingDown: Story = {
     remote: diagnostics({
       path: "relay",
       phase: "cooldown",
-      selectedCandidateType: "srflx",
       cooldownRemainingMs: 120_000,
-      lastFailure: { stage: "ice", reason: "the ICE connection failed" },
+      lastFailure: {
+        stage: "ice",
+        reason: "the ICE connection failed",
+        agoMs: 12_000,
+        pair: {
+          local: { type: "host", scope: "unknown" },
+          remote: { type: "srflx", scope: "public" },
+        },
+      },
     }),
   },
   play: ({ canvasElement }) => openConnection(canvasElement),
@@ -85,9 +100,8 @@ export const SectionLastFailure: Story = {
     remote: diagnostics({
       path: "relay",
       phase: "idle",
-      selectedCandidateType: "host",
       cooldownRemainingMs: 0,
-      lastFailure: { stage: "ice", reason: "the ICE connection failed" },
+      lastFailure: { stage: "ice", reason: "the ICE connection failed", agoMs: 45_000 },
     }),
   },
   play: ({ canvasElement }) => openConnection(canvasElement),

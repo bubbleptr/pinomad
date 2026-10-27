@@ -64,8 +64,11 @@ function failureLabel(failure: P2PFailure): string {
 
 function pathLabel(diagnostics: RtcDiagnostics): string {
   if (diagnostics.path !== "p2p") return PATH_LABEL[diagnostics.path];
-  const type = diagnostics.selectedCandidateType;
-  return type === undefined ? "P2P" : `P2P (${type} ↔ ${type})`;
+  const pair = diagnostics.selectedPair;
+  if (pair === undefined) return "P2P";
+  // A2 shows the scopes and expandable addresses; A1 only keeps the route
+  // display equivalent to the two candidate types it showed before.
+  return `P2P (${pair.local.type ?? "unknown"} ↔ ${pair.remote.type ?? "unknown"})`;
 }
 
 /**

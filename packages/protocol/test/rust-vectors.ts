@@ -17,7 +17,7 @@ import {
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession, SIGNAL_PROLOGUE } from "../src/secure-channel.ts";
-import { isRtcHello, RTC_DEFAULT_STUN } from "../src/rtc.ts";
+import { isRtcHello, RTC_DEFAULT_STUN, rtcAddressScope } from "../src/rtc.ts";
 import {
   ENDPOINT_SET_SCHEMA_VERSION,
   MAX_HOST_ENDPOINTS,
@@ -239,6 +239,57 @@ function framesVector(): VectorFile {
     versionGates,
     rtcHello,
     rtcOfferArgs,
+  });
+}
+
+// ─── RTC address scopes ─────────────────────────────────────────────────────
+//
+// The pure classifier both coordinators run over the platform's raw address
+// string. Each case is an address and the scope the Rust port must return.
+
+function rtcScopesVector(): VectorFile {
+  const addresses: readonly [string, string | null][] = [
+    ["loopback-v4-first", "127.0.0.1"],
+    ["loopback-v4-last", "127.255.255.254"],
+    ["loopback-v6", "::1"],
+    ["tailnet-v4-first", "100.64.0.1"],
+    ["tailnet-v4-last", "100.127.255.255"],
+    ["public-v4-below-tailnet", "100.63.255.255"],
+    ["public-v4-above-tailnet", "100.128.0.0"],
+    ["tailnet-v6", "fd7a:115c:a1e0::1"],
+    ["tailnet-v6-expanded", "fd7a:115c:a1e0:0:0:0:0:1"],
+    ["lan-v6-fd7a-neighbour", "fd7a:115c:a1e1::1"],
+    ["lan-v4-10", "10.0.0.1"],
+    ["lan-v4-172-first", "172.16.0.1"],
+    ["lan-v4-172-last", "172.31.255.255"],
+    ["public-v4-172-below", "172.15.0.1"],
+    ["public-v4-172-above", "172.32.0.1"],
+    ["lan-v4-192", "192.168.1.5:41000"],
+    ["lan-v4-link-local", "169.254.10.20"],
+    ["lan-v6-link-local", "fe80::1"],
+    ["lan-v6-ula-fc", "fc00::1"],
+    ["lan-v6-ula-fd", "fdff::1"],
+    ["public-v4", "8.8.8.8"],
+    ["public-v6", "2001:4860:4860::8888"],
+    ["mapped-lan", "::ffff:192.168.1.5"],
+    ["mapped-tailnet", "::ffff:100.64.0.1"],
+    ["mapped-loopback", "::ffff:127.0.0.1"],
+    ["mapped-public", "::ffff:8.8.8.8"],
+    ["bracketed-v6-with-port", "[fd7a:115c:a1e0::1]:41000"],
+    ["scoped-link-local", "fe80::1%en0"],
+    ["empty", ""],
+    ["blank", "   "],
+    ["mdns", "studio.local"],
+    ["hostname", "example.com"],
+    ["garbage", "not-an-ip"],
+    ["bad-mapped-v4", "::ffff:999.1.1.1"],
+  ];
+  return write("rtc-scopes", {
+    cases: addresses.map(([name, address]) => ({
+      name,
+      address,
+      expect: rtcAddressScope(address ?? undefined),
+    })),
   });
 }
 
@@ -603,5 +654,5 @@ function pairingVector(): VectorFile {
 
 /** Every vector file, `test/fixtures/rust-vectors/<name>.json`. */
 export function buildVectors(): readonly VectorFile[] {
-  return [framesVector(), deltaVector(), recordsVector(), endpointVector(), pairingVector()];
+  return [framesVector(), deltaVector(), recordsVector(), endpointVector(), pairingVector(), rtcScopesVector()];
 }

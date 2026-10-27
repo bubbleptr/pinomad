@@ -417,8 +417,13 @@ export class NodeRtcPeer implements RtcPeer {
     this.#pc.setRemoteDescription(sdp, "answer");
   }
 
-  selectedCandidateType(): string | undefined {
-    return this.#pc.getSelectedCandidatePair()?.local.type;
+  selectedPair() {
+    const pair = this.#pc.getSelectedCandidatePair();
+    if (pair === null) return undefined;
+    return {
+      local: { type: pair.local.type, address: pair.local.address },
+      remote: { type: pair.remote.type, address: pair.remote.address },
+    };
   }
 
   close(): void {

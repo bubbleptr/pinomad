@@ -1,0 +1,174 @@
+{
+  "cases": [
+    {
+      "name": "loopback-v4-first",
+      "address": "127.0.0.1",
+      "expect": "loopback"
+    },
+    {
+      "name": "loopback-v4-last",
+      "address": "127.255.255.254",
+      "expect": "loopback"
+    },
+    {
+      "name": "loopback-v6",
+      "address": "::1",
+      "expect": "loopback"
+    },
+    {
+      "name": "tailnet-v4-first",
+      "address": "100.64.0.1",
+      "expect": "tailnet"
+    },
+    {
+      "name": "tailnet-v4-last",
+      "address": "100.127.255.255",
+      "expect": "tailnet"
+    },
+    {
+      "name": "public-v4-below-tailnet",
+      "address": "100.63.255.255",
+      "expect": "public"
+    },
+    {
+      "name": "public-v4-above-tailnet",
+      "address": "100.128.0.0",
+      "expect": "public"
+    },
+    {
+      "name": "tailnet-v6",
+      "address": "fd7a:115c:a1e0::1",
+      "expect": "tailnet"
+    },
+    {
+      "name": "tailnet-v6-expanded",
+      "address": "fd7a:115c:a1e0:0:0:0:0:1",
+      "expect": "tailnet"
+    },
+    {
+      "name": "lan-v6-fd7a-neighbour",
+      "address": "fd7a:115c:a1e1::1",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v4-10",
+      "address": "10.0.0.1",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v4-172-first",
+      "address": "172.16.0.1",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v4-172-last",
+      "address": "172.31.255.255",
+      "expect": "lan"
+    },
+    {
+      "name": "public-v4-172-below",
+      "address": "172.15.0.1",
+      "expect": "public"
+    },
+    {
+      "name": "public-v4-172-above",
+      "address": "172.32.0.1",
+      "expect": "public"
+    },
+    {
+      "name": "lan-v4-192",
+      "address": "192.168.1.5:41000",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v4-link-local",
+      "address": "169.254.10.20",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v6-link-local",
+      "address": "fe80::1",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v6-ula-fc",
+      "address": "fc00::1",
+      "expect": "lan"
+    },
+    {
+      "name": "lan-v6-ula-fd",
+      "address": "fdff::1",
+      "expect": "lan"
+    },
+    {
+      "name": "public-v4",
+      "address": "8.8.8.8",
+      "expect": "public"
+    },
+    {
+      "name": "public-v6",
+      "address": "2001:4860:4860::8888",
+      "expect": "public"
+    },
+    {
+      "name": "mapped-lan",
+      "address": "::ffff:192.168.1.5",
+      "expect": "lan"
+    },
+    {
+      "name": "mapped-tailnet",
+      "address": "::ffff:100.64.0.1",
+      "expect": "tailnet"
+    },
+    {
+      "name": "mapped-loopback",
+      "address": "::ffff:127.0.0.1",
+      "expect": "loopback"
+    },
+    {
+      "name": "mapped-public",
+      "address": "::ffff:8.8.8.8",
+      "expect": "public"
+    },
+    {
+      "name": "bracketed-v6-with-port",
+      "address": "[fd7a:115c:a1e0::1]:41000",
+      "expect": "tailnet"
+    },
+    {
+      "name": "scoped-link-local",
+      "address": "fe80::1%en0",
+      "expect": "lan"
+    },
+    {
+      "name": "empty",
+      "address": "",
+      "expect": "unknown"
+    },
+    {
+      "name": "blank",
+      "address": "   ",
+      "expect": "unknown"
+    },
+    {
+      "name": "mdns",
+      "address": "studio.local",
+      "expect": "unknown"
+    },
+    {
+      "name": "hostname",
+      "address": "example.com",
+      "expect": "unknown"
+    },
+    {
+      "name": "garbage",
+      "address": "not-an-ip",
+      "expect": "unknown"
+    },
+    {
+      "name": "bad-mapped-v4",
+      "address": "::ffff:999.1.1.1",
+      "expect": "unknown"
+    }
+  ]
+}

@@ -63,14 +63,23 @@ pub enum Action {
     },
     /// SCTP is below the low-water mark; the coordinator may send more.
     BufferedAmountLow,
-    /// The selected ICE pair changed, named `local ↔ remote` candidate types.
+    /// The selected ICE pair changed. Both ends carry the library's candidate
+    /// type and the socket address the pair uses.
     SelectedCandidate {
-        kind: String,
+        local: SelectedCandidateEnd,
+        remote: SelectedCandidateEnd,
     },
     /// The peer is finished. Emitted at most once per engine.
     Closed {
         reason: String,
     },
+}
+
+/// One end of a selected ICE pair, as str0m reported it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelectedCandidateEnd {
+    pub kind: String,
+    pub address: SocketAddr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,7 +106,7 @@ pub struct Engine {
     connect_deadline: Option<Instant>,
     rtc_timeout: Option<Instant>,
     channel: Option<ChannelId>,
-    last_pair: Option<String>,
+    last_pair: Option<(SelectedCandidateEnd, SelectedCandidateEnd)>,
     closed_reason: Option<String>,
 }
 
@@ -514,12 +523,19 @@ impl Engine {
             .get(&remote)
             .cloned()
             .unwrap_or_else(|| "prflx".to_string());
-        let kind = format!("{local_type} ↔ {remote_type}");
-        if self.last_pair.as_deref() == Some(kind.as_str()) {
+        let local = SelectedCandidateEnd {
+            kind: local_type,
+            address: local,
+        };
+        let remote = SelectedCandidateEnd {
+            kind: remote_type,
+            address: remote,
+        };
+        if self.last_pair.as_ref() == Some(&(local.clone(), remote.clone())) {
             return;
         }
-        self.last_pair = Some(kind.clone());
-        actions.push(Action::SelectedCandidate { kind });
+        self.last_pair = Some((local.clone(), remote.clone()));
+        actions.push(Action::SelectedCandidate { local, remote });
     }
 
     fn schedule(&mut self, actions: &mut Vec<Action>) {

@@ -10,4 +10,4 @@
 pub mod engine;
 pub mod stun;
 
-pub use engine::{Action, Engine, EngineConfig, SendOutcome};
+pub use engine::{Action, Engine, EngineConfig, SelectedCandidateEnd, SendOutcome};

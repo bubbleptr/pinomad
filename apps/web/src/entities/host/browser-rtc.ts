@@ -10,7 +10,13 @@ import {
   type RtcPlatform,
   type RtcSendOutcome,
 } from "@pinomad/protocol/rtc-carrier.ts";
-import { RTC_DATA_CHANNEL_LABEL, sdpCandidates, withRtcCandidates } from "@pinomad/protocol/rtc.ts";
+import {
+  RTC_DATA_CHANNEL_LABEL,
+  sdpCandidates,
+  withRtcCandidates,
+  type RtcCandidateInfo,
+  type RtcCandidatePair,
+} from "@pinomad/protocol/rtc.ts";
 
 /** Whether this window can offer a Peer at all; renderers share this code. */
 export function browserRtcAvailable(): boolean {
@@ -28,11 +34,27 @@ interface ChannelState {
   locallyClosed: boolean;
   closed: boolean;
   openNotified?: boolean;
-  candidateType?: string;
+  selectedPair?: RtcCandidatePair;
 }
 
-/** The selected pair's local candidate type, read from getStats once it settles. */
-async function selectedCandidateType(connection: RTCPeerConnection): Promise<string | undefined> {
+type CandidateStats = RTCStats & {
+  candidateType?: string;
+  /** Newer browsers; older ones still expose the address as `ip`. */
+  address?: string;
+  ip?: string;
+};
+
+function candidateEnd(report: RTCStats | undefined): RtcCandidateInfo {
+  const candidate = report as CandidateStats | undefined;
+  const address = candidate?.address ?? candidate?.ip;
+  return {
+    ...(typeof candidate?.candidateType === "string" ? { type: candidate.candidateType } : {}),
+    ...(typeof address === "string" && address !== "" ? { address } : {}),
+  };
+}
+
+/** Both ends of the selected pair, read from getStats once it settles. */
+async function selectedCandidatePair(connection: RTCPeerConnection): Promise<RtcCandidatePair | undefined> {
   try {
     const reports = await connection.getStats();
     const byId = new Map<string, RTCStats>();
@@ -55,10 +77,11 @@ async function selectedCandidateType(connection: RTCPeerConnection): Promise<str
         }
       });
     }
-    const localId = pair?.localCandidateId;
-    const local = localId === undefined ? undefined : byId.get(localId);
-    const type = (local as (RTCStats & { candidateType?: string }) | undefined)?.candidateType;
-    return typeof type === "string" ? type : undefined;
+    if (pair === undefined) return undefined;
+    return {
+      local: candidateEnd(pair.localCandidateId === undefined ? undefined : byId.get(pair.localCandidateId)),
+      remote: candidateEnd(pair.remoteCandidateId === undefined ? undefined : byId.get(pair.remoteCandidateId)),
+    };
   } catch {
     // Stats are diagnostics: losing them must not close a working carrier.
     return undefined;
@@ -134,9 +157,11 @@ function wrapChannel(
   raw.onopen = () => {
     // getStats is the only browser API that names the selected pair. Resolve
     // it before telling the pump the channel is open, so the coordinator's
-    // one diagnostic read sees the type instead of racing a promise.
-    void selectedCandidateType(connection).then((type) => {
-      if (type !== undefined) state.candidateType = type;
+    // one diagnostic read sees both ends instead of racing a promise. The
+    // browser reports this once at open; a later ICE reselection is not
+    // reflected (accepted for A1; the Rust engine reports pair changes).
+    void selectedCandidatePair(connection).then((pair) => {
+      if (pair !== undefined) state.selectedPair = pair;
       notifyOpen();
     });
   };
@@ -269,7 +294,7 @@ async function createPeer(connection: RTCPeerConnection): Promise<RtcPeer> {
       });
     },
     channel,
-    selectedCandidateType: () => state.candidateType,
+    selectedPair: () => state.selectedPair,
     close(): void {
       if (state.locallyClosed) return;
       state.locallyClosed = true;

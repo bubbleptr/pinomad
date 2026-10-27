@@ -5,6 +5,7 @@ import { generateKeyPair, respondIK, type KeyPair } from "../src/noise.ts";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { PROTOCOL, type ClientFrame, type ServerFrame } from "../src/frames.ts";
 import type { ConnectionMode } from "../src/connection-mode.ts";
+import type { RtcCandidatePair } from "../src/rtc.ts";
 import type { RtcDataChannel, RtcPeer, RtcPlatform, RtcSendOutcome } from "../src/rtc-carrier.ts";
 import {
   connectRemoteDurable,
@@ -265,7 +266,12 @@ class FakePeer implements RtcPeer {
     this.answer = sdp;
     this.channel.open();
   }
-  selectedCandidateType(): string { return "host"; }
+  selectedPair(): RtcCandidatePair {
+    return {
+      local: { type: "host", address: "5f9a1c2e-1234-4abc-9def-0123456789ab.local" },
+      remote: { type: "srflx", address: "100.64.0.7:41000" },
+    };
+  }
   close(): void { this.channel.close("peer closed"); }
 }
 
@@ -433,6 +439,35 @@ describe("RTC standby handoff", () => {
       await submitted;
       expect(dc.calls.some((frame) => frame.type === "call" && frame.method === "submit")).toBe(true);
       expect(remote.rtcDiagnostics().path).toBe("p2p");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("reports the selected pair's scopes, then freezes it into an ageing failure", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      const dc = await upgrade(remote, world, network);
+      const selected = remote.rtcDiagnostics().selectedPair;
+      expect(selected?.local).toMatchObject({ type: "host", scope: "unknown" });
+      expect(selected?.remote).toMatchObject({ type: "srflx", scope: "tailnet" });
+      expect(remote.rtcDiagnostics().lastFailure).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      dc.close("the ICE connection failed");
+      await flush();
+      const failure = remote.rtcDiagnostics().lastFailure;
+      expect(failure?.stage).toBe("liveness");
+      expect(failure?.reason).toContain("the ICE connection failed");
+      expect(failure?.pair).toEqual(selected);
+      expect(failure?.agoMs).toBe(0);
+      expect(remote.rtcDiagnostics().selectedPair).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(7_000);
+      await flush();
+      expect(remote.rtcDiagnostics().lastFailure?.agoMs).toBe(7_000);
     } finally {
       remote.close();
     }
@@ -789,6 +824,41 @@ describe("RTC standby handoff", () => {
       dc.close("closed during sync");
       await flush();
       expect(failed).toBeInstanceOf(DisconnectedError);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("records the commit failure and selected pair when the carrier closes before sync finishes", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      await remote.controller.switchConversation(id(1));
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await flush();
+      const dc = world.dc;
+      dc.holdStreams.add("index");
+      dc.holdPing = (count) => count === 2;
+      await vi.advanceTimersByTimeAsync(300);
+      await flush();
+      dc.holdPing = () => false;
+      dc.releaseHeldPings();
+      await vi.advanceTimersByTimeAsync(10);
+      await flush();
+
+      const selected = remote.rtcDiagnostics().selectedPair;
+      expect(selected?.remote.scope).toBe("tailnet");
+      expect(remote.rtcDiagnostics().lastFailure).toBeUndefined();
+
+      dc.close("closed during sync");
+      await flush();
+      const failure = remote.rtcDiagnostics().lastFailure;
+      expect(failure?.stage).toBe("commit");
+      expect(failure?.reason).toBe("the DataChannel closed: closed during sync");
+      expect(failure?.pair).toEqual(selected);
+      expect(failure?.agoMs).toBe(0);
     } finally {
       remote.close();
     }

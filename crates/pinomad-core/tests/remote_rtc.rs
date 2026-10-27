@@ -10,6 +10,7 @@ use pinomad_core::frames::{ClientFrame, PROTOCOL};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::noise::{generate_keypair, KeyPair};
 use pinomad_core::remote_candidates::{RemoteCandidate, RemoteCandidateRole};
+use pinomad_core::rtc::RtcCandidateInfo;
 use pinomad_core::remote_durable::{
     CandidateSource, CandidateTimeouts, Command, Event, ReadyOutcome, RemoteDurable,
     RemoteDurableOptions, RtcOptions, RtcSendOutcome,
@@ -527,6 +528,17 @@ impl Harness {
                 }
                 Command::AcceptRtcAnswer { peer, sdp } => {
                     assert!(sdp.contains("max-message-size"));
+                    queue.extend(self.remote.handle(Event::RtcSelectedCandidate {
+                        peer,
+                        local: RtcCandidateInfo {
+                            rtc_type: Some("host".to_string()),
+                            address: Some("5f9a1c2e-1234-4abc-9def-0123456789ab.local".to_string()),
+                        },
+                        remote: RtcCandidateInfo {
+                            rtc_type: Some("srflx".to_string()),
+                            address: Some("100.64.0.7:41000".to_string()),
+                        },
+                    }));
                     queue.extend(self.remote.handle(Event::RtcChannelOpened { peer }));
                 }
                 Command::RtcSend { peer, bytes } => {
@@ -687,6 +699,53 @@ fn liveness_timeout_falls_back_and_quietly_retries_after_60s() {
     let peers = h.peers.len();
     h.advance(59_000);
     assert_eq!(h.peers.len(), peers);
+}
+
+#[test]
+fn diagnostics_report_the_selected_pair_and_age_a_frozen_failure() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_500);
+    let selected = h
+        .remote
+        .rtc_diagnostics()
+        .get("selectedPair")
+        .cloned()
+        .expect("the selected pair is reported while P2P is active");
+    assert_eq!(
+        selected.get("local").and_then(|end| end.get("scope")).and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("unknown")
+    );
+    assert_eq!(
+        selected.get("remote").and_then(|end| end.get("scope")).and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("tailnet")
+    );
+    assert!(h.remote.rtc_diagnostics().get("lastFailure").is_none());
+
+    h.advance(2_000);
+    let peer = h.peers[0];
+    h.feed(Event::RtcClosed {
+        peer,
+        reason: Some("the ICE connection failed".to_string()),
+    });
+    let failed = h.remote.rtc_diagnostics();
+    let failure = failed.get("lastFailure").expect("the failure is recorded");
+    assert_eq!(
+        failure.get("stage").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("liveness")
+    );
+    assert_eq!(failure.get("agoMs").and_then(Json::as_number), Some(0.0));
+    assert_eq!(failure.get("pair"), Some(&selected));
+    assert!(failed.get("selectedPair").is_none(), "a retired pair is not the active one");
+
+    h.advance(7_000);
+    assert_eq!(
+        h.remote
+            .rtc_diagnostics()
+            .get("lastFailure")
+            .and_then(|failure| failure.get("agoMs"))
+            .and_then(Json::as_number),
+        Some(7_000.0)
+    );
 }
 
 #[test]
@@ -855,6 +914,49 @@ fn rtc_close_during_handoff_sync_fails_queued_ops() {
         "queued op must fail: {:?}",
         h.ops.get(&3)
     );
+}
+
+#[test]
+fn rtc_close_during_handoff_sync_records_a_commit_failure_with_the_pair() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_100);
+    h.host.hold_streams.insert("index".to_string());
+    h.host.hold_from = Some(2);
+    h.advance(300);
+    let events = h.host.release_held();
+    let peer = h.peers[0];
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    let selected = h
+        .remote
+        .rtc_diagnostics()
+        .get("selectedPair")
+        .cloned()
+        .expect("the new carrier picked a pair before sync");
+    assert!(h.remote.rtc_diagnostics().get("lastFailure").is_none());
+
+    // The carrier is installed, but the held index snapshot keeps the sync
+    // barrier closed. Losing the DC is a commit failure, not a liveness one.
+    h.feed(Event::RtcClosed {
+        peer,
+        reason: Some("closed during sync".to_string()),
+    });
+    let failed = h.remote.rtc_diagnostics();
+    let failure = failed.get("lastFailure").expect("the failure is recorded");
+    assert_eq!(
+        failure.get("stage").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("commit")
+    );
+    assert_eq!(
+        failure.get("reason").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("closed during sync")
+    );
+    assert_eq!(failure.get("pair"), Some(&selected));
+    assert_eq!(failure.get("agoMs").and_then(Json::as_number), Some(0.0));
+    assert!(failed.get("selectedPair").is_none(), "a retired pair is not the active one");
 }
 
 #[test]

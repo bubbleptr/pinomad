@@ -6,9 +6,11 @@ import {
   parseRtcMaxMessageSize,
   RTC_DEFAULT_MAX_MESSAGE_SIZE,
   RTC_DEFAULT_STUN,
+  rtcAddressScope,
   rtcCandidateType,
   sdpCandidates,
   withRtcCandidates,
+  type RtcAddressScope,
 } from "../src/rtc.ts";
 
 describe("rtc SDP helpers", () => {
@@ -59,6 +61,52 @@ describe("rtc SDP helpers", () => {
     expect(isRtcHello({ stun: [""], signalOnly: true })).toBe(false);
     expect(isRtcHello({ stun: [...RTC_DEFAULT_STUN], signalOnly: "true" })).toBe(false);
     expect(isRtcHello(null)).toBe(false);
+  });
+});
+
+describe("RTC address scopes", () => {
+  it("classifies the issue's loopback, tailnet, LAN, public, and unknown boundaries", () => {
+    const cases: readonly [string | undefined, RtcAddressScope][] = [
+      ["127.0.0.1", "loopback"],
+      ["127.255.255.254", "loopback"],
+      ["::1", "loopback"],
+      ["100.64.0.1", "tailnet"],
+      ["100.127.255.255", "tailnet"],
+      ["100.63.255.255", "public"],
+      ["100.128.0.0", "public"],
+      ["fd7a:115c:a1e0::1", "tailnet"],
+      ["fd7a:115c:a1e0:0:0:0:0:1", "tailnet"],
+      ["fd7a:115c:a1e1::1", "lan"],
+      ["10.0.0.1", "lan"],
+      ["172.16.0.1", "lan"],
+      ["172.31.255.255", "lan"],
+      ["172.15.0.1", "public"],
+      ["172.32.0.1", "public"],
+      ["192.168.1.5", "lan"],
+      ["169.254.10.20", "lan"],
+      ["fe80::1", "lan"],
+      ["fc00::1", "lan"],
+      ["fdff::1", "lan"],
+      ["8.8.8.8", "public"],
+      ["2001:4860:4860::8888", "public"],
+      ["::ffff:192.168.1.5", "lan"],
+      ["::ffff:100.64.0.1", "tailnet"],
+      ["::ffff:127.0.0.1", "loopback"],
+      ["::ffff:8.8.8.8", "public"],
+      ["192.168.1.5:41000", "lan"],
+      ["[fd7a:115c:a1e0::1]:41000", "tailnet"],
+      ["fe80::1%en0", "lan"],
+      [undefined, "unknown"],
+      ["", "unknown"],
+      ["   ", "unknown"],
+      ["studio.local", "unknown"],
+      ["example.com", "unknown"],
+      ["not-an-ip", "unknown"],
+      ["::ffff:999.1.1.1", "unknown"],
+    ];
+    for (const [address, scope] of cases) {
+      expect(rtcAddressScope(address), address ?? "undefined").toBe(scope);
+    }
   });
 });
 
