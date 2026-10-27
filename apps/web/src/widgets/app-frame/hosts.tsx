@@ -1,4 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
@@ -12,12 +13,8 @@ import { useEffect, useRef, useState } from "react";
 import { hostLabels, type StoredHost } from "@pinomad/client/stored-host.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { ConnectionMode } from "@pinomad/protocol/connection-mode.ts";
-import type {
-  ConnectionPath,
-  P2PFailure,
-  RemoteDurable,
-  RtcDiagnostics,
-} from "@pinomad/protocol/remote-durable.ts";
+import type { RemoteDurable, RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
+import type { RtcCandidateEnd } from "@pinomad/protocol/rtc.ts";
 import type { ConnectionState } from "@pinomad/protocol/view.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { browserRtcAvailable } from "../../entities/host/browser-rtc.ts";
@@ -25,6 +22,12 @@ import { forgetHost, switchHost, useHosts } from "../../entities/host/host-store
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { Check, Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
+import {
+  candidateEndLabel,
+  failureLabel,
+  PATH_LABEL,
+  pathLabel,
+} from "./hosts-diagnostics.ts";
 
 /** The coordinator methods this panel pulls diagnostics from. */
 export type HostsRtc = Pick<RemoteDurable, "rtcDiagnostics" | "setConnectionMode">;
@@ -35,40 +38,10 @@ const MODE_HELP: Record<ConnectionMode, string> = {
   relayOnly: "Always go through the relay; never try peer-to-peer.",
 };
 
-const PATH_LABEL: Record<ConnectionPath, string> = {
-  p2p: "P2P",
-  relay: "Relay",
-  direct: "Direct",
-  loopback: "Local",
-};
-
-const FAILURE_STAGE_LABEL: Record<P2PFailure["stage"], string> = {
-  signal: "Signal",
-  ice: "ICE",
-  noise: "Noise",
-  warm: "Warm-up",
-  commit: "Switch",
-  liveness: "Liveness",
-};
-
 /** Minutes for the 10-minute cap, seconds for the short first cooldowns. */
 function cooldownLabel(ms: number): string {
   const seconds = Math.max(1, Math.ceil(ms / 1000));
   return seconds >= 60 ? `${Math.ceil(seconds / 60)}m` : `${seconds}s`;
-}
-
-function failureLabel(failure: P2PFailure): string {
-  const stage = FAILURE_STAGE_LABEL[failure.stage];
-  return failure.reason === undefined ? `Last failure: ${stage}` : `Last failure: ${stage} — ${failure.reason}`;
-}
-
-function pathLabel(diagnostics: RtcDiagnostics): string {
-  if (diagnostics.path !== "p2p") return PATH_LABEL[diagnostics.path];
-  const pair = diagnostics.selectedPair;
-  if (pair === undefined) return "P2P";
-  // A2 shows the scopes and expandable addresses; A1 only keeps the route
-  // display equivalent to the two candidate types it showed before.
-  return `P2P (${pair.local.type ?? "unknown"} ↔ ${pair.remote.type ?? "unknown"})`;
 }
 
 /**
@@ -113,12 +86,32 @@ function p2pStatus({
     return `Cooling down · retry in ${cooldownLabel(diagnostics.cooldownRemainingMs)}`;
   }
   if (diagnostics.phase !== "idle") return "Preparing…";
-  if (diagnostics.lastFailure !== undefined) return failureLabel(diagnostics.lastFailure);
+  // A failure is shown in its own row; the coordinator is between attempts.
+  if (diagnostics.lastFailure !== undefined) return "Idle";
   // The coordinator schedules its first upgrade 1s after ready when the host
   // advertised hello.rtc. An idle coordinator past that grace means this host
   // has no native RTC module, not that preparation is still running.
   if (Date.now() - connectedSince > 2_500) return "Not available on this host";
   return "Preparing…";
+}
+
+function AddressRow({ label, end }: { label: string; end: RtcCandidateEnd }) {
+  return (
+    <HStack gap={2} style={{ alignItems: "baseline" }}>
+      <Text type="supporting" className="w-20 shrink-0">
+        {label}
+      </Text>
+      <Text
+        type="code"
+        size="sm"
+        color="secondary"
+        hasTabularNumbers
+        style={{ wordBreak: "break-all", userSelect: "all" }}
+      >
+        {candidateEndLabel(end)}
+      </Text>
+    </HStack>
+  );
 }
 
 /**
@@ -365,7 +358,29 @@ export function HostsSection({
             <VStack gap={1}>
               <Text weight="semibold">Status</Text>
               <List density="compact">
-                <ListItem label="Path" description={diagnostics === undefined ? "—" : pathLabel(diagnostics)} />
+                <ListItem
+                  label="Path"
+                  description={
+                    <VStack gap={1}>
+                      <Text type="inherit">{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</Text>
+                      {diagnostics?.path === "p2p" && diagnostics.selectedPair !== undefined ? (
+                        <Collapsible
+                          defaultIsOpen={false}
+                          trigger={
+                            <Text type="body" size="sm" color="secondary" className="block min-h-11 py-3">
+                              Show addresses
+                            </Text>
+                          }
+                        >
+                          <VStack gap={1}>
+                            <AddressRow label="This device" end={diagnostics.selectedPair.local} />
+                            <AddressRow label="Host" end={diagnostics.selectedPair.remote} />
+                          </VStack>
+                        </Collapsible>
+                      ) : null}
+                    </VStack>
+                  }
+                />
                 <ListItem
                   label="Peer-to-peer"
                   description={p2pStatus({
@@ -376,6 +391,17 @@ export function HostsSection({
                     connectedSince: connectedSince.current,
                   })}
                 />
+                {diagnostics?.lastFailure === undefined ? null : (
+                  <ListItem
+                    label="Last failure"
+                    // A node wraps instead of truncating; the age ticks every second.
+                    description={
+                      <Text type="inherit" hasTabularNumbers>
+                        {failureLabel(diagnostics.lastFailure)}
+                      </Text>
+                    }
+                  />
+                )}
               </List>
             </VStack>
           ) : null}

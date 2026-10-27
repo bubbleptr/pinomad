@@ -5,6 +5,7 @@ import { Text } from "@astryxdesign/core/Text";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
+import type { RtcSelectedPair } from "@pinomad/protocol/rtc.ts";
 import { DEVBOX_HOST, fakeHosts, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
 import { HostsFallback, HostsMenu, HostsSection, type HostsRtc } from "./hosts.tsx";
 
@@ -28,6 +29,22 @@ const diagnostics = (next: RtcDiagnostics): HostsRtc => ({
   setConnectionMode: () => {},
 });
 
+// Browsers replace this device's host candidate with an mDNS name, so only
+// the host's end tells the real route.
+const MDNS_LOCAL = { type: "host", address: "4f2a1c9d.local", scope: "unknown" } as const;
+const LAN_PAIR: RtcSelectedPair = {
+  local: MDNS_LOCAL,
+  remote: { type: "host", address: "192.168.1.42:51234", scope: "lan" },
+};
+const TAILNET_PAIR: RtcSelectedPair = {
+  local: MDNS_LOCAL,
+  remote: { type: "srflx", address: "100.101.102.103:51234", scope: "tailnet" },
+};
+const UNKNOWN_PAIR: RtcSelectedPair = {
+  local: MDNS_LOCAL,
+  remote: { type: "srflx", address: "studio-a.local", scope: "unknown" },
+};
+
 const openConnection = async (canvasElement: HTMLElement): Promise<void> => {
   const buttons = within(canvasElement).getAllByRole("button", { name: /^Connection to / });
   await userEvent.click(buttons[0]!);
@@ -47,7 +64,10 @@ export const SectionEmpty: Story = {
   args: { connection: undefined, connectedHostKey: undefined },
 };
 
-/** The live path after the relay-to-P2P handoff. */
+/**
+ * A live LAN route with both addresses revealed; the previous attempt's
+ * failure stays visible even while the current link is active.
+ */
 export const SectionP2P: Story = {
   decorators: [withHosts(studioHosts())],
   args: {
@@ -58,15 +78,59 @@ export const SectionP2P: Story = {
       path: "p2p",
       phase: "active",
       cooldownRemainingMs: 0,
-      selectedPair: {
-        local: { type: "host", scope: "unknown" },
-        remote: { type: "srflx", scope: "public" },
+      selectedPair: LAN_PAIR,
+      lastFailure: {
+        stage: "ice",
+        reason: "the ICE connection failed",
+        agoMs: 12_000,
+        pair: LAN_PAIR,
       },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    await openConnection(canvasElement);
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Show addresses" }));
+    // Chromium treats userEvent's synthetic click as keyboard focus, so clear
+    // it to leave the story in the resting state used for screenshots.
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** The host's candidate is a tailnet address, so the route reads Tailnet. */
+export const SectionP2PTailnet: Story = {
+  decorators: [withHosts(studioHosts())],
+  args: {
+    connectedHostKey: STUDIO_HOST.hostKey,
+    hostMinor: 23,
+    rtcAvailable: true,
+    remote: diagnostics({
+      path: "p2p",
+      phase: "active",
+      cooldownRemainingMs: 0,
+      selectedPair: TAILNET_PAIR,
     }),
   },
   play: ({ canvasElement }) => openConnection(canvasElement),
 };
 
+/** Neither end classifies, so the path stays a bare P2P. */
+export const SectionP2PUnknownRoute: Story = {
+  decorators: [withHosts(studioHosts())],
+  args: {
+    connectedHostKey: STUDIO_HOST.hostKey,
+    hostMinor: 23,
+    rtcAvailable: true,
+    remote: diagnostics({
+      path: "p2p",
+      phase: "active",
+      cooldownRemainingMs: 0,
+      selectedPair: UNKNOWN_PAIR,
+    }),
+  },
+  play: ({ canvasElement }) => openConnection(canvasElement),
+};
+
+/** Cooling down still names the failed pair's route in its own row. */
 export const SectionCoolingDown: Story = {
   decorators: [withHosts(studioHosts())],
   args: {
@@ -81,10 +145,7 @@ export const SectionCoolingDown: Story = {
         stage: "ice",
         reason: "the ICE connection failed",
         agoMs: 12_000,
-        pair: {
-          local: { type: "host", scope: "unknown" },
-          remote: { type: "srflx", scope: "public" },
-        },
+        pair: LAN_PAIR,
       },
     }),
   },
@@ -101,7 +162,12 @@ export const SectionLastFailure: Story = {
       path: "relay",
       phase: "idle",
       cooldownRemainingMs: 0,
-      lastFailure: { stage: "ice", reason: "the ICE connection failed", agoMs: 45_000 },
+      lastFailure: {
+        stage: "ice",
+        reason: "the ICE connection failed",
+        agoMs: 45_000,
+        pair: TAILNET_PAIR,
+      },
     }),
   },
   play: ({ canvasElement }) => openConnection(canvasElement),
