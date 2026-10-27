@@ -29,6 +29,7 @@ pub mod questions;
 pub mod relay;
 pub mod remote_candidates;
 pub mod remote_durable;
+pub mod rtc;
 pub mod secure_channel;
 pub mod skill_blocks;
 pub mod skill_mentions;

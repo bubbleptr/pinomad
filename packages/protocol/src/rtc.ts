@@ -8,6 +8,152 @@
 // candidate that arrives later belongs to the next attempt, not to a live
 // one.
 
+/**
+ * How reachable the address behind one ICE candidate is: the local machine,
+ * the same LAN, the tailnet, or the public internet. Unknown covers mDNS
+ * hostnames, absent addresses, and anything that does not parse as an IP.
+ */
+export type RtcAddressScope = "loopback" | "lan" | "tailnet" | "public" | "unknown";
+
+/** The raw pair a platform reports; no classification, no assumptions. */
+export interface RtcCandidateInfo {
+  readonly type?: string;
+  readonly address?: string;
+}
+
+export interface RtcCandidatePair {
+  readonly local: RtcCandidateInfo;
+  readonly remote: RtcCandidateInfo;
+}
+
+export interface RtcCandidateEnd extends RtcCandidateInfo {
+  readonly scope: RtcAddressScope;
+}
+
+export interface RtcSelectedPair {
+  readonly local: RtcCandidateEnd;
+  readonly remote: RtcCandidateEnd;
+}
+
+/**
+ * Classify the address behind a platform candidate. The address may carry a
+ * port, an IPv6 zone, or brackets; mDNS names and malformed values are
+ * "unknown" because the UI must not guess a route.
+ */
+export function rtcAddressScope(address: string | undefined): RtcAddressScope {
+  const ip = parseRtcAddress(address);
+  if (ip === undefined) return "unknown";
+  if (ip.family === 4) return ipv4Scope(ip.octets);
+  const octets = mappedIpv4(ip.segments);
+  return octets === undefined ? ipv6Scope(ip.segments) : ipv4Scope(octets);
+}
+
+export function rtcCandidateEnd(info: RtcCandidateInfo): RtcCandidateEnd {
+  return {
+    ...(info.type === undefined ? {} : { type: info.type }),
+    ...(info.address === undefined ? {} : { address: info.address }),
+    scope: rtcAddressScope(info.address),
+  };
+}
+
+export function rtcSelectedPair(local: RtcCandidateInfo, remote: RtcCandidateInfo): RtcSelectedPair {
+  return { local: rtcCandidateEnd(local), remote: rtcCandidateEnd(remote) };
+}
+
+type ParsedAddress =
+  | { readonly family: 4; readonly octets: readonly number[] }
+  | { readonly family: 6; readonly segments: readonly number[] };
+
+function parseRtcAddress(address: string | undefined): ParsedAddress | undefined {
+  if (address === undefined) return undefined;
+  const text = address.trim();
+  if (text === "") return undefined;
+  let host = text;
+  if (text.startsWith("[")) {
+    const close = text.indexOf("]");
+    if (close === -1) return undefined;
+    const tail = text.slice(close + 1);
+    if (tail !== "" && !/^:\d+$/.test(tail)) return undefined;
+    host = text.slice(1, close);
+  } else if (text.split(":").length === 2) {
+    const [candidate, port] = text.split(":") as [string, string];
+    if (/^\d+$/.test(port)) host = candidate;
+  }
+  const zone = host.indexOf("%");
+  if (zone !== -1) host = host.slice(0, zone);
+  const ipv4 = parseIpv4(host);
+  if (ipv4 !== undefined) return { family: 4, octets: ipv4 };
+  const ipv6 = parseIpv6(host);
+  return ipv6 === undefined ? undefined : { family: 6, segments: ipv6 };
+}
+
+function parseIpv4(text: string): number[] | undefined {
+  const parts = text.split(".");
+  if (parts.length !== 4) return undefined;
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(part)) return undefined;
+    const value = Number(part);
+    if (value > 255) return undefined;
+    octets.push(value);
+  }
+  return octets;
+}
+
+function parseIpv6(text: string): number[] | undefined {
+  const halves = text.split("::");
+  if (halves.length > 2) return undefined;
+  const parsePart = (part: string, allowIpv4: boolean): number[] | undefined => {
+    if (part === "") return [];
+    const tokens = part.split(":");
+    const groups: number[] = [];
+    for (let index = 0; index < tokens.length; index++) {
+      const token = tokens[index]!;
+      if (allowIpv4 && index === tokens.length - 1 && token.includes(".")) {
+        const v4 = parseIpv4(token);
+        if (v4 === undefined) return undefined;
+        groups.push((v4[0]! << 8) | v4[1]!, (v4[2]! << 8) | v4[3]!);
+        continue;
+      }
+      if (!/^[0-9a-fA-F]{1,4}$/.test(token)) return undefined;
+      groups.push(Number.parseInt(token, 16));
+    }
+    return groups;
+  };
+  if (halves.length === 1) {
+    const groups = parsePart(text, true);
+    return groups?.length === 8 ? groups : undefined;
+  }
+  const left = parsePart(halves[0]!, false);
+  const right = parsePart(halves[1]!, true);
+  if (left === undefined || right === undefined) return undefined;
+  const zeros = 8 - left.length - right.length;
+  if (zeros < 1) return undefined;
+  return [...left, ...new Array<number>(zeros).fill(0), ...right];
+}
+
+function mappedIpv4(segments: readonly number[]): number[] | undefined {
+  if (!segments.slice(0, 5).every((group) => group === 0) || segments[5] !== 0xffff) return undefined;
+  return [segments[6]! >> 8, segments[6]! & 0xff, segments[7]! >> 8, segments[7]! & 0xff];
+}
+
+function ipv4Scope(octets: readonly number[]): RtcAddressScope {
+  const [a, b] = octets as [number, number, number, number];
+  if (a === 127) return "loopback";
+  if (a === 100 && b >= 64 && b <= 127) return "tailnet";
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) {
+    return "lan";
+  }
+  return "public";
+}
+
+function ipv6Scope(segments: readonly number[]): RtcAddressScope {
+  if (segments[0] === 0xfd7a && segments[1] === 0x115c && segments[2] === 0xa1e0) return "tailnet";
+  if ((segments[0]! & 0xfe00) === 0xfc00 || (segments[0]! & 0xffc0) === 0xfe80) return "lan";
+  if (segments.slice(0, 7).every((group) => group === 0) && segments[7] === 1) return "loopback";
+  return "public";
+}
+
 /** Where the host listens for ICE candidates when settings.json sets no list. */
 export const RTC_DEFAULT_STUN: readonly string[] = ["stun:stun.cloudflare.com:3478"];
 

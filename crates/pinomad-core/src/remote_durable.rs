@@ -35,6 +35,7 @@ use crate::secure_channel::{
 };
 use crate::b64::from_base64url;
 use crate::noise::{KeyPair, keypair_from_private};
+use crate::rtc::{RtcCandidateInfo, RtcSelectedPair, rtc_selected_pair};
 use crate::transport::{ConnOut, Connection, Transport};
 use crate::u16str::U16String;
 
@@ -489,8 +490,12 @@ pub enum Event {
     RtcLowWater { peer: u32 },
     /// The DataChannel / ICE closed. Candidate-level, never unauthorized.
     RtcClosed { peer: u32, reason: Option<String> },
-    /// The selected ICE candidate type, for diagnostics.
-    RtcSelectedCandidate { peer: u32, kind: String },
+    /// The selected ICE pair's raw ends, for diagnostics.
+    RtcSelectedCandidate {
+        peer: u32,
+        local: RtcCandidateInfo,
+        remote: RtcCandidateInfo,
+    },
     /// Switch connection mode; the whole client reconnects (ADR-0033 §3).
     SetConnectionMode { mode: ConnectionMode },
 }
@@ -829,7 +834,7 @@ struct RtcCarrier {
     in_flight: bool,
     stall_timer: Option<u32>,
     retry_timer: Option<u32>,
-    selected: Option<String>,
+    selected: Option<RtcSelectedPair>,
 }
 
 impl RtcCarrier {
@@ -867,6 +872,14 @@ struct Handoff {
     standby_peer: u32,
 }
 
+/// A recorded P2P failure; `agoMs` is computed when diagnostics are read.
+struct P2PFailure {
+    stage: String,
+    reason: String,
+    at_ms: u64,
+    pair: Option<RtcSelectedPair>,
+}
+
 struct SignalAttempt {
     candidates: Vec<RemoteCandidate>,
     index: usize,
@@ -892,7 +905,7 @@ pub struct RemoteDurable {
     handoff: Option<Handoff>,
     active_rtc: Option<RtcCarrier>,
     active_path: ConnectionPath,
-    p2p_failure: Option<(String, String)>,
+    p2p_failure: Option<P2PFailure>,
     next_peer: u32,
     upgrade_timer: Option<u32>,
     stable_timer: Option<u32>,
@@ -1219,7 +1232,7 @@ impl RemoteDurable {
             Event::RtcSendResult { peer, outcome } => self.rtc_send_result(peer, outcome),
             Event::RtcLowWater { peer } => self.rtc_low_water(peer),
             Event::RtcClosed { peer, reason } => self.rtc_closed(peer, reason),
-            Event::RtcSelectedCandidate { peer, kind } => self.rtc_selected(peer, kind),
+            Event::RtcSelectedCandidate { peer, local, remote } => self.rtc_selected(peer, local, remote),
             Event::SetConnectionMode { mode } => self.set_connection_mode(mode),
         }
         if self.view_dirty {
@@ -1556,6 +1569,7 @@ impl RemoteDurable {
         self.out.push(Command::ScheduleDeadline { timer, delay_ms: UPGRADE_DEADLINE_MS });
         let stun = self.host_rtc.as_ref().map(|rtc| rtc.stun.clone()).unwrap_or_default();
         self.out.push(Command::CreateRtcPeer { peer, stun });
+        self.p2p_failure = None;
         self.standby = Some(standby);
     }
 
@@ -1906,9 +1920,9 @@ impl RemoteDurable {
         self.rtc_pump(peer);
     }
 
-    fn rtc_selected(&mut self, peer: u32, kind: String) {
+    fn rtc_selected(&mut self, peer: u32, local: RtcCandidateInfo, remote: RtcCandidateInfo) {
         if let Some(carrier) = self.rtc_carrier_mut(peer) {
-            carrier.selected = Some(kind);
+            carrier.selected = Some(rtc_selected_pair(&local, &remote));
         }
     }
 
@@ -2257,6 +2271,10 @@ impl RemoteDurable {
 
     fn release_to_old(&mut self, reason: &str) {
         let Some(handoff) = self.handoff.take() else { return };
+        let pair = self
+            .standby
+            .as_ref()
+            .and_then(|standby| standby.carrier.selected.clone());
         if let Some(standby) = self.standby.take() {
             self.clear_standby_timers(&standby);
             self.out.push(Command::CloseRtcPeer { peer: standby.carrier.peer });
@@ -2264,7 +2282,7 @@ impl RemoteDurable {
                 self.close_signal_attempt();
             }
         }
-        self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
+        self.record_p2p_failure("commit", reason, pair);
         self.preparation_failed();
         for (op, kind, call) in handoff.entries {
             self.invoke(op, call);
@@ -2340,7 +2358,7 @@ impl RemoteDurable {
             RtcPhase::Noise => "noise",
             RtcPhase::Warm | RtcPhase::Ready => "warm",
         };
-        self.p2p_failure = Some((stage.to_string(), reason.to_string()));
+        self.record_p2p_failure(stage, reason, standby.carrier.selected.clone());
         if standby.signal_only && stage == "signal" {
             self.signal_only_hint = false;
             self.out.push(Command::RtcSignalOnly {
@@ -2365,8 +2383,17 @@ impl RemoteDurable {
         if standby.signal_only {
             self.close_signal_attempt();
         }
-        self.p2p_failure = Some(("commit".to_string(), reason.to_string()));
+        self.record_p2p_failure("commit", reason, standby.carrier.selected.clone());
         self.schedule_upgrade(PREPARE_RETRY_MS);
+    }
+
+    fn record_p2p_failure(&mut self, stage: &str, reason: &str, pair: Option<RtcSelectedPair>) {
+        self.p2p_failure = Some(P2PFailure {
+            stage: stage.to_string(),
+            reason: reason.to_string(),
+            at_ms: self.now_ms,
+            pair,
+        });
     }
 
     fn preparation_failed(&mut self) {
@@ -2489,8 +2516,12 @@ impl RemoteDurable {
         if self.handoff.is_some() {
             self.abort_handoff("Disconnected from host");
         }
+        let pair = self
+            .active_rtc
+            .as_ref()
+            .and_then(|carrier| carrier.selected.clone());
         self.close_rtc_objects();
-        self.p2p_failure = Some(("liveness".to_string(), reason.to_string()));
+        self.record_p2p_failure("liveness", reason, pair);
         self.no_upgrade_until = self.now_ms.saturating_add(FALLBACK_QUIET_MS);
         self.clear_liveness();
         if let Some(timer) = self.stable_timer.take() {
@@ -2741,18 +2772,26 @@ impl RemoteDurable {
         set(&mut object, "path", Json::from(self.active_path.as_str()));
         set(&mut object, "phase", Json::from(phase));
         set(&mut object, "available", Json::Bool(self.host_rtc.is_some()));
-        if let Some((stage, reason)) = &self.p2p_failure {
-            let mut failure = JsonObject::new();
-            set(&mut failure, "stage", Json::from(stage.clone()));
-            set(&mut failure, "reason", Json::from(reason.clone()));
-            set(&mut object, "lastFailure", Json::Object(Arc::new(failure)));
+        if let Some(failure) = &self.p2p_failure {
+            let mut recorded = JsonObject::new();
+            set(&mut recorded, "stage", Json::from(failure.stage.clone()));
+            set(&mut recorded, "reason", Json::from(failure.reason.clone()));
+            set(
+                &mut recorded,
+                "agoMs",
+                Json::Number(self.now_ms.saturating_sub(failure.at_ms) as f64),
+            );
+            if let Some(pair) = &failure.pair {
+                set(&mut recorded, "pair", pair.to_json());
+            }
+            set(&mut object, "lastFailure", Json::Object(Arc::new(recorded)));
         }
-        if let Some(kind) = self
+        if let Some(pair) = self
             .active_rtc
             .as_ref()
-            .and_then(|carrier| carrier.selected.clone())
+            .and_then(|carrier| carrier.selected.as_ref())
         {
-            set(&mut object, "selectedCandidateType", Json::from(kind));
+            set(&mut object, "selectedPair", pair.to_json());
         }
         set(
             &mut object,
@@ -2830,6 +2869,11 @@ impl RemoteDurable {
                 self.fallback_from_p2p(reason.as_deref().unwrap_or("the P2P carrier closed"));
                 return;
             }
+            let pair = self
+                .active_rtc
+                .as_ref()
+                .and_then(|carrier| carrier.selected.clone());
+            self.record_p2p_failure("commit", reason.as_deref().unwrap_or("the P2P carrier closed"), pair);
             self.abort_handoff("Disconnected from host");
             if let Some(carrier) = self.active_rtc.take() {
                 self.out.push(Command::CloseRtcPeer { peer: carrier.peer });

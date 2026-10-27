@@ -485,11 +485,19 @@ impl RtcDriver {
                     let more = self.remote.handle(Event::RtcLowWater { peer });
                     self.pump(more);
                 }
-                Action::SelectedCandidate { kind } => {
+                Action::SelectedCandidate { local, remote } => {
                     let peer = self.peer.as_ref().unwrap().peer;
-                    let more = self
-                        .remote
-                        .handle(Event::RtcSelectedCandidate { peer, kind });
+                    let more = self.remote.handle(Event::RtcSelectedCandidate {
+                        peer,
+                        local: pinomad_core::rtc::RtcCandidateInfo {
+                            rtc_type: Some(local.kind),
+                            address: Some(local.address.to_string()),
+                        },
+                        remote: pinomad_core::rtc::RtcCandidateInfo {
+                            rtc_type: Some(remote.kind),
+                            address: Some(remote.address.to_string()),
+                        },
+                    });
                     self.pump(more);
                 }
                 Action::Closed { reason } => {

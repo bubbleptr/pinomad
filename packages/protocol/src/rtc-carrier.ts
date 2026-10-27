@@ -4,7 +4,11 @@
 // offer, the Noise IK handshake over the DataChannel, one FIFO of records,
 // backpressure and the stall deadline (ADR-0033 §2).
 import { initiateIK, type KeyPair } from "./noise.ts";
-import { RTC_DATA_CHANNEL_LABEL, parseRtcMaxMessageSize } from "./rtc.ts";
+import {
+  RTC_DATA_CHANNEL_LABEL,
+  parseRtcMaxMessageSize,
+  type RtcCandidatePair,
+} from "./rtc.ts";
 import {
   decodeHostHello,
   encodeClientHello,
@@ -49,8 +53,8 @@ export interface RtcPeer {
   /** Apply the host's complete answer and start ICE. */
   acceptAnswer(sdp: string): void;
   readonly channel: RtcDataChannel;
-  /** The selected ICE pair's candidate type, when the platform can report it. */
-  selectedCandidateType?(): string | undefined;
+  /** The selected ICE pair's raw ends, when the platform can report them. */
+  selectedPair?(): RtcCandidatePair | undefined;
   close(): void;
 }
 
@@ -81,7 +85,7 @@ export interface RtcTransportOptions {
   offer(sdp: string): Promise<string>;
   /** Defaults to the business prologue; a signal path passes SIGNAL_PROLOGUE. */
   readonly prologue?: Uint8Array;
-  readonly onCandidateType?: (type: string | undefined) => void;
+  readonly onSelectedPair?: (pair: RtcCandidatePair | undefined) => void;
   readonly clock?: RtcClock;
   readonly stallMs?: number;
 }
@@ -222,7 +226,7 @@ export function rtcTransport(options: RtcTransportOptions): FrameTransport {
           channel.onOpen(() => {
             if (closed || opened) return;
             opened = true;
-            options.onCandidateType?.(created.selectedCandidateType?.());
+            options.onSelectedPair?.(created.selectedPair?.());
             handlers.opened?.();
             if (!handshakeStarted) {
               handshakeStarted = true;

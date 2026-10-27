@@ -59,7 +59,7 @@ const world = () => {
     offerSdp: "v=0\r\n",
     acceptAnswer: () => channel.open(),
     channel,
-    selectedCandidateType: () => "host",
+    selectedPair: () => ({ local: { type: "host" }, remote: { type: "srflx" } }),
     close: () => channel.close("peer closed"),
   };
   const platform: RtcPlatform = { createPeer: async () => peer };

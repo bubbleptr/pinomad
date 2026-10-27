@@ -226,19 +226,41 @@ describe("browser RTC platform", () => {
     expect(connection.connectionState).toBe("closed");
   });
 
-  it("reports the selected candidate pair's type from getStats", async () => {
+  it("reports both ends of the selected candidate pair from getStats", async () => {
     const { peer, connection } = await peerWithoutGathering();
     connection.stats = [
       { id: "transport", type: "transport", selectedCandidatePairId: "pair" },
-      { id: "pair", type: "candidate-pair", state: "succeeded", nominated: true, localCandidateId: "local" },
-      { id: "local", type: "local-candidate", candidateType: "srflx" },
+      {
+        id: "pair",
+        type: "candidate-pair",
+        state: "succeeded",
+        nominated: true,
+        localCandidateId: "local",
+        remoteCandidateId: "remote",
+      },
+      { id: "local", type: "local-candidate", candidateType: "host", address: "9a2b.local" },
+      { id: "remote", type: "remote-candidate", candidateType: "srflx", address: "192.168.1.8" },
     ];
     const opened = vi.fn();
     peer.channel.onOpen(opened);
     connection.channel.open();
     await flush();
-    expect(peer.selectedCandidateType?.()).toBe("srflx");
+    expect(peer.selectedPair?.()).toEqual({
+      local: { type: "host", address: "9a2b.local" },
+      remote: { type: "srflx", address: "192.168.1.8" },
+    });
     expect(opened).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the old getStats ip field", async () => {
+    const { peer, connection } = await peerWithoutGathering();
+    connection.stats = [
+      { id: "pair", type: "candidate-pair", state: "succeeded", nominated: true, localCandidateId: "local" },
+      { id: "local", type: "local-candidate", candidateType: "host", ip: "10.0.0.2" },
+    ];
+    connection.channel.open();
+    await flush();
+    expect(peer.selectedPair?.()).toEqual({ local: { type: "host", address: "10.0.0.2" }, remote: {} });
   });
 
   it("delivers a binary record as bytes", async () => {

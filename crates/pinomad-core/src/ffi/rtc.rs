@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::ffi::ClientError;
 use crate::json::Json;
+use crate::rtc::rtc_pair_kind;
 use pinomad_rtc::{Action, Engine, EngineConfig, SendOutcome};
 
 /// One thing the platform must do after an engine call.
@@ -63,7 +64,9 @@ impl From<Action> for RtcAction {
             Action::ChannelOpened => RtcAction::ChannelOpened,
             Action::Data { bytes } => RtcAction::Data { bytes },
             Action::BufferedAmountLow => RtcAction::BufferedAmountLow,
-            Action::SelectedCandidate { kind } => RtcAction::SelectedCandidate { kind },
+            Action::SelectedCandidate { local, remote } => RtcAction::SelectedCandidate {
+                kind: rtc_pair_kind(&local.kind, &remote.kind),
+            },
             Action::Closed { reason } => RtcAction::Closed { reason },
         }
     }
@@ -177,6 +180,23 @@ pub struct RtcFailure {
     pub reason: String,
 }
 
+/// Keep the old FFI field by composing it from the pair's two types. The
+/// pair's addresses and scopes stay in the core until PR B extends this
+/// record.
+fn selected_candidate_type(value: &Json) -> Option<String> {
+    let pair = value.get("selectedPair")?;
+    let text = |end: &str| {
+        pair.get(end)
+            .and_then(|candidate| candidate.get("type"))
+            .and_then(Json::as_str)
+            .map(|s| s.to_string_lossy())
+    };
+    match (text("local"), text("remote")) {
+        (Some(local), Some(remote)) => Some(rtc_pair_kind(&local, &remote)),
+        _ => None,
+    }
+}
+
 impl RtcDiagnostics {
     pub(crate) fn from_json(value: &Json) -> Self {
         let text = |key: &str| value.get(key).and_then(Json::as_str).map(|s| s.to_string_lossy());
@@ -190,7 +210,7 @@ impl RtcDiagnostics {
                     reason: failure.get("reason").and_then(Json::as_str).map(|s| s.to_string_lossy())?,
                 })
             }),
-            selected_candidate_type: text("selectedCandidateType"),
+            selected_candidate_type: selected_candidate_type(value),
             cooldown_remaining_ms: value
                 .get("cooldownRemainingMs")
                 .and_then(Json::as_number)

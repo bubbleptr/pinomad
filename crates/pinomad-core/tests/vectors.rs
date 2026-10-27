@@ -14,6 +14,7 @@ use pinomad_core::frames::{
 use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, ParsedEndpointSet};
 use pinomad_core::json::Json;
 use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param, parse_pairing_link};
+use pinomad_core::rtc::rtc_address_scope;
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/protocol/test/fixtures")
@@ -243,6 +244,19 @@ fn rtc_schema_matches_the_reference() {
         } else {
             assert!(parsed.is_err(), "{name}: accepted");
         }
+    }
+}
+
+/// The pure address classifier both coordinators run (issue #385): the TS
+/// reference writes each case, the Rust port must return the same scope.
+#[test]
+fn rtc_address_scopes_match_the_reference() {
+    let file = load("rust-vectors/rtc-scopes");
+    for case in field(&file, "cases").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let address = case.get("address").and_then(Json::as_str).map(|s| s.to_string_lossy());
+        let expect = as_text(field(case, "expect"));
+        assert_eq!(rtc_address_scope(address.as_deref()).as_str(), expect, "{name}");
     }
 }
 
