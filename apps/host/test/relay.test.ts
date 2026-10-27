@@ -16,7 +16,7 @@ import { loadRelayKey } from "../src/devices.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { Published, type HostValue } from "../src/host-value.ts";
 import { startRelayLink, type AccountOfferResult, type RelayLink, type RelayLinkState } from "../src/relay-link.ts";
-import { connectTo, freePort, openBoundAccounts, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, openBoundAccounts, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -51,28 +51,56 @@ function pairParams(url: string): { hostKey: string; secret: string; target: str
   return { hostKey: hostKey!, secret: secret!, target: params.get("url")! };
 }
 
+/** Attempts and spacing when re-binding a port a previous listener just released. */
+const BIND_ATTEMPTS = 10;
+const BIND_RETRY_MS = 20;
+
 /**
  * A relay on its own port with `dir`'s relay key bound to an account (unless
  * `bound: false`), plus the device URL. `stop` and `restart` cycle it on the
  * same port and accounts directory; cleanup stops whichever one is live.
  */
 async function startTestRelay(dir: string, options?: { bound?: boolean }) {
-  const port = await freePort();
   const key = await loadRelayKey(dir);
   const hostId = relayHostId(key.publicKey);
-  const origin = `http://127.0.0.1:${port}`;
   const server = await tempDir();
   defer(server.remove);
+  let port = 0;
+  let origin = "";
   let relay: Relay | undefined;
   let stopping: Promise<void> | undefined;
+
   const restart = async (): Promise<void> => {
-    relay = await startRelay({
-      port,
-      publicOrigin: origin,
-      accounts: await openBoundAccounts(server.path, options?.bound === false ? "x".repeat(43) : hostId),
-    });
-    stopping = undefined;
+    const accounts = await openBoundAccounts(server.path, options?.bound === false ? "x".repeat(43) : hostId);
+    try {
+      if (port === 0) {
+        // publicOrigin is fixed when the relay starts, so learn the port from a
+        // throwaway listener first, then compose the origin the live relay
+        // verifies registers against. The accounts are already open, leaving
+        // only the close-to-bind gap for another test to claim the port.
+        const probe = await startRelay({ port: 0, publicOrigin: "http://127.0.0.1:0" });
+        port = probe.port;
+        origin = `http://127.0.0.1:${port}`;
+        await probe.close();
+      }
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          relay = await startRelay({ port, publicOrigin: origin, accounts });
+          stopping = undefined;
+          return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || attempt >= BIND_ATTEMPTS) throw error;
+          // The old listener is closed, but another test can still claim the
+          // port for a moment; reconnect tests need the same port back, not a new one.
+          await new Promise((resolve) => setTimeout(resolve, BIND_RETRY_MS));
+        }
+      }
+    } catch (error) {
+      await accounts.close();
+      throw error;
+    }
   };
+
   const stop = (): Promise<void> => (stopping ??= relay!.close());
   await restart();
   defer(stop);
