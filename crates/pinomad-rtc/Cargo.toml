@@ -1,0 +1,20 @@
+[package]
+name = "pinomad-rtc"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+description = "PiNomad's sans-I/O WebRTC transport: STUN gathering and a str0m DataChannel"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+getrandom = "=0.4.3"
+str0m = { version = "=0.24.1", default-features = false, features = ["rust-crypto"] }
+str0m-rust-crypto = "=0.6.0"
+
+[dev-dependencies]
+pinomad-core = { path = "../pinomad-core" }
+serde_json = "=1.0.149"
+tungstenite = "=0.30.0"

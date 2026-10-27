@@ -7,6 +7,7 @@ mod calls;
 mod functions;
 mod hosts;
 mod providers;
+mod rtc;
 mod snapshot;
 mod types;
 
@@ -15,6 +16,7 @@ pub use calls::*;
 pub use functions::*;
 pub use hosts::*;
 pub use providers::*;
+pub use rtc::*;
 pub use snapshot::*;
 pub use types::*;
 
@@ -147,104 +149,135 @@ impl PinomadClient {
                                 op,
                                 value: CallResult::Changes { changes },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::Files) => match files_of(value.as_ref()) {
                             Ok((files, truncated)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Files { files, truncated },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::Skills) => match skills_of(value.as_ref()) {
                             Ok(skills) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Skills { skills },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::Image) => match image_of(value.as_ref()) {
                             Ok(image) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Image { image },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::Commands) => match commands_of(value.as_ref()) {
                             Ok(commands) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Commands { commands },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::BeginAttachment) => match begin_attachment_of(value.as_ref()) {
                             Ok(attachment_id) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::BeginAttachment { attachment_id },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::AppendAttachment) => match append_attachment_of(value.as_ref()) {
                             Ok((received, complete)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::AppendAttachment { received, complete },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::Pairing) => match pairing_of(value.as_ref()) {
                             Ok((url, expires_at)) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::Pairing { url, expires_at },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::WithdrawQueued) => match withdraw_outcome_of(value.as_ref()) {
                             Ok(outcome) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::WithdrawQueued { outcome },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::SteerQueued) => match steer_outcome_of(value.as_ref()) {
                             Ok(outcome) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::SteerQueued { outcome },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::LoginStarted) => match login_started_of(value.as_ref()) {
                             Ok(login_id) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::LoginStarted { login_id },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         Some(ResultKind::EndpointModels) => match endpoint_models_of(value.as_ref()) {
                             Ok(models) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::EndpointModels { models },
                             },
-                            Err(error) => FfiCommand::OperationFailed { op, error },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
                         None => FfiCommand::OperationSucceeded { op, value: CallResult::Unit },
                     }
                 }
-                Command::OperationFailed { op, error } => {
+                Command::OperationFailed { op, error, carrier_lost } => {
                     inner.result_kinds.remove(&op);
-                    FfiCommand::OperationFailed { op, error }
+                    FfiCommand::OperationFailed { op, error, carrier_lost }
                 }
-                // The FFI constructors declare RTC unsupported, so the core
-                // must never produce these. Reaching one is a bug, not a
-                // state the Swift layer could execute.
-                Command::RtcSignalOnly { .. }
-                | Command::CreateRtcPeer { .. }
-                | Command::AcceptRtcAnswer { .. }
-                | Command::RtcSend { .. }
-                | Command::CloseRtcPeer { .. } => {
-                    unreachable!("RTC commands are not exposed through FFI")
+                Command::RtcSignalOnly { host_key, signal_only } => {
+                    FfiCommand::RtcSignalOnly { host_key, signal_only }
                 }
+                Command::CreateRtcPeer { peer, stun } => {
+                    FfiCommand::CreateRtcPeer { peer: peer as u64, stun }
+                }
+                Command::AcceptRtcAnswer { peer, sdp } => {
+                    FfiCommand::AcceptRtcAnswer { peer: peer as u64, sdp }
+                }
+                Command::RtcSend { peer, bytes } => {
+                    FfiCommand::RtcSend { peer: peer as u64, bytes }
+                }
+                Command::CloseRtcPeer { peer } => FfiCommand::CloseRtcPeer { peer: peer as u64 },
             })
             .collect()
+    }
+}
+
+/// A source that can open both a business carrier and the signal-only one.
+/// They share the device key and the one-time pairing state; only the
+/// prologue differs.
+struct RtcCandidateSource {
+    business: PlannedSource,
+    signal: PlannedSource,
+}
+
+impl crate::remote_durable::CandidateSource for RtcCandidateSource {
+    fn open(
+        &mut self,
+        candidate: &crate::remote_candidates::RemoteCandidate,
+    ) -> Box<dyn crate::transport::Connection> {
+        self.business.open(candidate)
+    }
+
+    fn open_signal(
+        &mut self,
+        candidate: &crate::remote_candidates::RemoteCandidate,
+    ) -> Box<dyn crate::transport::Connection> {
+        self.signal.open(candidate)
+    }
+
+    fn mark_paired(&mut self) -> Option<(String, String, String)> {
+        self.business.mark_paired()
     }
 }
 
@@ -254,30 +287,52 @@ fn candidate_options(
     host_key: &str,
     private_key: &str,
     pairing: Option<crate::secure_channel::Pairing>,
+    connection_mode: crate::connection_mode::ConnectionMode,
+    rtc: Option<crate::remote_durable::RtcOptions>,
 ) -> RemoteDurableOptions {
     use crate::secure_channel::{PairingState, SecureTransport, UnavailableTransport};
 
     let candidates = candidate_plan(url, endpoint_set, None);
     let pairing_state = PairingState::new(pairing);
     let host_key = host_key.to_string();
-    let host_key_for_open = host_key.clone();
     let private_key = private_key.to_string();
-    let source = PlannedSource::new(Box::new(move |candidate| {
-        match SecureTransport::with_pairing_state(
-            &candidate.url,
-            &host_key_for_open,
-            &private_key,
-            pairing_state.clone(),
-        ) {
-            Ok(transport) => Box::new(transport),
-            Err(error) => Box::new(UnavailableTransport {
-                url: candidate.url.clone(),
-                reason: error.to_string(),
-            }),
-        }
-    }));
+
+    let factory = |signal: bool, host_key: String, private_key: String, state: PairingState| {
+        PlannedSource::new(Box::new(
+            move |candidate: &crate::remote_candidates::RemoteCandidate| {
+                match SecureTransport::with_pairing_state(
+                    &candidate.url,
+                    &host_key,
+                    &private_key,
+                    state.clone(),
+                ) {
+                    Ok(transport) => Box::new(if signal {
+                        transport.with_signal_prologue()
+                    } else {
+                        transport
+                    }),
+                    Err(error) => Box::new(UnavailableTransport {
+                        url: candidate.url.clone(),
+                        reason: error.to_string(),
+                    }),
+                }
+            },
+        ))
+    };
+    let business = factory(
+        false,
+        host_key.clone(),
+        private_key.clone(),
+        pairing_state.clone(),
+    );
+    let source: Box<dyn crate::remote_durable::CandidateSource> = if rtc.is_some() {
+        let signal = factory(true, host_key.clone(), private_key, pairing_state);
+        Box::new(RtcCandidateSource { business, signal })
+    } else {
+        Box::new(business)
+    };
     RemoteDurableOptions {
-        source: Box::new(source),
+        source,
         mode: crate::remote_durable::RemoteMode::Planned,
         reconnect_delay_ms: None,
         request_id: None,
@@ -288,10 +343,8 @@ fn candidate_options(
         pairing_endpoint_set: endpoint_set.cloned(),
         candidate_timeouts: Default::default(),
         round_timeout_ms: None,
-        connection_mode: crate::connection_mode::ConnectionMode::Auto,
-        // The FFI surface does not expose RTC yet (PR4): declaring the
-        // platform unsupported guarantees no RTC command is ever produced.
-        rtc: None,
+        connection_mode,
+        rtc,
     }
 }
 
@@ -334,6 +387,12 @@ impl PinomadClient {
                 secret: parsed.secret,
                 name: device_name,
             }),
+            crate::connection_mode::ConnectionMode::Auto,
+            Some(crate::remote_durable::RtcOptions {
+                host_key: host_key.clone(),
+                device_private_key: private.clone(),
+                signal_only_hint: false,
+            }),
         );
         Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
@@ -345,12 +404,23 @@ impl PinomadClient {
         let host = validate_stored_host(host)
             .map_err(|error| ClientError::InvalidStoredHost { message: error.to_string() })?;
         let endpoint_set = host.endpoint_set.as_ref().and_then(EndpointSet::to_core);
+        let connection_mode = match host.connection_mode.as_deref() {
+            Some("directOnly") => crate::connection_mode::ConnectionMode::DirectOnly,
+            Some("relayOnly") => crate::connection_mode::ConnectionMode::RelayOnly,
+            _ => crate::connection_mode::ConnectionMode::Auto,
+        };
         let options = candidate_options(
             &host.url,
             endpoint_set.as_ref(),
             &host.host_key,
             &host.private_key,
             None,
+            connection_mode,
+            Some(crate::remote_durable::RtcOptions {
+                host_key: host.host_key.clone(),
+                device_private_key: host.private_key.clone(),
+                signal_only_hint: host.rtc_signal_only.unwrap_or(false),
+            }),
         );
         Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
@@ -388,6 +458,22 @@ impl PinomadClient {
             FfiEvent::Foreground => Event::Foreground,
             FfiEvent::Background => Event::Background,
             FfiEvent::NetworkChanged => Event::NetworkChanged,
+            FfiEvent::Clock { now_ms } => Event::Clock { now_ms },
+            FfiEvent::RtcPeerReady { peer, sdp } => Event::RtcPeerReady { peer: peer as u32, sdp },
+            FfiEvent::RtcChannelOpened { peer } => Event::RtcChannelOpened { peer: peer as u32 },
+            FfiEvent::RtcData { peer, bytes } => Event::RtcData { peer: peer as u32, bytes },
+            FfiEvent::RtcSendResult { peer, outcome } => Event::RtcSendResult {
+                peer: peer as u32,
+                outcome: match outcome {
+                    RtcSendOutcome::Accepted => crate::remote_durable::RtcSendOutcome::Accepted,
+                    RtcSendOutcome::Rejected => crate::remote_durable::RtcSendOutcome::Rejected,
+                },
+            },
+            FfiEvent::RtcLowWater { peer } => Event::RtcLowWater { peer: peer as u32 },
+            FfiEvent::RtcClosed { peer, reason } => Event::RtcClosed { peer: peer as u32, reason },
+            FfiEvent::RtcSelectedCandidate { peer, kind } => {
+                Event::RtcSelectedCandidate { peer: peer as u32, kind }
+            }
         };
         let commands = inner.remote.handle(event);
         self.convert_commands(commands, &mut inner)
@@ -416,6 +502,14 @@ impl PinomadClient {
         let view = inner.remote.view()?;
         let conversation = view.get("conversation")?;
         crate::chat::queued_input(conversation, submission_id)
+    }
+
+    /// The connection-mode page's status. A pure read of the core under the
+    /// lock, like `snapshot()`; the platform feeds a Clock event first when
+    /// it wants cooldowns measured from now.
+    pub fn rtc_diagnostics(&self) -> RtcDiagnostics {
+        let inner = self.inner.lock().expect("client poisoned");
+        RtcDiagnostics::from_json(&inner.remote.rtc_diagnostics())
     }
 }
 

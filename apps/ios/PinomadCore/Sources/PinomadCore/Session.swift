@@ -20,6 +20,13 @@ public enum SessionEvent: Sendable {
     case foreground
     case background
     case networkChanged
+    case rtcPeerReady(peer: UInt64, sdp: String)
+    case rtcChannelOpened(peer: UInt64)
+    case rtcData(peer: UInt64, bytes: Data)
+    case rtcSendResult(peer: UInt64, outcome: RtcSendOutcome)
+    case rtcLowWater(peer: UInt64)
+    case rtcClosed(peer: UInt64, reason: String?)
+    case rtcSelectedCandidate(peer: UInt64, kind: String)
     /// An off-loop `snapshot()` finished — kept in queue order so the
     /// version check and dirty flag stay deterministic.
     case snapshotReady(ClientSnapshot?)
@@ -28,6 +35,10 @@ public enum SessionEvent: Sendable {
     /// Test seam: run a command batch through the real dispatch path —
     /// lets tests drive commands without a live host.
     case commands([FfiCommand])
+    /// Test seam: register a request continuation the core never saw, so
+    /// dispatch's failure classification can be driven by an
+    /// `OperationFailed` command alone.
+    case pendingRequest(op: UInt64, reply: CheckedContinuation<CallResult, any Error>)
     /// UI asked to disconnect for good.
     case shutdown
 }
@@ -70,6 +81,7 @@ public struct SessionDependencies: Sendable {
     public var socketFactory: any SessionSocketFactory
     public var clock: any SessionClock
     public var hostStore: any HostStore
+    public var rtcPlatform: any RtcPlatform
     /// Overrides `client.snapshot()` — lets tests drive the coalescing
     /// pump with synthetic versions instead of a connected core.
     var snapshotter: (@Sendable () -> ClientSnapshot?)?
@@ -77,18 +89,21 @@ public struct SessionDependencies: Sendable {
     public init(
         socketFactory: any SessionSocketFactory,
         clock: any SessionClock,
-        hostStore: any HostStore
+        hostStore: any HostStore,
+        rtcPlatform: any RtcPlatform = UnavailableRtcPlatform()
     ) {
         self.socketFactory = socketFactory
         self.clock = clock
         self.hostStore = hostStore
+        self.rtcPlatform = rtcPlatform
     }
 
     public static var live: SessionDependencies {
         SessionDependencies(
             socketFactory: URLSessionSocketFactory(),
             clock: TaskClock(),
-            hostStore: KeychainHostStore()
+            hostStore: KeychainHostStore(),
+            rtcPlatform: LiveRtcPlatform()
         )
     }
 }
@@ -121,17 +136,10 @@ public final class PinomadSession: @unchecked Sendable {
         let socket: any SessionSocket
         var pending: [Data] = []
         var sending = false
-        /// One epoch bump per physical connection, whichever path retires it.
-        var retired = false
     }
     private var conns: [UInt64: ConnState] = [:]
     private var timers: [UInt64: any SessionTimerHandle] = [:]
     private var pendingOps: [UInt64: CheckedContinuation<CallResult, any Error>] = [:]
-    /// The connection epoch each pending request started on. A failure after
-    /// the epoch moved cannot be told apart from a lost reply, even when a
-    /// reconnect has already made the live state connected again.
-    private var pendingOpGeneration: [UInt64: UInt64] = [:]
-    private var connectionGeneration: UInt64 = 0
     /// Ops cancelled before their `invoke` even reached the queue — the
     /// cancel arrives first, so the invoke must reject on sight.
     private var cancelledOps: Set<UInt64> = []
@@ -286,26 +294,31 @@ public final class PinomadSession: @unchecked Sendable {
     /// through the real loop without a host. A terminated stream settles
     /// the invoke the same way `invoke()` does.
     func enqueue(_ event: SessionEvent) {
-        if case .terminated = sink.yield(event),
-           case .invoke(_, _, let reply) = event {
-            reply.resume(throwing: SessionError.sessionClosed)
+        if case .terminated = sink.yield(event) {
+            switch event {
+            case .invoke(_, _, let reply), .pendingRequest(_, let reply):
+                reply.resume(throwing: SessionError.sessionClosed)
+            default:
+                break
+            }
         }
     }
 
     /// The newest published snapshot version — tests only.
     var lastPublishedVersion: UInt64 { publishedVersion }
 
-    /// The current connection epoch — tests only.
-    var currentConnectionGeneration: UInt64 { connectionGeneration }
+    /// What a request-class failure means. The core reports whether the
+    /// carrier that actually took the call is gone; a retirement of any
+    /// other connection (standby, signal-only, or an older generation) must
+    /// not turn a live connection's refusal into a lost reply.
+    static func requestFailure(carrierLost: Bool, message: String) -> SessionError {
+        carrierLost ? .connectionLost : .operationFailed(message)
+    }
 
-    /// What a request-class failure means, given the connection epoch the
-    /// request started on and the current one. An untracked request keeps
-    /// the old operation-failed behaviour; a moved epoch means the host may
-    /// have applied the call before the reply was lost, so the caller must
-    /// re-confirm by id instead of treating the error as a refusal.
-    static func requestFailure(startedOn: UInt64?, current: UInt64, message: String) -> SessionError {
-        guard let startedOn else { return .operationFailed(message) }
-        return startedOn == current ? .operationFailed(message) : .connectionLost
+    /// The connection-mode page's status. A pure read of the core, like
+    /// `isConnectedNow`; safe from the main actor without touching the loop.
+    public func rtcDiagnostics() -> RtcDiagnostics {
+        client.rtcDiagnostics()
     }
 
     // ── the loop ──
@@ -324,7 +337,7 @@ public final class PinomadSession: @unchecked Sendable {
         // the floor with its waiter.
         if shutdown {
             switch event {
-            case .invoke(_, _, let reply):
+            case .invoke(_, _, let reply), .pendingRequest(_, let reply):
                 reply.resume(throwing: SessionError.sessionClosed)
             case .barrier(let reply):
                 reply.resume()
@@ -341,10 +354,6 @@ public final class PinomadSession: @unchecked Sendable {
             PerfLog.shared.mark("bytes")
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
-            // Bump before feeding: any request failed by this close must
-            // know its connection epoch ended, even if a reconnect follows
-            // before its caller resumes.
-            _ = retire(conn)
             feed(.socketClosed(conn: conn, code: code, reason: reason))
             // A remote close is terminal for this generation but the
             // core does not echo CloseSocket back — clean up here or the
@@ -358,7 +367,6 @@ public final class PinomadSession: @unchecked Sendable {
                 // it emits CloseSocket and treats this as an abnormal close.
                 state.pending.removeAll()
                 conns[conn] = state
-                _ = retire(conn)
                 feed(.sendFailed(conn: conn))
             } else {
                 if !state.pending.isEmpty { state.pending.removeFirst() }
@@ -369,17 +377,16 @@ public final class PinomadSession: @unchecked Sendable {
             // Armed check: a cancel already processed in this loop drops
             // the fire even if the task woke before its cancellation.
             guard timers.removeValue(forKey: timer) != nil else { return }
+            feedClock()
             feed(.timerFired(timer: timer))
         case .invoke(let op, let call, let reply):
             if cancelledOps.remove(op) != nil {
                 reply.resume(throwing: CancellationError())
             } else {
                 pendingOps[op] = reply
-                pendingOpGeneration[op] = connectionGeneration
                 feed(.invoke(op: op, call: call))
             }
         case .abandonOp(let op):
-            pendingOpGeneration.removeValue(forKey: op)
             if let reply = pendingOps.removeValue(forKey: op) {
                 reply.resume(throwing: CancellationError())
             } else {
@@ -388,11 +395,39 @@ public final class PinomadSession: @unchecked Sendable {
                 cancelledOps.insert(op)
             }
         case .foreground:
+            feedClock()
             feed(.foreground)
         case .background:
+            feedClock()
             feed(.background)
         case .networkChanged:
+            // The socket's old candidates are dead on the new interface;
+            // retiring the peers first lets the core fall back to the relay
+            // before it decides what the change means.
+            dependencies.rtcPlatform.networkChanged()
+            feedClock()
             feed(.networkChanged)
+        case .rtcPeerReady(let peer, let sdp):
+            feedClock()
+            feed(.rtcPeerReady(peer: peer, sdp: sdp))
+        case .rtcChannelOpened(let peer):
+            feedClock()
+            feed(.rtcChannelOpened(peer: peer))
+        case .rtcData(let peer, let bytes):
+            feedClock()
+            feed(.rtcData(peer: peer, bytes: bytes))
+        case .rtcSendResult(let peer, let outcome):
+            feedClock()
+            feed(.rtcSendResult(peer: peer, outcome: outcome))
+        case .rtcLowWater(let peer):
+            feedClock()
+            feed(.rtcLowWater(peer: peer))
+        case .rtcClosed(let peer, let reason):
+            feedClock()
+            feed(.rtcClosed(peer: peer, reason: reason))
+        case .rtcSelectedCandidate(let peer, let kind):
+            feedClock()
+            feed(.rtcSelectedCandidate(peer: peer, kind: kind))
         case .snapshotReady(let snapshot):
             snapshotInFlight = false
             if let snapshot, snapshot.version > publishedVersion {
@@ -406,7 +441,10 @@ public final class PinomadSession: @unchecked Sendable {
             reply.resume()
         case .commands(let commands):
             dispatch(commands)
+        case .pendingRequest(let op, let reply):
+            pendingOps[op] = reply
         case .shutdown:
+            dependencies.rtcPlatform.shutdown()
             feed(.close)
             sink.finish()
             for (_, state) in conns { state.socket.close() }
@@ -419,22 +457,16 @@ public final class PinomadSession: @unchecked Sendable {
                 reply.resume(throwing: SessionError.sessionClosed)
             }
             pendingOps.removeAll()
-            pendingOpGeneration.removeAll()
             cancelledOps.removeAll()
             shutdown = true
         }
     }
 
-    /// Retire one physical connection exactly once. The epoch moves before
-    /// any resulting OperationFailed is dispatched, so a local close cannot
-    /// masquerade as the host refusing the request.
-    @discardableResult
-    private func retire(_ conn: UInt64) -> Bool {
-        guard var state = conns[conn], !state.retired else { return false }
-        state.retired = true
-        conns[conn] = state
-        connectionGeneration &+= 1
-        return true
+    /// Give the core the platform's monotonic clock. Decisions that depend
+    /// on time (cooldowns, idle windows, stall timers) must see it before
+    /// the event that asks the question.
+    private func feedClock() {
+        feed(.clock(nowMs: DispatchTime.now().uptimeNanoseconds / 1_000_000))
     }
 
     /// `handle` into the core; dispatch of the returned commands is part
@@ -460,10 +492,6 @@ public final class PinomadSession: @unchecked Sendable {
                 conns[conn]?.pending.append(bytes)
                 pumpSend(conn: conn)
             case .closeSocket(let conn):
-                // The core can retire a connection without a callback (a
-                // failed local decrypt, for example). End its epoch here so
-                // later OperationFailed is "reply lost", not a refusal.
-                _ = retire(conn)
                 conns.removeValue(forKey: conn)?.socket.close()
             case .scheduleReconnect(let timer, let delayMs),
                  .scheduleDeadline(let timer, let delayMs):
@@ -485,13 +513,22 @@ public final class PinomadSession: @unchecked Sendable {
             case .endpointSet(let hostKey, let url, let endpointSet):
                 mergeEndpoints(hostKey: hostKey, url: url, endpointSet: endpointSet)
             case .operationSucceeded(let op, let value):
-                pendingOpGeneration.removeValue(forKey: op)
                 pendingOps.removeValue(forKey: op)?.resume(returning: value)
-            case .operationFailed(let op, let error):
-                let started = pendingOpGeneration.removeValue(forKey: op)
-                let failure = Self.requestFailure(
-                    startedOn: started, current: connectionGeneration, message: error)
+            case .operationFailed(let op, let error, let carrierLost):
+                let failure = Self.requestFailure(carrierLost: carrierLost, message: error)
                 pendingOps.removeValue(forKey: op)?.resume(throwing: failure)
+            case .rtcSignalOnly(let hostKey, let signalOnly):
+                persistSignalOnly(hostKey: hostKey, signalOnly: signalOnly)
+            case .createRtcPeer(let peer, let stun):
+                dependencies.rtcPlatform.createPeer(peer: peer, stun: stun) { [sink] event in
+                    sink.yield(event)
+                }
+            case .acceptRtcAnswer(let peer, let sdp):
+                dependencies.rtcPlatform.acceptAnswer(peer: peer, sdp: sdp)
+            case .rtcSend(let peer, let bytes):
+                dependencies.rtcPlatform.send(peer: peer, bytes: bytes)
+            case .closeRtcPeer(let peer):
+                dependencies.rtcPlatform.closePeer(peer: peer)
             }
         }
     }
@@ -547,6 +584,8 @@ public final class PinomadSession: @unchecked Sendable {
             name: host.name,
             account: host.account.map { AccountLink(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
             endpointSet: host.endpointSet.flatMap(StoredEndpointSet.init),
+            connectionMode: host.connectionMode.flatMap(HostConnectionMode.init(rawValue:)),
+            rtcSignalOnly: host.rtcSignalOnly,
             pairedAt: Date())
         var saveError: String?
         do {
@@ -555,6 +594,8 @@ public final class PinomadSession: @unchecked Sendable {
                 if record.name == nil { record.name = existing?.name }
                 record.account = pairingAccount ?? existing?.account ?? record.account
                 if record.endpointSet == nil { record.endpointSet = existing?.endpointSet }
+                if record.connectionMode == nil { record.connectionMode = existing?.connectionMode }
+                if record.rtcSignalOnly == nil { record.rtcSignalOnly = existing?.rtcSignalOnly }
                 stored.hosts.removeAll { $0.hostKey == host.hostKey }
                 stored.hosts.append(record)
                 stored.activeHostKey = host.hostKey
@@ -567,6 +608,25 @@ public final class PinomadSession: @unchecked Sendable {
         currentHost = record
         currentHostInStore = saveError == nil
         updateSink.yield(.paired(record, saveError: saveError))
+    }
+
+    /// Persist the learned signal-only hint through the store's serialized
+    /// read-modify-write; the live identity is updated even when the host was
+    /// never saved. A write failure is reported, never silently dropped.
+    private func persistSignalOnly(hostKey: String, signalOnly: Bool) {
+        if currentHost?.hostKey == hostKey {
+            currentHost?.rtcSignalOnly = signalOnly
+        }
+        do {
+            try dependencies.hostStore.update { stored in
+                if let next = stored.settingSignalOnly(signalOnly, for: hostKey) {
+                    stored = next
+                }
+            }
+        } catch {
+            updateSink.yield(.platformError(
+                "Couldn't save this host's connection hint (\(error.localizedDescription))."))
+        }
     }
 
     /// A validated hello set updates the live session's routing identity even

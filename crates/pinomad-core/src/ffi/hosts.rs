@@ -248,6 +248,8 @@ pub enum ClientError {
     InvalidStoredHost { message: String },
     /// Key material or channel setup failed (bad keys, crypto init).
     KeyMaterial { message: String },
+    /// The platform passed a local or STUN address that is not `IP:port`.
+    RtcAddress { message: String },
 }
 
 impl std::fmt::Display for ClientError {
@@ -256,6 +258,7 @@ impl std::fmt::Display for ClientError {
             ClientError::InvalidPairingLink => f.write_str("not a valid pairing link"),
             ClientError::InvalidStoredHost { message } => f.write_str(message),
             ClientError::KeyMaterial { message } => f.write_str(message),
+            ClientError::RtcAddress { message } => f.write_str(message),
         }
     }
 }

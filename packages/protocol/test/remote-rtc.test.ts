@@ -69,6 +69,7 @@ function wsNetwork(script: {
   holdCall?: (method: string) => boolean;
 }) {
   const opens: { candidate: RemoteCandidate; handlers: FrameHandlers; frames: ClientFrame[]; closeCalls: number }[] = [];
+  const attempts: string[] = [];
   const transport = (candidate: RemoteCandidate) => ({
     label: candidate.url,
     open(handlers: FrameHandlers): FrameConnection {
@@ -80,6 +81,7 @@ function wsNetwork(script: {
           const frame = JSON.parse(data) as ClientFrame;
           record.frames.push(frame);
           if (frame.type === "call" && frame.method === "rtcOffer") {
+            attempts.push(frame.args.attempt);
             script.rtcWorld.lastOffer = frame.args.sdp;
             queueMicrotask(() => {
               if (closed) return;
@@ -113,7 +115,7 @@ function wsNetwork(script: {
       return connection;
     },
   });
-  return { opens, transport };
+  return { opens, transport, attempts };
 }
 
 class FakeDc implements RtcDataChannel {
@@ -433,6 +435,28 @@ describe("RTC standby handoff", () => {
       expect(remote.rtcDiagnostics().path).toBe("p2p");
     } finally {
       remote.close();
+    }
+  });
+
+  it("uses a unique RTC attempt for every coordinator instance", async () => {
+    const firstWorld = new FakeRtcWorld();
+    const firstNetwork = wsNetwork({ rtcWorld: firstWorld });
+    const first = await ready(connectRemoteDurable(options(firstNetwork, firstWorld)));
+    const secondWorld = new FakeRtcWorld();
+    const secondNetwork = wsNetwork({ rtcWorld: secondWorld });
+    const second = await ready(connectRemoteDurable(options(secondNetwork, secondWorld)));
+    try {
+      await first.controller.switchConversation(id(1));
+      await second.controller.switchConversation(id(1));
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await flush();
+      expect(firstNetwork.attempts[0]).toMatch(/^rtc-[0-9a-f]{16}-\d+$/);
+      expect(secondNetwork.attempts[0]).toMatch(/^rtc-[0-9a-f]{16}-\d+$/);
+      expect(secondNetwork.attempts[0]).not.toBe(firstNetwork.attempts[0]);
+    } finally {
+      first.close();
+      second.close();
     }
   });
 

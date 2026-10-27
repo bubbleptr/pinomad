@@ -171,6 +171,10 @@ const COOLDOWN_CLEAR_INTERVAL_MS = 60_000;
 
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
+/** Lowercase hex from fresh random bytes. */
+const randomHex = (bytes: number): string =>
+  Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
 const describeFailure = (failure: CandidateFailure): string => {
   const role = failure.candidate.role === "loopback" ? "local" : failure.candidate.role;
   const where = `${role} ${failure.candidate.url}`;
@@ -493,6 +497,12 @@ class RemoteClient {
   /** The last hello's packaged version, absent on source checkouts — `view.host.version`. */
   #hostVersion: string | undefined;
   #attempt = 0;
+  /**
+   * One random suffix per coordinator instance. The host caches answered
+   * peers by device + attempt, so a reloaded page must not ask with the
+   * same id and receive the previous offer's SDP answer.
+   */
+  #rtcAttemptNonce = randomHex(8);
   #closed = false;
   #notifying = false;
   #commands = Promise.resolve();
@@ -1209,7 +1219,7 @@ class RemoteClient {
       if (this.#standby !== standby || this.#handoff !== undefined) return;
       this.#failStandby(standby, "warm", `WebRTC preparation exceeded ${UPGRADE_DEADLINE_MS}ms`);
     }, UPGRADE_DEADLINE_MS);
-    const attempt = `rtc-${generation}`;
+    const attempt = `rtc-${this.#rtcAttemptNonce}-${generation}`;
     const transport = rtcTransport({
       platform: rtc.platform,
       stun: this.#hostRtc?.stun ?? [],

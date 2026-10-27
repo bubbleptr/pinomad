@@ -285,6 +285,68 @@ import Testing
         #expect(host.ffi.endpointSet?.endpoints.count == 2)
         #expect(StoredEndpointSet(host.ffi.endpointSet!) == set)
     }
+    /// The mode and signal-only hint are optional per field: a valid record
+    /// round-trips, and a corrupt one costs that field only — never the
+    /// device key or the rest of the keychain list.
+    @Test func connectionModeAndSignalHintDecodeTolerantly() throws {
+        let valid = Data("""
+        {"hosts":[{"url":"ws://a:1/","hostKey":"a","privateKey":"ka","pairedAt":0,
+          "connectionMode":"directOnly","rtcSignalOnly":true}]}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(StoredHosts.self, from: valid)
+        #expect(decoded.hosts[0].connectionMode == .directOnly)
+        #expect(decoded.hosts[0].rtcSignalOnly == true)
+        #expect(decoded.hosts[0].privateKey == "ka")
+
+        let broken = Data("""
+        {"hosts":[
+          {"url":"ws://a:1/","hostKey":"a","privateKey":"ka","pairedAt":0,
+           "connectionMode":"mesh","rtcSignalOnly":"yes"},
+          {"url":"ws://b:1/","hostKey":"b","privateKey":"kb","pairedAt":0,
+           "connectionMode":"relayOnly"}
+        ],"activeHostKey":"b"}
+        """.utf8)
+        let stored = try JSONDecoder().decode(StoredHosts.self, from: broken)
+        #expect(stored.hosts.map(\.hostKey) == ["a", "b"])
+        #expect(stored.hosts.map(\.privateKey) == ["ka", "kb"])
+        #expect(stored.hosts[0].connectionMode == nil)
+        #expect(stored.hosts[0].rtcSignalOnly == nil)
+        #expect(stored.hosts[1].connectionMode == .relayOnly)
+        #expect(stored.active?.hostKey == "b")
+    }
+
+    @Test func settingConnectionModeTouchesOnlyThatHost() throws {
+        var stored = StoredHosts(hosts: [record("a"), record("b")], activeHostKey: "a")
+        stored.hosts[0].name = "Desk"
+        let updated = try #require(stored.settingConnectionMode(.directOnly, for: "a"))
+        #expect(updated.hosts[0].connectionMode == .directOnly)
+        #expect(updated.hosts[0].name == "Desk")
+        #expect(updated.hosts[0].privateKey == "k")
+        #expect(updated.hosts[1].connectionMode == nil)
+        #expect(updated.activeHostKey == "a")
+        #expect(updated.settingConnectionMode(.directOnly, for: "a") == nil)
+        #expect(updated.settingConnectionMode(.auto, for: "never") == nil)
+    }
+
+    @Test func settingSignalOnlyStoresAnExplicitFalse() throws {
+        let stored = StoredHosts(hosts: [record("a")])
+        let hinted = try #require(stored.settingSignalOnly(true, for: "a"))
+        #expect(hinted.hosts[0].rtcSignalOnly == true)
+        let cleared = try #require(hinted.settingSignalOnly(false, for: "a"))
+        #expect(cleared.hosts[0].rtcSignalOnly == false)
+        #expect(cleared.hosts[0].ffi.rtcSignalOnly == false)
+        #expect(cleared.settingSignalOnly(false, for: "a") == nil)
+    }
+
+    @Test func theFFIRecordCarriesModeAndHint() {
+        var host = record("a")
+        host.connectionMode = .relayOnly
+        host.rtcSignalOnly = true
+        #expect(host.ffi.connectionMode == "relayOnly")
+        #expect(host.ffi.rtcSignalOnly == true)
+        #expect(record("a").ffi.connectionMode == nil)
+        #expect(record("a").ffi.rtcSignalOnly == nil)
+    }
 }
 
 private func record(_ key: String) -> HostRecord {

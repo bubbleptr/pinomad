@@ -13,6 +13,35 @@ public struct AccountLink: Codable, Sendable, Equatable {
     }
 }
 
+/// How this device reaches one host (ADR-0033 §5): the relay is always
+/// allowed in Auto, never carries business data in Direct only, and no
+/// peer-to-peer path is tried in Relay only. A missing/unknown stored value
+/// means Auto.
+public enum HostConnectionMode: String, Codable, Sendable, Equatable, CaseIterable {
+    case auto
+    case directOnly
+    case relayOnly
+
+    public var label: String {
+        switch self {
+        case .auto: "Auto"
+        case .directOnly: "Direct only"
+        case .relayOnly: "Relay only"
+        }
+    }
+
+    public var footer: String {
+        switch self {
+        case .auto:
+            "Start on the relay, then switch to a direct peer-to-peer link once it is stable."
+        case .directOnly:
+            "Never send conversation data through the PiNomad server. The relay is used only to set up the link."
+        case .relayOnly:
+            "Always go through the relay; never try peer-to-peer."
+        }
+    }
+}
+
 /// The path role a published endpoint plays (ADR-0032).
 public enum StoredEndpointRole: String, Codable, Sendable, Equatable {
     case direct
@@ -208,6 +237,11 @@ public struct HostRecord: Codable, Sendable, Equatable {
     /// The host's last published remote candidates (5.22, ADR-0032). Absent
     /// on old records and when the stored set was unusable.
     public var endpointSet: StoredEndpointSet?
+    /// The user's connection-mode choice (ADR-0033 §5). Absent means Auto.
+    public var connectionMode: HostConnectionMode?
+    /// The learned `hello.rtc.signalOnly` hint: true means the relay is
+    /// required for signaling. Absent/false means unknown or not needed.
+    public var rtcSignalOnly: Bool?
     public var pairedAt: Date
 
     public init(
@@ -217,6 +251,8 @@ public struct HostRecord: Codable, Sendable, Equatable {
         name: String? = nil,
         account: AccountLink? = nil,
         endpointSet: StoredEndpointSet? = nil,
+        connectionMode: HostConnectionMode? = nil,
+        rtcSignalOnly: Bool? = nil,
         pairedAt: Date = Date()
     ) {
         self.url = url
@@ -225,11 +261,13 @@ public struct HostRecord: Codable, Sendable, Equatable {
         self.name = name
         self.account = account
         self.endpointSet = endpointSet
+        self.connectionMode = connectionMode
+        self.rtcSignalOnly = rtcSignalOnly
         self.pairedAt = pairedAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case url, hostKey, privateKey, name, account, endpointSet, pairedAt
+        case url, hostKey, privateKey, name, account, endpointSet, connectionMode, rtcSignalOnly, pairedAt
     }
 
     /// Decode each host on its own optional endpoint boundary: a malformed or
@@ -245,6 +283,13 @@ public struct HostRecord: Codable, Sendable, Equatable {
         endpointSet = (try? container.decodeIfPresent(StoredEndpointSet.self, forKey: .endpointSet))
             .flatMap { $0 }
         if endpointSet?.isValid != true { endpointSet = nil }
+        // A bad mode or hint costs only that field; the private key and the
+        // rest of the list must survive whatever a future/hand-edited record
+        // holds.
+        connectionMode = (try? container.decodeIfPresent(HostConnectionMode.self, forKey: .connectionMode))
+            .flatMap { $0 }
+        rtcSignalOnly = (try? container.decodeIfPresent(Bool.self, forKey: .rtcSignalOnly))
+            .flatMap { $0 }
         pairedAt = try container.decode(Date.self, forKey: .pairedAt)
     }
 
@@ -258,6 +303,8 @@ public struct HostRecord: Codable, Sendable, Equatable {
         if let endpointSet, endpointSet.isValid {
             try container.encode(endpointSet, forKey: .endpointSet)
         }
+        try container.encodeIfPresent(connectionMode, forKey: .connectionMode)
+        try container.encodeIfPresent(rtcSignalOnly, forKey: .rtcSignalOnly)
         try container.encode(pairedAt, forKey: .pairedAt)
     }
 
@@ -270,7 +317,9 @@ public struct HostRecord: Codable, Sendable, Equatable {
             privateKey: privateKey,
             name: name,
             account: account.map { StoredHostAccount(serverOrigin: $0.serverOrigin, hostId: $0.hostId) },
-            endpointSet: endpointSet?.ffi
+            endpointSet: endpointSet?.ffi,
+            connectionMode: connectionMode?.rawValue,
+            rtcSignalOnly: rtcSignalOnly
         )
     }
 
@@ -281,6 +330,31 @@ public struct HostRecord: Codable, Sendable, Equatable {
         var next = self
         next.endpointSet = nextSet
         next.url = nextURL
+        return next
+    }
+}
+
+extension StoredHosts {
+    /// Apply the user's mode choice to one stored host. Everything else
+    /// (key material, name, account, endpoints) is untouched.
+    public func settingConnectionMode(_ mode: HostConnectionMode, for hostKey: String) -> StoredHosts? {
+        guard let index = hosts.firstIndex(where: { $0.hostKey == hostKey }),
+              hosts[index].connectionMode != mode
+        else { return nil }
+        var next = self
+        next.hosts[index].connectionMode = mode
+        return next
+    }
+
+    /// Apply the learned signal-only hint to one host. `false` is stored
+    /// explicitly: it disproves an earlier hint after a failed signal-only
+    /// handshake, so dropping it would retry the same dead path.
+    public func settingSignalOnly(_ signalOnly: Bool, for hostKey: String) -> StoredHosts? {
+        guard let index = hosts.firstIndex(where: { $0.hostKey == hostKey }),
+              hosts[index].rtcSignalOnly != signalOnly
+        else { return nil }
+        var next = self
+        next.hosts[index].rtcSignalOnly = signalOnly
         return next
     }
 }

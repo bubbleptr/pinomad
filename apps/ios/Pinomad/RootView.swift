@@ -103,6 +103,16 @@ private struct FailureView: View {
             Text(detail)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if case .directUnavailable(let reason) = failure {
+                Text("Details: \(reason)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Text("Change this host's connection mode under Settings → Paired Hosts (ⓘ), then try again.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
             if let warning = model.pairingSaveWarning {
                 Text(warning)
                     .font(.footnote)
@@ -148,7 +158,7 @@ private struct FailureView: View {
 
     private var canRetry: Bool {
         switch failure {
-        case .unreachable, .hostOutdated: true
+        case .unreachable, .hostOutdated, .directUnavailable: true
         case .pairingRefused, .revoked, .appOutdated: false
         }
     }
@@ -159,6 +169,7 @@ private struct FailureView: View {
         case .revoked: "The host refused or revoked this device"
         case .appOutdated: "Update the app"
         case .hostOutdated: "Update the host"
+        case .directUnavailable: "Direct connection unavailable"
         case .unreachable: "Couldn't reach the host"
         }
     }
@@ -173,6 +184,8 @@ private struct FailureView: View {
             "The host uses protocol version \(ConnectFailure.versionText(host)), but this app uses version \(ConnectFailure.versionText(client))."
         case .hostOutdated(let host, let client):
             "This app uses protocol version \(ConnectFailure.versionText(client)), but the host uses version \(ConnectFailure.versionText(host)). Run pinomad upgrade on the host."
+        case .directUnavailable:
+            "This host can't be reached without the relay, and the peer-to-peer link didn't connect."
         case .unreachable(let message):
             message
         }
