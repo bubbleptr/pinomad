@@ -284,6 +284,8 @@ extension AppModel {
             } catch is SubmissionTimeout {
                 // The row already reads "unknown"; releasing the lock is all
                 // this needs to do.
+            } catch is CancellationError {
+                // The app is tearing the session down; the row goes with it.
             } catch {
                 guard self.sessionGeneration == generation else { return }
                 self.showToast(self.describe(error), level: "error")
@@ -334,6 +336,8 @@ extension AppModel {
                 guard self.session === session, self.sessionGeneration == generation else { return }
                 self.putBack(PendingTakeBack(conversationId: id, draft: draft),
                              requestId: requestId, images: images)
+            } catch is CancellationError {
+                // The session is closing; nothing to restore into.
             } catch {
                 guard self.session === session, self.sessionGeneration == generation else { return }
                 self.showToast("Couldn't take the message back: \(self.describe(error))",

@@ -544,6 +544,7 @@ final class AppModel {
         // one; a late release must not unlock a new session's row either.
         submissionPending.removeAll()
         submissionTokens = [:]
+        takingBack = nil
         fileReads = [:]
         replyStreams.sync(chat: nil)
         toasts = []
@@ -564,8 +565,6 @@ final class AppModel {
             queuedEditPreparing.removeAll()
             queuePending.removeAll()
             queuedEditFocus = [:]
-            takingBack = nil
-            submissionPending.removeAll()
             sentFileDetails = [:]
             viewing = nil
             draftHome = .chat
