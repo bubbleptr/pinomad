@@ -92,7 +92,7 @@ export function QueuedList({
             isLocal={isLocal}
             narrow={narrow}
             isPending={pending}
-            isEditDisabled={canEdit && editDisabled && item.id !== editRetryId}
+            isEditDisabled={canEdit && editDisabled && (isLocal || item.id !== editRetryId)}
             editTooltip={editDisabled ? editTooltip : undefined}
             onSteer={actionable && item.mode === "followUp" && busy ? () => onSteer(item) : undefined}
             onRetry={canRetry ? () => onRetry(item) : undefined}

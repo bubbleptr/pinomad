@@ -12,6 +12,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
@@ -271,6 +272,8 @@ function SideTranscript({
   onRetry,
   onRetrySubmission,
   onEditSubmission,
+  submissionEditDisabled,
+  submissionEditTooltip,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -289,6 +292,8 @@ function SideTranscript({
   }) => Promise<void>;
   onRetrySubmission?: (requestId: string) => void;
   onEditSubmission?: (requestId: string) => void;
+  submissionEditDisabled?: boolean;
+  submissionEditTooltip?: string;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -296,6 +301,7 @@ function SideTranscript({
       conversation={side.conversation}
       docs={side.docs}
       submissions={view.submissions}
+      mergeQueuedSubmissions
       toolPresentations={view.toolPresentations}
       connected={view.connection === "connected"}
       // Fork depth is one: a fork's transcript never offers Fork.
@@ -311,6 +317,8 @@ function SideTranscript({
       onRetry={onRetry}
       onRetrySubmission={onRetrySubmission}
       onEditSubmission={onEditSubmission}
+      submissionEditDisabled={submissionEditDisabled}
+      submissionEditTooltip={submissionEditTooltip}
     />
   );
 }
@@ -339,13 +347,20 @@ function ThreadDetail({
   const skillDraft = useSkillDraft();
   const { value: draft, setValue: setDraft } = skillDraft;
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  const toast = useToast();
   const [takeBack, setTakeBack] = useState<SubmissionDraft>();
+  const [takeBackPending, setTakeBackPending] = useState(false);
+  // The text is the whole side composer; edits wait for it to be empty.
+  const composerOccupied = draft.trim() !== "";
+  const editDisabled = composerOccupied || takeBackPending;
+  const editTooltip = composerOccupied ? "Clear the composer to edit" : "Finish the current edit first";
   // The side composer has no attachment tray; restoring text and skill picks
   // is the whole of an edit here.
   useEffect(() => {
     if (takeBack === undefined) return;
     skillDraft.restore(takeBack.text, takeBack.skills);
     setTakeBack(undefined);
+    setTakeBackPending(false);
   }, [takeBack]);
   const atMentions = useAtMentions(
     view.agents,
@@ -373,6 +388,7 @@ function ThreadDetail({
   useSkillHighlight(inputRef, skillDraft.draft);
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const submit = (): void => {
+    if (takeBackPending) return;
     // Only the picked skills go out as `skills` (ADR-0028).
     const message = draftMessage(skillDraft.draft);
     const text = message.text.trim();
@@ -407,6 +423,7 @@ function ThreadDetail({
               target: side.id,
               requestId,
               images: images.map(outgoingImage),
+              ...(images.some((image) => !("data" in image)) ? { imageViews: images } : {}),
               skills,
               ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
               ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
@@ -416,13 +433,21 @@ function ThreadDetail({
             void remote.controller.retrySubmission(requestId).catch(() => {});
           }}
           onEditSubmission={(requestId) => {
+            if (editDisabled) return;
+            setTakeBackPending(true);
             void remote.controller
               .takeBackSubmission(requestId)
               .then((draft) => {
                 if (draft !== undefined) setTakeBack(draft);
+                else setTakeBackPending(false);
               })
-              .catch(() => {});
+              .catch((error: unknown) => {
+                setTakeBackPending(false);
+                toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+              });
           }}
+          submissionEditDisabled={editDisabled}
+          submissionEditTooltip={editDisabled ? editTooltip : undefined}
         />
         <PendingQuestions
           docs={side.docs}
@@ -437,7 +462,7 @@ function ThreadDetail({
           inputRef={inputRef}
           placeholder="Reply in this thread…"
           status={busy ? "streaming" : "ready"}
-          isDisabled={view.connection !== "connected"}
+          isDisabled={view.connection !== "connected" || takeBackPending}
           onSubmit={submit}
           onStop={() => void remote.controller.abort(side.id)}
           onValueChange={setDraft}

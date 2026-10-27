@@ -7,6 +7,7 @@ import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { useToast } from "@astryxdesign/core/Toast";
 import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
@@ -665,6 +666,15 @@ function Workbench({
   // A failed/unconfirmed send edited from the transcript flows back into the
   // composer that owns skill picks and attachment chips.
   const [takeBack, setTakeBack] = useState<SubmissionDraft>();
+  const [takingBack, setTakingBack] = useState(false);
+  const [editorState, setEditorState] = useState({ occupied: false, locked: false });
+  const toast = useToast();
+  const submissionEditDisabled = editorState.occupied || editorState.locked || takingBack;
+  const submissionEditTooltip = editorState.occupied
+    ? "Clear the composer to edit"
+    : submissionEditDisabled
+      ? "Finish the current edit first"
+      : undefined;
   const openInPanel = useCallback(
     (id: ConversationId, tab: "threads" | "tasks") => {
       setPanelTab(tab);
@@ -810,7 +820,12 @@ function Workbench({
                     busy={busy}
                     narrow={narrow}
                     takeBack={takeBack}
-                    onTakeBack={() => setTakeBack(undefined)}
+                    externalEditLocked={takingBack}
+                    onEditorStateChange={setEditorState}
+                    onTakeBack={() => {
+                      setTakeBack(undefined);
+                      setTakingBack(false);
+                    }}
                   />
                 </VStack>
               </div>
@@ -828,6 +843,8 @@ function Workbench({
               onFork={setForkTarget}
               forksAt={forksAtForShown}
               summaryOf={summaryOf}
+              submissionEditDisabled={submissionEditDisabled}
+              submissionEditTooltip={submissionEditTooltip}
               // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
               onRetry={
                 shownSummary?.kind === "subagent"
@@ -838,6 +855,7 @@ function Workbench({
                       await remote.controller.submit(text, "followUp", {
                         requestId,
                         images: images.map(outgoingImage),
+                        ...(images.some((image) => !("data" in image)) ? { imageViews: images } : {}),
                         skills,
                         ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
                         ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
@@ -848,12 +866,18 @@ function Workbench({
                 void remote.controller.retrySubmission(requestId).catch(() => {});
               }}
               onEditSubmission={(requestId) => {
+                if (submissionEditDisabled) return;
+                setTakingBack(true);
                 void remote.controller
                   .takeBackSubmission(requestId)
                   .then((draft) => {
                     if (draft !== undefined) setTakeBack(draft);
+                    else setTakingBack(false);
                   })
-                  .catch(() => {});
+                  .catch((error: unknown) => {
+                    setTakingBack(false);
+                    toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+                  });
               }}
             />
           </ChatLayout>

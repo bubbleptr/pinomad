@@ -55,6 +55,8 @@ export function ConversationComposer({
   narrow,
   takeBack,
   onTakeBack,
+  externalEditLocked = false,
+  onEditorStateChange,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -64,6 +66,10 @@ export function ConversationComposer({
   /** A send taken back from the transcript, to restore into this composer. */
   takeBack?: SubmissionDraft;
   onTakeBack?: () => void;
+  /** A transcript Edit is resolving/removing a submission right now. */
+  externalEditLocked?: boolean;
+  /** Let a transcript Edit disable itself while this composer holds a draft. */
+  onEditorStateChange?: (state: { occupied: boolean; locked: boolean }) => void;
 }) {
   // A plain string plus the `$` picks bound in it (ADR-0028).
   const skillDraft = useSkillDraft();
@@ -168,6 +174,7 @@ export function ConversationComposer({
   const pendingRows = useRef(new Set<number>());
   const [pendingSubmissions, setPendingSubmissions] = useState<readonly string[]>([]);
   const pendingSubmissionRows = useRef(new Set<string>());
+  const [localEditInFlight, setLocalEditInFlight] = useState(false);
   const beginAction = (id: number, kind: PendingAction["kind"]): boolean => {
     if (pendingRows.current.has(id)) return false;
     pendingRows.current.add(id);
@@ -183,12 +190,19 @@ export function ConversationComposer({
   // Restoring a withdrawn row overwrites the composer, so the draft must be
   // empty first; while one Edit is in flight no other row may start one.
   const composerOccupied = value.trim() !== "" || images.length > 0 || files.entries.length > 0 || imagesPending;
-  const editDisabled = composerOccupied || editInFlight || awaitingEdit;
-  const editTooltip = composerOccupied ? "Clear the composer to edit" : undefined;
-  // While Edit is in flight, or its withdraw outcome is unknown after an
-  // error, the composer and every attachment entry stay locked: a later
-  // refill must not overwrite something the user wrote in the meantime.
-  const editLocked = editInFlight || awaitingEdit;
+  const editDisabled = composerOccupied || editInFlight || awaitingEdit || localEditInFlight || externalEditLocked;
+  const editTooltip = composerOccupied
+    ? "Clear the composer to edit"
+    : editDisabled
+      ? "Finish the current edit first"
+      : undefined;
+  // While an edit resolves its images/withdraws, or its outcome is unknown
+  // after an error, the composer and every attachment entry stay locked: a
+  // later refill must not overwrite something the user wrote in the meantime.
+  const editLocked = editInFlight || awaitingEdit || localEditInFlight || externalEditLocked;
+  useEffect(() => {
+    onEditorStateChange?.({ occupied: composerOccupied, locked: editInFlight || awaitingEdit || localEditInFlight });
+  }, [composerOccupied, editInFlight, awaitingEdit, localEditInFlight, onEditorStateChange]);
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
   const conversationId = conversation.conversation.id;
   const showError = (error: unknown): void => {
@@ -212,16 +226,20 @@ export function ConversationComposer({
     void submissionAction(requestId, () => remote.controller.retrySubmission(requestId));
   };
   const editLocal = (requestId: string): void => {
+    // The controller resolves ref images before removing the row; this guard
+    // keeps a double click or a stale render from overwriting a new draft.
+    if (editDisabled) return;
+    setLocalEditInFlight(true);
     void submissionAction(requestId, async () => {
       const draft = await remote.controller.takeBackSubmission(requestId);
       if (draft === undefined) return;
       skillDraft.restore(draft.text, draft.skills);
-      // Inline bytes restore directly; a ref-only image has no type to preview
-      // until the host echoes it, and the composer never staged one.
+      // Every image was resolved before the take-back, so bytes are all that
+      // the composer needs to stage them again.
       restore(draft.images.flatMap((image) => ("data" in image ? [image] : [])));
       files.restore(draft.attachmentDetails ?? []);
       setFocusAfterEdit((count) => count + 1);
-    });
+    }).finally(() => setLocalEditInFlight(false));
   };
   const withdraw = async (item: QueueItem): Promise<void> => {
     const id = item.id;
@@ -396,6 +414,8 @@ export function ConversationComposer({
     // the controller's ordered queue in click order with no intervening await.
     void remote.controller.submit(text, whenBusy, {
       images: sending,
+      // Inline bytes already render from `images`; only refs need their type.
+      ...(sending.some((image) => !("data" in image)) ? { imageViews: sending } : {}),
       skills: message.skills,
       ...(attachments.length === 0 ? {} : { attachments }),
       ...(attachmentDetails.length === 0 ? {} : { attachmentDetails }),

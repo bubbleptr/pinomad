@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
-import type { ConversationSummary, DurableController } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, DurableController, LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { fakeRemote, fakeView, PARSER_ID, PINOMAD } from "../../test/story-fixtures.tsx";
 import { ConversationComposer } from "./conversation-composer.tsx";
 
@@ -14,8 +14,12 @@ function setup(options: {
   minor?: number;
   summary?: ConversationSummary;
   controller?: Partial<DurableController>;
+  submissions?: readonly LogicalSubmission[];
 } = {}) {
-  const base = fakeView(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } });
+  const base = fakeView({
+    ...(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } }),
+    ...(options.submissions === undefined ? {} : { submissions: options.submissions }),
+  });
   const view = options.summary === undefined
     ? base
     : {
@@ -212,5 +216,55 @@ describe("ConversationComposer agent switching", () => {
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("No longer available");
     expect(within(row).queryByRole("button")).toBeNull();
+  });
+});
+
+
+describe("ConversationComposer local submissions", () => {
+  const failedLocal: LogicalSubmission = {
+    requestId: "local-1",
+    text: "failed send",
+    whenBusy: "followUp",
+    placement: "queue",
+    phase: "failed",
+    images: [],
+    skills: [],
+    attachments: [],
+    error: "refused",
+  };
+
+  it("disables a local queued Edit while the composer holds a draft", async () => {
+    const takeBackSubmission = vi.fn(async () => undefined);
+    const { type } = setup({ submissions: [failedLocal], controller: { takeBackSubmission } });
+    type("my draft");
+    const row = screen.getByTestId("local-queued-message");
+    const edit = within(row).getByRole("button", { name: "Edit this message" });
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(edit);
+    expect(takeBackSubmission).not.toHaveBeenCalled();
+  });
+
+  it("takes a local queued row back when the composer is clear", async () => {
+    const takeBackSubmission = vi.fn(async () => undefined);
+    setup({ submissions: [failedLocal], controller: { takeBackSubmission } });
+    const row = screen.getByTestId("local-queued-message");
+    await userEvent.click(within(row).getByRole("button", { name: "Edit this message" }));
+    await waitFor(() => expect(takeBackSubmission).toHaveBeenCalledWith("local-1"));
+  });
+
+  it("locks the composer while a local take-back resolves", async () => {
+    let finish!: (draft: undefined) => void;
+    const takeBackSubmission = vi.fn(
+      () => new Promise<undefined>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { editable } = setup({ submissions: [failedLocal], controller: { takeBackSubmission } });
+    const row = screen.getByTestId("local-queued-message");
+    await userEvent.click(within(row).getByRole("button", { name: "Edit this message" }));
+    await waitFor(() => expect(takeBackSubmission).toHaveBeenCalled());
+    expect(editable).toHaveAttribute("contenteditable", "false");
+    finish(undefined);
+    await waitFor(() => expect(editable).toHaveAttribute("contenteditable", "true"));
   });
 });

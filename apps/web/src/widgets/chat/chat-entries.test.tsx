@@ -96,6 +96,55 @@ describe("local submission states", () => {
     expect(onEdit).toHaveBeenCalledWith("r1");
   });
 
+  it("disables Edit while the composer is occupied", async () => {
+    const onEdit = vi.fn();
+    render(
+      <ChatEntryView
+        entry={local("failed", "refused")}
+        connected
+        openInPanel={() => {}}
+        onFork={() => {}}
+        onRetrySubmission={() => {}}
+        onEditSubmission={onEdit}
+        submissionEditDisabled
+        submissionEditTooltip="Clear the composer to edit"
+      />,
+    );
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(edit);
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("keeps Copy outside the metadata row and uses compact action buttons", () => {
+    const onRetry = vi.fn();
+    const onEdit = vi.fn();
+    const { container } = render(
+      <ChatEntryView
+        entry={local("failed", "refused")}
+        connected
+        openInPanel={() => {}}
+        onFork={() => {}}
+        onRetrySubmission={onRetry}
+        onEditSubmission={onEdit}
+      />,
+    );
+    const row = container.querySelector(".chat-message__metadata-row")!;
+    const copy = row.querySelector<HTMLElement>(".chat-message__copy")!;
+    const metadata = row.querySelector<HTMLElement>(".chat-message__metadata")!;
+    expect(copy).not.toBeNull();
+    expect(copy).not.toContainElement(metadata);
+    expect(row.firstElementChild).toBe(copy);
+    expect(metadata.querySelector('[data-slot="chat-message-actions"]')).toBeNull();
+
+    const retry = screen.getByRole("button", { name: "Retry" });
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect(retry).toHaveAttribute("data-size", "sm");
+    expect(retry).toHaveAttribute("data-variant", "ghost");
+    expect(edit).toHaveAttribute("data-size", "sm");
+    expect(edit).toHaveAttribute("data-variant", "ghost");
+  });
+
   it("renders Delivered only for a committed newest bubble", () => {
     renderUser({ ...userEntry(Date.now()), status: "delivered" });
     expect(screen.getByText("Delivered")).toBeInTheDocument();
@@ -136,14 +185,17 @@ describe("message times", () => {
     expect(time).toHaveAttribute("title", expect.stringContaining("2026"));
   });
 
-  it("puts a user's Copy action and time in one metadata row", () => {
+  it("puts Copy beside the metadata row instead of inside its separators", () => {
     const { container } = renderUser(userEntry(new Date(2026, 9, 28, 14, 31).getTime()));
     fireEvent.mouseOver(container.querySelector('[data-slot="chat-message-bubble"]')!);
-    const actions = container.querySelector('[data-slot="chat-message-actions"]')!;
+    const row = container.querySelector(".chat-message__metadata-row")!;
+    const copy = container.querySelector(".chat-message__copy")!;
     const time = container.querySelector('[data-slot="chat-message-time"]')!;
     const metadata = container.querySelector(".chat-message__metadata")!;
 
-    expect(metadata.contains(actions)).toBe(true);
+    expect(row.firstElementChild).toBe(copy);
+    expect(row.contains(time)).toBe(true);
+    expect(metadata.contains(copy)).toBe(false);
     expect(metadata.contains(time)).toBe(true);
   });
 

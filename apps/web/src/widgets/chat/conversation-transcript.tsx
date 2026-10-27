@@ -28,8 +28,11 @@ export function ConversationTranscript({
   onRetry,
   onRetrySubmission,
   onEditSubmission,
+  submissionEditDisabled,
+  submissionEditTooltip,
   docs,
   submissions,
+  mergeQueuedSubmissions,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -66,10 +69,16 @@ export function ConversationTranscript({
   onRetrySubmission?: (requestId: string) => void;
   /** Take a failed or unconfirmed local send back for editing. */
   onEditSubmission?: (requestId: string) => void;
+  /** The composer holds a draft or another take-back. */
+  submissionEditDisabled?: boolean;
+  /** Why the local Edit is disabled. */
+  submissionEditTooltip?: string;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
   /** Client-side sends that have not been replaced by the host's fact yet. */
   submissions?: readonly LogicalSubmission[];
+  /** No queue list in this transcript; queue-placed local sends render as bubbles. */
+  mergeQueuedSubmissions?: boolean;
 }) {
   const busy = isBusy(conversation);
   const today = useToday();
@@ -81,8 +90,8 @@ export function ConversationTranscript({
     [conversation, ownOnly],
   );
   const items = useMemo(
-    () => deriveChat(view, toolPresentations, busy, submissions ?? []),
-    [view, toolPresentations, busy, submissions],
+    () => deriveChat(view, toolPresentations, busy, submissions ?? [], { mergeQueuedSubmissions }),
+    [view, toolPresentations, busy, submissions, mergeQueuedSubmissions],
   );
   const retry = useMemo(() => retryOf(items), [items]);
   const todoState = useMemo(() => todoOf(docs), [docs]);
@@ -115,6 +124,8 @@ export function ConversationTranscript({
             summaryOf={summaryOf}
             onRetrySubmission={onRetrySubmission}
             onEditSubmission={onEditSubmission}
+            submissionEditDisabled={submissionEditDisabled}
+            submissionEditTooltip={submissionEditTooltip}
             today={today}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={

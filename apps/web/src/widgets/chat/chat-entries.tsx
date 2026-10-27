@@ -2,6 +2,7 @@
 // a user bubble, then one Assistant message per run — its folded process and
 // Interim Output, the answer, the settled actions row (time, Copy + Fork, no
 // thumbs), and on the newest run the todo card (ADR-0026).
+import { Button } from "@astryxdesign/core/Button";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import { Token } from "@astryxdesign/core/Token";
@@ -9,7 +10,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { splitSubagentCalls, type ChatEntry, type CotView } from "@pinomad/client/cot-view.ts";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { segmentRun } from "@/entities/run-trace/segment-run";
 import { TodoCard } from "@/entities/todo/todo-card";
 import {
@@ -42,6 +43,8 @@ export function ChatEntryView({
   onRetry,
   onRetrySubmission,
   onEditSubmission,
+  submissionEditDisabled,
+  submissionEditTooltip,
   todo,
   today,
 }: {
@@ -62,6 +65,10 @@ export function ChatEntryView({
   onRetrySubmission?: (requestId: string) => void;
   /** Query/take back a failed or unconfirmed local send for editing. */
   onEditSubmission?: (requestId: string) => void;
+  /** The composer already holds a draft or another take-back. */
+  submissionEditDisabled?: boolean;
+  /** Why Edit is disabled, shown on hover. */
+  submissionEditTooltip?: string;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
   /** Local start of today, shared by the transcript's midnight clock. */
@@ -74,6 +81,8 @@ export function ChatEntryView({
           entry={entry}
           onRetrySubmission={onRetrySubmission}
           onEditSubmission={onEditSubmission}
+          submissionEditDisabled={submissionEditDisabled}
+          submissionEditTooltip={submissionEditTooltip}
           today={today}
         />
       );
@@ -104,16 +113,19 @@ function UserEntry({
   entry,
   onRetrySubmission,
   onEditSubmission,
+  submissionEditDisabled = false,
+  submissionEditTooltip,
   today,
 }: {
   entry: Extract<ChatEntry, { kind: "user" }>;
   onRetrySubmission?: (requestId: string) => void;
   onEditSubmission?: (requestId: string) => void;
+  submissionEditDisabled?: boolean;
+  submissionEditTooltip?: string;
   today?: number;
 }) {
   const local = entry.local;
-  const [hovered, setHovered] = useState(false);
-  const canAct = local !== undefined && (entry.status === "unknown" || entry.status === "failed");
+  const canRetry = local !== undefined && (entry.status === "unknown" || entry.status === "failed");
   const canEdit = local !== undefined && entry.status === "failed";
   const status =
     entry.status === "failed"
@@ -121,66 +133,30 @@ function UserEntry({
       : entry.status === "unknown"
         ? ("sending" as const)
         : entry.status;
-  const footer =
-    entry.text !== "" || canAct || local?.error !== undefined ? (
-      <div className="chat-message__metadata-footer">
-        {local?.error === undefined ? null : (
-          <span className="chat-message__local-error" title={local.error}>
-            {local.error}
-          </span>
-        )}
-        {entry.text === "" ? null : (
-          <ChatMessageActions className="chat-message__actions--inline">
-            <ChatMessageActions.Copy
-              aria-label="Copy"
-              tooltip="Copy"
-              onPress={() => {
-                void navigator.clipboard?.writeText(entry.text);
-              }}
-            />
-          </ChatMessageActions>
-        )}
-        {local === undefined || !canAct || onRetrySubmission === undefined ? null : (
-          <button
-            type="button"
-            className="chat-message__local-action"
-            onClick={() => onRetrySubmission(local.requestId)}
-          >
-            Retry
-          </button>
-        )}
-        {local === undefined || !canEdit || onEditSubmission === undefined ? null : (
-          <button
-            type="button"
-            className="chat-message__local-action"
-            onClick={() => onEditSubmission(local.requestId)}
-          >
-            Edit
-          </button>
-        )}
-      </div>
-    ) : undefined;
-  // Copy only materializes on hover/focus so the resting row is just
-  // "Delivered · 2:31 PM" rather than a reserved blank slot.
-  const visibleFooter = hovered || canAct ? footer : undefined;
+  // Copy sits outside ChatMessageMetadata so it never gets a separator dot.
+  // It stays mounted and only changes opacity, so status and time do not jump.
+  const copy =
+    entry.text === "" ? null : (
+      <ChatMessageActions className="chat-message__copy">
+        <ChatMessageActions.Copy
+          aria-label="Copy"
+          tooltip="Copy"
+          onPress={() => {
+            void navigator.clipboard?.writeText(entry.text);
+          }}
+        />
+      </ChatMessageActions>
+    );
   const metadata = (
     <ChatMessageMetadata
       {...(entry.timestamp === undefined ? {} : { timestamp: <ChatMessageTime timestamp={entry.timestamp} today={today} /> })}
       {...(status === undefined ? {} : { status })}
-      {...(visibleFooter === undefined ? {} : { footer: visibleFooter })}
       className="chat-message__metadata"
     />
   );
   return (
     <ChatMessage.User data-slot={local === undefined ? "chat-message-user" : "chat-message-local"}>
-      <div
-        className="flex flex-col items-end gap-1"
-        title={local?.error}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={() => setHovered(true)}
-        onBlur={() => setHovered(false)}
-      >
+      <div className="flex flex-col items-end gap-1">
         {entry.attachments.length === 0 ? null : (
           <MessageAttachments
             attachments={entry.attachments}
@@ -200,16 +176,46 @@ function UserEntry({
             </ChatMessage.Content>
           </ChatMessage.Bubble>
         )}
-        {entry.status === "unknown" ? (
-          <InternationalizationProvider
-            locale="en"
-            overrides={{ en: { "@astryx.chat.status.sending": "Not confirmed" } }}
-          >
-            {metadata}
-          </InternationalizationProvider>
-        ) : (
-          metadata
-        )}
+        <div className="chat-message__metadata-row">
+          {copy}
+          {entry.status === "unknown" ? (
+            <InternationalizationProvider
+              locale="en"
+              overrides={{ en: { "@astryx.chat.status.sending": "Not confirmed" } }}
+            >
+              {metadata}
+            </InternationalizationProvider>
+          ) : (
+            metadata
+          )}
+          {local?.error === undefined ? null : (
+            <span className="chat-message__local-error" title={local.error}>
+              {local.error}
+            </span>
+          )}
+          {local === undefined || !canRetry || onRetrySubmission === undefined ? null : (
+            <Button
+              label="Retry"
+              variant="ghost"
+              size="sm"
+              className="chat-message__local-action"
+              onClick={() => onRetrySubmission(local.requestId)}
+            />
+          )}
+          {local === undefined || !canEdit || onEditSubmission === undefined ? null : (
+            <Button
+              label="Edit"
+              variant="ghost"
+              size="sm"
+              className="chat-message__local-action"
+              isDisabled={submissionEditDisabled}
+              {...(submissionEditDisabled && submissionEditTooltip !== undefined
+                ? { tooltip: submissionEditTooltip }
+                : {})}
+              onClick={() => onEditSubmission(local.requestId)}
+            />
+          )}
+        </div>
       </div>
     </ChatMessage.User>
   );
