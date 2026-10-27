@@ -108,7 +108,6 @@ export function ChatEntryView({
   }
 }
 
-
 function UserEntry({
   entry,
   onRetrySubmission,
