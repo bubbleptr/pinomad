@@ -110,6 +110,8 @@ extension Replay {
         var children: [ScriptedCall] = []
     }
 
+    /// Long enough to outgrow the medium sheet detent, so the demo shows
+    /// live thinking follow the bottom instead of hiding behind a cap.
     static let thinking = """
     The test writes the file and reads it back right away. If the reader \
     wins the race it sees a partial write. Let me check how the store writes \
@@ -117,7 +119,19 @@ extension Replay {
     cache writer had the same flake last month and the fix there was an \
     atomic rename, so I want to compare the two paths before touching \
     anything. If it is the same race, the fix is small: write to a \
-    temporary file next to the target and rename it into place.
+    temporary file next to the target and rename it into place. Before I \
+    write it, I want to check the callers too: some of them may hold the \
+    file open across the write, and a rename would leave them reading the \
+    old inode. That would explain the second failure mode in the issue. I \
+    will grep for open file handles and for anything that maps the file, \
+    then decide whether the rename needs to happen under a lock. The same \
+    question applies to the cache writer, so I will compare both call sites \
+    and keep the change local if the semantics line up. The test harness \
+    itself might be serializing the two operations, though. I should read \
+    it before blaming the store: if it writes and reads on the same queue, \
+    the race is in the app, not the test. The CI logs from the last failure \
+    are in the issue, so I can check the ordering there first and save a \
+    local run if they are not conclusive.
     """
 
     static let firstCalls = [
