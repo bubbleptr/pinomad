@@ -357,6 +357,8 @@ interface SubmissionRecord {
   entry?: number;
   error?: string;
   timer?: ReturnType<typeof setTimeout>;
+  /** Releases the command chain when the 30s timeout wins. */
+  timeoutResolve?: () => void;
   /** Admission is confirmed; no timeout applies while waiting for its entry. */
   admitted: boolean;
   confirming: boolean;
@@ -2366,14 +2368,22 @@ class RemoteClient {
       if (this.#closed || record.phase !== "inFlight" || record.admitted) return;
       // The host may still admit it later; this only changes what the row says.
       record.phase = "unknown";
+      const resolve = record.timeoutResolve;
+      record.timeoutResolve = undefined;
       this.#touchSubmissions();
+      // Let the serialized queue continue so Retry is reachable.
+      resolve?.();
     }, SUBMISSION_TIMEOUT_MS);
   }
 
   #clearSubmissionTimer(record: SubmissionRecord): void {
-    if (record.timer === undefined) return;
-    clearTimeout(record.timer);
-    record.timer = undefined;
+    const resolve = record.timeoutResolve;
+    record.timeoutResolve = undefined;
+    if (record.timer !== undefined) {
+      clearTimeout(record.timer);
+      record.timer = undefined;
+    }
+    resolve?.();
   }
 
   #submissionSettled(record: SubmissionRecord): boolean {
@@ -2487,7 +2497,14 @@ class RemoteClient {
     try {
       const found = await this.#querySubmission(record);
       if (this.#closed || this.#submissionSettled(record)) return;
-      if (found !== null) this.#applySubmissionRecord(record, found);
+      if (found !== null) {
+        this.#applySubmissionRecord(record, found);
+      } else if (record.admitted) {
+        // The host admitted it and now has no record: it was withdrawn or
+        // consumed beyond the visible queue, so the local row is over.
+        this.#settleSubmission(record);
+        this.#touchSubmissions();
+      }
     } catch {
       // The result already admitted it; snapshots remain the other source of truth.
     } finally {
@@ -2524,48 +2541,66 @@ class RemoteClient {
     }
   }
 
+  #applySubmitResult(record: SubmissionRecord, result: { submissionId: number; entry?: number }): void {
+    if (this.#closed) return;
+    this.#clearSubmissionTimer(record);
+    record.admitted = true;
+    record.submissionId = result.submissionId;
+    if (result.entry !== undefined) record.entry = result.entry;
+    if (!hostSupportsFeature(this.#hostMinor, "submitEntry")) {
+      // A pre-5.25 host has no entry to wait for; its result is the fact.
+      this.#settleSubmission(record);
+    } else if (record.entry !== undefined) {
+      record.phase = "inFlight";
+      if (this.#entryPresent(record)) this.#settleSubmission(record);
+    } else {
+      record.phase = "inFlight";
+      void this.#confirmSubmission(record);
+    }
+    this.#touchSubmissions();
+  }
+
+  #applySubmitError(record: SubmissionRecord, error: unknown): void {
+    if (this.#closed) return;
+    this.#clearSubmissionTimer(record);
+    if (
+      error instanceof DisconnectedError
+      || (error instanceof Error && error.message === "Not connected to the host")
+    ) {
+      record.phase = "unknown";
+    } else {
+      record.phase = "failed";
+      record.error = error instanceof Error ? error.message : String(error);
+    }
+    this.#touchSubmissions();
+  }
+
   /** Put one submit frame out and fold its result (or loss) into the record. */
   async #sendSubmission(record: SubmissionRecord, direct: boolean): Promise<void> {
     if (record.phase === "settled" || this.#closed) return;
     record.phase = "inFlight";
     record.error = undefined;
+    const call = direct
+      ? this.#callNow("submit", this.#submissionArgs(record))
+      : this.#call("submit", this.#submissionArgs(record));
     this.#startSubmissionTimer(record);
+    let timeoutResolve!: () => void;
+    const timedOut = new Promise<void>((resolve) => {
+      timeoutResolve = resolve;
+    });
+    record.timeoutResolve = timeoutResolve;
     this.#touchSubmissions();
-    try {
-      const result = (await (direct ? this.#callNow("submit", this.#submissionArgs(record)) : this.#call("submit", this.#submissionArgs(record)))) as {
-        submissionId: number;
-        entry?: number;
-      };
-      if (this.#closed) return;
-      this.#clearSubmissionTimer(record);
-      record.admitted = true;
-      record.submissionId = result.submissionId;
-      if (result.entry !== undefined) record.entry = result.entry;
-      if (!hostSupportsFeature(this.#hostMinor, "submitEntry")) {
-        // A pre-5.25 host has no entry to wait for; its result is the fact.
-        this.#settleSubmission(record);
-      } else if (record.entry !== undefined) {
-        record.phase = "inFlight";
-        if (this.#entryPresent(record)) this.#settleSubmission(record);
-      } else {
-        record.phase = "inFlight";
-        void this.#confirmSubmission(record);
+    // The result handler stays attached after a timeout: the host may still
+    // admit the original request, and that late fact must win.
+    const handled = (async () => {
+      try {
+        const result = (await call) as { submissionId: number; entry?: number };
+        this.#applySubmitResult(record, result);
+      } catch (error) {
+        this.#applySubmitError(record, error);
       }
-      this.#touchSubmissions();
-    } catch (error) {
-      if (this.#closed) return;
-      this.#clearSubmissionTimer(record);
-      if (
-        error instanceof DisconnectedError
-        || (error instanceof Error && error.message === "Not connected to the host")
-      ) {
-        record.phase = "unknown";
-      } else {
-        record.phase = "failed";
-        record.error = error instanceof Error ? error.message : String(error);
-      }
-      this.#touchSubmissions();
-    }
+    })();
+    await Promise.race([handled, timedOut]);
   }
 
   async #runSubmission(record: SubmissionRecord): Promise<void> {
@@ -2591,9 +2626,7 @@ class RemoteClient {
       record.conversationId = target;
       record.fixed = true;
     }
-    // The frame is written synchronously; keep the command chain moving so a
-    // timed-out send can still be retried while its result is outstanding.
-    void this.#sendSubmission(record, false);
+    await this.#sendSubmission(record, false);
   }
 
   /**

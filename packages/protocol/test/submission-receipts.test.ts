@@ -331,13 +331,11 @@ describe("logical submissions", () => {
       const call = host.held.values().next().value as CallFrame;
       await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
       host.sendSnapshot("conversation:1", conversationView([userEntry(42, "hello")]));
+      // The reconnect starts immediately; its query must find this record.
+      host.setSubmissionAnswer(() => ({ ok: true, value: { submissionId: 7, status: "done", entry: 42 } }));
       host.disconnect();
       await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
-      // Let the submit's rejected promise observe the disconnect without
-      // deciding the outcome; the recovery query is the authority.
       await submit;
-
-      host.setSubmissionAnswer(() => ({ ok: true, value: { submissionId: 7, status: "done", entry: 42 } }));
       await waitFor(remote, (view) => view.connection === "connected" && (view.submissions ?? []).length === 0);
       expect(host.submits()).toHaveLength(1);
       expect(host.calls("submission")).toHaveLength(1);
@@ -353,12 +351,12 @@ describe("logical submissions", () => {
       const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
       const first = host.held.values().next().value as CallFrame;
       await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+      host.setSubmissionAnswer(() => ({ ok: true, value: null }));
+      host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7, entry: 42 } }));
       host.disconnect();
       await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
       await submit;
 
-      host.setSubmissionAnswer(() => ({ ok: true, value: null }));
-      host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7, entry: 42 } }));
       const resubmit = await waitForCall(host, "submit", 2);
       expect(resubmit.args).toMatchObject({ conversationId: 1, requestId: "r1" });
       host.sendSnapshot("conversation:1", conversationView([userEntry(42, "hello")]));
