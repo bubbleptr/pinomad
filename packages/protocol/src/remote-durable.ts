@@ -2499,9 +2499,10 @@ class RemoteClient {
       if (this.#closed || this.#submissionSettled(record)) return;
       if (found !== null) {
         this.#applySubmissionRecord(record, found);
-      } else if (record.admitted) {
-        // The host admitted it and now has no record: it was withdrawn or
-        // consumed beyond the visible queue, so the local row is over.
+      } else if (record.admitted && record.entry === undefined) {
+        // A queued admit has no entry, and no record now: it was withdrawn or
+        // consumed beyond the visible queue, so the local row is over. A known
+        // entry still waits for its snapshot (a reset may have trimmed it).
         this.#settleSubmission(record);
         this.#touchSubmissions();
       }
@@ -2555,6 +2556,12 @@ class RemoteClient {
       if (this.#entryPresent(record)) this.#settleSubmission(record);
     } else {
       record.phase = "inFlight";
+      if (record.conversationId !== undefined) {
+        // This query answers the current snapshot; the next one may re-ask.
+        record.checkedVersion =
+          (this.#streamVersions.get(conversationStream(record.conversationId)) ?? 0)
+          + (this.#streamVersions.get(docStream("pi.inbox", record.conversationId)) ?? 0);
+      }
       void this.#confirmSubmission(record);
     }
     this.#touchSubmissions();
