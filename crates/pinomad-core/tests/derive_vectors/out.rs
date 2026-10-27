@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 use pinomad_core::chat::{AgentState, QueueItem, QueuedInput, TaskRow, UsageRow};
-use pinomad_core::cot_view::{ChatEntry, CotStep, CotView, LiftedSubagent, RetryRequest, SplitSubagents};
+use pinomad_core::cot_view::{
+    ChatEntry, CotStep, CotView, LiftedSubagent, LocalQueueRow, RetryRequest, SplitSubagents, SubmissionRow,
+};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::presentation::ClassifiedDoc;
 use pinomad_core::skill_blocks::UserAttachment;
@@ -183,6 +185,76 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
 
 pub fn chat_entries_json(entries: &[ChatEntry]) -> Json {
     Json::array(entries.iter().map(chat_entry_json).collect())
+}
+
+/// The reference's final list: committed entries plus the local rows, with
+/// `status`/\`local\` fields the FFI enum deliberately does not carry yet.
+pub fn chat_entries_with_submissions_json(entries: &[ChatEntry], rows: &[SubmissionRow]) -> Json {
+    let mut items: Vec<Json> = entries.iter().map(chat_entry_json).collect();
+    if let Some(latest) = items
+        .iter_mut()
+        .rev()
+        .find(|item| item.get("kind").and_then(Json::as_str).is_some_and(|kind| kind.to_string_lossy() == "user"))
+    {
+        if let Json::Object(object) = latest {
+            let mut copy = object.as_ref().clone();
+            copy.set(U16String::from_str("status"), s("delivered"));
+            *latest = Json::Object(Arc::new(copy));
+        }
+    }
+    for row in rows {
+        let mut local = JsonObject::new();
+        local.set(U16String::from_str("requestId"), s(&row.request_id));
+        if let Some(error) = &row.error {
+            local.set(U16String::from_str("error"), s(error));
+        }
+        items.push(obj(&[
+            ("kind", Some(s("user"))),
+            ("id", Some(s(&format!("local:{}", row.request_id)))),
+            ("text", Some(s(&row.text))),
+            ("images", Some(Json::array(row.images.iter().map(image_json).collect()))),
+            (
+                "attachments",
+                Some(Json::array(row.attachments.iter().map(attachment_json).collect())),
+            ),
+            ("skills", Some(Json::array(row.skills.iter().map(|name| s(name)).collect()))),
+            ("status", Some(s(&row.status))),
+            ("local", Some(Json::Object(Arc::new(local)))),
+        ]));
+    }
+    Json::array(items)
+}
+
+pub fn queue_items_with_submissions_json(host: &[QueueItem], rows: &[LocalQueueRow]) -> Json {
+    let mut items: Vec<Json> = host
+        .iter()
+        .map(|item| {
+            obj(&[
+                ("id", Some(num(item.id as f64))),
+                ("mode", Some(s(item.mode.as_str()))),
+                ("text", Some(s(&item.text))),
+                ("imageCount", Some(num(item.image_count as f64))),
+                ("attachmentCount", Some(num(item.attachment_count as f64))),
+                ("status", Some(s("sent"))),
+            ])
+        })
+        .collect();
+    for row in rows {
+        let mut local = JsonObject::new();
+        if let Some(error) = &row.error {
+            local.set(U16String::from_str("error"), s(error));
+        }
+        items.push(obj(&[
+            ("requestId", Some(s(&row.request_id))),
+            ("mode", Some(s(&row.mode))),
+            ("text", Some(s(&row.text))),
+            ("imageCount", Some(num(row.image_count as f64))),
+            ("attachmentCount", Some(num(row.attachment_count as f64))),
+            ("status", Some(s(&row.status))),
+            ("local", Some(Json::Object(Arc::new(local)))),
+        ]));
+    }
+    Json::array(items)
 }
 
 pub fn retry_json(retry: Option<&RetryRequest>) -> Json {

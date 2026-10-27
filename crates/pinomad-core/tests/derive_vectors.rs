@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use pinomad_core::chat::{agent_of, queue_items, queued_input, status_text, task_rows, usage_rows};
 use pinomad_core::context_usage::context_usage;
-use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls};
+use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls, submission_queue_rows, submission_rows};
 use pinomad_core::json::Json;
 use pinomad_core::presentation::classify;
 use pinomad_core::tool_diff_stat::tool_diff_stat_from_result;
@@ -106,9 +106,11 @@ fn derive_chat_replays() {
         let view = Json::parse(&as_text(field(case, "view"))).unwrap();
         let busy = field(case, "busy").truthy();
         let presentations = Json::parse(&as_text(field(case, "presentations"))).unwrap();
+        let submissions = Json::parse(&as_text(field(case, "submissions"))).unwrap();
         let entries = derive_chat(&view, &presentations, busy);
+        let rows = submission_rows(&view, &submissions);
         assert_eq!(
-norm(&derive_vectors::out::chat_entries_json(&entries)),
+norm(&derive_vectors::out::chat_entries_with_submissions_json(&entries, &rows)),
 expect_text(case),
             "{name}"
         );
@@ -169,8 +171,20 @@ expect_text(case), "{name}");
         let name = as_text(field(case, "name"));
         let view = Json::parse(&as_text(field(case, "view"))).unwrap();
         assert_eq!(
-norm(&derive_vectors::out::queue_items_json(&queue_items(&view))),
+norm(&derive_vectors::out::queue_items_with_submissions_json(&queue_items(&view), &[])),
 expect_text(case), "{name}");
+    }
+    for case in cases(&file, "queueSubmissions") {
+        let name = as_text(field(case, "name"));
+        let view = Json::parse(&as_text(field(case, "view"))).unwrap();
+        let submissions = Json::parse(&as_text(field(case, "submissions"))).unwrap();
+        let host = queue_items(&view);
+        let rows = submission_queue_rows(&view, &submissions);
+        assert_eq!(
+            norm(&derive_vectors::out::queue_items_with_submissions_json(&host, &rows)),
+            expect_text(case),
+            "{name}"
+        );
     }
     for case in cases(&file, "queuedInput") {
         let name = as_text(field(case, "name"));
