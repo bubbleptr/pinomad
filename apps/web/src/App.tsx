@@ -22,13 +22,14 @@ import { useRunNotifications } from "./entities/conversation/use-run-notificatio
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
+import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import type { PanelTab } from "./widgets/side-panel/side-panel.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { DurableView, ProtocolMismatch, SubmissionDraft } from "@pinomad/protocol/view.ts";
+import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, SIGNAL_PROLOGUE, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
@@ -664,12 +665,16 @@ function Workbench({
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("threads");
   // A failed/unconfirmed send edited from the transcript flows back into the
-  // composer that owns skill picks and attachment chips.
-  const [takeBack, setTakeBack] = useState<SubmissionDraft>();
-  const [takingBack, setTakingBack] = useState(false);
+  // composer that owns skill picks and attachment chips. Bind the draft to the
+  // conversation it came from: switching away must not fill another composer.
+  const [takeBack, setTakeBack] = useState<PendingTakeBack>();
+  const [takingBack, setTakingBack] = useState<ConversationId>();
   const [editorState, setEditorState] = useState({ occupied: false, locked: false });
   const toast = useToast();
-  const submissionEditDisabled = editorState.occupied || editorState.locked || takingBack;
+  const shownConversationId = conversation?.conversation.id;
+  const takeBackForShown = takeBackForConversation(takeBack, shownConversationId);
+  const takingBackHere = takingBack !== undefined && takingBack === shownConversationId;
+  const submissionEditDisabled = editorState.occupied || editorState.locked || takingBack !== undefined;
   const submissionEditTooltip = editorState.occupied
     ? "Clear the composer to edit"
     : submissionEditDisabled
@@ -819,12 +824,12 @@ function Workbench({
                     conversation={conversation}
                     busy={busy}
                     narrow={narrow}
-                    takeBack={takeBack}
-                    externalEditLocked={takingBack}
+                    takeBack={takeBackForShown}
+                    externalEditLocked={takingBackHere}
                     onEditorStateChange={setEditorState}
                     onTakeBack={() => {
                       setTakeBack(undefined);
-                      setTakingBack(false);
+                      setTakingBack(undefined);
                     }}
                   />
                 </VStack>
@@ -866,16 +871,17 @@ function Workbench({
                 void remote.controller.retrySubmission(requestId).catch(() => {});
               }}
               onEditSubmission={(requestId) => {
-                if (submissionEditDisabled) return;
-                setTakingBack(true);
+                const origin = shownConversationId;
+                if (submissionEditDisabled || origin === undefined) return;
+                setTakingBack(origin);
                 void remote.controller
                   .takeBackSubmission(requestId)
                   .then((draft) => {
-                    if (draft !== undefined) setTakeBack(draft);
-                    else setTakingBack(false);
+                    if (draft !== undefined) setTakeBack({ conversationId: origin, draft });
+                    else setTakingBack(undefined);
                   })
                   .catch((error: unknown) => {
-                    setTakingBack(false);
+                    setTakingBack(undefined);
                     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
                   });
               }}

@@ -32,6 +32,7 @@ import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
 import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
+import { canTakeBackInSidePanel } from "../composer/take-back.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 
@@ -274,6 +275,7 @@ function SideTranscript({
   onEditSubmission,
   submissionEditDisabled,
   submissionEditTooltip,
+  localEditAttachmentsUnsupported,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -294,6 +296,7 @@ function SideTranscript({
   onEditSubmission?: (requestId: string) => void;
   submissionEditDisabled?: boolean;
   submissionEditTooltip?: string;
+  localEditAttachmentsUnsupported?: boolean;
 }) {
   if (side.conversation === undefined) return null;
   return (
@@ -319,6 +322,7 @@ function SideTranscript({
       onEditSubmission={onEditSubmission}
       submissionEditDisabled={submissionEditDisabled}
       submissionEditTooltip={submissionEditTooltip}
+      localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
     />
   );
 }
@@ -433,7 +437,10 @@ function ThreadDetail({
             void remote.controller.retrySubmission(requestId).catch(() => {});
           }}
           onEditSubmission={(requestId) => {
-            if (editDisabled) return;
+            const submission = view.submissions?.find((candidate) => candidate.requestId === requestId);
+            // The side composer has no image/file tray, so taking one back
+            // would silently drop it. Keep the local row and edit in main.
+            if (!canTakeBackInSidePanel(submission, editDisabled)) return;
             setTakeBackPending(true);
             void remote.controller
               .takeBackSubmission(requestId)
@@ -448,6 +455,7 @@ function ThreadDetail({
           }}
           submissionEditDisabled={editDisabled}
           submissionEditTooltip={editDisabled ? editTooltip : undefined}
+          localEditAttachmentsUnsupported
         />
         <PendingQuestions
           docs={side.docs}

@@ -30,6 +30,7 @@ export function ConversationTranscript({
   onEditSubmission,
   submissionEditDisabled,
   submissionEditTooltip,
+  localEditAttachmentsUnsupported,
   docs,
   submissions,
   mergeQueuedSubmissions,
@@ -73,6 +74,8 @@ export function ConversationTranscript({
   submissionEditDisabled?: boolean;
   /** Why the local Edit is disabled. */
   submissionEditTooltip?: string;
+  /** No image/file tray here, so local sends with attachments cannot be edited. */
+  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
   /** Client-side sends that have not been replaced by the host's fact yet. */
@@ -126,6 +129,7 @@ export function ConversationTranscript({
             onEditSubmission={onEditSubmission}
             submissionEditDisabled={submissionEditDisabled}
             submissionEditTooltip={submissionEditTooltip}
+            localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
             today={today}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={

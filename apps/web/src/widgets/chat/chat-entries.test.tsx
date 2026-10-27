@@ -96,6 +96,31 @@ describe("local submission states", () => {
     expect(onEdit).toHaveBeenCalledWith("r1");
   });
 
+  it("disables only Edit for a side-panel send with attachments", async () => {
+    const onRetry = vi.fn();
+    const onEdit = vi.fn();
+    render(
+      <ChatEntryView
+        entry={{
+          ...local("failed", "refused"),
+          images: [{ data: "aGk=", mimeType: "image/png" }],
+        }}
+        connected
+        openInPanel={() => {}}
+        onFork={() => {}}
+        onRetrySubmission={onRetry}
+        onEditSubmission={onEdit}
+        localEditAttachmentsUnsupported
+      />,
+    );
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(edit);
+    expect(onEdit).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledWith("r1");
+  });
+
   it("disables Edit while the composer is occupied", async () => {
     const onEdit = vi.fn();
     render(

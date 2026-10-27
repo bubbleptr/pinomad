@@ -45,6 +45,7 @@ export function ChatEntryView({
   onEditSubmission,
   submissionEditDisabled,
   submissionEditTooltip,
+  localEditAttachmentsUnsupported,
   todo,
   today,
 }: {
@@ -69,6 +70,8 @@ export function ChatEntryView({
   submissionEditDisabled?: boolean;
   /** Why Edit is disabled, shown on hover. */
   submissionEditTooltip?: string;
+  /** This composer has no image/file tray (the side panel). */
+  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
   /** Local start of today, shared by the transcript's midnight clock. */
@@ -83,6 +86,7 @@ export function ChatEntryView({
           onEditSubmission={onEditSubmission}
           submissionEditDisabled={submissionEditDisabled}
           submissionEditTooltip={submissionEditTooltip}
+          localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
           today={today}
         />
       );
@@ -114,6 +118,7 @@ function UserEntry({
   onEditSubmission,
   submissionEditDisabled = false,
   submissionEditTooltip,
+  localEditAttachmentsUnsupported = false,
   today,
 }: {
   entry: Extract<ChatEntry, { kind: "user" }>;
@@ -121,11 +126,18 @@ function UserEntry({
   onEditSubmission?: (requestId: string) => void;
   submissionEditDisabled?: boolean;
   submissionEditTooltip?: string;
+  localEditAttachmentsUnsupported?: boolean;
   today?: number;
 }) {
   const local = entry.local;
   const canRetry = local !== undefined && (entry.status === "unknown" || entry.status === "failed");
   const canEdit = local !== undefined && entry.status === "failed";
+  const attachmentsBlockEdit =
+    localEditAttachmentsUnsupported && local !== undefined && (entry.images.length > 0 || entry.attachments.length > 0);
+  const editDisabled = submissionEditDisabled || attachmentsBlockEdit;
+  const editTooltip = attachmentsBlockEdit
+    ? "Open in main to edit a message with attachments"
+    : submissionEditTooltip;
   const status =
     entry.status === "failed"
       ? ("error" as const)
@@ -207,10 +219,8 @@ function UserEntry({
               variant="ghost"
               size="sm"
               className="chat-message__local-action"
-              isDisabled={submissionEditDisabled}
-              {...(submissionEditDisabled && submissionEditTooltip !== undefined
-                ? { tooltip: submissionEditTooltip }
-                : {})}
+              isDisabled={editDisabled}
+              {...(editDisabled && editTooltip !== undefined ? { tooltip: editTooltip } : {})}
               onClick={() => onEditSubmission(local.requestId)}
             />
           )}

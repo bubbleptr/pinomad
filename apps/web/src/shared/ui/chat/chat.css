@@ -257,6 +257,7 @@ mark.chat-skill-mention {
   display: inline-flex;
   min-width: 0;
   max-width: 100%;
+  min-height: 28px;
   align-items: center;
   gap: var(--spacing-1);
 }
@@ -281,17 +282,22 @@ mark.chat-skill-mention {
   max-width: 18rem;
   overflow: hidden;
   color: var(--color-text-secondary);
+  font-size: var(--font-size-sm, 0.75rem);
+  line-height: 1.667;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Compact text actions right after the status/error, with no dot before them. */
+/* Compact text actions right after the status/error, with no dot before them.
+   Match the metadata type and keep a 24px target inside the 28px row. */
 .astryx-button.chat-message__local-action {
   flex: none;
   height: auto;
-  min-height: 0;
-  padding-block: 0;
+  min-height: 24px;
+  padding-block: 2px;
   padding-inline: var(--spacing-1);
+  font-size: var(--font-size-sm, 0.75rem);
+  line-height: 1.667;
 }
 
 .chat-message__action {
