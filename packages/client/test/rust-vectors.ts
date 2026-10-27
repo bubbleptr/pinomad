@@ -75,6 +75,7 @@ import {
   IS_BUSY_CASES,
   QUEUED_INPUT_CASES,
   QUEUE_CASES,
+  QUEUE_SUBMISSION_CASES,
   STATUS_CASES,
   TASK_GRAPH_CASES,
   USAGE_CASES,
@@ -184,7 +185,7 @@ function chatVector(): VectorFile {
   const recorded = recordedConversation();
   const cases = [
     ...DERIVE_CHAT_CASES,
-    { name: "recorded", view: recorded.view, busy: recorded.busy, presentations: recorded.presentations },
+    { name: "recorded", view: recorded.view, busy: recorded.busy, presentations: recorded.presentations, submissions: [] },
   ];
   return write("chat", {
     deriveChat: cases.map((c) => ({
@@ -192,7 +193,8 @@ function chatVector(): VectorFile {
       view: wire(c.view),
       busy: c.busy,
       presentations: wire(c.presentations ?? {}),
-      expect: expect(wire(deriveChat(c.view, (c.presentations ?? {}) as never, c.busy))),
+      submissions: wire(c.submissions ?? []),
+      expect: expect(wire(deriveChat(c.view, (c.presentations ?? {}) as never, c.busy, c.submissions ?? []))),
     })),
     retryOf: RETRY_CASES.map((c) => ({
       name: c.name,
@@ -214,6 +216,12 @@ function chatMetaVector(): VectorFile {
     agentOf: AGENT_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(agentOf(c.input))) })),
     statusText: STATUS_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(statusText(c.input))) })),
     queueItems: QUEUE_CASES.map((c) => ({ name: c.name, view: wire(c.input), expect: expect(wire(queueItems(c.input))) })),
+    queueSubmissions: QUEUE_SUBMISSION_CASES.map((c) => ({
+      name: c.name,
+      view: wire(c.input.view),
+      submissions: wire(c.input.submissions),
+      expect: expect(wire(queueItems(c.input.view, c.input.submissions))),
+    })),
     queuedInput: QUEUED_INPUT_CASES.map((c) => ({
       name: c.name,
       view: wire(c.input.view),

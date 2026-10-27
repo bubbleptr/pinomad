@@ -14,6 +14,7 @@ import type {
 } from "@earendil-works/pi-durable";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
+import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { stripUserBlocks } from "./skill-blocks.ts";
 
 type Block = {
@@ -59,29 +60,67 @@ export function statusText(view: ConversationView): string {
   return "";
 }
 
+export type QueueStatus = "sending" | "sent" | "unknown" | "failed";
+
 export interface QueueItem {
-  readonly id: number;
+  /** The host inbox id; absent on a local row the host has not admitted yet. */
+  readonly id?: number;
+  /** The local submission's idempotency key; absent on a host row. */
+  readonly requestId?: string;
   readonly mode: "steer" | "followUp" | "write";
   readonly text: string;
   /** Image blocks attached to the queued input; 0 on "write" items. */
   readonly imageCount: number;
   /** Host-stored file attachments on the queued input; 0 on "write" items. */
   readonly attachmentCount: number;
+  readonly status: QueueStatus;
+  /** Set only on a local row; error explains a failed send. */
+  readonly local?: { readonly error?: string };
 }
 
-export function queueItems(view: ConversationView): QueueItem[] {
+export function queueItems(
+  view: ConversationView,
+  submissions: readonly LogicalSubmission[] = [],
+): QueueItem[] {
   const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
-  return inbox.items.map((item) => {
+  const hostItems = inbox.items.map((item) => {
     const typed = item.mode === "write" ? undefined : stripUserBlocks(item.content as string | readonly Block[]);
     return {
       id: item.id as unknown as number,
       mode: item.mode,
-      // The typed text, not the blocks the host wrote around it (ADR-0028, #321).
+      // The typed text, not the blocks the host wrote around them (ADR-0028, #321).
       text: item.mode === "write" ? `<${String(item.entry.kind)}>` : typed!.text,
       imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Content),
       attachmentCount: typed?.attachments.length ?? 0,
+      // A host inbox row means the host has admitted it; one check.
+      status: "sent" as const,
     };
   });
+  const hostIds = new Set(hostItems.map((item) => String(item.id)));
+  const localItems = submissions.flatMap((submission): QueueItem[] => {
+    if (submission.phase === "settled" || submission.placement !== "queue") return [];
+    if (submission.conversationId !== undefined && submission.conversationId !== view.conversation.id) return [];
+    // The inbox row has already taken over even if the controller has not
+    // folded the event into its phase yet.
+    if (submission.submissionId !== undefined && hostIds.has(String(submission.submissionId))) return [];
+    const status: QueueStatus = submission.phase === "unknown"
+      ? "unknown"
+      : submission.phase === "failed"
+        ? "failed"
+        : "sending";
+    return [{
+      requestId: submission.requestId,
+      mode: submission.whenBusy,
+      text: submission.text,
+      imageCount: submission.images.length,
+      attachmentCount: (submission.attachmentDetails ?? submission.attachments).length,
+      status,
+      local: {
+        ...(submission.error === undefined ? {} : { error: submission.error }),
+      },
+    }];
+  });
+  return [...hostItems, ...localItems];
 }
 
 /** A queued input's original content, for an Edit affordance that withdraws then refills the composer. */
