@@ -178,7 +178,7 @@ describe("web RTC carrier", () => {
       await panel.waitFor();
       expect(await panel.getByRole("radio", { name: "Auto", exact: true }).isChecked()).toBe(true);
       await panel.getByText("Active", { exact: true }).waitFor();
-      await panel.getByText(/^P2P \(/).waitFor();
+      await panel.getByText(/^P2P(?: · |$)/).waitFor();
 
       await panel.getByRole("radio", { name: "Relay only", exact: true }).click();
       await expect
