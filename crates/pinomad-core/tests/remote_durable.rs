@@ -2766,4 +2766,3 @@ fn logical_retry_disconnects_again_then_recovery_settles() {
     assert_eq!(h.host.method("submit").len(), 2);
     assert_eq!(h.submission_queries().len(), 2);
 }
-
