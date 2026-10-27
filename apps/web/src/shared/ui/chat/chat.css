@@ -267,6 +267,12 @@ mark.chat-skill-mention {
 
 .chat-message__copy {
   flex: none;
+  pointer-events: none;
+}
+
+.chat-message:hover .chat-message__copy,
+.chat-message:focus-within .chat-message__copy {
+  pointer-events: auto;
 }
 
 /* A local send's error is secondary text until the row is acted on. */
