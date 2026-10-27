@@ -245,6 +245,31 @@ describe("deriveChat", () => {
     expect(run.cot.elapsedMs).toBe(4000);
   });
 
+  it("measures a one-message run to the recorded first answer token", () => {
+    const run = runs(derive("answer-started-single")).at(-1)!;
+    expect(run.cot.elapsedMs).toBe(1500);
+  });
+
+  it("reports no elapsed time for a one-message run without a recorded start", () => {
+    const run = runs(derive("settled-simple")).at(-1)!;
+    expect(run.cot.elapsedMs).toBeUndefined();
+  });
+
+  it("uses the recorded start instead of the request start in a multi-message run", () => {
+    const run = runs(derive("answer-started-multi")).at(-1)!;
+    expect(run.cot.elapsedMs).toBe(5500);
+  });
+
+  it("falls back to the last timestamp for a multi-message run without a recorded start", () => {
+    const run = runs(derive("answer-started-fallback-multi")).at(-1)!;
+    expect(run.cot.elapsedMs).toBe(4000);
+  });
+
+  it("ignores an answer start before the request or one that is not finite", () => {
+    expect(runs(derive("answer-started-invalid-early")).at(-1)!.cot.elapsedMs).toBeUndefined();
+    expect(runs(derive("answer-started-invalid-nonfinite")).at(-1)!.cot.elapsedMs).toBeUndefined();
+  });
+
   it("routes a repeated call id to the newest call awaiting it", () => {
     const run = runs(derive("dup-call-id")).at(-1)!;
     const tools = run.cot.steps.flatMap((step) => (step.kind === "tools" ? step.tools : []));

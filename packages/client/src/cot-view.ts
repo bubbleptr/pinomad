@@ -139,6 +139,8 @@ type AssistantMessageLike = {
   readonly stopReason?: string;
   readonly errorMessage?: string;
   readonly timestamp?: number;
+  /** PiNomad's own metadata on the stored assistant message (issue #395). */
+  readonly pinomad?: { readonly answerStartedAt?: number };
   readonly provider?: unknown;
   readonly model?: unknown;
 };
@@ -153,6 +155,18 @@ type ToolResultLike = {
 };
 
 type UserMessageLike = { readonly role: "user"; readonly content: string | readonly Block[] };
+
+/**
+ * The host's first-answer-token stamp, only when it is a usable instant: a
+ * finite epoch stamp no earlier than the request start. Anything else is
+ * treated as absent, which is also how old messages look.
+ */
+function answerStartedAtOf(message: AssistantMessageLike): number | undefined {
+  const startedAt = message.pinomad?.answerStartedAt;
+  if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) return undefined;
+  if (typeof message.timestamp !== "number" || startedAt < message.timestamp) return undefined;
+  return startedAt;
+}
 
 function textOf(content: string | readonly Block[]): string {
   if (typeof content === "string") return content;
@@ -497,7 +511,16 @@ function deriveRun(
       : undefined;
   let elapsedMs: number | undefined;
   if (settled && anchorMs !== undefined) {
-    const endMs = answering ? latest?.msg.timestamp : (draft.lastTs ?? latest?.msg.timestamp);
+    let endMs: number | undefined;
+    if (answering) {
+      // The recorded first token is the honest end; a run with one message has
+      // no later timestamp to fall back to, so it reports no elapsed time
+      // rather than zero. Older multi-message transcripts keep the estimate.
+      const startedAt = latest === undefined ? undefined : answerStartedAtOf(latest.msg);
+      endMs = startedAt ?? (latest === messages[0] ? undefined : latest?.msg.timestamp);
+    } else {
+      endMs = draft.lastTs ?? latest?.msg.timestamp;
+    }
     elapsedMs = endMs === undefined ? undefined : endMs - anchorMs;
   }
 

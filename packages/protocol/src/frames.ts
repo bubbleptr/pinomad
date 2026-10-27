@@ -93,7 +93,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 23 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 24 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */

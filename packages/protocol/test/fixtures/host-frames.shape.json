@@ -218,6 +218,9 @@
                   }
                 ],
                 "model": "string",
+                "pinomad": {
+                  "answerStartedAt": "number"
+                },
                 "provider": "string",
                 "role": "=assistant",
                 "stopReason": "string",

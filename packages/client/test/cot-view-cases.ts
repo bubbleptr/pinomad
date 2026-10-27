@@ -492,6 +492,54 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     ]),
     busy: false,
   },
+  // Appended after the earlier cases so their entry-id counters (and the
+  // committed vectors) do not shift.
+  {
+    // The host records when the first answer text arrived; a one-message run
+    // has no later timestamp to measure to.
+    name: "answer-started-single",
+    view: view([
+      user("go"),
+      assistant([thinking("plan"), text("done")], "stop", 1000, { pinomad: { answerStartedAt: 2500 } }),
+    ]),
+    busy: false,
+  },
+  {
+    name: "answer-started-multi",
+    view: view([
+      user("go"),
+      assistant([call("c1", "logs", {})], "toolUse", 1000),
+      result("c1", "logs", "ok", false, undefined, 3000),
+      assistant([text("done")], "stop", 5000, { pinomad: { answerStartedAt: 6500 } }),
+    ]),
+    busy: false,
+  },
+  {
+    name: "answer-started-invalid-early",
+    view: view([
+      user("go"),
+      assistant([text("done")], "stop", 1000, { pinomad: { answerStartedAt: 500 } }),
+    ]),
+    busy: false,
+  },
+  {
+    name: "answer-started-invalid-nonfinite",
+    view: view([
+      user("go"),
+      assistant([text("done")], "stop", 1000, { pinomad: { answerStartedAt: Number.POSITIVE_INFINITY } }),
+    ]),
+    busy: false,
+  },
+  {
+    name: "answer-started-fallback-multi",
+    view: view([
+      user("go"),
+      assistant([call("c1", "logs", {})], "toolUse", 1000),
+      result("c1", "logs", "ok", false, undefined, 3000),
+      assistant([text("done")], "stop", 5000),
+    ]),
+    busy: false,
+  },
 ];
 
 /** Cases also exercised through `retryOf` — by name into DERIVE_CHAT_CASES. */
