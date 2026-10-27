@@ -8,7 +8,7 @@
 use crate::ffi::calls::FfiCall;
 use crate::ffi::hosts::{CandidateFailure, EndpointSet, StoredHost};
 use crate::json::{Json, JsonObject};
-use crate::ffi::rtc::RtcSendOutcome;
+use crate::ffi::rtc::{RtcSelectedCandidateEnd, RtcSendOutcome};
 use crate::remote_durable::ReadyOutcome as CoreReadyOutcome;
 use crate::u16str::U16String;
 use std::sync::Arc;
@@ -69,7 +69,11 @@ pub enum FfiEvent {
     RtcSendResult { peer: u64, outcome: RtcSendOutcome },
     RtcLowWater { peer: u64 },
     RtcClosed { peer: u64, reason: Option<String> },
-    RtcSelectedCandidate { peer: u64, kind: String },
+    RtcSelectedCandidate {
+        peer: u64,
+        local: RtcSelectedCandidateEnd,
+        remote: RtcSelectedCandidateEnd,
+    },
 }
 
 // ─── Commands out ───────────────────────────────────────────────────────────

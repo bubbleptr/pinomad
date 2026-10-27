@@ -11,6 +11,9 @@ struct HostDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode: HostConnectionMode = .auto
     @State private var forgetting = false
+    /// The full addresses are hidden by default so a screenshot does not
+    /// leak the network. The disclosure resets with the page.
+    @State private var addressesExpanded = false
 
     private var host: HostRecord? { model.hostRecord(for: hostKey) }
     private var isCurrent: Bool { hostKey == model.currentHostKey }
@@ -36,11 +39,16 @@ struct HostDetailView: View {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         LabeledContent("Path", value: pathText)
                     }
+                    if let pair = status?.selectedPair {
+                        DisclosureGroup("Addresses", isExpanded: $addressesExpanded) {
+                            RtcAddressRow(label: "This device", end: pair.local)
+                            RtcAddressRow(label: "Host", end: pair.remote)
+                        }
+                    }
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         LabeledContent("Peer-to-peer", value: peerText)
                     }
                     if let failure = status?.lastFailure {
-                        Divider()
                         RtcFailureRow(failure: failure, stage: stageLabel(failure.stage))
                     }
                 }
@@ -88,16 +96,10 @@ struct HostDetailView: View {
     }
 
     private var pathText: String {
-        switch status?.path {
-        case "p2p":
-            if let kind = status?.selectedCandidateType, !kind.isEmpty {
-                return "P2P (\(kind))"
-            }
-            return "P2P"
-        case "relay": return "Relay"
-        case "direct": return "Direct"
-        default: return "Local"
-        }
+        RtcDiagnosticsText.pathLabel(
+            path: status?.path ?? "loopback",
+            remote: status?.selectedPair?.remote.scope,
+            local: status?.selectedPair?.local.scope)
     }
 
     private var peerText: String {
@@ -148,6 +150,24 @@ struct HostDetailView: View {
     }
 }
 
+/// One end of the selected pair. The disclosure's rows stay selectable so a
+/// long press can copy the address, and monospaced digits keep the values
+/// aligned while the page ticks.
+private struct RtcAddressRow: View {
+    let label: String
+    let end: RtcCandidateEnd
+
+    var body: some View {
+        LabeledContent(label) {
+            Text(RtcDiagnosticsText.candidateLabel(
+                type: end.rtcType, address: end.address, scope: end.scope))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+    }
+}
+
 /// The status card's failure line. Kept separate so the cooldown state can
 /// show the last failure without replacing the Peer-to-peer value.
 struct RtcFailureRow: View {
@@ -166,8 +186,19 @@ struct RtcFailureRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text(metaText)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
         }
         .padding(.vertical, 2)
+    }
+
+    private var metaText: String {
+        RtcDiagnosticsText.failureMeta(
+            agoMs: failure.agoMs,
+            remote: failure.pair?.remote.scope,
+            local: failure.pair?.local.scope)
     }
 }
 
@@ -176,9 +207,26 @@ struct RtcFailureRow: View {
         RtcFailureRow(
             failure: RtcFailure(
                 stage: "ice",
-                reason: "ICE, DTLS, or the DataChannel did not open within 10s"
+                reason: "ICE, DTLS, or the DataChannel did not open within 10s",
+                agoMs: 12_000,
+                pair: RtcSelectedPair(
+                    local: RtcCandidateEnd(
+                        rtcType: "host", address: "10.0.0.2:5000", scope: .lan),
+                    remote: RtcCandidateEnd(
+                        rtcType: "srflx", address: "100.64.1.2:6000", scope: .tailnet))
             ),
             stage: "ICE"
         )
+    }
+}
+
+#Preview("RTC addresses") {
+    List {
+        RtcAddressRow(
+            label: "This device",
+            end: RtcCandidateEnd(rtcType: "host", address: "10.0.0.2:5000", scope: .lan))
+        RtcAddressRow(
+            label: "Host",
+            end: RtcCandidateEnd(rtcType: "srflx", address: "100.64.1.2:6000", scope: .tailnet))
     }
 }
