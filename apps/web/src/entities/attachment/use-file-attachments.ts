@@ -38,6 +38,8 @@ export interface FileAttachments {
   clear(): void;
   /** Ids of every finished chip, in order — what submit sends. */
   ids(): string[];
+  /** The same chips' display names and sizes, for the local bubble. */
+  details(): UserAttachment[];
 }
 
 export function useFileAttachments(remote: RemoteDurable, enabled: boolean): FileAttachments {
@@ -173,5 +175,11 @@ export function useFileAttachments(remote: RemoteDurable, enabled: boolean): Fil
     restore,
     clear,
     ids: () => entriesRef.current.flatMap((entry) => (entry.status === "done" && entry.attachmentId !== undefined ? [entry.attachmentId] : [])),
+    details: () =>
+      entriesRef.current.flatMap((entry) =>
+        entry.status === "done" && entry.attachmentId !== undefined
+          ? [{ id: entry.attachmentId, name: entry.name, size: entry.size }]
+          : [],
+      ),
   };
 }

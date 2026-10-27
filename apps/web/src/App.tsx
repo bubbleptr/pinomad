@@ -27,7 +27,7 @@ import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
+import type { DurableView, ProtocolMismatch, SubmissionDraft } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, secureWebSocketTransport, SIGNAL_PROLOGUE, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
@@ -662,6 +662,9 @@ function Workbench({
   // The side panel: open state and tab live here so chat entries can open it.
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("threads");
+  // A failed/unconfirmed send edited from the transcript flows back into the
+  // composer that owns skill picks and attachment chips.
+  const [takeBack, setTakeBack] = useState<SubmissionDraft>();
   const openInPanel = useCallback(
     (id: ConversationId, tab: "threads" | "tasks") => {
       setPanelTab(tab);
@@ -800,7 +803,15 @@ function Workbench({
               <div className="mx-auto w-full max-w-[44rem]">
                 <VStack gap={1}>
                   <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
-                  <ConversationComposer view={view} remote={remote} conversation={conversation} busy={busy} narrow={narrow} />
+                  <ConversationComposer
+                    view={view}
+                    remote={remote}
+                    conversation={conversation}
+                    busy={busy}
+                    narrow={narrow}
+                    takeBack={takeBack}
+                    onTakeBack={() => setTakeBack(undefined)}
+                  />
                 </VStack>
               </div>
             }
@@ -809,6 +820,7 @@ function Workbench({
             <ConversationTranscript
               conversation={conversation}
               docs={view.docs}
+              submissions={view.submissions}
               toolPresentations={view.toolPresentations}
               connected={view.connection === "connected"}
               canFork={canFork}
@@ -828,9 +840,21 @@ function Workbench({
                         images: images.map(outgoingImage),
                         skills,
                         ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
+                        ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
                       });
                     }
               }
+              onRetrySubmission={(requestId) => {
+                void remote.controller.retrySubmission(requestId).catch(() => {});
+              }}
+              onEditSubmission={(requestId) => {
+                void remote.controller
+                  .takeBackSubmission(requestId)
+                  .then((draft) => {
+                    if (draft !== undefined) setTakeBack(draft);
+                  })
+                  .catch(() => {});
+              }}
             />
           </ChatLayout>
         )}

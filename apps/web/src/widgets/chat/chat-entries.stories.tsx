@@ -84,6 +84,8 @@ const meta = {
     connected: true,
     openInPanel: fn(),
     onFork: fn(),
+    onRetrySubmission: fn(),
+    onEditSubmission: fn(),
   },
 } satisfies Meta<typeof ChatEntryView>;
 
@@ -102,6 +104,52 @@ export const UserMessage: Story = {
       skills: ["review"],
       attachments: [{ id: "A".repeat(22), name: "parser.log", size: 12_345 }],
       timestamp: now - 95_000,
+    },
+  },
+};
+
+const localEntry = (
+  status: "sending" | "unknown" | "failed",
+  overrides: Partial<Extract<ChatEntry, { kind: "user" }>> = {},
+): Extract<ChatEntry, { kind: "user" }> => ({
+  kind: "user",
+  id: "local:local-1",
+  text: "Check the parser regression before merging",
+  images: [],
+  attachments: [],
+  skills: ["review"],
+  status,
+  local: { requestId: "local-1" },
+  ...overrides,
+});
+
+export const SubmissionSending: Story = {
+  args: { entry: localEntry("sending") },
+};
+
+export const SubmissionNotConfirmed: Story = {
+  args: { entry: localEntry("unknown") },
+};
+
+export const SubmissionFailed: Story = {
+  args: {
+    entry: localEntry("failed", {
+      local: { requestId: "local-1", error: "The host refused this message: no conversation selected." },
+    }),
+  },
+};
+
+export const SubmissionDelivered: Story = {
+  args: {
+    entry: {
+      kind: "user",
+      id: "user-42",
+      text: "Check the parser regression before merging",
+      images: [],
+      attachments: [],
+      skills: ["review"],
+      timestamp: now - 30_000,
+      status: "delivered",
     },
   },
 };

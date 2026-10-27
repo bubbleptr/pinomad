@@ -140,6 +140,7 @@ describe("ConversationComposer attachment uploads", () => {
       images: [],
       skills: [],
       attachments: ["A".repeat(22)],
+      attachmentDetails: [{ id: "A".repeat(22), name: "notes.txt", size: 5 }],
     });
   });
 });

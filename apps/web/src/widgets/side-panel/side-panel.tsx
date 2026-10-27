@@ -12,7 +12,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import { outgoingImage, type ViewImage } from "@pinomad/protocol/images.ts";
@@ -20,7 +20,7 @@ import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, DurableView, SideConversationView, SubmissionDraft } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "@pinomad/client/family.ts";
 import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
@@ -269,6 +269,8 @@ function SideTranscript({
   ownOnly,
   forkSource,
   onRetry,
+  onRetrySubmission,
+  onEditSubmission,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -285,12 +287,15 @@ function SideTranscript({
     attachments: readonly UserAttachment[];
     requestId: string;
   }) => Promise<void>;
+  onRetrySubmission?: (requestId: string) => void;
+  onEditSubmission?: (requestId: string) => void;
 }) {
   if (side.conversation === undefined) return null;
   return (
     <ConversationTranscript
       conversation={side.conversation}
       docs={side.docs}
+      submissions={view.submissions}
       toolPresentations={view.toolPresentations}
       connected={view.connection === "connected"}
       // Fork depth is one: a fork's transcript never offers Fork.
@@ -304,6 +309,8 @@ function SideTranscript({
       // still anchor a chip back to another thread.
       forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
       onRetry={onRetry}
+      onRetrySubmission={onRetrySubmission}
+      onEditSubmission={onEditSubmission}
     />
   );
 }
@@ -332,6 +339,14 @@ function ThreadDetail({
   const skillDraft = useSkillDraft();
   const { value: draft, setValue: setDraft } = skillDraft;
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  const [takeBack, setTakeBack] = useState<SubmissionDraft>();
+  // The side composer has no attachment tray; restoring text and skill picks
+  // is the whole of an edit here.
+  useEffect(() => {
+    if (takeBack === undefined) return;
+    skillDraft.restore(takeBack.text, takeBack.skills);
+    setTakeBack(undefined);
+  }, [takeBack]);
   const atMentions = useAtMentions(
     view.agents,
     inputRef,
@@ -394,7 +409,19 @@ function ThreadDetail({
               images: images.map(outgoingImage),
               skills,
               ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
+              ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
             });
+          }}
+          onRetrySubmission={(requestId) => {
+            void remote.controller.retrySubmission(requestId).catch(() => {});
+          }}
+          onEditSubmission={(requestId) => {
+            void remote.controller
+              .takeBackSubmission(requestId)
+              .then((draft) => {
+                if (draft !== undefined) setTakeBack(draft);
+              })
+              .catch(() => {});
           }}
         />
         <PendingQuestions

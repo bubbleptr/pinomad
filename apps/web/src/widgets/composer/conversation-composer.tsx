@@ -6,7 +6,7 @@ import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { DurableView, SubmissionDraft } from "@pinomad/protocol/view.ts";
 import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
@@ -53,12 +53,17 @@ export function ConversationComposer({
   conversation,
   busy,
   narrow,
+  takeBack,
+  onTakeBack,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   conversation: NonNullable<DurableView["conversation"]>;
   busy: boolean;
   narrow: boolean;
+  /** A send taken back from the transcript, to restore into this composer. */
+  takeBack?: SubmissionDraft;
+  onTakeBack?: () => void;
 }) {
   // A plain string plus the `$` picks bound in it (ADR-0028).
   const skillDraft = useSkillDraft();
@@ -108,7 +113,7 @@ export function ConversationComposer({
     ...(skills.trigger === undefined ? [] : [skills.trigger]),
     ...(slash.trigger === undefined ? [] : [slash.trigger]),
   ];
-  const queue = queueItems(conversation);
+  const queue = queueItems(conversation, view.submissions ?? []);
   const roles = view.agents?.roles ?? [];
   const summary = findConversation(view.organized, conversation.conversation.id)?.summary;
   // The creation agent is all a pre-5.18 host knows; 5.18 adds currentAgent.
@@ -161,6 +166,8 @@ export function ConversationComposer({
   type PendingAction = { id: number; kind: "steer" | "withdraw" | "edit" };
   const [pendingActions, setPendingActions] = useState<readonly PendingAction[]>([]);
   const pendingRows = useRef(new Set<number>());
+  const [pendingSubmissions, setPendingSubmissions] = useState<readonly string[]>([]);
+  const pendingSubmissionRows = useRef(new Set<string>());
   const beginAction = (id: number, kind: PendingAction["kind"]): boolean => {
     if (pendingRows.current.has(id)) return false;
     pendingRows.current.add(id);
@@ -187,28 +194,59 @@ export function ConversationComposer({
   const showError = (error: unknown): void => {
     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
   };
-  const withdraw = async (item: QueueItem): Promise<void> => {
-    if (!beginAction(item.id, "withdraw")) return;
+
+  const submissionAction = async (requestId: string, action: () => Promise<void>): Promise<void> => {
+    if (pendingSubmissionRows.current.has(requestId)) return;
+    pendingSubmissionRows.current.add(requestId);
+    setPendingSubmissions((current) => [...current, requestId]);
     try {
-      if ((await remote.controller.withdrawQueued(item.id, conversationId)) === "sent") {
+      await action();
+    } catch (error) {
+      showError(error);
+    } finally {
+      pendingSubmissionRows.current.delete(requestId);
+      setPendingSubmissions((current) => current.filter((id) => id !== requestId));
+    }
+  };
+  const retryLocal = (requestId: string): void => {
+    void submissionAction(requestId, () => remote.controller.retrySubmission(requestId));
+  };
+  const editLocal = (requestId: string): void => {
+    void submissionAction(requestId, async () => {
+      const draft = await remote.controller.takeBackSubmission(requestId);
+      if (draft === undefined) return;
+      skillDraft.restore(draft.text, draft.skills);
+      // Inline bytes restore directly; a ref-only image has no type to preview
+      // until the host echoes it, and the composer never staged one.
+      restore(draft.images.flatMap((image) => ("data" in image ? [image] : [])));
+      files.restore(draft.attachmentDetails ?? []);
+      setFocusAfterEdit((count) => count + 1);
+    });
+  };
+  const withdraw = async (item: QueueItem): Promise<void> => {
+    const id = item.id;
+    if (id === undefined || !beginAction(id, "withdraw")) return;
+    try {
+      if ((await remote.controller.withdrawQueued(id, conversationId)) === "sent") {
         toast({ body: "Already sent — can't withdraw" });
       }
     } catch (error) {
       showError(error);
     } finally {
-      endAction(item.id);
+      endAction(id);
     }
   };
   const steer = async (item: QueueItem): Promise<void> => {
-    if (!beginAction(item.id, "steer")) return;
+    const id = item.id;
+    if (id === undefined || !beginAction(id, "steer")) return;
     try {
       // "sent"/"unavailable" have nothing to say: the message is already out,
       // or someone else settled it before the promotion landed.
-      await remote.controller.steerQueued(item.id, conversationId);
+      await remote.controller.steerQueued(id, conversationId);
     } catch (error) {
       showError(error);
     } finally {
-      endAction(item.id);
+      endAction(id);
     }
   };
   // The original content is snapshotted before withdrawing so a lost reply
@@ -269,6 +307,10 @@ export function ConversationComposer({
     }
   };
   const edit = async (item: QueueItem): Promise<void> => {
+    if (item.id === undefined) {
+      if (item.requestId !== undefined) editLocal(item.requestId);
+      return;
+    }
     const retained =
       editCopy.current?.id === item.id && editCopy.current.conversationId === conversationId
         ? editCopy.current.input
@@ -294,6 +336,17 @@ export function ConversationComposer({
   useEffect(() => {
     if (focusAfterEdit > 0) inputRef.current?.focusAtEnd();
   }, [focusAfterEdit]);
+  // A transcript's Edit takes the send back through the controller; restoring
+  // it here keeps skill picks and file chips, not just the text.
+  useEffect(() => {
+    if (takeBack === undefined) return;
+    skillDraft.restore(takeBack.text, takeBack.skills);
+    restore(takeBack.images.flatMap((image) => ("data" in image ? [image] : [])));
+    files.restore(takeBack.attachmentDetails ?? []);
+    setFocusAfterEdit((count) => count + 1);
+    onTakeBack?.();
+    // The draft object changes once per take-back; its contents are immutable.
+  }, [takeBack]);
 
   const submit = (whenBusy: "steer" | "followUp"): void => {
     // Only the picked skills go out as `skills` (ADR-0028).
@@ -338,12 +391,14 @@ export function ConversationComposer({
     }
     const sending = images;
     const attachments = files.ids();
+    const attachmentDetails = files.details();
     // Staged images were primed before they became sendable, so this enters
     // the controller's ordered queue in click order with no intervening await.
     void remote.controller.submit(text, whenBusy, {
       images: sending,
       skills: message.skills,
       ...(attachments.length === 0 ? {} : { attachments }),
+      ...(attachmentDetails.length === 0 ? {} : { attachmentDetails }),
     });
     setValue("");
     clear();
@@ -365,7 +420,11 @@ export function ConversationComposer({
         editRetryId={awaitingEdit ? editCopy.current?.id : undefined}
         narrow={narrow}
         pendingIds={pendingIds}
+        pendingRequestIds={new Set(pendingSubmissions)}
         onSteer={(item) => void steer(item)}
+        onRetry={(item) => {
+          if (item.requestId !== undefined) retryLocal(item.requestId);
+        }}
         onEdit={(item) => void edit(item)}
         onWithdraw={(item) => void withdraw(item)}
       />

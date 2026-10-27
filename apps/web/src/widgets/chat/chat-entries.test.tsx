@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatEntry, CotStep, CotView } from "@pinomad/client/cot-view.ts";
@@ -52,6 +52,56 @@ const plan: TodoState = {
   ],
 };
 
+describe("local submission states", () => {
+  const local = (status: "sending" | "unknown" | "failed", error?: string): Extract<ChatEntry, { kind: "user" }> => ({
+    ...userEntry(),
+    id: "local:r1",
+    status,
+    local: { requestId: "r1", ...(error === undefined ? {} : { error }) },
+  });
+
+  it("labels an unconfirmed send and retries with its requestId", async () => {
+    const onRetry = vi.fn();
+    render(
+      <ChatEntryView
+        entry={local("unknown")}
+        connected
+        openInPanel={() => {}}
+        onFork={() => {}}
+        onRetrySubmission={onRetry}
+        onEditSubmission={() => {}}
+      />,
+    );
+    expect(screen.getByText("Not confirmed")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledWith("r1");
+  });
+
+  it("shows a failed send's error with Retry and Edit", async () => {
+    const onRetry = vi.fn();
+    const onEdit = vi.fn();
+    render(
+      <ChatEntryView
+        entry={local("failed", "The host refused this message")}
+        connected
+        openInPanel={() => {}}
+        onFork={() => {}}
+        onRetrySubmission={onRetry}
+        onEditSubmission={onEdit}
+      />,
+    );
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("The host refused this message")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalledWith("r1");
+  });
+
+  it("renders Delivered only for a committed newest bubble", () => {
+    renderUser({ ...userEntry(Date.now()), status: "delivered" });
+    expect(screen.getByText("Delivered")).toBeInTheDocument();
+  });
+});
+
 describe("message times", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -86,12 +136,15 @@ describe("message times", () => {
     expect(time).toHaveAttribute("title", expect.stringContaining("2026"));
   });
 
-  it("keeps a user's Copy action above the time row", () => {
+  it("puts a user's Copy action and time in one metadata row", () => {
     const { container } = renderUser(userEntry(new Date(2026, 9, 28, 14, 31).getTime()));
+    fireEvent.mouseOver(container.querySelector('[data-slot="chat-message-bubble"]')!);
     const actions = container.querySelector('[data-slot="chat-message-actions"]')!;
     const time = container.querySelector('[data-slot="chat-message-time"]')!;
+    const metadata = container.querySelector(".chat-message__metadata")!;
 
-    expect(actions.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(metadata.contains(actions)).toBe(true);
+    expect(metadata.contains(time)).toBe(true);
   });
 
   it("puts an assistant's time first in its actions row", () => {
