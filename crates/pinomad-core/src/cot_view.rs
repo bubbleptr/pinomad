@@ -145,6 +145,18 @@ fn string_of_value(value: Option<&Json>) -> Option<String> {
     value.map(|v| U16String::js_string(v).to_string_lossy())
 }
 
+/// The host's first-answer-token stamp, only when it is a usable instant: a
+/// finite epoch stamp no earlier than the request start. Anything else is
+/// treated as absent, which is also how old messages look.
+fn answer_started_at(message: &Json) -> Option<f64> {
+    let started_at = message.get("pinomad")?.get("answerStartedAt")?.as_number()?;
+    if !started_at.is_finite() {
+        return None;
+    }
+    let timestamp = message.get("timestamp")?.as_number()?;
+    (started_at >= timestamp).then_some(started_at)
+}
+
 fn text_of(content: Option<&Json>) -> Vec<u16> {
     match content {
         Some(Json::String(s)) => s.units().to_vec(),
@@ -657,7 +669,17 @@ fn derive_run(
     });
     let elapsed_ms = if settled && anchor_ms.is_some() {
         let end = if answering {
-            latest.and_then(|m| m.msg.get("timestamp")).map(|v| v.as_number().unwrap_or(f64::NAN))
+            // The recorded first token is the honest end; a run with one
+            // message has no later timestamp to fall back to, so it reports no
+            // elapsed time rather than zero.
+            let started_at = latest.and_then(|m| answer_started_at(m.msg));
+            started_at.or_else(|| {
+                if messages.len() == 1 {
+                    None
+                } else {
+                    latest.and_then(|m| m.msg.get("timestamp")).map(|v| v.as_number().unwrap_or(f64::NAN))
+                }
+            })
         } else {
             draft
                 .last_ts

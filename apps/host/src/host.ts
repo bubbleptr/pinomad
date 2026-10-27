@@ -25,6 +25,7 @@ import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway, validatePublicUrl } from "./gateway.ts";
 import type { RtcOptions } from "./rtc.ts";
 import { AttachmentStore } from "./attachments.ts";
+import { withAnswerTiming } from "./answer-timing.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -170,6 +171,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let attachments: AttachmentStore | undefined;
   let extensions: readonly BuiltinExtension[] = [];
   try {
+    const models = withAnswerTiming(options.models);
     const token = await hostToken(options.dataDir);
     attachments = new AttachmentStore({ dir: join(options.dataDir, "attachments") });
     await attachments.open();
@@ -220,7 +222,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     harness = await Harness.open(
       await (options.openStorage ?? openNodeSqliteStorage)(join(options.dataDir, "session.sqlite")),
       {
-        models: options.models,
+        models,
         registry,
         env: async (target) => {
           const cwd = target.cwd;
@@ -270,7 +272,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const relayKey = options.relay === undefined ? undefined : await loadRelayKey(options.dataDir);
     const gateway = await startGateway({
       harness,
-      models: options.models,
+      models,
       modelSummaries: options.modelSummaries,
       ...(options.images === undefined ? {} : { images: options.images }),
       session: { id: basename(options.dataDir), directory: options.dataDir },
