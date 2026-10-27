@@ -42,6 +42,7 @@ pub(crate) enum ResultKind {
     AppendAttachment,
     WithdrawQueued,
     SteerQueued,
+    TakeBackSubmission,
     LoginStarted,
     EndpointModels,
 }
@@ -214,6 +215,13 @@ impl PinomadClient {
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },
+                        Some(ResultKind::TakeBackSubmission) => match take_back_draft_of(value.as_ref()) {
+                            Ok(draft) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::TakeBackSubmission { draft },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
+                        },
                         Some(ResultKind::LoginStarted) => match login_started_of(value.as_ref()) {
                             Ok(login_id) => FfiCommand::OperationSucceeded {
                                 op,
@@ -345,8 +353,9 @@ fn candidate_options(
         round_timeout_ms: None,
         connection_mode,
         rtc,
-        // PR 2 keeps the native behavior: iOS opts in with its UI in #406.
-        logical_submissions: false,
+        // #406: the iOS UI renders local sends and their retry/take-back,
+        // so the controller tracks them from the first connection.
+        logical_submissions: true,
     }
 }
 
@@ -524,3 +533,25 @@ const _: () = {
     const fn bound<T: Send + Sync>() {}
     bound::<PinomadClient>();
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Both FFI connection modes opt into logical submissions: the iOS UI
+    /// explains "sending / not confirmed / failed" and calls retry/take-back,
+    /// which only exist while the core tracks the records (ADR-0034).
+    #[test]
+    fn connecting_tracks_logical_submissions() {
+        let options = candidate_options(
+            "ws://fake/",
+            None,
+            "host-key",
+            "private-key",
+            None,
+            crate::connection_mode::ConnectionMode::Auto,
+            None,
+        );
+        assert!(options.logical_submissions);
+    }
+}

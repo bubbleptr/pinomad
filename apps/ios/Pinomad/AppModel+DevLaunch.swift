@@ -119,6 +119,13 @@ extension AppModel {
             startFilesDemo(mode)
             return true
         }
+        if let mode = env["PINOMAD_DEMO_MESSAGE_META"] {
+            // Message times and delivery states without a host, for the
+            // light/dark screenshots: transcript | queue.
+            phase = .connected
+            startMessageMetaDemo(mode)
+            return true
+        }
         if let mode = env["PINOMAD_DEMO_AGENT"] {
             // The conversation model sheet's pickable Agent section on a
             // 5.18 host: `missing` keeps a since-removed agent selected,
@@ -974,6 +981,90 @@ extension AppModel {
             agents: nil,
             conversation: conv
         ))
+        replyStreams.sync(chat: chat)
+    }
+
+    /// `PINOMAD_DEMO_MESSAGE_META=transcript|queue`: the delivery states and
+    /// message times without a host, for light/dark screenshots. Transcript
+    /// mode puts sending, unknown and failed local sends under a delivered
+    /// bubble and a timed answer; queue mode shows the inbox check and the
+    /// same local phases above the composer.
+    private func startMessageMetaDemo(_ mode: String) {
+        phase = .connected
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let earlier = now - 2 * 86_400_000
+        let host = HostInfo(version: "5.25.0", protocol: ProtocolVersion(major: 5, minor: 25))
+        let ref = ModelRef(provider: "faux", modelId: "faux-1")
+        let model = ModelSummary(
+            provider: ref.provider, modelId: ref.modelId, name: "Faux Model",
+            contextWindow: 200_000, thinkingLevels: [.off], images: true)
+        let summary = ConversationSummary(
+            id: 1, kind: .conversation, parent: nil, forkedAt: nil,
+            title: "Message meta", status: nil, updatedAt: now,
+            label: nil, role: nil, activity: nil)
+        let answer = CotView(
+            phase: .settled, failed: false, anchorMs: earlier, elapsedMs: 42_000,
+            todoWrittenAtMs: nil, steps: [],
+            answer: CotAnswer(
+                text: "The parser change is in and the release notes are grouped by category.",
+                streaming: false))
+        let chat: [ChatEntry] = [
+            .user(id: "u1", text: "Summarize the parser changes.",
+                  images: [], timestamp: earlier),
+            .run(id: "run-demo", cot: answer, forkEntryId: nil, interrupted: false,
+                 failure: nil, endedAt: earlier + 42_000),
+            .user(id: "u2", text: "Ship it once the notes look right.",
+                  images: [], timestamp: now - 120_000),
+        ]
+        let local: [LocalSubmission]
+        let queue: [QueueItem]
+        let localQueue: [LocalQueueItem]
+        if mode == "queue" {
+            local = []
+            queue = [
+                QueueItem(id: 7, mode: .followUp, text: "Run the release checks",
+                          imageCount: 0, attachmentCount: 2),
+            ]
+            localQueue = [
+                LocalQueueItem(
+                    requestId: "q2", mode: .followUp, text: "Post the build to the team.",
+                    imageCount: 0, attachmentCount: 0, status: .unknown, error: nil),
+                LocalQueueItem(
+                    requestId: "q3", mode: .followUp, text: "Ship the changelog entry.",
+                    imageCount: 0, attachmentCount: 1, status: .failed,
+                    error: "The host refused the message"),
+            ]
+        } else {
+            local = [
+                LocalSubmission(
+                    requestId: "l1", text: "Check the release notes draft.",
+                    images: [], skills: [], attachmentIds: [], status: .sending, error: nil),
+                LocalSubmission(
+                    requestId: "l2", text: "Post the build to the team.",
+                    images: [], skills: [], attachmentIds: [], status: .unknown, error: nil),
+                LocalSubmission(
+                    requestId: "l3", text: "Ship the changelog entry.",
+                    images: [], skills: [], attachmentIds: [], status: .failed,
+                    error: "The host refused the message"),
+            ]
+            queue = []
+            localQueue = []
+        }
+        let conversation = ConversationSnapshot(
+            id: 1, chat: chat, statusText: "", queueItems: queue,
+            agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
+            questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
+            contextUsage: nil, fresh: true, freshEpoch: 1,
+            localSubmissions: local, localQueueItems: localQueue)
+        navPath = [.conversation(1)]
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil, host: host, hostName: nil, settings: nil, devices: [],
+            organized: Organized(
+                chats: [ConversationNode(summary: summary, children: [])],
+                projects: [], archived: []),
+            notices: [], models: [model], defaults: Defaults(model: ref, thinkingLevel: .off),
+            agents: nil, conversation: conversation))
         replyStreams.sync(chat: chat)
     }
 }

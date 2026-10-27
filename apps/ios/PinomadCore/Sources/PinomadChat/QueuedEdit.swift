@@ -127,19 +127,7 @@ extension QueuedEdit.Copy {
     public func resolvingImages(
         using load: @escaping @Sendable (String, ImageVariant) async throws -> CachedImage
     ) async throws -> QueuedEdit.Copy {
-        var resolved: [MessageImage] = []
-        resolved.reserveCapacity(images.count)
-        for image in images {
-            if !image.data.isEmpty {
-                resolved.append(image)
-                continue
-            }
-            guard let ref = image.ref, !ref.isEmpty else {
-                throw QueuedEditImageError.missingReference
-            }
-            let bytes = try await load(ref, .original)
-            resolved.append(MessageImage(data: bytes.data, mimeType: bytes.mimeType))
-        }
+        let resolved = try await images.resolving(using: load)
         return QueuedEdit.Copy(
             conversationId: conversationId,
             id: id,

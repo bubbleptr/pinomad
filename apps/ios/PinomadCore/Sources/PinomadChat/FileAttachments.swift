@@ -192,6 +192,16 @@ public struct FileAttachmentTray: Equatable, Sendable {
         entries.compactMap { $0.status == .done ? $0.attachmentId : nil }
     }
 
+    /// The finished chips as the host's record shape: what a local bubble or
+    /// a take-back shows after the tray itself is cleared.
+    public var attachments: [UserAttachment] {
+        entries.compactMap { entry in
+            guard entry.status == .done, let id = entry.attachmentId else { return nil }
+            return UserAttachment(
+                id: id, name: entry.name, size: UInt64(clamping: entry.size))
+        }
+    }
+
     public func entry(_ id: String) -> Entry? {
         entries.first { $0.id == id }
     }

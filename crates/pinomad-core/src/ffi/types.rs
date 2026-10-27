@@ -5,7 +5,7 @@
 // Pure-field records and enums derive UniFFI in place in the core modules
 // and are re-exported; this file holds the twins plus conversions.
 
-use crate::ffi::calls::FfiCall;
+use crate::ffi::calls::{FfiCall, SubmitMode};
 use crate::ffi::hosts::{CandidateFailure, EndpointSet, StoredHost};
 use crate::json::{Json, JsonObject};
 use crate::ffi::rtc::{RtcSelectedCandidateEnd, RtcSendOutcome};
@@ -200,6 +200,59 @@ pub enum CallResult {
     LoginStarted { login_id: String },
     /// `listEndpointModels` — the model ids the endpoint listed.
     EndpointModels { models: Vec<String> },
+    /// `takeBackSubmission` — the send's original content when it was taken
+    /// back, or `None` when the host already admitted it.
+    TakeBackSubmission { draft: Option<SubmissionDraft> },
+}
+
+/// A taken-back send, shaped like the composer's next submit: the text and
+/// the `$` picks go back as they were, host-stored files by id.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SubmissionDraft {
+    pub text: String,
+    pub when_busy: SubmitMode,
+    pub images: Vec<MessageImage>,
+    pub skills: Vec<String>,
+    pub attachments: Vec<String>,
+}
+
+/// How a local send reads until the host's entry or inbox row replaces it
+/// (ADR-0034 §5). `queued` and `inFlight` both read as sending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SubmissionStatus {
+    Sending,
+    Unknown,
+    Failed,
+}
+
+/// One local bubble the transcript keeps at the end: a send whose host entry
+/// has not arrived yet. The host replaces it with the real user entry.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct LocalSubmission {
+    pub request_id: String,
+    pub text: String,
+    pub images: Vec<MessageImage>,
+    /// The skills the host expanded in this message (ADR-0028).
+    pub skills: Vec<String>,
+    /// Host-stored attachment ids, as sent. Names and sizes live only in the
+    /// composer that sent them, so a take-back maps these back there.
+    pub attachment_ids: Vec<String>,
+    pub status: SubmissionStatus,
+    /// Why the host refused it, when `status` is failed.
+    pub error: Option<String>,
+}
+
+/// One local row above a busy composer: a queue-placed send the host has not
+/// admitted yet, or whose inbox row has not arrived.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct LocalQueueItem {
+    pub request_id: String,
+    pub mode: SubmitMode,
+    pub text: String,
+    pub image_count: u64,
+    pub attachment_count: u64,
+    pub status: SubmissionStatus,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -244,8 +297,118 @@ pub(crate) fn steer_outcome_of(value: Option<&Json>) -> Result<SteerOutcome, Str
     }
 }
 
-/// `createPairing`'s typed result — strict like `changes_of`: the offer is
+fn submission_status_of(value: &str) -> SubmissionStatus {
+    match value {
+        "unknown" => SubmissionStatus::Unknown,
+        "failed" => SubmissionStatus::Failed,
+        _ => SubmissionStatus::Sending,
+    }
+}
+
+/// A local submission image is the outgoing form (inline bytes or a ref),
+/// unlike a conversation block: accept both.
+fn outgoing_image_of(value: &Json) -> Option<MessageImage> {
+    let mime_type = lossy(value.get("mimeType")).unwrap_or_default();
+    if let Some(data) = value.get("data").and_then(Json::as_str).filter(|data| !data.is_empty()) {
+        return Some(MessageImage {
+            data: data.to_string_lossy(),
+            mime_type,
+            ref_: None,
+        });
+    }
+    let reference = value.get("ref").and_then(Json::as_str).filter(|reference| !reference.is_empty())?;
+    Some(MessageImage {
+        data: String::new(),
+        mime_type,
+        ref_: Some(reference.to_string_lossy()),
+    })
+}
+
+fn string_list(value: Option<&Json>) -> Vec<String> {
+    value
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter_map(|item| lossy(Some(item))).collect())
+        .unwrap_or_default()
+}
+
+/// The local bubbles the transcript appends after the committed entries.
+/// The core's submission_rows owns the placement/conversation filter; the
+/// attachment ids come from the same record so a take-back can map them back
+/// to the composer's chips.
+pub(crate) fn local_submissions_of(view: &Json) -> Vec<LocalSubmission> {
+    let empty = Json::Null;
+    let submissions = view.get("submissions").unwrap_or(&empty);
+    let raw = |request_id: &str| {
+        submissions.as_array().and_then(|items| {
+            items
+                .iter()
+                .find(|item| lossy(item.get("requestId")).as_deref() == Some(request_id))
+        })
+    };
+    crate::cot_view::submission_rows(view, submissions, false)
+        .into_iter()
+        .map(|row| LocalSubmission {
+            attachment_ids: string_list(raw(&row.request_id).and_then(|item| item.get("attachments"))),
+            request_id: row.request_id,
+            text: row.text,
+            images: row.images,
+            skills: row.skills,
+            status: submission_status_of(&row.status),
+            error: row.error,
+        })
+        .collect()
+}
+
+/// The local rows above a busy composer. The core's helper already hides a
+/// row whose host inbox entry has landed.
+pub(crate) fn local_queue_items_of(view: &Json) -> Vec<LocalQueueItem> {
+    let empty = Json::Null;
+    let submissions = view.get("submissions").unwrap_or(&empty);
+    crate::cot_view::submission_queue_rows(view, submissions)
+        .into_iter()
+        .map(|row| LocalQueueItem {
+            request_id: row.request_id,
+            mode: if row.mode == "steer" { SubmitMode::Steer } else { SubmitMode::FollowUp },
+            text: row.text,
+            image_count: row.image_count,
+            attachment_count: row.attachment_count,
+            status: submission_status_of(&row.status),
+            error: row.error,
+        })
+        .collect()
+}
+
+/// takeBackSubmission's typed result: null when the host already admitted the
+/// send, otherwise the draft the composer resends. Strict — a malformed draft
+/// fails the op instead of refilling the composer with a guess.
+pub(crate) fn take_back_draft_of(value: Option<&Json>) -> Result<Option<SubmissionDraft>, String> {
+    let Some(value) = value.filter(|v| !matches!(v, Json::Null)) else {
+        return Ok(None);
+    };
+    if !value.is_object() {
+        return Err("malformed takeBackSubmission result".to_string());
+    }
+    let when_busy = match lossy(value.get("whenBusy")).as_deref() {
+        Some("steer") => SubmitMode::Steer,
+        Some("followUp") | None => SubmitMode::FollowUp,
+        Some(_) => return Err("malformed takeBackSubmission result: whenBusy".to_string()),
+    };
+    Ok(Some(SubmissionDraft {
+        text: lossy(value.get("text")).unwrap_or_default(),
+        when_busy,
+        images: value
+            .get("images")
+            .and_then(Json::as_array)
+            .map(|items| items.iter().filter_map(outgoing_image_of).collect())
+            .unwrap_or_default(),
+        skills: string_list(value.get("skills")),
+        attachments: string_list(value.get("attachments")),
+    }))
+}
+
+/// createPairing's typed result — strict like changes_of: the offer is
 /// only safe to display whole, so a malformed shape fails the op.
+
 pub(crate) fn pairing_of(value: Option<&Json>) -> Result<(String, f64), String> {
     let value = value
         .filter(|v| v.is_object())

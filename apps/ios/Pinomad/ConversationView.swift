@@ -13,6 +13,10 @@ struct ConversationView: View {
     let model: AppModel
     let conversationId: UInt64
 
+    /// The shared calendar day for every message time. A local midnight timer
+    /// and returning to the foreground both re-read it (the Web's useToday).
+    @State private var clock = MessageClock(calendar: .autoupdatingCurrent)
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingOverview = false
     /// A subagent picked in the overview, pushed once the sheet is gone —
     /// pushing under a presented sheet glitches the transition.
@@ -191,6 +195,21 @@ struct ConversationView: View {
         .task {
             model.openConversation(conversationId)
         }
+        .task(id: scenePhase) {
+            // A suspended app's timer does not run; the active pass is what
+            // catches a day change that happened in the background.
+            guard scenePhase == .active else { return }
+            clock.refresh()
+            while !Task.isCancelled {
+                let next = Calendar.autoupdatingCurrent.nextDate(
+                    after: .now,
+                    matching: DateComponents(hour: 0, minute: 0, second: 0),
+                    matchingPolicy: .nextTime
+                ) ?? .now.addingTimeInterval(3600)
+                try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow + 0.5)))
+                clock.refresh()
+            }
+        }
     }
 
     /// Scripted scrolling for perf runs, driven by `PINOMAD_AUTOSCROLL` in
@@ -293,36 +312,69 @@ struct ConversationView: View {
             ? retryOf(entries: conversation.chat) : nil
         let latestRun = Self.latestRunId(conversation.chat)
         let todo = Self.todoLine(conversation)
-        ForEach(conversation.chat, id: \.entryId) { entry in
-            row(entry, retry: entry.entryId == conversation.chat.last?.entryId ? retry : nil,
-                subagentSummaries: subagentSummaries,
-                todo: entry.entryId == latestRun ? todo : nil)
+        let rows = Transcript.rows(
+            chat: conversation.chat,
+            local: conversation.localSubmissions,
+            attachmentDetails: model.sentFileDetails
+        )
+        ForEach(rows) { row in
+            transcriptRow(row, conversation: conversation, retry: retry, latestRun: latestRun,
+                          subagentSummaries: subagentSummaries, todo: todo)
         }
     }
 
     @ViewBuilder
-    private func row(
-        _ entry: ChatEntry,
+    private func transcriptRow(
+        _ row: TranscriptRow,
+        conversation: ConversationSnapshot,
         retry: RetryRequest?,
+        latestRun: String?,
         subagentSummaries: [UInt64: SubagentCardSummary],
         todo: TodoLine?
     ) -> some View {
-        switch entry {
-        case let .user(_, text, images, skills, attachments, _):
-            // Only the skills the host expanded light up (ADR-0028).
-            UserRow(text: text, images: images, skills: skills, attachments: attachments).equatable()
-        case let .run(id, cot, _, interrupted, failure, _):
-            RunRow(cot: cot, subagentSummaries: subagentSummaries,
-                   openSubagent: { openSubagent($0, from: id) },
-                   openTrace: { tracedRun = TracedRun(id: id) },
-                   todo: todo,
-                   interrupted: interrupted, failure: failure, stream: model.streamFor(id),
-                   retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
-                   retryKey: retry?.requestId).equatable()
-        case .compaction:
-            MarkerRow("Context compacted")
-        case .reset:
-            MarkerRow("Conversation reset")
+        switch row {
+        case let .entry(entry, status):
+            switch entry {
+            case let .user(_, text, images, skills, attachments, timestamp):
+                // Only the skills the host expanded light up (ADR-0028).
+                UserRow(
+                    text: text, images: images, skills: skills, attachments: attachments,
+                    timestamp: timestamp, status: status, error: nil,
+                    today: clock.today, requestKey: nil,
+                    retry: nil, edit: nil, editDisabled: false, editTooltip: nil,
+                    pending: false
+                ).equatable()
+            case let .run(id, cot, _, interrupted, failure, endedAt):
+                // Only the newest run may carry the failed run's retry and
+                // the current todo: an older row with either would resend
+                // the wrong prompt or show progress it never wrote.
+                let retryRequest = id == conversation.chat.last?.entryId ? retry : nil
+                RunRow(cot: cot, subagentSummaries: subagentSummaries,
+                       openSubagent: { openSubagent($0, from: id) },
+                       openTrace: { tracedRun = TracedRun(id: id) },
+                       todo: id == latestRun ? todo : nil,
+                       interrupted: interrupted, failure: failure, stream: model.streamFor(id),
+                       endedAt: endedAt, today: clock.today,
+                       retry: retryRequest.map { request in
+                           { model.retry(request, conversation: conversationId) }
+                       },
+                       retryKey: retryRequest?.requestId).equatable()
+            case .compaction:
+                MarkerRow("Context compacted")
+            case .reset:
+                MarkerRow("Conversation reset")
+            }
+        case let .local(message):
+            let availability = model.editAvailability(conversation: conversationId)
+            UserRow(
+                text: message.text, images: message.images, skills: message.skills,
+                attachments: message.attachments, timestamp: nil, status: message.status,
+                error: message.error, today: clock.today, requestKey: message.requestId,
+                retry: { model.retrySubmission(conversation: conversationId, requestId: message.requestId) },
+                edit: { model.editSubmission(conversation: conversationId, requestId: message.requestId) },
+                editDisabled: availability.isDisabled, editTooltip: availability.tooltip,
+                pending: !connected || model.submissionPending.contains(message.requestId)
+            ).equatable()
         }
     }
 }
@@ -363,10 +415,12 @@ private extension View {
     }
 }
 
-/// What the user sent: the bubble, then any attached images. The kit's
-/// UserMessageView carries the attributed text so the `$name` mentions of
-/// the skills the host expanded paint blue (ADR-0028); the bubble styling
-/// stays in one place.
+/// What the user sent: the bubble, then any attached images, then the
+/// delivery line — status and time beside a committed bubble, or the local
+/// send's phase with Retry/Edit until the host replaces it (ADR-0034 §5).
+/// The kit's UserMessageView carries the attributed text so the `$name`
+/// mentions of the skills the host expanded paint blue (ADR-0028); the
+/// bubble styling stays in one place.
 private struct UserRow: View, Equatable {
     let text: String
     let images: [MessageImage]
@@ -374,6 +428,21 @@ private struct UserRow: View, Equatable {
     let skills: [String]
     /// Host-stored files the message referenced (issue #321); chips only.
     let attachments: [UserAttachment]
+    /// When the host received a committed message; nil on a local send.
+    let timestamp: Double?
+    /// The delivery mark: delivered on the newest committed bubble, the
+    /// phase on a local one.
+    let status: MessageStatus?
+    let error: String?
+    let today: Date
+    /// The local send's idempotency key; nil on a committed bubble. The
+    /// retry/edit closures capture it, so equality uses this key instead.
+    let requestKey: String?
+    let retry: (() -> Void)?
+    let edit: (() -> Void)?
+    let editDisabled: Bool
+    let editTooltip: String?
+    let pending: Bool
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -390,7 +459,65 @@ private struct UserRow: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             if !text.isEmpty { UserMessageView(attributedText) }
+            metadata
         }
+    }
+
+    /// The row under the bubble: icon, time, and local-only actions. It is
+    /// always present and keeps one line, so a phase change never moves the
+    /// bubble (the icon slot has a fixed width too).
+    private var metadata: some View {
+        HStack(spacing: 6) {
+            if let status {
+                Image(status.icon)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(status == .failed ? Color.red : Color.secondary)
+                    .frame(width: 14, height: 14)
+                    .accessibilityLabel(Text(status.label))
+            }
+            if let caption = status?.caption {
+                Text(caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if let time {
+                Text(time.label)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityLabel(Text(time.full))
+            }
+            if let error, !error.isEmpty {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            if let retry, status == .unknown || status == .failed {
+                Button("Retry", action: retry)
+                    .buttonStyle(.plain)
+                    .fontWeight(.medium)
+                    .foregroundStyle(pending ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.tint))
+                    .disabled(pending)
+            }
+            // Only a refused send may be edited; an unconfirmed one must be
+            // retried (which queries first) or left alone (ADR-0034 §7).
+            if let edit, status == .failed {
+                Button("Edit", action: edit)
+                    .buttonStyle(.plain)
+                    .fontWeight(.medium)
+                    .foregroundStyle(editDisabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.tint))
+                    .disabled(editDisabled || pending)
+                    .accessibilityHint(Text(editDisabled ? editTooltip ?? "" : ""))
+            }
+        }
+        .font(.caption)
+        .frame(minHeight: 18)
+    }
+
+    private var time: MessageTime? {
+        guard let timestamp else { return nil }
+        return MessageTime(timestamp: timestamp, today: today)
     }
 
     /// The core decides what counts as a mention; the app only converts its
@@ -409,7 +536,10 @@ private struct UserRow: View, Equatable {
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.text == rhs.text && lhs.images == rhs.images && lhs.skills == rhs.skills
-            && lhs.attachments == rhs.attachments
+            && lhs.attachments == rhs.attachments && lhs.timestamp == rhs.timestamp
+            && lhs.status == rhs.status && lhs.error == rhs.error && lhs.today == rhs.today
+            && lhs.requestKey == rhs.requestKey && lhs.pending == rhs.pending
+            && lhs.editDisabled == rhs.editDisabled
     }
 }
 
@@ -433,6 +563,10 @@ private struct RunRow: View, Equatable {
     let interrupted: Bool
     let failure: String?
     let stream: StreamingMarkdown?
+    /// When the run's last answer finished, once settled; the answer's
+    /// action row shows it (the Web's ChatMessageMetadata).
+    let endedAt: Double?
+    let today: Date
     /// Set on the newest failed run while a retry is possible.
     let retry: (() -> Void)?
     /// What `retry` resends — the closure itself can't be compared.
@@ -449,12 +583,19 @@ private struct RunRow: View, Equatable {
                 SubagentCardView(card: card, onOpen: openSubagent)
             }
             if cot.answer != nil {
-                ReplyBody(answer: cot.answer!, stream: stream)
+                ReplyBody(answer: cot.answer!, stream: stream, endedAt: endedAt, today: today)
+            } else if let endedAt, let time = MessageTime(timestamp: endedAt, today: today) {
+                // A textless settled run still says when it stopped.
+                Text(time.label)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Text(time.full))
             }
             if let failure {
                 RunFailureView(raw: failure)
             }
-            if let retry {
+            if let retry, failure != nil {
                 Button("Retry", image: .rotateCw, action: retry)
                     .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)
@@ -471,6 +612,7 @@ private struct RunRow: View, Equatable {
             && lhs.todo == rhs.todo
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
+            && lhs.endedAt == rhs.endedAt && lhs.today == rhs.today
     }
 }
 
@@ -540,15 +682,31 @@ private struct MarkerRow: View {
 private struct ReplyBody: View {
     let answer: CotAnswer
     let stream: StreamingMarkdown?
+    let endedAt: Double?
+    let today: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let stream {
                 StreamingMarkdownView(stream)
                 if stream.stream.isFinished {
-                    ReplyActions(markdown: stream.markdown)
+                    HStack(spacing: 8) {
+                        ReplyActions(markdown: stream.markdown)
+                        if let time {
+                            Text(time.label)
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel(Text(time.full))
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private var time: MessageTime? {
+        guard let endedAt else { return nil }
+        return MessageTime(timestamp: endedAt, today: today)
     }
 }
