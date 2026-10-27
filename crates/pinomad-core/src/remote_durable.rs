@@ -5321,6 +5321,11 @@ impl RemoteDurable {
             SubmissionQuery::Confirm(index) => {
                 if ok && !matches!(value, Json::Null) {
                     self.apply_submission_fact(index, &value);
+                } else if ok && self.submissions[index].admitted {
+                    // Admitted, then gone from storage: withdrawn or consumed
+                    // past the visible queue, so the local row is over.
+                    self.settle_submission(index);
+                    let _ = self.refresh();
                 }
             }
             SubmissionQuery::RecoveryQuery(index) => {
