@@ -2721,3 +2721,49 @@ fn logical_submit_degrades_on_a_pre_525_host() {
     assert!(h.submission_queries().is_empty());
 }
 
+
+
+#[test]
+fn logical_retry_disconnects_again_then_recovery_settles() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    h.set_result("submission", Json::Null);
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.host.method("submit").len(), 2);
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    h.disconnect(1000, None);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    h.host.hung_methods.remove("submit");
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("done")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert_eq!(h.submission_queries().len(), 2);
+}
+
