@@ -322,7 +322,15 @@ impl Harness {
         Self::with_options(host, (20, 20), false)
     }
 
-    fn logical(host: ScriptedHost) -> Self {
+    fn logical(mut host: ScriptedHost) -> Self {
+        // Logical rows reconcile against the inbox doc as well as the transcript.
+        host.hello_extras.push((
+            "docs".to_string(),
+            Json::array(vec![
+                obj(&[("kind", Json::from(DOC_KIND)), ("presentation", Json::from(DOC_KIND))]),
+                obj(&[("kind", Json::from("pi.inbox"))]),
+            ]),
+        ));
         let mut harness = Self::with_options(host, (20, 20), true);
         harness.invoke(0, switch_to(1));
         harness
@@ -2625,3 +2633,91 @@ fn logical_recovery_blocks_switch_and_set_model_until_it_finishes() {
 fn num_id(value: &Json) -> Option<u64> {
     value.as_number().filter(|n| *n >= 0.0).map(|n| n as u64)
 }
+
+
+#[test]
+fn logical_submit_ignores_another_devices_entry_and_inbox_row() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("queued")),
+        ]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(99, "other device")]));
+    h.snapshot(
+        "doc:pi.inbox:1",
+        obj(&[("items", Json::array(vec![obj(&[
+            ("id", Json::Number(8.0)),
+            ("mode", Json::from("steer")),
+            ("content", Json::from("other")),
+        ])]))]),
+    );
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "inFlight"
+    );
+    h.snapshot(
+        "doc:pi.inbox:1",
+        obj(&[("items", Json::array(vec![obj(&[
+            ("id", Json::Number(7.0)),
+            ("mode", Json::from("followUp")),
+            ("content", Json::from("hello")),
+        ])]))]),
+    );
+    assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_submit_settles_a_done_record_whose_entry_was_trimmed() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("done")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.submission_queries().len(), 1);
+}
+
+#[test]
+fn logical_submit_degrades_on_a_pre_525_host() {
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![("protocol".to_string(), protocol_obj(24.0))],
+    );
+    let mut h = Harness::with_options(host, (20, 20), true);
+    h.invoke(0, switch_to(1));
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.invoke(1, submit_call("r1", "hello"));
+    assert!(h.submissions().is_empty(), "the result is the only fact");
+    assert!(h.submission_queries().is_empty());
+
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(2, submit_call("r2", "second"));
+    h.disconnect(1000, None);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    h.host.hung_methods.remove("submit");
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert!(h.submission_queries().is_empty());
+}
+

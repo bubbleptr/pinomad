@@ -5044,6 +5044,21 @@ impl RemoteDurable {
             }
         } else {
             self.submissions[index].phase = SubmissionPhase::InFlight;
+            if let Some(conversation) = self.submissions[index].conversation_id {
+                // This query answers the current snapshot; the next one may re-ask.
+                self.submissions[index].checked_version = Some(
+                    self.stream_versions
+                        .get(&conversation_stream(conversation).0)
+                        .copied()
+                        .unwrap_or(0)
+                        .wrapping_add(
+                            self.stream_versions
+                                .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
+                                .copied()
+                                .unwrap_or(0),
+                        ),
+                );
+            }
             self.send_submission_query(index, SubmissionQuery::Confirm(index));
         }
         let _ = self.refresh();
@@ -5321,9 +5336,13 @@ impl RemoteDurable {
             SubmissionQuery::Confirm(index) => {
                 if ok && !matches!(value, Json::Null) {
                     self.apply_submission_fact(index, &value);
-                } else if ok && self.submissions[index].admitted {
-                    // Admitted, then gone from storage: withdrawn or consumed
-                    // past the visible queue, so the local row is over.
+                } else if ok
+                    && self.submissions[index].admitted
+                    && self.submissions[index].entry.is_none()
+                {
+                    // A queued admit has no entry, and no record now: withdrawn
+                    // or consumed past the visible queue, so the local row is
+                    // over. A known entry still waits for its snapshot.
                     self.settle_submission(index);
                     let _ = self.refresh();
                 }
