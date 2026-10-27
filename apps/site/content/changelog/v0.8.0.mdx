@@ -1,0 +1,38 @@
+---
+title: P2P connections, provider sign-in from clients, and multiple host addresses
+version: v0.8.0
+date: 2026-10-27
+---
+
+**Before you upgrade**
+
+- The host now reads credentials only from its own data directory, not from pi's config. After upgrading, sign in to your model providers again in Settings → Providers.
+- Upgrade the host and the server together; older clients show that an update is needed.
+
+**Connections**
+
+- Clients connect through the relay first, then switch to a WebRTC peer-to-peer link in the background once it is stable, so traffic no longer passes through the server. If hole punching fails, the connection stays on the relay. Works on web, desktop, and iOS.
+- Choose how each host connects: Auto, Direct only, or Relay only.
+- Connection details show whether you are on P2P or the relay, whether each end is a LAN, tailnet, or public address, and the last failure. Full addresses stay hidden until you expand them.
+- Pairing carries several host addresses (relay, LAN, and so on); clients try them in order and move on when one is unreachable.
+- iOS gathers both IPv4 and IPv6 candidates, so P2P works over IPv6 on cellular.
+
+**Providers**
+
+- Settings → Providers lists every model provider: sign in with a subscription, enter an API key, or add a custom compatible endpoint. Available on web, desktop, and iOS.
+- The model picker shows each maker's logo.
+
+**Images**
+
+- The host makes thumbnails and previews; conversations load the small version first and open the original on tap.
+
+**iOS**
+
+- TeX math in replies renders as formulas; dollar amounts stay as text.
+- Draft project and checkout chips are liquid-glass capsules, a finished run shows its outcome icon, and the context meter is just the ring.
+- Quotes next to CJK text pair up again, question cards cap their height and scroll, and a failed run shows the provider's status and message with the raw text under Details.
+- Composer menus shrink to fit instead of pushing the composer off screen.
+
+**Desktop**
+
+- Development builds keep their own data directory, separate from the release app.
