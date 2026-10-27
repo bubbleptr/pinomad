@@ -2258,11 +2258,12 @@ it("shows a queued follow-up above the composer until the run takes it", async (
   await prompt(page).fill("next task");
   await page.getByRole("button", { name: "Follow-up", exact: true }).click();
 
-  const queued = page.locator(".chat-queued-message");
+  // Host inbox rows only: an unconfirmed local row may coexist briefly.
+  const queued = page.getByTestId("chat-queued-message");
   await queued.getByText("next task", { exact: true }).waitFor();
   await queued.getByText("Follow-up", { exact: true }).waitFor();
   // Once the run takes it, the row is gone and the message is a user entry.
-  await page.locator(".chat-queued-message").first().waitFor({ state: "detached" });
+  await queued.first().waitFor({ state: "detached" });
   await page.getByText("followed", { exact: true }).waitFor();
 });
 

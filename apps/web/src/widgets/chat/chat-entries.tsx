@@ -181,8 +181,18 @@ function UserEntry({
         onFocus={() => setHovered(true)}
         onBlur={() => setHovered(false)}
       >
-        {entry.attachments.length === 0 ? null : <MessageAttachments attachments={entry.attachments} />}
-        {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
+        {entry.attachments.length === 0 ? null : (
+          <MessageAttachments
+            attachments={entry.attachments}
+            {...(local === undefined ? {} : { testId: "local-message-attachments" })}
+          />
+        )}
+        {entry.images.length === 0 ? null : (
+          <MessageImages
+            images={entry.images}
+            {...(local === undefined ? {} : { testId: "local-message-images" })}
+          />
+        )}
         {entry.text === "" ? null : (
           <ChatMessage.Bubble>
             <ChatMessage.Content>

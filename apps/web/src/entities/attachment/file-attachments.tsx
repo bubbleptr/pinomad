@@ -60,10 +60,16 @@ export function FileAttachmentChip({
 }
 
 /** A sent message's files: names and sizes only, never a preview. */
-export function MessageAttachments({ attachments }: { attachments: readonly UserAttachment[] }) {
+export function MessageAttachments({
+  attachments,
+  testId = "message-attachments",
+}: {
+  attachments: readonly UserAttachment[];
+  testId?: string;
+}) {
   if (attachments.length === 0) return null;
   return (
-    <div className="flex flex-wrap justify-end gap-2" data-testid="message-attachments">
+    <div className="flex flex-wrap justify-end gap-2" data-testid={testId}>
       {attachments.map((file, index) => (
         <div key={`${file.id}:${index}`} className="file-chip" data-status="done" title={file.name}>
           <FileIcon aria-hidden="true" className="file-chip__icon" />

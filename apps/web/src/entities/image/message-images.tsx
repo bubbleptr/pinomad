@@ -11,11 +11,17 @@ import { useState } from "react";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
 import { cachedImageSrc, useImageSrc, useNearViewport } from "./image-source.tsx";
 
-export function MessageImages({ images }: { images: readonly ViewImage[] }) {
+export function MessageImages({
+  images,
+  testId = "message-images",
+}: {
+  images: readonly ViewImage[];
+  testId?: string;
+}) {
   const [open, setOpen] = useState<number | undefined>(undefined);
   if (images.length === 0) return null;
   return (
-    <div className="flex flex-wrap justify-end gap-2" data-testid="message-images">
+    <div className="flex flex-wrap justify-end gap-2" data-testid={testId}>
       {images.map((image, index) => (
         <MessageThumbnail
           key={index}
