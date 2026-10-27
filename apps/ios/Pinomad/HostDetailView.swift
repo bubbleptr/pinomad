@@ -49,7 +49,12 @@ struct HostDetailView: View {
                         LabeledContent("Peer-to-peer", value: peerText)
                     }
                     if let failure = status?.lastFailure {
-                        RtcFailureRow(failure: failure, stage: stageLabel(failure.stage))
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            RtcFailureRow(
+                                failure: failure,
+                                stage: stageLabel(failure.stage),
+                                elapsedMs: statusElapsedMs)
+                        }
                     }
                 }
             }
@@ -93,6 +98,15 @@ struct HostDetailView: View {
 
     private var status: RtcDiagnostics? {
         isCurrent ? model.rtcStatus : nil
+    }
+
+    /// The core's `agoMs` is frozen until a Clock event, so the failure row
+    /// adds the local time since the status read — the same baseline the
+    /// cooldown uses.
+    private var statusElapsedMs: UInt64 {
+        let elapsed = Date().timeIntervalSince(model.rtcStatusAt)
+        guard elapsed > 0 else { return 0 }
+        return UInt64(elapsed * 1000)
     }
 
     private var pathText: String {
@@ -158,13 +172,17 @@ private struct RtcAddressRow: View {
     let end: RtcCandidateEnd
 
     var body: some View {
-        LabeledContent(label) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
             Text(RtcDiagnosticsText.candidateLabel(
                 type: end.rtcType, address: end.address, scope: end.scope))
+                .foregroundStyle(.secondary)
                 .monospacedDigit()
-                .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
     }
 }
 
@@ -173,6 +191,7 @@ private struct RtcAddressRow: View {
 struct RtcFailureRow: View {
     let failure: RtcFailure
     let stage: String
+    let elapsedMs: UInt64
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -197,6 +216,7 @@ struct RtcFailureRow: View {
     private var metaText: String {
         RtcDiagnosticsText.failureMeta(
             agoMs: failure.agoMs,
+            elapsedMs: elapsedMs,
             remote: failure.pair?.remote.scope,
             local: failure.pair?.local.scope)
     }
@@ -215,7 +235,8 @@ struct RtcFailureRow: View {
                     remote: RtcCandidateEnd(
                         rtcType: "srflx", address: "100.64.1.2:6000", scope: .tailnet))
             ),
-            stage: "ICE"
+            stage: "ICE",
+            elapsedMs: 0
         )
     }
 }

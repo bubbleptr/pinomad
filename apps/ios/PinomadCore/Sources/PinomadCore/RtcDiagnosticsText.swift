@@ -37,6 +37,14 @@ public enum RtcDiagnosticsText {
         }
     }
 
+    /// The failure age as of now: the core's reading plus the time since the
+    /// page read it. The core clock only moves on `Clock` events, so without
+    /// this the age would freeze while the page polls.
+    public static func ageLabel(agoMs: UInt64, elapsedMs: UInt64) -> String {
+        let (total, overflow) = agoMs.addingReportingOverflow(elapsedMs)
+        return agoLabel(overflow ? UInt64.max : total)
+    }
+
     /// Whole seconds below a minute, whole minutes below an hour, then hours.
     public static func agoLabel(_ milliseconds: UInt64) -> String {
         let seconds = Int(milliseconds / 1000)
@@ -59,9 +67,10 @@ public enum RtcDiagnosticsText {
 
     /// Age plus the pair's route, for the Last failure row.
     public static func failureMeta(
-        agoMs: UInt64, remote: RtcAddressScope?, local: RtcAddressScope?
+        agoMs: UInt64, elapsedMs: UInt64,
+        remote: RtcAddressScope?, local: RtcAddressScope?
     ) -> String {
-        var parts = [agoLabel(agoMs)]
+        var parts = [ageLabel(agoMs: agoMs, elapsedMs: elapsedMs)]
         if let remote, let local, let scope = routeScope(remote: remote, local: local) {
             parts.append("on \(scopeLabel(scope))")
         }

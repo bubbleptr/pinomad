@@ -37,13 +37,27 @@ struct RtcDiagnosticsTextTests {
         #expect(RtcDiagnosticsText.candidateLabel(type: "srflx", address: nil, scope: .public) == "srflx (Internet)")
     }
 
+    @Test func failureAgeAdvancesWithLocalElapsed() {
+        #expect(RtcDiagnosticsText.ageLabel(agoMs: 4_000, elapsedMs: 0) == "4s ago")
+        #expect(RtcDiagnosticsText.ageLabel(agoMs: 4_000, elapsedMs: 7_000) == "11s ago")
+        #expect(RtcDiagnosticsText.ageLabel(agoMs: 55_000, elapsedMs: 10_000) == "1m ago")
+        #expect(
+            RtcDiagnosticsText.failureMeta(
+                agoMs: 4_000, elapsedMs: 7_000, remote: .lan, local: .unknown)
+                == "11s ago · on LAN")
+    }
+
     @Test func failureMetaAddsTheRouteOnlyWhenKnown() {
         #expect(
-            RtcDiagnosticsText.failureMeta(agoMs: 12_000, remote: .tailnet, local: .lan)
+            RtcDiagnosticsText.failureMeta(
+                agoMs: 12_000, elapsedMs: 0, remote: .tailnet, local: .lan)
                 == "12s ago · on Tailnet")
-        #expect(RtcDiagnosticsText.failureMeta(agoMs: 60_000, remote: nil, local: nil) == "1m ago")
         #expect(
-            RtcDiagnosticsText.failureMeta(agoMs: 3_600_000, remote: .unknown, local: .public)
+            RtcDiagnosticsText.failureMeta(agoMs: 60_000, elapsedMs: 0, remote: nil, local: nil)
+                == "1m ago")
+        #expect(
+            RtcDiagnosticsText.failureMeta(
+                agoMs: 3_600_000, elapsedMs: 0, remote: .unknown, local: .public)
                 == "1h ago · on Internet")
     }
 }
