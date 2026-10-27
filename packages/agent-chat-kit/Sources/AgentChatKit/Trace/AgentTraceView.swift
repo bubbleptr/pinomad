@@ -148,7 +148,16 @@ public struct AgentTraceSheet: View {
             }
         }
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
-            if following { position.scrollTo(edge: .bottom) }
+            // Scrolling right here is clamped to the size before this layout
+            // pass, leaving live text stuck at the top once it outgrows the
+            // sheet. The next turn sees the new size.
+            if following {
+                Task { @MainActor in
+                    // The reader may have started a drag after this was
+                    // queued; their position wins.
+                    if following { position.scrollTo(edge: .bottom) }
+                }
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -248,11 +257,10 @@ private struct TraceSteps: View {
 }
 
 /// A thinking step: while live its text streams in like the answer does —
-/// word by word, each word fading in — capped near four lines with the
-/// overflow fading out at the top so the steps below are not pushed further
-/// down as it grows. Settled, it folds to a one-line "Thought" row; the
-/// full text stays behind a disclosure, and a step with no text does not
-/// open at all.
+/// word by word, each word fading in — and grows with the run. It is the
+/// last step while live, and the sheet follows it while the reader stays
+/// at the end. Settled, it folds to a one-line "Thought" row; the full text
+/// stays behind a disclosure, and a step with no text does not open at all.
 private struct ThinkingStep: View {
     let text: String
     let isLive: Bool
@@ -356,44 +364,17 @@ private struct ThinkingStep: View {
     }
 }
 
-/// Live thinking text, capped near four lines: the tail stays visible and
-/// what has scrolled past fades out at the top.
+/// Live thinking text, word by word. It grows with the run rather than
+/// scrolling inside a cap: the sheet follows it while the reader is at the
+/// end, and scrolling up is how they leave.
 private struct LiveThinking: View {
     let stream: StreamingMarkdown
-    @State private var lineHeight: CGFloat = 22
-    @State private var contentHeight: CGFloat = 0
-
-    private var cap: CGFloat { lineHeight * 4 }
 
     var body: some View {
         StreamingMarkdownView(stream)
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
-            .frame(maxWidth: .infinity, maxHeight: cap, alignment: .bottom)
-            .clipped()
-            .mask {
-                if contentHeight > cap {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .black, location: 0.4),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                } else {
-                    Color.black
-                }
-            }
-            .background(alignment: .topLeading) {
-                // A one-line probe; the cap is in lines, not points.
-                Text("Ag")
-                    .font(.callout)
-                    .opacity(0)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { lineHeight = $0 }
-            }
     }
 }
 
