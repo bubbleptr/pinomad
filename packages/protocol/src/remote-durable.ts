@@ -2658,15 +2658,18 @@ class RemoteClient {
     } catch (error) {
       if (this.#closed) return;
       this.#clearSubmissionTimer(record);
-      record.phase = "unknown";
-      record.error = undefined;
-      this.#touchSubmissions();
       if (
         error instanceof DisconnectedError
         || (error instanceof Error && error.message === "Not connected to the host")
       ) {
+        record.phase = "unknown";
+        record.error = undefined;
+        this.#touchSubmissions();
         return;
       }
+      record.phase = "failed";
+      record.error = error instanceof Error ? error.message : String(error);
+      this.#touchSubmissions();
       throw error;
     }
   }
