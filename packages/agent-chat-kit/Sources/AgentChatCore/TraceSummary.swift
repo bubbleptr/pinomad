@@ -15,7 +15,8 @@ public struct TraceSummary: Sendable, Equatable {
     }
 
     public var headline: Headline
-    /// Whole seconds; ticks while the agent works, then stops.
+    /// Whole seconds; ticks while the agent works, then stops. The live
+    /// clock floors, while a settled duration rounds and reads at least 1s.
     public var elapsed: Duration?
     /// Calls the model made itself; calls made from inside a tool are not counted.
     public var toolCount: Int
@@ -40,7 +41,14 @@ extension AgentTrace {
 
         let end = working ? now : endedAt
         let elapsed = startedAt.flatMap { start in
-            end.map { Duration.seconds(Int(max($0.timeIntervalSince(start), 0))) }
+            end.map { stop in
+                let measured = max(stop.timeIntervalSince(start), 0)
+                // Floor the live clock so it never shows a second early or
+                // claims 1s at the start. Once settled, match the web:
+                // round and never read as 0s.
+                let seconds = working ? Int(measured) : max(1, Int(measured.rounded()))
+                return Duration.seconds(seconds)
+            }
         }
         return TraceSummary(
             headline: headline,
