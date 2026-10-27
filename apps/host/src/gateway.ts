@@ -180,6 +180,62 @@ function serializedFork<T>(harness: Harness, work: () => Promise<T>): Promise<T>
   return next;
 }
 
+/**
+ * Admission lanes keyed by one conversation and request id (issue #402). The
+ * second submit waits for the first admission to settle and then re-reads the
+ * record; it does not wait for the run, or every later send in the
+ * conversation would queue behind an answer.
+ */
+const submissionTails = new WeakMap<Harness, Map<string, Promise<unknown>>>();
+
+function serializedSubmission<T>(
+  harness: Harness,
+  conversationId: ConversationId,
+  requestId: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  let tails = submissionTails.get(harness);
+  if (tails === undefined) {
+    tails = new Map();
+    submissionTails.set(harness, tails);
+  }
+  const lanes = tails;
+  const key = `${conversationId}\u0000${requestId}`;
+  const next = (lanes.get(key) ?? Promise.resolve()).then(work, work);
+  const settled = next.then(
+    () => {},
+    () => {},
+  );
+  lanes.set(key, settled);
+  void settled.then(() => {
+    if (lanes.get(key) === settled) lanes.delete(key);
+  });
+  return next;
+}
+
+type SubmissionReply = {
+  readonly submissionId: number;
+  readonly status: SubmissionRecord["status"];
+  readonly entry?: number;
+};
+
+/** The wire shape of the `submission` query: identity, state, and entry when the record has one. */
+function submissionResult(record: SubmissionRecord): SubmissionReply {
+  return {
+    submissionId: record.id,
+    status: record.status,
+    ...(record.entry === undefined ? {} : { entry: record.entry }),
+  };
+}
+
+/** `submit` answers with the record's identity and entry; the lifecycle status belongs to `submission`. */
+function submitResult(record: SubmissionRecord): { submissionId: number; entry?: number } {
+  return {
+    submissionId: record.id,
+    ...(record.entry === undefined ? {} : { entry: record.entry }),
+  };
+}
+
 /** Secure-channel access: the IK handshake gate plus where sockets come from. */
 export interface SecureGatewayOptions {
   /** The host's long-term X25519 identity (server side of the IK handshake). */
@@ -1886,17 +1942,27 @@ class GatewayClient {
     return files === undefined ? undefined : attachmentBlock(files);
   }
 
+  /**
+   * Resolve refs against the live views now, but defer the failure: a
+   * duplicate submit must not fail on a ref that moved on after the first
+   * admission, while a fresh submit still gets the bytes shown at send time.
+   */
+  #captureImages(images: readonly OutgoingImage[] | undefined): () => MessageImage[] | undefined {
+    const captured = images?.map((image) => ("data" in image ? image : this.#shownImage(image.ref)));
+    return () => {
+      const resolved = captured?.map((image, index) => {
+        if (image === undefined) throw new Error(`Image ${index + 1} is no longer available`);
+        return image;
+      });
+      const problem = imageProblem(resolved ?? []);
+      if (problem !== undefined) throw new Error(problem);
+      return resolved;
+    };
+  }
+
   /** Attached images with refs swapped back for their bytes, then checked like freshly sent ones. */
   #attached(images: readonly OutgoingImage[] | undefined): MessageImage[] | undefined {
-    const resolved = images?.map((image, index) => {
-      if ("data" in image) return image;
-      const shown = this.#shownImage(image.ref);
-      if (shown === undefined) throw new Error(`Image ${index + 1} is no longer available`);
-      return shown;
-    });
-    const problem = imageProblem(resolved ?? []);
-    if (problem !== undefined) throw new Error(problem);
-    return resolved;
+    return this.#captureImages(images)();
   }
 
   async #unsubscribe(stream: StreamName): Promise<void> {
@@ -1909,6 +1975,15 @@ class GatewayClient {
     const conversation = await this.#options.harness.conversation(id, context);
     if (conversation === undefined) throw new Error(`Conversation ${id} does not exist`);
     return conversation;
+  }
+
+  /**
+   * Durable request-id lookup. Harness's runtime surface exposes the read on
+   * `Tx`, not on `Session`; a write-free commit is still a pure read and lets
+   * the admission lane share the Session line with the submit it dedupes.
+   */
+  #submissionByRequest(conversationId: ConversationId, requestId: string): Promise<SubmissionRecord | undefined> {
+    return this.#options.harness.commit((tx) => tx.submissionByRequest(conversationId, requestId), context);
   }
 
   /** Start a manual compaction and report its outcome as a notice once it settles. */
@@ -1939,38 +2014,66 @@ class GatewayClient {
         return null;
       case "submit": {
         const input = args as CallMethods["submit"]["args"];
-        // Resolve refs before the first await: this frame arrived while the
-        // subscription was live, and a client may unsubscribe while the host
-        // is still reading the conversation. Looking the ref up afterwards
-        // would turn an accepted submit into "no longer available".
-        const images = this.#attached(input.images);
-        const conversation = await this.#conversation(input.conversationId);
-        // Mark attachments used before the message write (issue #321); the
-        // store's lock is the same one cleanup sweeps under, so a used file
-        // can never be deleted between these two steps.
-        const attachments = await this.#attachmentText(input.attachments);
-        const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id }, input.skills);
-        // A pending question never blocks the composer (ADR-0011 §4): mark it
-        // dismissed so its wait task finishes, then steer regardless.
-        const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
-        const submission = await conversation.submit(
-          {
-            type: "input",
-            content: messageContent(text, images, attachments),
-            whenBusy: dismissed ? "steer" : input.whenBusy,
-            requestId: input.requestId,
-          },
-          context,
-        );
-        void submission.wait(context).then(
-          (settled) => {
-            if (settled.status === "unanswered" && settled.reason !== "aborted") {
-              void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
+        // Capture refs before the first await: they only exist through this
+        // connection's live views, and a client may unsubscribe while the host
+        // reads the conversation or waits for an earlier admission. The
+        // duplicate check comes first, so validation is deferred: a resend
+        // must not fail on a ref the first admission already consumed.
+        const images = this.#captureImages(input.images);
+        return await serializedSubmission(
+          this.#options.harness,
+          input.conversationId,
+          input.requestId,
+          async () => {
+            // Dedupe before any preprocessing (issue #402): a resend of an
+            // admitted request must not dismiss questions, expand skills, mark
+            // attachments used, or fail on image refs the host no longer shows.
+            const existing = await this.#submissionByRequest(input.conversationId, input.requestId);
+            if (existing !== undefined) return submitResult(existing);
+            const resolved = images();
+            const conversation = await this.#conversation(input.conversationId);
+            // Mark attachments used before the message write (issue #321); the
+            // store's lock is the same one cleanup sweeps under, so a used file
+            // can never be deleted between these two steps.
+            const attachments = await this.#attachmentText(input.attachments);
+            const text = await this.#expandSkills(input.text, { kind: "conversation", conversationId: conversation.id }, input.skills);
+            // A pending question never blocks the composer (ADR-0011 §4): mark it
+            // dismissed so its wait task finishes, then steer regardless.
+            const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
+            const submission = await conversation.submit(
+              {
+                type: "input",
+                content: messageContent(text, resolved, attachments),
+                whenBusy: dismissed ? "steer" : input.whenBusy,
+                requestId: input.requestId,
+              },
+              context,
+            );
+            // Admission is already durable: a failed read only loses the
+            // convenience `entry`, never turns the call into `ok:false`.
+            let entry: number | undefined;
+            try {
+              const admitted = await this.#options.harness.submission(submission.id, context);
+              entry = (await admitted?.status(context))?.entry;
+            } catch {
+              // The client reconciles through the snapshot or `submission`.
             }
+            void submission.wait(context).then(
+              (settled) => {
+                if (settled.status === "unanswered" && settled.reason !== "aborted") {
+                  void this.send({ type: "notice", level: "error", message: `No answer: ${settled.reason}` });
+                }
+              },
+              () => {},
+            );
+            return { submissionId: submission.id, ...(entry === undefined ? {} : { entry }) };
           },
-          () => {},
         );
-        return { submissionId: submission.id };
+      }
+      case "submission": {
+        const input = args as CallMethods["submission"]["args"];
+        const record = await this.#submissionByRequest(input.conversationId, input.requestId);
+        return record === undefined ? null : submissionResult(record);
       }
       case "createConversation": {
         const create = args as CallMethods["createConversation"]["args"];

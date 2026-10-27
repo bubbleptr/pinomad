@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 24
+    "minor": 25
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":24},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":25},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":24},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":25},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":24},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":25},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":24}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":25}}",
       "expect": "signalHello"
     },
     {
@@ -225,6 +225,10 @@
       "wire": "{\"type\":\"call\",\"id\":26,\"method\":\"submit\",\"args\":{\"conversationId\":2,\"text\":\"look\",\"whenBusy\":\"followUp\",\"requestId\":\"r\",\"attachments\":[\"AAAAAAAAAAAAAAAAAAAAAA\"]}}"
     },
     {
+      "name": "call-submission",
+      "wire": "{\"type\":\"call\",\"id\":27,\"method\":\"submission\",\"args\":{\"conversationId\":2,\"requestId\":\"req\"}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -380,6 +384,10 @@
         "since": 14
       },
       {
+        "name": "submission",
+        "since": 25
+      },
+      {
         "name": "submit",
         "since": 0
       },
@@ -478,6 +486,10 @@
       {
         "name": "rtc",
         "since": 23
+      },
+      {
+        "name": "submitEntry",
+        "since": 25
       }
     ]
   },
@@ -837,6 +849,18 @@
       "expect": false
     },
     {
+      "name": "submission@25",
+      "minor": 25,
+      "call": "submission",
+      "expect": true
+    },
+    {
+      "name": "submission@24",
+      "minor": 24,
+      "call": "submission",
+      "expect": false
+    },
+    {
       "name": "submit@0",
       "minor": 0,
       "call": "submit",
@@ -1008,6 +1032,18 @@
       "name": "rtc@22",
       "minor": 22,
       "feature": "rtc",
+      "expect": false
+    },
+    {
+      "name": "submitEntry@25",
+      "minor": 25,
+      "feature": "submitEntry",
+      "expect": true
+    },
+    {
+      "name": "submitEntry@24",
+      "minor": 24,
+      "feature": "submitEntry",
       "expect": false
     }
   ],

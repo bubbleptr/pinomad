@@ -93,7 +93,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 24 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 25 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -188,7 +188,25 @@ export interface CallMethods {
        */
       attachments?: readonly string[];
     };
-    result: { submissionId: number };
+    /**
+     * `entry` (5.25) is the admitted entry's id when the record already has
+     * one. Gate it on `submitEntry` in FEATURE_SINCE, not on presence: a
+     * queued result legitimately has none even on a new host.
+     */
+    result: { submissionId: number; entry?: number };
+  };
+  /**
+   * The record admitted for a conversation-scoped `requestId` (5.25, issue
+   * #402), or `null` when none exists. Read-only: no submit preprocessing and
+   * no side effects. `entry` follows the record, so a queued input has none.
+   */
+  submission: {
+    args: { conversationId: ConversationId; requestId: string };
+    result: {
+      submissionId: number;
+      status: "queued" | "placed" | "done" | "unanswered";
+      entry?: number;
+    } | null;
   };
   /**
    * Start a file upload (5.19, issue #321) and get the host-generated id.
@@ -370,6 +388,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   archive: 0,
   renameConversation: 4,
   submit: 0,
+  submission: 25,
   withdrawQueued: 14,
   steerQueued: 14,
   abort: 0,
@@ -407,7 +426,7 @@ export function hostSupportsCall(hostMinor: number, method: CallMethod): boolean
   return hostMinor >= CALL_SINCE[method];
 }
 
-/** Minor version that introduced each call-arg feature (ADR-0018 §2). */
+/** Minor version that introduced each call-arg or call-result feature (ADR-0018 §2). */
 export const FEATURE_SINCE = {
   images: 5,
   acceptAccountDevices: 8,
@@ -426,6 +445,12 @@ export const FEATURE_SINCE = {
   imageVariants: 20,
   /** `hello.rtc` is present and the host answers `rtcOffer` (23, ADR-0033). */
   rtc: 23,
+  /**
+   * `submit` results carry `entry` (25, issue #402). Old hosts omit it, and
+   * a queued result has none on any host, so callers must gate on this — not
+   * on whether the field arrived.
+   */
+  submitEntry: 25,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -609,6 +634,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")
         && nonempty(args.requestId) && images() && skills() && attachments()
       );
+    case "submission":
+      return conversationId() && nonempty(args.requestId);
     case "withdrawQueued":
     case "steerQueued":
       return conversationId() && submissionId();

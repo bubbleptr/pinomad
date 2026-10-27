@@ -120,6 +120,7 @@ fn feature_of(name: &str) -> HostFeature {
         "boundSkills" => HostFeature::BoundSkills,
         "attachments" => HostFeature::Attachments,
         "rtc" => HostFeature::Rtc,
+        "submitEntry" => HostFeature::SubmitEntry,
         other => panic!("unknown feature {other}"),
     }
 }
