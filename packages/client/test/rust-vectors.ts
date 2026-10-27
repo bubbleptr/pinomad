@@ -185,7 +185,7 @@ function chatVector(): VectorFile {
   const recorded = recordedConversation();
   const cases = [
     ...DERIVE_CHAT_CASES,
-    { name: "recorded", view: recorded.view, busy: recorded.busy, presentations: recorded.presentations, submissions: [] },
+    { name: "recorded", view: recorded.view, busy: recorded.busy, presentations: recorded.presentations, submissions: [], mergeQueued: false },
   ];
   return write("chat", {
     deriveChat: cases.map((c) => ({
@@ -194,7 +194,10 @@ function chatVector(): VectorFile {
       busy: c.busy,
       presentations: wire(c.presentations ?? {}),
       submissions: wire(c.submissions ?? []),
-      expect: expect(wire(deriveChat(c.view, (c.presentations ?? {}) as never, c.busy, c.submissions ?? []))),
+      mergeQueued: c.mergeQueued ?? false,
+      expect: expect(wire(deriveChat(c.view, (c.presentations ?? {}) as never, c.busy, c.submissions ?? [], {
+        mergeQueuedSubmissions: c.mergeQueued ?? false,
+      }))),
     })),
     retryOf: RETRY_CASES.map((c) => ({
       name: c.name,

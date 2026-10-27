@@ -6,6 +6,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"1\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-2\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"hello\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"2\",\"endedAt\":0}]"
     },
     {
@@ -14,6 +15,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"3\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-4\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"thinking\",\"id\":\"4-thinking-0\",\"text\":\"plan\",\"live\":false},{\"kind\":\"tools\",\"id\":\"4-tools-1\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"A\"},{\"state\":\"output-available\",\"toolCallId\":\"c2\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\",\"output\":\"B\"}],\"live\":false},{\"kind\":\"interim\",\"id\":\"7-text-0\",\"text\":\"checking next\"},{\"kind\":\"tools\",\"id\":\"7-tools-1\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c3\",\"toolName\":\"bash\",\"argsText\":\"{\\\"command\\\":\\\"ls\\\"}\",\"output\":\"ok\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"9\",\"endedAt\":0}]"
     },
     {
@@ -22,6 +24,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"10\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-11\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"model\":{\"provider\":\"anthropic\",\"modelId\":\"claude-opus-5-5\"},\"steps\":[{\"kind\":\"tools\",\"id\":\"11-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"A\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"13\",\"endedAt\":0}]"
     },
     {
@@ -30,6 +33,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"14\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"thinking\",\"steps\":[{\"kind\":\"thinking\",\"id\":\"live-thinking-0\",\"text\":\"che\",\"live\":true}]},\"interrupted\":false}]"
     },
     {
@@ -38,6 +42,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"15\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-16\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"16-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\"}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -46,6 +51,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"17\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"answering\",\"steps\":[],\"answer\":{\"text\":\"hel\",\"streaming\":true}},\"interrupted\":false}]"
     },
     {
@@ -54,6 +60,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"18\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"acting\",\"steps\":[{\"kind\":\"tools\",\"id\":\"live-tools-0\",\"tools\":[{\"state\":\"input-streaming\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -62,6 +69,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"19\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-20\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"20-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"Not run: the answer was interrupted.\"}],\"live\":false}]},\"interrupted\":true,\"endedAt\":0}]"
     },
     {
@@ -70,6 +78,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"21\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-22\",\"cot\":{\"phase\":\"settled\",\"outcome\":\"failed\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"interim\",\"id\":\"22-text-0\",\"text\":\"\"}]},\"interrupted\":false,\"failure\":\"HTTP 429 quota exceeded\",\"endedAt\":0}]"
     },
     {
@@ -78,6 +87,7 @@
       "busy": false,
       "presentations": "{\"edit\":\"pinomad.diff\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"23\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-24\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"24-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"edit\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"edited a.ts\",\"diffStat\":{\"additions\":1,\"deletions\":1},\"pinomad\":{\"kind\":\"diff\",\"patch\":\"diff --git a/a.ts b/a.ts\\n@@ -1,2 +1,2 @@\\n-old\\n+new\\n\"}}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"24\",\"endedAt\":0}]"
     },
     {
@@ -86,6 +96,7 @@
       "busy": false,
       "presentations": "{\"edit\":\"pinomad.diff\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"26\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-27\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"27-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"edit\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"edited\"}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"27\",\"endedAt\":0}]"
     },
     {
@@ -94,6 +105,7 @@
       "busy": false,
       "presentations": "{\"codemode\":\"pinomad.codemode\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"29\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-30\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"30-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"argsText\":\"await tools.bash({})\",\"output\":\"script result\",\"children\":[{\"state\":\"output-available\",\"toolName\":\"bash\",\"argsText\":\"{}\",\"durationMs\":10},{\"state\":\"output-error\",\"toolName\":\"read\",\"argsText\":\"{}\",\"output\":\"Cancelled\"},{\"state\":\"output-error\",\"toolName\":\"edit\",\"argsText\":\"{}\",\"output\":\"conflict\"}]}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"30\",\"endedAt\":0}]"
     },
     {
@@ -102,6 +114,7 @@
       "busy": true,
       "presentations": "{\"codemode\":\"pinomad.codemode\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"32\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-33\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"33-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"argsText\":\"x\",\"children\":[{\"state\":\"input-available\",\"toolCallId\":\"c1/1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.txt\\\"}\"},{\"state\":\"output-error\",\"toolCallId\":\"c1/2\",\"toolName\":\"bash\",\"argsText\":\"{\\\"command\\\":\\\"exit 3\\\"}\",\"output\":\"Command exited with code 3\",\"durationMs\":5}]}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -110,6 +123,7 @@
       "busy": false,
       "presentations": "{\"codemode\":\"pinomad.codemode\",\"edit\":\"pinomad.diff\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"34\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-35\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"35-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"argsText\":\"x\",\"output\":\"ok\",\"children\":[{\"state\":\"output-error\",\"toolName\":\"read\",\"argsText\":\"{}\",\"output\":\"Cancelled\"},{\"state\":\"output-available\",\"toolName\":\"edit\",\"argsText\":\"{}\",\"pinomad\":{\"kind\":\"diff\",\"patch\":\"diff --git a/a b/a\\n@@ -1 +1 @@\\n-a\\n+b\\n\"}}]}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"35\",\"endedAt\":0}]"
     },
     {
@@ -118,6 +132,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"37\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-38\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"38-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"survey\\\"}\",\"pinomad\":{\"kind\":\"subagent\",\"conversationId\":7,\"model\":\"faux/faux-1\",\"startedAt\":1000}}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -126,6 +141,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"39\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-40\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":4000,\"steps\":[{\"kind\":\"tools\",\"id\":\"40-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"survey\\\"}\",\"output\":\"report\",\"pinomad\":{\"kind\":\"subagent\",\"conversationId\":9,\"output\":\"report\",\"model\":\"faux/faux-1\",\"startedAt\":1000,\"endedAt\":4000}}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"40\",\"endedAt\":0}]"
     },
     {
@@ -134,6 +150,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"42\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-43\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"43-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"mcp__shot__capture\",\"argsText\":\"{}\",\"output\":\"captured\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"43\",\"endedAt\":0}]"
     },
     {
@@ -142,6 +159,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"45\",\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"timestamp\":0},{\"kind\":\"run\",\"id\":\"run-46\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"46\",\"endedAt\":0},{\"kind\":\"user\",\"id\":\"47\",\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-48\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"again\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"48\",\"endedAt\":0}]"
     },
     {
@@ -150,6 +168,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"49\",\"text\":\"$review do x\",\"images\":[],\"skills\":[\"review\"],\"attachments\":[],\"timestamp\":0},{\"kind\":\"run\",\"id\":\"run-50\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"reviewed\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"50\",\"endedAt\":0},{\"kind\":\"user\",\"id\":\"51\",\"text\":\"look $review\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[\"review\"],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-52\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"52\",\"endedAt\":0}]"
     },
     {
@@ -158,6 +177,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"53\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-54\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"54\",\"endedAt\":0}]"
     },
     {
@@ -166,6 +186,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"55\",\"text\":\"before <attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments> after\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-56\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"56\",\"endedAt\":0}]"
     },
     {
@@ -174,6 +195,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"57\",\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"a&b<c>d\\\"e.txt\",\"size\":5}],\"timestamp\":0},{\"kind\":\"run\",\"id\":\"run-58\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"58\",\"endedAt\":0},{\"kind\":\"user\",\"id\":\"59\",\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"only.txt\",\"size\":5}],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-60\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"again\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"60\",\"endedAt\":0}]"
     },
     {
@@ -182,6 +204,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"61\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-62\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"62-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"notes.txt\\\"}\",\"output\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"64\",\"endedAt\":0}]"
     },
     {
@@ -190,6 +213,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"65\",\"text\":\"one\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0},{\"kind\":\"run\",\"id\":\"run-66\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"first\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"66\",\"endedAt\":0},{\"kind\":\"compaction\",\"id\":\"67\"},{\"kind\":\"reset\",\"id\":\"68\"},{\"kind\":\"user\",\"id\":\"69\",\"text\":\"two\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-70\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"second\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"70\",\"endedAt\":0}]"
     },
     {
@@ -198,6 +222,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"71\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-72\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"elapsedMs\":4000,\"steps\":[{\"kind\":\"tools\",\"id\":\"72-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"ok\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"74\",\"endedAt\":5000}]"
     },
     {
@@ -206,6 +231,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"75\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-76\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"76-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a\\\"}\",\"output\":\"A\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"78-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b\\\"}\",\"output\":\"B\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"80\",\"endedAt\":0}]"
     },
     {
@@ -214,6 +240,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"81\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-82\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"82-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a\\\"}\",\"output\":\"A\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"84-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -222,6 +249,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"85\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-86\",\"cot\":{\"phase\":\"thinking\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"86-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c1\",\"toolName\":\"bash\",\"argsText\":\"{\\\"command\\\":\\\"x\\\"}\",\"output\":\"Not run: the answer was interrupted.\"}],\"live\":false},{\"kind\":\"thinking\",\"id\":\"live-thinking-0\",\"text\":\"retrying\",\"live\":true}]},\"interrupted\":true}]"
     },
     {
@@ -230,6 +258,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"87\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-88\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"interim\",\"id\":\"88-text-0\",\"text\":\"Checking the logs\"},{\"kind\":\"tools\",\"id\":\"88-tools-1\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"bash\",\"argsText\":\"{\\\"command\\\":\\\"ls\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c1\"}]},\"interrupted\":false}]"
     },
     {
@@ -238,6 +267,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"89\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-90\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"elapsedMs\":3000,\"steps\":[{\"kind\":\"tools\",\"id\":\"90-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"ok\"}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"90\",\"endedAt\":1000}]"
     },
     {
@@ -246,6 +276,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"92\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"hidden\",\"steps\":[]},\"interrupted\":false}]"
     },
     {
@@ -254,6 +285,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"settled\",\"steps\":[]},\"interrupted\":false},{\"kind\":\"user\",\"id\":\"94\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-95\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"95-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a\\\"}\"}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"95\",\"endedAt\":0}]"
     },
     {
@@ -262,6 +294,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"96\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"answering\",\"steps\":[{\"kind\":\"thinking\",\"id\":\"live-thinking-0\",\"text\":\"hmm\",\"live\":false}],\"answer\":{\"text\":\"hel\",\"streaming\":true}},\"interrupted\":false}]"
     },
     {
@@ -270,6 +303,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"97\",\"text\":\"hi\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-98\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[{\"kind\":\"thinking\",\"id\":\"98-thinking-0\",\"text\":\"hmm\",\"live\":false}],\"answer\":{\"text\":\"hello\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"98\",\"endedAt\":0}]"
     },
     {
@@ -278,6 +312,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"99\",\"text\":\"phone � and a rocket 🚀\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-100\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[{\"kind\":\"thinking\",\"id\":\"100-thinking-0\",\"text\":\"想🤔\",\"live\":false}],\"answer\":{\"text\":\"done � ok\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"100\",\"endedAt\":0}]"
     },
     {
@@ -286,6 +321,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"101\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-102\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":300,\"todoWrittenAtMs\":300,\"steps\":[{\"kind\":\"tools\",\"id\":\"102-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"104-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"bash\",\"argsText\":\"{\\\"command\\\":\\\"ls\\\"}\",\"output\":\"ok\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"106-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t2\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"108\",\"endedAt\":350}]"
     },
     {
@@ -294,6 +330,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"109\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-110\",\"cot\":{\"phase\":\"acting\",\"anchorMs\":50,\"todoWrittenAtMs\":100,\"steps\":[{\"kind\":\"tools\",\"id\":\"110-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"112-tools-0\",\"tools\":[{\"state\":\"input-available\",\"toolCallId\":\"t2\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\"}],\"live\":true,\"activeToolCallId\":\"t2\"}]},\"interrupted\":false}]"
     },
     {
@@ -302,6 +339,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"113\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-114\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":500,\"todoWrittenAtMs\":300,\"steps\":[{\"kind\":\"tools\",\"id\":\"114-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":[]}\",\"output\":\"Todo list updated: 0 item(s).\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"116-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c1\",\"toolName\":\"codemode\",\"argsText\":\"await tools.todo_write({ items: [] }); throw new Error()\",\"output\":\"Error\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"118-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"c2\",\"toolName\":\"codemode\",\"argsText\":\"await tools.todo_write({ items: 1 })\",\"output\":\"Error\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"120\",\"endedAt\":550}]"
     },
     {
@@ -310,6 +348,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"121\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-122\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":50,\"elapsedMs\":100,\"steps\":[{\"kind\":\"tools\",\"id\":\"122-tools-0\",\"tools\":[{\"state\":\"output-error\",\"toolCallId\":\"t1\",\"toolName\":\"todo_write\",\"argsText\":\"{\\\"items\\\":\\\"bad\\\"}\",\"output\":\"Validation failed\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"124\",\"endedAt\":150}]"
     },
     {
@@ -318,6 +357,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"125\",\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"data\":\"aGk=\",\"mimeType\":\"image/webp\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-126\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"steps\":[],\"answer\":{\"text\":\"seen\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"126\",\"endedAt\":0}]"
     },
     {
@@ -326,6 +366,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"127\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-128\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"128-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"mcp__shot__capture\",\"argsText\":\"{}\",\"output\":\"captured\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}],\"live\":false}]},\"interrupted\":false,\"forkEntryId\":\"128\",\"endedAt\":0}]"
     },
     {
@@ -334,6 +375,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"130\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-131\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"elapsedMs\":1500,\"steps\":[{\"kind\":\"thinking\",\"id\":\"131-thinking-0\",\"text\":\"plan\",\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"131\",\"endedAt\":1000}]"
     },
     {
@@ -342,6 +384,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"132\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-133\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"elapsedMs\":5500,\"steps\":[{\"kind\":\"tools\",\"id\":\"133-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"ok\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"135\",\"endedAt\":5000}]"
     },
     {
@@ -350,6 +393,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"136\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-137\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"steps\":[],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"137\",\"endedAt\":1000}]"
     },
     {
@@ -358,6 +402,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"138\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-139\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"steps\":[],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"139\",\"endedAt\":1000}]"
     },
     {
@@ -366,6 +411,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"140\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-141\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1000,\"elapsedMs\":4000,\"steps\":[{\"kind\":\"tools\",\"id\":\"141-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"ok\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"143\",\"endedAt\":5000}]"
     },
     {
@@ -374,6 +420,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"144\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":1234,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-145\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":2000,\"steps\":[],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"145\",\"endedAt\":2000}]"
     },
     {
@@ -382,6 +429,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"146\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":1000,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-147\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1100,\"elapsedMs\":900,\"steps\":[{\"kind\":\"tools\",\"id\":\"147-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"logs\",\"argsText\":\"{}\",\"output\":\"ok\"}],\"live\":false}],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"149\",\"endedAt\":2350}]"
     },
     {
@@ -390,6 +438,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"150\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":1000,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-151\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":2000,\"steps\":[],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"151\",\"endedAt\":2000}]"
     },
     {
@@ -398,6 +447,7 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"152\",\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":1000,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-153\",\"cot\":{\"phase\":\"answering\",\"anchorMs\":2000,\"steps\":[],\"answer\":{\"text\":\"done\",\"streaming\":false}},\"interrupted\":false}]"
     },
     {
@@ -406,6 +456,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"154\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"sending\",\"local\":{\"requestId\":\"local-1\"}}]"
     },
     {
@@ -414,6 +465,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"unknown\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"unknown\",\"local\":{\"requestId\":\"local-1\"}}]"
     },
     {
@@ -422,6 +474,7 @@
       "busy": false,
       "presentations": "{}",
       "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"failed\",\"images\":[],\"skills\":[],\"attachments\":[],\"error\":\"refused\"}]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"failed\",\"local\":{\"requestId\":\"local-1\",\"error\":\"refused\"}}]"
     },
     {
@@ -430,31 +483,53 @@
       "busy": true,
       "presentations": "{}",
       "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"155\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"hidden\",\"steps\":[]},\"interrupted\":false}]"
     },
     {
-      "name": "submission-local-other-conversation",
+      "name": "submission-local-queue-merged",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":156,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"host hello\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
-      "busy": false,
+      "busy": true,
       "presentations": "{}",
-      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[],\"conversationId\":2}]",
-      "expect": "[{\"kind\":\"user\",\"id\":\"156\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"}]"
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "mergeQueued": true,
+      "expect": "[{\"kind\":\"user\",\"id\":\"156\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-open-0\",\"cot\":{\"phase\":\"hidden\",\"steps\":[]},\"interrupted\":false},{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"sending\",\"local\":{\"requestId\":\"local-1\"}}]"
     },
     {
-      "name": "submission-local-settled-hidden",
+      "name": "submission-local-ref-image",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{}}}",
+      "busy": false,
+      "presentations": "{}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[{\"ref\":\"ref-1\"}],\"skills\":[],\"attachments\":[],\"imageViews\":[{\"ref\":\"ref-1\",\"mimeType\":\"image/png\"}]}]",
+      "mergeQueued": false,
+      "expect": "[{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[{\"ref\":\"ref-1\",\"mimeType\":\"image/png\"}],\"attachments\":[],\"skills\":[],\"status\":\"sending\",\"local\":{\"requestId\":\"local-1\"}}]"
+    },
+    {
+      "name": "submission-local-other-conversation",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":157,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"host hello\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"settled\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[],\"conversationId\":2}]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"157\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"}]"
     },
     {
+      "name": "submission-local-settled-hidden",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":158,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"host hello\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "busy": false,
+      "presentations": "{}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"settled\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "mergeQueued": false,
+      "expect": "[{\"kind\":\"user\",\"id\":\"158\",\"text\":\"host hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"}]"
+    },
+    {
       "name": "submission-local-duplicate",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":158,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"local hello\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":159,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"local hello\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
-      "expect": "[{\"kind\":\"user\",\"id\":\"158\",\"text\":\"local hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"sending\",\"local\":{\"requestId\":\"local-1\"}}]"
+      "mergeQueued": false,
+      "expect": "[{\"kind\":\"user\",\"id\":\"159\",\"text\":\"local hello\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":0,\"status\":\"delivered\"},{\"kind\":\"user\",\"id\":\"local:local-1\",\"text\":\"local hello\",\"images\":[],\"attachments\":[],\"skills\":[],\"status\":\"sending\",\"local\":{\"requestId\":\"local-1\"}}]"
     },
     {
       "name": "recorded",
@@ -462,100 +537,101 @@
       "busy": false,
       "presentations": "{\"edit\":\"pinomad.diff\",\"write\":\"pinomad.diff\"}",
       "submissions": "[]",
+      "mergeQueued": false,
       "expect": "[{\"kind\":\"user\",\"id\":\"11\",\"text\":\"contract run\",\"images\":[],\"skills\":[],\"attachments\":[],\"timestamp\":1793123080122,\"status\":\"delivered\"},{\"kind\":\"run\",\"id\":\"run-15\",\"cot\":{\"phase\":\"settled\",\"anchorMs\":1793123080081,\"elapsedMs\":122,\"model\":{\"provider\":\"faux\",\"modelId\":\"faux-1\"},\"steps\":[{\"kind\":\"tools\",\"id\":\"15-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"tool:1793123080081:h4oy4ta16k\",\"toolName\":\"write\",\"argsText\":\"{\\\"path\\\":\\\"note.txt\\\",\\\"content\\\":\\\"contract\\\\n\\\"}\",\"output\":\"Successfully wrote to note.txt\",\"diffStat\":{\"additions\":1,\"deletions\":0},\"pinomad\":{\"kind\":\"diff\",\"patch\":\"Index: note.txt\\n===================================================================\\n--- note.txt\\n+++ note.txt\\n@@ -0,0 +1,1 @@\\n+contract\\n\"}}],\"live\":false}],\"answer\":{\"text\":\"contract done\",\"streaming\":false}},\"interrupted\":false,\"forkEntryId\":\"19\",\"endedAt\":1793123080081}]"
     }
   ],
   "retryOf": [
     {
       "name": "retry-simple",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":159,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":160,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":160,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":161,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-160\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-161\"}"
     },
     {
       "name": "retry-images",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":161,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":162,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":162,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":163,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-162\"}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-163\"}"
     },
     {
       "name": "retry-skills",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":163,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review do x\",\"timestamp\":0}]},{\"id\":164,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":164,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review do x\",\"timestamp\":0}]},{\"id\":165,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"$review do x\",\"images\":[],\"skills\":[\"review\"],\"attachments\":[],\"requestId\":\"retry:run-164\"}"
+      "expect": "{\"text\":\"$review do x\",\"images\":[],\"skills\":[\"review\"],\"attachments\":[],\"requestId\":\"retry:run-165\"}"
     },
     {
       "name": "retry-image-only",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":165,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":166,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":166,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"timestamp\":0}]},{\"id\":167,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-166\"}"
+      "expect": "{\"text\":\"\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-167\"}"
     },
     {
       "name": "retry-attachments",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":167,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"text\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"}],\"timestamp\":0}]},{\"id\":168,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":168,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"text\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"}],\"timestamp\":0}]},{\"id\":169,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[],\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"notes.txt\",\"size\":5}],\"requestId\":\"retry:run-168\"}"
+      "expect": "{\"text\":\"look\",\"images\":[],\"skills\":[],\"attachments\":[{\"id\":\"AAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"notes.txt\",\"size\":5}],\"requestId\":\"retry:run-169\"}"
     },
     {
       "name": "retry-empty-prompt",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":169,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":170,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":170,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"\",\"timestamp\":0}]},{\"id\":171,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-not-newest",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":171,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":172,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":173,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":174,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":172,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":173,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":174,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]},{\"id\":175,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"recovered\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-succeeded",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":175,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":176,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":176,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":177,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":177,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":178,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":179,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":178,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":179,\"conversationId\":0,\"kind\":\"pi.compaction\",\"model\":[{\"role\":\"user\",\"content\":\"summary\"}]},{\"id\":180,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-179\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-180\"}"
     },
     {
       "name": "retry-reset",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":180,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":181,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":182,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":181,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":182,\"conversationId\":0,\"kind\":\"pi.reset\"},{\"id\":183,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
       "expect": "null"
     },
     {
       "name": "retry-steer",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":183,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":184,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":185,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":186,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":184,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"first\",\"timestamp\":0}]},{\"id\":185,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"one\"}],\"stopReason\":\"stop\",\"timestamp\":0}]},{\"id\":186,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"steer\",\"timestamp\":0}]},{\"id\":187,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"steer\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-186\"}"
+      "expect": "{\"text\":\"steer\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-187\"}"
     },
     {
       "name": "retry-second-failure",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":187,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":188,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":189,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":190,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":188,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":189,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]},{\"id\":190,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"go\",\"timestamp\":0}]},{\"id\":191,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-190\"}"
+      "expect": "{\"text\":\"go\",\"images\":[],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-191\"}"
     },
     {
       "name": "retry-images-mixed",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":191,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"timestamp\":0}]},{\"id\":192,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":192,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"timestamp\":0}]},{\"id\":193,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}],\"stopReason\":\"error\",\"timestamp\":0,\"errorMessage\":\"HTTP 429 quota exceeded\"}]}],\"docs\":{\"pi.live\":{}}}",
       "busy": false,
       "presentations": "{}",
-      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-192\"}"
+      "expect": "{\"text\":\"look\",\"images\":[{\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}],\"skills\":[],\"attachments\":[],\"requestId\":\"retry:run-193\"}"
     }
   ],
   "splitSubagentCalls": [
@@ -566,18 +642,18 @@
     },
     {
       "name": "split-settles-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"194-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"194-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"194-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"195-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"195-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"}],\"live\":false}]},\"subagents\":[{\"key\":\"195-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-hands-active",
-      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"197-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
-      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"197-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"197-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
+      "cot": "{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"198-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c2\"}]}",
+      "expect": "{\"view\":{\"phase\":\"acting\",\"anchorMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"198-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"output\":\"done\"},{\"state\":\"input-available\",\"toolCallId\":\"c3\",\"toolName\":\"read\",\"argsText\":\"{\\\"path\\\":\\\"b.ts\\\"}\"}],\"live\":true,\"activeToolCallId\":\"c3\"}]},\"subagents\":[{\"key\":\"198-tools-0/c2\",\"tool\":{\"state\":\"input-available\",\"toolCallId\":\"c2\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"x\\\"}\"}}]}"
     },
     {
       "name": "split-dup-callid",
-      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"200-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"202-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
-      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"200-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"202-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
+      "cot": "{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[{\"kind\":\"tools\",\"id\":\"201-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}],\"live\":false},{\"kind\":\"tools\",\"id\":\"203-tools-0\",\"tools\":[{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}],\"live\":false}]}",
+      "expect": "{\"view\":{\"phase\":\"settled\",\"anchorMs\":0,\"elapsedMs\":0,\"steps\":[]},\"subagents\":[{\"key\":\"201-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"one\\\"}\",\"output\":\"r1\"}},{\"key\":\"203-tools-0/c1\",\"tool\":{\"state\":\"output-available\",\"toolCallId\":\"c1\",\"toolName\":\"subagent\",\"argsText\":\"{\\\"task\\\":\\\"two\\\"}\",\"output\":\"r2\"}}]}"
     }
   ]
 }

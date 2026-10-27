@@ -581,11 +581,17 @@ function deriveRun(
   };
 }
 
+export interface DeriveChatOptions {
+  /** No queue list here (the side panel): draw queue-placed local sends as bubbles. */
+  readonly mergeQueuedSubmissions?: boolean;
+}
+
 export function deriveChat(
   view: ConversationView,
   toolPresentations: Record<string, PresentationType>,
   busy: boolean,
   submissions: readonly LogicalSubmission[] = [],
+  options: DeriveChatOptions = {},
 ): ChatEntry[] {
   const items: ChatEntry[] = [];
   const live = (view.docs["pi.live"] ?? {}) as LiveState;
@@ -671,7 +677,10 @@ export function deriveChat(
 
   const conversationId = view.conversation.id;
   for (const submission of submissions) {
-    if (submission.phase === "settled" || submission.placement !== "conversation") continue;
+    const placementVisible =
+      submission.placement === "conversation"
+      || (options.mergeQueuedSubmissions === true && submission.placement === "queue");
+    if (submission.phase === "settled" || !placementVisible) continue;
     // An unresolved target belongs to the conversation that first executes it;
     // until then it is still this client's send for the shown one.
     if (submission.conversationId !== undefined && submission.conversationId !== conversationId) continue;
@@ -685,9 +694,11 @@ export function deriveChat(
       kind: "user",
       id: `local:${submission.requestId}`,
       text: submission.text,
-      // A ref-only outgoing image has no type to render before the host echoes
-      // the bubble; inline bytes are the common case and stay visible.
-      images: submission.images.flatMap((image) => ("data" in image ? [image] : [])),
+      // Prefer the typed views; a ref-only outgoing image has no type of its
+      // own to render before the host echoes the bubble.
+      images:
+        submission.imageViews
+        ?? submission.images.flatMap((image) => ("data" in image ? [image] : [])),
       attachments: submission.attachmentDetails ?? [],
       skills: submission.skills,
       status,

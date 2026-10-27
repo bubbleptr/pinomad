@@ -9,7 +9,9 @@ const CASE = (name: string) => {
 };
 const derive = (name: string) => {
   const c = CASE(name);
-  return deriveChat(c.view, c.presentations ?? {}, c.busy, c.submissions ?? []);
+  return deriveChat(c.view, c.presentations ?? {}, c.busy, c.submissions ?? [], {
+    mergeQueuedSubmissions: c.mergeQueued ?? false,
+  });
 };
 
 describe("deriveChat todo stamp", () => {
@@ -129,6 +131,25 @@ describe("deriveChat submissions", () => {
     if (failed.kind !== "user") return;
     expect(failed.status).toBe("failed");
     expect(failed.local).toEqual({ requestId: "local-1", error: "refused" });
+  });
+
+  it("can draw a queue-placed local row as a bubble when there is no queue list", () => {
+    const merged = derive("submission-local-queue-merged");
+    const local = merged.find((item) => item.kind === "user" && item.local !== undefined);
+    expect(local?.kind).toBe("user");
+    if (local?.kind !== "user") return;
+    expect(local.status).toBe("sending");
+    expect(local.local).toEqual({ requestId: "local-1" });
+
+    // Without the explicit option the queue row stays out of the transcript.
+    expect(derive("submission-local-queue-hidden").filter((item) => item.kind === "user")).toHaveLength(1);
+  });
+
+  it("keeps a typed ref image on a local row", () => {
+    const local = derive("submission-local-ref-image").find((item) => item.kind === "user");
+    expect(local?.kind).toBe("user");
+    if (local?.kind !== "user") return;
+    expect(local.images).toEqual([{ ref: "ref-1", mimeType: "image/png" }]);
   });
 
   it("keeps queued rows, other conversations and settled sends out of the transcript", () => {

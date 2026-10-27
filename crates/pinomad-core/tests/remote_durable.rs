@@ -2741,28 +2741,81 @@ fn logical_retry_disconnects_again_then_recovery_settles() {
         "unknown"
     );
 
-    h.set_result("submission", Json::Null);
+    // The retry query misses, then the reconnect query finds the admitted
+    // record; a reconnect may start immediately or on the deferred timer.
+    h.host
+        .call_result_queue
+        .entry("submission".to_string())
+        .or_default()
+        .push_back(Json::Null);
+    h.host
+        .call_result_queue
+        .entry("submission".to_string())
+        .or_default()
+        .push_back(obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("done")),
+            ("entry", Json::Number(42.0)),
+        ]));
     h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
     assert_eq!(h.host.method("submit").len(), 2);
     h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
     h.disconnect(1000, None);
+    if !h.submissions().is_empty() {
+        h.fire_timer();
+    }
+    assert_eq!(h.connection(), "connected");
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert_eq!(h.submission_queries().len(), 2);
+}
+
+
+#[test]
+fn logical_submit_timeout_releases_the_serialized_queue() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let first_id = h.host.method("submit")[0].get("id").cloned().unwrap();
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert!(matches!(h.ops.get(&1), Some(Ok(None))), "the timed-out op resolves");
     assert_eq!(
         h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
         "unknown"
     );
 
-    h.host.hung_methods.remove("submit");
-    h.set_result(
-        "submission",
-        obj(&[
-            ("submissionId", Json::Number(7.0)),
-            ("status", Json::from("done")),
-            ("entry", Json::Number(42.0)),
-        ]),
-    );
-    h.fire_timer();
-    assert_eq!(h.connection(), "connected");
-    assert!(h.submissions().is_empty());
+    // The original submit no longer holds the serialized queue.
+    h.invoke(2, Call::SetModel {
+        model: obj(&[("provider", Json::from("p")), ("modelId", Json::from("m"))]),
+    });
+    assert_eq!(h.host.method("setModel").len(), 1);
+
+    // A second submit can be sent while the first result is still missing.
+    h.invoke(3, submit_call("r2", "second"));
     assert_eq!(h.host.method("submit").len(), 2);
-    assert_eq!(h.submission_queries().len(), 2);
+
+    // The late result still reconciles the original request by its id.
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", first_id),
+        ("ok", Json::Bool(true)),
+        ("value", obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("entry", Json::Number(42.0)),
+        ])),
+    ]));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    let remaining = h.submissions();
+    assert_eq!(remaining.len(), 1, "only the second submit remains: {remaining:?}");
+    assert_eq!(
+        remaining[0].get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "r2"
+    );
 }

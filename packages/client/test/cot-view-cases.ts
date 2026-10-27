@@ -40,6 +40,8 @@ export interface DeriveChatCase {
   readonly busy: boolean;
   readonly presentations?: Record<string, PresentationType>;
   readonly submissions?: readonly LogicalSubmission[];
+  /** No queue list in this transcript: draw queue-placed local rows as bubbles. */
+  readonly mergeQueued?: boolean;
 }
 
 const local = (overrides: Partial<LogicalSubmission> = {}): LogicalSubmission => ({
@@ -608,6 +610,24 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     view: view([user("host hello")]),
     busy: true,
     submissions: [local({ placement: "queue" })],
+  },
+  {
+    name: "submission-local-queue-merged",
+    view: view([user("host hello")]),
+    busy: true,
+    submissions: [local({ placement: "queue" })],
+    mergeQueued: true,
+  },
+  {
+    name: "submission-local-ref-image",
+    view: view([]),
+    busy: false,
+    submissions: [
+      local({
+        images: [{ ref: "ref-1" }],
+        imageViews: [{ ref: "ref-1", mimeType: "image/png" }],
+      }),
+    ],
   },
   {
     name: "submission-local-other-conversation",

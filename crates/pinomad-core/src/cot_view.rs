@@ -917,16 +917,40 @@ fn submission_status(submission: &Json) -> String {
     }
 }
 
-/// Local bubbles in the order they were sent; a settled or queue-placed send
-/// is not a bubble.
-pub fn submission_rows(view: &Json, submissions: &Json) -> Vec<SubmissionRow> {
+/// A local submission image is a plain ViewImage (no `type` tag), unlike a
+/// conversation block; accept both shapes.
+fn submission_image(value: &Json) -> Option<MessageImage> {
+    if value.get("type").is_some() {
+        return MessageImage::from_view_block(value);
+    }
+    let mime_type = value.get("mimeType").and_then(Json::as_str)?.to_string_lossy();
+    if let Some(data) = value.get("data").and_then(Json::as_str).filter(|data| !data.is_empty()) {
+        return Some(MessageImage {
+            data: data.to_string_lossy(),
+            mime_type,
+            ref_: None,
+        });
+    }
+    let reference = value.get("ref").and_then(Json::as_str).filter(|reference| !reference.is_empty())?;
+    Some(MessageImage {
+        data: String::new(),
+        mime_type,
+        ref_: Some(reference.to_string_lossy()),
+    })
+}
+
+/// Local bubbles in the order they were sent. A settled send is never a bubble;
+/// `merge_queued` includes queue-placed sends for a transcript with no queue list.
+pub fn submission_rows(view: &Json, submissions: &Json, merge_queued: bool) -> Vec<SubmissionRow> {
     let Some(items) = submissions.as_array() else {
         return Vec::new();
     };
     items
         .iter()
         .filter(|submission| {
-            submission_str(submission.get("placement")).as_deref() == Some("conversation")
+            let placement = submission_str(submission.get("placement"));
+            (placement.as_deref() == Some("conversation")
+                || (merge_queued && placement.as_deref() == Some("queue")))
                 && submission_str(submission.get("phase")).as_deref() != Some("settled")
                 && submission_conversation_matches(view, submission)
         })
@@ -934,9 +958,10 @@ pub fn submission_rows(view: &Json, submissions: &Json) -> Vec<SubmissionRow> {
             request_id: submission_str(submission.get("requestId")).unwrap_or_default(),
             text: submission_str(submission.get("text")).unwrap_or_default(),
             images: submission
-                .get("images")
+                .get("imageViews")
+                .or_else(|| submission.get("images"))
                 .and_then(Json::as_array)
-                .map(|items| items.iter().filter_map(MessageImage::from_view_block).collect())
+                .map(|items| items.iter().filter_map(submission_image).collect())
                 .unwrap_or_default(),
             skills: submission
                 .get("skills")

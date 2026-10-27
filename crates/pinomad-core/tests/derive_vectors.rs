@@ -107,8 +107,9 @@ fn derive_chat_replays() {
         let busy = field(case, "busy").truthy();
         let presentations = Json::parse(&as_text(field(case, "presentations"))).unwrap();
         let submissions = Json::parse(&as_text(field(case, "submissions"))).unwrap();
+        let merge_queued = field(case, "mergeQueued").truthy();
         let entries = derive_chat(&view, &presentations, busy);
-        let rows = submission_rows(&view, &submissions);
+        let rows = submission_rows(&view, &submissions, merge_queued);
         assert_eq!(
 norm(&derive_vectors::out::chat_entries_with_submissions_json(&entries, &rows)),
 expect_text(case),

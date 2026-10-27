@@ -1065,6 +1065,8 @@ pub struct RemoteDurable {
     submissions: Vec<SubmissionRecord>,
     submission_by_request: HashMap<String, usize>,
     op_submissions: HashMap<u64, usize>,
+    /// A timed-out submit's call id, kept so a late result still reconciles.
+    late_submission_calls: HashMap<u64, usize>,
     submission_queries: HashMap<u64, SubmissionQuery>,
     submission_timers: HashMap<u32, usize>,
     submission_recovery: VecDeque<usize>,
@@ -1195,6 +1197,7 @@ impl RemoteDurable {
             submissions: Vec::new(),
             submission_by_request: HashMap::new(),
             op_submissions: HashMap::new(),
+            late_submission_calls: HashMap::new(),
             submission_queries: HashMap::new(),
             submission_timers: HashMap::new(),
             submission_recovery: VecDeque::new(),
@@ -1354,6 +1357,9 @@ impl RemoteDurable {
                 self.submissions[index].phase = SubmissionPhase::Unknown;
                 self.submissions[index].timer = None;
                 let _ = self.refresh();
+                // The caller's op resolves now; a queued command may run while
+                // the original submit is still outstanding.
+                self.retire_submission_op(index);
             }
             return;
         }
@@ -3797,6 +3803,15 @@ impl RemoteDurable {
         if self.handle_rtc_result(call_id, rtc_ok, value.clone(), error.clone()) {
             return;
         }
+        if let Some(index) = self.late_submission_calls.remove(&call_id) {
+            if ok.truthy() {
+                self.finish_submission_result(index, Some(value));
+            } else {
+                let message = U16String::js_string(&error).to_string_lossy();
+                self.mark_submission_failed(index, &message);
+            }
+            return;
+        }
         let Some(op_id) = self.pending_calls.remove(&call_id) else {
             return;
         };
@@ -4839,6 +4854,36 @@ impl RemoteDurable {
         };
         self.submission_timers.remove(&timer);
         self.out.push(Command::CancelDeadline { timer });
+    }
+
+    /// Take a timed-out submit out of the serialized queue while keeping its
+    /// call id for a late result. This is the Rust counterpart of the TS
+    /// timeout race releasing the command chain.
+    fn retire_submission_op(&mut self, index: usize) {
+        let Some(position) = self
+            .active
+            .iter()
+            .position(|op| self.op_submissions.get(&op.op_id) == Some(&index))
+        else {
+            return;
+        };
+        let op = self.active.remove(position);
+        self.op_submissions.remove(&op.op_id);
+        let calls: Vec<u64> = self
+            .pending_calls
+            .iter()
+            .filter(|(_, op_id)| **op_id == op.op_id)
+            .map(|(call_id, _)| *call_id)
+            .collect();
+        for call_id in calls {
+            self.pending_calls.remove(&call_id);
+            self.late_submission_calls.insert(call_id, index);
+        }
+        self.out.push(Command::OperationSucceeded {
+            op: op.op_id,
+            value: None,
+        });
+        self.pump();
     }
 
     fn start_submission_timer(&mut self, index: usize) {
