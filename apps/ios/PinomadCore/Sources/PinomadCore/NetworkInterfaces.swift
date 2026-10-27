@@ -56,17 +56,74 @@ public enum NetworkInterfaces {
         }
     }
 
-    /// The address the RTC socket binds to: Wi-Fi first, then cellular, then
-    /// any other interface. IPv4 is preferred because a dual-stack network
-    /// still routes v4 to the common case; a v6-only interface falls back to
-    /// v6 only when nothing else is up.
-    public static func primary() -> NetworkAddress? {
-        let all = active()
+    /// The addresses the RTC peer binds: the primary IPv4 address plus one
+    /// global IPv6 address on the same interface, so a dual-stack path can
+    /// try both families. IPv4 keeps the existing Wi-Fi → cellular → other
+    /// preference; without IPv4 the peer is single-stack on a global IPv6.
+    /// Link-local and ULA addresses never become candidates: neither is a
+    /// public IPv6 path, and both churn on every flap.
+    public static func rtcAddresses() -> [NetworkAddress] {
+        rtcAddresses(from: active())
+    }
+
+    static func rtcAddresses(from all: [NetworkAddress]) -> [NetworkAddress] {
+        let primary = primaryAddress(from: all)
+        guard let primary else { return [] }
+        if primary.isIPv6 { return [primary] }
+        var selected = [primary]
+        if let v6 = globalIPv6(on: primary.interface, in: all) {
+            selected.append(v6)
+        }
+        return selected
+    }
+
+    /// Wi-Fi first, then cellular, then any other interface. IPv4 wins across
+    /// interfaces; a global IPv6 is only the primary when no IPv4 is usable.
+    private static func primaryAddress(from all: [NetworkAddress]) -> NetworkAddress? {
         if let wifi = all.first(where: { $0.interface == "en0" && !$0.isIPv6 }) { return wifi }
-        if let phone = all.first(where: { $0.interface.hasPrefix("pdp_ip") && !$0.isIPv6 }) { return phone }
+        if let phone = all.first(where: { $0.interface.hasPrefix("pdp_ip") && !$0.isIPv6 }) {
+            return phone
+        }
         if let other = all.first(where: { !$0.isIPv6 }) { return other }
-        if let wifi6 = all.first(where: { $0.interface == "en0" }) { return wifi6 }
-        return all.first
+        let global = all.filter { $0.isIPv6 && globalIPv6Bytes($0.address) != nil }
+        if let wifi = global.first(where: { $0.interface == "en0" }) { return wifi }
+        if let phone = global.first(where: { $0.interface.hasPrefix("pdp_ip") }) { return phone }
+        return global.first
+    }
+
+    /// One address per interface; the numeric order keeps the choice stable
+    /// while privacy addresses rotate underneath us.
+    private static func globalIPv6(
+        on interface: String,
+        in all: [NetworkAddress]
+    ) -> NetworkAddress? {
+        var best: (NetworkAddress, [UInt8])?
+        for address in all {
+            guard address.isIPv6, address.interface == interface,
+                  let bytes = globalIPv6Bytes(address.address)
+            else { continue }
+            if let current = best, current.1.lexicographicallyPrecedes(bytes) { continue }
+            best = (address, bytes)
+        }
+        return best?.0
+    }
+
+    /// A global-unicast IPv6 address, as opposed to loopback, unspecified,
+    /// multicast, link-local, ULA, or an IPv4-mapped address.
+    private static func globalIPv6Bytes(_ address: String) -> [UInt8]? {
+        var raw = in6_addr()
+        guard inet_pton(AF_INET6, address, &raw) == 1 else { return nil }
+        let bytes = withUnsafeBytes(of: &raw) { Array($0) }
+        guard bytes.count == 16 else { return nil }
+        if bytes.allSatisfy({ $0 == 0 }) { return nil }
+        if bytes.dropLast().allSatisfy({ $0 == 0 }) && bytes[15] == 1 { return nil }
+        if bytes[0] == 0xff { return nil }
+        if bytes[0] & 0xfe == 0xfc { return nil }
+        if bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80 { return nil }
+        if bytes[0..<10].allSatisfy({ $0 == 0 }) && bytes[10] == 0xff && bytes[11] == 0xff {
+            return nil
+        }
+        return bytes
     }
 }
 

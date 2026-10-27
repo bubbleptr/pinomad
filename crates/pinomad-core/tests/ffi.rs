@@ -2556,7 +2556,7 @@ fn snapshot_providers_follows_stream_updates() {
 fn rtc_peer_starts_closes_and_rejects_sends() {
     use pinomad_core::ffi::{RtcAction, RtcPeer, RtcSendOutcome};
 
-    let peer = RtcPeer::new("127.0.0.1:41000".to_string(), Vec::new(), 1_000).unwrap();
+    let peer = RtcPeer::new(vec!["127.0.0.1:41000".to_string()], Vec::new(), 1_000).unwrap();
     let actions = peer.start(1_000);
     assert!(
         actions.iter().any(|action| matches!(action, RtcAction::LocalOffer { sdp } if sdp.contains("m=application"))),
@@ -2567,7 +2567,7 @@ fn rtc_peer_starts_closes_and_rejects_sends() {
     assert_eq!(peer.send(1_000, b"after close".to_vec()).outcome, RtcSendOutcome::Rejected);
     assert!(peer.timeout(2_000).is_empty());
     assert!(matches!(
-        RtcPeer::new("not-an-address".to_string(), Vec::new(), 1_000).err().expect("bad address"),
+        RtcPeer::new(vec!["not-an-address".to_string()], Vec::new(), 1_000).err().expect("bad address"),
         ClientError::RtcAddress { .. }
     ));
 }

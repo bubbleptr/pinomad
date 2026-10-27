@@ -23,6 +23,7 @@ struct Wire {
     b_addr: SocketAddr,
     now: u64,
     a_transmits: Vec<Vec<u8>>,
+    a_sources: Vec<SocketAddr>,
     b_transmits: Vec<Vec<u8>>,
     a_next: Option<u64>,
     b_next: Option<u64>,
@@ -36,11 +37,15 @@ struct Wire {
 
 impl Wire {
     fn new() -> Self {
-        let a_addr: SocketAddr = "127.0.0.1:40001".parse().unwrap();
+        Self::with_local_addrs(vec!["127.0.0.1:40001".parse().unwrap()])
+    }
+
+    fn with_local_addrs(addrs: Vec<SocketAddr>) -> Self {
+        let a_addr = addrs[0];
         let b_addr: SocketAddr = "127.0.0.1:40002".parse().unwrap();
         let a = Engine::new(
             EngineConfig {
-                local_addr: a_addr,
+                local_addrs: addrs,
                 stun_servers: vec![],
             },
             START_MS,
@@ -57,6 +62,7 @@ impl Wire {
             b_addr,
             now: START_MS,
             a_transmits: vec![],
+            a_sources: vec![],
             b_transmits: vec![],
             a_next: None,
             b_next: None,
@@ -76,7 +82,10 @@ impl Wire {
     fn handle_a(&mut self, actions: Vec<Action>) {
         for action in actions {
             match action {
-                Action::Transmit { bytes, .. } => self.a_transmits.push(bytes),
+                Action::Transmit { source, bytes, .. } => {
+                    self.a_sources.push(source);
+                    self.a_transmits.push(bytes);
+                }
                 Action::Schedule { at_ms } => self.a_next = Some(at_ms),
                 Action::ChannelOpened => self.a_open = true,
                 Action::Data { bytes } => self.a_data.push(bytes),
@@ -142,7 +151,7 @@ impl Wire {
             }
             self.drain_b();
             for bytes in b_out {
-                let actions = self.a.receive(self.now, self.b_addr, &bytes);
+                let actions = self.a.receive(self.now, self.a_addr, self.b_addr, &bytes);
                 self.handle_a(actions);
             }
             self.drain_b();
@@ -198,6 +207,92 @@ impl Wire {
             }
         }
     }
+}
+
+fn host_candidate_line(sdp: &str, address: SocketAddr) -> bool {
+    let ip = address.ip().to_string();
+    let port = address.port().to_string();
+    sdp.lines()
+        .filter_map(|line| line.strip_prefix("a=candidate:"))
+        .any(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            fields.get(4) == Some(&ip.as_str())
+                && fields.get(5) == Some(&port.as_str())
+                && fields.get(6) == Some(&"typ")
+                && fields.get(7) == Some(&"host")
+        })
+}
+
+#[test]
+fn offers_a_host_candidate_for_each_local_address() {
+    let v4: SocketAddr = "127.0.0.1:40001".parse().unwrap();
+    let v6: SocketAddr = "[::1]:40003".parse().unwrap();
+    let mut engine = Engine::new(
+        EngineConfig {
+            local_addrs: vec![v4, v6],
+            stun_servers: vec![],
+        },
+        START_MS,
+    );
+    let offer = engine
+        .start(START_MS)
+        .into_iter()
+        .find_map(|action| match action {
+            Action::LocalOffer { sdp } => Some(sdp),
+            _ => None,
+        })
+        .expect("offer");
+    assert!(host_candidate_line(&offer, v4), "missing v4 host: {offer}");
+    assert!(host_candidate_line(&offer, v6), "missing v6 host: {offer}");
+}
+
+#[test]
+fn stun_requests_leave_from_the_socket_of_the_same_family() {
+    let v4: SocketAddr = "127.0.0.1:40001".parse().unwrap();
+    let v6: SocketAddr = "[::1]:40003".parse().unwrap();
+    let v4_server: SocketAddr = "203.0.113.10:3478".parse().unwrap();
+    let v6_server: SocketAddr = "[2001:db8::10]:3478".parse().unwrap();
+    let mut engine = Engine::new(
+        EngineConfig {
+            local_addrs: vec![v4, v6],
+            stun_servers: vec![v4_server, v6_server],
+        },
+        START_MS,
+    );
+    let mut saw_v4 = false;
+    let mut saw_v6 = false;
+    for action in engine.start(START_MS) {
+        let Action::Transmit {
+            source,
+            destination,
+            ..
+        } = action
+        else {
+            continue;
+        };
+        assert_eq!(
+            source.is_ipv4(),
+            destination.is_ipv4(),
+            "STUN must leave from a socket of the server's family"
+        );
+        saw_v4 |= source == v4;
+        saw_v6 |= source == v6;
+    }
+    assert!(saw_v4 && saw_v6);
+}
+
+#[test]
+fn transmits_from_the_local_socket_that_owns_the_pair() {
+    let v4: SocketAddr = "127.0.0.1:40001".parse().unwrap();
+    let v6: SocketAddr = "[::1]:40003".parse().unwrap();
+    let mut wire = Wire::with_local_addrs(vec![v4, v6]);
+    wire.run_until_open();
+    assert!(!wire.a_sources.is_empty());
+    assert!(
+        wire.a_sources.iter().all(|source| source.is_ipv4()),
+        "a v4 remote pair must send from the v4 socket, got {:?}",
+        wire.a_sources
+    );
 }
 
 #[test]

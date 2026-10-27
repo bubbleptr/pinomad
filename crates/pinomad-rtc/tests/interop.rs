@@ -2,7 +2,9 @@
 //! (pinomad-core) open a DataChannel to node-datachannel, run Noise IK over
 //! it, and receive the host's business hello. The host is spawned with a
 //! throwaway data dir and STUN disabled, so the test uses loopback candidates
-//! only and never touches the network beyond 127.0.0.1.
+//! only and never touches the network beyond the loopback addresses. The
+//! client binds both loopback families when IPv6 is available, exercising the
+//! dual-stack socket routing without requiring a public IPv6 address.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -302,7 +304,9 @@ impl SocketDriver {
 
 struct Peer {
     engine: Engine,
-    socket: UdpSocket,
+    /// One socket per local address, keyed by the address the engine uses as
+    /// the transmit source.
+    sockets: Vec<(SocketAddr, UdpSocket)>,
     peer: u32,
     next_deadline: Option<u64>,
 }
@@ -391,13 +395,26 @@ impl RtcDriver {
                         stun.is_empty(),
                         "the test host must advertise no STUN: {stun:?}"
                     );
-                    let socket = UdpSocket::bind("0.0.0.0:0").expect("udp bind");
-                    socket.set_nonblocking(true).unwrap();
-                    let port = socket.local_addr().unwrap().port();
-                    let local: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+                    let mut sockets = Vec::new();
+                    let mut locals = Vec::new();
+                    for bind in ["0.0.0.0:0", "[::]:0"] {
+                        let Ok(socket) = UdpSocket::bind(bind) else {
+                            continue;
+                        };
+                        socket.set_nonblocking(true).unwrap();
+                        let port = socket.local_addr().unwrap().port();
+                        let local: SocketAddr = if bind.starts_with('[') {
+                            format!("[::1]:{port}").parse().unwrap()
+                        } else {
+                            format!("127.0.0.1:{port}").parse().unwrap()
+                        };
+                        sockets.push((local, socket));
+                        locals.push(local);
+                    }
+                    assert!(!sockets.is_empty(), "no loopback UDP socket");
                     let mut engine = Engine::new(
                         EngineConfig {
-                            local_addr: local,
+                            local_addrs: locals,
                             stun_servers: vec![],
                         },
                         self.now(),
@@ -405,7 +422,7 @@ impl RtcDriver {
                     let actions = engine.start(self.now());
                     self.peer = Some(Peer {
                         engine,
-                        socket,
+                        sockets,
                         peer,
                         next_deadline: None,
                     });
@@ -455,9 +472,22 @@ impl RtcDriver {
     fn apply(&mut self, actions: Vec<Action>) {
         for action in actions {
             match action {
-                Action::Transmit { destination, bytes } => {
+                Action::Transmit {
+                    source,
+                    destination,
+                    bytes,
+                } => {
                     if let Some(runtime) = self.peer.as_ref() {
-                        let _ = runtime.socket.send_to(&bytes, destination);
+                        let socket = runtime
+                            .sockets
+                            .iter()
+                            .find(|(local, _)| *local == source)
+                            .map(|(_, socket)| socket);
+                        assert!(
+                            socket.is_some(),
+                            "no socket bound to transmit source {source}"
+                        );
+                        let _ = socket.unwrap().send_to(&bytes, destination);
                     }
                 }
                 Action::Schedule { at_ms } => {
@@ -564,20 +594,24 @@ impl RtcDriver {
         let mut received = Vec::new();
         if let Some(runtime) = self.peer.as_ref() {
             let mut buffer = [0u8; 65536];
-            loop {
-                match runtime.socket.recv_from(&mut buffer) {
-                    Ok((count, source)) => received.push((source, buffer[..count].to_vec())),
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(error) => panic!("udp receive: {error}"),
+            for (local, socket) in &runtime.sockets {
+                loop {
+                    match socket.recv_from(&mut buffer) {
+                        Ok((count, source)) => {
+                            received.push((*local, source, buffer[..count].to_vec()))
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(error) => panic!("udp receive: {error}"),
+                    }
                 }
             }
         }
         let now = self.now();
-        for (source, bytes) in received {
+        for (local, source, bytes) in received {
             let Some(runtime) = self.peer.as_mut() else {
                 break;
             };
-            let actions = runtime.engine.receive(now, source, &bytes);
+            let actions = runtime.engine.receive(now, local, source, &bytes);
             self.apply(actions);
         }
     }
