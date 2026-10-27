@@ -236,6 +236,14 @@ mark.chat-skill-mention {
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
+/* Message times read like the actions beside them: secondary, and tabular so
+   a column of rows does not jitter. */
+.chat-message__time {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .chat-message:hover .chat-message__actions,
 .chat-message:focus-within .chat-message__actions,
 .chat-message__actions--persist {

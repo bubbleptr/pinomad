@@ -1,8 +1,8 @@
 // ChatEntry rendering, after Pace's widgets/live-chat/live-chat-message.tsx:
 // a user bubble, then one Assistant message per run — its folded process and
-// Interim Output, the answer, the settled actions row (Copy + Fork, no
+// Interim Output, the answer, the settled actions row (time, Copy + Fork, no
 // thumbs), and on the newest run the todo card (ADR-0026).
-import { ChatSystemMessage } from "@astryxdesign/core/Chat";
+import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
@@ -23,6 +23,7 @@ import { MessageAttachments } from "../../entities/attachment/file-attachments.t
 import { MessageImages } from "../../entities/image/message-images.tsx";
 import { GitFork } from "@/shared/ui/icons";
 import { SkillMentionText } from "../../entities/agent/skill-mentions.tsx";
+import { messageTime } from "./chat-time.ts";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 
@@ -64,22 +65,25 @@ export function ChatEntryView({
             {entry.attachments.length === 0 ? null : <MessageAttachments attachments={entry.attachments} />}
             {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
             {entry.text === "" ? null : (
-              <>
-                <ChatMessage.Bubble>
-                  <ChatMessage.Content>
-                    <SkillMentionText text={entry.text} names={entry.skills} />
-                  </ChatMessage.Content>
-                </ChatMessage.Bubble>
-                <ChatMessageActions className="shrink-0">
-                  <ChatMessageActions.Copy
-                    aria-label="Copy"
-                    tooltip="Copy"
-                    onPress={() => {
-                      void navigator.clipboard?.writeText(entry.text);
-                    }}
-                  />
-                </ChatMessageActions>
-              </>
+              <ChatMessage.Bubble>
+                <ChatMessage.Content>
+                  <SkillMentionText text={entry.text} names={entry.skills} />
+                </ChatMessage.Content>
+              </ChatMessage.Bubble>
+            )}
+            {entry.timestamp === undefined ? null : (
+              <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={entry.timestamp} />} />
+            )}
+            {entry.text === "" ? null : (
+              <ChatMessageActions className="shrink-0">
+                <ChatMessageActions.Copy
+                  aria-label="Copy"
+                  tooltip="Copy"
+                  onPress={() => {
+                    void navigator.clipboard?.writeText(entry.text);
+                  }}
+                />
+              </ChatMessageActions>
             )}
           </div>
         </ChatMessage.User>
@@ -103,6 +107,21 @@ export function ChatEntryView({
     case "reset":
       return <ChatSystemMessage variant="divider">New context</ChatSystemMessage>;
   }
+}
+
+function ChatMessageTime({ timestamp }: { timestamp: number }) {
+  const value = messageTime(timestamp);
+  if (value === undefined) return null;
+  return (
+    <time
+      className="chat-message__time"
+      data-slot="chat-message-time"
+      dateTime={value.iso}
+      title={value.full}
+    >
+      {value.label}
+    </time>
+  );
 }
 
 function RunEntry({
@@ -132,11 +151,17 @@ function RunEntry({
   const answer = cot.answer;
   // A forked message's chip opens the thread in the panel rather than the dialog.
   const forks = entry.forkEntryId === undefined ? [] : (forksAt?.(entry.forkEntryId) ?? []);
-  // A settled run's actions ride on its answer when it has one; a textless tail
-  // (thinking-only or tool-only last message) still gets the chip/Fork from
-  // forkEntryId — the chip shows even when canFork is false (legacy nesting).
+  // A settled run's metadata rides in its actions row: the end time first,
+  // then Copy/Fork. A textless tail (thinking-only or tool-only last message)
+  // still gets the chip/Fork from forkEntryId — the chip shows even when
+  // canFork is false (legacy nesting). A settled run with nothing else to act
+  // on still shows when it ended.
+  const endedAt = cot.phase === "settled" ? entry.endedAt : undefined;
   const showActions =
-    cot.phase === "settled" && (answer !== undefined || (entry.forkEntryId !== undefined && (canFork || forks.length > 0)));
+    cot.phase === "settled" &&
+    (endedAt !== undefined ||
+      answer !== undefined ||
+      (entry.forkEntryId !== undefined && (canFork || forks.length > 0)));
   return (
     <ChatMessage.Assistant>
       <ChatMessage.Body>
@@ -159,6 +184,7 @@ function RunEntry({
         {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} onRetry={onRetry} />}
         {!showActions ? null : (
           <ChatMessageActions className="chat-message__actions--persist">
+            {endedAt === undefined ? null : <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={endedAt} />} />}
             {answer === undefined ? null : (
               <ChatMessageActions.Copy
                 aria-label="Copy"

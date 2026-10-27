@@ -148,7 +148,7 @@ pub fn cot_json(cot: &CotView) -> Json {
 
 pub fn chat_entry_json(entry: &ChatEntry) -> Json {
     match entry {
-        ChatEntry::User { id, text, images, skills, attachments } => obj(&[
+        ChatEntry::User { id, text, images, skills, attachments, timestamp } => obj(&[
             ("kind", Some(s("user"))),
             ("id", Some(s(id))),
             ("text", Some(s(text))),
@@ -158,6 +158,7 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
                 "attachments",
                 Some(Json::array(attachments.iter().map(attachment_json).collect())),
             ),
+            ("timestamp", timestamp.map(num)),
         ]),
         ChatEntry::Run {
             id,
@@ -165,6 +166,7 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
             fork_entry_id,
             interrupted,
             failure,
+            ended_at,
         } => obj(&[
             ("kind", Some(s("run"))),
             ("id", Some(s(id))),
@@ -172,6 +174,7 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
             ("interrupted", Some(Json::Bool(*interrupted))),
             ("forkEntryId", fork_entry_id.as_deref().map(s)),
             ("failure", failure.as_deref().map(s)),
+            ("endedAt", ended_at.map(num)),
         ]),
         ChatEntry::Compaction { id } => obj(&[("kind", Some(s("compaction"))), ("id", Some(s(id)))]),
         ChatEntry::Reset { id } => obj(&[("kind", Some(s("reset"))), ("id", Some(s(id)))]),

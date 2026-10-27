@@ -76,6 +76,8 @@ export type ChatEntry =
       images: readonly ViewImage[];
       /** Files the user attached, as the host recorded them. */
       attachments: readonly UserAttachment[];
+      /** When the host received this message, as an epoch stamp. */
+      timestamp?: number;
       /**
        * The skills the host expanded into this message. A bubble highlights a
        * `$name` in `text` only when its name is here — by name, so a plain
@@ -91,6 +93,8 @@ export type ChatEntry =
       interrupted: boolean;
       /** Last assistant stopReason === "error": its errorMessage (or a generic text). */
       failure?: string;
+      /** When the run's last answer finished, once settled. */
+      endedAt?: number;
     }
   | { kind: "compaction"; id: string }
   | { kind: "reset"; id: string };
@@ -139,6 +143,8 @@ type AssistantMessageLike = {
   readonly stopReason?: string;
   readonly errorMessage?: string;
   readonly timestamp?: number;
+  /** Milliseconds from the request start to the response's end, from the provider stream. */
+  readonly durationMs?: number;
   /** PiNomad's own metadata on the stored assistant message (issue #395). */
   readonly pinomad?: { readonly answerStartedAt?: number };
   readonly provider?: unknown;
@@ -154,7 +160,7 @@ type ToolResultLike = {
   readonly timestamp?: number;
 };
 
-type UserMessageLike = { readonly role: "user"; readonly content: string | readonly Block[] };
+type UserMessageLike = { readonly role: "user"; readonly content: string | readonly Block[]; readonly timestamp?: number };
 
 /**
  * The host's first-answer-token stamp, only when it is a usable instant: a
@@ -166,6 +172,11 @@ function answerStartedAtOf(message: AssistantMessageLike): number | undefined {
   if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) return undefined;
   if (typeof message.timestamp !== "number" || startedAt < message.timestamp) return undefined;
   return startedAt;
+}
+
+/** A usable instant: a finite number, never NaN or an Infinity. */
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function textOf(content: string | readonly Block[]): string {
@@ -504,6 +515,15 @@ function deriveRun(
 
   const interrupted = lastCommitted?.msg.stopReason === "aborted";
   const failed = settled && lastCommitted?.msg.stopReason === "error";
+  // A settled run ends with its last answer; old messages have no duration,
+  // so their request start is the best available end. A live run's answer is
+  // not final and gets no end.
+  const lastAnswerAt = lastCommitted === undefined ? undefined : finiteNumber(lastCommitted.msg.timestamp);
+  const lastAnswerDuration = lastCommitted === undefined ? undefined : finiteNumber(lastCommitted.msg.durationMs);
+  const endedAt =
+    settled && lastAnswerAt !== undefined
+      ? finiteNumber(lastAnswerAt + (lastAnswerDuration ?? 0))
+      : undefined;
   const anchorMs = messages[0]?.msg.timestamp;
   const model =
     typeof latest?.msg.provider === "string" && typeof latest.msg.model === "string"
@@ -542,6 +562,7 @@ function deriveRun(
       ? { forkEntryId: lastCommitted.id }
       : {}),
     ...(failed === true ? { failure: lastCommitted?.msg.errorMessage ?? "The run failed." } : {}),
+    ...(endedAt === undefined ? {} : { endedAt }),
   };
 }
 
@@ -574,6 +595,7 @@ export function deriveChat(
     if (entry.kind === "pi.user" && message?.role === "user") {
       flush(false);
       const typed = stripUserBlocks(message.content);
+      const timestamp = finiteNumber(message.timestamp);
       items.push({
         kind: "user",
         id,
@@ -581,6 +603,7 @@ export function deriveChat(
         images: imagesOf(message.content),
         skills: typed.skills,
         attachments: typed.attachments,
+        ...(timestamp === undefined ? {} : { timestamp }),
       });
     } else if (entry.kind === "pi.compaction") {
       flush(false);

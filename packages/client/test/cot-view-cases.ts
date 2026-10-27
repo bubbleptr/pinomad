@@ -11,7 +11,7 @@ import { block } from "./skill-blocks-cases.ts";
 let nextId = 1;
 export const entry = (kind: string, message?: unknown): EntryRecord =>
   ({ id: nextId++, conversationId: 0, kind, ...(message === undefined ? {} : { model: [message] }) }) as unknown as EntryRecord;
-export const user = (content: string | unknown[]) => entry("pi.user", { role: "user", content, timestamp: 0 });
+export const user = (content: string | unknown[], timestamp = 0) => entry("pi.user", { role: "user", content, timestamp });
 export const assistant = (content: unknown[], stopReason = "stop", timestamp = 0, extra: object = {}) =>
   entry("pi.assistant", { role: "assistant", content, stopReason, timestamp, ...extra });
 export const result = (callId: string, name: string, output: string, isError = false, details?: unknown, timestamp = 0) =>
@@ -539,6 +539,37 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
       assistant([text("done")], "stop", 5000),
     ]),
     busy: false,
+  },
+  {
+    // The host records when it received the prompt; the bubble dates itself
+    // from the user message's own stamp.
+    name: "user-timestamp",
+    view: view([user("go", 1234), assistant([text("done")], "stop", 2000)]),
+    busy: false,
+  },
+  {
+    // A settled run ends when its last answer finished: request start plus
+    // the response's measured duration.
+    name: "run-ended-at",
+    view: view([
+      user("go", 1000),
+      assistant([call("c1", "logs", {})], "toolUse", 1100),
+      result("c1", "logs", "ok", false, undefined, 1500),
+      assistant([text("done")], "stop", 2000, { durationMs: 350 }),
+    ]),
+    busy: false,
+  },
+  {
+    // Older messages carry no duration: the request start is the best end.
+    name: "run-ended-at-fallback",
+    view: view([user("go", 1000), assistant([text("done")], "stop", 2000)]),
+    busy: false,
+  },
+  {
+    // While the run is still live the answer is not final, so it has no end.
+    name: "run-ended-at-live",
+    view: view([user("go", 1000), assistant([text("done")], "stop", 2000, { durationMs: 350 })], { run: {} }),
+    busy: true,
   },
 ];
 

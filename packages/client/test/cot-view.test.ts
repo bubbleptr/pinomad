@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deriveChat, pinomadOf, retryOf, splitSubagentCalls } from "../src/cot-view.ts";
-import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES, runs } from "./cot-view-cases.ts";
+import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES, entry, runs, view } from "./cot-view-cases.ts";
 
 const CASE = (name: string) => {
   const found = [...DERIVE_CHAT_CASES, ...RETRY_CASES].find((c) => c.name === name);
@@ -38,6 +38,72 @@ describe("deriveChat run model", () => {
 
   it("leaves it out when the messages don't say", () => {
     expect(runs(derive("settled-run"))[0]!.cot.model).toBeUndefined();
+  });
+});
+
+describe("deriveChat timestamps", () => {
+  it("stamps a user message with the time the host received it", () => {
+    const user = derive("user-timestamp").find((item) => item.kind === "user")!;
+    expect(user.kind).toBe("user");
+    if (user.kind !== "user") return;
+    expect(user.timestamp).toBe(1234);
+  });
+
+  it("leaves out a user timestamp that is not finite", () => {
+    const entries = deriveChat(
+      view([entry("pi.user", { role: "user", content: "go", timestamp: Number.POSITIVE_INFINITY })]),
+      {},
+      false,
+    );
+    const user = entries.find((item) => item.kind === "user")!;
+    expect(user.kind).toBe("user");
+    if (user.kind !== "user") return;
+    expect(user.timestamp).toBeUndefined();
+  });
+
+  it("ends a settled run at its last answer's timestamp plus duration", () => {
+    expect(runs(derive("run-ended-at"))[0]!.endedAt).toBe(2350);
+  });
+
+  it("falls back to the last answer's timestamp without a duration", () => {
+    expect(runs(derive("run-ended-at-fallback"))[0]!.endedAt).toBe(2000);
+  });
+
+  it("does not end a run that is still live", () => {
+    expect(runs(derive("run-ended-at-live"))[0]!.endedAt).toBeUndefined();
+  });
+
+  it("treats a non-finite duration as absent and an unusable stamp as no end", () => {
+    const entries = deriveChat(
+      view([
+        entry("pi.user", { role: "user", content: "go" }),
+        entry("pi.assistant", {
+          role: "assistant",
+          content: [{ type: "text", text: "done" }],
+          stopReason: "stop",
+          timestamp: 2000,
+          durationMs: Number.POSITIVE_INFINITY,
+        }),
+      ]),
+      {},
+      false,
+    );
+    expect(runs(entries)[0]!.endedAt).toBe(2000);
+
+    const unusable = deriveChat(
+      view([
+        entry("pi.user", { role: "user", content: "go" }),
+        entry("pi.assistant", {
+          role: "assistant",
+          content: [{ type: "text", text: "done" }],
+          stopReason: "stop",
+          timestamp: Number.NaN,
+        }),
+      ]),
+      {},
+      false,
+    );
+    expect(runs(unusable)[0]!.endedAt).toBeUndefined();
   });
 });
 
