@@ -115,13 +115,18 @@ describe("remote controller", () => {
     expect(client.view.current().notices.at(-1)).toMatchObject({ level: "error", message: expect.stringMatching(/999/) });
   });
 
-  it("notices when a command needs a conversation and none is shown", async () => {
+  it("fails the logical submission when a command needs a conversation and none is shown", async () => {
     const host = await startFauxHost(defer);
     const client = await connectTo(defer, host);
     expect(client.view.current().conversation).toBeUndefined();
 
     await client.controller.submit("hello", "followUp");
-    await waitForView(client.view, (view) => view.notices.some((notice) => notice.message === "No conversation selected"));
+    await waitForView(
+      client.view,
+      (view) =>
+        view.submissions?.[0]?.phase === "failed"
+        && view.submissions[0]?.error === "No conversation selected",
+    );
   });
 
   it("carries the host's defaults on hello and the models' thinking levels", async () => {
