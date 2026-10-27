@@ -183,10 +183,6 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
     }
 }
 
-pub fn chat_entries_json(entries: &[ChatEntry]) -> Json {
-    Json::array(entries.iter().map(chat_entry_json).collect())
-}
-
 /// The reference's final list: committed entries plus the local rows, with
 /// `status`/\`local\` fields the FFI enum deliberately does not carry yet.
 pub fn chat_entries_with_submissions_json(entries: &[ChatEntry], rows: &[SubmissionRow]) -> Json {
@@ -294,23 +290,6 @@ pub fn split_json(split: &SplitSubagents) -> Json {
 
 pub fn agent_json(agent: &AgentState) -> Json {
     agent.to_json()
-}
-
-pub fn queue_items_json(items: &[QueueItem]) -> Json {
-    Json::array(
-        items
-            .iter()
-            .map(|item| {
-                obj(&[
-                    ("id", Some(num(item.id as f64))),
-                    ("mode", Some(s(item.mode.as_str()))),
-                    ("text", Some(s(&item.text))),
-                    ("imageCount", Some(num(item.image_count as f64))),
-                    ("attachmentCount", Some(num(item.attachment_count as f64))),
-                ])
-            })
-            .collect(),
-    )
 }
 
 pub fn queued_input_json(input: &QueuedInput) -> Json {
