@@ -1,6 +1,6 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
-import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.ts";
+import { MAX_ATTACHMENTS_PER_MESSAGE, type UserAttachment } from "./attachments.ts";
 import type { ImageVariant, OutgoingImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { KeyPair } from "./noise.ts";
@@ -45,14 +45,18 @@ import {
   type RtcSelectedPair,
 } from "./rtc.ts";
 import { type FrameConnection, type FrameHandlers, type FrameTransport, webSocketTransport } from "./transport.ts";
+import { isBusy } from "./transcript.ts";
 import type {
   ConversationDefaults,
   DurableController,
   DurableView,
   DurableViewSource,
   ExtensionDocView,
+  LogicalSubmission,
   ModelSummary,
   Notice,
+  SubmissionDraft,
+  SubmissionPlacement,
 } from "./view.ts";
 
 /** The one-time offer a pairing candidate carries until message 2 verifies. */
@@ -178,6 +182,8 @@ const COOLDOWN_MAX_MS = 10 * 60_000;
 const P2P_STABLE_MS = 10 * 60_000;
 const FALLBACK_QUIET_MS = 60_000;
 const COOLDOWN_CLEAR_INTERVAL_MS = 60_000;
+/** A submit with no result for this long is unknown, never failed (ADR-0034 §7). */
+const SUBMISSION_TIMEOUT_MS = 30_000;
 
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -326,6 +332,37 @@ export class ProtocolMismatchError extends Error {
 }
 
 type Pending = { resolve(value: unknown): void; reject(error: Error): void };
+
+/**
+ * One client-side send from enqueue to the host's own fact (ADR-0034 §5).
+ * `fixed` marks a resolved conversation target: retries read this, never
+ * "whatever is shown now".
+ */
+type SubmissionFact = NonNullable<CallMethods["submission"]["result"]>;
+
+interface SubmissionRecord {
+  readonly requestId: string;
+  readonly text: string;
+  readonly whenBusy: "steer" | "followUp";
+  readonly placement: SubmissionPlacement;
+  readonly images: readonly OutgoingImage[];
+  /** Undefined omits the field; an empty array tells a 5.16 host not to scan. */
+  readonly skills?: readonly string[];
+  readonly attachments: readonly string[];
+  readonly attachmentDetails?: readonly UserAttachment[];
+  phase: "queued" | "inFlight" | "unknown" | "failed" | "settled";
+  conversationId?: ConversationId;
+  fixed: boolean;
+  submissionId?: number;
+  entry?: number;
+  error?: string;
+  timer?: ReturnType<typeof setTimeout>;
+  /** Admission is confirmed; no timeout applies while waiting for its entry. */
+  admitted: boolean;
+  confirming: boolean;
+  /** Snapshot version last checked for a missing entry. */
+  checkedVersion?: number;
+}
 
 /**
  * Whether a batch needs the host's 5.15 image-ref support: a ref with no
@@ -500,6 +537,13 @@ class RemoteClient {
   #side: ConversationId | undefined;
   #nextCall = 1;
   #nextNotice = 1;
+  /** Every send this session, settled ones kept as idempotency guards. */
+  readonly #submissions = new Map<string, SubmissionRecord>();
+  /** Written objects from enqueue order; the view publishes the active ones. */
+  readonly #submissionOrder: SubmissionRecord[] = [];
+  readonly #submissionLocks = new Set<string>();
+  /** One counter per stream snapshot, so a reset-trimmed entry is rechecked. */
+  readonly #streamVersions = new Map<StreamName, number>();
   /** The connected host's minor version; gates minor-gated streams and calls. */
   #hostMinor = 0;
   /**
@@ -895,6 +939,7 @@ class RemoteClient {
         notices: [],
         connection: "connected",
         docs: [],
+        submissions: [],
         toolPresentations: hello.toolPresentations,
         devices: [],
         mcp: null,
@@ -918,6 +963,10 @@ class RemoteClient {
     }
     this.#update({ session: hello.session, connection: "connected" });
     this.#refresh();
+    // The reconciliation queries and resends must finish before the gate
+    // releases commands queued during the outage (ADR-0034 §6).
+    await this.#recoverSubmissions();
+    if (!this.#isActive(dial)) return;
     this.#finishSyncGate();
     this.#afterCarrierReady(dial);
   }
@@ -971,6 +1020,7 @@ class RemoteClient {
     }
     this.#recordFailure(dial.candidate, stage, code === UNAUTHORIZED_CLOSE_CODE, code, reason);
     this.#abandonDial(dial);
+    this.#loseSubmissions();
     this.#rejectPending();
     // A handoff that lost either side must fail what it queued and never
     // carry those calls into the next reconnect round (ADR-0033 §3 step 9).
@@ -2035,6 +2085,7 @@ class RemoteClient {
   }
 
   #clearTimers(): void {
+    for (const record of this.#submissionOrder) this.#clearSubmissionTimer(record);
     this.#clearRoundTimer();
     this.#clearBackoff();
     this.#clearUpgradeTimer();
@@ -2115,6 +2166,7 @@ class RemoteClient {
         if (!this.#wanted.has(frame.stream)) return;
         this.#values.set(frame.stream, frame.value);
         this.#fresh.add(frame.stream);
+        this.#streamVersions.set(frame.stream, (this.#streamVersions.get(frame.stream) ?? 0) + 1);
         this.#refresh();
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) waiter.resolve();
         return;
@@ -2273,6 +2325,390 @@ class RemoteClient {
     return false;
   }
 
+
+  /** A lost carrier turns every unconfirmed in-flight send unknown at once. */
+  #loseSubmissions(): void {
+    for (const record of this.#submissionOrder) {
+      if (record.phase !== "inFlight" || record.admitted) continue;
+      record.phase = "unknown";
+      this.#clearSubmissionTimer(record);
+    }
+  }
+  /** The sends whose host fact has not replaced them yet, in enqueue order. */
+  #activeSubmissions(): LogicalSubmission[] {
+    return this.#submissionOrder
+      .filter((record) => record.phase !== "settled")
+      .map((record) => ({
+        requestId: record.requestId,
+        ...(record.conversationId === undefined ? {} : { conversationId: record.conversationId }),
+        text: record.text,
+        whenBusy: record.whenBusy,
+        placement: record.placement,
+        phase: record.phase,
+        images: record.images,
+        skills: record.skills ?? [],
+        attachments: record.attachments,
+        ...(record.attachmentDetails === undefined ? {} : { attachmentDetails: record.attachmentDetails }),
+        ...(record.submissionId === undefined ? {} : { submissionId: record.submissionId }),
+        ...(record.entry === undefined ? {} : { entry: record.entry }),
+        ...(record.error === undefined ? {} : { error: record.error }),
+      }));
+  }
+
+  #touchSubmissions(): void {
+    this.#refresh();
+  }
+
+  #startSubmissionTimer(record: SubmissionRecord): void {
+    this.#clearSubmissionTimer(record);
+    record.timer = setTimeout(() => {
+      record.timer = undefined;
+      if (this.#closed || record.phase !== "inFlight" || record.admitted) return;
+      // The host may still admit it later; this only changes what the row says.
+      record.phase = "unknown";
+      this.#touchSubmissions();
+    }, SUBMISSION_TIMEOUT_MS);
+  }
+
+  #clearSubmissionTimer(record: SubmissionRecord): void {
+    if (record.timer === undefined) return;
+    clearTimeout(record.timer);
+    record.timer = undefined;
+  }
+
+  #submissionSettled(record: SubmissionRecord): boolean {
+    return record.phase === "settled";
+  }
+
+  #settleSubmission(record: SubmissionRecord): void {
+    if (this.#submissionSettled(record)) return;
+    record.phase = "settled";
+    record.error = undefined;
+    this.#clearSubmissionTimer(record);
+  }
+
+  #entriesOf(id: ConversationId | undefined): readonly { readonly id?: unknown }[] {
+    if (id === undefined) return [];
+    const view = this.#values.get(conversationStream(id)) as ConversationView | undefined;
+    return view?.entries ?? [];
+  }
+
+  #entryPresent(record: SubmissionRecord): boolean {
+    if (record.entry === undefined) return false;
+    return this.#entriesOf(record.conversationId).some((entry) => String(entry.id) === String(record.entry));
+  }
+
+  /** Whether the host's inbox currently shows the row this submission became. */
+  #inboxHas(record: SubmissionRecord): boolean {
+    if (record.conversationId === undefined || record.submissionId === undefined) return false;
+    const inbox = this.#values.get(docStream("pi.inbox", record.conversationId)) as
+      | { readonly items?: readonly { readonly id?: unknown }[] }
+      | undefined;
+    return (inbox?.items ?? []).some((item) => String(item.id) === String(record.submissionId));
+  }
+
+  /**
+   * Take the host's record as the truth for a logical submission. A record
+   * with an entry waits for that entry; one without waits for its inbox row
+   * only while it is still queued. Placed/done/unanswered are already past
+   * the client's view, so the local row goes away (ADR-0034 §7).
+   */
+  #applySubmissionRecord(record: SubmissionRecord, found: SubmissionFact): void {
+    record.admitted = true;
+    record.submissionId = found.submissionId;
+    record.error = undefined;
+    this.#clearSubmissionTimer(record);
+    if (found.entry !== undefined) record.entry = found.entry;
+    if (record.entry !== undefined) {
+      if (this.#entryPresent(record) || found.status === "done") this.#settleSubmission(record);
+      else record.phase = "inFlight";
+    } else if (this.#inboxHas(record)) {
+      this.#settleSubmission(record);
+    } else if (found.status === "placed" || found.status === "done" || found.status === "unanswered") {
+      this.#settleSubmission(record);
+    } else {
+      record.phase = "inFlight";
+    }
+    this.#touchSubmissions();
+  }
+
+  /** Settle records whose entry or inbox row has now arrived in a stream. */
+  #reconcileSubmissions(): void {
+    for (const record of this.#submissionOrder) {
+      if (record.phase === "settled" || record.submissionId === undefined) continue;
+      if (this.#entryPresent(record) || this.#inboxHas(record)) {
+        this.#settleSubmission(record);
+        continue;
+      }
+      // An admitted record with an entry the fresh snapshot lacks may have
+      // been trimmed by a reset after it committed; a queued record with no
+      // inbox row may have been consumed or withdrawn before we saw it. Ask
+      // once per fresh snapshot in both cases.
+      if (
+        record.conversationId !== undefined
+        && record.submissionId !== undefined
+        && record.admitted
+        && (record.entry !== undefined || !this.#inboxHas(record))
+      ) {
+        const stream = conversationStream(record.conversationId);
+        // Either the transcript or the inbox moving can turn an admitted row
+        // into a stale one, so check once per version of both.
+        const version =
+          (this.#streamVersions.get(stream) ?? 0)
+          + (this.#streamVersions.get(docStream("pi.inbox", record.conversationId)) ?? 0);
+        if (this.#fresh.has(stream) && record.checkedVersion !== version) {
+          record.checkedVersion = version;
+          void this.#confirmSubmission(record);
+        }
+      }
+    }
+  }
+
+  /** One submission read; direct bypasses the sync gate during recovery. */
+  #querySubmission(record: SubmissionRecord, direct = false): Promise<SubmissionFact | null> {
+    if (!hostSupportsCall(this.#hostMinor, "submission")) {
+      return Promise.reject(new Error("The host is too old for submission receipts (needs protocol 5.25); run `pinomad upgrade` on the host"));
+    }
+    if (record.conversationId === undefined) {
+      return Promise.reject(new Error("No conversation selected"));
+    }
+    const args = { conversationId: record.conversationId, requestId: record.requestId };
+    const call = direct ? this.#callNow("submission", args) : this.#call("submission", args);
+    return call as Promise<SubmissionFact | null>;
+  }
+
+  /**
+   * After an admission result without an entry (a queued input) ask once
+   * whether the host already has a fact the snapshots missed.
+   */
+  async #confirmSubmission(record: SubmissionRecord): Promise<void> {
+    if (record.confirming || record.phase === "settled" || !hostSupportsCall(this.#hostMinor, "submission")) return;
+    record.confirming = true;
+    try {
+      const found = await this.#querySubmission(record);
+      if (this.#closed || this.#submissionSettled(record)) return;
+      if (found !== null) this.#applySubmissionRecord(record, found);
+    } catch {
+      // The result already admitted it; snapshots remain the other source of truth.
+    } finally {
+      record.confirming = false;
+    }
+  }
+
+  #submissionArgs(record: SubmissionRecord): CallMethods["submit"]["args"] {
+    const conversationId = record.conversationId;
+    if (conversationId === undefined) throw new Error("No conversation selected");
+    return {
+      conversationId,
+      text: record.text,
+      whenBusy: record.whenBusy,
+      requestId: record.requestId,
+      ...(record.images.length === 0 ? {} : { images: record.images }),
+      ...this.#boundSkills(record.skills),
+      ...(record.attachments.length === 0 ? {} : { attachments: record.attachments }),
+    };
+  }
+
+  #validateSubmission(record: SubmissionRecord): void {
+    if (record.images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
+      throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
+    }
+    if (needsImageRefs(record.images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
+      throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
+    }
+    if (record.attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      throw new Error("At most " + MAX_ATTACHMENTS_PER_MESSAGE + " attachments per message");
+    }
+    if (record.attachments.length > 0 && !hostSupportsFeature(this.#hostMinor, "attachments")) {
+      throw new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host");
+    }
+  }
+
+  /** Put one submit frame out and fold its result (or loss) into the record. */
+  async #sendSubmission(record: SubmissionRecord, direct: boolean): Promise<void> {
+    if (record.phase === "settled" || this.#closed) return;
+    record.phase = "inFlight";
+    record.error = undefined;
+    this.#startSubmissionTimer(record);
+    this.#touchSubmissions();
+    try {
+      const result = (await (direct ? this.#callNow("submit", this.#submissionArgs(record)) : this.#call("submit", this.#submissionArgs(record)))) as {
+        submissionId: number;
+        entry?: number;
+      };
+      if (this.#closed) return;
+      this.#clearSubmissionTimer(record);
+      record.admitted = true;
+      record.submissionId = result.submissionId;
+      if (result.entry !== undefined) record.entry = result.entry;
+      if (!hostSupportsFeature(this.#hostMinor, "submitEntry")) {
+        // A pre-5.25 host has no entry to wait for; its result is the fact.
+        this.#settleSubmission(record);
+      } else if (record.entry !== undefined) {
+        record.phase = "inFlight";
+        if (this.#entryPresent(record)) this.#settleSubmission(record);
+      } else {
+        record.phase = "inFlight";
+        void this.#confirmSubmission(record);
+      }
+      this.#touchSubmissions();
+    } catch (error) {
+      if (this.#closed) return;
+      this.#clearSubmissionTimer(record);
+      if (
+        error instanceof DisconnectedError
+        || (error instanceof Error && error.message === "Not connected to the host")
+      ) {
+        record.phase = "unknown";
+      } else {
+        record.phase = "failed";
+        record.error = error instanceof Error ? error.message : String(error);
+      }
+      this.#touchSubmissions();
+    }
+  }
+
+  async #runSubmission(record: SubmissionRecord): Promise<void> {
+    if (record.phase === "settled" || this.#closed) return;
+    try {
+      this.#validateSubmission(record);
+    } catch (error) {
+      if (this.#closed) return;
+      record.phase = "failed";
+      record.error = error instanceof Error ? error.message : String(error);
+      this.#touchSubmissions();
+      return;
+    }
+    if (!record.fixed) {
+      // Resolve once, in command order, then retries read this instead of the slot.
+      const target = this.#current;
+      if (target === undefined) {
+        record.phase = "failed";
+        record.error = "No conversation selected";
+        this.#touchSubmissions();
+        return;
+      }
+      record.conversationId = target;
+      record.fixed = true;
+    }
+    // The frame is written synchronously; keep the command chain moving so a
+    // timed-out send can still be retried while its result is outstanding.
+    void this.#sendSubmission(record, false);
+  }
+
+  /**
+   * Before a reconnect's sync gate releases queued calls, resolve every
+   * unknown send in enqueue order. A host record wins; a null record is the
+   * only reason to resend the same requestId into the same conversation.
+   */
+  async #recoverSubmissions(): Promise<void> {
+    const unknown = this.#submissionOrder.filter((record) => record.phase === "unknown");
+    for (const record of unknown) {
+      if (this.#closed || record.phase !== "unknown" || !record.fixed) continue;
+      try {
+        if (hostSupportsCall(this.#hostMinor, "submission")) {
+          const found = await this.#querySubmission(record, true);
+          if (found !== null) {
+            this.#applySubmissionRecord(record, found);
+            continue;
+          }
+        } else {
+          // A pre-5.25 host cannot answer "did you get it?"; leave the row for
+          // the user's Retry, exactly like today's missing receipt.
+          continue;
+        }
+        await this.#sendSubmission(record, true);
+      } catch (error) {
+        if (this.#closed) return;
+        this.#clearSubmissionTimer(record);
+        record.phase = "unknown";
+        this.#touchSubmissions();
+        if (
+          error instanceof DisconnectedError
+          || (error instanceof Error && error.message === "Not connected to the host")
+        ) {
+          return;
+        }
+      }
+    }
+  }
+
+  #submissionDraft(record: SubmissionRecord): SubmissionDraft {
+    return {
+      text: record.text,
+      whenBusy: record.whenBusy,
+      images: record.images,
+      skills: record.skills ?? [],
+      attachments: record.attachments,
+      ...(record.attachmentDetails === undefined ? {} : { attachmentDetails: record.attachmentDetails }),
+    };
+  }
+
+  async #retrySubmission(record: SubmissionRecord): Promise<void> {
+    if (record.phase !== "unknown" && record.phase !== "failed") return;
+    try {
+      if (record.phase === "unknown" && hostSupportsCall(this.#hostMinor, "submission")) {
+        const found = await this.#querySubmission(record);
+        if (found !== null) {
+          this.#applySubmissionRecord(record, found);
+          return;
+        }
+      }
+      await this.#sendSubmission(record, false);
+    } catch (error) {
+      if (this.#closed) return;
+      this.#clearSubmissionTimer(record);
+      record.phase = "unknown";
+      record.error = undefined;
+      this.#touchSubmissions();
+      if (
+        error instanceof DisconnectedError
+        || (error instanceof Error && error.message === "Not connected to the host")
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async #takeBackSubmission(record: SubmissionRecord): Promise<SubmissionDraft | undefined> {
+    if (record.phase === "queued" || record.phase === "failed") {
+      this.#settleSubmission(record);
+      this.#touchSubmissions();
+      return this.#submissionDraft(record);
+    }
+    if (record.phase !== "unknown" && !(record.phase === "inFlight" && record.submissionId !== undefined)) {
+      return undefined;
+    }
+    if (!hostSupportsCall(this.#hostMinor, "submission")) return undefined;
+    const found = await this.#querySubmission(record);
+    if (found === null) {
+      this.#settleSubmission(record);
+      this.#touchSubmissions();
+      return this.#submissionDraft(record);
+    }
+    this.#applySubmissionRecord(record, found);
+    if (this.#submissionSettled(record)) return undefined;
+    if (found.status === "placed" || found.status === "done" || found.entry !== undefined) return undefined;
+    if (found.status === "unanswered") {
+      this.#settleSubmission(record);
+      this.#touchSubmissions();
+      return this.#submissionDraft(record);
+    }
+    if (record.conversationId === undefined) return undefined;
+    const { outcome } = await this.#call("withdrawQueued", {
+      conversationId: record.conversationId,
+      submissionId: found.submissionId,
+    });
+    if (outcome === "sent") {
+      this.#settleSubmission(record);
+      this.#touchSubmissions();
+      return undefined;
+    }
+    this.#settleSubmission(record);
+    this.#touchSubmissions();
+    return this.#submissionDraft(record);
+  }
   /** One shown conversation's extension docs, in the host's order. */
   #docsOf(id: ConversationId): ExtensionDocView[] {
     return this.#docs.flatMap((doc) => {
@@ -2285,6 +2721,7 @@ class RemoteClient {
 
   #refresh(): void {
     if (this.#state === undefined) return;
+    this.#reconcileSubmissions();
     const current = this.#current;
     const side = this.#side;
     const conversation =
@@ -2303,6 +2740,7 @@ class RemoteClient {
       checkout: current === undefined ? undefined : checkoutOf(index, summaries, current),
       tasks,
       docs: current === undefined ? [] : this.#docsOf(current),
+      submissions: this.#activeSubmissions(),
       side:
         side === undefined
           ? undefined
@@ -2367,6 +2805,17 @@ class RemoteClient {
         entries.push({ id, frame, resolve: resolve as (value: unknown) => void, reject });
       });
     }
+    if (this.#dial?.phase !== "ready" || this.#state?.connection !== "connected") {
+      return Promise.reject(new Error("Not connected to the host"));
+    }
+    return this.#deliverCall(this.#dial, this.#nextCall++, method, args);
+  }
+
+  /**
+   * A call that bypasses the sync gate, for the reconciliation queries and
+   * resends that must finish before the gate releases later commands.
+   */
+  #callNow<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
     if (this.#dial?.phase !== "ready" || this.#state?.connection !== "connected") {
       return Promise.reject(new Error("Not connected to the host"));
     }
@@ -2498,33 +2947,47 @@ class RemoteClient {
           // family is gone too.
           if (archived && this.#side !== undefined && this.#descendsFrom(this.#side, id)) await this.#showSide(undefined);
         }),
-      submit: (text, whenBusy, options) =>
-        this.#command(() => {
-          const images = options?.images ?? [];
-          if (images.length > 0 && !hostSupportsFeature(this.#hostMinor, "images")) {
-            throw new Error("The host is too old for images (needs protocol 5.5); run `pinomad upgrade` on the host");
-          }
-          // Same gate as createConversation: an old host would 4400 the frame.
-          if (needsImageRefs(images) && !hostSupportsFeature(this.#hostMinor, "imageRefs")) {
-            throw new Error("The host is too old for image refs (needs protocol 5.15); run `pinomad upgrade` on the host");
-          }
-          const attachments = options?.attachments ?? [];
-          if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
-            throw new Error(`At most ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`);
-          }
-          if (attachments.length > 0 && !hostSupportsFeature(this.#hostMinor, "attachments")) {
-            throw new Error("The host is too old for attachments (needs protocol 5.19); run `pinomad upgrade` on the host");
-          }
-          return this.#call("submit", {
-            conversationId: options?.target ?? conversationId(),
-            text,
-            whenBusy,
-            requestId: options?.requestId ?? newRequestId(),
-            ...(images.length === 0 ? {} : { images }),
-            ...this.#boundSkills(options?.skills),
-            ...(attachments.length === 0 ? {} : { attachments }),
-          });
-        }),
+      submit: (text, whenBusy, options) => {
+        const requestId = options?.requestId ?? newRequestId();
+        if (this.#submissions.has(requestId)) return Promise.resolve();
+        const target = options?.target ?? this.#current;
+        const shown = target === undefined ? undefined : (this.#values.get(conversationStream(target)) as ConversationView | undefined);
+        const record: SubmissionRecord = {
+          requestId,
+          text,
+          whenBusy,
+          // Placement is fixed at send time: confirming later must not move the row.
+          placement: shown !== undefined && isBusy(shown) ? "queue" : "conversation",
+          images: options?.images ?? [],
+          ...(options?.skills === undefined ? {} : { skills: options.skills }),
+          attachments: options?.attachments ?? [],
+          ...(options?.attachmentDetails === undefined ? {} : { attachmentDetails: options.attachmentDetails }),
+          phase: "queued",
+          ...(target === undefined ? {} : { conversationId: target }),
+          fixed: options?.target !== undefined,
+          admitted: false,
+          confirming: false,
+        };
+        this.#submissions.set(requestId, record);
+        this.#submissionOrder.push(record);
+        this.#touchSubmissions();
+        return this.#request(() => this.#runSubmission(record)).then(
+          () => {},
+          () => {},
+        );
+      },
+      retrySubmission: (requestId) => {
+        const record = this.#submissions.get(requestId);
+        if (record === undefined || this.#submissionLocks.has(requestId)) return Promise.resolve();
+        this.#submissionLocks.add(requestId);
+        return this.#request(() => this.#retrySubmission(record)).finally(() => this.#submissionLocks.delete(requestId));
+      },
+      takeBackSubmission: (requestId) => {
+        const record = this.#submissions.get(requestId);
+        if (record === undefined || this.#submissionLocks.has(requestId)) return Promise.resolve(undefined);
+        this.#submissionLocks.add(requestId);
+        return this.#request(() => this.#takeBackSubmission(record)).finally(() => this.#submissionLocks.delete(requestId));
+      },
       compact: (instructions) =>
         this.#command(() =>
           this.#call("compact", { conversationId: conversationId(), ...(instructions === undefined ? {} : { instructions }) }),

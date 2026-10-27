@@ -38,6 +38,6 @@ export function streamingText(view: ConversationView): string | undefined {
 
 /** Whether the conversation has a run in flight. */
 export function isBusy(view: ConversationView): boolean {
-  const live = view.docs["pi.live"] as { run?: unknown } | undefined;
+  const live = view.docs?.["pi.live"] as { run?: unknown } | undefined;
   return live?.run !== undefined;
 }
