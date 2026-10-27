@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
+import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,7 @@ import { createHostStore, type StoredAccount, type StoredHost } from "./host-sto
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
+import { desktopUserDataDir } from "./user-data.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
@@ -170,13 +172,24 @@ function openPairingLink(fragment: string): void {
   void mainWindow.loadURL(entryWithFragment(fragment));
 }
 
-// The single-instance lock is stored inside userData, so the E2E override has
-// to land before the lock is requested: otherwise the test competes for the
-// installed app's lock and quits. The renderer's paired device also lives in
-// userData localStorage; macOS derives it from the system Library, not $HOME,
-// so tests need this.
-if (process.env.PINOMAD_USER_DATA_DIR !== undefined) {
-  app.setPath("userData", process.env.PINOMAD_USER_DATA_DIR);
+// The single-instance lock is stored inside userData, so this has to land
+// before the lock is requested: otherwise dev and installed builds compete for
+// the same lock and one quits. Separate directories also keep a dev run from
+// rewriting the real host list and renderer localStorage. No migration — hosts
+// paired in a dev build before this need pairing again. The override comes
+// first so E2E can still use a throwaway directory (on macOS the renderer's
+// paired device lives in the system Library, not $HOME).
+const defaultUserDataDir = app.getPath("userData");
+const userDataDir = desktopUserDataDir({
+  defaultDir: defaultUserDataDir,
+  isPackaged: app.isPackaged,
+  override: process.env.PINOMAD_USER_DATA_DIR,
+});
+if (userDataDir !== defaultUserDataDir) {
+  // setPath throws when the directory is missing, and the -dev sibling does
+  // not exist on the first development launch.
+  mkdirSync(userDataDir, { recursive: true });
+  app.setPath("userData", userDataDir);
 }
 
 if (!app.requestSingleInstanceLock()) {
