@@ -41,7 +41,7 @@ public enum ChatAdapter {
     /// shows the list and how stale it is.
     public static func todoWrites(in chat: [ChatEntry]) -> [Date?] {
         chat.compactMap { entry -> Date?? in
-            guard case let .run(_, cot, _, _, _) = entry else { return nil }
+            guard case let .run(_, cot, _, _, _, _) = entry else { return nil }
             return .some(cot.todoWrittenAtMs.map { Date(timeIntervalSince1970: $0 / 1000) })
         }
     }
@@ -168,7 +168,7 @@ extension ChatEntry {
     /// the transcript's `ForEach`.
     public var entryId: String {
         switch self {
-        case let .user(id, _, _, _, _), let .run(id, _, _, _, _), let .compaction(id), let .reset(id):
+        case let .user(id, _, _, _, _, _), let .run(id, _, _, _, _, _), let .compaction(id), let .reset(id):
             id
         }
     }
