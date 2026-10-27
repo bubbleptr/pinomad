@@ -51,7 +51,7 @@ function pairParams(url: string): { hostKey: string; secret: string; target: str
   return { hostKey: hostKey!, secret: secret!, target: params.get("url")! };
 }
 
-/** Attempts and spacing when re-binding a port a previous listener just released. */
+/** Live-bind attempts; restarts space same-port retries by BIND_RETRY_MS. */
 const BIND_ATTEMPTS = 10;
 const BIND_RETRY_MS = 20;
 
@@ -73,25 +73,33 @@ async function startTestRelay(dir: string, options?: { bound?: boolean }) {
   const restart = async (): Promise<void> => {
     const accounts = await openBoundAccounts(server.path, options?.bound === false ? "x".repeat(43) : hostId);
     try {
-      if (port === 0) {
-        // publicOrigin is fixed when the relay starts, so learn the port from a
-        // throwaway listener first, then compose the origin the live relay
-        // verifies registers against. The accounts are already open, leaving
-        // only the close-to-bind gap for another test to claim the port.
-        const probe = await startRelay({ port: 0, publicOrigin: "http://127.0.0.1:0" });
-        port = probe.port;
-        origin = `http://127.0.0.1:${port}`;
-        await probe.close();
-      }
-      for (let attempt = 1; ; attempt += 1) {
+      const firstStart = port === 0;
+      let attempt = 1;
+      for (;;) {
+        if (firstStart) {
+          // publicOrigin is fixed when the relay starts, so learn the port from a
+          // throwaway listener first, then compose the origin the live relay
+          // verifies registers against. The accounts are already open, leaving
+          // only the close-to-bind gap for another test to claim the port.
+          const probe = await startRelay({ port: 0, publicOrigin: "http://127.0.0.1:0" });
+          port = probe.port;
+          origin = `http://127.0.0.1:${port}`;
+          await probe.close();
+        }
         try {
           relay = await startRelay({ port, publicOrigin: origin, accounts });
           stopping = undefined;
           return;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || attempt >= BIND_ATTEMPTS) throw error;
-          // The old listener is closed, but another test can still claim the
-          // port for a moment; reconnect tests need the same port back, not a new one.
+          attempt += 1;
+          if (firstStart) {
+            // Nothing has dialed this origin yet: probe again rather than wait
+            // for a port a long-lived listener may hold indefinitely.
+            continue;
+          }
+          // Restarts must keep the port for reconnect tests; the previous
+          // listener just released it, so a short retry covers the race.
           await new Promise((resolve) => setTimeout(resolve, BIND_RETRY_MS));
         }
       }
