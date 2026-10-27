@@ -1,7 +1,7 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import { MAX_ATTACHMENTS_PER_MESSAGE, type UserAttachment } from "./attachments.ts";
-import type { ImageVariant, OutgoingImage } from "./images.ts";
+import type { ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { KeyPair } from "./noise.ts";
 import type { PresentationType } from "./presentation.ts";
@@ -346,6 +346,7 @@ interface SubmissionRecord {
   readonly whenBusy: "steer" | "followUp";
   readonly placement: SubmissionPlacement;
   readonly images: readonly OutgoingImage[];
+  readonly imageViews?: readonly ViewImage[];
   /** Undefined omits the field; an empty array tells a 5.16 host not to scan. */
   readonly skills?: readonly string[];
   readonly attachments: readonly string[];
@@ -2348,6 +2349,7 @@ class RemoteClient {
         placement: record.placement,
         phase: record.phase,
         images: record.images,
+        ...(record.imageViews === undefined ? {} : { imageViews: record.imageViews }),
         skills: record.skills ?? [],
         attachments: record.attachments,
         ...(record.attachmentDetails === undefined ? {} : { attachmentDetails: record.attachmentDetails }),
@@ -2673,15 +2675,33 @@ class RemoteClient {
     }
   }
 
-  #submissionDraft(record: SubmissionRecord): SubmissionDraft {
+  #submissionDraft(record: SubmissionRecord, images: readonly OutgoingImage[] = record.images): SubmissionDraft {
     return {
       text: record.text,
       whenBusy: record.whenBusy,
-      images: record.images,
+      images,
       skills: record.skills ?? [],
       attachments: record.attachments,
       ...(record.attachmentDetails === undefined ? {} : { attachmentDetails: record.attachmentDetails }),
     };
+  }
+
+  /**
+   * Resolve every image to bytes before an edit removes the local submission.
+   * A ref the host no longer serves must leave the row and composer untouched.
+   */
+  async #resolveSubmissionImages(record: SubmissionRecord): Promise<readonly OutgoingImage[]> {
+    const views: readonly (ViewImage | OutgoingImage)[] = record.imageViews ?? record.images;
+    const resolved: OutgoingImage[] = [];
+    for (const image of views) {
+      if ("data" in image) {
+        resolved.push(image);
+      } else {
+        const bytes = await this.#call("image", { ref: image.ref });
+        resolved.push({ data: bytes.data, mimeType: bytes.mimeType });
+      }
+    }
+    return resolved;
   }
 
   async #retrySubmission(record: SubmissionRecord): Promise<void> {
@@ -2715,10 +2735,21 @@ class RemoteClient {
   }
 
   async #takeBackSubmission(record: SubmissionRecord): Promise<SubmissionDraft | undefined> {
+    let resolved: readonly OutgoingImage[] | undefined;
+    const images = async (): Promise<readonly OutgoingImage[]> => {
+      if (resolved !== undefined) return resolved;
+      try {
+        resolved = await this.#resolveSubmissionImages(record);
+        return resolved;
+      } catch {
+        throw new Error("Couldn't load the original images — try again");
+      }
+    };
     if (record.phase === "queued" || record.phase === "failed") {
+      const draft = await images();
       this.#settleSubmission(record);
       this.#touchSubmissions();
-      return this.#submissionDraft(record);
+      return this.#submissionDraft(record, draft);
     }
     if (record.phase !== "unknown" && !(record.phase === "inFlight" && record.submissionId !== undefined)) {
       return undefined;
@@ -2726,19 +2757,22 @@ class RemoteClient {
     if (!hostSupportsCall(this.#hostMinor, "submission")) return undefined;
     const found = await this.#querySubmission(record);
     if (found === null) {
+      const draft = await images();
       this.#settleSubmission(record);
       this.#touchSubmissions();
-      return this.#submissionDraft(record);
+      return this.#submissionDraft(record, draft);
     }
     this.#applySubmissionRecord(record, found);
     if (this.#submissionSettled(record)) return undefined;
     if (found.status === "placed" || found.status === "done" || found.entry !== undefined) return undefined;
     if (found.status === "unanswered") {
+      const draft = await images();
       this.#settleSubmission(record);
       this.#touchSubmissions();
-      return this.#submissionDraft(record);
+      return this.#submissionDraft(record, draft);
     }
     if (record.conversationId === undefined) return undefined;
+    const draft = await images();
     const { outcome } = await this.#call("withdrawQueued", {
       conversationId: record.conversationId,
       submissionId: found.submissionId,
@@ -2750,7 +2784,7 @@ class RemoteClient {
     }
     this.#settleSubmission(record);
     this.#touchSubmissions();
-    return this.#submissionDraft(record);
+    return this.#submissionDraft(record, draft);
   }
   /** One shown conversation's extension docs, in the host's order. */
   #docsOf(id: ConversationId): ExtensionDocView[] {
@@ -3002,6 +3036,7 @@ class RemoteClient {
           // Placement is fixed at send time: confirming later must not move the row.
           placement: shown !== undefined && isBusy(shown) ? "queue" : "conversation",
           images: options?.images ?? [],
+          ...(options?.imageViews === undefined ? {} : { imageViews: options.imageViews }),
           ...(options?.skills === undefined ? {} : { skills: options.skills }),
           attachments: options?.attachments ?? [],
           ...(options?.attachmentDetails === undefined ? {} : { attachmentDetails: options.attachmentDetails }),

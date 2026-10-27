@@ -62,6 +62,7 @@ function createHost(minor = PROTOCOL.minor) {
   let submitAnswer: (call: CallFrame) => Answer | undefined = () => undefined;
   let submissionAnswer: (call: CallFrame) => Answer | undefined = () => undefined;
   let withdrawAnswer: (call: CallFrame) => Answer | undefined = () => ({ ok: true, value: { outcome: "withdrawn" } });
+  const genericAnswers = new Map<string, (call: CallFrame) => Answer | undefined>();
 
   const snapshotFor = (stream: string): unknown => {
     if (snapshots.has(stream)) return snapshots.get(stream);
@@ -80,16 +81,11 @@ function createHost(minor = PROTOCOL.minor) {
     queueMicrotask(() => handler?.message(JSON.stringify(frame)));
   };
 
-  const respond = (call: CallFrame): void => {
-    const configured =
-      call.method === "submit"
-        ? submitAnswer(call)
-        : call.method === "submission"
-          ? submissionAnswer(call)
-          : call.method === "withdrawQueued"
-            ? withdrawAnswer(call)
-            : { ok: true as const, value: undefined };
-    if (configured !== undefined) answer(call, configured);
+  const answerFor = (call: CallFrame): Answer | undefined => {
+    if (call.method === "submit") return submitAnswer(call);
+    if (call.method === "submission") return submissionAnswer(call);
+    if (call.method === "withdrawQueued") return withdrawAnswer(call);
+    return genericAnswers.get(call.method)?.(call) ?? { ok: true, value: undefined };
   };
 
   const transport: FrameTransport = {
@@ -116,14 +112,7 @@ function createHost(minor = PROTOCOL.minor) {
               handler?.message(JSON.stringify({ type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) })),
             );
           } else if (frame.type === "call") {
-            const configured =
-              frame.method === "submit"
-                ? submitAnswer(frame)
-                : frame.method === "submission"
-                  ? submissionAnswer(frame)
-                  : frame.method === "withdrawQueued"
-                    ? withdrawAnswer(frame)
-                    : { ok: true as const, value: undefined };
+            const configured = answerFor(frame);
             if (configured === undefined) held.set(frame.id, frame);
             else answer(frame, configured);
           }
@@ -148,6 +137,9 @@ function createHost(minor = PROTOCOL.minor) {
     },
     setWithdrawAnswer: (fn: (call: CallFrame) => Answer | undefined) => {
       withdrawAnswer = fn;
+    },
+    setCallAnswer: (method: string, fn: (call: CallFrame) => Answer | undefined) => {
+      genericAnswers.set(method, fn);
     },
     answer(call: CallFrame, value: Answer) {
       held.delete(call.id);
@@ -541,6 +533,46 @@ describe("logical submissions", () => {
       expect(placed.calls("withdrawQueued")).toHaveLength(0);
     } finally {
       remote3.close();
+    }
+  });
+
+
+  it("resolves ref images before taking back a failed submission", async () => {
+    const host = createHost();
+    host.setSubmitAnswer(() => ({ ok: false, error: "refused" }));
+    host.setCallAnswer("image", () => ({ ok: true, value: { data: "aGk=", mimeType: "image/png" } }));
+    const remote = await connected(host);
+    try {
+      await remote.controller.submit("look", "followUp", {
+        requestId: "r1",
+        images: [{ ref: "ref-1" }],
+        imageViews: [{ ref: "ref-1", mimeType: "image/png" }],
+      });
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "failed");
+      const draft = await remote.controller.takeBackSubmission("r1");
+      expect(draft?.images).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+      expect(submissions(remote)).toHaveLength(0);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("keeps a failed submission when one of its ref images cannot be resolved", async () => {
+    const host = createHost();
+    host.setSubmitAnswer(() => ({ ok: false, error: "refused" }));
+    host.setCallAnswer("image", () => ({ ok: false, error: "gone" }));
+    const remote = await connected(host);
+    try {
+      await remote.controller.submit("look", "followUp", {
+        requestId: "r1",
+        images: [{ ref: "ref-1" }],
+        imageViews: [{ ref: "ref-1", mimeType: "image/png" }],
+      });
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "failed");
+      await expect(remote.controller.takeBackSubmission("r1")).rejects.toThrow("Couldn't load");
+      expect(onlySubmission(remote).phase).toBe("failed");
+    } finally {
+      remote.close();
     }
   });
 

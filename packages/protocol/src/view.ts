@@ -13,7 +13,7 @@ import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
-import type { ImageResult, ImageVariant, OutgoingImage } from "./images.ts";
+import type { ImageResult, ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import type { UserAttachment } from "./attachments.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
@@ -140,6 +140,8 @@ export interface LogicalSubmission {
   readonly placement: SubmissionPlacement;
   readonly phase: SubmissionPhase;
   readonly images: readonly OutgoingImage[];
+  /** The same images with their ref types, when the caller had them for local preview/edit. */
+  readonly imageViews?: readonly ViewImage[];
   readonly skills: readonly string[];
   /** Host-stored attachment ids, as sent. */
   readonly attachments: readonly string[];
@@ -275,6 +277,8 @@ export interface DurableController {
       target?: ConversationId;
       requestId?: string;
       images?: readonly OutgoingImage[];
+      /** The same images with their types, for the local bubble and Edit. */
+      imageViews?: readonly ViewImage[];
       skills?: readonly string[];
       /** Host-stored attachment ids to reference (5.19, issue #321). */
       attachments?: readonly string[];
