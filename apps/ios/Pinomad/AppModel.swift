@@ -397,8 +397,9 @@ final class AppModel {
     }
 
     /// The poll re-reads the same core value until the next core clock tick.
-    /// Only a changed value starts a new local countdown; otherwise the page
-    /// would reset the baseline every second and show a frozen cooldown.
+    /// A changed value starts a new local baseline for the cooldown and the
+    /// failure age; resetting every second would double-count elapsed time
+    /// once the core clock advances.
     private func setRtcStatus(_ next: RtcDiagnostics) {
         let previous = rtcStatus
         rtcStatus = next
@@ -406,6 +407,7 @@ final class AppModel {
             || previous?.phase != next.phase
             || previous?.path != next.path
             || previous?.cooldownRemainingMs != next.cooldownRemainingMs
+            || previous?.lastFailure != next.lastFailure
         {
             rtcStatusAt = Date()
         }

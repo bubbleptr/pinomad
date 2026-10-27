@@ -234,8 +234,8 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
                 runtime.sink(.rtcData(peer: peer, bytes: bytes))
             case .bufferedAmountLow:
                 runtime.sink(.rtcLowWater(peer: peer))
-            case .selectedCandidate(let kind):
-                runtime.sink(.rtcSelectedCandidate(peer: peer, kind: kind))
+            case .selectedCandidate(let local, let remote):
+                runtime.sink(.rtcSelectedCandidate(peer: peer, local: local, remote: remote))
             case .closed(let reason):
                 retire(peer: peer, reason: reason)
             }

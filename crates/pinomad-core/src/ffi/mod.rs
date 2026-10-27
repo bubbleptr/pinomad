@@ -25,7 +25,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::remote_candidates::candidate_plan;
 use crate::remote_durable::{Command, Event, PlannedSource, RemoteDurable, RemoteDurableOptions};
-use crate::rtc::rtc_pair_from_kind;
 
 /// How a Request-class op's `OperationSucceeded` value decodes. Command and
 /// Unqueued ops always map to `CallResult::Unit`.
@@ -472,9 +471,12 @@ impl PinomadClient {
             },
             FfiEvent::RtcLowWater { peer } => Event::RtcLowWater { peer: peer as u32 },
             FfiEvent::RtcClosed { peer, reason } => Event::RtcClosed { peer: peer as u32, reason },
-            FfiEvent::RtcSelectedCandidate { peer, kind } => {
-                let (local, remote) = rtc_pair_from_kind(&kind);
-                Event::RtcSelectedCandidate { peer: peer as u32, local, remote }
+            FfiEvent::RtcSelectedCandidate { peer, local, remote } => {
+                Event::RtcSelectedCandidate {
+                    peer: peer as u32,
+                    local: local.into_core(),
+                    remote: remote.into_core(),
+                }
             }
         };
         let commands = inner.remote.handle(event);

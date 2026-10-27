@@ -26,7 +26,8 @@ public enum SessionEvent: Sendable {
     case rtcSendResult(peer: UInt64, outcome: RtcSendOutcome)
     case rtcLowWater(peer: UInt64)
     case rtcClosed(peer: UInt64, reason: String?)
-    case rtcSelectedCandidate(peer: UInt64, kind: String)
+    case rtcSelectedCandidate(
+        peer: UInt64, local: RtcSelectedCandidateEnd, remote: RtcSelectedCandidateEnd)
     /// An off-loop `snapshot()` finished — kept in queue order so the
     /// version check and dirty flag stay deterministic.
     case snapshotReady(ClientSnapshot?)
@@ -425,9 +426,9 @@ public final class PinomadSession: @unchecked Sendable {
         case .rtcClosed(let peer, let reason):
             feedClock()
             feed(.rtcClosed(peer: peer, reason: reason))
-        case .rtcSelectedCandidate(let peer, let kind):
+        case .rtcSelectedCandidate(let peer, let local, let remote):
             feedClock()
-            feed(.rtcSelectedCandidate(peer: peer, kind: kind))
+            feed(.rtcSelectedCandidate(peer: peer, local: local, remote: remote))
         case .snapshotReady(let snapshot):
             snapshotInFlight = false
             if let snapshot, snapshot.version > publishedVersion {
