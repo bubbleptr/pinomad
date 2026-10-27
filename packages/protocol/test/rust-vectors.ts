@@ -177,6 +177,11 @@ function framesVector(): VectorFile {
       name: "call-submit-attachments",
       wire: wire({ type: "call", id: 26, method: "submit", args: { conversationId: 2, text: "look", whenBusy: "followUp", requestId: "r", attachments: ["A".repeat(22)] } }),
     },
+    // 5.25: read-only request-id lookup (issue #402).
+    {
+      name: "call-submission",
+      wire: wire({ type: "call", id: 27, method: "submission", args: { conversationId: 2, requestId: "req" } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];

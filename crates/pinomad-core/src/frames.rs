@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 24 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 25 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -82,6 +82,7 @@ pub enum CallMethod {
     Archive,
     RenameConversation,
     Submit,
+    Submission,
     WithdrawQueued,
     SteerQueued,
     Abort,
@@ -129,6 +130,7 @@ impl CallMethod {
             "archive" => Self::Archive,
             "renameConversation" => Self::RenameConversation,
             "submit" => Self::Submit,
+            "submission" => Self::Submission,
             "withdrawQueued" => Self::WithdrawQueued,
             "steerQueued" => Self::SteerQueued,
             "abort" => Self::Abort,
@@ -204,6 +206,7 @@ impl CallMethod {
             | Self::RemoveCustomProvider
             | Self::ListEndpointModels => 21,
             Self::RtcOffer | Self::Ping => 23,
+            Self::Submission => 25,
         }
     }
 }
@@ -219,7 +222,8 @@ pub fn host_supports_call(host_minor: u32, method: &str) -> bool {
     host_minor >= call_since(method)
 }
 
-/// Minor version that introduced each call-arg feature (`FEATURE_SINCE`).
+/// Minor version that introduced each call-arg or call-result feature
+/// (`FEATURE_SINCE`).
 pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
     let since = match feature {
         HostFeature::Images => 5,
@@ -233,6 +237,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Attachments => 19,
         HostFeature::ImageVariants => 20,
         HostFeature::Rtc => 23,
+        HostFeature::SubmitEntry => 25,
     };
     host_minor >= since
 }
@@ -269,6 +274,10 @@ pub enum HostFeature {
     ImageVariants,
     /// `hello.rtc` is present and the host answers `rtcOffer` (23, ADR-0033).
     Rtc,
+    /// `submit` results carry `entry` (25, issue #402). Old hosts omit it,
+    /// and a queued result has none on any host, so gate on this — not on
+    /// whether the field arrived.
+    SubmitEntry,
 }
 
 

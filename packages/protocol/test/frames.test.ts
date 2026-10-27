@@ -155,6 +155,22 @@ describe("parseClientFrame", () => {
     expect(hostSupportsCall(14, "steerQueued")).toBe(true);
   });
 
+  it("accepts the submission query and gates it with submit entry at minor 25", () => {
+    const query = (args: unknown) => kinds({ type: "call", id: 1, method: "submission", args });
+    expect(query({ conversationId: 7, requestId: "req" })).toBe("frame");
+    expect(query({ conversationId: 7 })).toBe("malformed");
+    expect(query({ conversationId: 7, requestId: "" })).toBe("malformed");
+    expect(query({ conversationId: 7, requestId: 3 })).toBe("malformed");
+    expect(query({ conversationId: 0, requestId: "req" })).toBe("malformed");
+    expect(query({ requestId: "req" })).toBe("malformed");
+    expect(hostSupportsCall(24, "submission")).toBe(false);
+    expect(hostSupportsCall(25, "submission")).toBe(true);
+    // Old hosts omit the field and a queued result has none on any host, so
+    // callers gate on the version rather than on presence.
+    expect(hostSupportsFeature(24, "submitEntry")).toBe(false);
+    expect(hostSupportsFeature(25, "submitEntry")).toBe(true);
+  });
+
   it("accepts setThinkingLevel; the removed cycleThinking is an unknown call", () => {
     expect(
       kinds({
