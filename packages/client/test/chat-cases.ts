@@ -2,6 +2,7 @@
 // these and rust-vectors.ts serializes them for the Rust replay — one table,
 // no copies.
 import type { ConversationView, EntryRecord, TaskGraph } from "@earendil-works/pi-durable";
+import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import { attached } from "./attachment-blocks-cases.ts";
 import { block } from "./skill-blocks-cases.ts";
@@ -109,6 +110,60 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
     ]),
   },
   { name: "empty", input: chatView() },
+];
+
+export interface QueueSubmissionCase {
+  readonly view: ConversationView;
+  readonly submissions: readonly LogicalSubmission[];
+}
+
+const localQueue = (overrides: Partial<LogicalSubmission> = {}): LogicalSubmission => ({
+  requestId: "local-1",
+  text: "local hello",
+  whenBusy: "followUp",
+  placement: "queue",
+  phase: "inFlight",
+  images: [],
+  skills: [],
+  attachments: [],
+  ...overrides,
+});
+
+export const QUEUE_SUBMISSION_CASES: NamedCase<QueueSubmissionCase>[] = [
+  {
+    name: "host-plus-local",
+    input: {
+      view: chatView([], {}, [{ id: 1, mode: "steer", content: "host row" }]),
+      submissions: [localQueue()],
+    },
+  },
+  {
+    name: "local-unknown",
+    input: { view: chatView(), submissions: [localQueue({ phase: "unknown" })] },
+  },
+  {
+    name: "local-failed",
+    input: { view: chatView(), submissions: [localQueue({ phase: "failed", error: "refused" })] },
+  },
+  {
+    name: "local-settled-hidden",
+    input: { view: chatView(), submissions: [localQueue({ phase: "settled" })] },
+  },
+  {
+    name: "local-inbox-row-wins",
+    input: {
+      view: chatView([], {}, [{ id: 7, mode: "followUp", content: "local hello" }]),
+      submissions: [localQueue({ submissionId: 7 })],
+    },
+  },
+  {
+    name: "local-conversation-placement-hidden",
+    input: { view: chatView(), submissions: [localQueue({ placement: "conversation" })] },
+  },
+  {
+    name: "local-other-conversation-hidden",
+    input: { view: chatView(), submissions: [localQueue({ conversationId: 2 as never })] },
+  },
 ];
 
 export interface QueuedInputCase {

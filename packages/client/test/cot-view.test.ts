@@ -9,7 +9,9 @@ const CASE = (name: string) => {
 };
 const derive = (name: string) => {
   const c = CASE(name);
-  return deriveChat(c.view, c.presentations ?? {}, c.busy);
+  return deriveChat(c.view, c.presentations ?? {}, c.busy, c.submissions ?? [], {
+    mergeQueuedSubmissions: c.mergeQueued ?? false,
+  });
 };
 
 describe("deriveChat todo stamp", () => {
@@ -104,6 +106,65 @@ describe("deriveChat timestamps", () => {
       false,
     );
     expect(runs(unusable)[0]!.endedAt).toBeUndefined();
+  });
+});
+
+describe("deriveChat submissions", () => {
+  it("appends a local bubble in send order and marks the newest host bubble delivered", () => {
+    const entries = derive("submission-local-sending");
+    expect(entries.map((item) => item.kind)).toEqual(["user", "user"]);
+    const host = entries[0]!;
+    const local = entries[1]!;
+    if (host.kind !== "user" || local.kind !== "user") return;
+    expect(host.status).toBe("delivered");
+    expect(host.local).toBeUndefined();
+    expect(local.id).toBe("local:local-1");
+    expect(local.status).toBe("sending");
+    expect(local.local).toEqual({ requestId: "local-1" });
+  });
+
+  it("labels unknown and failed local rows", () => {
+    const unknown = derive("submission-local-unknown").find((item) => item.kind === "user")!;
+    if (unknown.kind !== "user") return;
+    expect(unknown.status).toBe("unknown");
+    const failed = derive("submission-local-failed").find((item) => item.kind === "user")!;
+    if (failed.kind !== "user") return;
+    expect(failed.status).toBe("failed");
+    expect(failed.local).toEqual({ requestId: "local-1", error: "refused" });
+  });
+
+  it("can draw a queue-placed local row as a bubble when there is no queue list", () => {
+    const merged = derive("submission-local-queue-merged");
+    const local = merged.find((item) => item.kind === "user" && item.local !== undefined);
+    expect(local?.kind).toBe("user");
+    if (local?.kind !== "user") return;
+    expect(local.status).toBe("sending");
+    expect(local.local).toEqual({ requestId: "local-1" });
+
+    // Without the explicit option the queue row stays out of the transcript.
+    expect(derive("submission-local-queue-hidden").filter((item) => item.kind === "user")).toHaveLength(1);
+  });
+
+  it("keeps a typed ref image on a local row", () => {
+    const local = derive("submission-local-ref-image").find((item) => item.kind === "user");
+    expect(local?.kind).toBe("user");
+    if (local?.kind !== "user") return;
+    expect(local.images).toEqual([{ ref: "ref-1", mimeType: "image/png" }]);
+  });
+
+  it("keeps queued rows, other conversations and settled sends out of the transcript", () => {
+    for (const name of [
+      "submission-local-queue-hidden",
+      "submission-local-other-conversation",
+      "submission-local-settled-hidden",
+    ]) {
+      expect(derive(name).filter((item) => item.kind === "user")).toHaveLength(1);
+    }
+  });
+
+  it("shows the short duplicate while the snapshot is ahead of the result", () => {
+    const users = derive("submission-local-duplicate").filter((item) => item.kind === "user");
+    expect(users.map((item) => (item.kind === "user" ? item.status : undefined))).toEqual(["delivered", "sending"]);
   });
 });
 

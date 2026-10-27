@@ -250,6 +250,56 @@ mark.chat-skill-mention {
   opacity: 1;
 }
 
+/* Copy, status, time and the local actions share one row under the bubble.
+   Copy is outside the metadata component, so it never adds a separator dot;
+   it stays mounted and only fades, keeping status/time in place. */
+.chat-message__metadata-row {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.chat-message__metadata {
+  margin-top: calc(-1 * var(--spacing-0-5));
+}
+
+.chat-message__copy {
+  flex: none;
+  pointer-events: none;
+}
+
+.chat-message:hover .chat-message__copy,
+.chat-message:focus-within .chat-message__copy {
+  pointer-events: auto;
+}
+
+/* A local send's error is secondary text until the row is acted on. */
+.chat-message__local-error {
+  min-width: 0;
+  max-width: 18rem;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm, 0.75rem);
+  line-height: 1.667;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Compact text actions right after the status/error, with no dot before them.
+   Match the metadata type and keep a 24px target inside the 28px row. */
+.astryx-button.chat-message__local-action {
+  flex: none;
+  height: auto;
+  min-height: 24px;
+  padding-block: 2px;
+  padding-inline: var(--spacing-1);
+  font-size: var(--font-size-sm, 0.75rem);
+  line-height: 1.667;
+}
+
 .chat-message__action {
   display: inline-flex;
   align-items: center;

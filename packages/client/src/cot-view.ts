@@ -9,6 +9,7 @@ import type { ConversationId, ConversationView, EntryRecord, LiveState, ModelRef
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
+import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { stripUserBlocks } from "./skill-blocks.ts";
 import { toolDiffStatFromResult } from "./tool-diff-stat.ts";
 import type { ToolItem } from "./tool-item.ts";
@@ -67,6 +68,16 @@ export type CotView = {
   answer?: { text: string; streaming: boolean };
 };
 
+/** A user bubble's delivery caption; only the newest committed bubble gets one. */
+export type UserSubmissionStatus = "sending" | "unknown" | "failed" | "delivered";
+
+/** What marks a bubble as the client's own send rather than a host entry. */
+export interface LocalSubmissionRef {
+  readonly requestId: string;
+  /** Why the host refused it, or why local validation failed. */
+  readonly error?: string;
+}
+
 export type ChatEntry =
   | {
       kind: "user";
@@ -84,6 +95,10 @@ export type ChatEntry =
        * `$name` next to a picked one of the same name lights up too.
        */
       skills: readonly string[];
+      /** Delivery status: delivered on the newest host bubble, or a local row's phase. */
+      status?: UserSubmissionStatus;
+      /** Present only on a local row the host has not replaced yet (ADR-0034). */
+      local?: LocalSubmissionRef;
     }
   | {
       kind: "run"; id: string;
@@ -566,10 +581,17 @@ function deriveRun(
   };
 }
 
+export interface DeriveChatOptions {
+  /** No queue list here (the side panel): draw queue-placed local sends as bubbles. */
+  readonly mergeQueuedSubmissions?: boolean;
+}
+
 export function deriveChat(
   view: ConversationView,
   toolPresentations: Record<string, PresentationType>,
   busy: boolean,
+  submissions: readonly LogicalSubmission[] = [],
+  options: DeriveChatOptions = {},
 ): ChatEntry[] {
   const items: ChatEntry[] = [];
   const live = (view.docs["pi.live"] ?? {}) as LiveState;
@@ -643,6 +665,49 @@ export function deriveChat(
   // one still renders (the run exists even before its first message).
   draft ??= busy ? { assistants: [], orphans: new Map() } : undefined;
   flush(busy);
+
+  // Only the newest host bubble carries delivery state; local rows always do
+  // (ADR-0034 §5). Compute before appending the local rows so they never
+  // become the "latest committed" bubble.
+  let latestCommitted: Extract<ChatEntry, { kind: "user" }> | undefined;
+  for (const item of items) {
+    if (item.kind === "user" && item.local === undefined) latestCommitted = item;
+  }
+  if (latestCommitted !== undefined) latestCommitted.status = "delivered";
+
+  const conversationId = view.conversation.id;
+  for (const submission of submissions) {
+    const placementVisible =
+      submission.placement === "conversation"
+      || (options.mergeQueuedSubmissions === true && submission.placement === "queue");
+    if (submission.phase === "settled" || !placementVisible) continue;
+    // An unresolved target belongs to the conversation that first executes it;
+    // until then it is still this client's send for the shown one.
+    if (submission.conversationId !== undefined && submission.conversationId !== conversationId) continue;
+    const status =
+      submission.phase === "unknown"
+        ? "unknown"
+        : submission.phase === "failed"
+          ? "failed"
+          : "sending";
+    items.push({
+      kind: "user",
+      id: `local:${submission.requestId}`,
+      text: submission.text,
+      // Prefer the typed views; a ref-only outgoing image has no type of its
+      // own to render before the host echoes the bubble.
+      images:
+        submission.imageViews
+        ?? submission.images.flatMap((image) => ("data" in image ? [image] : [])),
+      attachments: submission.attachmentDetails ?? [],
+      skills: submission.skills,
+      status,
+      local: {
+        requestId: submission.requestId,
+        ...(submission.error === undefined ? {} : { error: submission.error }),
+      },
+    });
+  }
   return items;
 }
 

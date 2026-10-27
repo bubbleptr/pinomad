@@ -2,7 +2,9 @@
 // a user bubble, then one Assistant message per run — its folded process and
 // Interim Output, the answer, the settled actions row (time, Copy + Fork, no
 // thumbs), and on the newest run the todo card (ADR-0026).
+import { Button } from "@astryxdesign/core/Button";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
+import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
@@ -39,6 +41,11 @@ export function ChatEntryView({
   forksAt,
   summaryOf,
   onRetry,
+  onRetrySubmission,
+  onEditSubmission,
+  submissionEditDisabled,
+  submissionEditTooltip,
+  localEditAttachmentsUnsupported,
   todo,
   today,
 }: {
@@ -55,6 +62,16 @@ export function ChatEntryView({
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   /** Only set on the newest entry when it is a failed run. */
   onRetry?: () => Promise<void>;
+  /** Resend an unknown or failed logical submission with its original key. */
+  onRetrySubmission?: (requestId: string) => void;
+  /** Query/take back a failed or unconfirmed local send for editing. */
+  onEditSubmission?: (requestId: string) => void;
+  /** The composer already holds a draft or another take-back. */
+  submissionEditDisabled?: boolean;
+  /** Why Edit is disabled, shown on hover. */
+  submissionEditTooltip?: string;
+  /** This composer has no image/file tray (the side panel). */
+  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
   /** Local start of today, shared by the transcript's midnight clock. */
@@ -63,33 +80,15 @@ export function ChatEntryView({
   switch (entry.kind) {
     case "user":
       return (
-        <ChatMessage.User>
-          <div className="flex flex-col items-end gap-1">
-            {entry.attachments.length === 0 ? null : <MessageAttachments attachments={entry.attachments} />}
-            {entry.images.length === 0 ? null : <MessageImages images={entry.images} />}
-            {entry.text === "" ? null : (
-              <>
-                <ChatMessage.Bubble>
-                  <ChatMessage.Content>
-                    <SkillMentionText text={entry.text} names={entry.skills} />
-                  </ChatMessage.Content>
-                </ChatMessage.Bubble>
-                <ChatMessageActions className="shrink-0">
-                  <ChatMessageActions.Copy
-                    aria-label="Copy"
-                    tooltip="Copy"
-                    onPress={() => {
-                      void navigator.clipboard?.writeText(entry.text);
-                    }}
-                  />
-                </ChatMessageActions>
-              </>
-            )}
-            {entry.timestamp === undefined ? null : (
-              <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={entry.timestamp} today={today} />} />
-            )}
-          </div>
-        </ChatMessage.User>
+        <UserEntry
+          entry={entry}
+          onRetrySubmission={onRetrySubmission}
+          onEditSubmission={onEditSubmission}
+          submissionEditDisabled={submissionEditDisabled}
+          submissionEditTooltip={submissionEditTooltip}
+          localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
+          today={today}
+        />
       );
     case "run":
       return (
@@ -113,6 +112,123 @@ export function ChatEntryView({
   }
 }
 
+function UserEntry({
+  entry,
+  onRetrySubmission,
+  onEditSubmission,
+  submissionEditDisabled = false,
+  submissionEditTooltip,
+  localEditAttachmentsUnsupported = false,
+  today,
+}: {
+  entry: Extract<ChatEntry, { kind: "user" }>;
+  onRetrySubmission?: (requestId: string) => void;
+  onEditSubmission?: (requestId: string) => void;
+  submissionEditDisabled?: boolean;
+  submissionEditTooltip?: string;
+  localEditAttachmentsUnsupported?: boolean;
+  today?: number;
+}) {
+  const local = entry.local;
+  const canRetry = local !== undefined && (entry.status === "unknown" || entry.status === "failed");
+  const canEdit = local !== undefined && entry.status === "failed";
+  const attachmentsBlockEdit =
+    localEditAttachmentsUnsupported && local !== undefined && (entry.images.length > 0 || entry.attachments.length > 0);
+  const editDisabled = submissionEditDisabled || attachmentsBlockEdit;
+  const editTooltip = attachmentsBlockEdit
+    ? "Open in main to edit a message with attachments"
+    : submissionEditTooltip;
+  const status =
+    entry.status === "failed"
+      ? ("error" as const)
+      : entry.status === "unknown"
+        ? ("sending" as const)
+        : entry.status;
+  // Copy sits outside ChatMessageMetadata so it never gets a separator dot.
+  // It stays mounted and only changes opacity, so status and time do not jump.
+  const copy =
+    entry.text === "" ? null : (
+      <ChatMessageActions className="chat-message__copy">
+        <ChatMessageActions.Copy
+          aria-label="Copy"
+          tooltip="Copy"
+          onPress={() => {
+            void navigator.clipboard?.writeText(entry.text);
+          }}
+        />
+      </ChatMessageActions>
+    );
+  const metadata = (
+    <ChatMessageMetadata
+      {...(entry.timestamp === undefined ? {} : { timestamp: <ChatMessageTime timestamp={entry.timestamp} today={today} /> })}
+      {...(status === undefined ? {} : { status })}
+      className="chat-message__metadata"
+    />
+  );
+  return (
+    <ChatMessage.User data-slot={local === undefined ? "chat-message-user" : "chat-message-local"}>
+      <div className="flex flex-col items-end gap-1">
+        {entry.attachments.length === 0 ? null : (
+          <MessageAttachments
+            attachments={entry.attachments}
+            {...(local === undefined ? {} : { testId: "local-message-attachments" })}
+          />
+        )}
+        {entry.images.length === 0 ? null : (
+          <MessageImages
+            images={entry.images}
+            {...(local === undefined ? {} : { testId: "local-message-images" })}
+          />
+        )}
+        {entry.text === "" ? null : (
+          <ChatMessage.Bubble>
+            <ChatMessage.Content>
+              <SkillMentionText text={entry.text} names={entry.skills} />
+            </ChatMessage.Content>
+          </ChatMessage.Bubble>
+        )}
+        <div className="chat-message__metadata-row">
+          {copy}
+          {entry.status === "unknown" ? (
+            <InternationalizationProvider
+              locale="en"
+              overrides={{ en: { "@astryx.chat.status.sending": "Not confirmed" } }}
+            >
+              {metadata}
+            </InternationalizationProvider>
+          ) : (
+            metadata
+          )}
+          {local?.error === undefined ? null : (
+            <span className="chat-message__local-error" title={local.error}>
+              {local.error}
+            </span>
+          )}
+          {local === undefined || !canRetry || onRetrySubmission === undefined ? null : (
+            <Button
+              label="Retry"
+              variant="ghost"
+              size="sm"
+              className="chat-message__local-action"
+              onClick={() => onRetrySubmission(local.requestId)}
+            />
+          )}
+          {local === undefined || !canEdit || onEditSubmission === undefined ? null : (
+            <Button
+              label="Edit"
+              variant="ghost"
+              size="sm"
+              className="chat-message__local-action"
+              isDisabled={editDisabled}
+              {...(editDisabled && editTooltip !== undefined ? { tooltip: editTooltip } : {})}
+              onClick={() => onEditSubmission(local.requestId)}
+            />
+          )}
+        </div>
+      </div>
+    </ChatMessage.User>
+  );
+}
 function ChatMessageTime({ timestamp, today }: { timestamp: number; today?: number }) {
   const value = messageTime(timestamp, today);
   if (value === undefined) return null;

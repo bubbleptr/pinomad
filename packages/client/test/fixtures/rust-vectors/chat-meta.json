@@ -52,36 +52,80 @@
     {
       "name": "steer-followup",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"focus\"},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"then this\"}]}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"focus\",\"imageCount\":0,\"attachmentCount\":0},{\"id\":2,\"mode\":\"followUp\",\"text\":\"then this\",\"imageCount\":0,\"attachmentCount\":0}]"
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"focus\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"},{\"id\":2,\"mode\":\"followUp\",\"text\":\"then this\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "images",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]},{\"id\":2,\"mode\":\"write\",\"entry\":{\"kind\":\"pi.note\"}}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"followUp\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0},{\"id\":2,\"mode\":\"write\",\"text\":\"<pi.note>\",\"imageCount\":0,\"attachmentCount\":0}]"
+      "expect": "[{\"id\":1,\"mode\":\"followUp\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0,\"status\":\"sent\"},{\"id\":2,\"mode\":\"write\",\"text\":\"<pi.note>\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "images-ref",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"ref\":\"5f2a\",\"mimeType\":\"image/jpeg\"}]}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0}]"
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "skill-blocks",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\n$review now\"},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"<skill name=\\\"review\\\" location=\\\"/home/u/.agents/skills/review/SKILL.md\\\">\\nReferences are relative to /home/u/.agents/skills/review.\\n\\nReview steps.\\n</skill>\\n\\nlook $review\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"$review now\",\"imageCount\":0,\"attachmentCount\":0},{\"id\":2,\"mode\":\"followUp\",\"text\":\"look $review\",\"imageCount\":1,\"attachmentCount\":0}]"
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"$review now\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"},{\"id\":2,\"mode\":\"followUp\",\"text\":\"look $review\",\"imageCount\":1,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "attachment-block-string",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"before <attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments> after\"}]}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\",\"imageCount\":0,\"attachmentCount\":0},{\"id\":2,\"mode\":\"followUp\",\"text\":\"before <attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments> after\",\"imageCount\":0,\"attachmentCount\":0}]"
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"},{\"id\":2,\"mode\":\"followUp\",\"text\":\"before <attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"notes.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments> after\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "attachments",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"text\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"a&amp;b&lt;c&gt;d&quot;e.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]},{\"id\":2,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"<attachments v=\\\"1\\\">\\nThe user attached these files. They are read-only originals on this machine: read them with your tools when relevant, and copy one into the working directory before changing it.\\n<file id=\\\"AAAAAAAAAAAAAAAAAAAAAA\\\" name=\\\"only.txt\\\" path=\\\"/home/u/.pinomad/attachments/AAAAAAAAAAAAAAAAAAAAAA/file/notes.txt\\\" size=\\\"5\\\"/>\\n</attachments>\"}]}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"look\",\"imageCount\":1,\"attachmentCount\":1},{\"id\":2,\"mode\":\"followUp\",\"text\":\"\",\"imageCount\":0,\"attachmentCount\":1}]"
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"look\",\"imageCount\":1,\"attachmentCount\":1,\"status\":\"sent\"},{\"id\":2,\"mode\":\"followUp\",\"text\":\"\",\"imageCount\":0,\"attachmentCount\":1,\"status\":\"sent\"}]"
     },
     {
       "name": "empty",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "expect": "[]"
+    }
+  ],
+  "queueSubmissions": [
+    {
+      "name": "host-plus-local",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"steer\",\"content\":\"host row\"}]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "expect": "[{\"id\":1,\"mode\":\"steer\",\"text\":\"host row\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"},{\"requestId\":\"local-1\",\"mode\":\"followUp\",\"text\":\"local hello\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sending\",\"local\":{}}]"
+    },
+    {
+      "name": "local-unknown",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"unknown\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "expect": "[{\"requestId\":\"local-1\",\"mode\":\"followUp\",\"text\":\"local hello\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"unknown\",\"local\":{}}]"
+    },
+    {
+      "name": "local-failed",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"failed\",\"images\":[],\"skills\":[],\"attachments\":[],\"error\":\"refused\"}]",
+      "expect": "[{\"requestId\":\"local-1\",\"mode\":\"followUp\",\"text\":\"local hello\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"failed\",\"local\":{\"error\":\"refused\"}}]"
+    },
+    {
+      "name": "local-settled-hidden",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"settled\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "expect": "[]"
+    },
+    {
+      "name": "local-inbox-row-wins",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":7,\"mode\":\"followUp\",\"content\":\"local hello\"}]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[],\"submissionId\":7}]",
+      "expect": "[{\"id\":7,\"mode\":\"followUp\",\"text\":\"local hello\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
+    },
+    {
+      "name": "local-conversation-placement-hidden",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"conversation\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[]}]",
+      "expect": "[]"
+    },
+    {
+      "name": "local-other-conversation-hidden",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[]}}}",
+      "submissions": "[{\"requestId\":\"local-1\",\"text\":\"local hello\",\"whenBusy\":\"followUp\",\"placement\":\"queue\",\"phase\":\"inFlight\",\"images\":[],\"skills\":[],\"attachments\":[],\"conversationId\":2}]",
       "expect": "[]"
     }
   ],
@@ -203,67 +247,67 @@
     },
     {
       "name": "no-assistant",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":199,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"hi\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":205,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"hi\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "latest-wins",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":200,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":201,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":78000,\"output\":6000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":202,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":206,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":207,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":78000,\"output\":6000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":208,\"conversationId\":0,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"again\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":84000,\"window\":200000}"
     },
     {
       "name": "skips-aborted-error-zero",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":203,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":204,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"error\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]},{\"id\":205,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"aborted\",\"usage\":{\"input\":50000,\"output\":5000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":55000},\"timestamp\":0}]},{\"id\":206,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":209,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":12000,\"output\":200,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12200},\"timestamp\":0}]},{\"id\":210,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"error\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]},{\"id\":211,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"aborted\",\"usage\":{\"input\":50000,\"output\":5000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":55000},\"timestamp\":0}]},{\"id\":212,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":12200,\"window\":200000}"
     },
     {
       "name": "usage-missing",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":207,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":8000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":8000},\"timestamp\":0}]},{\"id\":208,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":213,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":8000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":8000},\"timestamp\":0}]},{\"id\":214,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":8000,\"window\":200000}"
     },
     {
       "name": "compaction-tail",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":209,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":210,\"conversationId\":0,\"kind\":\"pi.compaction\"}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":215,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":216,\"conversationId\":0,\"kind\":\"pi.compaction\"}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "reset-tail",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":211,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":212,\"conversationId\":0,\"kind\":\"pi.reset\"}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":217,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]},{\"id\":218,\"conversationId\":0,\"kind\":\"pi.reset\"}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "null"
     },
     {
       "name": "reply-after-compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":213,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":50000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":50000},\"timestamp\":0}]},{\"id\":214,\"conversationId\":0,\"kind\":\"pi.compaction\"},{\"id\":215,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":11000,\"output\":1000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":219,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":50000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":50000},\"timestamp\":0}]},{\"id\":220,\"conversationId\":0,\"kind\":\"pi.compaction\"},{\"id\":221,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":11000,\"output\":1000,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":12000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":12000,\"window\":200000}"
     },
     {
       "name": "components-sum",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":216,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":60000,\"output\":20000,\"cacheRead\":3000,\"cacheWrite\":1000,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":222,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":60000,\"output\":20000,\"cacheRead\":3000,\"cacheWrite\":1000,\"totalTokens\":0},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":84000,\"window\":200000}"
     },
     {
       "name": "no-window",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":217,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":223,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": null,
       "expect": "null"
     },
     {
       "name": "zero-window",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":218,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":224,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":84000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":84000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 0,
       "expect": "null"
     },
     {
       "name": "overflow",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":219,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":250000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":250000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[{\"id\":225,\"conversationId\":0,\"kind\":\"pi.assistant\",\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stopReason\":\"stop\",\"usage\":{\"input\":250000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":250000},\"timestamp\":0}]}],\"docs\":{\"pi.live\":{}}}",
       "contextWindow": 200000,
       "expect": "{\"used\":250000,\"window\":200000}"
     }

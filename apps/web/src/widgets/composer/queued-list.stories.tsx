@@ -7,14 +7,16 @@ const meta = {
   component: QueuedList,
   args: {
     items: [
-      { id: 1, mode: "steer", text: "Skip the e2e suite, just run unit tests", imageCount: 0, attachmentCount: 0 },
-      { id: 2, mode: "followUp", text: "Then open a PR against main", imageCount: 0, attachmentCount: 0 },
+      { id: 1, mode: "steer", text: "Skip the e2e suite, just run unit tests", imageCount: 0, attachmentCount: 0, status: "sent" as const },
+      { id: 2, mode: "followUp", text: "Then open a PR against main", imageCount: 0, attachmentCount: 0, status: "sent" as const },
     ],
     canAct: true,
     busy: true,
     editDisabled: false,
     narrow: false,
     pendingIds: new Set(),
+    pendingRequestIds: new Set(),
+    onRetry: fn(),
     onSteer: fn(),
     onEdit: fn(),
     onWithdraw: fn(),
@@ -29,10 +31,27 @@ export const Default: Story = {};
 export const EveryMode: Story = {
   args: {
     items: [
-      { id: 1, mode: "steer", text: "Use the existing date helper instead", imageCount: 0, attachmentCount: 0 },
-      { id: 2, mode: "followUp", text: "Does this match the mockup?", imageCount: 1, attachmentCount: 0 },
-      { id: 3, mode: "followUp", text: "", imageCount: 2, attachmentCount: 1 },
-      { id: 4, mode: "write", text: "<custom>", imageCount: 0, attachmentCount: 0 },
+      { id: 1, mode: "steer", text: "Use the existing date helper instead", imageCount: 0, attachmentCount: 0, status: "sent" as const },
+      { id: 2, mode: "followUp", text: "Does this match the mockup?", imageCount: 1, attachmentCount: 0, status: "sent" as const },
+      { id: 3, mode: "followUp", text: "", imageCount: 2, attachmentCount: 1, status: "sent" as const },
+      { id: 4, mode: "write", text: "<custom>", imageCount: 0, attachmentCount: 0, status: "sent" as const },
+    ],
+  },
+};
+
+export const SubmissionQueued: Story = {
+  args: {
+    items: [
+      { id: 7, mode: "followUp", text: "Then run the release notes pass", imageCount: 0, attachmentCount: 0, status: "sent" },
+      {
+        requestId: "local-1",
+        mode: "followUp",
+        text: "Check the parser regression before merging",
+        imageCount: 0,
+        attachmentCount: 0,
+        status: "unknown",
+        local: {},
+      },
     ],
   },
 };
@@ -57,7 +76,7 @@ export const LongMessage: Story = {
         id: 1,
         mode: "followUp",
         text: "After the refactor lands, go through every call site of parseConfig in apps/host and apps/server, switch them to the new loader, and make sure the error messages still name the file and line that failed.",
-        imageCount: 0, attachmentCount: 0,
+        imageCount: 0, attachmentCount: 0, status: "sent" as const,
       },
     ],
   },

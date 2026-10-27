@@ -345,6 +345,8 @@ fn candidate_options(
         round_timeout_ms: None,
         connection_mode,
         rtc,
+        // PR 2 keeps the native behavior: iOS opts in with its UI in #406.
+        logical_submissions: false,
     }
 }
 

@@ -6,6 +6,7 @@ import {
   IS_BUSY_CASES,
   QUEUED_INPUT_CASES,
   QUEUE_CASES,
+  QUEUE_SUBMISSION_CASES,
   STATUS_CASES,
   TASK_GRAPH_CASES,
   USAGE_CASES,
@@ -49,28 +50,28 @@ describe("statusText", () => {
 describe("queueItems", () => {
   it("lists queued inputs with their mode", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "steer-followup")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "focus", imageCount: 0, attachmentCount: 0 },
-      { id: 2, mode: "followUp", text: "then this", imageCount: 0, attachmentCount: 0 },
+      { id: 1, mode: "steer", text: "focus", imageCount: 0, attachmentCount: 0, status: "sent" },
+      { id: 2, mode: "followUp", text: "then this", imageCount: 0, attachmentCount: 0, status: "sent" },
     ]);
   });
 
   it("counts the image blocks a queued input carries", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "images")!.input)).toEqual([
-      { id: 1, mode: "followUp", text: "look", imageCount: 2, attachmentCount: 0 },
-      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0, attachmentCount: 0 },
+      { id: 1, mode: "followUp", text: "look", imageCount: 2, attachmentCount: 0, status: "sent" },
+      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0, attachmentCount: 0, status: "sent" },
     ]);
   });
 
   it("counts ref images too", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "images-ref")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "look", imageCount: 2, attachmentCount: 0 },
+      { id: 1, mode: "steer", text: "look", imageCount: 2, attachmentCount: 0, status: "sent" },
     ]);
   });
 
   it("previews what the user typed, not the skill blocks the host prepended", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "skill-blocks")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "$review now", imageCount: 0, attachmentCount: 0 },
-      { id: 2, mode: "followUp", text: "look $review", imageCount: 1, attachmentCount: 0 },
+      { id: 1, mode: "steer", text: "$review now", imageCount: 0, attachmentCount: 0, status: "sent" },
+      { id: 2, mode: "followUp", text: "look $review", imageCount: 1, attachmentCount: 0, status: "sent" },
     ]);
   });
 
@@ -87,10 +88,48 @@ describe("queueItems", () => {
     });
   });
 
+  it("appends a local row with its sending state and no host id", () => {
+    const c = QUEUE_SUBMISSION_CASES.find((each) => each.name === "host-plus-local")!.input;
+    expect(queueItems(c.view, c.submissions)).toEqual([
+      { id: 1, mode: "steer", text: "host row", imageCount: 0, attachmentCount: 0, status: "sent" },
+      {
+        requestId: "local-1",
+        mode: "followUp",
+        text: "local hello",
+        imageCount: 0,
+        attachmentCount: 0,
+        status: "sending",
+        local: {},
+      },
+    ]);
+  });
+
+  it("labels unknown and failed local rows", () => {
+    const unknown = QUEUE_SUBMISSION_CASES.find((each) => each.name === "local-unknown")!.input;
+    expect(queueItems(unknown.view, unknown.submissions)[0]).toMatchObject({ status: "unknown", local: {} });
+    const failed = QUEUE_SUBMISSION_CASES.find((each) => each.name === "local-failed")!.input;
+    expect(queueItems(failed.view, failed.submissions)[0]).toMatchObject({
+      status: "failed",
+      local: { error: "refused" },
+    });
+  });
+
+  it("drops local rows the inbox already replaced or that belong elsewhere", () => {
+    for (const name of [
+      "local-settled-hidden",
+      "local-inbox-row-wins",
+      "local-conversation-placement-hidden",
+      "local-other-conversation-hidden",
+    ]) {
+      const c = QUEUE_SUBMISSION_CASES.find((each) => each.name === name)!.input;
+      expect(queueItems(c.view, c.submissions)).toHaveLength(name === "local-inbox-row-wins" ? 1 : 0);
+    }
+  });
+
   it("counts attachments and leaves their block out of the preview", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "attachments")!.input)).toEqual([
-      { id: 1, mode: "steer", text: "look", imageCount: 1, attachmentCount: 1 },
-      { id: 2, mode: "followUp", text: "", imageCount: 0, attachmentCount: 1 },
+      { id: 1, mode: "steer", text: "look", imageCount: 1, attachmentCount: 1, status: "sent" },
+      { id: 2, mode: "followUp", text: "", imageCount: 0, attachmentCount: 1, status: "sent" },
     ]);
   });
 });

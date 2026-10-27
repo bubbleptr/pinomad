@@ -9,7 +9,7 @@ import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { deriveChat, retryOf } from "@pinomad/client/cot-view.ts";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
-import type { ConversationSummary, ExtensionDocView } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, ExtensionDocView, LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { lastTodoWriteMs } from "@/entities/todo/todo-card";
 import { ChatEntryView } from "./chat-entries.tsx";
 import { useToday } from "./use-today.ts";
@@ -26,7 +26,14 @@ export function ConversationTranscript({
   ownOnly,
   forkSource,
   onRetry,
+  onRetrySubmission,
+  onEditSubmission,
+  submissionEditDisabled,
+  submissionEditTooltip,
+  localEditAttachmentsUnsupported,
   docs,
+  submissions,
+  mergeQueuedSubmissions,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -59,8 +66,22 @@ export function ConversationTranscript({
     attachments: readonly UserAttachment[];
     requestId: string;
   }) => Promise<void>;
+  /** Resend a local send with its original requestId. */
+  onRetrySubmission?: (requestId: string) => void;
+  /** Take a failed or unconfirmed local send back for editing. */
+  onEditSubmission?: (requestId: string) => void;
+  /** The composer holds a draft or another take-back. */
+  submissionEditDisabled?: boolean;
+  /** Why the local Edit is disabled. */
+  submissionEditTooltip?: string;
+  /** No image/file tray here, so local sends with attachments cannot be edited. */
+  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
+  /** Client-side sends that have not been replaced by the host's fact yet. */
+  submissions?: readonly LogicalSubmission[];
+  /** No queue list in this transcript; queue-placed local sends render as bubbles. */
+  mergeQueuedSubmissions?: boolean;
 }) {
   const busy = isBusy(conversation);
   const today = useToday();
@@ -71,7 +92,10 @@ export function ConversationTranscript({
         : conversation,
     [conversation, ownOnly],
   );
-  const items = useMemo(() => deriveChat(view, toolPresentations, busy), [view, toolPresentations, busy]);
+  const items = useMemo(
+    () => deriveChat(view, toolPresentations, busy, submissions ?? [], { mergeQueuedSubmissions }),
+    [view, toolPresentations, busy, submissions, mergeQueuedSubmissions],
+  );
   const retry = useMemo(() => retryOf(items), [items]);
   const todoState = useMemo(() => todoOf(docs), [docs]);
   const todoUpdatedAtMs = useMemo(() => lastTodoWriteMs(items), [items]);
@@ -101,6 +125,11 @@ export function ConversationTranscript({
             canFork={canFork}
             forksAt={forksAt}
             summaryOf={summaryOf}
+            onRetrySubmission={onRetrySubmission}
+            onEditSubmission={onEditSubmission}
+            submissionEditDisabled={submissionEditDisabled}
+            submissionEditTooltip={submissionEditTooltip}
+            localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
             today={today}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={

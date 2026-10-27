@@ -418,11 +418,8 @@ describe("RemoteDurable side conversation", () => {
     try {
       await remoteOld.controller.switchConversation(id(1));
       await remoteOld.controller.submit("look", "followUp", { images: [image] });
-      await waitForView(remoteOld, (view) =>
-        view.notices.some(
-          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.5"),
-        ),
-      );
+      await waitForView(remoteOld, (view) => view.submissions?.[0]?.phase === "failed");
+      expect(remoteOld.view.current().submissions?.[0]?.error).toContain("needs protocol 5.5");
       expect(old.sent.filter((frame) => frame.type === "call" && frame.method === "submit")).toHaveLength(0);
     } finally {
       remoteOld.close();
@@ -518,11 +515,8 @@ describe("RemoteDurable side conversation", () => {
       await remoteOld.controller.switchConversation(id(1));
       await expect(remoteOld.controller.beginAttachment("a.txt", 5)).rejects.toThrow("needs protocol 5.19");
       await remoteOld.controller.submit("look", "followUp", { attachments: [attachment] });
-      await waitForView(remoteOld, (view) =>
-        view.notices.some(
-          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.19"),
-        ),
-      );
+      await waitForView(remoteOld, (view) => view.submissions?.[0]?.phase === "failed");
+      expect(remoteOld.view.current().submissions?.[0]?.error).toContain("needs protocol 5.19");
       await remoteOld.controller.createConversation({ kind: "chat" }, "look", { attachments: [attachment] });
       expect(
         old.sent.some(
@@ -569,11 +563,8 @@ describe("RemoteDurable side conversation", () => {
     try {
       await remoteOld.controller.switchConversation(id(1));
       await remoteOld.controller.submit("look", "followUp", { images: [reference] });
-      await waitForView(remoteOld, (view) =>
-        view.notices.some(
-          (notice) => notice.level === "error" && notice.message.includes("needs protocol 5.15"),
-        ),
-      );
+      await waitForView(remoteOld, (view) => view.submissions?.[0]?.phase === "failed");
+      expect(remoteOld.view.current().submissions?.[0]?.error).toContain("needs protocol 5.15");
       // A mixed batch is refused too: the host would 4400 the ref entry.
       await remoteOld.controller.submit("both", "followUp", { images: [bytes, reference] });
       await remoteOld.controller.createConversation({ kind: "chat" }, "new", { images: [reference] });

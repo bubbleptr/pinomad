@@ -48,6 +48,28 @@ export const Tasks: Story = { args: { tab: "tasks" } };
 const withFork = fakeView({ side: { id: FORK_ID, conversation: forkConversation(), docs: [] } });
 export const ThreadDetail: Story = { args: { view: withFork, remote: fakeRemote(withFork) } };
 
+/** A follow-up queued in the side panel that the host refused; it stays local. */
+const withFailedFollowUp = fakeView({
+  side: { id: FORK_ID, conversation: forkConversation(), docs: [] },
+  submissions: [
+    {
+      requestId: "side-follow-up",
+      conversationId: FORK_ID,
+      text: "Follow up with the release notes",
+      whenBusy: "followUp",
+      placement: "queue",
+      phase: "failed",
+      images: [],
+      skills: [],
+      attachments: [],
+      error: "The host refused this follow-up.",
+    },
+  ],
+});
+export const FailedFollowUp: Story = {
+  args: { view: withFailedFollowUp, remote: fakeRemote(withFailedFollowUp) },
+};
+
 /** A running subagent's transcript, read-only. */
 const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemote(withSubagent), tab: "tasks" } };

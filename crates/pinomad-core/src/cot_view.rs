@@ -882,6 +882,151 @@ pub struct RetryRequest {
 
 /// `retryOf(entries)` — undefined when the newest entry is not a failed run,
 /// or no user text/images precede it.
+
+/// One local bubble the logical-submission derivation keeps (ADR-0034 §5).
+/// The reference's `ChatEntry::User` gains `status`/`local`; the FFI enum
+/// deliberately stays unchanged until PR 3 teaches Swift about them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SubmissionRow {
+    pub request_id: String,
+    pub text: String,
+    pub images: Vec<MessageImage>,
+    pub skills: Vec<String>,
+    pub attachments: Vec<UserAttachment>,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+fn submission_str(value: Option<&Json>) -> Option<String> {
+    value.and_then(Json::as_str).map(|s| s.to_string_lossy())
+}
+
+fn submission_conversation_matches(view: &Json, submission: &Json) -> bool {
+    let shown = view.get("conversation").and_then(|c| c.get("id")).and_then(|id| crate::json::num_key(Some(id)));
+    match crate::json::num_key(submission.get("conversationId")) {
+        None => true,
+        Some(id) => shown == Some(id),
+    }
+}
+
+fn submission_status(submission: &Json) -> String {
+    match submission_str(submission.get("phase")).as_deref() {
+        Some("unknown") => "unknown".to_string(),
+        Some("failed") => "failed".to_string(),
+        _ => "sending".to_string(),
+    }
+}
+
+/// A local submission image is a plain ViewImage (no `type` tag), unlike a
+/// conversation block; accept both shapes.
+fn submission_image(value: &Json) -> Option<MessageImage> {
+    if value.get("type").is_some() {
+        return MessageImage::from_view_block(value);
+    }
+    let mime_type = value.get("mimeType").and_then(Json::as_str)?.to_string_lossy();
+    if let Some(data) = value.get("data").and_then(Json::as_str).filter(|data| !data.is_empty()) {
+        return Some(MessageImage {
+            data: data.to_string_lossy(),
+            mime_type,
+            ref_: None,
+        });
+    }
+    let reference = value.get("ref").and_then(Json::as_str).filter(|reference| !reference.is_empty())?;
+    Some(MessageImage {
+        data: String::new(),
+        mime_type,
+        ref_: Some(reference.to_string_lossy()),
+    })
+}
+
+/// Local bubbles in the order they were sent. A settled send is never a bubble;
+/// `merge_queued` includes queue-placed sends for a transcript with no queue list.
+pub fn submission_rows(view: &Json, submissions: &Json, merge_queued: bool) -> Vec<SubmissionRow> {
+    let Some(items) = submissions.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter(|submission| {
+            let placement = submission_str(submission.get("placement"));
+            (placement.as_deref() == Some("conversation")
+                || (merge_queued && placement.as_deref() == Some("queue")))
+                && submission_str(submission.get("phase")).as_deref() != Some("settled")
+                && submission_conversation_matches(view, submission)
+        })
+        .map(|submission| SubmissionRow {
+            request_id: submission_str(submission.get("requestId")).unwrap_or_default(),
+            text: submission_str(submission.get("text")).unwrap_or_default(),
+            images: submission
+                .get("imageViews")
+                .or_else(|| submission.get("images"))
+                .and_then(Json::as_array)
+                .map(|items| items.iter().filter_map(submission_image).collect())
+                .unwrap_or_default(),
+            skills: submission
+                .get("skills")
+                .and_then(Json::as_array)
+                .map(|items| items.iter().filter_map(|item| submission_str(Some(item))).collect())
+                .unwrap_or_default(),
+            attachments: Vec::new(),
+            status: submission_status(submission),
+            error: submission_str(submission.get("error")),
+        })
+        .collect()
+}
+
+/// One local row above a busy composer; the host inbox rows stay separate.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LocalQueueRow {
+    pub request_id: String,
+    pub mode: String,
+    pub text: String,
+    pub image_count: u64,
+    pub attachment_count: u64,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+pub fn submission_queue_rows(view: &Json, submissions: &Json) -> Vec<LocalQueueRow> {
+    let Some(items) = submissions.as_array() else {
+        return Vec::new();
+    };
+    let inbox_ids: Vec<u64> = view
+        .get("docs")
+        .and_then(|docs| docs.get("pi.inbox"))
+        .and_then(|inbox| inbox.get("items"))
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter_map(|item| crate::json::num_key(item.get("id"))).collect())
+        .unwrap_or_default();
+    items
+        .iter()
+        .filter(|submission| {
+            submission_str(submission.get("placement")).as_deref() == Some("queue")
+                && submission_str(submission.get("phase")).as_deref() != Some("settled")
+                && submission_conversation_matches(view, submission)
+                && !crate::json::num_key(submission.get("submissionId"))
+                    .is_some_and(|id| inbox_ids.contains(&id))
+        })
+        .map(|submission| LocalQueueRow {
+            request_id: submission_str(submission.get("requestId")).unwrap_or_default(),
+            mode: submission_str(submission.get("whenBusy")).unwrap_or_default(),
+            text: submission_str(submission.get("text")).unwrap_or_default(),
+            image_count: submission
+                .get("images")
+                .and_then(Json::as_array)
+                .map(|items| items.len() as u64)
+                .unwrap_or(0),
+            attachment_count: submission
+                .get("attachments")
+                .and_then(Json::as_array)
+                .map(|items| items.len() as u64)
+                .unwrap_or(0),
+            status: submission_status(submission),
+            error: submission_str(submission.get("error")),
+        })
+        .collect()
+}
+
 pub fn retry_of(entries: &[ChatEntry]) -> Option<RetryRequest> {
     let last = entries.last()?;
     let ChatEntry::Run { id: run_id, failure, .. } = last else { return None };

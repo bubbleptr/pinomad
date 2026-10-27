@@ -3,6 +3,7 @@
 // no copies. Entry ids come from a module counter so every case is stable.
 import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
+import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
 import { attached } from "./attachment-blocks-cases.ts";
@@ -38,7 +39,22 @@ export interface DeriveChatCase {
   readonly view: ConversationView;
   readonly busy: boolean;
   readonly presentations?: Record<string, PresentationType>;
+  readonly submissions?: readonly LogicalSubmission[];
+  /** No queue list in this transcript: draw queue-placed local rows as bubbles. */
+  readonly mergeQueued?: boolean;
 }
+
+const local = (overrides: Partial<LogicalSubmission> = {}): LogicalSubmission => ({
+  requestId: "local-1",
+  text: "local hello",
+  whenBusy: "followUp",
+  placement: "conversation",
+  phase: "inFlight",
+  images: [],
+  skills: [],
+  attachments: [],
+  ...overrides,
+});
 
 export const failed = (errorMessage = "HTTP 429 quota exceeded") =>
   assistant([text("")], "error", 0, { errorMessage });
@@ -570,6 +586,68 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     name: "run-ended-at-live",
     view: view([user("go", 1000), assistant([text("done")], "stop", 2000, { durationMs: 350 })], { run: {} }),
     busy: true,
+  },
+  {
+    name: "submission-local-sending",
+    view: view([user("host hello")]),
+    busy: false,
+    submissions: [local()],
+  },
+  {
+    name: "submission-local-unknown",
+    view: view([]),
+    busy: false,
+    submissions: [local({ phase: "unknown" })],
+  },
+  {
+    name: "submission-local-failed",
+    view: view([]),
+    busy: false,
+    submissions: [local({ phase: "failed", error: "refused" })],
+  },
+  {
+    name: "submission-local-queue-hidden",
+    view: view([user("host hello")]),
+    busy: true,
+    submissions: [local({ placement: "queue" })],
+  },
+  {
+    name: "submission-local-queue-merged",
+    view: view([user("host hello")]),
+    busy: true,
+    submissions: [local({ placement: "queue" })],
+    mergeQueued: true,
+  },
+  {
+    name: "submission-local-ref-image",
+    view: view([]),
+    busy: false,
+    submissions: [
+      local({
+        images: [{ ref: "ref-1" }],
+        imageViews: [{ ref: "ref-1", mimeType: "image/png" }],
+      }),
+    ],
+  },
+  {
+    name: "submission-local-other-conversation",
+    view: view([user("host hello")]),
+    busy: false,
+    submissions: [local({ conversationId: 2 as never })],
+  },
+  {
+    name: "submission-local-settled-hidden",
+    view: view([user("host hello")]),
+    busy: false,
+    submissions: [local({ phase: "settled" })],
+  },
+  {
+    // The allowed short duplicate: the host entry and the local row coexist
+    // until the result arrives.
+    name: "submission-local-duplicate",
+    view: view([user("local hello")]),
+    busy: false,
+    submissions: [local()],
   },
 ];
 

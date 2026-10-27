@@ -13,7 +13,8 @@ import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
-import type { ImageResult, ImageVariant, OutgoingImage } from "./images.ts";
+import type { ImageResult, ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
+import type { UserAttachment } from "./attachments.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -100,6 +101,16 @@ export interface ExtensionDocView {
 }
 
 /** A second conversation shown beside the main one, with its documents. */
+/** The content `takeBackSubmission` returns to the composer. */
+export interface SubmissionDraft {
+  readonly text: string;
+  readonly whenBusy: "steer" | "followUp";
+  readonly images: readonly OutgoingImage[];
+  readonly skills: readonly string[];
+  readonly attachments: readonly string[];
+  readonly attachmentDetails?: readonly UserAttachment[];
+}
+
 export interface SideConversationView {
   readonly id: ConversationId;
   /** Undefined until its snapshot arrives, or after the host ended its stream. */
@@ -109,6 +120,41 @@ export interface SideConversationView {
 }
 
 /** Everything a client renders. Plain values; no Harness objects cross this boundary. */
+/** Where a logical submission renders until the host's fact replaces it. */
+export type SubmissionPlacement = "conversation" | "queue";
+
+/** A submission the client is tracking before the host's entry or inbox row takes over. */
+export type SubmissionPhase = "queued" | "inFlight" | "unknown" | "failed" | "settled";
+
+/**
+ * One send the client keeps until the host's own fact (entry or inbox row)
+ * replaces it (ADR-0034 §5). `conversationId` is fixed on first execution so
+ * a retry can never land in a different conversation; `phase` drives the
+ * local "sending / not confirmed / failed" caption.
+ */
+export interface LogicalSubmission {
+  readonly requestId: string;
+  readonly conversationId?: ConversationId;
+  readonly text: string;
+  readonly whenBusy: "steer" | "followUp";
+  readonly placement: SubmissionPlacement;
+  readonly phase: SubmissionPhase;
+  readonly images: readonly OutgoingImage[];
+  /** The same images with their ref types, when the caller had them for local preview/edit. */
+  readonly imageViews?: readonly ViewImage[];
+  readonly skills: readonly string[];
+  /** Host-stored attachment ids, as sent. */
+  readonly attachments: readonly string[];
+  /** Display names and sizes for the local chips, when the composer had them. */
+  readonly attachmentDetails?: readonly UserAttachment[];
+  /** The host's record once a result or query named it. */
+  readonly submissionId?: number;
+  /** The admitted entry, once the host's record carries one. */
+  readonly entry?: number;
+  /** Why the host refused the submission (or local validation failed). */
+  readonly error?: string;
+}
+
 export interface DurableView {
   readonly session: SessionInfo;
   /** The conversation shown and talked to; undefined until one is shown. */
@@ -135,6 +181,8 @@ export interface DurableView {
   readonly unauthorized?: true;
   /** The shown conversation's extension documents, in the host's order. */
   readonly docs: readonly ExtensionDocView[];
+  /** Client-side sends not yet replaced by the host's entry or inbox row (ADR-0034). */
+  readonly submissions?: readonly LogicalSubmission[];
   /** How the host wants each tool's result `details` rendered (ADR-0005). */
   readonly toolPresentations: Record<string, PresentationType>;
   /** Paired devices on the host (ADR-0008); empty while remote access is off. */
@@ -212,10 +260,15 @@ export interface DurableController {
   renameConversation(id: ConversationId, title: string): Promise<void>;
   /**
    * Prompt when idle; otherwise steer or queue a follow-up. `target` defaults
-   * to the main shown conversation. `requestId` is an idempotency key: the
-   * host admits one submission per key and conversation; defaults to a fresh
-   * one. `images` attaches up to 4 images; needs a 5.5 host, a `{ ref }`
-   * entry needs 5.15. `skills`: as for `createConversation`.
+   * to the main shown conversation at execution time, then stays fixed for
+   * this submission's retries (ADR-0034 §6). `requestId` is an idempotency
+   * key: a second send with the same key is a no-op. `images` attaches up to
+   * 4 images; needs a 5.5 host, a `{ ref }` entry needs 5.15. `skills`: as
+   * for `createConversation`.
+   *
+   * The promise resolves once the attempt is handed to the connection (or
+   * fails locally); its outcome lives on the view's `submissions` entry, never
+   * in a notice.
    */
   submit(
     text: string,
@@ -224,11 +277,27 @@ export interface DurableController {
       target?: ConversationId;
       requestId?: string;
       images?: readonly OutgoingImage[];
+      /** The same images with their types, for the local bubble and Edit. */
+      imageViews?: readonly ViewImage[];
       skills?: readonly string[];
       /** Host-stored attachment ids to reference (5.19, issue #321). */
       attachments?: readonly string[];
+      /** Names and sizes for the local chips before the host's entry arrives. */
+      attachmentDetails?: readonly UserAttachment[];
     },
   ): Promise<void>;
+  /**
+   * Retry an unknown or failed submission with the same `requestId` and the
+   * conversation fixed on its first execution. Unknown first asks the host's
+   * `submission` query and resends only when no record exists (ADR-0034 §7).
+   */
+  retrySubmission(requestId: string): Promise<void>;
+  /**
+   * Take back a failed or confirmed-unadmitted submission for editing: an
+   * unknown one is queried first, a queued one is withdrawn by its host id.
+   * Returns undefined when the host already admitted it or cannot confirm it.
+   */
+  takeBackSubmission(requestId: string): Promise<SubmissionDraft | undefined>;
   compact(instructions: string | undefined): Promise<void>;
   /**
    * Run the host-declared command `name` (listed by `listCommands`) on

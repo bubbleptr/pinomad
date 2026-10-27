@@ -154,6 +154,7 @@ struct ScriptedHost {
     opened: u32,
     call_errors: HashMap<String, String>,
     call_results: HashMap<String, Json>,
+    call_result_queue: HashMap<String, VecDeque<Json>>,
     /// Calls recorded but never answered — pending calls on the client.
     hang_calls: bool,
     /// Calls to these methods are recorded but never answered.
@@ -176,6 +177,7 @@ impl ScriptedHost {
             opened: 0,
             call_errors: HashMap::new(),
             call_results: HashMap::new(),
+            call_result_queue: HashMap::new(),
             hang_calls: false,
             hung_methods: HashSet::new(),
             fail_open: None,
@@ -216,7 +218,13 @@ impl ScriptedHost {
                     return vec![];
                 }
                 let id = frame.get("id").cloned().unwrap_or(Json::Null);
-                let value = if let Some(configured) = self.call_results.get(&method) {
+                let value = if let Some(configured) = self
+                    .call_result_queue
+                    .get_mut(&method)
+                    .and_then(|queue| queue.pop_front())
+                {
+                    configured
+                } else if let Some(configured) = self.call_results.get(&method) {
                     configured.clone()
                 } else if method == "fork" {
                     let conversation = frame
@@ -311,10 +319,24 @@ struct Harness {
 
 impl Harness {
     fn new(host: ScriptedHost) -> Self {
-        Self::with_options(host, (20, 20))
+        Self::with_options(host, (20, 20), false)
     }
 
-    fn with_options(host: ScriptedHost, delays: (u64, u64)) -> Self {
+    fn logical(mut host: ScriptedHost) -> Self {
+        // Logical rows reconcile against the inbox doc as well as the transcript.
+        host.hello_extras.push((
+            "docs".to_string(),
+            Json::array(vec![
+                obj(&[("kind", Json::from(DOC_KIND)), ("presentation", Json::from(DOC_KIND))]),
+                obj(&[("kind", Json::from("pi.inbox"))]),
+            ]),
+        ));
+        let mut harness = Self::with_options(host, (20, 20), true);
+        harness.invoke(0, switch_to(1));
+        harness
+    }
+
+    fn with_options(host: ScriptedHost, delays: (u64, u64), logical: bool) -> Self {
         let mut harness = Harness {
             remote: RemoteDurable::new(RemoteDurableOptions {
                 reconnect_delay_ms: Some(delays),
@@ -325,6 +347,7 @@ impl Harness {
                         format!("request-{n}")
                     }
                 })),
+                logical_submissions: logical,
                 ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
                     url: "ws://fake/".to_string(),
                 }))
@@ -489,6 +512,47 @@ impl Harness {
 
     fn view(&self) -> Json {
         self.remote.view().expect("view")
+    }
+
+    fn submissions(&self) -> Vec<Json> {
+        self.view_get("submissions")
+            .and_then(|value| value.as_array().map(|items| items.as_ref().clone()))
+            .unwrap_or_default()
+    }
+
+    fn only_submission(&self) -> Json {
+        let items = self.submissions();
+        assert_eq!(items.len(), 1, "one logical submission: {items:?}");
+        items[0].clone()
+    }
+
+    fn submission_queries(&self) -> Vec<Json> {
+        self.host.method("submission")
+    }
+
+    /// A snapshot delivered out of band on the current connection.
+    fn snapshot(&mut self, stream: &str, value: Json) {
+        self.host.snapshots.insert(stream.to_string(), value.clone());
+        self.deliver(obj(&[
+            ("type", Json::from("snapshot")),
+            ("stream", Json::from(stream)),
+            ("value", value),
+        ]));
+    }
+
+    fn answer_last(&mut self, method: &str, value: Json) {
+        let call = self.host.method(method).last().cloned().expect("call");
+        let id = call.get("id").cloned().unwrap_or(Json::Null);
+        self.deliver(obj(&[
+            ("type", Json::from("result")),
+            ("id", id),
+            ("ok", Json::Bool(true)),
+            ("value", value),
+        ]));
+    }
+
+    fn set_result(&mut self, method: &str, value: Json) {
+        self.host.call_results.insert(method.to_string(), value);
     }
 
     /// `view.a.b.c` without the borrow dance — returns a cloned Json.
@@ -670,7 +734,7 @@ fn foreground_reconnects_immediately_and_resets_the_backoff() {
     // delays (20, 80): first failed round arms 20, a second would arm 40 —
     // the reset shows the counter went back to zero.
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
-    let mut h = Harness::with_options(host, (20, 80));
+    let mut h = Harness::with_options(host, (20, 80), false);
     h.host.fail_open = Some((1006, None));
     h.disconnect_now(1006, None);
     let (timer, delay) = h.timers.last().copied().expect("backoff armed");
@@ -2345,5 +2409,413 @@ fn bound_skills_reach_a_5_16_host_only() {
     assert_eq!(
         skills_arg(&h.host.method("createConversation")[0]),
         Some(Json::array(vec![Json::from("review")]))
+    );
+}
+
+
+fn logical_user_entry(id: u64, text: &str) -> Json {
+    obj(&[
+        ("id", Json::Number(id as f64)),
+        ("conversationId", Json::Number(1.0)),
+        ("kind", Json::from("pi.user")),
+        (
+            "model",
+            Json::array(vec![obj(&[
+                ("role", Json::from("user")),
+                ("content", Json::from(text)),
+                ("timestamp", Json::Number(1_000.0)),
+            ])]),
+        ),
+    ])
+}
+
+fn user_view(entries: Vec<Json>) -> Json {
+    obj(&[
+        ("conversation", obj(&[("id", Json::Number(1.0))])),
+        ("entries", Json::array(entries)),
+        (
+            "docs",
+            obj(&[
+                ("pi.live", obj(&[])),
+                ("pi.inbox", obj(&[("items", Json::array(vec![]))])),
+            ]),
+        ),
+    ])
+}
+
+fn submit_call(request_id: &str, text: &str) -> Call {
+    Call::Submit {
+        text: text.to_string(),
+        when_busy: "followUp".to_string(),
+        target: Some(1),
+        request_id: Some(request_id.to_string()),
+        images: vec![],
+        skills: None,
+        attachments: vec![],
+    }
+}
+
+fn switch_to(id: u64) -> Call {
+    Call::SwitchConversation { id }
+}
+
+#[test]
+fn logical_submit_waits_for_its_entry_then_settles() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.invoke(1, submit_call("r1", "hello"));
+    assert_eq!(h.host.method("submit").len(), 1);
+    let record = h.only_submission();
+    assert_eq!(
+        record.get("phase").and_then(Json::as_str).map(|s| s.to_string_lossy()),
+        Some("inFlight".to_string())
+    );
+    assert_eq!(num_id(record.get("submissionId").unwrap()), Some(7));
+
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty(), "entry snapshot settles the local row");
+    assert_eq!(h.host.method("submit").len(), 1);
+}
+
+#[test]
+fn logical_submit_snapshot_first_keeps_the_short_duplicate() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert_eq!(h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(), "inFlight");
+    h.host.hung_methods.remove("submit");
+    h.answer_last("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_submit_reconnect_queries_and_never_resends_when_found() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    h.disconnect(1000, None);
+    assert_eq!(h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(), "unknown");
+    h.host.hung_methods.remove("submit");
+    h.set_result("submission", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("status", Json::from("done")),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 1);
+    assert_eq!(h.submission_queries().len(), 1);
+}
+
+#[test]
+fn logical_submit_reconnect_resends_only_after_null() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    h.disconnect(1000, None);
+    h.host.hung_methods.remove("submit");
+    h.set_result("submission", Json::Null);
+    h.set_result("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.fire_timer();
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty());
+    let submits = h.host.method("submit");
+    assert_eq!(submits.len(), 2);
+    let args = submits[1].get("args").expect("args");
+    assert_eq!(args.get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(), "r1");
+    assert_eq!(num_id(args.get("conversationId").unwrap()), Some(1));
+}
+
+#[test]
+fn logical_submit_timeout_is_unknown_and_a_late_result_still_settles() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert_eq!(h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(), "unknown");
+    h.host.hung_methods.remove("submit");
+    h.answer_last("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 1);
+}
+
+#[test]
+fn logical_submit_repeated_request_id_is_one_send() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.invoke(1, submit_call("r1", "hello"));
+    h.invoke(2, submit_call("r1", "hello"));
+    assert_eq!(h.host.method("submit").len(), 1);
+}
+
+#[test]
+fn logical_submit_failure_and_take_back() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.call_errors.insert("submit".to_string(), "refused".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let record = h.only_submission();
+    assert_eq!(record.get("phase").and_then(Json::as_str).unwrap().to_string_lossy(), "failed");
+    assert_eq!(record.get("error").and_then(Json::as_str).unwrap().to_string_lossy(), "refused");
+
+    h.invoke(2, Call::TakeBackSubmission { request_id: "r1".to_string() });
+    let result = h.ops.get(&2).expect("take-back result");
+    let draft = result.as_ref().expect("ok").clone().expect("draft");
+    assert_eq!(draft.get("text").and_then(Json::as_str).unwrap().to_string_lossy(), "hello");
+    assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_recovery_blocks_switch_and_set_model_until_it_finishes() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    h.disconnect(1000, None);
+    // Both the original and its resend stay on the wire until answered by hand.
+    h.host.hung_methods.insert("submission".to_string());
+    h.fire_timer();
+    // The reconnect shell is visible; the recovery query holds the gate.
+    assert_eq!(h.connection(), "connected");
+    assert_eq!(h.submission_queries().len(), 1);
+    h.invoke(2, switch_to(2));
+    h.invoke(3, Call::SetModel {
+        model: obj(&[("provider", Json::from("p")), ("modelId", Json::from("m"))]),
+    });
+    assert_eq!(h.host.method("setModel").len(), 0);
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    h.host.hung_methods.remove("submission");
+    h.set_result("submission", Json::Null);
+    h.answer_last("submission", Json::Null);
+    // The resend is now waiting; commands still cannot overtake it.
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert_eq!(h.host.method("setModel").len(), 0);
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    h.answer_last("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("setModel").len(), 1);
+    assert!(h.host.subscribes().iter().any(|stream| stream == "conversation:2"));
+}
+
+
+fn num_id(value: &Json) -> Option<u64> {
+    value.as_number().filter(|n| *n >= 0.0).map(|n| n as u64)
+}
+
+
+#[test]
+fn logical_submit_ignores_another_devices_entry_and_inbox_row() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("queued")),
+        ]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(99, "other device")]));
+    h.snapshot(
+        "doc:pi.inbox:1",
+        obj(&[("items", Json::array(vec![obj(&[
+            ("id", Json::Number(8.0)),
+            ("mode", Json::from("steer")),
+            ("content", Json::from("other")),
+        ])]))]),
+    );
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "inFlight"
+    );
+    h.snapshot(
+        "doc:pi.inbox:1",
+        obj(&[("items", Json::array(vec![obj(&[
+            ("id", Json::Number(7.0)),
+            ("mode", Json::from("followUp")),
+            ("content", Json::from("hello")),
+        ])]))]),
+    );
+    assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_submit_settles_a_done_record_whose_entry_was_trimmed() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("done")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.submission_queries().len(), 1);
+}
+
+#[test]
+fn logical_submit_degrades_on_a_pre_525_host() {
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![("protocol".to_string(), protocol_obj(24.0))],
+    );
+    let mut h = Harness::with_options(host, (20, 20), true);
+    h.invoke(0, switch_to(1));
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.invoke(1, submit_call("r1", "hello"));
+    assert!(h.submissions().is_empty(), "the result is the only fact");
+    assert!(h.submission_queries().is_empty());
+
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(2, submit_call("r2", "second"));
+    h.disconnect(1000, None);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    h.host.hung_methods.remove("submit");
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert!(h.submission_queries().is_empty());
+}
+
+
+
+#[test]
+fn logical_retry_disconnects_again_then_recovery_settles() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    // The retry query misses, then the reconnect query finds the admitted
+    // record; a reconnect may start immediately or on the deferred timer.
+    h.host
+        .call_result_queue
+        .entry("submission".to_string())
+        .or_default()
+        .push_back(Json::Null);
+    h.host
+        .call_result_queue
+        .entry("submission".to_string())
+        .or_default()
+        .push_back(obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("done")),
+            ("entry", Json::Number(42.0)),
+        ]));
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.host.method("submit").len(), 2);
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    h.disconnect(1000, None);
+    if !h.submissions().is_empty() {
+        h.fire_timer();
+    }
+    assert_eq!(h.connection(), "connected");
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert_eq!(h.submission_queries().len(), 2);
+}
+
+
+#[test]
+fn logical_submit_timeout_releases_the_serialized_queue() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let first_id = h.host.method("submit")[0].get("id").cloned().unwrap();
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert!(matches!(h.ops.get(&1), Some(Ok(None))), "the timed-out op resolves");
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    // The original submit no longer holds the serialized queue.
+    h.invoke(2, Call::SetModel {
+        model: obj(&[("provider", Json::from("p")), ("modelId", Json::from("m"))]),
+    });
+    assert_eq!(h.host.method("setModel").len(), 1);
+
+    // A second submit can be sent while the first result is still missing.
+    h.invoke(3, submit_call("r2", "second"));
+    assert_eq!(h.host.method("submit").len(), 2);
+
+    // The late result still reconciles the original request by its id.
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", first_id),
+        ("ok", Json::Bool(true)),
+        ("value", obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("entry", Json::Number(42.0)),
+        ])),
+    ]));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    let remaining = h.submissions();
+    assert_eq!(remaining.len(), 1, "only the second submit remains: {remaining:?}");
+    assert_eq!(
+        remaining[0].get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "r2"
     );
 }

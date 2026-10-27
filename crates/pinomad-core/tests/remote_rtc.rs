@@ -420,6 +420,7 @@ impl Harness {
             round_timeout_ms: Some(10_000),
             connection_mode: mode,
             rtc: Some(rtc),
+            logical_submissions: false,
         });
         let mut harness = Harness {
             remote,
@@ -778,6 +779,7 @@ fn unsupported_rtc_emits_no_rtc_commands() {
         round_timeout_ms: Some(10_000),
         connection_mode: ConnectionMode::Auto,
         rtc: None,
+        logical_submissions: false,
     });
     let mut commands = remote.take();
     let mut rtc_commands = 0;

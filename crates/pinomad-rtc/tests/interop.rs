@@ -745,6 +745,7 @@ fn engine_reaches_the_business_hello_over_a_real_host() {
             device_private_key: private_key.clone(),
             signal_only_hint: false,
         }),
+        logical_submissions: false,
     };
     let mut rtc = RtcDriver::new(RemoteDurable::new(options));
     assert!(

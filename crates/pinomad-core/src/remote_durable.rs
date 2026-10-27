@@ -371,6 +371,10 @@ pub enum Call {
     BeginAttachment { name: String, size: u64 },
     /// `appendAttachment` — append one base64 chunk at `offset` (5.19).
     AppendAttachment { attachment_id: String, offset: u64, data: String },
+    /// Retry a logical submission with the same requestId and fixed target.
+    RetrySubmission { request_id: String },
+    /// Take a failed or confirmed-unadmitted logical submission back for editing.
+    TakeBackSubmission { request_id: String },
 }
 
 /// Why a message's attachment ids can't be sent, or `Ok` when they can.
@@ -631,6 +635,10 @@ pub struct RemoteDurableOptions {
     /// Absent means the platform cannot do RTC; the core then behaves exactly
     /// as before and never emits an RTC command.
     pub rtc: Option<RtcOptions>,
+    /// Track submissions until the host's entry or inbox row replaces them
+    /// (ADR-0034). Off by default: iOS keeps the pre-PR-3 behavior until the
+    /// Web client's reconciliation has a native UI.
+    pub logical_submissions: bool,
 }
 
 impl RemoteDurableOptions {
@@ -653,6 +661,7 @@ impl RemoteDurableOptions {
             round_timeout_ms: None,
             connection_mode: ConnectionMode::Auto,
             rtc: None,
+            logical_submissions: false,
         }
     }
 }
@@ -670,6 +679,76 @@ enum OpKind {
     /// chain either, but the caller owns the result like a Request: a
     /// read-only query resolves with the host's answer or its error.
     Direct,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SubmissionPhase {
+    Queued,
+    InFlight,
+    Unknown,
+    Failed,
+    Settled,
+}
+
+impl SubmissionPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            SubmissionPhase::Queued => "queued",
+            SubmissionPhase::InFlight => "inFlight",
+            SubmissionPhase::Unknown => "unknown",
+            SubmissionPhase::Failed => "failed",
+            SubmissionPhase::Settled => "settled",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SubmissionPlacement {
+    Conversation,
+    Queue,
+}
+
+impl SubmissionPlacement {
+    fn as_str(self) -> &'static str {
+        match self {
+            SubmissionPlacement::Conversation => "conversation",
+            SubmissionPlacement::Queue => "queue",
+        }
+    }
+}
+
+/// One client-side send before the host's own fact replaces it (ADR-0034 §5).
+struct SubmissionRecord {
+    request_id: String,
+    text: String,
+    when_busy: String,
+    placement: SubmissionPlacement,
+    phase: SubmissionPhase,
+    images: Vec<Json>,
+    skills: Option<Vec<String>>,
+    attachments: Vec<String>,
+    conversation_id: Option<u64>,
+    fixed: bool,
+    submission_id: Option<u64>,
+    entry: Option<u64>,
+    error: Option<String>,
+    timer: Option<u32>,
+    /// Admission is confirmed; no timeout applies while waiting for its entry.
+    admitted: bool,
+    confirming: bool,
+    /// Snapshot version last checked for a missing entry.
+    checked_version: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SubmissionQuery {
+    Confirm(usize),
+    RecoveryQuery(usize),
+    RecoveryResend(usize),
+    RetryQuery(usize, u64),
+    RetryResend(usize, u64),
+    TakeBackQuery(usize, u64),
+    TakeBackWithdraw(usize, u64),
 }
 
 /// One in-flight controller operation.
@@ -801,6 +880,8 @@ const COOLDOWN_CLEAR_INTERVAL_MS: u64 = 60_000;
 const LIVENESS_INTERVAL_MS: u64 = 5_000;
 const LIVENESS_BUDGET_MS: u64 = 15_000;
 const LIVENESS_VERIFY_MS: u64 = 3_000;
+/// A submit with no result for this long is unknown, never failed (ADR-0034 §7).
+const SUBMISSION_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RtcPhase {
@@ -980,6 +1061,18 @@ pub struct RemoteDurable {
     next_timer: u32,
     queue: VecDeque<(u64, OpKind, Call)>,
     active: Vec<ActiveOp>,
+    logical_submissions: bool,
+    submissions: Vec<SubmissionRecord>,
+    submission_by_request: HashMap<String, usize>,
+    op_submissions: HashMap<u64, usize>,
+    /// A timed-out submit's call id, kept so a late result still reconciles.
+    late_submission_calls: HashMap<u64, usize>,
+    submission_queries: HashMap<u64, SubmissionQuery>,
+    submission_timers: HashMap<u32, usize>,
+    submission_recovery: VecDeque<usize>,
+    recovering_submissions: bool,
+    recovery_waiting: Option<u64>,
+    stream_versions: HashMap<Vec<u16>, u64>,
     first_view: Option<FirstView>,
     ready_sent: bool,
     view_dirty: bool,
@@ -1100,6 +1193,17 @@ impl RemoteDurable {
             next_timer: 1,
             queue: VecDeque::new(),
             active: Vec::new(),
+            logical_submissions: options.logical_submissions,
+            submissions: Vec::new(),
+            submission_by_request: HashMap::new(),
+            op_submissions: HashMap::new(),
+            late_submission_calls: HashMap::new(),
+            submission_queries: HashMap::new(),
+            submission_timers: HashMap::new(),
+            submission_recovery: VecDeque::new(),
+            recovering_submissions: false,
+            recovery_waiting: None,
+            stream_versions: HashMap::new(),
             first_view: None,
             ready_sent: false,
             view_dirty: false,
@@ -1244,6 +1348,19 @@ impl RemoteDurable {
 
     fn timer_fired(&mut self, timer: u32) {
         if self.closed {
+            return;
+        }
+        if let Some(index) = self.submission_timers.remove(&timer) {
+            if self.submissions[index].phase == SubmissionPhase::InFlight
+                && !self.submissions[index].admitted
+            {
+                self.submissions[index].phase = SubmissionPhase::Unknown;
+                self.submissions[index].timer = None;
+                let _ = self.refresh();
+                // The caller's op resolves now; a queued command may run while
+                // the original submit is still outstanding.
+                self.retire_submission_op(index);
+            }
             return;
         }
         if self.reconnect_timer == Some(timer) {
@@ -2911,6 +3028,7 @@ impl RemoteDurable {
             return;
         };
         dial.done = true;
+        self.fail_submission_queries();
         if self.sync_gate || !self.sync_queue.is_empty() {
             self.sync_gate = false;
             let queued = std::mem::take(&mut self.sync_queue);
@@ -2924,6 +3042,45 @@ impl RemoteDurable {
         if let Some(conn) = dial.conn.take() {
             self.out.push(Command::CloseSocket { conn: conn.id });
         }
+    }
+
+    /// A lost carrier also loses the reconciliation/queries riding it. A
+    /// retry that had not settled becomes unknown; an admitted record keeps
+    /// its fact and waits for the next snapshot or reconnect.
+    fn fail_submission_queries(&mut self) {
+        let queries = std::mem::take(&mut self.submission_queries);
+        let mut mark_unknown = Vec::new();
+        for query in queries.values() {
+            match query {
+                SubmissionQuery::RetryQuery(index, op)
+                | SubmissionQuery::RetryResend(index, op) => {
+                    mark_unknown.push(*index);
+                    self.out.push(Command::OperationSucceeded {
+                        op: *op,
+                        value: None,
+                    });
+                }
+                SubmissionQuery::TakeBackQuery(_, op)
+                | SubmissionQuery::TakeBackWithdraw(_, op) => {
+                    self.out.push(Command::OperationSucceeded {
+                        op: *op,
+                        value: None,
+                    });
+                }
+                SubmissionQuery::RecoveryQuery(_)
+                | SubmissionQuery::RecoveryResend(_)
+                | SubmissionQuery::Confirm(_) => {}
+            }
+        }
+        for index in mark_unknown {
+            if self.submissions[index].phase != SubmissionPhase::Settled {
+                self.submissions[index].phase = SubmissionPhase::Unknown;
+                self.clear_submission_timer(index);
+            }
+        }
+        self.recovering_submissions = false;
+        self.recovery_waiting = None;
+        self.submission_recovery.clear();
     }
 
     fn reject_pending_calls(&mut self) {
@@ -3053,6 +3210,14 @@ impl RemoteDurable {
     }
 
     fn clear_all_timers(&mut self) {
+        let submission_timers: Vec<u32> = self.submission_timers.keys().copied().collect();
+        for timer in submission_timers {
+            self.out.push(Command::CancelDeadline { timer });
+        }
+        self.submission_timers.clear();
+        for record in &mut self.submissions {
+            record.timer = None;
+        }
         self.clear_round_timer();
         self.clear_backoff();
         self.clear_dial_timer();
@@ -3487,6 +3652,7 @@ impl RemoteDurable {
         let was_fresh = self.conversation_is_fresh();
         self.values.insert(units.clone(), value);
         self.fresh.insert(units.clone());
+        *self.stream_versions.entry(units.clone()).or_insert(0) += 1;
         if !was_fresh && self.conversation_is_fresh() {
             self.conversation_fresh_epoch += 1;
         }
@@ -3605,6 +3771,10 @@ impl RemoteDurable {
         else {
             return;
         };
+        if let Some(query) = self.submission_queries.remove(&call_id) {
+            self.handle_submission_query(call_id, query, ok.truthy(), value);
+            return;
+        }
         if self.probes.remove(&call_id) {
             let verify = self.verify_probe == Some(call_id);
             if verify {
@@ -3631,6 +3801,15 @@ impl RemoteDurable {
         }
         let rtc_ok = ok.truthy();
         if self.handle_rtc_result(call_id, rtc_ok, value.clone(), error.clone()) {
+            return;
+        }
+        if let Some(index) = self.late_submission_calls.remove(&call_id) {
+            if ok.truthy() {
+                self.finish_submission_result(index, Some(value));
+            } else {
+                let message = U16String::js_string(&error).to_string_lossy();
+                self.mark_submission_failed(index, &message);
+            }
             return;
         }
         let Some(op_id) = self.pending_calls.remove(&call_id) else {
@@ -3669,7 +3848,24 @@ impl RemoteDurable {
 
     // ─── Controller surface ─────────────────────────────────────────────
 
-    fn invoke(&mut self, op: u64, call: Call) {
+    fn invoke(&mut self, op: u64, mut call: Call) {
+        if self.logical_submissions && self.handoff.is_none() && !self.sync_gate {
+            match call {
+                submission @ Call::Submit { .. } => {
+                    self.create_submission(op, submission);
+                    return;
+                }
+                Call::RetrySubmission { request_id } => {
+                    self.retry_submission(op, &request_id);
+                    return;
+                }
+                Call::TakeBackSubmission { request_id } => {
+                    self.take_back_submission(op, &request_id);
+                    return;
+                }
+                other => call = other,
+            }
+        }
         let kind = op_kind(&call);
         if let Some(handoff) = self.handoff.as_mut() {
             // The atomic barrier closed the new-call entrance; the op waits
@@ -3701,6 +3897,11 @@ impl RemoteDurable {
     }
 
     fn begin_op(&mut self, op_id: u64, kind: OpKind, call: Call, holds_queue: bool) {
+        if let Some(index) = self.logical_submit_index(&call) {
+            if self.begin_logical_submit(op_id, index, &call) {
+                return;
+            }
+        }
         match self.op_steps(&call) {
             Ok(steps) => {
                 self.active.push(ActiveOp {
@@ -4141,6 +4342,9 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "appendAttachment", args });
             }
+            Call::RetrySubmission { .. } | Call::TakeBackSubmission { .. } => {
+                return Err("submission actions never reach the wire".to_string());
+            }
         }
         steps.push_back(Step::Done { value: DoneValue::LastResult });
         Ok(steps)
@@ -4331,7 +4535,12 @@ impl RemoteDurable {
     /// Op finished: result to the caller, then the queue continues.
     fn complete_op(&mut self, index: usize, value: Option<Json>) {
         let op = self.active.remove(index);
-        self.out.push(Command::OperationSucceeded { op: op.op_id, value });
+        if let Some(submission) = self.op_submissions.remove(&op.op_id) {
+            self.finish_submission_result(submission, value);
+            self.out.push(Command::OperationSucceeded { op: op.op_id, value: None });
+        } else {
+            self.out.push(Command::OperationSucceeded { op: op.op_id, value });
+        }
         self.pump();
     }
 
@@ -4340,6 +4549,17 @@ impl RemoteDurable {
     /// the #command/#request split plus abort's `.then(()=>{}, notice)`.
     fn fail_op(&mut self, index: usize, error: &str) {
         let op = self.active.remove(index);
+        if let Some(submission) = self.op_submissions.remove(&op.op_id) {
+            let carrier_lost = op.carrier.is_some_and(|carrier| !self.carrier_live(carrier));
+            if carrier_lost || error == "Not connected to the host" {
+                self.mark_submission_unknown(submission);
+            } else {
+                self.mark_submission_failed(submission, error);
+            }
+            self.out.push(Command::OperationSucceeded { op: op.op_id, value: None });
+            self.pump();
+            return;
+        }
         self.finish_failed(op.op_id, op.kind, error, op.carrier);
     }
 
@@ -4365,6 +4585,13 @@ impl RemoteDurable {
         error: &str,
         carrier: Option<CallCarrier>,
     ) {
+        if let Some(index) = self.op_submissions.remove(&op_id) {
+            // A local gate (image refs, attachments) refused it before the wire.
+            self.mark_submission_failed(index, error);
+            self.out.push(Command::OperationSucceeded { op: op_id, value: None });
+            self.pump();
+            return;
+        }
         let carrier_lost = carrier.is_some_and(|carrier| !self.carrier_live(carrier));
         match kind {
             OpKind::Request | OpKind::Direct => {
@@ -4559,10 +4786,720 @@ impl RemoteDurable {
     /// `#refresh` — recompute the derived view fields. Every input is read
     /// before anything is written, so a failure leaves the view untouched,
     /// like the reference building the patch object first.
+    /// Whether the shown (or target) conversation has a run in flight.
+    fn conversation_busy(&self, id: Option<u64>) -> bool {
+        let Some(id) = id else { return false };
+        let Some(view) = self.values.get(&conversation_stream(id).0) else { return false };
+        view.get("docs")
+            .and_then(|docs| docs.get("pi.live"))
+            .and_then(|live| live.get("run"))
+            .is_some()
+    }
+
+    fn submission_json(&self, record: &SubmissionRecord) -> Json {
+        let mut object = JsonObject::new();
+        set(&mut object, "requestId", Json::from(record.request_id.clone()));
+        if let Some(id) = record.conversation_id {
+            set(&mut object, "conversationId", Json::Number(id as f64));
+        }
+        set(&mut object, "text", Json::from(record.text.clone()));
+        set(&mut object, "whenBusy", Json::from(record.when_busy.clone()));
+        set(&mut object, "placement", Json::from(record.placement.as_str()));
+        set(&mut object, "phase", Json::from(record.phase.as_str()));
+        set(&mut object, "images", Json::array(record.images.clone()));
+        set(
+            &mut object,
+            "skills",
+            Json::array(record.skills.clone().unwrap_or_default().into_iter().map(Json::from).collect()),
+        );
+        set(
+            &mut object,
+            "attachments",
+            Json::array(record.attachments.iter().cloned().map(Json::from).collect()),
+        );
+        if let Some(id) = record.submission_id {
+            set(&mut object, "submissionId", Json::Number(id as f64));
+        }
+        if let Some(entry) = record.entry {
+            set(&mut object, "entry", Json::Number(entry as f64));
+        }
+        if let Some(error) = &record.error {
+            set(&mut object, "error", Json::from(error.clone()));
+        }
+        Json::Object(Arc::new(object))
+    }
+
+    fn submissions_json(&self) -> Json {
+        Json::array(
+            self.submissions
+                .iter()
+                .filter(|record| record.phase != SubmissionPhase::Settled)
+                .map(|record| self.submission_json(record))
+                .collect(),
+        )
+    }
+
+    fn settle_submission(&mut self, index: usize) {
+        if self.submissions[index].phase == SubmissionPhase::Settled {
+            return;
+        }
+        self.submissions[index].phase = SubmissionPhase::Settled;
+        self.submissions[index].error = None;
+        self.clear_submission_timer(index);
+    }
+
+    fn clear_submission_timer(&mut self, index: usize) {
+        let Some(timer) = self.submissions[index].timer.take() else {
+            return;
+        };
+        self.submission_timers.remove(&timer);
+        self.out.push(Command::CancelDeadline { timer });
+    }
+
+    /// Take a timed-out submit out of the serialized queue while keeping its
+    /// call id for a late result. This is the Rust counterpart of the TS
+    /// timeout race releasing the command chain.
+    fn retire_submission_op(&mut self, index: usize) {
+        let Some(position) = self
+            .active
+            .iter()
+            .position(|op| self.op_submissions.get(&op.op_id) == Some(&index))
+        else {
+            return;
+        };
+        let op = self.active.remove(position);
+        self.op_submissions.remove(&op.op_id);
+        let calls: Vec<u64> = self
+            .pending_calls
+            .iter()
+            .filter(|(_, op_id)| **op_id == op.op_id)
+            .map(|(call_id, _)| *call_id)
+            .collect();
+        for call_id in calls {
+            self.pending_calls.remove(&call_id);
+            self.late_submission_calls.insert(call_id, index);
+        }
+        self.out.push(Command::OperationSucceeded {
+            op: op.op_id,
+            value: None,
+        });
+        self.pump();
+    }
+
+    fn start_submission_timer(&mut self, index: usize) {
+        self.clear_submission_timer(index);
+        let timer = self.next_timer;
+        self.next_timer += 1;
+        self.submissions[index].timer = Some(timer);
+        self.submission_timers.insert(timer, index);
+        self.out.push(Command::ScheduleDeadline {
+            timer,
+            delay_ms: SUBMISSION_TIMEOUT_MS,
+        });
+    }
+
+    fn submission_entry_present(&self, index: usize) -> bool {
+        let record = &self.submissions[index];
+        let (Some(conversation), Some(entry)) = (record.conversation_id, record.entry) else {
+            return false;
+        };
+        self.values
+            .get(&conversation_stream(conversation).0)
+            .and_then(|view| view.get("entries"))
+            .and_then(Json::as_array)
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(entry))
+            })
+    }
+
+    fn submission_inbox_has(&self, index: usize) -> bool {
+        let record = &self.submissions[index];
+        let (Some(conversation), Some(submission)) = (record.conversation_id, record.submission_id) else {
+            return false;
+        };
+        self.values
+            .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
+            .and_then(|inbox| inbox.get("items"))
+            .and_then(Json::as_array)
+            .is_some_and(|items| items.iter().any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(submission)))
+    }
+    /// Settle records whose entry or inbox row has now arrived; recheck an
+    /// admitted entry a fresh snapshot lacks (a reset may have trimmed it).
+    fn reconcile_submissions(&mut self) {
+        for index in 0..self.submissions.len() {
+            if self.submissions[index].phase == SubmissionPhase::Settled
+                || self.submissions[index].submission_id.is_none()
+            {
+                continue;
+            }
+            if self.submission_entry_present(index) || self.submission_inbox_has(index) {
+                self.settle_submission(index);
+                continue;
+            }
+            let Some(conversation) = self.submissions[index].conversation_id else {
+                continue;
+            };
+            if !self.submissions[index].admitted
+                || (self.submissions[index].entry.is_none() && self.submission_inbox_has(index))
+            {
+                continue;
+            }
+            // Either the transcript or the inbox moving can turn an admitted
+            // row into a stale one, so check once per version of both.
+            let version = self
+                .stream_versions
+                .get(&conversation_stream(conversation).0)
+                .copied()
+                .unwrap_or(0)
+                .wrapping_add(
+                    self.stream_versions
+                        .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
+                        .copied()
+                        .unwrap_or(0),
+                );
+            if self.submissions[index].checked_version != Some(version)
+                && self.fresh.contains(&conversation_stream(conversation).0)
+                && !self.submissions[index].confirming
+            {
+                self.submissions[index].checked_version = Some(version);
+                self.send_submission_query(index, SubmissionQuery::Confirm(index));
+            }
+        }
+    }
+
+    fn apply_submission_fact(&mut self, index: usize, fact: &Json) {
+        let Some(submission_id) = fact.get("submissionId").and_then(|value| num_id(Some(value))) else {
+            return;
+        };
+        let status = fact
+            .get("status")
+            .and_then(Json::as_str)
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_default();
+        let entry = fact.get("entry").and_then(|value| num_id(Some(value)));
+        self.submissions[index].admitted = true;
+        self.submissions[index].submission_id = Some(submission_id);
+        self.submissions[index].error = None;
+        self.clear_submission_timer(index);
+        if let Some(entry) = entry {
+            self.submissions[index].entry = Some(entry);
+        }
+        if self.submissions[index].entry.is_some() {
+            if self.submission_entry_present(index) || status == "done" {
+                self.settle_submission(index);
+            } else {
+                self.submissions[index].phase = SubmissionPhase::InFlight;
+            }
+        } else if self.submission_inbox_has(index) {
+            self.settle_submission(index);
+        } else if status == "placed" || status == "done" || status == "unanswered" {
+            self.settle_submission(index);
+        } else {
+            self.submissions[index].phase = SubmissionPhase::InFlight;
+        }
+        let _ = self.refresh();
+    }
+
+    fn submission_query_args(&self, index: usize) -> Option<Json> {
+        let record = &self.submissions[index];
+        let conversation = record.conversation_id?;
+        Some(obj(&[
+            ("conversationId", Json::Number(conversation as f64)),
+            ("requestId", Json::from(record.request_id.clone())),
+        ]))
+    }
+
+    fn send_submission_query(&mut self, index: usize, kind: SubmissionQuery) -> Option<u64> {
+        let args = self.submission_query_args(index)?;
+        let id = self.next_call;
+        self.next_call += 1;
+        self.submission_queries.insert(id, kind);
+        self.send(ClientFrame::Call {
+            id: id as f64,
+            method: U16String::from_str("submission"),
+            args,
+        });
+        Some(id)
+    }
+
+    fn send_submission_resend(
+        &mut self,
+        index: usize,
+        kind: SubmissionQuery,
+    ) -> Option<u64> {
+        let record = &self.submissions[index];
+        let conversation = record.conversation_id?;
+        let mut args = JsonObject::new();
+        set(&mut args, "conversationId", Json::Number(conversation as f64));
+        set(&mut args, "text", Json::from(record.text.clone()));
+        set(&mut args, "whenBusy", Json::from(record.when_busy.clone()));
+        set(&mut args, "requestId", Json::from(record.request_id.clone()));
+        if !record.images.is_empty() {
+            set(&mut args, "images", Json::array(record.images.clone()));
+        }
+        self.set_bound_skills(&mut args, &record.skills);
+        set_attachments(&mut args, &record.attachments);
+        let id = self.next_call;
+        self.next_call += 1;
+        self.submission_queries.insert(id, kind);
+        self.send(ClientFrame::Call {
+            id: id as f64,
+            method: U16String::from_str("submit"),
+            args: Json::Object(Arc::new(args)),
+        });
+        Some(id)
+    }
+
+    /// Start a retry resend and carry the operation that must resolve on it.
+    fn send_submission_resend_query(
+        &mut self,
+        index: usize,
+        kind: SubmissionQuery,
+    ) -> Option<u64> {
+        self.submissions[index].phase = SubmissionPhase::InFlight;
+        self.submissions[index].error = None;
+        self.start_submission_timer(index);
+        self.send_submission_resend(index, kind)
+    }
+
+    fn finish_submission_result(&mut self, index: usize, value: Option<Json>) {
+        let Some(value) = value else {
+            self.mark_submission_unknown(index);
+            return;
+        };
+        let Some(submission_id) = value.get("submissionId").and_then(|value| num_id(Some(value))) else {
+            self.mark_submission_failed(index, "The submit result had no submissionId");
+            return;
+        };
+        self.submissions[index].admitted = true;
+        self.submissions[index].submission_id = Some(submission_id);
+        self.submissions[index].error = None;
+        self.clear_submission_timer(index);
+        if let Some(entry) = value.get("entry").and_then(|value| num_id(Some(value))) {
+            self.submissions[index].entry = Some(entry);
+        }
+        if !host_supports_feature(self.host_minor, HostFeature::SubmitEntry) {
+            self.settle_submission(index);
+        } else if self.submissions[index].entry.is_some() {
+            self.submissions[index].phase = SubmissionPhase::InFlight;
+            if self.submission_entry_present(index) {
+                self.settle_submission(index);
+            }
+        } else {
+            self.submissions[index].phase = SubmissionPhase::InFlight;
+            if let Some(conversation) = self.submissions[index].conversation_id {
+                // This query answers the current snapshot; the next one may re-ask.
+                self.submissions[index].checked_version = Some(
+                    self.stream_versions
+                        .get(&conversation_stream(conversation).0)
+                        .copied()
+                        .unwrap_or(0)
+                        .wrapping_add(
+                            self.stream_versions
+                                .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
+                                .copied()
+                                .unwrap_or(0),
+                        ),
+                );
+            }
+            self.send_submission_query(index, SubmissionQuery::Confirm(index));
+        }
+        let _ = self.refresh();
+    }
+
+    fn mark_submission_unknown(&mut self, index: usize) {
+        if self.submissions[index].phase == SubmissionPhase::Settled {
+            return;
+        }
+        self.submissions[index].phase = SubmissionPhase::Unknown;
+        self.clear_submission_timer(index);
+        let _ = self.refresh();
+    }
+
+    fn mark_submission_failed(&mut self, index: usize, error: &str) {
+        if self.submissions[index].phase == SubmissionPhase::Settled {
+            return;
+        }
+        self.submissions[index].phase = SubmissionPhase::Failed;
+        self.submissions[index].error = Some(error.to_string());
+        self.clear_submission_timer(index);
+        let _ = self.refresh();
+    }
+    /// Start a logical submission: create the record, then let the normal
+    /// serialized queue carry its one wire `submit`.
+    fn create_submission(&mut self, op: u64, call: Call) {
+        let Call::Submit {
+            text,
+            when_busy,
+            target,
+            request_id,
+            images,
+            skills,
+            attachments,
+        } = call
+        else {
+            return;
+        };
+        let request_id = request_id.unwrap_or_else(|| (self.request_id)());
+        if self.submission_by_request.contains_key(&request_id) {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+            return;
+        }
+        let placement = if self.conversation_busy(target.or(self.current)) {
+            SubmissionPlacement::Queue
+        } else {
+            SubmissionPlacement::Conversation
+        };
+        let index = self.submissions.len();
+        self.submissions.push(SubmissionRecord {
+            request_id: request_id.clone(),
+            text: text.clone(),
+            when_busy: when_busy.clone(),
+            placement,
+            phase: SubmissionPhase::Queued,
+            images: images.clone(),
+            skills: skills.clone(),
+            attachments: attachments.clone(),
+            conversation_id: target,
+            fixed: target.is_some(),
+            submission_id: None,
+            entry: None,
+            error: None,
+            timer: None,
+            admitted: false,
+            confirming: false,
+            checked_version: None,
+        });
+        self.submission_by_request.insert(request_id.clone(), index);
+        self.queue.push_back((
+            op,
+            OpKind::Request,
+            Call::Submit {
+                text,
+                when_busy,
+                target,
+                request_id: Some(request_id),
+                images,
+                skills,
+                attachments,
+            },
+        ));
+        let _ = self.refresh();
+        self.pump();
+    }
+
+    /// The index of a submit's logical record, if this call is one.
+    fn logical_submit_index(&self, call: &Call) -> Option<usize> {
+        if !self.logical_submissions {
+            return None;
+        }
+        let Call::Submit {
+            request_id: Some(request_id),
+            ..
+        } = call
+        else {
+            return None;
+        };
+        self.submission_by_request.get(request_id).copied()
+    }
+
+    /// Resolve the conversation at first execution and start its timer.
+    fn begin_logical_submit(&mut self, op_id: u64, index: usize, call: &Call) -> bool {
+        if !self.submissions[index].fixed {
+            let target = match call {
+                Call::Submit { target, .. } => target.or(self.current),
+                _ => self.current,
+            };
+            let Some(target) = target else {
+                self.mark_submission_failed(index, "No conversation selected");
+                self.out.push(Command::OperationSucceeded { op: op_id, value: None });
+                self.pump();
+                return true;
+            };
+            self.submissions[index].conversation_id = Some(target);
+            self.submissions[index].fixed = true;
+        }
+        self.submissions[index].phase = SubmissionPhase::InFlight;
+        self.submissions[index].error = None;
+        self.op_submissions.insert(op_id, index);
+        self.start_submission_timer(index);
+        let _ = self.refresh();
+        false
+    }
+
+    fn begin_submission_recovery(&mut self) -> bool {
+        if !self.logical_submissions {
+            return false;
+        }
+        let queue: VecDeque<usize> = self
+            .submissions
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.phase == SubmissionPhase::Unknown && record.fixed)
+            .map(|(index, _)| index)
+            .collect();
+        if queue.is_empty() {
+            return false;
+        }
+        self.recovering_submissions = true;
+        self.sync_gate = true;
+        self.submission_recovery = queue;
+        self.advance_submission_recovery();
+        true
+    }
+
+    fn advance_submission_recovery(&mut self) {
+        if !self.recovering_submissions {
+            return;
+        }
+        while let Some(index) = self.submission_recovery.pop_front() {
+            if self.submissions[index].phase != SubmissionPhase::Unknown {
+                continue;
+            }
+            if !host_supports_call(self.host_minor, "submission") {
+                continue;
+            }
+            if let Some(id) = self.send_submission_query(index, SubmissionQuery::RecoveryQuery(index)) {
+                self.recovery_waiting = Some(id);
+                return;
+            }
+        }
+        self.recovering_submissions = false;
+        self.recovery_waiting = None;
+        self.sync_gate = false;
+        let queued = std::mem::take(&mut self.sync_queue);
+        for (op, _kind, call) in queued {
+            self.invoke(op, call);
+        }
+        let _ = self.refresh();
+    }
+
+    fn retry_submission(&mut self, op: u64, request_id: &str) {
+        let Some(index) = self.submission_by_request.get(request_id).copied() else {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+            return;
+        };
+        if !matches!(self.submissions[index].phase, SubmissionPhase::Unknown | SubmissionPhase::Failed) {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+            return;
+        }
+        if self.submissions[index].phase == SubmissionPhase::Unknown
+            && host_supports_call(self.host_minor, "submission")
+        {
+            if self.send_submission_query(index, SubmissionQuery::RetryQuery(index, op)).is_some() {
+                return;
+            }
+        }
+        self.submissions[index].phase = SubmissionPhase::InFlight;
+        self.submissions[index].error = None;
+        self.start_submission_timer(index);
+        if self
+            .send_submission_resend(index, SubmissionQuery::RetryResend(index, op))
+            .is_none()
+        {
+            self.mark_submission_failed(index, "No conversation selected");
+            self.out.push(Command::OperationSucceeded { op, value: None });
+        }
+        let _ = self.refresh();
+    }
+    fn submission_draft_json(&self, index: usize) -> Json {
+        let record = &self.submissions[index];
+        let mut object = JsonObject::new();
+        set(&mut object, "text", Json::from(record.text.clone()));
+        set(&mut object, "whenBusy", Json::from(record.when_busy.clone()));
+        set(&mut object, "images", Json::array(record.images.clone()));
+        set(
+            &mut object,
+            "skills",
+            Json::array(record.skills.clone().unwrap_or_default().into_iter().map(Json::from).collect()),
+        );
+        set(
+            &mut object,
+            "attachments",
+            Json::array(record.attachments.iter().cloned().map(Json::from).collect()),
+        );
+        Json::Object(Arc::new(object))
+    }
+
+    fn take_back_submission(&mut self, op: u64, request_id: &str) {
+        let Some(index) = self.submission_by_request.get(request_id).copied() else {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+            return;
+        };
+        let phase = self.submissions[index].phase;
+        if phase == SubmissionPhase::Queued || phase == SubmissionPhase::Failed {
+            let draft = self.submission_draft_json(index);
+            self.settle_submission(index);
+            let _ = self.refresh();
+            self.out.push(Command::OperationSucceeded {
+                op,
+                value: Some(draft),
+            });
+            return;
+        }
+        let can_query = phase == SubmissionPhase::Unknown
+            || (phase == SubmissionPhase::InFlight && self.submissions[index].submission_id.is_some());
+        if !can_query || !host_supports_call(self.host_minor, "submission") {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+            return;
+        }
+        if self
+            .send_submission_query(index, SubmissionQuery::TakeBackQuery(index, op))
+            .is_none()
+        {
+            self.out.push(Command::OperationSucceeded { op, value: None });
+        }
+    }
+
+    fn finish_take_back_withdraw(&mut self, index: usize, op: u64, outcome: Option<&Json>) {
+        let withdrawn = outcome
+            .and_then(|value| value.get("outcome"))
+            .and_then(Json::as_str)
+            .is_some_and(|value| value.to_string_lossy() == "withdrawn");
+        let draft = if withdrawn {
+            Some(self.submission_draft_json(index))
+        } else {
+            None
+        };
+        self.settle_submission(index);
+        let _ = self.refresh();
+        self.out.push(Command::OperationSucceeded { op, value: draft });
+    }
+    fn handle_submission_query(
+        &mut self,
+        call_id: u64,
+        query: SubmissionQuery,
+        ok: bool,
+        value: Json,
+    ) {
+        if self.recovery_waiting == Some(call_id) {
+            self.recovery_waiting = None;
+        }
+        match query {
+            SubmissionQuery::Confirm(index) => {
+                if ok && !matches!(value, Json::Null) {
+                    self.apply_submission_fact(index, &value);
+                } else if ok
+                    && self.submissions[index].admitted
+                    && self.submissions[index].entry.is_none()
+                {
+                    // A queued admit has no entry, and no record now: withdrawn
+                    // or consumed past the visible queue, so the local row is
+                    // over. A known entry still waits for its snapshot.
+                    self.settle_submission(index);
+                    let _ = self.refresh();
+                }
+            }
+            SubmissionQuery::RecoveryQuery(index) => {
+                if ok && !matches!(value, Json::Null) {
+                    self.apply_submission_fact(index, &value);
+                    self.advance_submission_recovery();
+                } else if ok {
+                    if let Some(id) = self.send_submission_resend(index, SubmissionQuery::RecoveryResend(index)) {
+                        self.recovery_waiting = Some(id);
+                    } else {
+                        self.mark_submission_unknown(index);
+                        self.advance_submission_recovery();
+                    }
+                } else {
+                    self.mark_submission_unknown(index);
+                    self.advance_submission_recovery();
+                }
+            }
+            SubmissionQuery::RecoveryResend(index) => {
+                if ok {
+                    self.finish_submission_result(index, Some(value));
+                } else {
+                    self.mark_submission_unknown(index);
+                }
+                self.advance_submission_recovery();
+            }
+            SubmissionQuery::RetryQuery(index, op) => {
+                if ok && !matches!(value, Json::Null) {
+                    self.apply_submission_fact(index, &value);
+                    self.out.push(Command::OperationSucceeded { op, value: None });
+                } else if ok {
+                    if self.send_submission_resend_query(index, SubmissionQuery::RetryResend(index, op)).is_none() {
+                        self.mark_submission_failed(index, "No conversation selected");
+                        self.out.push(Command::OperationSucceeded { op, value: None });
+                    }
+                } else {
+                    self.mark_submission_unknown(index);
+                    self.out.push(Command::OperationSucceeded { op, value: None });
+                }
+            }
+            SubmissionQuery::RetryResend(index, op) => {
+                if ok {
+                    self.finish_submission_result(index, Some(value));
+                } else {
+                    self.mark_submission_unknown(index);
+                }
+                self.out.push(Command::OperationSucceeded { op, value: None });
+            }
+            SubmissionQuery::TakeBackQuery(index, op) => {
+                if ok && !matches!(value, Json::Null) {
+                    self.apply_submission_fact(index, &value);
+                    let status = self.submissions[index]
+                        .submission_id
+                        .is_some();
+                    if self.submissions[index].phase == SubmissionPhase::Settled
+                        || self.submissions[index].entry.is_some()
+                        || !status
+                    {
+                        self.out.push(Command::OperationSucceeded { op, value: None });
+                    } else {
+                        let conversation = self.submissions[index].conversation_id;
+                        let submission = self.submissions[index].submission_id;
+                        if let (Some(conversation), Some(submission)) = (conversation, submission) {
+                            let args = obj(&[
+                                ("conversationId", Json::Number(conversation as f64)),
+                                ("submissionId", Json::Number(submission as f64)),
+                            ]);
+                            let id = self.next_call;
+                            self.next_call += 1;
+                            self.submission_queries.insert(
+                                id,
+                                SubmissionQuery::TakeBackWithdraw(index, op),
+                            );
+                            self.send(ClientFrame::Call {
+                                id: id as f64,
+                                method: U16String::from_str("withdrawQueued"),
+                                args,
+                            });
+                        } else {
+                            self.out.push(Command::OperationSucceeded { op, value: None });
+                        }
+                    }
+                } else if ok {
+                    let draft = self.submission_draft_json(index);
+                    self.settle_submission(index);
+                    let _ = self.refresh();
+                    self.out.push(Command::OperationSucceeded { op, value: Some(draft) });
+                } else {
+                    self.out.push(Command::OperationSucceeded { op, value: None });
+                }
+            }
+            SubmissionQuery::TakeBackWithdraw(index, op) => {
+                if ok {
+                    self.finish_take_back_withdraw(index, op, Some(&value));
+                } else {
+                    let error = U16String::js_string(&value).to_string_lossy();
+                    self.out.push(Command::OperationFailed {
+                        op,
+                        error,
+                        carrier_lost: false,
+                    });
+                }
+            }
+        }
+    }
     fn refresh(&mut self) -> Result<(), String> {
         if self.state.is_none() {
             return Ok(());
         }
+        self.reconcile_submissions();
         let summaries: Vec<Json> = self
             .values
             .get(&key("conversations"))
@@ -4619,6 +5556,7 @@ impl RemoteDurable {
         self.set_field("settings", settings);
         self.set_field("agents", agents);
         self.set_field("defaults", defaults);
+        self.set_field("submissions", self.submissions_json());
         Ok(())
     }
 
@@ -4739,12 +5677,18 @@ impl RemoteDurable {
     /// A reconnect's fresh snapshots arrived: the connection is usable again.
     fn finish_reconnect(&mut self) {
         self.reconnect_remaining = None;
-        self.sync_gate = false;
         self.set_field("connection", Json::from(CONNECTED));
         if let Err(error) = self.refresh() {
             return self.fail_channel(&error);
         }
         self.mark_dial_ready();
+        // Unknown submissions are resolved in order before queued commands
+        // may run; their queries and resends use this live connection
+        // directly, not the gate they are holding (ADR-0034 §6).
+        if self.begin_submission_recovery() {
+            return;
+        }
+        self.sync_gate = false;
         let queued = std::mem::take(&mut self.sync_queue);
         for (op, _kind, call) in queued {
             self.invoke(op, call);
