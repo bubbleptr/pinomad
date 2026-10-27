@@ -9,6 +9,8 @@ import UIKit
 /// normally and surfaces as a notice toast, so only a dead session
 /// (thrown) needs handling here.
 extension AppModel {
+    /// The local retry's own deadline; see `retrySubmission`.
+    private struct SubmissionTimeout: Error {}
     /// Send the conversation's draft. Idle → a plain prompt; busy → `mode`
     /// decides between steering the run and queueing a follow-up. The draft
     /// clears at once; a refused send is a local row with its own Retry
@@ -235,16 +237,55 @@ extension AppModel {
     // (ADR-0034 §11). The row carries the requestId, so neither reads the
     // conversation's current content.
 
+    private func beginSubmissionAction(_ requestId: String) -> UUID? {
+        guard submissionPending.insert(requestId).inserted else { return nil }
+        let token = UUID()
+        submissionTokens[requestId] = token
+        return token
+    }
+
+    private func endSubmissionAction(_ requestId: String, token: UUID) {
+        guard submissionTokens[requestId] == token else { return }
+        submissionTokens.removeValue(forKey: requestId)
+        submissionPending.remove(requestId)
+    }
+
     /// Resend a failed or unconfirmed local send with its original key; the
     /// core queries before resending when the outcome is unknown.
     func retrySubmission(conversation id: UInt64, requestId: String) {
-        guard connected, let session, submissionPending.insert(requestId).inserted else { return }
+        guard connected, let session, let token = beginSubmissionAction(requestId) else { return }
+        let generation = sessionGeneration
         Task { [weak self] in
-            defer { self?.submissionPending.remove(requestId) }
+            guard let self else { return }
+            defer {
+                if self.sessionGeneration == generation {
+                    self.endSubmissionAction(requestId, token: token)
+                }
+            }
             do {
-                _ = try await session.invoke(.retrySubmission(requestId: requestId))
+                // The controller's query-then-resend is not an op it can
+                // time out: a host that never answers would leave the invoke
+                // pending while the row turns unknown. Cancel the invoke on
+                // the same window so the session lets the op go and Retry is
+                // reachable again; the token keeps the release from
+                // unlocking a newer retry.
+                _ = try await withThrowingTaskGroup(of: CallResult.self) { group in
+                    group.addTask {
+                        try await session.invoke(.retrySubmission(requestId: requestId))
+                    }
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(35))
+                        throw SubmissionTimeout()
+                    }
+                    defer { group.cancelAll() }
+                    guard let result = try await group.next() else { throw SubmissionTimeout() }
+                    return result
+                }
+            } catch is SubmissionTimeout {
+                // The row already reads "unknown"; releasing the lock is all
+                // this needs to do.
             } catch {
-                guard let self else { return }
+                guard self.sessionGeneration == generation else { return }
                 self.showToast(self.describe(error), level: "error")
             }
         }
@@ -257,34 +298,44 @@ extension AppModel {
     func editSubmission(conversation id: UInt64, requestId: String) {
         guard connected, let session, takingBack == nil,
               !editAvailability(conversation: id).isDisabled,
-              submissionPending.insert(requestId).inserted
+              let token = beginSubmissionAction(requestId)
         else { return }
         takingBack = id
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             defer {
-                self.takingBack = nil
-                self.submissionPending.remove(requestId)
+                if self.sessionGeneration == generation {
+                    if self.takingBack == id { self.takingBack = nil }
+                    self.endSubmissionAction(requestId, token: token)
+                }
             }
             do {
                 let result = try await session.invoke(
                     .takeBackSubmission(requestId: requestId))
-                guard case let .takeBackSubmission(draft) = result, let draft else { return }
+                guard self.session === session, self.sessionGeneration == generation,
+                      case let .takeBackSubmission(draft) = result, let draft
+                else { return }
                 var images: [MessageImage] = []
                 do {
                     images = try await draft.images.resolving { ref, variant in
-                        try await self.cachedImage(ref: ref, variant: variant)
+                        try await self.cachedImage(ref: ref, variant: variant, session: session)
                     }
                 } catch {
                     // The text and file chips are still worth restoring; the
-                    // source image ref left the live view.
+                    // source image ref left the live view. A replaced host is
+                    // not this task's to fill.
+                    guard self.session === session, self.sessionGeneration == generation
+                    else { return }
                     self.showToast(
                         "Couldn't load the original images; the message text is back.",
                         level: "error")
                 }
+                guard self.session === session, self.sessionGeneration == generation else { return }
                 self.putBack(PendingTakeBack(conversationId: id, draft: draft),
                              requestId: requestId, images: images)
             } catch {
+                guard self.session === session, self.sessionGeneration == generation else { return }
                 self.showToast("Couldn't take the message back: \(self.describe(error))",
                                level: "error")
             }
@@ -483,7 +534,15 @@ extension AppModel {
     /// ordered loop only carries the read-only `image` call.
     func cachedImage(ref: String, variant: ImageVariant = .original) async throws -> CachedImage {
         guard let session else { throw SessionError.sessionClosed }
-        return try await images.load(ref: ref, variant: variant) { ref, variant in
+        return try await cachedImage(ref: ref, variant: variant, session: session)
+    }
+
+    /// The same read pinned to a captured session: a host switch must not
+    /// load the old conversation's ref through the new host.
+    func cachedImage(
+        ref: String, variant: ImageVariant = .original, session: PinomadSession
+    ) async throws -> CachedImage {
+        try await images.load(ref: ref, variant: variant) { ref, variant in
             let result = try await session.invoke(.image(ref: ref, variant: variant))
             guard case .image(let image) = result else {
                 throw SessionError.operationFailed("The host's reply wasn't an image.")

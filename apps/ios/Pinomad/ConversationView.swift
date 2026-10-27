@@ -318,7 +318,7 @@ struct ConversationView: View {
             attachmentDetails: model.sentFileDetails
         )
         ForEach(rows) { row in
-            transcriptRow(row, conversation: conversation, retry: retry,
+            transcriptRow(row, conversation: conversation, retry: retry, latestRun: latestRun,
                           subagentSummaries: subagentSummaries, todo: todo)
         }
     }
@@ -328,6 +328,7 @@ struct ConversationView: View {
         _ row: TranscriptRow,
         conversation: ConversationSnapshot,
         retry: RetryRequest?,
+        latestRun: String?,
         subagentSummaries: [UInt64: SubagentCardSummary],
         todo: TodoLine?
     ) -> some View {
@@ -344,14 +345,20 @@ struct ConversationView: View {
                     pending: false
                 ).equatable()
             case let .run(id, cot, _, interrupted, failure, endedAt):
+                // Only the newest run may carry the failed run's retry and
+                // the current todo: an older row with either would resend
+                // the wrong prompt or show progress it never wrote.
+                let retryRequest = id == conversation.chat.last?.entryId ? retry : nil
                 RunRow(cot: cot, subagentSummaries: subagentSummaries,
                        openSubagent: { openSubagent($0, from: id) },
                        openTrace: { tracedRun = TracedRun(id: id) },
-                       todo: todo,
+                       todo: id == latestRun ? todo : nil,
                        interrupted: interrupted, failure: failure, stream: model.streamFor(id),
                        endedAt: endedAt, today: clock.today,
-                       retry: retry.map { request in { model.retry(request, conversation: conversationId) } },
-                       retryKey: retry?.requestId).equatable()
+                       retry: retryRequest.map { request in
+                           { model.retry(request, conversation: conversationId) }
+                       },
+                       retryKey: retryRequest?.requestId).equatable()
             case .compaction:
                 MarkerRow("Context compacted")
             case .reset:
@@ -588,7 +595,7 @@ private struct RunRow: View, Equatable {
             if let failure {
                 RunFailureView(raw: failure)
             }
-            if let retry {
+            if let retry, failure != nil {
                 Button("Retry", image: .rotateCw, action: retry)
                     .buttonStyle(.tactile(.bordered))
                     .controlSize(.small)

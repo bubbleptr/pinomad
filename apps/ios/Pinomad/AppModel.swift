@@ -140,6 +140,10 @@ final class AppModel {
     /// Local sends with a retry or take-back request in flight; their row's
     /// buttons stay disabled until it settles.
     var submissionPending: Set<String> = []
+    /// The owner of each pending local action. A timeout can release a row
+    /// whose invoke is still pending; an older task's deferred release must
+    /// not unlock a newer retry of the same request id.
+    var submissionTokens: [String: UUID] = [:]
     /// The file chips each local send was made with, by request id. The host
     /// only keeps ids, so this is what a local bubble and its take-back show.
     var sentFileDetails: [String: [UserAttachment]] = [:]
@@ -536,6 +540,10 @@ final class AppModel {
         push.currentConnectedHostKey = nil
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
+        // Actions owned by the replaced session can no longer touch this
+        // one; a late release must not unlock a new session's row either.
+        submissionPending.removeAll()
+        submissionTokens = [:]
         fileReads = [:]
         replyStreams.sync(chat: nil)
         toasts = []
