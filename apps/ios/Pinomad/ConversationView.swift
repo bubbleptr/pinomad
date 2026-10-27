@@ -117,7 +117,7 @@ struct ConversationView: View {
         // the reader's own doing and stays quiet.
         .sensoryFeedback(trigger: conversation?.busy) { old, new in
             guard old == true, new == false,
-                  case .run(_, _, _, let interrupted, let failure)? = conversation?.chat.last
+                  case .run(_, _, _, let interrupted, let failure, _)? = conversation?.chat.last
             else { return nil }
             if failure != nil { return .error }
             return interrupted ? nil : .success
@@ -260,7 +260,7 @@ struct ConversationView: View {
         subagentSummaries: [UInt64: SubagentCardSummary]
     ) -> some View {
         if let entry = conversation.chat.first(where: { $0.entryId == runId }),
-           case let .run(_, cot, _, interrupted, _) = entry {
+           case let .run(_, cot, _, interrupted, _, _) = entry {
             // The same trace the capsule summarizes: subagent calls stay
             // on their cards in the transcript.
             let trace = ChatAdapter.trace(
@@ -275,7 +275,7 @@ struct ConversationView: View {
     }
 
     private static func endsInFailure(_ chat: [ChatEntry]) -> Bool {
-        if case .run(_, _, _, _, let failure)? = chat.last { return failure != nil }
+        if case .run(_, _, _, _, let failure, _)? = chat.last { return failure != nil }
         return false
     }
 
@@ -308,10 +308,10 @@ struct ConversationView: View {
         todo: TodoLine?
     ) -> some View {
         switch entry {
-        case let .user(_, text, images, skills, attachments):
+        case let .user(_, text, images, skills, attachments, _):
             // Only the skills the host expanded light up (ADR-0028).
             UserRow(text: text, images: images, skills: skills, attachments: attachments).equatable()
-        case let .run(id, cot, _, interrupted, failure):
+        case let .run(id, cot, _, interrupted, failure, _):
             RunRow(cot: cot, subagentSummaries: subagentSummaries,
                    openSubagent: { openSubagent($0, from: id) },
                    openTrace: { tracedRun = TracedRun(id: id) },

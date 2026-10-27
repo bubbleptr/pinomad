@@ -30,7 +30,7 @@ public final class ReplyStreams {
     public func sync(chat: [ChatEntry]?) {
         var live: [String: StreamingMarkdown] = [:]
         for entry in chat ?? [] {
-            guard case let .run(id, cot, _, _, _) = entry,
+            guard case let .run(id, cot, _, _, _, _) = entry,
                   let answer = cot.answer, !answer.text.isEmpty else { continue }
             live[id] = feed(id: id, answer: answer, current: byRunId[id])
         }

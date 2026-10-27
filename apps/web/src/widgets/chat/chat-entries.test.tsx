@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatEntry, CotStep, CotView } from "@pinomad/client/cot-view.ts";
 import type { ToolItem } from "@pinomad/client/tool-item.ts";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
@@ -22,6 +22,22 @@ function renderRun(entry: RunEntry, todo?: { state: TodoState; updatedAtMs?: num
   );
 }
 
+function userEntry(timestamp?: number): Extract<ChatEntry, { kind: "user" }> {
+  return {
+    kind: "user",
+    id: "user-1",
+    text: "hi",
+    images: [],
+    skills: [],
+    attachments: [],
+    ...(timestamp === undefined ? {} : { timestamp }),
+  };
+}
+
+function renderUser(entry: Extract<ChatEntry, { kind: "user" }>) {
+  return render(<ChatEntryView entry={entry} connected openInPanel={() => {}} onFork={() => {}} canFork={false} />);
+}
+
 const narrated: CotStep[] = [
   { kind: "thinking", id: "a-thinking-0", text: "", live: false },
   { kind: "tools", id: "a-tools-1", tools: [bash("c1", "ls"), bash("c2", "cat x")], live: false },
@@ -35,6 +51,61 @@ const plan: TodoState = {
     { text: "Fix it", status: "in_progress" },
   ],
 };
+
+describe("message times", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 28, 15, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows only the time on a user message from today", () => {
+    const sentAt = new Date(2026, 9, 28, 14, 31).getTime();
+    const { container } = renderUser(userEntry(sentAt));
+    const time = container.querySelector('[data-slot="chat-message-time"]')!;
+    const month = new Intl.DateTimeFormat(undefined, { month: "short" }).format(sentAt);
+
+    expect(time.textContent).toMatch(/\d{1,2}:\d{2}/);
+    expect(time.textContent).not.toContain(month);
+    expect(time.textContent).not.toContain("2026");
+    expect(time).toHaveAttribute("datetime", new Date(sentAt).toISOString());
+    expect(time).toHaveAttribute("title", expect.stringContaining("2026"));
+  });
+
+  it("adds the date to a user message from another day", () => {
+    const sentAt = new Date(2026, 9, 27, 14, 31).getTime();
+    const { container } = renderUser(userEntry(sentAt));
+    const time = container.querySelector('[data-slot="chat-message-time"]')!;
+    const month = new Intl.DateTimeFormat(undefined, { month: "short" }).format(sentAt);
+
+    expect(time.textContent).toContain(month);
+    expect(time.textContent).not.toContain("2026");
+    expect(time).toHaveAttribute("title", expect.stringContaining("2026"));
+  });
+
+  it("keeps a user's Copy action above the time row", () => {
+    const { container } = renderUser(userEntry(new Date(2026, 9, 28, 14, 31).getTime()));
+    const actions = container.querySelector('[data-slot="chat-message-actions"]')!;
+    const time = container.querySelector('[data-slot="chat-message-time"]')!;
+
+    expect(actions.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("puts an assistant's time first in its actions row", () => {
+    const endedAt = new Date(2026, 9, 28, 14, 31).getTime();
+    const { container } = renderRun(
+      run({ steps: [], answer: { text: "Done.", streaming: false } }, { endedAt }),
+    );
+    const time = container.querySelector('[data-slot="chat-message-time"]')!;
+    const copy = screen.getByRole("button", { name: "Copy" });
+
+    expect(time).toHaveTextContent(/\d{1,2}:\d{2}/);
+    expect(time.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
 
 describe("a run in the transcript", () => {
   it("folds a run the model never narrated into a single line with its duration", () => {

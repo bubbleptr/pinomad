@@ -105,6 +105,9 @@ pub enum ChatEntry {
         /// Files the user attached (issue #321), as the host recorded them.
         #[cfg_attr(feature = "ffi", uniffi(default))]
         attachments: Vec<UserAttachment>,
+        /// When the host received this message, as an epoch stamp.
+        #[cfg_attr(feature = "ffi", uniffi(default))]
+        timestamp: Option<f64>,
     },
     Run {
         id: String,
@@ -115,6 +118,9 @@ pub enum ChatEntry {
         interrupted: bool,
         /// Last assistant stopReason === "error": its errorMessage (or a generic text).
         failure: Option<String>,
+        /// When the run's last answer finished, once settled.
+        #[cfg_attr(feature = "ffi", uniffi(default))]
+        ended_at: Option<f64>,
     },
     Compaction { id: String },
     Reset { id: String },
@@ -137,6 +143,11 @@ fn lossy(units: &[u16]) -> String {
 /// `value` under JS `??` — absent or null both fall through.
 fn not_null(value: Option<&Json>) -> Option<&Json> {
     value.filter(|v| !matches!(v, Json::Null))
+}
+
+/// A usable instant: a finite number, never NaN or an Infinity.
+fn finite_number(value: Option<&Json>) -> Option<f64> {
+    value.and_then(Json::as_number).filter(|n| n.is_finite())
 }
 
 /// `String(value)` for a field the reference passes through raw — a close
@@ -657,6 +668,19 @@ fn derive_run(
 
     let interrupted = last_committed.is_some_and(|a| str_eq(a.msg.get("stopReason"), "aborted"));
     let failed = settled && last_committed.is_some_and(|a| str_eq(a.msg.get("stopReason"), "error"));
+    // A settled run ends with its last answer; old messages have no duration,
+    // so their request start is the best available end. A live run's answer is
+    // not final and gets no end.
+    let ended_at = if settled {
+        last_committed
+            .and_then(|answer| {
+                let timestamp = finite_number(answer.msg.get("timestamp"))?;
+                Some(timestamp + finite_number(answer.msg.get("durationMs")).unwrap_or(0.0))
+            })
+            .filter(|end| end.is_finite())
+    } else {
+        None
+    };
     let anchor_ms = messages
         .first()
         .and_then(|m| m.msg.get("timestamp"))
@@ -724,6 +748,7 @@ fn derive_run(
         } else {
             None
         },
+        ended_at,
     }
 }
 
@@ -775,6 +800,7 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
                 images: images_of(message.and_then(|m| m.get("content"))),
                 skills: typed.skills,
                 attachments: typed.attachments,
+                timestamp: finite_number(message.and_then(|m| m.get("timestamp"))),
             });
         } else if str_eq(kind, "pi.compaction") {
             flush!(false);

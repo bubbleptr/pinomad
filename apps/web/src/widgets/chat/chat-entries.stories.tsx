@@ -8,6 +8,8 @@ import { ChatEntryView } from "./chat-entries.tsx";
 
 type RunEntry = Extract<ChatEntry, { kind: "run" }>;
 
+const now = Date.now();
+
 function bash(id: string, command: string, state: ToolItem["state"] = "output-available"): ToolItem {
   return { toolName: "bash", toolCallId: id, argsText: JSON.stringify({ command }), state };
 }
@@ -78,7 +80,7 @@ const meta = {
   title: "Widgets/Chat/ChatEntryView",
   component: ChatEntryView,
   args: {
-    entry: run({ elapsedMs: 16_400, steps: narrated, answer }, { forkEntryId: "entry-9" }),
+    entry: run({ elapsedMs: 16_400, steps: narrated, answer }, { forkEntryId: "entry-9", endedAt: now - 5_000 }),
     connected: true,
     openInPanel: fn(),
     onFork: fn(),
@@ -99,6 +101,7 @@ export const UserMessage: Story = {
       images: [{ data: PNG, mimeType: "image/png" }],
       skills: ["review"],
       attachments: [{ id: "A".repeat(22), name: "parser.log", size: 12_345 }],
+      timestamp: now - 95_000,
     },
   },
 };
@@ -132,7 +135,7 @@ export const FailedRun: Story = {
   args: {
     entry: run(
       { elapsedMs: 1_400, outcome: "failed", steps: [narrated[1]!] },
-      { failure: "Provider returned 529: overloaded" },
+      { failure: "Provider returned 529: overloaded", endedAt: now - 60_000 },
     ),
     onRetry: fn(async () => {}),
   },
@@ -140,20 +143,23 @@ export const FailedRun: Story = {
 
 export const WithTodoAndSubagent: Story = {
   args: {
-    entry: run({
-      elapsedMs: 48_000,
-      todoWrittenAtMs: Date.now(),
-      steps: [
-        ...narrated,
-        {
-          kind: "tools",
-          id: "c-tools-0",
-          tools: [delegated],
-          live: false,
-        },
-      ],
-      answer,
-    }),
+    entry: run(
+      {
+        elapsedMs: 48_000,
+        todoWrittenAtMs: Date.now(),
+        steps: [
+          ...narrated,
+          {
+            kind: "tools",
+            id: "c-tools-0",
+            tools: [delegated],
+            live: false,
+          },
+        ],
+        answer,
+      },
+      { endedAt: now - 30_000 },
+    ),
     todo: { state: plan, updatedAtMs: Date.now() },
   },
 };

@@ -73,7 +73,7 @@ extension ChatAdapter {
     /// returns to after opening the child from outside its card.
     public static func runSpawning(_ child: UInt64, in chat: [ChatEntry]) -> String? {
         for entry in chat.reversed() {
-            guard case let .run(id, cot, _, _, _) = entry else { continue }
+            guard case let .run(id, cot, _, _, _, _) = entry else { continue }
             let spawns = cot.steps.contains { step in
                 guard case let .tools(_, tools, _, _) = step else { return false }
                 return tools.contains { conversationID(of: $0) == child }
