@@ -35,17 +35,20 @@ const CHANNEL_LABEL: &str = "pinomad";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EngineConfig {
-    /// The address the platform's UDP socket is bound to.
-    pub local_addr: SocketAddr,
-    /// Resolved STUN servers. Empty means host candidates only.
+    /// The addresses the platform's UDP sockets are bound to. Each address
+    /// gets its own host candidate and its own same-family STUN gatherer.
+    pub local_addrs: Vec<SocketAddr>,
+    /// Resolved STUN servers across every local family. Empty means host
+    /// candidates only.
     pub stun_servers: Vec<SocketAddr>,
 }
 
 /// Everything the platform must do or report after one engine call.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
-    /// Send these bytes from the peer's UDP socket.
+    /// Send these bytes from the socket bound to `source`.
     Transmit {
+        source: SocketAddr,
         destination: SocketAddr,
         bytes: Vec<u8>,
     },
@@ -96,11 +99,13 @@ pub struct Engine {
     base_ms: u64,
     rtc: Rtc,
     phase: Phase,
-    local_addr: SocketAddr,
+    local_addrs: Vec<SocketAddr>,
     stun_servers: Vec<SocketAddr>,
     local_kind: HashMap<SocketAddr, String>,
     remote_kind: HashMap<SocketAddr, String>,
-    stun: Option<StunClient>,
+    /// One STUN client per local socket, in `local_addrs` order, each with
+    /// only the servers of that socket's family.
+    stun: Vec<(SocketAddr, StunClient)>,
     gather_deadline: Option<Instant>,
     pending_offer: Option<SdpPendingOffer>,
     connect_deadline: Option<Instant>,
@@ -133,20 +138,27 @@ impl Engine {
             .set_sctp_max_buffered_amount(SCTP_BUFFER)
             .build(base);
         let mut local_kind = HashMap::new();
-        if let Ok(candidate) = Candidate::host(config.local_addr, "udp") {
-            local_kind.insert(config.local_addr, "host".to_string());
-            rtc.add_local_candidate(candidate);
+        let mut local_addrs = Vec::new();
+        for address in config.local_addrs {
+            if local_addrs.contains(&address) {
+                continue;
+            }
+            if let Ok(candidate) = Candidate::host(address, "udp") {
+                local_kind.insert(address, "host".to_string());
+                rtc.add_local_candidate(candidate);
+                local_addrs.push(address);
+            }
         }
         Engine {
             base,
             base_ms: now_ms,
             rtc,
             phase: Phase::New,
-            local_addr: config.local_addr,
+            local_addrs,
             stun_servers: config.stun_servers,
             local_kind,
             remote_kind: HashMap::new(),
-            stun: None,
+            stun: Vec::new(),
             gather_deadline: None,
             pending_offer: None,
             connect_deadline: None,
@@ -165,8 +177,8 @@ impl Engine {
         self.base_ms + instant.saturating_duration_since(self.base).as_millis() as u64
     }
 
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local_addr
+    pub fn local_addrs(&self) -> &[SocketAddr] {
+        &self.local_addrs
     }
 
     pub fn start(&mut self, now_ms: u64) -> Vec<Action> {
@@ -175,26 +187,47 @@ impl Engine {
             return actions;
         }
         let now = self.instant(now_ms);
-        if self.stun_servers.is_empty() {
+        let deadline = now + GATHER_WINDOW;
+        self.stun = self
+            .local_addrs
+            .iter()
+            .filter_map(|local| {
+                let servers: Vec<SocketAddr> = self
+                    .stun_servers
+                    .iter()
+                    .copied()
+                    .filter(|server| server.is_ipv4() == local.is_ipv4())
+                    .collect();
+                if servers.is_empty() {
+                    return None;
+                }
+                Some((*local, StunClient::new(&servers, now, deadline)))
+            })
+            .collect();
+        if self.stun.is_empty() {
             self.finish_gathering(now, &mut actions);
             return actions;
         }
         self.phase = Phase::Gathering;
-        let deadline = now + GATHER_WINDOW;
         self.gather_deadline = Some(deadline);
-        self.stun = Some(StunClient::new(&self.stun_servers, now, deadline));
         self.send_stun(now, &mut actions);
         self.schedule(&mut actions);
         actions
     }
 
     fn send_stun(&mut self, now: Instant, actions: &mut Vec<Action>) {
-        if let Some(stun) = &mut self.stun {
+        let mut next = None;
+        for (source, stun) in &mut self.stun {
             for (destination, bytes) in stun.outgoing(now) {
-                actions.push(Action::Transmit { destination, bytes });
+                actions.push(Action::Transmit {
+                    source: *source,
+                    destination,
+                    bytes,
+                });
             }
-            self.rtc_timeout = stun.next_timeout();
+            next = min_deadline(next, stun.next_timeout());
         }
+        self.rtc_timeout = next;
     }
 
     pub fn accept_answer(&mut self, now_ms: u64, sdp: &str) -> Vec<Action> {
@@ -229,17 +262,31 @@ impl Engine {
         actions
     }
 
-    pub fn receive(&mut self, now_ms: u64, source: SocketAddr, bytes: &[u8]) -> Vec<Action> {
+    /// Feed one datagram received on `local`, the socket the platform read it
+    /// from. STUN replies only count on the socket that sent the request, and
+    /// str0m needs the real destination to match a candidate on the right
+    /// family.
+    pub fn receive(
+        &mut self,
+        now_ms: u64,
+        local: SocketAddr,
+        source: SocketAddr,
+        bytes: &[u8],
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         if self.phase == Phase::Closed {
             return actions;
         }
         let now = self.instant(now_ms);
         if self.phase == Phase::Gathering {
-            let reply = self.stun.as_mut().and_then(|stun| stun.handle(now, bytes));
+            let reply = self
+                .stun
+                .iter_mut()
+                .find(|(address, _)| *address == local)
+                .and_then(|(_, stun)| stun.handle(now, bytes));
             if let Some(reply) = reply {
-                self.handle_stun_reply(reply, &mut actions);
-                if self.stun.as_ref().is_some_and(|stun| stun.pending() == 0) {
+                self.handle_stun_reply(reply, local, &mut actions);
+                if self.stun.iter().all(|(_, stun)| stun.pending() == 0) {
                     self.finish_gathering(now, &mut actions);
                 } else {
                     self.schedule(&mut actions);
@@ -259,7 +306,7 @@ impl Engine {
             Receive {
                 proto: Protocol::Udp,
                 source,
-                destination: self.local_addr,
+                destination: local,
                 contents,
             },
         );
@@ -277,8 +324,7 @@ impl Engine {
         actions
     }
 
-    fn handle_stun_reply(&mut self, reply: StunReply, _actions: &mut [Action]) {
-        let base = self.local_addr;
+    fn handle_stun_reply(&mut self, reply: StunReply, base: SocketAddr, _actions: &mut [Action]) {
         // A mapped address of the other family cannot be a candidate for this
         // socket: sending to it would use a source the socket never bound.
         if reply.mapped.is_ipv4() != base.is_ipv4() {
@@ -297,7 +343,7 @@ impl Engine {
     }
 
     fn finish_gathering(&mut self, now: Instant, actions: &mut Vec<Action>) {
-        self.stun = None;
+        self.stun.clear();
         self.gather_deadline = None;
         self.rtc_timeout = None;
         let mut api = self.rtc.sdp_api();
@@ -348,7 +394,7 @@ impl Engine {
         if self.phase == Phase::Gathering {
             self.send_stun(now, &mut actions);
             let expired = self.gather_deadline.is_some_and(|deadline| now >= deadline);
-            let answered = self.stun.as_ref().is_some_and(|stun| stun.pending() == 0);
+            let answered = self.stun.iter().all(|(_, stun)| stun.pending() == 0);
             if expired || answered {
                 self.finish_gathering(now, &mut actions);
             } else {
@@ -415,7 +461,7 @@ impl Engine {
         }
         self.phase = Phase::Closed;
         self.closed_reason = Some("closed by the client".to_string());
-        self.stun = None;
+        self.stun.clear();
         self.gather_deadline = None;
         self.connect_deadline = None;
         self.rtc_timeout = None;
@@ -433,7 +479,7 @@ impl Engine {
         }
         self.phase = Phase::Closed;
         self.closed_reason = Some(reason.to_string());
-        self.stun = None;
+        self.stun.clear();
         self.gather_deadline = None;
         self.connect_deadline = None;
         self.rtc_timeout = None;
@@ -452,6 +498,7 @@ impl Engine {
                     break;
                 }
                 Ok(Output::Transmit(transmit)) => actions.push(Action::Transmit {
+                    source: transmit.source,
                     destination: transmit.destination,
                     bytes: transmit.contents.to_vec(),
                 }),

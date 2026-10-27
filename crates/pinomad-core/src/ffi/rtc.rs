@@ -42,6 +42,8 @@ impl RtcSelectedCandidateEnd {
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum RtcAction {
     Transmit {
+        /// The local socket address this datagram must leave from.
+        source: String,
         destination: String,
         bytes: Vec<u8>,
     },
@@ -83,7 +85,12 @@ pub struct RtcWrite {
 impl From<Action> for RtcAction {
     fn from(action: Action) -> Self {
         match action {
-            Action::Transmit { destination, bytes } => RtcAction::Transmit {
+            Action::Transmit {
+                source,
+                destination,
+                bytes,
+            } => RtcAction::Transmit {
+                source: source.to_string(),
                 destination: destination.to_string(),
                 bytes,
             },
@@ -123,11 +130,14 @@ pub struct RtcPeer {
 impl RtcPeer {
     #[uniffi::constructor]
     pub fn new(
-        local_addr: String,
+        local_addrs: Vec<String>,
         stun_servers: Vec<String>,
         now_ms: u64,
     ) -> Result<Arc<Self>, ClientError> {
-        let local = address(&local_addr)?;
+        let locals = local_addrs
+            .iter()
+            .map(|local| address(local))
+            .collect::<Result<Vec<_>, _>>()?;
         let servers = stun_servers
             .iter()
             .map(|server| address(server))
@@ -135,7 +145,7 @@ impl RtcPeer {
         Ok(Arc::new(RtcPeer {
             inner: Mutex::new(Engine::new(
                 EngineConfig {
-                    local_addr: local,
+                    local_addrs: locals,
                     stun_servers: servers,
                 },
                 now_ms,
@@ -151,11 +161,18 @@ impl RtcPeer {
         actions(self.engine().accept_answer(now_ms, &sdp))
     }
 
-    pub fn receive(&self, now_ms: u64, source: String, bytes: Vec<u8>) -> Vec<RtcAction> {
-        let Ok(source) = source.parse::<SocketAddr>() else {
+    pub fn receive(
+        &self,
+        now_ms: u64,
+        local: String,
+        source: String,
+        bytes: Vec<u8>,
+    ) -> Vec<RtcAction> {
+        let (Ok(local), Ok(source)) = (local.parse::<SocketAddr>(), source.parse::<SocketAddr>())
+        else {
             return Vec::new();
         };
-        actions(self.engine().receive(now_ms, source, &bytes))
+        actions(self.engine().receive(now_ms, local, source, &bytes))
     }
 
     pub fn timeout(&self, now_ms: u64) -> Vec<RtcAction> {
@@ -316,6 +333,27 @@ impl RtcDiagnostics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transmit_action_keeps_the_socket_source() {
+        let action = Action::Transmit {
+            source: "[::1]:5000".parse().expect("source address"),
+            destination: "[2001:db8::1]:6000".parse().expect("destination"),
+            bytes: vec![1, 2, 3],
+        };
+        match RtcAction::from(action) {
+            RtcAction::Transmit {
+                source,
+                destination,
+                bytes,
+            } => {
+                assert_eq!(source, "[::1]:5000");
+                assert_eq!(destination, "[2001:db8::1]:6000");
+                assert_eq!(bytes, vec![1, 2, 3]);
+            }
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
 
     #[test]
     fn selected_candidate_action_keeps_both_ends() {

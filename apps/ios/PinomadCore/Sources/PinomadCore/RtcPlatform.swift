@@ -53,8 +53,7 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
 
     private final class Peer {
         let engine: RtcPeer
-        let socket: RtcUdpSocket
-        let source: DispatchSourceRead
+        let sockets: [PeerSocket]
         let sink: @Sendable (SessionEvent) -> Void
         var timer: DispatchSourceTimer?
         var timerGeneration: UInt64 = 0
@@ -65,14 +64,26 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
 
         init(
             engine: RtcPeer,
-            socket: RtcUdpSocket,
-            source: DispatchSourceRead,
+            sockets: [PeerSocket],
             sink: @escaping @Sendable (SessionEvent) -> Void
         ) {
             self.engine = engine
+            self.sockets = sockets
+            self.sink = sink
+        }
+    }
+
+    /// One UDP socket and its receive loop. The engine addresses a transmit
+    /// with `source`, the same string this record stores.
+    private final class PeerSocket {
+        let address: String
+        let socket: RtcUdpSocket
+        let source: DispatchSourceRead
+
+        init(address: String, socket: RtcUdpSocket, source: DispatchSourceRead) {
+            self.address = address
             self.socket = socket
             self.source = source
-            self.sink = sink
         }
     }
 
@@ -141,22 +152,33 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         sink: @escaping @Sendable (SessionEvent) -> Void
     ) {
         guard peers[peer] == nil else { return }
-        guard let local = NetworkInterfaces.primary() else {
+        let addresses = NetworkInterfaces.rtcAddresses()
+        guard !addresses.isEmpty else {
             let reason = "this device has no usable network interface"
             rtcLogger.error("rtc peer \(peer): \(reason, privacy: .public)")
             sink(.rtcClosed(peer: peer, reason: reason))
             return
         }
-        let resolved: [String]
+        let prepared: ([NetworkAddress], [String])
         do {
-            resolved = try Self.resolve(stun: stun, ipv6: local.isIPv6)
+            prepared = try Self.prepare(stun: stun, addresses: addresses)
         } catch {
             rtcLogger.error("rtc peer \(peer): \(error.localizedDescription, privacy: .public)")
             sink(.rtcClosed(peer: peer, reason: error.localizedDescription))
             return
         }
-        guard let socket = RtcUdpSocket(bind: local) else {
-            let reason = "could not bind a UDP socket on \(local.interface)"
+        let (locals, resolved) = prepared
+        var bound: [(NetworkAddress, RtcUdpSocket)] = []
+        for local in locals {
+            guard let socket = RtcUdpSocket(bind: local) else {
+                rtcLogger.error(
+                    "rtc peer \(peer): could not bind \(local.interface, privacy: .public)")
+                continue
+            }
+            bound.append((local, socket))
+        }
+        guard !bound.isEmpty else {
+            let reason = "could not bind a UDP socket on any selected interface"
             rtcLogger.error("rtc peer \(peer): \(reason, privacy: .public)")
             sink(.rtcClosed(peer: peer, reason: reason))
             return
@@ -164,43 +186,49 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         let engine: RtcPeer
         do {
             engine = try RtcPeer(
-                localAddr: local.socketAddress(port: socket.port),
+                localAddrs: bound.map { $0.0.socketAddress(port: $0.1.port) },
                 stunServers: resolved,
                 nowMs: nowMs())
         } catch {
-            socket.close()
+            for (_, socket) in bound { socket.close() }
             let reason = "the RTC engine could not start: \(error)"
             rtcLogger.error("rtc peer \(peer): \(reason, privacy: .public)")
             sink(.rtcClosed(peer: peer, reason: reason))
             return
         }
-        let source = DispatchSource.makeReadSource(fileDescriptor: socket.fd, queue: queue)
-        let runtime = Peer(
-            engine: engine,
-            socket: socket,
-            source: source,
-            sink: sink)
-        peers[peer] = runtime
-        source.setEventHandler { [weak self] in
-            self?.receive(peer: peer)
+        var sockets: [PeerSocket] = []
+        for (local, socket) in bound {
+            let address = local.socketAddress(port: socket.port)
+            let source = DispatchSource.makeReadSource(fileDescriptor: socket.fd, queue: queue)
+            let runtime = PeerSocket(address: address, socket: socket, source: source)
+            source.setEventHandler { [weak self] in
+                self?.receive(peer: peer, local: address)
+            }
+            // libdispatch only guarantees the descriptor is no longer used
+            // after the cancellation handler runs. Closing it at cancel()
+            // time could let a newly created Peer reuse the fd while the old
+            // source drains.
+            source.setCancelHandler { [socket] in
+                socket.close()
+            }
+            sockets.append(runtime)
         }
-        // libdispatch only guarantees the descriptor is no longer used after
-        // the cancellation handler runs. Closing it at cancel() time could
-        // let a newly created Peer reuse the fd while the old source drains.
-        source.setCancelHandler { [socket] in
-            socket.close()
-        }
-        source.resume()
+        peers[peer] = Peer(engine: engine, sockets: sockets, sink: sink)
+        for runtime in sockets { runtime.source.resume() }
         let actions = engine.start(nowMs: nowMs())
         handle(peer: peer, actions: actions)
     }
 
-    private func receive(peer: UInt64) {
-        guard let runtime = peers[peer], !runtime.closed else { return }
-        for datagram in runtime.socket.receive() {
+    /// One sequential receive loop per socket. They share the serial queue,
+    /// so every datagram enters the engine in the order its socket read it.
+    private func receive(peer: UInt64, local: String) {
+        guard let runtime = peers[peer], !runtime.closed,
+              let socket = runtime.sockets.first(where: { $0.address == local })
+        else { return }
+        for datagram in socket.socket.receive() {
             if runtime.closed { return }
             let actions = runtime.engine.receive(
-                nowMs: nowMs(), source: datagram.source, bytes: datagram.bytes)
+                nowMs: nowMs(), local: local, source: datagram.source, bytes: datagram.bytes)
             handle(peer: peer, actions: actions)
         }
     }
@@ -219,11 +247,12 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         guard let runtime = peers[peer], !runtime.closed else { return }
         for action in actions {
             switch action {
-            case .transmit(let destination, let bytes):
+            case .transmit(let source, let destination, let bytes):
                 // UDP is lossy by design; a failed send is a dropped packet,
                 // not a closed carrier. ICE/DTLS retransmission covers it and
                 // the stall timer remains the only "no progress" verdict.
-                runtime.socket.send(bytes, to: destination)
+                runtime.sockets.first(where: { $0.address == source })?
+                    .socket.send(bytes, to: destination)
             case .schedule(let atMs):
                 arm(peer: peer, atMs: atMs)
             case .localOffer(let sdp):
@@ -271,11 +300,44 @@ public final class LiveRtcPlatform: RtcPlatform, @unchecked Sendable {
         runtime.timer?.setEventHandler {}
         runtime.timer?.cancel()
         runtime.timer = nil
-        runtime.source.cancel()
+        for socket in runtime.sockets { socket.source.cancel() }
         runtime.engine.close()
         if let reason {
             runtime.sink(.rtcClosed(peer: peer, reason: reason))
         }
+    }
+
+    /// Resolve STUN once per selected address family. One family failing
+    /// costs that family only: the peer continues on the other socket. TURN
+    /// is unsupported, so when every family rejects the list the peer fails
+    /// with the first concrete error.
+    private static func prepare(
+        stun: [String],
+        addresses: [NetworkAddress]
+    ) throws -> ([NetworkAddress], [String]) {
+        guard !stun.isEmpty else { return (addresses, []) }
+        var kept: [NetworkAddress] = []
+        var servers: [String] = []
+        var failure: (any Error)?
+        for address in addresses {
+            do {
+                let resolved = try resolve(stun: stun, ipv6: address.isIPv6)
+                kept.append(address)
+                for server in resolved where !servers.contains(server) {
+                    servers.append(server)
+                }
+            } catch {
+                let family = address.isIPv6 ? "IPv6" : "IPv4"
+                rtcLogger.error(
+                    "rtc: dropping \(family, privacy: .public) STUN on \(address.interface, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                failure = failure ?? error
+            }
+        }
+        guard !kept.isEmpty else {
+            throw failure
+                ?? RtcPlatformError.unresolvedServer(stun.joined(separator: ", "))
+        }
+        return (kept, servers)
     }
 
     /// Parse `stun:host[:port]` and resolve it for the socket's family.
