@@ -12,7 +12,8 @@ use pinomad_core::ffi::{
     LoginEvent, LoginInput, LoginLink, LoginMethod, LoginOption, LoginPrompt, LoginState, ProviderInfo, ProviderOAuth, StoredCredential, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
     DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
-    SteerOutcome, StoredHost, SubmitMode, ThinkingLevel, WithdrawOutcome,
+    SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
+    WithdrawOutcome,
 };
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -69,6 +70,8 @@ struct ScriptedHost {
     held: HashSet<String>,
     call_errors: HashMap<String, String>,
     call_results: HashMap<String, Json>,
+    /// Methods the host never answers, so a local send stays in flight.
+    hung: HashSet<String>,
     minor: f64,
     sent: Vec<Json>,
     conn: u64,
@@ -81,6 +84,7 @@ impl ScriptedHost {
             held: HashSet::new(),
             call_errors: HashMap::new(),
             call_results: HashMap::new(),
+            hung: HashSet::new(),
             minor: pinomad_core::frames::PROTOCOL.minor as f64,
             sent: Vec::new(),
             conn: 0,
@@ -98,6 +102,17 @@ impl ScriptedHost {
             ("defaults", obj(&[])),
         ])
         .to_json()
+    }
+
+    fn method(&self, name: &str) -> Vec<Json> {
+        self.sent
+            .iter()
+            .filter(|frame| {
+                frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() == Some("call")
+                    && frame.get("method").and_then(Json::as_str).map(|s| s.to_string_lossy()) == Some(name.to_string())
+            })
+            .cloned()
+            .collect()
     }
 
     fn receive(&mut self, text: &str) -> Vec<String> {
@@ -127,6 +142,9 @@ impl ScriptedHost {
                     .and_then(Json::as_str)
                     .map(|s| s.to_string_lossy())
                     .unwrap_or_default();
+                if self.hung.contains(&method) {
+                    return vec![];
+                }
                 let result = if let Some(error) = self.call_errors.get(&method) {
                     obj(&[
                         ("type", Json::from("result")),
@@ -161,6 +179,7 @@ struct Harness {
     ops: HashMap<u64, Result<CallResult, String>>,
     view_changes: u64,
     paired: bool,
+    deadlines: Vec<(u64, u64)>,
 }
 
 impl Harness {
@@ -175,13 +194,17 @@ impl Harness {
     /// Connect with a preconfigured host — snapshots, held streams, call
     /// results, and protocol minor are set before the client opens.
     fn boot(host: ScriptedHost, request_id: &'static str) -> Self {
-        let client = PinomadClient::with_options(RemoteDurableOptions {
-            reconnect_delay_ms: Some((20, 20)),
-            request_id: Some(Box::new(move || request_id.to_string())),
-            ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
-                url: "ws://fake/".to_string(),
-            }))
-        });
+        Self::boot_with(host, request_id, false)
+    }
+
+    fn boot_with(host: ScriptedHost, request_id: &'static str, logical: bool) -> Self {
+        let mut options = RemoteDurableOptions::single(Box::new(PlaintextTransport {
+            url: "ws://fake/".to_string(),
+        }));
+        options.reconnect_delay_ms = Some((20, 20));
+        options.request_id = Some(Box::new(move || request_id.to_string()));
+        options.logical_submissions = logical;
+        let client = PinomadClient::with_options(options);
         let mut harness = Harness {
             client: Arc::new(client),
             host,
@@ -189,6 +212,7 @@ impl Harness {
             ops: HashMap::new(),
             view_changes: 0,
             paired: false,
+            deadlines: Vec::new(),
         };
         let initial = harness.client.take();
         harness.pump(initial);
@@ -221,10 +245,14 @@ impl Harness {
                 }
                 FfiCommand::ScheduleReconnect { .. }
                 | FfiCommand::CancelReconnect { .. }
-                | FfiCommand::ScheduleDeadline { .. }
-                | FfiCommand::CancelDeadline { .. }
                 | FfiCommand::CandidateFailed { .. }
                 | FfiCommand::EndpointSet { .. } => {}
+                FfiCommand::ScheduleDeadline { timer, delay_ms } => {
+                    self.deadlines.push((timer, delay_ms));
+                }
+                FfiCommand::CancelDeadline { timer } => {
+                    self.deadlines.retain(|(armed, _)| *armed != timer);
+                }
                 FfiCommand::Ready { outcome } => self.ready = Some(outcome),
                 FfiCommand::ViewChanged => self.view_changes += 1,
                 FfiCommand::Paired { .. } => self.paired = true,
@@ -274,6 +302,7 @@ fn client_works_when_created_and_driven_on_another_thread() {
             ops: HashMap::new(),
             view_changes: 0,
             paired: false,
+            deadlines: Vec::new(),
         };
         let initial = h.client.take();
         h.pump(initial);
@@ -2570,4 +2599,172 @@ fn rtc_peer_starts_closes_and_rejects_sends() {
         RtcPeer::new(vec!["not-an-address".to_string()], Vec::new(), 1_000).err().expect("bad address"),
         ClientError::RtcAddress { .. }
     ));
+}
+// ─── Logical submissions (#402/#406) ───────────────────────────────────────
+
+fn logical_view(entries: Vec<Json>, busy: bool, inbox: Vec<Json>) -> Json {
+    obj(&[
+        ("conversation", obj(&[("id", Json::Number(1.0))])),
+        ("entries", Json::array(entries)),
+        (
+            "docs",
+            obj(&[
+                (
+                    "pi.live",
+                    if busy { obj(&[("run", obj(&[]))]) } else { obj(&[]) },
+                ),
+                ("pi.inbox", obj(&[("items", Json::array(inbox))])),
+            ]),
+        ),
+    ])
+}
+
+fn logical_harness(view: Json) -> Harness {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert("conversation:1".to_string(), view);
+    let mut harness = Harness::boot_with(host, "req-1", true);
+    harness.invoke(0, FfiCall::SwitchConversation { id: 1 });
+    harness
+}
+
+fn logical_submit(text: &str, request_id: &str, images: Vec<MessageImage>) -> FfiCall {
+    FfiCall::Submit {
+        text: text.to_string(),
+        when_busy: SubmitMode::FollowUp,
+        target: Some(1),
+        request_id: Some(request_id.to_string()),
+        images,
+        skills: Some(vec!["review".to_string()]),
+        attachments: vec!["attachment-1".to_string()],
+    }
+}
+
+fn fire_submission_timeout(h: &mut Harness) {
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(FfiEvent::TimerFired { timer });
+}
+
+#[test]
+fn local_submission_maps_and_take_back_returns_the_draft() {
+    let mut h = logical_harness(logical_view(vec![], false, vec![]));
+    h.host.call_errors.insert("submit".to_string(), "the host refused".to_string());
+    let image = MessageImage { data: "aGk=".to_string(), mime_type: "image/png".to_string(), ref_: None };
+    h.invoke(1, logical_submit("hello", "r1", vec![image.clone()]));
+
+    let conversation = h.client.snapshot().unwrap().conversation.expect("shown conversation");
+    assert_eq!(conversation.local_submissions.len(), 1);
+    let row = &conversation.local_submissions[0];
+    assert_eq!(row.request_id, "r1");
+    assert_eq!(row.text, "hello");
+    assert_eq!(row.images, vec![image.clone()]);
+    assert_eq!(row.skills, vec!["review".to_string()]);
+    assert_eq!(row.attachment_ids, vec!["attachment-1".to_string()]);
+    assert_eq!(row.status, SubmissionStatus::Failed);
+    assert_eq!(row.error.as_deref(), Some("the host refused"));
+    assert!(conversation.local_queue_items.is_empty());
+
+    h.invoke(2, FfiCall::TakeBackSubmission { request_id: "r1".to_string() });
+    match h.ops.get(&2) {
+        Some(Ok(CallResult::TakeBackSubmission { draft: Some(draft) })) => {
+            assert_eq!(
+                draft,
+                &SubmissionDraft {
+                    text: "hello".to_string(),
+                    when_busy: SubmitMode::FollowUp,
+                    images: vec![image],
+                    skills: vec!["review".to_string()],
+                    attachments: vec!["attachment-1".to_string()],
+                }
+            );
+        }
+        other => panic!("expected a take-back draft, got {other:?}"),
+    }
+    let conversation = h.client.snapshot().unwrap().conversation.expect("shown conversation");
+    assert!(conversation.local_submissions.is_empty(), "the local row is settled by the take-back");
+    assert!(h.host.method("takeBackSubmission").is_empty(), "take-back never reaches the wire");
+}
+
+#[test]
+fn local_submission_times_out_to_unknown_and_retries_with_the_same_key() {
+    let mut h = logical_harness(logical_view(vec![], false, vec![]));
+    h.host.hung.insert("submit".to_string());
+    h.invoke(1, logical_submit("hello", "r2", vec![]));
+    let conversation = h.client.snapshot().unwrap().conversation.unwrap();
+    assert_eq!(conversation.local_submissions[0].status, SubmissionStatus::Sending);
+
+    fire_submission_timeout(&mut h);
+    let conversation = h.client.snapshot().unwrap().conversation.unwrap();
+    assert_eq!(conversation.local_submissions[0].status, SubmissionStatus::Unknown);
+
+    h.host.hung.remove("submit");
+    h.invoke(2, FfiCall::RetrySubmission { request_id: "r2".to_string() });
+    assert_eq!(h.host.method("submission").len(), 1, "unknown is queried before resending");
+    let submits = h.host.method("submit");
+    assert_eq!(submits.len(), 2);
+    for submit in &submits {
+        assert_eq!(
+            submit.get("args").and_then(|args| args.get("requestId")).and_then(Json::as_str).map(|s| s.to_string_lossy()),
+            Some("r2".to_string()),
+        );
+    }
+}
+
+#[test]
+fn take_back_queries_then_withdraws_an_unknown_submission() {
+    let mut h = logical_harness(logical_view(vec![], false, vec![]));
+    h.host.hung.insert("submit".to_string());
+    h.invoke(1, logical_submit("hello", "r3", vec![]));
+    fire_submission_timeout(&mut h);
+
+    h.host.call_results.insert(
+        "submission".to_string(),
+        obj(&[("submissionId", Json::Number(7.0)), ("status", Json::from("queued"))]),
+    );
+    h.host.call_results.insert(
+        "withdrawQueued".to_string(),
+        obj(&[("outcome", Json::from("withdrawn"))]),
+    );
+    h.invoke(2, FfiCall::TakeBackSubmission { request_id: "r3".to_string() });
+    match h.ops.get(&2) {
+        Some(Ok(CallResult::TakeBackSubmission { draft: Some(draft) })) => {
+            assert_eq!(draft.text, "hello");
+        }
+        other => panic!("expected a take-back draft, got {other:?}"),
+    }
+    let withdraw = h.host.method("withdrawQueued");
+    assert_eq!(withdraw.len(), 1);
+    assert_eq!(
+        withdraw[0].get("args").and_then(|args| args.get("submissionId")).and_then(|v| v.as_number()),
+        Some(7.0),
+    );
+    let conversation = h.client.snapshot().unwrap().conversation.unwrap();
+    assert!(conversation.local_submissions.is_empty());
+}
+
+#[test]
+fn a_busy_send_joins_the_local_queue_instead_of_the_transcript() {
+    let mut h = logical_harness(logical_view(vec![], true, vec![]));
+    h.host.call_errors.insert("submit".to_string(), "the host refused".to_string());
+    h.invoke(1, logical_submit("queued", "r4", vec![]));
+
+    let conversation = h.client.snapshot().unwrap().conversation.unwrap();
+    assert!(conversation.local_submissions.is_empty());
+    assert_eq!(conversation.local_queue_items.len(), 1);
+    let row = &conversation.local_queue_items[0];
+    assert_eq!(row.request_id, "r4");
+    assert_eq!(row.mode, SubmitMode::FollowUp);
+    assert_eq!(row.text, "queued");
+    assert_eq!(row.image_count, 0);
+    assert_eq!(row.attachment_count, 1);
+    assert_eq!(row.status, SubmissionStatus::Failed);
+    assert_eq!(row.error.as_deref(), Some("the host refused"));
+
+    h.invoke(2, FfiCall::TakeBackSubmission { request_id: "r4".to_string() });
+    assert!(matches!(h.ops.get(&2), Some(Ok(CallResult::TakeBackSubmission { draft: Some(_) }))));
+    assert!(h.client.snapshot().unwrap().conversation.unwrap().local_queue_items.is_empty());
 }

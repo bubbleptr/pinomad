@@ -10,6 +10,7 @@ ban
 bell-check
 camera
 check
+check-check
 chevron-down
 chevron-right
 circle
@@ -19,6 +20,7 @@ circle-dashed
 circle-dot
 circle-x
 clipboard-paste
+clock
 cloud-off
 copy
 ellipsis

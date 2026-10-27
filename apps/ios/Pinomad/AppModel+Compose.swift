@@ -10,8 +10,9 @@ import UIKit
 /// (thrown) needs handling here.
 extension AppModel {
     /// Send the conversation's draft. Idle → a plain prompt; busy → `mode`
-    /// decides between steering the run and queueing a follow-up. The
-    /// draft clears at once and comes back if the session was gone.
+    /// decides between steering the run and queueing a follow-up. The draft
+    /// clears at once; a refused send is a local row with its own Retry
+    /// (ADR-0034 §5), not a second copy in the composer.
     func send(conversation id: UInt64, mode: SubmitMode) {
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
@@ -26,9 +27,12 @@ extension AppModel {
             return
         }
         let images = tray.images
-        let attachments = files.ids
+        let requestId = UUID().uuidString
+        let sentFiles = files.attachments
+        let attachments = sentFiles.map(\.id)
         let chips = chips(for: id)
         let payload = chips.payload(hostMinor: hostMinor)
+        if !sentFiles.isEmpty { sentFileDetails[requestId] = sentFiles }
         drafts[id] = ""
         skillChips[id] = nil
         trays[id] = nil
@@ -37,26 +41,15 @@ extension AppModel {
         Task { [weak self] in
             do {
                 _ = try await session.invoke(
-                    .submit(text: payload.text, whenBusy: mode, target: id, requestId: nil,
+                    .submit(text: payload.text, whenBusy: mode, target: id, requestId: requestId,
                             images: images, skills: payload.skills, attachments: attachments))
             } catch {
+                // The local submission owns a host refusal (ADR-0034 §5):
+                // putting the draft back would leave two resendable copies.
+                // Only a session that ended before admitting the call has no
+                // row, and there is no composer left to restore into then.
                 guard let self else { return }
-                // Don't clobber anything typed or attached meanwhile.
-                if (self.drafts[id] ?? "").isEmpty {
-                    self.drafts[id] = text
-                    self.skillChips[id] = chips
-                }
-                if self.trays[id]?.isEmpty ?? true {
-                    var restored = AttachmentTray()
-                    if let claim = restored.reserve(images.count, accepts: true) {
-                        restored.fulfil(claim, with: images)
-                    }
-                    self.trays[id] = restored
-                }
-                if self.fileTrays[id] == nil, !files.isEmpty {
-                    self.fileTrays[id] = files
-                }
-                self.lastError = "Couldn't send: \(self.describe(error))"
+                self.showToast("Couldn't send: \(self.describe(error))", level: "error")
             }
         }
     }
@@ -153,6 +146,9 @@ extension AppModel {
     /// skills go back too, or the host would match every `$name` in the text.
     func retry(_ request: RetryRequest, conversation id: UInt64) {
         transcriptPin += 1
+        if !request.attachments.isEmpty {
+            sentFileDetails[request.requestId] = request.attachments
+        }
         // The host stripped the attachment block from the text; resend the
         // ids core kept or the retry silently becomes text-only (#321).
         run(.submit(text: request.text, whenBusy: .followUp, target: id,
@@ -211,18 +207,110 @@ extension AppModel {
 
     func queuedEditLocksComposer(conversation id: UInt64) -> Bool {
         queuedEdit.locksComposer(conversation: id) || queuedEditPreparing.contains(id)
+            || takingBack == id
     }
 
-    /// Editing restores the queued input over the composer, so it waits for
-    /// an empty composer and for the previous Edit to resolve.
-    func queuedEditDisabled(conversation id: UInt64) -> Bool {
-        guard queuedEdit.canBegin, queuedEditPreparing.isEmpty else { return true }
+    /// Editing restores a send over the composer, so it waits for an empty
+    /// composer and for any other Edit to resolve. Local sends and host
+    /// queued rows share this rule.
+    func editAvailability(conversation id: UInt64) -> EditAvailability {
         let text = drafts[id] ?? ""
         let tray = trays[id] ?? AttachmentTray()
         let files = fileTrays[id] ?? FileAttachmentTray()
-        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !tray.images.isEmpty || tray.preparing > 0 || !files.isEmpty
-            || filePreparing(id)
+        return EditAvailability(
+            draft: text,
+            hasImages: !tray.images.isEmpty,
+            hasFiles: !files.isEmpty,
+            preparing: tray.preparing > 0 || filePreparing(id),
+            anotherEdit: !queuedEdit.canBegin || !queuedEditPreparing.isEmpty || takingBack != nil
+        )
+    }
+
+    func queuedEditDisabled(conversation id: UInt64) -> Bool {
+        editAvailability(conversation: id).isDisabled
+    }
+
+    // ── Local sends (#402/#406) ─────────────────────────────────────────
+    // Retry and take-back are core-local actions on a logical submission
+    // (ADR-0034 §11). The row carries the requestId, so neither reads the
+    // conversation's current content.
+
+    /// Resend a failed or unconfirmed local send with its original key; the
+    /// core queries before resending when the outcome is unknown.
+    func retrySubmission(conversation id: UInt64, requestId: String) {
+        guard connected, let session, submissionPending.insert(requestId).inserted else { return }
+        Task { [weak self] in
+            defer { self?.submissionPending.remove(requestId) }
+            do {
+                _ = try await session.invoke(.retrySubmission(requestId: requestId))
+            } catch {
+                guard let self else { return }
+                self.showToast(self.describe(error), level: "error")
+            }
+        }
+    }
+
+    /// Take a failed or unconfirmed local send back for editing. The draft
+    /// lands only in the conversation that sent it, even if the reader
+    /// switched away; its ref images are read while the source entries are
+    /// still subscribed.
+    func editSubmission(conversation id: UInt64, requestId: String) {
+        guard connected, let session, takingBack == nil,
+              !editAvailability(conversation: id).isDisabled,
+              submissionPending.insert(requestId).inserted
+        else { return }
+        takingBack = id
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.takingBack = nil
+                self.submissionPending.remove(requestId)
+            }
+            do {
+                let result = try await session.invoke(
+                    .takeBackSubmission(requestId: requestId))
+                guard case let .takeBackSubmission(draft) = result, let draft else { return }
+                var images: [MessageImage] = []
+                do {
+                    images = try await draft.images.resolving { ref, variant in
+                        try await self.cachedImage(ref: ref, variant: variant)
+                    }
+                } catch {
+                    // The text and file chips are still worth restoring; the
+                    // source image ref left the live view.
+                    self.showToast(
+                        "Couldn't load the original images; the message text is back.",
+                        level: "error")
+                }
+                self.putBack(PendingTakeBack(conversationId: id, draft: draft),
+                             requestId: requestId, images: images)
+            } catch {
+                self.showToast("Couldn't take the message back: \(self.describe(error))",
+                               level: "error")
+            }
+        }
+    }
+
+    /// Refill the origin conversation's composer with a taken-back send.
+    private func putBack(_ pending: PendingTakeBack, requestId: String, images: [MessageImage]) {
+        let id = pending.conversationId
+        guard let draft = pending.draft(for: id) else { return }
+        drafts[id] = draft.text
+        skillChips[id] = .restored(text: draft.text, skills: draft.skills)
+        var tray = trays[id] ?? AttachmentTray()
+        tray.restore(images)
+        trays[id] = tray
+        let known = sentFileDetails[requestId] ?? []
+        restoreFiles(
+            conversation: id,
+            attachments: draft.attachments.compactMap { attachmentId in
+                known.first { $0.id == attachmentId }
+            }
+        )
+        sentFileDetails.removeValue(forKey: requestId)
+        if case .conversation(id)? = navPath.last {
+            queuedEditFocus[id, default: 0] += 1
+        }
     }
 
     /// Withdraw a queued row without editing it. `sent` means it reached the

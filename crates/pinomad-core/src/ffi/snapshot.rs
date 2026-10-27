@@ -6,7 +6,8 @@ use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
 use crate::ffi::providers::{providers_of, HostProviders};
 use crate::ffi::types::*;
-use crate::json::Json;
+use crate::json::{Json, JsonObject};
+use crate::u16str::U16String;
 use crate::model::ModelRef;
 use crate::questions::pending_questions;
 use crate::remote_durable::RemoteDurable;
@@ -128,6 +129,15 @@ pub struct ConversationSnapshot {
     /// becomes fresh on a (re)connect. The UI retries ref images on a
     /// change, even if snapshot coalescing skipped the false state.
     pub fresh_epoch: u64,
+    /// Local sends the host has not replaced with a real bubble yet
+    /// (ADR-0034 §5), in send order. The transcript appends them after
+    /// `chat`; the newest committed user bubble carries the delivered mark.
+    #[uniffi(default)]
+    pub local_submissions: Vec<LocalSubmission>,
+    /// Local queue-placed sends whose host inbox row has not arrived yet.
+    /// The composer shows them after `queue_items`.
+    #[uniffi(default)]
+    pub local_queue_items: Vec<LocalQueueItem>,
 }
 
 fn connection_of(view: &Json) -> ConnectionState {
@@ -317,6 +327,33 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
             .and_then(|c| c.get("id")),
     )?;
     let busy = is_busy(conversation);
+    // The local-send derivations take the reference's merged ConversationView
+    // (conversation record + docs); the durable view keeps docs one level up.
+    let local_scope = {
+        let mut object = JsonObject::new();
+        if let Some(record) = conversation.get("conversation") {
+            object.set(U16String::from_str("conversation"), record.clone());
+        }
+        if let Some(entries) = conversation.get("entries") {
+            object.set(U16String::from_str("entries"), entries.clone());
+        }
+        // The durable view lists documents as `{kind, value}` entries; the
+        // core derivations read them by kind (the inbox, for queue rows).
+        if let Some(items) = view.get("docs").and_then(Json::as_array) {
+            let mut docs = JsonObject::new();
+            for item in items.iter() {
+                let Some(kind) = item.get("kind").and_then(Json::as_str) else { continue };
+                if let Some(value) = item.get("value") {
+                    docs.set(kind.clone(), value.clone());
+                }
+            }
+            object.set(U16String::from_str("docs"), Json::Object(std::sync::Arc::new(docs)));
+        }
+        if let Some(submissions) = view.get("submissions") {
+            object.set(U16String::from_str("submissions"), submissions.clone());
+        }
+        Json::Object(std::sync::Arc::new(object))
+    };
     let empty_presentations = Json::object();
     let tool_presentations = view.get("toolPresentations").unwrap_or(&empty_presentations);
     let chat = crate::cot_view::derive_chat(conversation, tool_presentations, busy);
@@ -372,6 +409,8 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
         context_usage,
         fresh,
         fresh_epoch,
+        local_submissions: local_submissions_of(&local_scope),
+        local_queue_items: local_queue_items_of(&local_scope),
     })
 }
 

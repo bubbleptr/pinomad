@@ -122,6 +122,38 @@ struct ConversationComposer: View {
         model.queuedEditDisabled(conversation: conversation.id)
     }
 
+    private var editAvailability: EditAvailability {
+        model.editAvailability(conversation: conversation.id)
+    }
+
+    /// Host inbox rows first, then this client's sends the host has not
+    /// admitted (ADR-0034 §5).
+    private var queuedRows: [QueuedRow] {
+        QueuedList.rows(host: conversation.queueItems, local: conversation.localQueueItems)
+    }
+
+    private var queueList: some View {
+        QueueList(
+            rows: queuedRows,
+            busy: conversation.busy,
+            canAct: canActOnQueue,
+            editDisabled: editDisabled,
+            editTooltip: editAvailability.tooltip,
+            localActionsEnabled: connected,
+            pending: queuePending,
+            pendingRequests: model.submissionPending,
+            onSteer: { model.steerQueued(conversation: conversation.id, item: $0) },
+            onRetryLocal: { requestId in
+                model.retrySubmission(conversation: conversation.id, requestId: requestId)
+            },
+            onEdit: { model.editQueued(conversation: conversation.id, item: $0) },
+            onEditLocal: { requestId in
+                model.editSubmission(conversation: conversation.id, requestId: requestId)
+            },
+            onWithdraw: { model.withdrawQueued(conversation: conversation.id, item: $0) }
+        )
+    }
+
     private var queuePending: Set<UInt64> {
         var pending = model.queuePending
         if let id = model.queuedEdit.copy?.id { pending.insert(id) }
@@ -141,17 +173,8 @@ struct ConversationComposer: View {
             if !conversation.statusText.isEmpty {
                 StatusPill(text: conversation.statusText)
             }
-            if !conversation.queueItems.isEmpty {
-                QueueList(
-                    items: conversation.queueItems,
-                    busy: conversation.busy,
-                    canAct: canActOnQueue,
-                    editDisabled: editDisabled,
-                    pending: queuePending,
-                    onSteer: { model.steerQueued(conversation: conversation.id, item: $0) },
-                    onEdit: { model.editQueued(conversation: conversation.id, item: $0) },
-                    onWithdraw: { model.withdrawQueued(conversation: conversation.id, item: $0) }
-                )
+            if !queuedRows.isEmpty {
+                queueList
             }
             if mentions.commandMenu.isShowing {
                 CommandMenuView(menu: mentions.commandMenu, choose: chooseCommand)
@@ -801,10 +824,10 @@ private struct StatusPill: View {
 }
 
 /// Inputs waiting on the run, oldest first; scrolls past about three.
-/// Only steer/follow-up rows carry actions — the protocol rejects writes —
-/// and only while the host is live on 5.14.
+/// Host inbox rows say Sent (one check); local rows keep their send phase and
+/// offer Retry/Edit until the host's row replaces them (ADR-0034 §5).
 private struct QueueList: View {
-    let items: [QueueItem]
+    let rows: [QueuedRow]
     /// A run is in flight; Steer only makes sense while one is.
     let busy: Bool
     /// The connection is live and the host knows the 5.14 calls.
@@ -812,10 +835,17 @@ private struct QueueList: View {
     /// Edit is unavailable for every row — the composer already holds a
     /// draft or attachment, or another Edit is unresolved.
     let editDisabled: Bool
-    /// Rows with a request in flight; their actions stay disabled.
+    let editTooltip: String?
+    /// The connection is live, so a local retry/take-back can run.
+    let localActionsEnabled: Bool
+    /// Host rows with a request in flight; their actions stay disabled.
     let pending: Set<UInt64>
+    /// Local rows with a retry or take-back in flight.
+    let pendingRequests: Set<String>
     let onSteer: (QueueItem) -> Void
+    let onRetryLocal: (String) -> Void
     let onEdit: (QueueItem) -> Void
+    let onEditLocal: (String) -> Void
     let onWithdraw: (QueueItem) -> Void
 
     /// The action target is 44pt, so a row is 48pt. The ScrollView takes all
@@ -828,8 +858,8 @@ private struct QueueList: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.spacing) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    row(item)
+                ForEach(rows) { row in
+                    self.row(row)
                 }
             }
         }
@@ -839,7 +869,7 @@ private struct QueueList: View {
     }
 
     private var height: CGFloat {
-        let count = CGFloat(items.count)
+        let count = CGFloat(rows.count)
         guard count > 0 else { return 0 }
         let content = count * Self.rowHeight + (count - 1) * Self.spacing
         let visible = CGFloat(Self.visibleRows) * Self.rowHeight
@@ -852,11 +882,16 @@ private struct QueueList: View {
     }
 
     @ViewBuilder
-    private func row(_ item: QueueItem) -> some View {
-        if actionable(item) {
-            base(item).contextMenu { actions(item) }
-        } else {
-            base(item)
+    private func row(_ row: QueuedRow) -> some View {
+        switch row {
+        case let .host(item):
+            if actionable(item) {
+                base(item).contextMenu { actions(item) }
+            } else {
+                base(item)
+            }
+        case let .local(item):
+            local(item)
         }
     }
 
@@ -868,17 +903,9 @@ private struct QueueList: View {
             Text(item.text.isEmpty ? " " : item.text)
                 .font(.footnote)
                 .lineLimit(1)
-            if item.imageCount > 0 {
-                Text("· \(item.imageCount) image\(item.imageCount == 1 ? "" : "s")")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if item.attachmentCount > 0 {
-                Text("· \(item.attachmentCount) file\(item.attachmentCount == 1 ? "" : "s")")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            counts(images: item.imageCount, files: item.attachmentCount)
             Spacer(minLength: 0)
+            QueueDeliveryMark(status: .sent)
             if actionable(item) {
                 Menu {
                     actions(item)
@@ -900,6 +927,63 @@ private struct QueueList: View {
         .padding(.trailing, actionable(item) ? 2 : 12)
         .frame(minHeight: Self.rowHeight)
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
+    }
+
+    private func local(_ item: LocalQueueItem) -> some View {
+        let status = MessageStatus(item.status)
+        let pendingRequest = pendingRequests.contains(item.requestId)
+        return HStack(spacing: 8) {
+            Text(tag(item.mode))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(item.text.isEmpty ? " " : item.text)
+                .font(.footnote)
+                .lineLimit(1)
+            counts(images: item.imageCount, files: item.attachmentCount)
+            Spacer(minLength: 0)
+            QueueDeliveryMark(status: status)
+            if status == .unknown || status == .failed {
+                Button("Retry") {
+                    onRetryLocal(item.requestId)
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(
+                    pendingRequest || !localActionsEnabled
+                        ? Color.secondary.opacity(0.4) : Color.accentColor)
+                .disabled(pendingRequest || !localActionsEnabled)
+            }
+            if status == .failed {
+                Button("Edit") {
+                    onEditLocal(item.requestId)
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(
+                    editDisabled || !localActionsEnabled
+                        ? Color.secondary.opacity(0.4) : Color.accentColor)
+                .disabled(pendingRequest || editDisabled || !localActionsEnabled)
+                .accessibilityHint(Text(editDisabled ? editTooltip ?? "" : ""))
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
+        .frame(minHeight: Self.rowHeight)
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private func counts(images: UInt64, files: UInt64) -> some View {
+        if images > 0 {
+            Text("· \(images) image\(images == 1 ? "" : "s")")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        if files > 0 {
+            Text("· \(files) file\(files == 1 ? "" : "s")")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
@@ -929,4 +1013,34 @@ private struct QueueList: View {
         case .write, .other: "Queued"
         }
     }
+
+    private func tag(_ mode: SubmitMode) -> String {
+        switch mode {
+        case .steer: "Steer"
+        case .followUp: "Follow-up"
+        }
+    }
+}
+
+/// One delivery mark in a queued row: a clock while it waits, one check once
+/// the host has it, an x when it was refused. "Not confirmed" is spelled out
+/// because that row offers a retry.
+private struct QueueDeliveryMark: View {
+    let status: MessageStatus
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(status.icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(status == .failed ? Color.red : Color.secondary)
+                .accessibilityLabel(Text(status.label))
+            if let caption = status.caption {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
 }

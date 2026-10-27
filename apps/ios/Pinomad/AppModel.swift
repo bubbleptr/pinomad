@@ -135,6 +135,14 @@ final class AppModel {
     /// Bumped per conversation when an Edit hands content back, so the open
     /// composer can focus after the refill.
     var queuedEditFocus: [UInt64: UInt64] = [:]
+    /// The conversation whose local send is being taken back right now.
+    var takingBack: UInt64?
+    /// Local sends with a retry or take-back request in flight; their row's
+    /// buttons stay disabled until it settles.
+    var submissionPending: Set<String> = []
+    /// The file chips each local send was made with, by request id. The host
+    /// only keeps ids, so this is what a local bubble and its take-back show.
+    var sentFileDetails: [String: [UserAttachment]] = [:]
     /// Local toast ids descend from the top so they never collide with the
     /// core's increasing notice ids.
     var localToastID: UInt64 = .max
@@ -548,6 +556,9 @@ final class AppModel {
             queuedEditPreparing.removeAll()
             queuePending.removeAll()
             queuedEditFocus = [:]
+            takingBack = nil
+            submissionPending.removeAll()
+            sentFileDetails = [:]
             viewing = nil
             draftHome = .chat
             draftCheckout = .worktree

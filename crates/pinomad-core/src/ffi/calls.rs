@@ -326,6 +326,15 @@ pub enum FfiCall {
     /// Append one base64 chunk at `offset` (5.19); the host answers the
     /// bytes it actually holds so a retry resumes instead of guessing.
     AppendAttachment { attachment_id: String, offset: u64, data: String },
+    /// Resend a local send with its original requestId and fixed conversation
+    /// (ADR-0034 §6/§11). Resolves `Unit`; the row's next snapshot shows the
+    /// outcome. Only meaningful while the core tracks logical submissions.
+    RetrySubmission { request_id: String },
+    /// Query the host (when needed) and take a failed or unconfirmed local
+    /// send back for editing (ADR-0034 §7). Resolves
+    /// `CallResult::TakeBackSubmission` with the draft when it was removed,
+    /// or with no draft when the host had already admitted it.
+    TakeBackSubmission { request_id: String },
     /// Remove a provider's stored credential on the host. Command-class: a
     /// failure lands in `snapshot().notices`. Needs a 5.1 host.
     Logout { provider_id: String },
@@ -371,6 +380,7 @@ impl FfiCall {
             FfiCall::ListCommands { .. } => Some(ResultKind::Commands),
             FfiCall::BeginAttachment { .. } => Some(ResultKind::BeginAttachment),
             FfiCall::AppendAttachment { .. } => Some(ResultKind::AppendAttachment),
+            FfiCall::TakeBackSubmission { .. } => Some(ResultKind::TakeBackSubmission),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
             FfiCall::BeginLogin { .. } => Some(ResultKind::LoginStarted),
@@ -477,6 +487,8 @@ impl FfiCall {
             FfiCall::AppendAttachment { attachment_id, offset, data } => {
                 Call::AppendAttachment { attachment_id, offset, data }
             }
+            FfiCall::RetrySubmission { request_id } => Call::RetrySubmission { request_id },
+            FfiCall::TakeBackSubmission { request_id } => Call::TakeBackSubmission { request_id },
             FfiCall::Logout { provider_id } => Call::Logout { provider_id },
             FfiCall::BeginLogin { provider_id, method } => Call::BeginLogin {
                 provider_id,
