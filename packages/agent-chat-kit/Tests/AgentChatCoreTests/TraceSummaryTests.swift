@@ -22,6 +22,42 @@ import Testing
         #expect(summary.elapsed == .seconds(12))
     }
 
+    @Test(arguments: [
+        (after: 0.4, seconds: 1),
+        (after: 0.6, seconds: 1),
+        (after: 59.6, seconds: 60),
+    ])
+    func aSettledRunRoundsToWholeSeconds(after: TimeInterval, seconds: Int) {
+        let trace = AgentTrace(
+            phase: .settled,
+            steps: [],
+            startedAt: start,
+            endedAt: start.addingTimeInterval(after)
+        )
+        #expect(trace.summary(at: start.addingTimeInterval(120)).elapsed == .seconds(seconds))
+    }
+
+    @Test func aRunWithoutAMeasuredSpanShowsNoDuration() {
+        let incomplete = AgentTrace(phase: .settled, steps: [], startedAt: start)
+        #expect(incomplete.summary(at: start.addingTimeInterval(10)).elapsed == nil)
+
+        let unanchored = AgentTrace(
+            phase: .settled,
+            steps: [],
+            endedAt: start.addingTimeInterval(5)
+        )
+        #expect(unanchored.summary(at: start.addingTimeInterval(10)).elapsed == nil)
+    }
+
+    @Test func aLiveClockFloorsSoItNeverRunsAhead() {
+        // Rounding a live clock would turn 0.5s into 1s early, and a
+        // one-second floor would claim 1s at the start; both make the clock
+        // jump before the second has elapsed.
+        let trace = AgentTrace(phase: .acting, steps: [], startedAt: start)
+        #expect(trace.summary(at: start.addingTimeInterval(0.6)).elapsed == .seconds(0))
+        #expect(trace.summary(at: start.addingTimeInterval(1.6)).elapsed == .seconds(1))
+    }
+
     @Test func aFinishedRunCountsItsTopLevelCallsAndStopsTheClock() {
         let script = ToolCall(id: "3", name: "codemode", state: .succeeded, children: [
             ToolCall(id: "3a", name: "read", state: .succeeded),
