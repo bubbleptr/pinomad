@@ -1712,7 +1712,13 @@ impl RemoteDurable {
         if self.standby.as_ref().is_some_and(|s| s.carrier.peer == peer) {
             self.fail_standby(peer, reason);
         } else if self.active_rtc.as_ref().is_some_and(|c| c.peer == peer) {
-            self.fallback_from_p2p(reason);
+            // The reference records a lost carrier as "liveness" once the
+            // dial is ready, and as "commit" while the handoff sync barrier
+            // is still closed.
+            match self.dial.as_ref().map(|dial| dial.phase) {
+                Some(Phase::Ready) | None => self.fallback_from_p2p(reason),
+                Some(phase) => self.fail_current(phase.stage(), Some(1006), Some(reason.to_string())),
+            }
         }
     }
 
@@ -1927,6 +1933,9 @@ impl RemoteDurable {
     }
 
     fn rtc_closed(&mut self, peer: u32, reason: Option<String>) {
+        // Keep the platform's reason as-is: RtcClosed also reports failures
+        // that are not DataChannel closes (a Peer that never gathered a
+        // candidate, for one). The TypeScript carrier adds its own prefix.
         self.rtc_fail(peer, reason.as_deref().unwrap_or("the DataChannel closed"));
     }
 
@@ -2866,14 +2875,14 @@ impl RemoteDurable {
         }
         if self.active_rtc.is_some() {
             if was_ready {
-                self.fallback_from_p2p(reason.as_deref().unwrap_or("the P2P carrier closed"));
+                self.fallback_from_p2p(reason.as_deref().unwrap_or("the DataChannel closed"));
                 return;
             }
             let pair = self
                 .active_rtc
                 .as_ref()
                 .and_then(|carrier| carrier.selected.clone());
-            self.record_p2p_failure("commit", reason.as_deref().unwrap_or("the P2P carrier closed"), pair);
+            self.record_p2p_failure("commit", reason.as_deref().unwrap_or("the DataChannel closed"), pair);
             self.abort_handoff("Disconnected from host");
             if let Some(carrier) = self.active_rtc.take() {
                 self.out.push(Command::CloseRtcPeer { peer: carrier.peer });

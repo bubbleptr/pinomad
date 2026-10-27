@@ -917,6 +917,49 @@ fn rtc_close_during_handoff_sync_fails_queued_ops() {
 }
 
 #[test]
+fn rtc_close_during_handoff_sync_records_a_commit_failure_with_the_pair() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    h.advance(1_100);
+    h.host.hold_streams.insert("index".to_string());
+    h.host.hold_from = Some(2);
+    h.advance(300);
+    let events = h.host.release_held();
+    let peer = h.peers[0];
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    let selected = h
+        .remote
+        .rtc_diagnostics()
+        .get("selectedPair")
+        .cloned()
+        .expect("the new carrier picked a pair before sync");
+    assert!(h.remote.rtc_diagnostics().get("lastFailure").is_none());
+
+    // The carrier is installed, but the held index snapshot keeps the sync
+    // barrier closed. Losing the DC is a commit failure, not a liveness one.
+    h.feed(Event::RtcClosed {
+        peer,
+        reason: Some("closed during sync".to_string()),
+    });
+    let failed = h.remote.rtc_diagnostics();
+    let failure = failed.get("lastFailure").expect("the failure is recorded");
+    assert_eq!(
+        failure.get("stage").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("commit")
+    );
+    assert_eq!(
+        failure.get("reason").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("closed during sync")
+    );
+    assert_eq!(failure.get("pair"), Some(&selected));
+    assert_eq!(failure.get("agoMs").and_then(Json::as_number), Some(0.0));
+    assert!(failed.get("selectedPair").is_none(), "a retired pair is not the active one");
+}
+
+#[test]
 fn close_retires_every_rtc_object_and_timer() {
     let mut h = Harness::new(candidates(), ConnectionMode::Auto);
     h.advance(1_500);

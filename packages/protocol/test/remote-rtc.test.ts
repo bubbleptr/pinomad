@@ -829,6 +829,41 @@ describe("RTC standby handoff", () => {
     }
   });
 
+  it("records the commit failure and selected pair when the carrier closes before sync finishes", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      await remote.controller.switchConversation(id(1));
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await flush();
+      const dc = world.dc;
+      dc.holdStreams.add("index");
+      dc.holdPing = (count) => count === 2;
+      await vi.advanceTimersByTimeAsync(300);
+      await flush();
+      dc.holdPing = () => false;
+      dc.releaseHeldPings();
+      await vi.advanceTimersByTimeAsync(10);
+      await flush();
+
+      const selected = remote.rtcDiagnostics().selectedPair;
+      expect(selected?.remote.scope).toBe("tailnet");
+      expect(remote.rtcDiagnostics().lastFailure).toBeUndefined();
+
+      dc.close("closed during sync");
+      await flush();
+      const failure = remote.rtcDiagnostics().lastFailure;
+      expect(failure?.stage).toBe("commit");
+      expect(failure?.reason).toBe("the DataChannel closed: closed during sync");
+      expect(failure?.pair).toEqual(selected);
+      expect(failure?.agoMs).toBe(0);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("closes the active RTC peer when the controller closes", async () => {
     const world = new FakeRtcWorld();
     const network = wsNetwork({ rtcWorld: world });

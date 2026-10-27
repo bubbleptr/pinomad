@@ -157,7 +157,9 @@ function wrapChannel(
   raw.onopen = () => {
     // getStats is the only browser API that names the selected pair. Resolve
     // it before telling the pump the channel is open, so the coordinator's
-    // one diagnostic read sees both ends instead of racing a promise.
+    // one diagnostic read sees both ends instead of racing a promise. The
+    // browser reports this once at open; a later ICE reselection is not
+    // reflected (accepted for A1; the Rust engine reports pair changes).
     void selectedCandidatePair(connection).then((pair) => {
       if (pair !== undefined) state.selectedPair = pair;
       notifyOpen();
