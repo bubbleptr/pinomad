@@ -90,6 +90,9 @@ export const SectionP2P: Story = {
   play: async ({ canvasElement }) => {
     await openConnection(canvasElement);
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Show addresses" }));
+    // Chromium treats userEvent's synthetic click as keyboard focus, so clear
+    // it to leave the story in the resting state used for screenshots.
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
 

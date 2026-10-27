@@ -97,11 +97,17 @@ function p2pStatus({
 
 function AddressRow({ label, end }: { label: string; end: RtcCandidateEnd }) {
   return (
-    <HStack gap={2} vAlign="start">
+    <HStack gap={2} style={{ alignItems: "baseline" }}>
       <Text type="supporting" className="w-20 shrink-0">
         {label}
       </Text>
-      <Text type="code" hasTabularNumbers style={{ wordBreak: "break-all", userSelect: "all" }}>
+      <Text
+        type="code"
+        size="sm"
+        color="secondary"
+        hasTabularNumbers
+        style={{ wordBreak: "break-all", userSelect: "all" }}
+      >
         {candidateEndLabel(end)}
       </Text>
     </HStack>
