@@ -172,7 +172,7 @@ function UserEntry({
     />
   );
   return (
-    <ChatMessage.User>
+    <ChatMessage.User data-slot={local === undefined ? "chat-message-user" : "chat-message-local"}>
       <div
         className="flex flex-col items-end gap-1"
         title={local?.error}

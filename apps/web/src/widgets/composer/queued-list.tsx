@@ -85,6 +85,7 @@ export function QueuedList({
         return (
           <ChatQueuedMessage
             key={isLocal ? `local:${item.requestId}` : item.id}
+            data-testid={isLocal ? "local-queued-message" : "chat-queued-message"}
             body={bodyOf(item)}
             tag={TAGS[item.mode]}
             status={<QueueStatusView status={item.status} />}
