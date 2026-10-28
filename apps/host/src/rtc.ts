@@ -491,7 +491,12 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
         if (settled || localSdp === undefined) return;
         for (const candidate of sdpCandidates(localSdp)) addCandidate(candidate);
         if (candidates.size === 0) {
-          fail(new Error("no usable local ICE candidates"));
+          // libdatachannel reports "complete" on a native thread, while
+          // node-datachannel queues that callback separately from the
+          // candidate callbacks. Complete can therefore run before candidates
+          // that were gathered earlier; only the collection deadline proves
+          // the set is actually empty.
+          if (deadlineReached) fail(new Error("no usable local ICE candidates"));
           return;
         }
         settled = true;
@@ -506,7 +511,11 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
         localSdp = sdp;
         maybeCommit();
       });
-      pc.onLocalCandidate((candidate) => addCandidate(candidate));
+      pc.onLocalCandidate((candidate) => {
+        addCandidate(candidate);
+        // A candidate queued behind "complete" still lands in the answer.
+        maybeCommit();
+      });
       pc.onGatheringStateChange((state) => {
         if (state === "complete") {
           gatheringDone = true;

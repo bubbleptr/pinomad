@@ -14,7 +14,15 @@ import {
   SIGNAL_PROLOGUE,
   toBase64Url,
 } from "@pinomad/protocol/secure-channel.ts";
-import { platformPackageName, startRtcHost, type RtcPeerFactory, type RtcPeerConnection, type RtcTimers } from "../src/rtc.ts";
+import {
+  nodeRtcFactory,
+  platformPackageName,
+  startRtcHost,
+  systemRtcTimers,
+  type RtcPeerFactory,
+  type RtcPeerConnection,
+  type RtcTimers,
+} from "../src/rtc.ts";
 import type { RecordCarrier } from "../src/secure-carrier.ts";
 import {
   connectTo,
@@ -319,5 +327,69 @@ describe("Peer limits and timeouts", () => {
     expect(factory.connections[0]!.connection.closed).toBe(false);
     await host.close();
     expect(factory.connections[0]!.connection.closed).toBe(true);
+  });
+});
+
+describe("node-datachannel answerer", () => {
+  it("keeps candidates whose callbacks arrive after gathering completes", async () => {
+    const candidate = "candidate:1 1 UDP 2122252543 127.0.0.1 40000 typ host";
+    const offer = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+      + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\n"
+      + "a=mid:0\r\na=sctp-port:5000\r\n";
+    // libdatachannel reports "complete" from a native thread while
+    // node-datachannel queues each callback separately. The complete callback
+    // can therefore run before the candidate callbacks queued ahead of it.
+    class ReorderedPeerConnection {
+      #sdp: string | undefined;
+      #localDescription?: (sdp: string, type: string) => void;
+      #localCandidate?: (candidate: string, mid: string) => void;
+      #gathering?: (state: string) => void;
+
+      constructor(_name: string, _config: { iceServers: readonly string[] }) {}
+
+      close(): void {}
+
+      localDescription(): { type: string; sdp: string } | null {
+        return this.#sdp === undefined ? null : { type: "answer", sdp: this.#sdp };
+      }
+
+      setRemoteDescription(): void {
+        this.#sdp = "v=0\r\n";
+        this.#localDescription?.(this.#sdp, "answer");
+        this.#gathering?.("complete");
+        queueMicrotask(() => {
+          this.#sdp += `a=${candidate}\r\n`;
+          this.#localCandidate?.(candidate, "0");
+        });
+      }
+
+      onLocalDescription(cb: (sdp: string, type: string) => void): void {
+        this.#localDescription = cb;
+      }
+
+      onLocalCandidate(cb: (candidate: string, mid: string) => void): void {
+        this.#localCandidate = cb;
+      }
+
+      onGatheringStateChange(cb: (state: string) => void): void {
+        this.#gathering = cb;
+      }
+
+      onStateChange(_cb: (state: string) => void): void {}
+      onDataChannel(_cb: (channel: unknown) => void): void {}
+    }
+
+    const factory = nodeRtcFactory({ PeerConnection: ReorderedPeerConnection });
+    const answer = await factory.connect({
+      offerSdp: offer,
+      stun: [],
+      timers: systemRtcTimers,
+      onChannel: () => {
+        throw new Error("the answerer should not open a DataChannel");
+      },
+      onClosed: () => {},
+      log: () => {},
+    }).answer;
+    expect(answer).toContain(candidate);
   });
 });

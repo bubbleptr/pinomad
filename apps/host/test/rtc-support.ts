@@ -542,7 +542,8 @@ async function gatherOffer(
     if (settled || localSdp === undefined) return;
     for (const candidate of sdpCandidates(localSdp)) add(candidate);
     if (candidates.size === 0) {
-      fail(new Error("the offer gathered no usable candidates"));
+      // "complete" can arrive before the candidate callbacks queued ahead of
+      // it; the 10s timer is the deadline that proves no candidate is coming.
       return;
     }
     settled = true;
@@ -554,7 +555,10 @@ async function gatherOffer(
     localSdp = sdp;
     if (gatheringDone) commit();
   });
-  pc.onLocalCandidate((candidate) => add(candidate));
+  pc.onLocalCandidate((candidate) => {
+    add(candidate);
+    if (gatheringDone) commit();
+  });
   pc.onGatheringStateChange((state) => {
     if (state === "complete") {
       gatheringDone = true;
