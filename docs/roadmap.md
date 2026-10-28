@@ -4,8 +4,7 @@
 
 ## 现在
 
-1. **[M6 对话体验](https://github.com/bubbleptr/pinomad/milestone/4)**：先清掉各端用户会碰到的 bug 和小缺口，再做要改协议的几项（上下文用量、撤回/改写排队消息、斜杠命令）。这是长期打磨阶段，新发现的体验问题也归到这里。
-2. **[M7 iOS 布局](https://github.com/bubbleptr/pinomad/milestone/5)**：和 M6 并行。按移动端习惯重排原生 iOS 的页面结构，导航改成抽屉式，控制信息密度。iOS 的界面问题归到这里，Web/桌面的留在 M6。
+下一阶段待定。没定之前，新问题先进 Backlog。
 
 ## 以后
 
@@ -15,7 +14,7 @@
 
 ## 已完成的阶段
 
-M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置） · [M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)（推送随 iOS 原生替换交付） · [M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3) · [iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1)。细节在对应的 ADR 和 PR 里。
+M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置） · [M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)（推送随 iOS 原生替换交付） · [M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3) · [iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1) · [M6 对话体验](https://github.com/bubbleptr/pinomad/milestone/4) · [M7 iOS 布局](https://github.com/bubbleptr/pinomad/milestone/5)。细节在对应的 ADR 和 PR 里。
 
 ## 不在计划内
 

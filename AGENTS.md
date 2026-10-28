@@ -6,9 +6,9 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 Node 上都能运行，ADR-0024）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 官网：落地页、文档、博客和更新日志，TanStack Start + Fumadocs，构建时预渲染成静态文件，见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 Node 上都能运行，ADR-0024）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 官网：落地页、文档、博客和更新日志，TanStack Start + Fumadocs，构建时预渲染成静态文件，见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）、`crates/pinomad-rtc`（原生端 P2P 用的 sans-I/O WebRTC 栈：STUN + str0m DataChannel，ADR-0033 §6；不开 socket、不读时钟，由平台层喂数据报和计时器，`pinomad-core` 的 `ffi` feature 依赖它）。
 
-iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-0024），不在 Bun workspaces 里，开发验证见下。
+iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-0024），不在 Bun workspaces 里，开发验证见下。聊天界面组件 AgentChatKit 是独立的 SwiftPM 包 `packages/agent-chat-kit`（没有 `package.json`，也不在 Bun workspaces 里，有自己的 `AGENTS.md`）。
 
 改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并重新生成对照向量：在仓库根目录跑，协议层的（生成器在 `packages/protocol/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors`，推导层的（生成器在 `packages/client/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project client rust-vectors`；在子目录里跑会报 "No test files found"。新鲜度测试会拦下漂移。
 
