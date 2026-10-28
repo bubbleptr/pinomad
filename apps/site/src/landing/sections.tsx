@@ -3,7 +3,7 @@ import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { buttonVariants } from "@/components/ui/button.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
-import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram, MachineDiagram } from "./diagrams.tsx";
+import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
 import { shot } from "./shots.ts";
 
@@ -112,7 +112,7 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
   );
 }
 
-/** How it works: the durable run and the machine it runs on. */
+/** How it works: the durable run. */
 export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"]; durable: LandingCopy["durable"] }) {
   return (
     <section className="section" id="how-it-works" aria-labelledby="core-title">
@@ -125,11 +125,6 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
             <h3 id="durable-title">{durable.title}</h3>
             <p>{durable.body}</p>
             <DurableDiagram t={durable} />
-          </article>
-          <article className="cell cell-machine">
-            <h3>{t.machine.title}</h3>
-            <p>{t.machine.body}</p>
-            <MachineDiagram t={t.machine.diagram} />
           </article>
         </div>
         <p className="section-link">

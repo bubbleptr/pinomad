@@ -32,11 +32,6 @@ export interface LandingCopy {
   core: {
     eyebrow: string;
     title: string;
-    machine: {
-      title: string;
-      body: string;
-      diagram: { label: string; machine: string; uses: string[] };
-    };
     allFeatures: string;
   };
   durable: {
@@ -106,7 +101,7 @@ export const copy: Record<Lang, LandingCopy> = {
     primaryNav: "Primary",
     hero: {
       title: "The open-source coding agent that goes where you go.",
-      lead: "It runs on your own Mac or Linux machine, with its shell and repos; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
+      lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
       modelsLabel: "Any model pi supports, including subscriptions you already pay for",
@@ -125,17 +120,7 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     core: {
       eyebrow: "How it works",
-      title: "Built on Pi Durable, running on your machine",
-      machine: {
-        title: "Your environment, one worktree per conversation",
-        body: "The host runs on a Mac mini, a Linux box, or a VPS, and the agent uses that machine's shell, toolchains, and credentials. In a Git project each conversation gets its own worktree and branch, so parallel runs leave your checkout alone. AGENTS.md, CLAUDE.md, skills, and your MCP servers work as they are.",
-        diagram: {
-          label:
-            "The PiNomad host runs inside your own machine, a Mac mini, a Linux box, or a VPS, and uses that machine's shell, repositories, and credentials.",
-          machine: "Your machine",
-          uses: ["Shell", "Repos", "Credentials"],
-        },
-      },
+      title: "Built on Pi Durable",
       allFeatures: "Everything the agent can do",
     },
     durable: {
@@ -275,7 +260,7 @@ export const copy: Record<Lang, LandingCopy> = {
           <span className="nowrap">在哪都能接手的</span> <span className="nowrap">开源 coding agent</span>
         </>
       ),
-      lead: "宿主用你 Mac 或 Linux 上的 shell 和代码仓库，Mac App、浏览器、iPhone 随时接手。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
+      lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
       start: "开始使用",
       github: "在 GitHub 上查看",
       modelsLabel: "pi 支持的模型都能用，已有订阅可直接登录",
@@ -292,16 +277,7 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     core: {
       eyebrow: "工作方式",
-      title: "基于 Pi Durable，跑在你的机器上",
-      machine: {
-        title: "用本机环境，每条对话一个 worktree",
-        body: "宿主跑在 Mac mini、Linux 主机或 VPS 上，用那台机器的 shell、工具链和凭据。Git 项目里每条对话有独立的 worktree 和分支，并行也不碰你的检出。AGENTS.md、CLAUDE.md、skills 和 MCP 照常可用。",
-        diagram: {
-          label: "PiNomad 宿主跑在你自己的机器上（Mac mini、Linux 主机或 VPS），直接用那台机器的 shell、代码仓库和凭据。",
-          machine: "你的机器",
-          uses: ["Shell", "代码仓库", "凭据"],
-        },
-      },
+      title: "基于 Pi Durable",
       allFeatures: "agent 能做的所有事",
     },
     durable: {
