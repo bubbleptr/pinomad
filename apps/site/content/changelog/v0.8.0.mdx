@@ -1,7 +1,7 @@
 ---
-title: P2P connections, provider sign-in from clients, and multiple host addresses
+title: P2P connections, message times and delivery states, and provider sign-in from clients
 version: v0.8.0
-date: 2026-10-27
+date: 2026-10-28
 ---
 
 **Before you upgrade**
@@ -16,6 +16,13 @@ date: 2026-10-27
 - Connection details show whether you are on P2P or the relay, whether each end is a LAN, tailnet, or public address, and the last failure. Full addresses stay hidden until you expand them.
 - Pairing carries several host addresses (relay, LAN, and so on); clients try them in order and move on when one is unreachable.
 - iOS gathers both IPv4 and IPv6 candidates, so P2P works over IPv6 on cellular.
+
+**Messages**
+
+- Your messages and replies show when they were sent: just the time for today, the date for earlier days, and the year for older ones. Hover on web and desktop for the full date and time.
+- Your messages show whether they reached the host: Sending, Not confirmed when there is no answer within 30 seconds or the connection drops, Failed with the reason, and Delivered on your latest message. Works on web, desktop, and iOS.
+- A message that is not confirmed is checked with the host after reconnecting and only resent if the host never got it, so it is never sent twice. Failed messages can be retried or taken back into the composer to edit.
+- How long a reply took now counts up to its first word of answer, so a single-step run no longer shows 0s.
 
 **Providers**
 
@@ -32,6 +39,7 @@ date: 2026-10-27
 - Draft project and checkout chips are liquid-glass capsules, a finished run shows its outcome icon, and the context meter is just the ring.
 - Quotes next to CJK text pair up again, question cards cap their height and scroll, and a failed run shows the provider's status and message with the raw text under Details.
 - Composer menus shrink to fit instead of pushing the composer off screen.
+- Live thinking in the trace drawer is no longer cut off at four lines and keeps scrolling to the newest text.
 
 **Desktop**
 
