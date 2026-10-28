@@ -5,20 +5,19 @@ const REPOSITORY = "https://github.com/bubbleptr/pinomad";
 
 const copy = {
   en: {
-    title: "PiNomad — the durable coding agent for your own machine",
+    title: "PiNomad — open-source, self-hosted coding agent that goes where you go",
     description:
-      "PiNomad is a self-hosted coding agent built on Pi Durable. It checkpoints every model and tool call, so a crash or restart picks up where it stopped; the Mac app, the web client, and the iPhone app all attach to the same runs.",
+      "PiNomad is an open-source, self-hosted coding agent. It runs on your own Mac or Linux machine, and you follow and steer it from the Mac app, the browser, or your iPhone. Built on Pi Durable, so a crash or restart resumes the run.",
     social:
-      "Runs on your machine and checkpoints every model and tool call; the Mac app, the web client, and the iPhone app all attach to the same runs.",
+      "Run the coding agent on your own machine and steer it from the Mac app, the browser, or your iPhone. Every model and tool call is checkpointed.",
     locale: "en_US",
     altLocale: "zh_CN",
   },
   zh: {
-    title: "PiNomad — 崩溃重启也不丢进度的 coding agent",
+    title: "PiNomad — 开源自托管 coding agent，在哪都能接手",
     description:
-      "PiNomad 是基于 Pi Durable 的自托管 coding agent，跑在你自己的机器上。每一步模型和工具调用都会存下检查点，崩溃或重启后从断处接着跑；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。",
-    social:
-      "跑在你自己的机器上，每一步模型和工具调用都存检查点；Mac、Web 和 iPhone 客户端连向同一个宿主，随时接手正在跑的任务。",
+      "PiNomad 是开源、自托管的 coding agent，跑在你的 Mac 或 Linux 上，Mac App、浏览器、iPhone 随时接手。基于 Pi Durable，崩溃重启也从断处接着跑。",
+    social: "跑在你机器上、在哪都能接手的开源 coding agent，崩溃重启也从断处接着跑。",
     locale: "zh_CN",
     altLocale: "en_US",
   },

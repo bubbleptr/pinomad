@@ -3,7 +3,7 @@ import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { buttonVariants } from "@/components/ui/button.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
-import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram, MachineDiagram } from "./diagrams.tsx";
+import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
 import { shot } from "./shots.ts";
 
@@ -112,7 +112,7 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
   );
 }
 
-/** How it works: the durable run and the machine it runs on. */
+/** How it works: the durable run. */
 export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"]; durable: LandingCopy["durable"] }) {
   return (
     <section className="section" id="how-it-works" aria-labelledby="core-title">
@@ -126,17 +126,35 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
             <p>{durable.body}</p>
             <DurableDiagram t={durable} />
           </article>
-          <article className="cell cell-machine">
-            <h3>{t.machine.title}</h3>
-            <p>{t.machine.body}</p>
-            <MachineDiagram t={t.machine.diagram} />
-          </article>
         </div>
         <p className="section-link">
           <a className="text-link" href={localized(lang, "/docs/features/")}>
             {t.allFeatures}
           </a>
         </p>
+      </div>
+    </section>
+  );
+}
+
+export function Subscriptions({ t }: { t: LandingCopy["subs"] }) {
+  return (
+    <section className="section" id="subscriptions" aria-labelledby="subs-title">
+      <div className="wrap">
+        <div className="section-head">
+          <SectionHead id="subs-title" eyebrow={t.eyebrow} title={t.title} />
+        </div>
+        <ul className="subs">
+          {t.plans.map((plan) => (
+            <li key={plan.logo} className="sub">
+              <span className={`sub-logo is-${plan.logo}`} aria-hidden="true" />
+              <span>
+                <strong>{plan.name}</strong>
+                <span className="sub-note">{plan.note}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -197,6 +215,11 @@ export function Connection({ t }: { t: LandingCopy["connection"] }) {
               </li>
             ))}
           </ul>
+          <p className="section-link">
+            <a className="text-link" href={t.more.href}>
+              {t.more.text}
+            </a>
+          </p>
         </div>
         <ConnectionDiagram t={t.diagram} />
       </div>

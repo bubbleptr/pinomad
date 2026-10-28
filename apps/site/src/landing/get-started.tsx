@@ -8,7 +8,7 @@ import { StarIcon } from "./icons.tsx";
 /** The newest changelog entry, read from the changelog when the page is prerendered. */
 export type LatestRelease = { version: string; date: string };
 
-export function GetStarted({ lang, t, latest }: { lang: Lang; t: LandingCopy["start"]; latest?: LatestRelease }) {
+export function GetStarted({ t }: { t: LandingCopy["start"] }) {
   return (
     <section className="section" id="quick-start" aria-labelledby="quick-start-title">
       <div className="wrap split">
@@ -49,22 +49,30 @@ export function GetStarted({ lang, t, latest }: { lang: Lang; t: LandingCopy["st
             </li>
           ))}
         </ul>
-        <div className="start-end">
-          {latest && (
-            <p className="latest">
-              {t.latest(latest.version, formatDate(lang, latest.date))}
-              {" · "}
-              <a href={localized(lang, "/changelog/")}>{t.changelog}</a>
-            </p>
-          )}
-          <a className={buttonVariants({ variant: "quiet" })} href={githubUrl}>
-            <StarIcon />
-            {t.star}
-          </a>
-          <p className="star-note">{t.starNote}</p>
-        </div>
       </div>
     </section>
+  );
+}
+
+/** The page's sign-off after the roadmap: the latest release and the GitHub star. */
+export function Closing({ lang, t, latest }: { lang: Lang; t: LandingCopy["start"]; latest?: LatestRelease }) {
+  return (
+    <div className="wrap">
+      <div className="start-end">
+        {latest && (
+          <p className="latest">
+            {t.latest(latest.version, formatDate(lang, latest.date))}
+            {" · "}
+            <a href={localized(lang, "/changelog/")}>{t.changelog}</a>
+          </p>
+        )}
+        <a className={buttonVariants({ variant: "quiet" })} href={githubUrl}>
+          <StarIcon />
+          {t.star}
+        </a>
+        <p className="star-note">{t.starNote}</p>
+      </div>
+    </div>
   );
 }
 

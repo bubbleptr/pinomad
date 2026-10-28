@@ -8,6 +8,9 @@ import type { Lang } from "@/lib/i18n.ts";
 
 type Link = { text: string; href: string };
 
+/** Provider marks drawn by page.css as `.sub-logo.is-<name>` masks. */
+export type SubLogo = "claude" | "openai" | "copilot" | "grok" | "kimi" | "ollama";
+
 export interface LandingCopy {
   skip: string;
   home: string;
@@ -32,12 +35,12 @@ export interface LandingCopy {
   core: {
     eyebrow: string;
     title: string;
-    machine: {
-      title: string;
-      body: string;
-      diagram: { label: string; machine: string; uses: string[] };
-    };
     allFeatures: string;
+  };
+  subs: {
+    eyebrow: string;
+    title: string;
+    plans: { logo: SubLogo; name: string; note: string }[];
   };
   durable: {
     title: string;
@@ -61,6 +64,7 @@ export interface LandingCopy {
     title: string;
     lead: string;
     chips: { name: string; text: string }[];
+    more: Link;
     diagram: { label: string; host: string; relay: string };
   };
   next: {
@@ -104,8 +108,8 @@ export const copy: Record<Lang, LandingCopy> = {
     home: "PiNomad home",
     primaryNav: "Primary",
     hero: {
-      title: "The durable coding agent for your own machine.",
-      lead: "PiNomad runs on your machine, with that machine's shell and repos, and checkpoints every model and tool call. If the host crashes or restarts, the run picks up where it stopped. The Mac app, the web client, and the iPhone app all attach to the same runs.",
+      title: "The open-source coding agent that goes where you go.",
+      lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
       modelsLabel: "Use any model pi supports",
@@ -116,26 +120,28 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     anywhere: {
       eyebrow: "Any screen",
-      title: "Step away from your desk",
-      lead: "Start a task at your desk, then check on it or steer it from your phone. The Mac app, the web client, and the iPhone app attach to the same runs.",
+      title: "Start at your desk, decide from your phone",
+      lead: "Start a task, then walk away. When the agent needs a decision, it asks one to four multiple-choice questions and waits; the iPhone app notifies you when a run is waiting for you, finished, or failed. Tap through to answer, send a message to steer the run, or queue the next one.",
       clients: ["Mac app", "Web", "iPhone"],
       shotAlt:
         "The same run in the PiNomad iPhone app: the agent's summary of the accent folding, the README request below it, and the run still going at the bottom with a stop button",
     },
     core: {
       eyebrow: "How it works",
-      title: "Runs on your machine, survives crashes, follows you around",
-      machine: {
-        title: "Your machine does the work",
-        body: "The host runs on a Mac mini, a Linux box, or a VPS, and the agent uses that machine's shell, repositories, and credentials.",
-        diagram: {
-          label:
-            "The PiNomad host runs inside your own machine, a Mac mini, a Linux box, or a VPS, and uses that machine's shell, repositories, and credentials.",
-          machine: "Your machine",
-          uses: ["Shell", "Repos", "Credentials"],
-        },
-      },
+      title: "Built on Pi Durable",
       allFeatures: "Everything the agent can do",
+    },
+    subs: {
+      eyebrow: "Models",
+      title: "Bring your own subscription",
+      plans: [
+        { logo: "claude", name: "Claude", note: "Pro · Max" },
+        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
+        { logo: "copilot", name: "GitHub Copilot", note: "Subscription" },
+        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
+        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
+        { logo: "ollama", name: "Your endpoint", note: "Ollama · vLLM · LM Studio" },
+      ],
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -173,14 +179,15 @@ export const copy: Record<Lang, LandingCopy> = {
     connection: {
       eyebrow: "Connection",
       title: "Reach your host from anywhere, privately",
-      lead: "Pair a device by scanning a one-time QR code. Auto starts on the relay when a relay is available, then switches to a direct WebRTC link in the background; if that fails it stays on the relay. Choose Auto, Direct only, or Relay only for each host.",
+      lead: "Pair a device once with a one-time QR code. Everything after that is end-to-end encrypted with Noise: it goes peer-to-peer when the network allows, and otherwise through a relay that only ever sees ciphertext. Revoke any device from the host.",
       chips: [
         { name: "P2P", text: " over your LAN, tailnet, or the public internet" },
         { name: "Relay", text: " that only sees ciphertext" },
       ],
+      more: { text: "How pairing, P2P, and the relay work", href: "/docs/#connect-your-other-devices" },
       diagram: {
         label:
-          "A device pairs with the host once by scanning its QR code. Auto connects through the relay when a relay is available, then tries a direct WebRTC link in the background; if that fails it stays on the relay. Either way the channel is end-to-end encrypted, so the relay only forwards ciphertext.",
+          "A device pairs with the host once by scanning its QR code. After that the two talk end-to-end encrypted, directly over WebRTC when the network allows, otherwise through a relay that only forwards ciphertext.",
         host: "Host",
         relay: "Relay",
       },
@@ -202,7 +209,7 @@ export const copy: Record<Lang, LandingCopy> = {
         },
         {
           title: "An open plugin protocol",
-          body: "Built-in features are already written against the same extension boundary. Once it settles, the protocol opens to plugins from anyone.",
+          body: "PiNomad's own features already use the extension protocol. Once it settles, it opens up, and anyone can write plugins that add tools and new ways to present results.",
           link: { text: "ADR-0004", href: adr4 },
         },
       ],
@@ -218,18 +225,14 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "Install, start the host, open a client",
       lead: "Free and open source under Apache-2.0. The host needs Node 25+ on macOS or Linux.",
       notes: [
-        <>
-          <code>pinomad host</code> reads credentials only from its own data directory. Sign in to a model provider
-          under Settings → Providers: a subscription, an API key, or your own compatible endpoint. No provider yet?{" "}
-          <code>pinomad host --faux "hi"</code> runs a scripted fake model so you can click around.
-        </>,
-        "It's early. Pi Durable is itself experimental, and the host and its clients must speak the same protocol major version.",
+        "Then sign in to a model provider under Settings → Providers: a subscription you already pay for, an API key, or your own compatible endpoint.",
+        "It's an early version, and things still change between releases.",
       ],
       terminal: "Terminal",
       copy: "Copy",
       copied: "Copied",
       copyFailed: "Copy failed",
-      hostComment: "# uses credentials from its own data directory",
+      hostComment: "# starts the host on this machine",
       linkComment: "# in another terminal: prints a web client link",
       clientsTitle: "Clients",
       clients: [
@@ -237,8 +240,7 @@ export const copy: Record<Lang, LandingCopy> = {
           name: "Web",
           body: (
             <>
-              Open <a href="https://app.pinomad.si">app.pinomad.si</a>, or the web client your host serves itself (
-              <code>pinomad link</code>). Any modern browser.
+              Your host serves it: <code>pinomad link</code> prints the link. Any modern browser.
             </>
           ),
         },
@@ -274,10 +276,11 @@ export const copy: Record<Lang, LandingCopy> = {
     hero: {
       title: (
         <>
-          <span className="nowrap">崩溃重启也不丢进度的</span> <span className="nowrap">coding agent</span>
+          <span className="nowrap">跑在你机器上、</span>
+          <span className="nowrap">在哪都能接手的</span> <span className="nowrap">开源 coding agent</span>
         </>
       ),
-      lead: "PiNomad 跑在你自己的机器上，直接调用本机的 shell 和代码。每一步模型和工具调用都会存下检查点，就算进程挂了或机器重启，也能从断处接着跑。Mac App、Web 和 iPhone App 连向同一个宿主，任务在哪都能随时接手。",
+      lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
       start: "开始使用",
       github: "在 GitHub 上查看",
       modelsLabel: "pi 支持的模型都能用",
@@ -287,28 +290,31 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     anywhere: {
       eyebrow: "多端接力",
-      title: "离开电脑也能接着管",
-      lead: "在电脑前派好活，出门拿手机看进度，方向偏了随时插话调整。Mac App、Web 和 iPhone App 连的是同一批任务。",
+      title: "在电脑前派活，出门用手机拍板",
+      lead: "派完活就能走开。要你拍板时，agent 会出几道选择题等你回答；任务等你、跑完或失败，iPhone 都会推送。点开就能回答，也能中途插话或排下一条。",
       clients: ["Mac App", "Web", "iPhone"],
       shotAlt: "同一个任务在 PiNomad iPhone App 里：上面是 agent 对重音字母折叠的总结，下面是写 README 的追问，最底下任务还在跑，旁边是停止按钮",
     },
     core: {
       eyebrow: "工作方式",
-      title: "跑在你的机器上，崩了能接着跑，走到哪跟到哪",
-      machine: {
-        title: "活在你自己的机器上干",
-        body: "宿主可以跑在 Mac mini、Linux 主机或 VPS 上，agent 直接用那台机器的 shell、代码仓库和凭据。",
-        diagram: {
-          label: "PiNomad 宿主跑在你自己的机器上（Mac mini、Linux 主机或 VPS），直接用那台机器的 shell、代码仓库和凭据。",
-          machine: "你的机器",
-          uses: ["Shell", "代码仓库", "凭据"],
-        },
-      },
+      title: "基于 Pi Durable",
       allFeatures: "agent 能做的所有事",
+    },
+    subs: {
+      eyebrow: "模型",
+      title: "用你已经付费的订阅",
+      plans: [
+        { logo: "claude", name: "Claude", note: "Pro · Max" },
+        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
+        { logo: "copilot", name: "GitHub Copilot", note: "订阅" },
+        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
+        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
+        { logo: "ollama", name: "自己的 endpoint", note: "Ollama · vLLM · LM Studio" },
+      ],
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
-      body: "每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。",
+      body: "Pi Durable 在每次模型和工具调用后存检查点。宿主重启后从最近的检查点恢复，只重跑被打断的那一步。",
       description:
         "同一个任务跑两遍，一边没有检查点，一边用 Pi Durable。前三步跑完，第四步跑到一半宿主崩溃。重启后，没有检查点的那边三步全丢，从第一步重来；Pi Durable 这边三步都还在，只重跑被打断的那一步，然后跑完。",
       plain: "没有检查点",
@@ -324,7 +330,7 @@ export const copy: Record<Lang, LandingCopy> = {
     agents: {
       eyebrow: "具名 Agent",
       title: "每个角色交给一个专属 agent",
-      lead: "把一个角色定义一次：提示词、模型、思考等级都是它自己的。之后用 @名字 或子代理派活给它，像一个小团队那样分工：",
+      lead: "每个角色有自己的提示词、模型和思考等级，用 @名字 或子代理派活，像小团队一样分工：",
       roles: [
         { name: "Planner", job: "和你一起定方案" },
         { name: "Worker", job: "写代码" },
@@ -340,13 +346,14 @@ export const copy: Record<Lang, LandingCopy> = {
     connection: {
       eyebrow: "连接",
       title: "在哪都能连上宿主，内容只有你看得到",
-      lead: "新设备扫一次性二维码就能配对。Auto 有中继时先经中继连上，随后在后台切到 WebRTC 直连；打洞失败就继续走中继。每台宿主可以单独选 Auto、Direct only 或 Relay only。",
+      lead: "扫一次二维码完成配对，之后全程 Noise 端到端加密。能直连就走 P2P，不通再经中继，中继只看得到密文。设备可以随时吊销。",
       chips: [
         { name: "P2P", text: "（直连）：局域网、tailnet 或公网" },
         { name: "中继", text: "：只转发密文" },
       ],
+      more: { text: "配对、P2P 和中继的细节", href: "/zh/docs/remote-access/" },
       diagram: {
-        label: "设备扫一次宿主的二维码完成配对。Auto 有中继时先经中继连上，再在后台尝试 WebRTC 直连；打洞失败就留在中继。两种方式都是端到端加密，中继只转发密文。",
+        label: "设备扫一次宿主的二维码完成配对。之后两者之间端到端加密：网络允许时走 WebRTC 直连，否则经中继转发，中继只转发密文。",
         host: "宿主",
         relay: "中继",
       },
@@ -354,11 +361,11 @@ export const copy: Record<Lang, LandingCopy> = {
     next: {
       eyebrow: "接下来",
       title: "PiNomad 接下来要做的",
-      lead: "下面这些都还没上线，每一项都链到规划它的 issue。",
+      lead: "以下都还没上线，每项链到对应的 issue。",
       items: [
         {
           title: "一台宿主，多个执行环境",
-          body: "宿主留在你的主力机上，把项目指向一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具通过 SSH 在那台机器上执行，底层是 pi-env。",
+          body: "宿主留在主力机上，项目指向另一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具经 pi-env 用 SSH 在那台机器上执行。",
           link: { text: "#363", href: issue(363) },
         },
         {
@@ -368,7 +375,7 @@ export const copy: Record<Lang, LandingCopy> = {
         },
         {
           title: "开放插件协议",
-          body: "内置功能已经按同一套扩展边界来写，等协议稳定后对外开放，谁都能写插件。",
+          body: "PiNomad 自己的功能就是用这套扩展协议写的，稳定后对外开放，谁都能写插件加工具和展示方式。",
           link: { text: "ADR-0004", href: adr4 },
         },
       ],
@@ -383,18 +390,14 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "三条命令跑起来",
       lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
       notes: [
-        <>
-          <code>pinomad host</code> 只读宿主数据目录里的凭据。模型在 Settings → Providers 里接入：用订阅登录、
-          填 API key，或者填自己的兼容 endpoint。还没接入？可以先跑{" "}
-          <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
-        </>,
-        "项目还在早期，底层的 Pi Durable 也处于实验阶段；升级时请保持宿主和客户端的协议主版本号一致。",
+        "然后在 Settings → Providers 接入模型：已有订阅、API key 或兼容 endpoint 都行。",
+        "目前是早期版本，版本之间还会有变化。",
       ],
       terminal: "终端",
       copy: "复制",
       copied: "已复制",
       copyFailed: "复制失败",
-      hostComment: "# 用自己数据目录里的凭据",
+      hostComment: "# 在本机启动宿主",
       linkComment: "# 另开一个终端，打印 Web 客户端链接",
       clientsTitle: "客户端",
       clients: [
@@ -402,7 +405,7 @@ export const copy: Record<Lang, LandingCopy> = {
           name: "Web",
           body: (
             <>
-              直接打开 <a href="https://app.pinomad.si">app.pinomad.si</a>，或运行 <code>pinomad link</code> 打开宿主自带的 Web 客户端，现代浏览器即开即用。
+              宿主自带，运行 <code>pinomad link</code> 打印链接，现代浏览器即开即用。
             </>
           ),
         },
@@ -410,13 +413,12 @@ export const copy: Record<Lang, LandingCopy> = {
           name: "macOS",
           body: (
             <>
-              在 <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a> 下载已签名的 DMG
-              安装包，支持自动更新。
+              从 <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a> 下载已签名的 DMG，自动更新。
             </>
           ),
           tag: "Apple 芯片",
         },
-        { name: "iOS", body: "扫一下宿主生成的一次性二维码即可完成配对。", tag: "目前仅限 TestFlight 内测" },
+        { name: "iOS", body: "扫宿主的一次性二维码配对。", tag: "目前仅限 TestFlight 内测" },
         { name: "Linux、Windows", body: "直接使用 Web 客户端。" },
       ],
       latest: (version, date) => `最新版本：${version}，${date}`,

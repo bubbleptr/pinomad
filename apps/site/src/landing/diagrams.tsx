@@ -171,11 +171,8 @@ export function TitleBar({ x, y, w, title }: { x: number; y: number; w: number; 
 // Remix Icon line icons (Remix Icon License v1.0, see docs/licenses/remixicon.md),
 // path data copied from remixicon 4.9.1 on its 24-unit grid. They are filled outlines.
 const icons = {
-  terminal: "M10.9999 12L3.92886 19.0711L2.51465 17.6569L8.1715 12L2.51465 6.34317L3.92886 4.92896L10.9999 12ZM10.9999 19H20.9999V21H10.9999V19Z",
   terminalBox:
     "M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM4 5V19H20V5H4ZM12 15H18V17H12V15ZM8.66685 12L5.83842 9.17157L7.25264 7.75736L11.4953 12L7.25264 16.2426L5.83842 14.8284L8.66685 12Z",
-  repo: "M13 21V23.5L10 21.5L7 23.5V21H6.5C4.567 21 3 19.433 3 17.5V5C3 3.34315 4.34315 2 6 2H20C20.5523 2 21 2.44772 21 3V20C21 20.5523 20.5523 21 20 21H13ZM13 19H19V16H6.5C5.67157 16 5 16.6716 5 17.5C5 18.3284 5.67157 19 6.5 19H7V17H13V19ZM19 14V4H6V14.0354C6.1633 14.0121 6.33024 14 6.5 14H19ZM7 5H9V7H7V5ZM7 8H9V10H7V8ZM7 11H9V13H7V11Z",
-  key: "M10.7577 11.8281L18.6066 3.97919L20.0208 5.3934L18.6066 6.80761L21.0815 9.28249L19.6673 10.6967L17.1924 8.22183L15.7782 9.63604L17.8995 11.7574L16.4853 13.1716L14.364 11.0503L12.1719 13.2423C13.4581 15.1837 13.246 17.8251 11.5355 19.5355C9.58291 21.4882 6.41709 21.4882 4.46447 19.5355C2.51184 17.5829 2.51184 14.4171 4.46447 12.4645C6.17493 10.754 8.81633 10.5419 10.7577 11.8281ZM10.1213 18.1213C11.2929 16.9497 11.2929 15.0503 10.1213 13.8787C8.94975 12.7071 7.05025 12.7071 5.87868 13.8787C4.70711 15.0503 4.70711 16.9497 5.87868 18.1213C7.05025 19.2929 8.94975 19.2929 10.1213 18.1213Z",
   lock: "M6 8V7C6 3.68629 8.68629 1 12 1C15.3137 1 18 3.68629 18 7V8H20C20.5523 8 21 8.44772 21 9V21C21 21.5523 20.5523 22 20 22H4C3.44772 22 3 21.5523 3 21V9C3 8.44772 3.44772 8 4 8H6ZM19 10H5V20H19V10ZM11 15.7324C10.4022 15.3866 10 14.7403 10 14C10 12.8954 10.8954 12 12 12C13.1046 12 14 12.8954 14 14C14 14.7403 13.5978 15.3866 13 15.7324V18H11V15.7324ZM8 8H16V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V8Z",
   server:
     "M5 11H19V5H5V11ZM21 4V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V4C3 3.44772 3.44772 3 4 3H20C20.5523 3 21 3.44772 21 4ZM19 13H5V19H19V13ZM7 15H10V17H7V15ZM7 7H10V9H7V7Z",
@@ -255,50 +252,6 @@ const QR = ["111010111", "101001101", "111010111", "000110100", "101011011", "01
 const qrPath = QR.flatMap((row, y) =>
   [...row].flatMap((bit, x) => (bit === "1" ? [`M${x * 5} ${y * 5}h4.4v4.4h-4.4z`] : [])),
 ).join("");
-
-/** The host on your own machine sends work to the machine's shell, repositories, and credentials. */
-export function MachineDiagram({ t }: { t: LandingCopy["core"]["machine"]["diagram"] }) {
-  const loop = { dur: "3.2s" };
-  const uses = [
-    { icon: "terminal", x: 76 },
-    { icon: "repo", x: 180 },
-    { icon: "key", x: 284 },
-  ] as const;
-  return (
-    <Diagram label={t.label} height={216}>
-      <Card x={10} y={8} w={340} h={200} r={14} />
-      <TitleBar x={10} y={8} w={340} title={t.machine} />
-
-      <rect className="dg-screen" x="26" y="48" width="308" height="64" rx="10" />
-      <text className="dg-code is-dim" x="40" y="70">
-        $
-      </text>
-      <text className="dg-code" x="54" y="70">
-        pinomad host
-      </text>
-      <rect className="dg-cursor" x="152" y="60" width="7" height="13" rx="1" />
-      <Bar x={54} y={84} w={150} />
-      <Bar x={54} y={96} w={100} />
-      <circle className="dg-live dg-breathe" cx="316" cy="66" r="3.5" />
-
-      <path className="dg-line" d="M180 112V124M76 124H284M76 124V136M180 124V136M284 124V136" />
-      {uses.map((use, i) => (
-        <g key={use.icon}>
-          <Down x={use.x} y={136} />
-          <rect className="dg-tile" x={use.x - 50} y="136" width="100" height="60" rx="10" />
-          <rect className="dg-tile-lit dg-motion" x={use.x - 50} y="136" width="100" height="60" rx="10" opacity="0">
-            <Shown {...loop} from={0.32} to={0.78} />
-          </rect>
-          <Icon name={use.icon} x={use.x - 9} y={146} />
-          <text className="dg-name is-small" x={use.x} y="184">
-            {t.uses[i]}
-          </text>
-          <Pulse {...loop} path={`M180 112V124H${use.x}V136`} from={0.05} to={0.3} />
-        </g>
-      ))}
-    </Diagram>
-  );
-}
 
 const hues = ["is-violet", "is-blue", "is-amber", "is-rose"];
 
