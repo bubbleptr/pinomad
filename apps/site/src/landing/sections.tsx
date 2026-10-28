@@ -142,7 +142,7 @@ export function Subscriptions({ t }: { t: LandingCopy["subs"] }) {
     <section className="section" id="subscriptions" aria-labelledby="subs-title">
       <div className="wrap">
         <div className="section-head">
-          <SectionHead id="subs-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
+          <SectionHead id="subs-title" eyebrow={t.eyebrow} title={t.title} />
         </div>
         <ul className="subs">
           {t.plans.map((plan) => (

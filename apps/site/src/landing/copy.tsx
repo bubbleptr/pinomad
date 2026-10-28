@@ -40,7 +40,6 @@ export interface LandingCopy {
   subs: {
     eyebrow: string;
     title: string;
-    lead: string;
     plans: { logo: SubLogo; name: string; note: string }[];
   };
   durable: {
@@ -135,7 +134,6 @@ export const copy: Record<Lang, LandingCopy> = {
     subs: {
       eyebrow: "Models",
       title: "Bring your own subscription",
-      lead: "PiNomad doesn't resell tokens. Sign in with the plan you already pay for, add an API key, or point it at your own endpoint.",
       plans: [
         { logo: "claude", name: "Claude", note: "Pro · Max" },
         { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
@@ -305,7 +303,6 @@ export const copy: Record<Lang, LandingCopy> = {
     subs: {
       eyebrow: "模型",
       title: "用你已经付费的订阅",
-      lead: "PiNomad 不卖 token。直接登录你在用的订阅，也可以填 API key，或接自己的 endpoint。",
       plans: [
         { logo: "claude", name: "Claude", note: "Pro · Max" },
         { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
