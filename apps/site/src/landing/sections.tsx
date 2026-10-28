@@ -197,6 +197,11 @@ export function Connection({ t }: { t: LandingCopy["connection"] }) {
               </li>
             ))}
           </ul>
+          <p className="section-link">
+            <a className="text-link" href={t.more.href}>
+              {t.more.text}
+            </a>
+          </p>
         </div>
         <ConnectionDiagram t={t.diagram} />
       </div>

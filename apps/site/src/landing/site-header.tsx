@@ -29,9 +29,12 @@ export function SiteHeader({ lang, t }: { lang: Lang; t: LandingCopy }) {
           <a className="icon-link" href={githubUrl} aria-label="GitHub">
             <GitHubIcon />
           </a>
-          <a className="app-link" href={nav.app.url}>
-            <span className="when-signed-out">{nav.app.signedOut}</span>
-            <span className="when-signed-in">{nav.app.signedIn}</span>
+          {/* A new visitor can't sign up at the app yet, so they get the install steps; someone who already uses the app goes back to it. */}
+          <a className="app-link when-signed-out" href="#quick-start">
+            {t.hero.start}
+          </a>
+          <a className="app-link when-signed-in" href={nav.app.url}>
+            {nav.app.signedIn}
           </a>
         </div>
       </div>

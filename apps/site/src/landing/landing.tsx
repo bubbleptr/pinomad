@@ -18,12 +18,12 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
       <SiteHeader lang={lang} t={t} />
       <main id="main">
         <Hero lang={lang} t={t.hero} />
-        <Anywhere lang={lang} t={t.anywhere} />
         <Core lang={lang} t={t.core} durable={t.durable} />
-        <Agents lang={lang} t={t.agents} />
+        <Anywhere lang={lang} t={t.anywhere} />
         <Connection t={t.connection} />
-        <Next t={t.next} />
+        <Agents lang={lang} t={t.agents} />
         <GetStarted lang={lang} t={t.start} latest={latest} />
+        <Next t={t.next} />
       </main>
       <SiteFooter lang={lang} t={t.footer} />
     </div>
