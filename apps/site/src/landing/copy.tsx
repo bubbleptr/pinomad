@@ -110,7 +110,7 @@ export const copy: Record<Lang, LandingCopy> = {
       github: "View on GitHub",
       modelsLabel: "Use any model pi supports",
       models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
-      modelsMore: "30 more",
+      modelsMore: "17 more",
       shotAlt:
         "The PiNomad web client mid-run: the slugkit project's conversations in the sidebar; the agent has folded accented letters in slugs, been asked to document the rules in the README, edited it, and is running the tests again",
     },
@@ -282,7 +282,7 @@ export const copy: Record<Lang, LandingCopy> = {
       github: "在 GitHub 上查看",
       modelsLabel: "pi 支持的模型都能用",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
-      modelsMore: "另有 30 家",
+      modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是 slugkit 项目的对话列表；agent 改好了重音字母的折叠，又被要求在 README 里写明规则，改完 README 后正在重跑测试",
     },
     anywhere: {
