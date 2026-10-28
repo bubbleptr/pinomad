@@ -5,7 +5,7 @@ const REPOSITORY = "https://github.com/bubbleptr/pinomad";
 
 const copy = {
   en: {
-    title: "PiNomad — open-source, self-hosted coding agent you can steer from anywhere",
+    title: "PiNomad — open-source, self-hosted coding agent that goes where you go",
     description:
       "PiNomad is an open-source, self-hosted coding agent. It runs on your own Mac or Linux machine, and you follow and steer it from the Mac app, the browser, or your iPhone. Built on Pi Durable, so a crash or restart resumes the run.",
     social:
@@ -14,11 +14,10 @@ const copy = {
     altLocale: "zh_CN",
   },
   zh: {
-    title: "PiNomad — 开源自托管的 coding agent，人在哪都能接手",
+    title: "PiNomad — 开源自托管 coding agent，在哪都能接手",
     description:
-      "PiNomad 是开源、自托管的 coding agent，跑在你自己的 Mac 或 Linux 上，用 Mac App、浏览器或 iPhone 随时查看和接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启后从断处接着跑。",
-    social:
-      "coding agent 跑在你自己的机器上，用 Mac App、浏览器或 iPhone 随时接手；每次模型和工具调用都存检查点。",
+      "PiNomad 是开源、自托管的 coding agent，跑在你的 Mac 或 Linux 上，Mac App、浏览器、iPhone 随时接手。基于 Pi Durable，崩溃重启也从断处接着跑。",
+    social: "跑在你机器上、在哪都能接手的开源 coding agent，崩溃重启也从断处接着跑。",
     locale: "zh_CN",
     altLocale: "en_US",
   },

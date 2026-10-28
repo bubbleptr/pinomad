@@ -105,8 +105,8 @@ export const copy: Record<Lang, LandingCopy> = {
     home: "PiNomad home",
     primaryNav: "Primary",
     hero: {
-      title: "Run the agent on your machine. Steer it from anywhere.",
-      lead: "PiNomad is an open-source coding agent that runs on your own Mac or Linux machine, with its shell and repos. Start a task at your desk, then follow it from the Mac app, the browser, or your iPhone. It's built on Pi Durable: every model and tool call is checkpointed, so a crash or restart resumes the run instead of starting it over.",
+      title: "The open-source coding agent that goes where you go.",
+      lead: "It runs on your own Mac or Linux machine, with its shell and repos; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
       modelsLabel: "Any model pi supports, including subscriptions you already pay for",
@@ -271,14 +271,14 @@ export const copy: Record<Lang, LandingCopy> = {
     hero: {
       title: (
         <>
-          <span className="nowrap">agent 跑在你的机器上，</span>
-          <span className="nowrap">你在哪都能接手</span>
+          <span className="nowrap">跑在你机器上、</span>
+          <span className="nowrap">在哪都能接手的</span> <span className="nowrap">开源 coding agent</span>
         </>
       ),
-      lead: "PiNomad 是开源的 coding agent，跑在你自己的 Mac 或 Linux 上，用那台机器的 shell 和代码仓库。在电脑前派好活，出门用 Mac App、浏览器或 iPhone 接着管。底层是 Pi Durable：每次模型和工具调用都存检查点，崩溃或重启后从断处接着跑，不用从头再来。",
+      lead: "宿主用你 Mac 或 Linux 上的 shell 和代码仓库，Mac App、浏览器、iPhone 随时接手。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
       start: "开始使用",
       github: "在 GitHub 上查看",
-      modelsLabel: "pi 支持的模型都能用，也能直接用你已经在付费的订阅",
+      modelsLabel: "pi 支持的模型都能用，已有订阅可直接登录",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是 slugkit 项目的对话列表；agent 改好了重音字母的折叠，又被要求在 README 里写明规则，改完 README 后正在重跑测试",
@@ -286,16 +286,16 @@ export const copy: Record<Lang, LandingCopy> = {
     anywhere: {
       eyebrow: "多端接力",
       title: "在电脑前派活，出门用手机拍板",
-      lead: "派好活就可以走开。agent 需要你拍板时，会问你 1–4 道选择题然后等着；任务在等你、跑完或失败时，iPhone App 会推送通知。点开就能回答，跑到一半也能插话调整方向，或者先排好下一条。",
+      lead: "派完活就能走开。要你拍板时，agent 会出几道选择题等你回答；任务等你、跑完或失败，iPhone 都会推送。点开就能回答，也能中途插话或排下一条。",
       clients: ["Mac App", "Web", "iPhone"],
       shotAlt: "同一个任务在 PiNomad iPhone App 里：上面是 agent 对重音字母折叠的总结，下面是写 README 的追问，最底下任务还在跑，旁边是停止按钮",
     },
     core: {
       eyebrow: "工作方式",
-      title: "基于 Pi Durable，跑在你自己的机器上",
+      title: "基于 Pi Durable，跑在你的机器上",
       machine: {
-        title: "用你机器上的环境，每条对话一个 worktree",
-        body: "宿主可以跑在 Mac mini、Linux 主机或 VPS 上，agent 直接用那台机器的 shell、工具链和凭据。Git 项目里每条对话有自己的 worktree 和分支，几条对话并行也不会动到你手上的检出。AGENTS.md、CLAUDE.md、skills 和你的 MCP server 都照常能用。",
+        title: "用本机环境，每条对话一个 worktree",
+        body: "宿主跑在 Mac mini、Linux 主机或 VPS 上，用那台机器的 shell、工具链和凭据。Git 项目里每条对话有独立的 worktree 和分支，并行也不碰你的检出。AGENTS.md、CLAUDE.md、skills 和 MCP 照常可用。",
         diagram: {
           label: "PiNomad 宿主跑在你自己的机器上（Mac mini、Linux 主机或 VPS），直接用那台机器的 shell、代码仓库和凭据。",
           machine: "你的机器",
@@ -306,7 +306,7 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
-      body: "每完成一次模型调用或工具调用，Pi Durable 都会存下检查点。宿主重启后直接从最近一个检查点恢复，只有中断时没跑完的那一步需要重跑。",
+      body: "Pi Durable 在每次模型和工具调用后存检查点。宿主重启后从最近的检查点恢复，只重跑被打断的那一步。",
       description:
         "同一个任务跑两遍，一边没有检查点，一边用 Pi Durable。前三步跑完，第四步跑到一半宿主崩溃。重启后，没有检查点的那边三步全丢，从第一步重来；Pi Durable 这边三步都还在，只重跑被打断的那一步，然后跑完。",
       plain: "没有检查点",
@@ -322,7 +322,7 @@ export const copy: Record<Lang, LandingCopy> = {
     agents: {
       eyebrow: "具名 Agent",
       title: "每个角色交给一个专属 agent",
-      lead: "把一个角色定义一次：提示词、模型、思考等级都是它自己的。之后用 @名字 或子代理派活给它，像一个小团队那样分工：",
+      lead: "每个角色有自己的提示词、模型和思考等级，用 @名字 或子代理派活，像小团队一样分工：",
       roles: [
         { name: "Planner", job: "和你一起定方案" },
         { name: "Worker", job: "写代码" },
@@ -338,7 +338,7 @@ export const copy: Record<Lang, LandingCopy> = {
     connection: {
       eyebrow: "连接",
       title: "在哪都能连上宿主，内容只有你看得到",
-      lead: "新设备扫一次性二维码，配对一次就行。之后的通信用 Noise 端到端加密：网络允许时走 P2P 直连，不通就经中继转发，中继只看得到密文。任何设备都可以在宿主上随时吊销。",
+      lead: "扫一次二维码完成配对，之后全程 Noise 端到端加密。能直连就走 P2P，不通再经中继，中继只看得到密文。设备可以随时吊销。",
       chips: [
         { name: "P2P", text: "（直连）：局域网、tailnet 或公网" },
         { name: "中继", text: "：只转发密文" },
@@ -353,11 +353,11 @@ export const copy: Record<Lang, LandingCopy> = {
     next: {
       eyebrow: "接下来",
       title: "PiNomad 接下来要做的",
-      lead: "下面这些都还没上线，每一项都链到规划它的 issue。",
+      lead: "以下都还没上线，每项链到对应的 issue。",
       items: [
         {
           title: "一台宿主，多个执行环境",
-          body: "宿主留在你的主力机上，把项目指向一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具通过 SSH 在那台机器上执行，底层是 pi-env。",
+          body: "宿主留在主力机上，项目指向另一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具经 pi-env 用 SSH 在那台机器上执行。",
           link: { text: "#363", href: issue(363) },
         },
         {
@@ -367,7 +367,7 @@ export const copy: Record<Lang, LandingCopy> = {
         },
         {
           title: "开放插件协议",
-          body: "PiNomad 自己的功能用的就是这套扩展协议。等它稳定后对外开放，任何人都能写插件，加工具、加新的展示方式。",
+          body: "PiNomad 自己的功能就是用这套扩展协议写的，稳定后对外开放，谁都能写插件加工具和展示方式。",
           link: { text: "ADR-0004", href: adr4 },
         },
       ],
@@ -382,8 +382,8 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "三条命令跑起来",
       lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
       notes: [
-        "然后在 Settings → Providers 里接入模型：用已经在付费的订阅、API key，或者自己的兼容 endpoint。",
-        "还是早期版本，版本之间仍会有变化。",
+        "然后在 Settings → Providers 接入模型：已有订阅、API key 或兼容 endpoint 都行。",
+        "目前是早期版本，版本之间还会有变化。",
       ],
       terminal: "终端",
       copy: "复制",
@@ -405,13 +405,12 @@ export const copy: Record<Lang, LandingCopy> = {
           name: "macOS",
           body: (
             <>
-              在 <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a> 下载已签名的 DMG
-              安装包，支持自动更新。
+              从 <a href="https://github.com/bubbleptr/pinomad/releases">GitHub Releases</a> 下载已签名的 DMG，自动更新。
             </>
           ),
           tag: "Apple 芯片",
         },
-        { name: "iOS", body: "扫一下宿主生成的一次性二维码即可完成配对。", tag: "目前仅限 TestFlight 内测" },
+        { name: "iOS", body: "扫宿主的一次性二维码配对。", tag: "目前仅限 TestFlight 内测" },
         { name: "Linux、Windows", body: "直接使用 Web 客户端。" },
       ],
       latest: (version, date) => `最新版本：${version}，${date}`,

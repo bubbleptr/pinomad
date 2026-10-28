@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { copy } from "./copy.tsx";
-import { GetStarted, type LatestRelease } from "./get-started.tsx";
+import { Closing, GetStarted, type LatestRelease } from "./get-started.tsx";
 import { Agents, Anywhere, Connection, Core, Hero, Next } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
 import { SiteHeader } from "./site-header.tsx";
@@ -22,8 +22,9 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
         <Anywhere lang={lang} t={t.anywhere} />
         <Connection t={t.connection} />
         <Agents lang={lang} t={t.agents} />
-        <GetStarted lang={lang} t={t.start} latest={latest} />
+        <GetStarted t={t.start} />
         <Next t={t.next} />
+        <Closing lang={lang} t={t.start} latest={latest} />
       </main>
       <SiteFooter lang={lang} t={t.footer} />
     </div>
