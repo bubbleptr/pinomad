@@ -155,11 +155,6 @@ export function Subscriptions({ t }: { t: LandingCopy["subs"] }) {
             </li>
           ))}
         </ul>
-        <ul className="sub-checks">
-          {t.checks.map((check) => (
-            <li key={check}>{check}</li>
-          ))}
-        </ul>
       </div>
     </section>
   );

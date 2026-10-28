@@ -1109,7 +1109,7 @@ html[lang="zh-CN"] .hero h1 {
   font-size: 0.95rem;
 }
 
-/* —— Bring your own subscription: one strip of plans, then what it means for you. —— */
+/* —— Bring your own subscription: one strip of plans. —— */
 .subs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1183,33 +1183,6 @@ html[lang="zh-CN"] .hero h1 {
 
 .sub-logo.is-ollama {
   mask-image: url("../../../web/src/entities/provider/logos/ollama.svg");
-}
-
-.sub-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 2rem;
-  margin-top: 1.5rem;
-  color: var(--fg-2);
-  font-size: 0.95rem;
-}
-
-.sub-checks li {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-/* A check drawn from two borders, so it needs no image the CSP would have to allow. */
-.sub-checks li::before {
-  content: "";
-  flex: none;
-  width: 0.35rem;
-  height: 0.7rem;
-  margin: -0.2rem 0 0 0.15rem;
-  border: solid oklch(0.72 0.15 150);
-  border-width: 0 2px 2px 0;
-  rotate: 45deg;
 }
 
 .clients {

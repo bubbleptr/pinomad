@@ -42,7 +42,6 @@ export interface LandingCopy {
     title: string;
     lead: string;
     plans: { logo: SubLogo; name: string; note: string }[];
-    checks: string[];
   };
   durable: {
     title: string;
@@ -145,7 +144,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { logo: "kimi", name: "Kimi", note: "Kimi Code" },
         { logo: "ollama", name: "Your endpoint", note: "Ollama · vLLM · LM Studio" },
       ],
-      checks: ["No tokens resold, no extra quota", "Credentials stay on your host", "Switch models mid-conversation"],
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -316,7 +314,6 @@ export const copy: Record<Lang, LandingCopy> = {
         { logo: "kimi", name: "Kimi", note: "Kimi Code" },
         { logo: "ollama", name: "自己的 endpoint", note: "Ollama · vLLM · LM Studio" },
       ],
-      checks: ["不转售 token，不另设配额", "凭据只存在你的宿主上", "对话中途可以换模型"],
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
