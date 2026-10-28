@@ -517,6 +517,7 @@ async function gatherOffer(
   let gatheringDone = false;
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let commitTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveOffer!: (sdp: string) => void;
   let rejectOffer!: (error: Error) => void;
   const offer = new Promise<string>((resolve, reject) => {
@@ -532,14 +533,25 @@ async function gatherOffer(
       candidates.add(raw.startsWith("a=") ? raw.slice(2) : raw);
     }
   };
+  const clearCommit = (): void => {
+    if (commitTimer === undefined) return;
+    clearTimeout(commitTimer);
+    commitTimer = undefined;
+  };
   const fail = (error: Error): void => {
     if (settled) return;
     settled = true;
     if (timer !== undefined) clearTimeout(timer);
+    clearCommit();
     rejectOffer(error);
   };
   const commit = (): void => {
-    if (settled || localSdp === undefined) return;
+    if (settled) return;
+    // The native description is authoritative when it has already gathered
+    // candidates that the queued callbacks have not delivered.
+    const local = pc.localDescription();
+    if (local !== null) localSdp = local.sdp;
+    if (localSdp === undefined) return;
     for (const candidate of sdpCandidates(localSdp)) add(candidate);
     if (candidates.size === 0) {
       // "complete" can arrive before the candidate callbacks queued ahead of
@@ -548,21 +560,33 @@ async function gatherOffer(
     }
     settled = true;
     if (timer !== undefined) clearTimeout(timer);
+    clearCommit();
     resolveOffer(withRtcCandidates(localSdp, [...candidates]));
+  };
+  const scheduleCommit = (): void => {
+    if (settled) return;
+    // Candidate and complete callbacks ride separate native-thread queues.
+    // Yield one turn, and re-arm on each callback, so the offer is sealed only
+    // after the callbacks already queued ahead of it have landed.
+    if (commitTimer !== undefined) clearTimeout(commitTimer);
+    commitTimer = setTimeout(() => {
+      commitTimer = undefined;
+      commit();
+    }, 0);
   };
 
   pc.onLocalDescription((sdp) => {
     localSdp = sdp;
-    if (gatheringDone) commit();
+    if (gatheringDone) scheduleCommit();
   });
   pc.onLocalCandidate((candidate) => {
     add(candidate);
-    if (gatheringDone) commit();
+    if (gatheringDone) scheduleCommit();
   });
   pc.onGatheringStateChange((state) => {
     if (state === "complete") {
       gatheringDone = true;
-      commit();
+      scheduleCommit();
     }
   });
   const dc = makeChannel();

@@ -331,8 +331,9 @@ describe("Peer limits and timeouts", () => {
 });
 
 describe("node-datachannel answerer", () => {
-  it("keeps candidates whose callbacks arrive after gathering completes", async () => {
-    const candidate = "candidate:1 1 UDP 2122252543 127.0.0.1 40000 typ host";
+  it("keeps every candidate whose callbacks arrive after gathering completes", async () => {
+    const hostCandidate = "candidate:1 1 UDP 2122252543 127.0.0.1 40000 typ host";
+    const srflxCandidate = "candidate:2 1 UDP 1686052863 203.0.113.7 50000 typ srflx raddr 0.0.0.0 rport 0";
     const offer = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
       + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\n"
       + "a=mid:0\r\na=sctp-port:5000\r\n";
@@ -358,8 +359,12 @@ describe("node-datachannel answerer", () => {
         this.#localDescription?.(this.#sdp, "answer");
         this.#gathering?.("complete");
         queueMicrotask(() => {
-          this.#sdp += `a=${candidate}\r\n`;
-          this.#localCandidate?.(candidate, "0");
+          this.#sdp += `a=${hostCandidate}\r\n`;
+          this.#localCandidate?.(hostCandidate, "0");
+        });
+        queueMicrotask(() => {
+          this.#sdp += `a=${srflxCandidate}\r\n`;
+          this.#localCandidate?.(srflxCandidate, "0");
         });
       }
 
@@ -390,6 +395,8 @@ describe("node-datachannel answerer", () => {
       onClosed: () => {},
       log: () => {},
     }).answer;
-    expect(answer).toContain(candidate);
+    expect(answer).toContain(hostCandidate);
+    expect(answer).toContain(srflxCandidate);
+    expect(answer.match(/a=candidate:/g)).toHaveLength(2);
   });
 });
