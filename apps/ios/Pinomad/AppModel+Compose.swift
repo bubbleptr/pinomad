@@ -9,8 +9,6 @@ import UIKit
 /// normally and surfaces as a notice toast, so only a dead session
 /// (thrown) needs handling here.
 extension AppModel {
-    /// The local retry's own deadline; see `retrySubmission`.
-    private struct SubmissionTimeout: Error {}
     /// Send the conversation's draft. Idle → a plain prompt; busy → `mode`
     /// decides between steering the run and queueing a follow-up. The draft
     /// clears at once; a refused send is a local row with its own Retry
@@ -237,55 +235,20 @@ extension AppModel {
     // (ADR-0034 §11). The row carries the requestId, so neither reads the
     // conversation's current content.
 
-    private func beginSubmissionAction(_ requestId: String) -> UUID? {
-        guard submissionPending.insert(requestId).inserted else { return nil }
-        let token = UUID()
-        submissionTokens[requestId] = token
-        return token
-    }
-
-    private func endSubmissionAction(_ requestId: String, token: UUID) {
-        guard submissionTokens[requestId] == token else { return }
-        submissionTokens.removeValue(forKey: requestId)
-        submissionPending.remove(requestId)
-    }
-
     /// Resend a failed or unconfirmed local send with its original key; the
     /// core queries before resending when the outcome is unknown.
     func retrySubmission(conversation id: UInt64, requestId: String) {
-        guard connected, let session, let token = beginSubmissionAction(requestId) else { return }
+        guard connected, let session, submissionPending.insert(requestId).inserted else { return }
         let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             defer {
                 if self.sessionGeneration == generation {
-                    self.endSubmissionAction(requestId, token: token)
+                    self.submissionPending.remove(requestId)
                 }
             }
             do {
-                // The controller's query-then-resend is not an op it can
-                // time out: a host that never answers would leave the invoke
-                // pending while the row turns unknown. Cancel the invoke on
-                // the same window so the session lets the op go and Retry is
-                // reachable again; the token keeps the release from
-                // unlocking a newer retry.
-                _ = try await withThrowingTaskGroup(of: CallResult.self) { group in
-                    group.addTask {
-                        try await session.invoke(.retrySubmission(requestId: requestId))
-                    }
-                    group.addTask {
-                        try await Task.sleep(for: .seconds(35))
-                        throw SubmissionTimeout()
-                    }
-                    defer { group.cancelAll() }
-                    guard let result = try await group.next() else { throw SubmissionTimeout() }
-                    return result
-                }
-            } catch is SubmissionTimeout {
-                // The row already reads "unknown"; releasing the lock is all
-                // this needs to do.
-            } catch is CancellationError {
-                // The app is tearing the session down; the row goes with it.
+                _ = try await session.invoke(.retrySubmission(requestId: requestId))
             } catch {
                 guard self.sessionGeneration == generation else { return }
                 self.showToast(self.describe(error), level: "error")
@@ -300,7 +263,7 @@ extension AppModel {
     func editSubmission(conversation id: UInt64, requestId: String) {
         guard connected, let session, takingBack == nil,
               !editAvailability(conversation: id).isDisabled,
-              let token = beginSubmissionAction(requestId)
+              submissionPending.insert(requestId).inserted
         else { return }
         takingBack = id
         let generation = sessionGeneration
@@ -309,7 +272,7 @@ extension AppModel {
             defer {
                 if self.sessionGeneration == generation {
                     if self.takingBack == id { self.takingBack = nil }
-                    self.endSubmissionAction(requestId, token: token)
+                    self.submissionPending.remove(requestId)
                 }
             }
             do {
