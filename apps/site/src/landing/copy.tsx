@@ -173,14 +173,14 @@ export const copy: Record<Lang, LandingCopy> = {
     connection: {
       eyebrow: "Connection",
       title: "Reach your host from anywhere, privately",
-      lead: "Pair a device by scanning a one-time QR code. From then on it talks to the host over an end-to-end encrypted channel.",
+      lead: "Pair a device by scanning a one-time QR code. Auto starts on the relay when a relay is available, then switches to a direct WebRTC link in the background; if that fails it stays on the relay. Choose Auto, Direct only, or Relay only for each host.",
       chips: [
-        { name: "Direct", text: " over your LAN or tailnet" },
+        { name: "P2P", text: " over your LAN, tailnet, or the public internet" },
         { name: "Relay", text: " that only sees ciphertext" },
       ],
       diagram: {
         label:
-          "A device pairs with the host once by scanning its QR code. After that they talk over one end-to-end encrypted channel, either directly over the LAN or tailnet, or through a relay that passes it on without being able to read it.",
+          "A device pairs with the host once by scanning its QR code. Auto connects through the relay when a relay is available, then tries a direct WebRTC link in the background; if that fails it stays on the relay. Either way the channel is end-to-end encrypted, so the relay only forwards ciphertext.",
         host: "Host",
         relay: "Relay",
       },
@@ -201,11 +201,6 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "#148", href: issue(148) },
         },
         {
-          title: "More ways to connect",
-          body: "Peer-to-peer connections alongside the relay, and a built-in Tailscale network.",
-          link: { text: "#345", href: issue(345) },
-        },
-        {
           title: "An open plugin protocol",
           body: "Built-in features are already written against the same extension boundary. Once it settles, the protocol opens to plugins from anyone.",
           link: { text: "ADR-0004", href: adr4 },
@@ -224,9 +219,9 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "Free and open source under Apache-2.0. The host needs Node 25+ on macOS or Linux.",
       notes: [
         <>
-          <code>pinomad host</code> uses the models and credentials you set up in pi (<code>~/.pi/agent</code>).
-          Haven't set up pi yet? <code>pinomad host --faux "hi"</code> runs a scripted fake model so you can click
-          around.
+          <code>pinomad host</code> reads credentials only from its own data directory. Sign in to a model provider
+          under Settings → Providers: a subscription, an API key, or your own compatible endpoint. No provider yet?{" "}
+          <code>pinomad host --faux "hi"</code> runs a scripted fake model so you can click around.
         </>,
         "It's early. Pi Durable is itself experimental, and the host and its clients must speak the same protocol major version.",
       ],
@@ -234,7 +229,7 @@ export const copy: Record<Lang, LandingCopy> = {
       copy: "Copy",
       copied: "Copied",
       copyFailed: "Copy failed",
-      hostComment: "# uses the models and credentials set up in pi",
+      hostComment: "# uses credentials from its own data directory",
       linkComment: "# in another terminal: prints a web client link",
       clientsTitle: "Clients",
       clients: [
@@ -345,13 +340,13 @@ export const copy: Record<Lang, LandingCopy> = {
     connection: {
       eyebrow: "连接",
       title: "在哪都能连上宿主，内容只有你看得到",
-      lead: "新设备扫一次性二维码就能配对，之后和宿主之间全程走端到端加密的通道。",
+      lead: "新设备扫一次性二维码就能配对。Auto 有中继时先经中继连上，随后在后台切到 WebRTC 直连；打洞失败就继续走中继。每台宿主可以单独选 Auto、Direct only 或 Relay only。",
       chips: [
-        { name: "直连", text: "：局域网或 tailnet" },
+        { name: "P2P", text: "（直连）：局域网、tailnet 或公网" },
         { name: "中继", text: "：只转发密文" },
       ],
       diagram: {
-        label: "设备扫一次宿主的二维码完成配对，之后两者之间只走一条端到端加密的通道：局域网或 tailnet 直连，或者经过中继；中继只转发，读不到内容。",
+        label: "设备扫一次宿主的二维码完成配对。Auto 有中继时先经中继连上，再在后台尝试 WebRTC 直连；打洞失败就留在中继。两种方式都是端到端加密，中继只转发密文。",
         host: "宿主",
         relay: "中继",
       },
@@ -372,11 +367,6 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "#148", href: issue(148) },
         },
         {
-          title: "更多连接方式",
-          body: "在中继之外加上 P2P 直连，以及内置的 Tailscale 网络。",
-          link: { text: "#345", href: issue(345) },
-        },
-        {
           title: "开放插件协议",
           body: "内置功能已经按同一套扩展边界来写，等协议稳定后对外开放，谁都能写插件。",
           link: { text: "ADR-0004", href: adr4 },
@@ -394,8 +384,9 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
       notes: [
         <>
-          <code>pinomad host</code> 会直接复用你在 pi（<code>~/.pi/agent</code>）里配好的模型和认证。还没配过
-          pi？可以先跑 <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
+          <code>pinomad host</code> 只读宿主数据目录里的凭据。模型在 Settings → Providers 里接入：用订阅登录、
+          填 API key，或者填自己的兼容 endpoint。还没接入？可以先跑{" "}
+          <code>pinomad host --faux "hi"</code>，用内置的模拟模型把界面点通试试。
         </>,
         "项目还在早期，底层的 Pi Durable 也处于实验阶段；升级时请保持宿主和客户端的协议主版本号一致。",
       ],
@@ -403,7 +394,7 @@ export const copy: Record<Lang, LandingCopy> = {
       copy: "复制",
       copied: "已复制",
       copyFailed: "复制失败",
-      hostComment: "# 复用 pi 里配好的模型和认证",
+      hostComment: "# 用自己数据目录里的凭据",
       linkComment: "# 另开一个终端，打印 Web 客户端链接",
       clientsTitle: "客户端",
       clients: [

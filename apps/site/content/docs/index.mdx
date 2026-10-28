@@ -30,7 +30,9 @@ The pairing link always keeps a legacy socket URL and can carry the reachable re
 
 ## WebRTC direct connections
 
-The host can answer WebRTC offers and carry the secure channel over a reliable, ordered DataChannel instead of a WebSocket. Client support for actually using P2P — and the connection-mode setting — ships in a later version; this release adds the host side and the protocol.
+When a relay is available, clients connect through it first. Once the connection is up, Auto tries a direct WebRTC DataChannel in the background; when it succeeds, conversation data no longer passes through the server. If hole punching fails, the connection stays on the relay. There is no TURN.
+
+The connection mode is per host, under Settings → Hosts → Connection…: Auto (the default), Direct only (never send conversation data through the PiNomad server; the relay is used only to set up the link), or Relay only (never try peer-to-peer). The same panel shows the current path: P2P (with whether each end is on a LAN, tailnet, or public address; full addresses behind Show addresses) or the relay, plus the last failure.
 
 The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json` and advertises the same list in `hello.rtc`:
 
@@ -40,7 +42,7 @@ The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json`
 }
 ```
 
-The default is Cloudflare's public STUN server. Set it to `[]` to use only host candidates (no STUN), or list your own `stun:` URLs. There is no TURN; when P2P cannot connect, the existing relay/direct WebSocket path stays the fallback. If the host's `node-datachannel` native module is missing — for example after an npm install with `--omit=optional` — the host keeps running and simply does not advertise `hello.rtc`.
+The default is Cloudflare's public STUN server. Set it to `[]` to use only host candidates (no STUN), or list your own `stun:` URLs. There is no TURN, so some networks cannot establish P2P; Auto keeps using the relay. If the host's `node-datachannel` native module is missing — for example after an npm install with `--omit=optional` — the host keeps running and simply does not advertise `hello.rtc`.
 
 ## Keep it running
 

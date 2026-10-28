@@ -30,7 +30,9 @@ iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设�
 
 ## WebRTC 直连
 
-宿主可以应答 WebRTC offer，把安全通道放在可靠、有序的 DataChannel 上，而不是 WebSocket。客户端真正使用 P2P 的能力（以及"连接方式"设置）会在后续版本推出；这个版本只有宿主侧和协议。
+有中继时，客户端先经中继连上。链路就绪后，Auto 会在后台尝试 WebRTC DataChannel 直连；打洞成功，对话数据就不再经过服务端；打洞失败则继续走中继。没有 TURN。
+
+连接方式是每台宿主单独设置的，在 Settings → Hosts → Connection… 里选：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板显示当前路径：P2P（以及两端是局域网、tailnet 还是公网地址，完整地址点 Show addresses 展开）还是中继，以及最近一次失败的原因。
 
 宿主从 `<数据目录>/settings.json` 的 `rtcStun` 读 STUN 服务器，并在 `hello.rtc` 里下发同一份列表：
 
@@ -40,7 +42,7 @@ iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设�
 }
 ```
 
-默认是 Cloudflare 的公共 STUN 服务器；设为 `[]` 表示只用 host 候选（不走 STUN），也可以换成自己的 `stun:` 地址。没有 TURN：P2P 连不上时，仍然回落到现有的中继 / 直连 WebSocket。宿主没有装上 `node-datachannel` 原生模块时（例如 npm 安装用了 `--omit=optional`），宿主照常运行，只是不再声明 `hello.rtc`。
+默认是 Cloudflare 的公共 STUN 服务器；设为 `[]` 表示只用 host 候选（不走 STUN），也可以换成自己的 `stun:` 地址。没有 TURN，所以有些网络建不起 P2P，Auto 会继续走中继。宿主没有装上 `node-datachannel` 原生模块时（例如 npm 安装用了 `--omit=optional`），宿主照常运行，只是不再声明 `hello.rtc`。
 
 ## 常驻运行
 
