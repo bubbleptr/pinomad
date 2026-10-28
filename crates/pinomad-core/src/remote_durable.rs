@@ -1067,6 +1067,9 @@ pub struct RemoteDurable {
     op_submissions: HashMap<u64, usize>,
     /// A timed-out submit's call id, kept so a late result still reconciles.
     late_submission_calls: HashMap<u64, usize>,
+    /// A timed-out query's call id, kept so a late fact still reconciles but
+    /// can never trigger a resend.
+    late_submission_queries: HashMap<u64, usize>,
     submission_queries: HashMap<u64, SubmissionQuery>,
     submission_timers: HashMap<u32, usize>,
     submission_recovery: VecDeque<usize>,
@@ -1198,6 +1201,7 @@ impl RemoteDurable {
             submission_by_request: HashMap::new(),
             op_submissions: HashMap::new(),
             late_submission_calls: HashMap::new(),
+            late_submission_queries: HashMap::new(),
             submission_queries: HashMap::new(),
             submission_timers: HashMap::new(),
             submission_recovery: VecDeque::new(),
@@ -1351,11 +1355,15 @@ impl RemoteDurable {
             return;
         }
         if let Some(index) = self.submission_timers.remove(&timer) {
-            if self.submissions[index].phase == SubmissionPhase::InFlight
+            self.submissions[index].timer = None;
+            if self.submissions[index].phase != SubmissionPhase::Settled
                 && !self.submissions[index].admitted
             {
-                self.submissions[index].phase = SubmissionPhase::Unknown;
-                self.submissions[index].timer = None;
+                // A retry or recovery query times out in Unknown; the same
+                // window also covers its resend, which times out InFlight.
+                if self.submissions[index].phase == SubmissionPhase::InFlight {
+                    self.submissions[index].phase = SubmissionPhase::Unknown;
+                }
                 let _ = self.refresh();
                 // The caller's op resolves now; a queued command may run while
                 // the original submit is still outstanding.
@@ -3050,16 +3058,20 @@ impl RemoteDurable {
     fn fail_submission_queries(&mut self) {
         let queries = std::mem::take(&mut self.submission_queries);
         let mut mark_unknown = Vec::new();
+        let mut timed = Vec::new();
         for query in queries.values() {
             match query {
                 SubmissionQuery::RetryQuery(index, op)
                 | SubmissionQuery::RetryResend(index, op) => {
                     mark_unknown.push(*index);
+                    timed.push(*index);
                     self.out.push(Command::OperationSucceeded {
                         op: *op,
                         value: None,
                     });
                 }
+                SubmissionQuery::RecoveryQuery(index)
+                | SubmissionQuery::RecoveryResend(index) => timed.push(*index),
                 SubmissionQuery::TakeBackQuery(_, op)
                 | SubmissionQuery::TakeBackWithdraw(_, op) => {
                     self.out.push(Command::OperationSucceeded {
@@ -3067,16 +3079,16 @@ impl RemoteDurable {
                         value: None,
                     });
                 }
-                SubmissionQuery::RecoveryQuery(_)
-                | SubmissionQuery::RecoveryResend(_)
-                | SubmissionQuery::Confirm(_) => {}
+                SubmissionQuery::Confirm(index) => timed.push(*index),
             }
         }
         for index in mark_unknown {
             if self.submissions[index].phase != SubmissionPhase::Settled {
                 self.submissions[index].phase = SubmissionPhase::Unknown;
-                self.clear_submission_timer(index);
             }
+        }
+        for index in timed {
+            self.clear_submission_timer(index);
         }
         self.recovering_submissions = false;
         self.recovery_waiting = None;
@@ -3801,6 +3813,17 @@ impl RemoteDurable {
         }
         let rtc_ok = ok.truthy();
         if self.handle_rtc_result(call_id, rtc_ok, value.clone(), error.clone()) {
+            return;
+        }
+        if let Some(index) = self.late_submission_queries.remove(&call_id) {
+            // The deadline already released the invoke. A late fact may still
+            // reconcile the row; a late null must never cause a resend.
+            if ok.truthy()
+                && !matches!(&value, Json::Null)
+                && self.submissions[index].phase != SubmissionPhase::Settled
+            {
+                self.apply_submission_fact(index, &value);
+            }
             return;
         }
         if let Some(index) = self.late_submission_calls.remove(&call_id) {
@@ -4849,7 +4872,7 @@ impl RemoteDurable {
     }
 
     fn clear_submission_timer(&mut self, index: usize) {
-        self.retire_retry_resend(index);
+        self.retire_pending_submission_call(index);
         let Some(timer) = self.submissions[index].timer.take() else {
             return;
         };
@@ -4857,29 +4880,53 @@ impl RemoteDurable {
         self.out.push(Command::CancelDeadline { timer });
     }
 
-    /// A retried resend is not an active op: its invoke is released by the
-    /// result, by its 30s deadline, or by any other fact for the same logical
-    /// submission. Keep the call id so a late result still reconciles.
-    fn retire_retry_resend(&mut self, index: usize) {
+    /// A retry/resend or recovery call is not an active op: its invoke is
+    /// released by the result, by its 30s deadline, or by any other fact for
+    /// the same logical submission. Keep the call id so a late fact still
+    /// reconciles; a late query must never trigger a resend.
+    fn retire_pending_submission_call(&mut self, index: usize) {
         let call_id = self.submission_queries.iter().find_map(|(call_id, query)| match query {
-            SubmissionQuery::RetryResend(record, _) if *record == index => Some(*call_id),
+            SubmissionQuery::RetryQuery(record, _)
+            | SubmissionQuery::RetryResend(record, _)
+            | SubmissionQuery::RecoveryQuery(record)
+            | SubmissionQuery::RecoveryResend(record)
+                if *record == index => Some(*call_id),
             _ => None,
         });
         let Some(call_id) = call_id else {
             return;
         };
-        let Some(SubmissionQuery::RetryResend(_, op)) = self.submission_queries.remove(&call_id) else {
+        let Some(query) = self.submission_queries.remove(&call_id) else {
             return;
         };
-        self.late_submission_calls.insert(call_id, index);
-        self.out.push(Command::OperationSucceeded { op, value: None });
+        match query {
+            SubmissionQuery::RetryQuery(_, op) => {
+                self.late_submission_queries.insert(call_id, index);
+                self.out.push(Command::OperationSucceeded { op, value: None });
+            }
+            SubmissionQuery::RetryResend(_, op) => {
+                self.late_submission_calls.insert(call_id, index);
+                self.out.push(Command::OperationSucceeded { op, value: None });
+            }
+            SubmissionQuery::RecoveryQuery(_) => {
+                self.late_submission_queries.insert(call_id, index);
+            }
+            SubmissionQuery::RecoveryResend(_) => {
+                self.late_submission_calls.insert(call_id, index);
+            }
+            _ => return,
+        }
+        if self.recovery_waiting == Some(call_id) {
+            self.recovery_waiting = None;
+            self.advance_submission_recovery();
+        }
     }
 
     /// Take a timed-out submit out of the serialized queue while keeping its
     /// call id for a late result. This is the Rust counterpart of the TS
     /// timeout race releasing the command chain.
     fn retire_submission_op(&mut self, index: usize) {
-        self.retire_retry_resend(index);
+        self.retire_pending_submission_call(index);
         let Some(position) = self
             .active
             .iter()
@@ -5080,7 +5127,11 @@ impl RemoteDurable {
     ) -> Option<u64> {
         self.submissions[index].phase = SubmissionPhase::InFlight;
         self.submissions[index].error = None;
-        self.start_submission_timer(index);
+        // The retry's deadline already started with its query; crossing into
+        // the resend must not reset it.
+        if self.submissions[index].timer.is_none() {
+            self.start_submission_timer(index);
+        }
         let call = self.send_submission_resend(index, kind);
         let _ = self.refresh();
         call
@@ -5283,10 +5334,14 @@ impl RemoteDurable {
             if !host_supports_call(self.host_minor, "submission") {
                 continue;
             }
+            // Arm the shared window before the query exists: starting the
+            // timer later would retire the call it is meant to bound.
+            self.start_submission_timer(index);
             if let Some(id) = self.send_submission_query(index, SubmissionQuery::RecoveryQuery(index)) {
                 self.recovery_waiting = Some(id);
                 return;
             }
+            self.clear_submission_timer(index);
         }
         self.recovering_submissions = false;
         self.recovery_waiting = None;
@@ -5310,9 +5365,13 @@ impl RemoteDurable {
         if self.submissions[index].phase == SubmissionPhase::Unknown
             && host_supports_call(self.host_minor, "submission")
         {
+            // The one deadline starts at Retry and covers both the query and
+            // the resend it may lead to.
+            self.start_submission_timer(index);
             if self.send_submission_query(index, SubmissionQuery::RetryQuery(index, op)).is_some() {
                 return;
             }
+            self.clear_submission_timer(index);
         }
         self.submissions[index].phase = SubmissionPhase::InFlight;
         self.submissions[index].error = None;

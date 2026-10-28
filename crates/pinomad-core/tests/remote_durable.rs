@@ -2897,6 +2897,126 @@ fn logical_retry_again_after_timeout_still_lands() {
 }
 
 #[test]
+fn logical_retry_query_timeout_releases_the_op_and_a_late_null_never_resends() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&1), Some(Ok(None))));
+
+    // The retry query hangs: the op waits and no resend exists yet.
+    h.host.hung_methods.insert("submission".to_string());
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.submission_queries().len(), 1);
+    assert_eq!(h.host.method("submit").len(), 1);
+    assert!(h.ops.get(&2).is_none(), "the retry waits for its query");
+
+    // Its own deadline completes the invoke and keeps the row unknown.
+    fire_deadline(&mut h, 30_000);
+    assert!(
+        matches!(h.ops.get(&2), Some(Ok(None))),
+        "the timed-out query completes its invoke: {:?}",
+        h.ops.get(&2)
+    );
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    // A null answer after the deadline must not trigger the resend.
+    h.answer_last("submission", Json::Null);
+    assert_eq!(h.host.method("submit").len(), 1);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    // Retry is reachable again: the next retry starts a fresh query, and a
+    // null now allows the resend.
+    h.host.hung_methods.remove("submission");
+    h.set_result("submission", Json::Null);
+    h.invoke(3, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.submission_queries().len(), 2);
+    assert_eq!(h.host.method("submit").len(), 2);
+    assert!(h.ops.get(&3).is_none(), "the second retry waits for its resend");
+    assert_eq!(
+        h.deadlines.iter().filter(|(_, delay)| *delay == 30_000).count(),
+        1,
+        "the query and resend share one deadline"
+    );
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&3), Some(Ok(None))));
+}
+
+#[test]
+fn logical_retry_query_timeout_reconciles_a_late_fact_without_resending() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    fire_deadline(&mut h, 30_000);
+
+    h.host.hung_methods.insert("submission".to_string());
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.submission_queries().len(), 1);
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&2), Some(Ok(None))));
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    // The record arrives after the deadline: reconcile it, never resend.
+    h.answer_last("submission", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("status", Json::from("done")),
+        ("entry", Json::Number(42.0)),
+    ]));
+    assert_eq!(h.host.method("submit").len(), 1);
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 1);
+}
+
+#[test]
+fn logical_recovery_query_timeout_keeps_unknown_and_releases_queued_commands() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    h.disconnect(1000, None);
+    h.host.hung_methods.insert("submission".to_string());
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert_eq!(h.submission_queries().len(), 1);
+
+    // The recovery query holds the sync gate.
+    h.invoke(2, switch_to(2));
+    h.invoke(3, Call::SetModel {
+        model: obj(&[("provider", Json::from("p")), ("modelId", Json::from("m"))]),
+    });
+    assert_eq!(h.host.method("setModel").len(), 0);
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    // Its deadline leaves the row unknown and lets the queued commands run.
+    fire_deadline(&mut h, 30_000);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+    assert_eq!(h.host.method("setModel").len(), 1);
+    assert!(h.host.subscribes().iter().any(|stream| stream == "conversation:2"));
+    assert_eq!(h.host.method("submit").len(), 1);
+
+    // A late null must not resend either.
+    h.answer_last("submission", Json::Null);
+    assert_eq!(h.host.method("submit").len(), 1);
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+}
+
+#[test]
 fn logical_submit_timeout_releases_the_serialized_queue() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut h = Harness::logical(host);
