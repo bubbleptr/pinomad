@@ -2634,6 +2634,16 @@ fn num_id(value: &Json) -> Option<u64> {
     value.as_number().filter(|n| *n >= 0.0).map(|n| n as u64)
 }
 
+fn fire_deadline(h: &mut Harness, delay_ms: u64) {
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == delay_ms).then_some(*timer))
+        .unwrap_or_else(|| panic!("{delay_ms}ms deadline"));
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+}
+
 
 #[test]
 fn logical_submit_ignores_another_devices_entry_and_inbox_row() {
@@ -2770,6 +2780,121 @@ fn logical_retry_disconnects_again_then_recovery_settles() {
     assert_eq!(h.submission_queries().len(), 2);
 }
 
+
+#[test]
+fn logical_retry_timeout_resolves_the_retry_and_a_late_result_settles() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&1), Some(Ok(None))));
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    // The retry query misses, so the same requestId is resent. The host does
+    // not answer this submit either.
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.host.method("submission").len(), 1);
+    assert_eq!(h.host.method("submit").len(), 2);
+    let retry_id = h.host.method("submit")[1].get("id").cloned().unwrap();
+    assert!(h.ops.get(&2).is_none(), "the retry waits for its result");
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "inFlight"
+    );
+
+    // The retry's own deadline completes the invoke, just like the first send.
+    fire_deadline(&mut h, 30_000);
+    assert!(
+        matches!(h.ops.get(&2), Some(Ok(None))),
+        "the timed-out retry completes its invoke: {:?}",
+        h.ops.get(&2)
+    );
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    // Nothing it held blocks the serialized queue any more.
+    h.invoke(3, Call::SetModel {
+        model: obj(&[("provider", Json::from("p")), ("modelId", Json::from("m"))]),
+    });
+    assert_eq!(h.host.method("setModel").len(), 1);
+
+    // The late result still reconciles the retried request by its call id.
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", retry_id),
+        ("ok", Json::Bool(true)),
+        ("value", obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("entry", Json::Number(42.0)),
+        ])),
+    ]));
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 2);
+}
+
+#[test]
+fn logical_retry_again_after_timeout_still_lands() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&1), Some(Ok(None))));
+
+    // First retry: query misses, resend times out.
+    h.invoke(2, Call::RetrySubmission { request_id: "r1".to_string() });
+    let first_retry = h.host.method("submit")[1].get("id").cloned().unwrap();
+    fire_deadline(&mut h, 30_000);
+    assert!(matches!(h.ops.get(&2), Some(Ok(None))));
+
+    // Retry again: the user can still reach Retry after the first timeout.
+    h.invoke(3, Call::RetrySubmission { request_id: "r1".to_string() });
+    assert_eq!(h.host.method("submission").len(), 2);
+    assert_eq!(h.host.method("submit").len(), 3);
+    let second_retry = h.host.method("submit")[2].get("id").cloned().unwrap();
+    assert!(h.ops.get(&3).is_none(), "the second retry waits for its result");
+
+    // The first retry's late result is a fact for the same requestId: it
+    // settles the second retry's invoke and cancels its deadline.
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", first_retry),
+        ("ok", Json::Bool(true)),
+        ("value", obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("entry", Json::Number(42.0)),
+        ])),
+    ]));
+    assert!(
+        matches!(h.ops.get(&3), Some(Ok(None))),
+        "a fact for the same request releases the newer retry: {:?}",
+        h.ops.get(&3)
+    );
+    assert!(!h.deadlines.iter().any(|(_, delay)| *delay == 30_000));
+
+    h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
+    assert!(h.submissions().is_empty());
+
+    // The second resend's own late result is harmless after the settlement.
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", second_retry),
+        ("ok", Json::Bool(true)),
+        ("value", obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("entry", Json::Number(42.0)),
+        ])),
+    ]));
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.host.method("submit").len(), 3);
+}
 
 #[test]
 fn logical_submit_timeout_releases_the_serialized_queue() {

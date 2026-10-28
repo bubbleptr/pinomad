@@ -404,6 +404,91 @@ describe("logical submissions", () => {
     }
   });
 
+  it("times out a retried resend, frees the command chain, and settles its late result", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+      expect(host.submits()).toHaveLength(1);
+
+      // The retry query misses, then the host holds the retried submit.
+      host.setSubmissionAnswer(() => ({ ok: true, value: null }));
+      host.setSubmitAnswer(() => undefined);
+      const retry = remote.controller.retrySubmission("r1");
+      const resend = await waitForCall(host, "submit", 2);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+
+      // The retry still owns the command chain until its own 30s deadline.
+      const modeled = remote.controller.setModel({ provider: "p", modelId: "m" });
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+      expect(host.calls("setModel")).toHaveLength(0);
+
+      vi.advanceTimersByTime(30_000);
+      await retry;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await modeled;
+      expect(host.calls("setModel")).toHaveLength(1);
+      expect(host.submits()).toHaveLength(2);
+
+      // The retried submit's late result still reconciles the request.
+      host.answer(resend, { ok: true, value: { submissionId: 7, entry: 42 } });
+      host.sendSnapshot("conversation:1", conversationView([userEntry(42, "hello")]));
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("can retry again after a retried resend times out, and a late fact releases it", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+
+      host.setSubmissionAnswer(() => ({ ok: true, value: null }));
+      host.setSubmitAnswer(() => undefined);
+      const firstRetry = remote.controller.retrySubmission("r1");
+      const firstResend = await waitForCall(host, "submit", 2);
+      vi.advanceTimersByTime(30_000);
+      await firstRetry;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+
+      // Retry again after the first retry timed out.
+      const secondRetry = remote.controller.retrySubmission("r1");
+      const secondResend = await waitForCall(host, "submit", 3);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+
+      // The first retry's late result is a fact for the same requestId, so it
+      // releases the second retry without waiting for another result.
+      host.answer(firstResend, { ok: true, value: { submissionId: 7, entry: 42 } });
+      await secondRetry;
+      host.sendSnapshot("conversation:1", conversationView([userEntry(42, "hello")]));
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+      expect(host.submits()).toHaveLength(3);
+
+      // The second resend's own late result is harmless after the settlement.
+      host.answer(secondResend, { ok: true, value: { submissionId: 7, entry: 42 } });
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a retry unknown when it disconnects again, then settles without a third send", async () => {
     vi.useFakeTimers();
     const host = createHost();

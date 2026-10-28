@@ -4849,6 +4849,7 @@ impl RemoteDurable {
     }
 
     fn clear_submission_timer(&mut self, index: usize) {
+        self.retire_retry_resend(index);
         let Some(timer) = self.submissions[index].timer.take() else {
             return;
         };
@@ -4856,10 +4857,29 @@ impl RemoteDurable {
         self.out.push(Command::CancelDeadline { timer });
     }
 
+    /// A retried resend is not an active op: its invoke is released by the
+    /// result, by its 30s deadline, or by any other fact for the same logical
+    /// submission. Keep the call id so a late result still reconciles.
+    fn retire_retry_resend(&mut self, index: usize) {
+        let call_id = self.submission_queries.iter().find_map(|(call_id, query)| match query {
+            SubmissionQuery::RetryResend(record, _) if *record == index => Some(*call_id),
+            _ => None,
+        });
+        let Some(call_id) = call_id else {
+            return;
+        };
+        let Some(SubmissionQuery::RetryResend(_, op)) = self.submission_queries.remove(&call_id) else {
+            return;
+        };
+        self.late_submission_calls.insert(call_id, index);
+        self.out.push(Command::OperationSucceeded { op, value: None });
+    }
+
     /// Take a timed-out submit out of the serialized queue while keeping its
     /// call id for a late result. This is the Rust counterpart of the TS
     /// timeout race releasing the command chain.
     fn retire_submission_op(&mut self, index: usize) {
+        self.retire_retry_resend(index);
         let Some(position) = self
             .active
             .iter()
@@ -5061,7 +5081,9 @@ impl RemoteDurable {
         self.submissions[index].phase = SubmissionPhase::InFlight;
         self.submissions[index].error = None;
         self.start_submission_timer(index);
-        self.send_submission_resend(index, kind)
+        let call = self.send_submission_resend(index, kind);
+        let _ = self.refresh();
+        call
     }
 
     fn finish_submission_result(&mut self, index: usize, value: Option<Json>) {
