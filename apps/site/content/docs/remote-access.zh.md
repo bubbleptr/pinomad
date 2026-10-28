@@ -1,22 +1,29 @@
 ---
 title: 远程访问
-description: 配对、tailnet 直连、自部署中继和服务端账号。
+description: 配对、tailnet / WebRTC 直连、自部署中继和服务端账号。
 ---
 
 先装好宿主，见[快速上手](/zh/docs/)。
 
-一条命令起全部（构建 Web、起宿主、起 vite），并在终端打印电脑浏览器链接和手机配对二维码：
+npm 安装的宿主直接开远程端口；宿主要在终端里一直跑着，另开一个终端发配对邀请：
+
+```sh
+pinomad host --remote-port 7422
+pinomad pair        # 一次性的二维码和链接，5 分钟后过期
+```
+
+手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后重新跑 `pinomad pair`。已登记的设备在 Web 的 Settings → Devices 里管理，在那直接点 Revoke 就能吊销。
+
+配对邀请始终带 legacy `url`，并可以再带一份 `endpointSet` 候选列表（ADR-0032）：开着远程端口时，直连候选是当前探测到的局域网地址或显式 `--public-url`；加入可远程访问的中继时，中继也会作为候选。自动 LAN 地址在每次生成邀请和每次安全连接的 `hello` 时重新探测，不是启动时的缓存。回环 direct 和回环 relay 都只留在本机：邀请省略 `endpointSet`（没有可达的远程候选时），也不会把 `127.0.0.1` 发布给远程客户端；旧客户端继续只读 `url`。
+
+<details><summary>从源码检出：一条命令或分开跑各进程</summary>
+
+源码检出里 `bun run start` 会构建 Web、起宿主和 vite，并在终端打印电脑浏览器链接和手机配对二维码：
 
 ```sh
 bun run start
 # 透传宿主参数：bun run start -- --faux "hi" --data-dir /tmp/demo
 ```
-
-手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后用 `bun run pair` 重发一个。已登记的设备在 Web 的 Settings → Devices 里管理，在那直接点 Revoke 就能吊销。
-
-配对邀请始终带 legacy `url`，并可以再带一份 `endpointSet` 候选列表（ADR-0032）：开着远程端口时，直连候选是当前探测到的局域网地址或显式 `--public-url`；加入可远程访问的中继时，中继也会作为候选。自动 LAN 地址在每次生成邀请和每次安全连接的 `hello` 时重新探测，不是启动时的缓存。回环 direct 和回环 relay 都只留在本机：邀请省略 `endpointSet`（没有可达的远程候选时），也不会把 `127.0.0.1` 发布给远程客户端；旧客户端继续只读 `url`。
-
-<details><summary>手动/高级：分开跑各个进程</summary>
 
 默认只监听 `127.0.0.1`。`--remote-port N` 另起一个监听所有网卡的安全通道端口，同端口用 HTTP 提供构建好的 Web 客户端（`apps/web/dist`，缺失时页面是 503）：
 
@@ -44,6 +51,12 @@ Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面
 - tun 用 `route_exclude_address` 排除 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。
 
 宿主机器上开着 sing-box tun（`auto_route`）时，`route_exclude_address` 还要加上局域网网段（如 `192.168.0.0/16`）。否则宿主回给局域网设备的包会被路由进 tun，手机用局域网 IP 连远程端口时一直转圈。可以在宿主上用 `ip route get <手机 IP>` 检查，应该走物理网卡，而不是 `tun0`。
+
+## WebRTC P2P 直连
+
+有中继时，客户端先经中继连上；链路就绪后，Auto 在后台尝试 WebRTC DataChannel 直连，打洞成功对话数据就不再经过服务端，失败则留在中继。没有 TURN，所以有些网络（比如双方都在对称 NAT 后面）建不起 P2P。宿主声明 `hello.rtc` 才支持；没有装 `node-datachannel` 原生模块时宿主照常运行，只是不声明。STUN 列表在 `<数据目录>/settings.json` 的 `rtcStun`，默认 Cloudflare 的公共 STUN，`[]` 表示只用 host 候选。
+
+连接方式按宿主设置，在 Settings → Hosts 里点该宿主的 Connection…：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网、tailnet 还是公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。同一套设置的简述在[快速上手](/zh/docs/)的「WebRTC 直连」一节。
 
 ## 经自部署中继访问
 

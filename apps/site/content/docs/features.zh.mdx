@@ -15,6 +15,9 @@ description: 工具、项目和 worktree、子代理、具名 Agent、codemode�
 | codemode | 模型写一段 JavaScript，在 QuickJS 沙箱里调用其他工具，只有脚本的输出进入上下文 |
 | MCP | 在 `~/.agents/mcp.json` 里配置 server，格式就是常见的 `mcpServers` |
 | 图片 | Web / 桌面端输入框可粘贴、拖入、从 "+" 菜单选图，一条最多 4 张，发送前缩放并转成 JPEG |
+| 文件附件 | Web / 桌面端输入框一条消息最多附 10 个文件，单个解码后最多 10 MiB。选中后立刻上传到宿主；模型看到的是只读路径，要改先复制到工作目录 |
+| 斜杠命令 | 消息开头输入 `/` 执行宿主声明的命令。内置的 `/compact [说明]` 用来压缩较早的上下文；命令在宿主上执行，不发给模型 |
+| 消息时间和送达状态 | 每条消息显示发送时间。最新一条送达后显示 Delivered；发送中显示 Sending，没确认显示 Not confirmed，被拒绝显示 Failed 和原因。未确认和失败的消息可以重试，失败的还可以取回输入框修改 |
 | AGENTS.md 和 skills | 每次请求都会读 `~/.agents` 和项目里的 `AGENTS.md` / `CLAUDE.md` 与 skills；消息里用 `$名字` 提及的 skill 会把全文随消息发给模型 |
 
 细节和 MCP 配置说明见[使用说明](/zh/docs/usage/)。

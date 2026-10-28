@@ -57,7 +57,7 @@ MCP server 在 `~/.agents/mcp.json` 里配置（ADR-0012），格式是各家客
 }
 ```
 
-stdio server 写 `command`（可选 `args`、`env`、`cwd`——相对的 cwd 按主目录解析）；HTTP server 写 `url`（可选 `headers`）。`env` 和 `headers` 的值可以用 `${NAME}` 引用宿主进程的环境变量。`timeout`（秒，默认 60）是单次工具调用的超时；`enabled: false` 保留配置但不连接。每个 server 在宿主里只连一份、所有对话共用；工具名是 `mcp__<server>__<tool>`。`exposure` 决定模型怎么够到它们（ADR-0013）：默认 `codemode`，工具不声明给模型，只能在 codemode 脚本里调用，模型用 `searchTools` / `describeNamespace` 找到它们，server 连上前后工具声明不变；写 `"direct"` 则同时直接声明给模型，结果里的图片显示在工具卡片里。`description`（可选）是给模型看的一句话说明，列在系统提示词里；不写时只列 server 名和工具数，server 自带的 instructions 由 `describeNamespace` 返回。右侧状态面板的 MCP 区列出每个 server 的状态、工具数和错误，以及配置错误（比如引用了一个不存在的环境变量）。配置只在启动时读一次，改动后重启宿主生效（常驻模式用 `bun run service -- restart`）。暂不支持：项目级 `mcp.json`、OAuth 登录（server 回 401 会在状态里提示）、resources / prompts、`deferred` / `tool_search`。
+stdio server 写 `command`（可选 `args`、`env`、`cwd`——相对的 cwd 按主目录解析）；HTTP server 写 `url`（可选 `headers`）。`env` 和 `headers` 的值可以用 `${NAME}` 引用宿主进程的环境变量。`timeout`（秒，默认 60）是单次工具调用的超时；`enabled: false` 保留配置但不连接。每个 server 在宿主里只连一份、所有对话共用；工具名是 `mcp__<server>__<tool>`。`exposure` 决定模型怎么够到它们（ADR-0013）：默认 `codemode`，工具不声明给模型，只能在 codemode 脚本里调用，模型用 `searchTools` / `describeNamespace` 找到它们，server 连上前后工具声明不变；写 `"direct"` 则同时直接声明给模型，结果里的图片显示在工具卡片里。`description`（可选）是给模型看的一句话说明，列在系统提示词里；不写时只列 server 名和工具数，server 自带的 instructions 由 `describeNamespace` 返回。右侧状态面板的 MCP 区列出每个 server 的状态、工具数和错误，以及配置错误（比如引用了一个不存在的环境变量）。配置只在启动时读一次，改动后重启宿主生效（常驻模式用 `pinomad service restart`；从源码检出跑时是 `bun run service -- restart`）。暂不支持：项目级 `mcp.json`、OAuth 登录（server 回 401 会在状态里提示）、resources / prompts、`deferred` / `tool_search`。
 
 让 agent 看图：`read` 遇到 PNG / JPEG / GIF / WebP 会把图片返回给模型，太大的会按模型上限缩小；模型不支持图片输入时看到的是占位说明。要让 agent 自己截图，在 `~/.agents/mcp.json` 里配 Playwright MCP（或 Chrome DevTools MCP）：
 
@@ -80,6 +80,16 @@ Settings → Providers 管理宿主能用哪些模型，任何一台已配对设
 - **Custom endpoint**：自己的 OpenAI / Anthropic / Gemini 兼容服务（Ollama、LM Studio、vLLM、网关）。填 base URL 和模型 id，"Fetch from /models" 由宿主去问 endpoint 有哪些模型。
 
 一个 provider 只存一份凭据，换登录方式会替换掉原来的。凭据存在数据目录的 `auth.json`，自定义 endpoint 存在 `models.json`（pi 的 models.json 格式，可以在宿主停止时手改）。宿主环境变量里的 key（例如 `GEMINI_API_KEY`）照样生效，在列表里标为来自环境变量。从旧版本升级不会带上 `~/.pi/agent` 里的登录，要在这里重新登录。代理、重试、压缩这些 pi 的 harness 设置写在 `settings.json` 的 `"pi"` 键下，格式同 pi 的 settings.json，只能手改，宿主启动时读。
+
+## 斜杠命令、消息时间和送达状态
+
+在消息开头输入 `/` 会出现宿主声明的命令菜单（ADR-0029）。命令只认消息开头那一段：`/compact [说明]` 让宿主压缩较早的上下文，在宿主上执行，不会作为消息发给模型；`/usr/bin/x` 这类开头的路径按普通消息发。`+` 菜单里的 "Run a command…" 打开同一份列表。宿主低于 5.17 时没有 `/` 菜单，`+` 里仍保留压缩上下文。
+
+每条消息都显示发送时间：今天的只显示时刻，更早的加日期，往年的再加年份；Web / 桌面端悬停看完整的日期时间。你发的消息还显示送达状态（ADR-0034）：最新一条送达后显示 Delivered，发送中显示 Sending，30 秒没回音或断线显示 Not confirmed，被宿主拒绝显示 Failed 和原因。没确认的消息重连后会先向宿主核对，确实没收到才重发，不会发重；未确认和失败的消息可以 Retry，失败的还可以 Edit 取回输入框修改。
+
+## 连接方式
+
+在 Settings → Hosts 里点某台宿主的 Connection… 选连接方式（ADR-0033）：Auto（默认，有中继时先经中继连上，链路就绪后在后台切到 WebRTC P2P，打洞失败就留在中继）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网 / tailnet / 公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。没有 TURN，有些网络建不起 P2P；中继和配对细节见[远程访问](/zh/docs/remote-access/)。
 
 ## iOS 账号
 

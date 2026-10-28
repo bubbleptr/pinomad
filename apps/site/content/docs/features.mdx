@@ -15,6 +15,9 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
 | MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |
 | Images | Paste, drop, or pick up to 4 images per message in the Web/desktop composer — resized to JPEG before sending |
+| File attachments | Attach up to 10 files per message in the Web/desktop composer, each up to 10 MiB. They upload to the host as you attach them; the model gets read-only paths and copies a file into the working directory before changing it |
+| Slash commands | Type `/` at the start of a message to run a command the host declares. The built-in `/compact [instructions]` summarizes older context; commands run on the host and are not sent to the model |
+| Message times and delivery states | Messages show when they were sent. Your latest message shows Delivered; a send in progress shows Sending, an unanswered one Not confirmed, and a refused one Failed with the reason. Unconfirmed and failed sends can be retried, and failed ones edited |
 | AGENTS.md and skills | Reads `AGENTS.md` / `CLAUDE.md` and skills from `~/.agents` and the project, on every request; a `$name` mention sends that skill's full text with the message |
 
 Details and the MCP config reference: [Usage](/zh/docs/usage/) (Chinese).
