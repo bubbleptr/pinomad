@@ -39,6 +39,10 @@ for (const file of files) {
   const scripts = new Set<string>();
   for (const [, attrs, body] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
     if (/\bsrc=/.test(attrs) || body === "") continue;
+    // JSON-LD and other data blocks are not executable scripts; hashing them
+    // would only bloat the policy.
+    const type = attrs.match(/\btype="([^"]*)"/)?.[1];
+    if (type && type !== "module" && !/(?:java|ecma)script/i.test(type)) continue;
     scripts.add(hash(body));
   }
   // Docs and blog pages carry style="" attributes (Shiki's code colours, Base UI

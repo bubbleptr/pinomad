@@ -7,7 +7,6 @@ import { i18n, localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl, siteNav } from "@/lib/nav.ts";
 import { counterpart } from "@/lib/pages.ts";
 import { GitHubIcon } from "@/landing/icons.tsx";
-import appCss from "@/styles/app.css?url";
 import favicon from "../../../web/public/favicon.svg?url";
 
 const ui = defineI18nUI(i18n, {
@@ -31,9 +30,6 @@ const ui = defineI18nUI(i18n, {
     "Back to Home(404 not found page)": "回到首页",
   },
 });
-
-/** Stylesheet for every docs and blog page; the landing page brings its own. */
-export const shellLinks = [{ rel: "stylesheet", href: appCss }];
 
 /** Fumadocs context for docs and blog: theme, search, and translated UI strings. */
 export function Shell({ lang, children }: { lang: Lang; children: ReactNode }) {

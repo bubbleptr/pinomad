@@ -15,10 +15,19 @@ export const loadDocsPage = createServerFn({ method: "GET" })
   .handler(async ({ data: { lang, slugs } }) => {
     const page = source.getPage(slugs, lang);
     if (!page) throw notFound();
+    const english = source.getPage(slugs, "en");
+    const chinese = source.getPage(slugs, "zh");
     return {
       path: page.path,
+      url: page.url,
       title: page.data.title,
       description: page.data.description,
+      // Fumadocs inherits English files into the Chinese source, so check the
+      // page's actual locale instead of whether getPage returned something.
+      alternates: {
+        en: english?.locale === "en" ? english.url : undefined,
+        zh: chinese?.locale === "zh" ? chinese.url : undefined,
+      },
       pageTree: await source.serializePageTree(source.getPageTree(lang)),
     };
   });
@@ -44,7 +53,18 @@ export const loadBlogPost = createServerFn({ method: "GET" })
   .handler(({ data: { lang, slug } }) => {
     const post = blog.getPage([slug], lang);
     if (!post) throw notFound();
-    return { path: post.path, title: post.data.title, description: post.data.description };
+    const english = blog.getPage([slug], "en");
+    const chinese = blog.getPage([slug], "zh");
+    return {
+      path: post.path,
+      url: post.url,
+      title: post.data.title,
+      description: post.data.description,
+      alternates: {
+        en: english?.locale === "en" ? english.url : undefined,
+        zh: chinese?.locale === "zh" ? chinese.url : undefined,
+      },
+    };
   });
 
 export const loadChangelog = createServerFn({ method: "GET" })

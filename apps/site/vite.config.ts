@@ -18,6 +18,15 @@ export default defineConfig({
       // Not linked from any page, so the crawler can't find them. The 404 pages
       // become 404.html / zh/404.html after the build (scripts/not-found.ts).
       pages: [{ path: "/api/search.json" }, { path: "/404/" }, { path: "/zh/404/" }],
+      router: {
+        codeSplittingOptions: {
+          // Route configs are imported by the entry and their static imports are
+          // preloaded on every page. Loaders are where a config reaches the
+          // docs/blog bundles; splitting them keeps the landing page's preloads
+          // to the router, its own head helper, and route stubs.
+          defaultBehavior: [["loader"], ["component"], ["pendingComponent"], ["errorComponent"], ["notFoundComponent"]],
+        },
+      },
     }),
     react(),
   ],
