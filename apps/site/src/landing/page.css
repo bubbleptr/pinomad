@@ -1109,6 +1109,109 @@ html[lang="zh-CN"] .hero h1 {
   font-size: 0.95rem;
 }
 
+/* —— Bring your own subscription: one strip of plans, then what it means for you. —— */
+.subs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: clamp(2rem, 5vw, 3rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+@media (min-width: 48rem) {
+  .subs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Hairlines between cells come from each cell's own edges, clipped by the strip. */
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0 -1px -1px 0;
+  padding: 1.1rem 1.25rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.sub strong {
+  display: block;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.sub-note {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* Brand marks in one ink: the SVG is only a mask, so mono and colour logos read alike. */
+.sub-logo {
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+  background: var(--fg-2);
+  mask: center / contain no-repeat;
+}
+
+.sub-logo.is-claude {
+  mask-image: url("../../../web/src/entities/provider/logos/claude-color.svg");
+}
+
+.sub-logo.is-openai {
+  mask-image: url("../../../web/src/entities/provider/logos/openai.svg");
+}
+
+.sub-logo.is-copilot {
+  mask-image: url("../../../web/src/entities/provider/logos/githubcopilot.svg");
+}
+
+.sub-logo.is-grok {
+  mask-image: url("../../../web/src/entities/provider/logos/grok.svg");
+}
+
+.sub-logo.is-kimi {
+  mask-image: url("../../../web/src/entities/provider/logos/kimi-color.svg");
+}
+
+.sub-logo.is-ollama {
+  mask-image: url("../../../web/src/entities/provider/logos/ollama.svg");
+}
+
+.sub-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin-top: 1.5rem;
+  color: var(--fg-2);
+  font-size: 0.95rem;
+}
+
+.sub-checks li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* A check drawn from two borders, so it needs no image the CSP would have to allow. */
+.sub-checks li::before {
+  content: "";
+  flex: none;
+  width: 0.35rem;
+  height: 0.7rem;
+  margin: -0.2rem 0 0 0.15rem;
+  border: solid oklch(0.72 0.15 150);
+  border-width: 0 2px 2px 0;
+  rotate: 45deg;
+}
+
 .clients {
   display: grid;
   gap: 0 2rem;

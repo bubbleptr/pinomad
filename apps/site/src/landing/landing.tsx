@@ -2,7 +2,7 @@ import { type RefObject, useEffect, useRef } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { copy } from "./copy.tsx";
 import { Closing, GetStarted, type LatestRelease } from "./get-started.tsx";
-import { Agents, Anywhere, Connection, Core, Hero, Next } from "./sections.tsx";
+import { Agents, Anywhere, Connection, Core, Hero, Next, Subscriptions } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
 import { SiteHeader } from "./site-header.tsx";
 
@@ -20,6 +20,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
         <Hero lang={lang} t={t.hero} />
         <Core lang={lang} t={t.core} durable={t.durable} />
         <Anywhere lang={lang} t={t.anywhere} />
+        <Subscriptions t={t.subs} />
         <Connection t={t.connection} />
         <Agents lang={lang} t={t.agents} />
         <GetStarted t={t.start} />
@@ -31,7 +32,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
   );
 }
 
-const revealed = ".section-head, .cell, .split > .diagram, .split > .phone, .stack, .plan, .client, .code-card, .start-end";
+const revealed = ".section-head, .cell, .split > .diagram, .split > .phone, .stack, .plan, .subs, .client, .code-card, .start-end";
 
 /**
  * Blocks that start below the first screen fade up once as they scroll in.

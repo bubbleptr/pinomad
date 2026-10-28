@@ -8,6 +8,9 @@ import type { Lang } from "@/lib/i18n.ts";
 
 type Link = { text: string; href: string };
 
+/** Provider marks drawn by page.css as `.sub-logo.is-<name>` masks. */
+export type SubLogo = "claude" | "openai" | "copilot" | "grok" | "kimi" | "ollama";
+
 export interface LandingCopy {
   skip: string;
   home: string;
@@ -33,6 +36,13 @@ export interface LandingCopy {
     eyebrow: string;
     title: string;
     allFeatures: string;
+  };
+  subs: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    plans: { logo: SubLogo; name: string; note: string }[];
+    checks: string[];
   };
   durable: {
     title: string;
@@ -104,7 +114,7 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
-      modelsLabel: "Any model pi supports, including subscriptions you already pay for",
+      modelsLabel: "Use any model pi supports",
       models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "17 more",
       shotAlt:
@@ -122,6 +132,20 @@ export const copy: Record<Lang, LandingCopy> = {
       eyebrow: "How it works",
       title: "Built on Pi Durable",
       allFeatures: "Everything the agent can do",
+    },
+    subs: {
+      eyebrow: "Models",
+      title: "Bring your own subscription",
+      lead: "PiNomad doesn't resell tokens. Sign in with the plan you already pay for, add an API key, or point it at your own endpoint.",
+      plans: [
+        { logo: "claude", name: "Claude", note: "Pro · Max" },
+        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
+        { logo: "copilot", name: "GitHub Copilot", note: "Subscription" },
+        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
+        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
+        { logo: "ollama", name: "Your endpoint", note: "Ollama · vLLM · LM Studio" },
+      ],
+      checks: ["No tokens resold, no extra quota", "Credentials stay on your host", "Switch models mid-conversation"],
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -263,7 +287,7 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
       start: "开始使用",
       github: "在 GitHub 上查看",
-      modelsLabel: "pi 支持的模型都能用，已有订阅可直接登录",
+      modelsLabel: "pi 支持的模型都能用",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
       shotAlt: "PiNomad Web 客户端运行画面：左侧是 slugkit 项目的对话列表；agent 改好了重音字母的折叠，又被要求在 README 里写明规则，改完 README 后正在重跑测试",
@@ -279,6 +303,20 @@ export const copy: Record<Lang, LandingCopy> = {
       eyebrow: "工作方式",
       title: "基于 Pi Durable",
       allFeatures: "agent 能做的所有事",
+    },
+    subs: {
+      eyebrow: "模型",
+      title: "用你已经付费的订阅",
+      lead: "PiNomad 不卖 token。直接登录你在用的订阅，也可以填 API key，或接自己的 endpoint。",
+      plans: [
+        { logo: "claude", name: "Claude", note: "Pro · Max" },
+        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
+        { logo: "copilot", name: "GitHub Copilot", note: "订阅" },
+        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
+        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
+        { logo: "ollama", name: "自己的 endpoint", note: "Ollama · vLLM · LM Studio" },
+      ],
+      checks: ["不转售 token，不另设配额", "凭据只存在你的宿主上", "对话中途可以换模型"],
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
