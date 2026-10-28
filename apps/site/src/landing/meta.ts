@@ -1,6 +1,7 @@
 import type { Lang } from "../lib/i18n.ts";
 
 const ORIGIN = "https://pinomad.si";
+const REPOSITORY = "https://github.com/bubbleptr/pinomad";
 
 const copy = {
   en: {
@@ -23,7 +24,28 @@ const copy = {
   },
 } as const;
 
-export function landingHead(lang: Lang) {
+/**
+ * Structured data for the product landing pages. TanStack Router renders a
+ * `script:ld+json` entry as a data block, not executable JavaScript; csp.ts
+ * skips non-JS script types when collecting hashes.
+ */
+function softwareApplication(lang: Lang, softwareVersion?: string) {
+  const url = lang === "zh" ? `${ORIGIN}/zh/` : `${ORIGIN}/`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "PiNomad",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Linux",
+    license: "https://www.apache.org/licenses/LICENSE-2.0",
+    codeRepository: REPOSITORY,
+    url,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    ...(softwareVersion ? { softwareVersion } : {}),
+  };
+}
+
+export function landingHead(lang: Lang, softwareVersion?: string) {
   const c = copy[lang];
   const url = lang === "zh" ? `${ORIGIN}/zh/` : `${ORIGIN}/`;
   return {
@@ -42,6 +64,7 @@ export function landingHead(lang: Lang) {
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: c.title },
       { name: "twitter:description", content: c.social },
+      { "script:ld+json": softwareApplication(lang, softwareVersion) },
     ],
     links: [
       { rel: "canonical", href: url },

@@ -1,17 +1,10 @@
 import { type RefObject, useEffect, useRef } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { copy } from "./copy.tsx";
-import landingCss from "./landing.css?url";
-import { landingHead } from "./meta.ts";
 import { GetStarted, type LatestRelease } from "./get-started.tsx";
 import { Agents, Anywhere, Connection, Core, Hero, Next } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
 import { SiteHeader } from "./site-header.tsx";
-
-export function landingRouteHead(lang: Lang) {
-  const head = landingHead(lang);
-  return { ...head, links: [...head.links, { rel: "stylesheet", href: landingCss }] };
-}
 
 export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }) {
   const t = copy[lang];
