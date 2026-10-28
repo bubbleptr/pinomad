@@ -453,6 +453,7 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
       let settled = false;
       let deadline: unknown;
       let pollTimer: unknown;
+      let commitTimer: unknown;
       let resolveAnswer!: (sdp: string) => void;
       let rejectAnswer!: (error: Error) => void;
       const answer = new Promise<string>((resolve, reject) => {
@@ -475,6 +476,10 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
           timers.clearTimeout(pollTimer);
           pollTimer = undefined;
         }
+        if (commitTimer !== undefined) {
+          timers.clearTimeout(commitTimer);
+          commitTimer = undefined;
+        }
       };
       const fail = (error: Error): void => {
         if (settled) return;
@@ -488,10 +493,20 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
         rejectAnswer(error);
       };
       const commit = (): void => {
-        if (settled || localSdp === undefined) return;
+        if (settled) return;
+        // The native description is authoritative when it has already
+        // gathered candidates that the queued callbacks have not delivered.
+        const local = pc.localDescription();
+        if (local !== null) localSdp = local.sdp;
+        if (localSdp === undefined) return;
         for (const candidate of sdpCandidates(localSdp)) addCandidate(candidate);
         if (candidates.size === 0) {
-          fail(new Error("no usable local ICE candidates"));
+          // libdatachannel reports "complete" on a native thread, while
+          // node-datachannel queues that callback separately from the
+          // candidate callbacks. Complete can therefore run before candidates
+          // that were gathered earlier; only the collection deadline proves
+          // the set is actually empty.
+          if (deadlineReached) fail(new Error("no usable local ICE candidates"));
           return;
         }
         settled = true;
@@ -499,18 +514,36 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
         resolveAnswer(withRtcCandidates(localSdp, [...candidates]));
       };
       const maybeCommit = (): void => {
+        // A pending drain must run before sealing: the first late candidate
+        // does not mean the other queued candidates have arrived.
+        if (commitTimer !== undefined && !deadlineReached) return;
         if (localSdp !== undefined && (gatheringDone || deadlineReached)) commit();
+      };
+      const scheduleCommit = (): void => {
+        if (settled) return;
+        // Candidate and complete callbacks ride separate native-thread queues.
+        // Yield one turn, and re-arm on each callback, so the answer is sealed
+        // only after the callbacks already queued ahead of it have landed.
+        if (commitTimer !== undefined) timers.clearTimeout(commitTimer);
+        commitTimer = timers.setTimeout(() => {
+          commitTimer = undefined;
+          maybeCommit();
+        }, 0);
       };
 
       pc.onLocalDescription((sdp) => {
         localSdp = sdp;
-        maybeCommit();
+        if (gatheringDone) scheduleCommit();
+        else maybeCommit();
       });
-      pc.onLocalCandidate((candidate) => addCandidate(candidate));
+      pc.onLocalCandidate((candidate) => {
+        addCandidate(candidate);
+        if (gatheringDone) scheduleCommit();
+      });
       pc.onGatheringStateChange((state) => {
         if (state === "complete") {
           gatheringDone = true;
-          maybeCommit();
+          scheduleCommit();
         }
       });
       pc.onStateChange((state) => {
@@ -549,7 +582,8 @@ export function nodeRtcFactory(loaded: unknown): RtcPeerFactory {
         const local = pc.localDescription();
         if (local !== null) {
           localSdp = local.sdp;
-          maybeCommit();
+          if (gatheringDone) scheduleCommit();
+          else maybeCommit();
         }
         if (!settled) pollTimer = timers.setTimeout(poll, 25);
       };

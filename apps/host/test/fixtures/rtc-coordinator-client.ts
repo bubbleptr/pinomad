@@ -45,13 +45,19 @@ async function tokenCall<M extends keyof CallMethods>(method: M, args: CallMetho
   });
 }
 
-async function waitFor(what: string, predicate: () => boolean, timeoutMs = 30_000): Promise<void> {
+async function waitFor(
+  what: string,
+  predicate: () => boolean,
+  timeoutMs = 30_000,
+  details?: () => unknown,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`timed out waiting for ${what}`);
+  const why = details === undefined ? "" : ` (${JSON.stringify(details())})`;
+  throw new Error(`timed out waiting for ${what}${why}`);
 }
 
 class Platform {
@@ -92,7 +98,12 @@ async function main(): Promise<void> {
   try {
     await waitFor("ready", () => remote.view.current().connection === "connected");
     if (remote.rtcDiagnostics().path === "p2p") throw new Error("upgraded before the initial WebSocket was ready");
-    await waitFor("P2P handoff", () => remote.rtcDiagnostics().path === "p2p");
+    await waitFor(
+      "P2P handoff",
+      () => remote.rtcDiagnostics().path === "p2p",
+      30_000,
+      () => remote.rtcDiagnostics(),
+    );
     const models = remote.view.current().models;
     const created = await remote.controller.createPairing();
     if (typeof created.url !== "string" || created.url === "") throw new Error("createPairing did not return a url");
