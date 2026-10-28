@@ -489,6 +489,157 @@ describe("logical submissions", () => {
     }
   });
 
+  it("times out a retry query, releases the invoke, and never resends on its late null", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+
+      // The retry's query holds the command chain until its own deadline.
+      host.setSubmissionAnswer(() => undefined);
+      const retry = remote.controller.retrySubmission("r1");
+      const query = await waitForCall(host, "submission", 1);
+      const modeled = remote.controller.setModel({ provider: "p", modelId: "m" });
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+      expect(host.calls("setModel")).toHaveLength(0);
+
+      vi.advanceTimersByTime(30_000);
+      await retry;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await modeled;
+      expect(host.calls("setModel")).toHaveLength(1);
+      expect(host.submits()).toHaveLength(1);
+
+      // A null answer after the deadline must not trigger the resend.
+      host.answer(query, { ok: true, value: null });
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+      expect(host.submits()).toHaveLength(1);
+
+      // Retry is reachable again: the next retry starts another query.
+      host.setSubmissionAnswer(() => undefined);
+      const again = remote.controller.retrySubmission("r1");
+      await waitForCall(host, "submission", 2);
+      expect(host.submits()).toHaveLength(1);
+      vi.advanceTimersByTime(30_000);
+      await again;
+      expect(onlySubmission(remote).phase).toBe("unknown");
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares one retry deadline between its query and resend", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+
+      host.setSubmissionAnswer(() => undefined);
+      const retry = remote.controller.retrySubmission("r1");
+      const query = await waitForCall(host, "submission", 1);
+      vi.advanceTimersByTime(10_000);
+      host.answer(query, { ok: true, value: null });
+      await waitForCall(host, "submit", 2);
+
+      // 29s after the click the resend still has the first window; the
+      // transition from query to resend does not restart it.
+      vi.advanceTimersByTime(19_000);
+      expect(onlySubmission(remote).phase).toBe("inFlight");
+      vi.advanceTimersByTime(1_000);
+      await retry;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      expect(host.submits()).toHaveLength(2);
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles a late retry query record without resending", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+
+      host.setSubmissionAnswer(() => undefined);
+      const retry = remote.controller.retrySubmission("r1");
+      const query = await waitForCall(host, "submission", 1);
+      vi.advanceTimersByTime(30_000);
+      await retry;
+
+      // The record arrives after the query's deadline: reconcile it, never resend.
+      host.answer(query, { ok: true, value: { submissionId: 7, status: "queued", entry: 42 } });
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+      expect(host.submits()).toHaveLength(1);
+      host.sendSnapshot("conversation:1", conversationView([userEntry(42, "hello")]));
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+      expect(host.submits()).toHaveLength(1);
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out a recovery query and releases the commands it held", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 0, max: 0 } });
+    await remote.controller.switchConversation(id(1));
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+      await submit;
+
+      // The recovery query never answers, so the sync gate must not wait forever.
+      host.setSubmissionAnswer(() => undefined);
+      host.disconnect();
+      await vi.advanceTimersByTimeAsync(0);
+      await waitFor(remote, (view) => view.connection === "connected");
+      const query = await waitForCall(host, "submission", 1);
+      const switched = remote.controller.switchConversation(id(2));
+      const modeled = remote.controller.setModel({ provider: "p", modelId: "m" });
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+      expect(host.calls("setModel")).toHaveLength(0);
+
+      vi.advanceTimersByTime(30_000);
+      await switched;
+      await modeled;
+      expect(host.calls("setModel")).toHaveLength(1);
+      expect(host.submits()).toHaveLength(1);
+      expect(onlySubmission(remote).phase).toBe("unknown");
+
+      // Its late null is not a reason to resend either.
+      host.answer(query, { ok: true, value: null });
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+      expect(host.submits()).toHaveLength(1);
+      expect(onlySubmission(remote).phase).toBe("unknown");
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a retry unknown when it disconnects again, then settles without a third send", async () => {
     vi.useFakeTimers();
     const host = createHost();

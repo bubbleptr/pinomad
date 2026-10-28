@@ -2367,15 +2367,32 @@ class RemoteClient {
     this.#clearSubmissionTimer(record);
     record.timer = setTimeout(() => {
       record.timer = undefined;
-      if (this.#closed || record.phase !== "inFlight" || record.admitted) return;
-      // The host may still admit it later; this only changes what the row says.
-      record.phase = "unknown";
+      if (this.#closed || record.phase === "settled" || record.admitted) return;
+      // The deadline covers both retry phases: a query that never answered
+      // also leaves the row unknown, rather than holding the invoke forever.
+      if (record.phase === "inFlight") record.phase = "unknown";
       const resolve = record.timeoutResolve;
       record.timeoutResolve = undefined;
       this.#touchSubmissions();
       // Let the serialized queue continue so Retry is reachable.
       resolve?.();
     }, SUBMISSION_TIMEOUT_MS);
+  }
+
+  /**
+   * Arm one 30s deadline for a retry or recovery item and return the promise
+   * that resolves when it fires (or when another fact clears it). The query
+   * and the resend share this deadline, so crossing from one to the other
+   * must not restart it.
+   */
+  #armSubmissionDeadline(record: SubmissionRecord): Promise<void> {
+    this.#startSubmissionTimer(record);
+    let resolve!: () => void;
+    const deadline = new Promise<void>((done) => {
+      resolve = done;
+    });
+    record.timeoutResolve = resolve;
+    return deadline;
   }
 
   #clearSubmissionTimer(record: SubmissionRecord): void {
@@ -2584,20 +2601,27 @@ class RemoteClient {
     this.#touchSubmissions();
   }
 
-  /** Put one submit frame out and fold its result (or loss) into the record. */
-  async #sendSubmission(record: SubmissionRecord, direct: boolean): Promise<void> {
+  /**
+   * Put one submit frame out and fold its result (or loss) into the record.
+   * A caller that already armed the deadline passes it in, so a retry's
+   * query and resend share one window.
+   */
+  async #sendSubmission(record: SubmissionRecord, direct: boolean, deadline?: Promise<void>): Promise<void> {
     if (record.phase === "settled" || this.#closed) return;
+    if (deadline !== undefined && record.timer === undefined) {
+      // The shared deadline already fired; never send on a spent window.
+      if (record.phase !== "failed") {
+        record.phase = "unknown";
+        this.#touchSubmissions();
+      }
+      return;
+    }
     record.phase = "inFlight";
     record.error = undefined;
     const call = direct
       ? this.#callNow("submit", this.#submissionArgs(record))
       : this.#call("submit", this.#submissionArgs(record));
-    this.#startSubmissionTimer(record);
-    let timeoutResolve!: () => void;
-    const timedOut = new Promise<void>((resolve) => {
-      timeoutResolve = resolve;
-    });
-    record.timeoutResolve = timeoutResolve;
+    const timedOut = deadline ?? this.#armSubmissionDeadline(record);
     this.#touchSubmissions();
     // The result handler stays attached after a timeout: the host may still
     // admit the original request, and that late fact must win.
@@ -2645,21 +2669,34 @@ class RemoteClient {
    */
   async #recoverSubmissions(): Promise<void> {
     const unknown = this.#submissionOrder.filter((record) => record.phase === "unknown");
+    // Even when every stream arrived before this turn, the queries must
+    // finish before calls queued during the outage may run (ADR-0034 §6).
+    if (
+      this.#syncGate === undefined
+      && unknown.some((record) => record.fixed)
+      && hostSupportsCall(this.#hostMinor, "submission")
+    ) {
+      this.#syncGate = { entries: [] };
+    }
     for (const record of unknown) {
       if (this.#closed || record.phase !== "unknown" || !record.fixed) continue;
       try {
-        if (hostSupportsCall(this.#hostMinor, "submission")) {
-          const found = await this.#querySubmission(record, true);
-          if (found !== null) {
-            this.#applySubmissionRecord(record, found);
-            continue;
-          }
-        } else {
+        if (!hostSupportsCall(this.#hostMinor, "submission")) {
           // A pre-5.25 host cannot answer "did you get it?"; leave the row for
           // the user's Retry, exactly like today's missing receipt.
           continue;
         }
-        await this.#sendSubmission(record, true);
+        const deadline = this.#armSubmissionDeadline(record);
+        const found = await this.#querySubmissionWithinDeadline(record, true, deadline);
+        if (found === "deadline") continue;
+        if (found !== null) {
+          this.#applySubmissionRecord(record, found);
+          continue;
+        }
+        // A fact may have settled the row while the query was in flight; a
+        // spent deadline must never turn a null into a resend.
+        if (record.phase !== "unknown" || record.timer === undefined) continue;
+        await this.#sendSubmission(record, true, deadline);
       } catch (error) {
         if (this.#closed) return;
         this.#clearSubmissionTimer(record);
@@ -2704,17 +2741,53 @@ class RemoteClient {
     return resolved;
   }
 
+  /**
+   * One submission read under an already armed deadline. If the deadline
+   * wins, a late record may still reconcile the row, but it must not send.
+   */
+  async #querySubmissionWithinDeadline(
+    record: SubmissionRecord,
+    direct: boolean,
+    deadline: Promise<void>,
+  ): Promise<SubmissionFact | null | "deadline"> {
+    const query = this.#querySubmission(record, direct);
+    const outcome = await Promise.race([
+      query.then(
+        (found) => ({ kind: "found" as const, found }),
+        (error: unknown) => ({ kind: "error" as const, error }),
+      ),
+      deadline.then(() => ({ kind: "deadline" as const })),
+    ]);
+    if (outcome.kind === "deadline") {
+      void query.then(
+        (found) => {
+          if (this.#closed || found === null || record.phase === "settled") return;
+          this.#applySubmissionRecord(record, found);
+        },
+        () => {},
+      );
+      return "deadline";
+    }
+    if (outcome.kind === "error") throw outcome.error;
+    return outcome.found;
+  }
+
   async #retrySubmission(record: SubmissionRecord): Promise<void> {
     if (record.phase !== "unknown" && record.phase !== "failed") return;
+    const deadline = this.#armSubmissionDeadline(record);
     try {
       if (record.phase === "unknown" && hostSupportsCall(this.#hostMinor, "submission")) {
-        const found = await this.#querySubmission(record);
+        const found = await this.#querySubmissionWithinDeadline(record, false, deadline);
+        if (found === "deadline") return;
         if (found !== null) {
           this.#applySubmissionRecord(record, found);
           return;
         }
+        // A fact may have settled the row while the query was in flight; a
+        // spent deadline must never turn a null into a resend.
+        if (record.phase !== "unknown" || record.timer === undefined) return;
       }
-      await this.#sendSubmission(record, false);
+      await this.#sendSubmission(record, false, deadline);
     } catch (error) {
       if (this.#closed) return;
       this.#clearSubmissionTimer(record);
