@@ -1,14 +1,27 @@
 name: CI
 
-# PR gate for the whole repo: typecheck, `bun run test` (the vitest projects,
-# including the web client's Playwright end-to-end tests, plus cargo test with
-# and without `ffi`), then `bun run build`. Only doc-only changes skip it; the
-# macOS iOS job stays path-filtered in rust-core.yml.
+# PR gate for the Bun workspace and the Rust crates: typecheck, `bun run test`
+# (the vitest projects, including the web client's Playwright end-to-end tests,
+# plus cargo test with and without `ffi`), then `bun run build`.
+#
+# It skips PRs that only touch what it doesn't exercise: docs, the site (site.yml
+# checks it), the native iOS app and AgentChatKit (rust-core.yml), the server
+# Dockerfile, and other workflows. Later patterns win, so ci.yml re-includes
+# itself after `.github/**`. If main ever gets branch protection, don't mark
+# these path-filtered checks as required: a skipped workflow never reports.
 on:
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**/*.md"
+      - "!LICENSE"
+      - "!apps/site/**"
+      - "!apps/ios/**"
+      - "!packages/agent-chat-kit/**"
+      - "!deploy/**"
+      - "!.github/**"
+      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
