@@ -3,7 +3,7 @@ import { HomeLayout } from "fumadocs-ui/layouts/home";
 import type { loadChangelog } from "@/lib/content-data.ts";
 import { formatDate, type Lang } from "@/lib/i18n.ts";
 import { releases } from "@/lib/source.ts";
-import { baseOptions, Shell } from "./shell.tsx";
+import { homeLayout, Shell } from "./shell.tsx";
 
 const copy = {
   en: { title: "Changelog", lead: "What changed in each release.", release: "Release on GitHub" },
@@ -49,7 +49,7 @@ function Release({ lang, entry }: { lang: Lang; entry: Entries[number] }) {
 export function ChangelogPage({ lang, entries }: { lang: Lang; entries: Entries }) {
   return (
     <Shell lang={lang}>
-      <HomeLayout {...baseOptions(lang)}>
+      <HomeLayout {...homeLayout}>
         <div className="mx-auto w-full max-w-4xl px-4 py-12">
           <h1 className="text-3xl font-semibold">{copy[lang].title}</h1>
           <p className="mt-2 mb-10 text-fd-muted-foreground">{copy[lang].lead}</p>

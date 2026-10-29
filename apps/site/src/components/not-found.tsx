@@ -1,7 +1,7 @@
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import appCss from "@/styles/app.css?url";
-import { baseOptions, Shell } from "./shell.tsx";
+import { homeLayout, Shell } from "./shell.tsx";
 
 const copy = {
   en: {
@@ -31,7 +31,7 @@ export function NotFound({ lang }: { lang: Lang }) {
       <title>{`${c.title} — PiNomad`}</title>
       <meta name="robots" content="noindex" />
       <link rel="stylesheet" href={appCss} precedence="default" />
-      <HomeLayout {...baseOptions(lang)}>
+      <HomeLayout {...homeLayout}>
         <div className="mx-auto flex w-full max-w-3xl flex-col items-start px-4 py-24">
           <p className="font-mono text-sm text-fd-muted-foreground">404</p>
           <h1 className="mt-2 text-3xl font-semibold">{c.title}</h1>

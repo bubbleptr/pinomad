@@ -1,10 +1,11 @@
 import { type RefObject, useEffect, useRef } from "react";
-import type { Lang } from "@/lib/i18n.ts";
+import { SiteHeader } from "@/components/site-header.tsx";
+import { localized, type Lang } from "@/lib/i18n.ts";
+import { otherLanguage } from "@/lib/nav.ts";
 import { copy } from "./copy.tsx";
 import { Closing, GetStarted, type LatestRelease } from "./get-started.tsx";
 import { Agents, Anywhere, Connection, Core, Hero, Next, Subscriptions } from "./sections.tsx";
 import { SiteFooter } from "./site-footer.tsx";
-import { SiteHeader } from "./site-header.tsx";
 
 export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }) {
   const t = copy[lang];
@@ -15,7 +16,13 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
       <a className="skip-link" href="#main">
         {t.skip}
       </a>
-      <SiteHeader lang={lang} t={t} />
+      <SiteHeader
+        lang={lang}
+        pathname={localized(lang, "/")}
+        languageHref={otherLanguage[lang].href}
+        // A new visitor can't sign up at the app yet, so they get the install steps.
+        start={{ text: t.hero.start, href: "#quick-start" }}
+      />
       <main id="main">
         <Hero lang={lang} t={t.hero} />
         <Core lang={lang} t={t.core} durable={t.durable} />

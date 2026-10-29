@@ -13,8 +13,6 @@ export type SubLogo = "claude" | "openai" | "copilot" | "grok" | "kimi" | "ollam
 
 export interface LandingCopy {
   skip: string;
-  home: string;
-  primaryNav: string;
   hero: {
     title: ReactNode;
     lead: string;
@@ -106,8 +104,6 @@ export const blogUrl = blogPost;
 export const copy: Record<Lang, LandingCopy> = {
   en: {
     skip: "Skip to content",
-    home: "PiNomad home",
-    primaryNav: "Primary",
     hero: {
       title: (
         <>
@@ -280,8 +276,6 @@ export const copy: Record<Lang, LandingCopy> = {
   },
   zh: {
     skip: "跳到正文",
-    home: "PiNomad 首页",
-    primaryNav: "主导航",
     hero: {
       title: (
         <>
