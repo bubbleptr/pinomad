@@ -1,14 +1,42 @@
 name: CI
 
-# PR gate for the Bun workspace and the Rust crates: typecheck, `bun run test`
-# (the vitest projects, including the web client's Playwright end-to-end tests,
-# plus cargo test with and without `ffi`), then `bun run build`.
+# PR gate for the Bun workspace and the Rust crates. A `changes` job matches the
+# PR's files against one filter per check, and only the matching checks run:
 #
-# It skips PRs that only touch what it doesn't exercise: docs, the site (site.yml
-# checks it), the native iOS app and AgentChatKit (rust-core.yml), the server
-# Dockerfile, and other workflows. Later patterns win, so ci.yml re-includes
-# itself after `.github/**`. If main ever gets branch protection, don't mark
-# these path-filtered checks as required: a skipped workflow never reports.
+#   protocol, client, host, server, cli, desktop
+#       `tsc --noEmit -p <dir>` and `vitest run --project <name>`
+#   web     tsc, the `web` and `web-dom` vitest projects (Playwright for the
+#           first), then `bun run build` (web, plus the site that reuses its icons)
+#   cargo   `cargo test`, then again with `-p pinomad-core --features ffi`
+#
+# Each filter is the check's own workspace plus everything its sources, tests
+# and tsconfig include import, transitively:
+#
+#   protocol  packages/protocol; apps/host (images.test.ts imports src/image-refs.ts)
+#   client    packages/client, packages/protocol
+#   host      apps/host, apps/server (test/support.ts opens server accounts), client, protocol
+#   server    apps/server, apps/host (src imports host), client, protocol
+#   cli       apps/cli, apps/host, apps/server (src/pinomad.ts dispatches to both), client, protocol
+#   desktop   apps/desktop, apps/web (electron/ imports web/src, electron.vite.config.ts
+#             imports web/vite.config.ts), apps/host + apps/server (test/e2e.ts imports
+#             host/test/support.ts), client, protocol
+#   web       apps/web, apps/host (tests start real hosts through test/support.ts), client, protocol
+#   cargo     crates, Cargo.*, rust-toolchain.toml; packages/protocol + packages/client
+#             (the Rust vectors live in their test/fixtures); apps/host/src and its
+#             package.json (tests/interop.rs spawns `node apps/host/src/main.ts`)
+#
+# Root package.json, bun.lock, tsconfig.base.json, vitest.config.ts and this
+# file run everything. Two edges are left out on purpose: web skips apps/server
+# (host/test/support.ts imports server/src/accounts.ts, but only the host tests
+# use it, and they do run on server changes), and cargo skips host tests.
+# apps/site's typecheck and build live in site.yml.
+#
+# The workflow-level filter below skips PRs that touch none of the above: docs,
+# the site (site.yml), the native iOS app and AgentChatKit (rust-core.yml), the
+# server Dockerfile, and other workflows. Later patterns win, so ci.yml
+# re-includes itself after `.github/**`. If main ever gets branch protection,
+# don't mark these path-filtered checks as required: a skipped workflow or job
+# never reports success.
 on:
   pull_request:
     paths:
@@ -31,7 +59,113 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # paths-filter lists a pull request's files through the API.
+      pull-requests: read
+    outputs:
+      workspaces: ${{ steps.workspaces.outputs.matrix }}
+      web: ${{ steps.filter.outputs.web }}
+      cargo: ${{ steps.filter.outputs.cargo }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            root: &root
+              - package.json
+              - bun.lock
+              - tsconfig.base.json
+              - vitest.config.ts
+              - .github/workflows/ci.yml
+            protocol:
+              - *root
+              - packages/protocol/**
+              - apps/host/**
+            client:
+              - *root
+              - packages/client/**
+              - packages/protocol/**
+            host:
+              - *root
+              - apps/host/**
+              - apps/server/**
+              - packages/client/**
+              - packages/protocol/**
+            server:
+              - *root
+              - apps/server/**
+              - apps/host/**
+              - packages/client/**
+              - packages/protocol/**
+            cli:
+              - *root
+              - apps/cli/**
+              - apps/host/**
+              - apps/server/**
+              - packages/client/**
+              - packages/protocol/**
+            desktop:
+              - *root
+              - apps/desktop/**
+              - apps/web/**
+              - apps/host/**
+              - apps/server/**
+              - packages/client/**
+              - packages/protocol/**
+            web:
+              - *root
+              - apps/web/**
+              - apps/host/**
+              - packages/client/**
+              - packages/protocol/**
+            cargo:
+              - *root
+              - crates/**
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+              - packages/protocol/**
+              - packages/client/**
+              - apps/host/src/**
+              - apps/host/package.json
+      # The matched filters that are plain workspaces, as matrix entries.
+      - id: workspaces
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+        run: |
+          matrix=$(jq -c '
+            map(select(IN("protocol", "client", "host", "server", "cli", "desktop")))
+            | map({name: ., dir: ((if IN("protocol", "client") then "packages/" else "apps/" end) + .)})
+          ' <<<"$CHANGES")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  workspace:
+    needs: changes
+    if: needs.changes.outputs.workspaces != '[]'
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "25"
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit -p ${{ matrix.dir }}
+      - run: bunx vitest run --project ${{ matrix.name }}
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -41,14 +175,31 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "25"
-      # Reads rust-toolchain.toml for the pinned channel.
-      - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
       # Run from apps/web so bunx uses its locked @playwright/test; at the
       # root bunx fetches the latest playwright and installs a mismatched
       # browser build.
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
-      - run: bun run typecheck
-      - run: bun run test
+      - run: bunx tsc --noEmit -p apps/web
+      - run: bunx vitest run --project web --project web-dom
       - run: bun run build
+
+  cargo:
+    needs: changes
+    if: needs.changes.outputs.cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # The interop test runs the real host, so it needs Node and the workspace.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "25"
+      # Reads rust-toolchain.toml for the pinned channel.
+      - uses: dtolnay/rust-toolchain@stable
+      - run: bun install --frozen-lockfile
+      - run: cargo test
+      - run: cargo test -p pinomad-core --features ffi
