@@ -50,7 +50,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0009](0009-host-lifecycle.md) | 宿主作为用户级系统服务常驻，源码检出升级，等空闲重启 |
 | [0015](0015-relay-splicing-and-host-registration.md) | 自部署中继按设备连接拼接 WebSocket，宿主用独立 Ed25519 密钥签名登记，中继用 HTTPS 提供 Web 客户端 |
 | [0016](0016-npm-single-package-distribution.md) | 分发：单个 npm 包 `pinomad`（宿主+中继+Web 客户端打包成 JS bundle，第三方依赖外置），tag 触发 GitHub Actions 发布 |
-| [0020](0020-desktop-connects-as-paired-device.md) | 桌面端连任何宿主都作为已配对设备走安全通道，不读 token；回环端口在 `/secure` 上也接受安全通道；桌面端和 npm 包共用版本号 |
+| [0020](0020-desktop-connects-as-paired-device.md) | 桌面端连任何宿主都作为已配对设备走安全通道，不读 token；回环端口在 `/secure` 上也接受安全通道；桌面端、iOS 和 npm 包共用版本号 |
 | [0018](0018-protocol-compatibility.md) | 协议兼容：hello 带 `{ major, minor }`，同一主版本内只增不删；两端对不认识的内容回错误或忽略，不断开；上游数据结构靠契约快照盯着；宿主只支持当前主版本 |
 | [0025](0025-push-via-server-apns.md) | 推送直连 APNs，按环境分开的密钥只放在服务端；宿主经控制连接请服务端发，服务端只转发不保存；开放注册前要先让服务端核对 token 归属 |
 | [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |

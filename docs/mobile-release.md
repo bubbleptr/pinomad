@@ -9,14 +9,17 @@ iOS 端在 mbp 本地 `xcodebuild archive` 出包、`-exportArchive` 导出上�
 
 ## 发版流程
 
-从最新的 `origin/main` 检出打包：`git rev-list --count HEAD` 只有在 main 上才单调递增，特性分支上算出来的数可能和以后 main 上的重复。
+从要发的 `v*` tag 检出打包（`git checkout v<版本>`），不从 main 的最新提交打：版本号取自 tag，包里的代码就要是这个 tag 的代码（见下面的「版本号」）。
 
 1. Archive：
 
    ```sh
+   tag=$(git describe --tags --exact-match)   # HEAD 不在 tag 上会直接报错
+   version=${tag#v}; version=${version%%-*}   # v0.9.0-beta.1 → 0.9.0
    xcodebuild -project apps/ios/Pinomad.xcodeproj -scheme Pinomad -configuration Release \
      -destination 'generic/platform=iOS' -archivePath <dir>/Pinomad.xcarchive \
      DEVELOPMENT_TEAM=9KZ32XLVQW \
+     MARKETING_VERSION="$version" \
      CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD) \
      -allowProvisioningUpdates archive
    ```
@@ -39,20 +42,21 @@ xcarchive 里带 dSYM，崩溃符号化靠它；放 `/tmp` 重启会丢，要留
 
 ## 版本号
 
-- 用户可见版本是 `apps/ios/Pinomad.xcodeproj/project.pbxproj` 里的 `MARKETING_VERSION`，改版本就提交。原生版从 `0.2.0` 起，和已结束的 Expo `0.1.x` 线分开。
-- 构建号不入库：archive 时命令行注入 `CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD)`，main 上单调递增，不用为每次上传提交；构建号只需在同一版本号下唯一。
+- 用户可见版本和 npm 包、桌面端共用 `v*` tag（ADR-0020 §5），做法也和桌面端一样：仓库里的 `MARKETING_VERSION` 是占位的 `0.0.0`（和 `package.json` 的 `version` 一样），archive 时从 tag 注入。预发布 tag 去掉后缀，App Store 只收纯数字版本号。原生版在 TestFlight 上用过独立的 `0.2.0`，并入 tag 后直接跳到当时的 tag 版本，只增不减的要求不受影响。
+- 构建号不入库：archive 时命令行注入 `CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD)`。tag 都打在 main 上，所以按 tag 打包时它单调递增；构建号只需在同一版本号下唯一。同一个提交上的两个 tag（例如 `v0.9.0-beta.1` 和 `v0.9.0`）算出来的构建号一样，只传其中一个。
 
 ## 版本和发版节奏
 
-npm 包（宿主、中继、Web）和桌面端共用版本号和 `v*` tag，一起发布（ADR-0016、ADR-0020）。移动端是另一条发布线（ADR-0017 §5），不跟着一起发：
+npm 包（宿主、中继、Web）、桌面端和 iOS 共用版本号和 `v*` tag（ADR-0016、ADR-0020）。npm 包和桌面端由 tag 触发自动发布；iOS 不进流水线，手动打包上传，也不是每个 tag 都发：
 
-- **版本号独立**：`MARKETING_VERSION` 自己涨，不跟 `v*` tag。移动端的界面是另一套代码，App Store 又要求版本号只增不减，绑定 tag 会让宿主的每个补丁都逼着移动端发版。
+- **iOS 可以跳号**：手机端的更新频率和桌面端不一样，只在有值得发的改动时，挑当时最新的 tag 打包。比如 iOS 上一版是 0.6.0，下一版可以直接是 0.8.0。
+- **只改 iOS 的修复也打 tag**：两个 tag 之间要单独发 iOS 时，打一个补丁 tag（例如 `v0.8.1`）再从它打包，版本号始终能对回一份确定的代码。这会让 npm 包和桌面端顺带发一个没有它们改动的补丁版，可以接受。
 - **能不能配合看协议版本，不看 App 版本**（ADR-0018）：主版本号相同就能连；同一主版本内只新增，新增一次次版本号加一。
 - **大部分改动可以错开发**：
   - 宿主新增功能：先发宿主，旧的移动端不用新功能，照常能用。
   - 移动端用宿主的新功能：按宿主的次版本号判断，不够就隐藏或提示升级宿主；先发移动端也行，连旧宿主时这个功能不出现。
-  - 只改移动端界面、不碰协议：随时发。
-- **主版本号升级才要一起升**：先把移动端新包提交到 TestFlight 或审核，可用以后再打 `v*` tag 发宿主和桌面端；窗口期里旧的移动端会提示更新 App。
+  - 只改移动端界面、不碰协议：随时打补丁 tag 发。
+- **主版本号升级才要一起升**：移动端要先可用，宿主才能发。先打预发布 tag（例如 `v1.0.0-beta.1`，npm 只进 `next`，`pinomad upgrade` 不会装上），从它打包 iOS 提交到 TestFlight 或审核，可用以后再打正式 tag 发宿主和桌面端；窗口期里旧的移动端会提示更新 App。
 - 功能对应的次版本号集中记在 `packages/protocol/src/frames.ts` 的 `FEATURE_SINCE` 表里，各端都按它判断，不在各处散落数字比较。
 
 ## TestFlight 测试员

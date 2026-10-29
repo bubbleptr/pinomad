@@ -297,7 +297,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.0.0;
 				PINOMAD_APS_ENVIRONMENT = development;
 				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -331,7 +331,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.0.0;
 				PINOMAD_APS_ENVIRONMENT = production;
 				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad;
 				PRODUCT_NAME = "$(TARGET_NAME)";
