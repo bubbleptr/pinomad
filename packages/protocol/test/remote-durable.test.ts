@@ -850,6 +850,32 @@ it("closes the side when the archive removes it or its root", async () => {
       remote.close();
     }
   });
+
+  it("clears while a reconnect's conversation snapshot is still held without keeping the sync gate closed", async () => {
+    const { transport, sent, hold, disconnect } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      // The reconnect barrier waits for this stream, but clear drops the
+      // subscription before its snapshot can arrive. The barrier must settle
+      // on the released stream instead of holding every later call until the
+      // sync deadline closes a healthy connection.
+      hold("conversation:1" as StreamName);
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected");
+
+      await remote.controller.clearConversation();
+      expect(remote.view.current().conversation).toBeUndefined();
+
+      const pairing = remote.controller.createPairing().catch(() => undefined);
+      await expect
+        .poll(() => sent.some((frame) => frame.type === "call" && frame.method === "createPairing"), { timeout: 2000 })
+        .toBe(true);
+      await pairing;
+    } finally {
+      remote.close();
+    }
+  });
 });
 
 describe("RemoteDurable image refs", () => {

@@ -2225,6 +2225,9 @@ class RemoteClient {
 
   /** Resolve at the stream's next snapshot; reject if the host ends it instead. */
   #snapshot(stream: StreamName, endSatisfies = false): Promise<void> {
+    // A stream released between the sync barrier's list and this call needs
+    // no snapshot; waiting would hang the barrier (clear during a reconnect).
+    if (!this.#wanted.has(stream)) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const waiters = this.#snapshotWaiters.get(stream) ?? [];
       waiters.push({ resolve, reject, endSatisfies });
@@ -2280,6 +2283,11 @@ class RemoteClient {
       this.#wanted.delete(stream);
       this.#values.delete(stream);
       this.#fresh.delete(stream);
+      // No snapshot will ever be accepted for this stream again, so a sync
+      // barrier waiting on it must settle now. Otherwise a clear during a
+      // reconnect would hold every later call until the sync timer kills a
+      // healthy connection.
+      for (const waiter of this.#snapshotWaiters.get(stream)?.splice(0) ?? []) waiter.resolve();
       this.#send({ type: "unsubscribe", stream });
     }
   }
