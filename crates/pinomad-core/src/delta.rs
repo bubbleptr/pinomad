@@ -1,5 +1,5 @@
 // The chord delta ops a host applies to a stream's snapshot (the `ops`
-// frame). Ported from @earendil-works/chord@1.2.0 `dist/delta/index.js` —
+// frame). Ported from @earendil-works/chord@1.4.0 `dist/delta/index.js` —
 // only the parts a consumer of `applyImmutable` needs: the decoded-op
 // validator, the path safety rules, and the copy-on-write apply. The wire
 // codec (#-references, short forms) does not cross this boundary: the host
@@ -250,7 +250,7 @@ fn as_index(v: f64) -> usize {
     }
 }
 
-/// `applyImmutable(target, ops)` from chord 1.2.0: validate every op, then
+/// `applyImmutable(target, ops)` from chord 1.4.0: validate every op, then
 /// replay copy-on-write — a container is cloned when first touched, so the
 /// previous value is never mutated. Arc sharing makes the clone-once
 /// bookkeeping of the JS WeakSet version unnecessary: `Arc::make_mut`

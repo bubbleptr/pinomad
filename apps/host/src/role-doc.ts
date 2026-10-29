@@ -13,4 +13,5 @@ export const RoleDoc = defineDoc<{ name?: string | null }>({
   history: "rewindable",
   fork: "asOf",
   initial: () => ({}),
+  checkpointWhen: () => false,
 });

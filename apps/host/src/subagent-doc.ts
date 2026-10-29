@@ -14,4 +14,5 @@ export const SubagentDoc = defineDoc<{ label?: string; model?: string; startedAt
   history: "latest",
   fork: "initial",
   initial: () => ({}),
+  checkpointWhen: () => false,
 });

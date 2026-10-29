@@ -13,6 +13,7 @@ const TodoDoc = defineDoc<TodoState>({
   history: "rewindable",
   fork: "asOf",
   initial: () => ({ items: [] }),
+  checkpointWhen: () => false,
 });
 
 const todoWrite = defineTool({

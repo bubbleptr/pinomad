@@ -31,6 +31,7 @@ export const IndexDoc = defineDoc<HostIndex>({
   version: 1,
   scope: "session",
   initial: () => ({ projects: [], conversations: [] }),
+  checkpointWhen: () => false,
 });
 
 /** What a new conversation starts with; the host's configured defaults. Wire-level type lives in protocol. */

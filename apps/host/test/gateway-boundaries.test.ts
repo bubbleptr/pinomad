@@ -24,6 +24,7 @@ const TestDoc = defineDoc<{ items: { text: string; status: string }[] }>({
   history: "rewindable",
   fork: "asOf",
   initial: () => ({ items: [] }),
+  checkpointWhen: () => false,
 });
 
 function barrier() {

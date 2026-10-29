@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 24
+      "minor": 25
     },
     "session": {
       "id": "<sessionId>",
@@ -150,7 +150,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1793123080119,
+            "createdAt": 1793262333768,
             "requestId": "contract-1"
           }
         ]
@@ -235,7 +235,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793123080122,
+        "updatedAt": 1793262333771,
         "currentAgent": null
       }
     ]
@@ -278,7 +278,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1793123080122
+              "timestamp": 1793262333771
             }
           ],
           "kind": "pi.user",
@@ -395,7 +395,7 @@
                   }
                 }
               ],
-              "timestamp": 1793123080127
+              "timestamp": 1793262333775
             }
           ],
           "kind": "pi.system",
@@ -428,7 +428,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a17e76-d7b7-7218-b3bb-59a31c8e559e"
+          "sessionId": "01a186c3-af48-71ac-a4c4-ca50b2acdf06"
         },
         "pi.usage": {
           "models": {},
@@ -499,7 +499,7 @@
         ],
         [
           {
-            "callId": "tool:1793123080081:h4oy4ta16k",
+            "callId": "tool:1793262333718:ctr8p7v2azf",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -552,7 +552,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1793123080081:h4oy4ta16k",
+                    "id": "tool:1793262333718:ctr8p7v2azf",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -560,7 +560,7 @@
                     }
                   }
                 ],
-                "api": "faux:1793123080081:vnseu4ae8k9",
+                "api": "faux:1793262333719:51kb9ow0hsl",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -578,7 +578,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1793123080081
+                "timestamp": 1793262333718
               }
             ],
             "kind": "pi.assistant",
@@ -668,7 +668,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793123080081,
+        "updatedAt": 1793262333718,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -728,7 +728,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1793123080081:h4oy4ta16k",
+                "toolCallId": "tool:1793262333718:ctr8p7v2azf",
                 "toolName": "write",
                 "content": [
                   {
@@ -741,7 +741,7 @@
                 },
                 "isError": false,
                 "durationMs": 1,
-                "timestamp": 1793123080195
+                "timestamp": 1793262333842
               }
             ],
             "data": {
@@ -871,7 +871,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793123080081,
+        "updatedAt": 1793262333718,
         "currentAgent": null
       }
     ]
@@ -1024,7 +1024,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1793123080081:vnseu4ae8k9",
+                "api": "faux:1793262333719:51kb9ow0hsl",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1042,9 +1042,9 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1793123080081,
+                "timestamp": 1793262333719,
                 "pinomad": {
-                  "answerStartedAt": 1793123080203
+                  "answerStartedAt": 1793262333851
                 }
               }
             ],

@@ -16,6 +16,7 @@ export const DevicesDoc = defineDoc<HostDevices>({
   version: 1,
   scope: "session",
   initial: () => ({ devices: [] }),
+  checkpointWhen: () => false,
 });
 
 export async function ensureDevices(harness: Harness, context: Context): Promise<void> {
@@ -33,6 +34,7 @@ export const RevocationsDoc = defineDoc<{ revoked: string[] }>({
   version: 1,
   scope: "session",
   initial: () => ({ revoked: [] }),
+  checkpointWhen: () => false,
 });
 
 export type DeviceAdmission =
