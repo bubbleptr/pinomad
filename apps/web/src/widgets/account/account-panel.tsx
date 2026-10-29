@@ -15,7 +15,7 @@ import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
-import { switchHost, useHosts } from "../../entities/host/host-store.ts";
+import { useHosts } from "../../entities/host/host-store.ts";
 import { useNow } from "../../shared/use-now.ts";
 
 /** Server and model error codes in words. Unknown codes fall through to the raw code. */
@@ -152,12 +152,13 @@ function SignedIn({
   onSignOutWarning: (message: string | undefined) => void;
 }) {
   const [actionError, setActionError] = useState<AccountError>();
+  const { focusHost } = useHosts();
   const server = new URL(state.serverOrigin).host;
-  // A saved retry finishes what Pair started: connect to the host.
+  // A saved retry finishes what Pair started: focus the host, no reload.
   const retrySave = (host: StoredHost): void => {
     setActionError(undefined);
-    void account.retryUnsavedHost().then((result) => {
-      if (result.ok) switchHost(host.hostKey);
+    void account.retryUnsavedHost(host.account?.hostId).then((result) => {
+      if (result.ok) focusHost(host.hostKey);
       else setActionError(result.error);
     });
   };
@@ -167,14 +168,15 @@ function SignedIn({
         <Heading level={3}>{state.user}</Heading>
         <Text type="supporting">Signed in to {server}</Text>
       </VStack>
-      {state.unsavedHost === undefined ? null : (
+      {state.unsavedHosts.map((host) => (
         <Banner
+          key={host.hostKey}
           status="warning"
           title="This pairing wasn't saved"
-          description="It will be lost when the app restarts."
-          endContent={<Button label="Retry" variant="ghost" onClick={() => retrySave(state.unsavedHost!)} />}
+          description={`${host.name ?? host.url} will be lost when the app restarts.`}
+          endContent={<Button label="Retry" variant="ghost" onClick={() => retrySave(host)} />}
         />
-      )}
+      ))}
       <HostList account={account} state={state} onError={setActionError} />
       {actionError === undefined ? null : (
         <Banner status="error" title="Couldn't pair" description={accountErrorMessage(actionError)} />
@@ -195,15 +197,14 @@ function HostList({
   onError: (error: AccountError | undefined) => void;
 }) {
   const now = useNow(30_000);
-  const { activeHostKey } = useHosts();
+  const { focus, focusHost } = useHosts();
   const [pairing, setPairing] = useState<string>();
   const pair = (hostId: string): void => {
     setPairing(hostId);
     onError(undefined);
     void account.pairHost(hostId).then((result) => {
       setPairing(undefined);
-      // paired() already made it the active host; reload to connect.
-      if (result.ok) switchHost(result.value.hostKey);
+      if (result.ok) focusHost(result.value.hostKey);
       else onError(result.error);
     });
   };
@@ -225,7 +226,7 @@ function HostList({
               key={match.host.hostId}
               match={match}
               now={now}
-              isCurrent={match.status === "paired" && match.stored?.hostKey === activeHostKey}
+              isCurrent={match.status === "paired" && match.stored?.hostKey === focus?.hostKey}
               isRevoked={match.stored !== undefined && state.rejectedHostKeys.includes(match.stored.hostKey)}
               isPairing={pairing === match.host.hostId}
               isBusy={pairing !== undefined}
@@ -262,6 +263,7 @@ function HostRow({
   isBusy: boolean;
   onPair: () => void;
 }) {
+  const { focusHost } = useHosts();
   const { host, status, stored } = match;
   const presence = host.online ? "Online" : `Last seen ${relativeTime(host.lastSeenAt, now)}`;
   const pairable = host.pairing === "available";
@@ -287,7 +289,7 @@ function HostRow({
     end = isCurrent ? (
       <Token label="Connected" size="sm" />
     ) : (
-      <Button label="Connect" variant="secondary" size="sm" onClick={() => switchHost(stored!.hostKey)} />
+      <Button label="Connect" variant="secondary" size="sm" onClick={() => focusHost(stored!.hostKey)} />
     );
   } else {
     if (!pairable) detail = `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`;

@@ -376,11 +376,17 @@ describe("useHostNameSync", () => {
     const state: HostsState = {
       store: hostStore(),
       hosts,
-      activeHostKey: null,
+      focus: null,
       paired: () => Promise.resolve(),
       setName,
       endpoints: () => Promise.resolve(),
       setConnection: () => Promise.resolve(),
+      focusHost: () => {},
+      focusConversation: () => {},
+      rememberConversation: () => {},
+      focusDraft: () => {},
+      forget: () => Promise.resolve(),
+      dropHost: () => Promise.resolve(),
     };
     return { state, setName };
   };

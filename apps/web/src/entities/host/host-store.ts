@@ -9,12 +9,10 @@ import {
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";
 import { DEVICE_KEY, storedDevice, type StoredHost } from "../../address.ts";
+import type { ConversationRef, HostFocus } from "./focus.ts";
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
 export type { StoredHost };
-
-/** localStorage key naming the host the sidebar last connected to (a UI pref, not a secret). */
-export const ACTIVE_HOST_KEY = "pinomad.activeHost";
 
 /** localStorage key holding the browser's paired hosts as a JSON array. */
 export const HOSTS_KEY = "pinomad.hosts";
@@ -179,25 +177,47 @@ export function hostStore(): HostStore {
 export type HostsState = {
   readonly store: HostStore;
   readonly hosts: readonly StoredHost[];
-  readonly activeHostKey: string | null;
-  /** Persist a new pairing, mark it active, and update the in-memory list. */
+  /** The one focused host/conversation for the whole app (ADR-0035 §1). */
+  readonly focus: HostFocus | null;
+  /** Persist a new pairing and add its runtime; it never moves focus. */
   readonly paired: (host: StoredHost) => Promise<void>;
-  /** Persist an announced host name and update the in-memory list; unlike `paired` it does not select the host. */
+  /** Persist an announced host name and update the in-memory list. */
   readonly setName: (hostKey: string, name: string) => Promise<void>;
   /** Persist a host-published remote set and update the in-memory list in place. */
   readonly endpoints: (hostKey: string, endpointSet: EndpointSet) => Promise<void>;
   /** Persist a connection preference or RTC hint and update the in-memory list in place. */
   readonly setConnection: (hostKey: string, change: StoredHostConnectionChange) => Promise<void>;
+  /** Focus a host, restoring the conversation it last showed when known. */
+  readonly focusHost: (hostKey: string) => void;
+  /** Focus one conversation, releasing every other host's conversation stream. */
+  readonly focusConversation: (ref: ConversationRef) => void;
+  /** Remember a host's conversation without moving focus (a background create). */
+  readonly rememberConversation: (ref: ConversationRef) => void;
+  /** Focus a host's draft, clearing its remembered conversation. */
+  readonly focusDraft: (hostKey: string) => void;
+  /** Close and remove one host runtime, without reloading the page. */
+  readonly forget: (hostKey: string) => Promise<void>;
+  /**
+   * Close and remove one host runtime without declining it — for a superseded
+   * identity (a key-change re-pair), not a user forget.
+   */
+  readonly dropHost: (hostKey: string) => Promise<void>;
 };
 
 const defaultState: HostsState = {
   store: browserStore,
   hosts: [],
-  activeHostKey: null,
+  focus: null,
   paired: (host) => browserStore.save(host),
   setName: (hostKey, name) => browserStore.setName(hostKey, name),
   endpoints: (hostKey, endpointSet) => browserStore.updateEndpoints(hostKey, endpointSet),
   setConnection: (hostKey, change) => browserStore.updateConnection(hostKey, change),
+  focusHost: () => {},
+  focusConversation: () => {},
+  rememberConversation: () => {},
+  focusDraft: () => {},
+  forget: (hostKey) => browserStore.remove(hostKey),
+  dropHost: (hostKey) => browserStore.remove(hostKey),
 };
 
 // Deep components — the sidebar footer, the connection-failure screens — read
@@ -208,7 +228,7 @@ export const useHosts = (): HostsState => useContext(HostsContext);
 /**
  * Cache the machine name a 5.12 host announces on its settings stream onto
  * this connection's stored entry — keyed by the connection's hostKey, never
- * by the selected host. A missing `hostName` (older host, pre-snapshot view)
+ * by the focused host. A missing `hostName` (older host, pre-snapshot view)
  * is a skip, not a clear: a cached name survives it.
  */
 export function useHostNameSync(hostKey: string | undefined, settings: HostSettings | null): void {
@@ -222,31 +242,4 @@ export function useHostNameSync(hostKey: string | undefined, settings: HostSetti
       console.error("Could not store the host name", error),
     );
   }, [hostKey, announced, hosts, setName]);
-}
-
-/**
- * Connect to a stored host: one connection at a time, so the choice is stored
- * and the page reloads to re-resolve the address.
- */
-export function switchHost(hostKey: string): void {
-  localStorage.setItem(ACTIVE_HOST_KEY, hostKey);
-  // A live fragment (#token=…, #pair=…) would win over the stored selection
-  // after reload — clear it so the switch sticks.
-  history.replaceState(null, "", window.location.pathname + window.location.search);
-  window.location.reload();
-}
-
-/**
- * Drop a paired host from this device. The selection marker goes first: the
- * reload lands on another stored host, or the no-link screen when none
- * remain; a stale marker would just fall back to the first host.
- */
-export function forgetHost(store: HostStore, hostKey: string): void {
-  if (localStorage.getItem(ACTIVE_HOST_KEY) === hostKey) {
-    localStorage.removeItem(ACTIVE_HOST_KEY);
-  }
-  // A live fragment (#token=…, #pair=…) would win over the stored list after
-  // reload — clear it like switchHost does so the next stored host connects.
-  history.replaceState(null, "", window.location.pathname + window.location.search);
-  void store.remove(hostKey).finally(() => window.location.reload());
 }

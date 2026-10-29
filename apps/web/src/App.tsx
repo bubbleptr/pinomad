@@ -8,18 +8,28 @@ import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesi
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
-import type { AgentState, ConversationId } from "@earendil-works/pi-durable";
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
+
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
-import { candidatePlan, preferredLegacyUrl, type RemoteCandidate } from "@pinomad/protocol/remote-candidates.ts";
+import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
-import { useConversationOpening } from "./entities/conversation/use-conversation-opening.ts";
+import { useConversationOpening, type Opening } from "./entities/conversation/use-conversation-opening.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -31,43 +41,60 @@ import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
-import { fromBase64Url, secureWebSocketTransport, SIGNAL_PROLOGUE, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
-import { ACTIVE_HOST_KEY, forgetHost, HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
-import { useAppUpdate } from "./entities/app-update/use-app-update.ts";
-import { UpdateStatusNote } from "./entities/app-update/update-status-note.tsx";
+import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { clientDeviceName, resolveAddress, type ResolvedAddress, type StoredHost } from "./address.ts";
+import { HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
+import {
+  focusPairedHost,
+  readFocus,
+  rememberedHostFocus,
+  seedRememberedFocus,
+  writeFocus,
+  type ConversationRef,
+  type HostFocus,
+} from "./entities/host/focus.ts";
+import { browserDeclined, cancelAccountRegistration } from "./entities/account/declined.ts";
+import {
+  createHostRuntimeRegistry,
+  HostRuntimesContext,
+} from "./entities/host/host-runtimes.ts";
+import { useComposerSlot, useComposerSlotState } from "./entities/composer/composer-context.tsx";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
 import { AccountPanel } from "./widgets/account/account-panel.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
-import { hostWindowChrome } from "./shared/host-chrome.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
+import { secureOptions } from "./entities/host/secure-options.ts";
+import { HostRuntimes, type RemoteConnect } from "./entities/host/host-runtime.tsx";
+import { Centered } from "./shared/ui/centered.tsx";
+import { reloadedKey, VersionMismatch } from "./widgets/app-frame/version-mismatch.tsx";
 
-const page: CSSProperties = {
-  height: "100dvh",
-  width: "100%",
-  backgroundColor: "var(--color-background-body)",
-  color: "var(--color-text-primary)",
-};
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
 const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 const readOverviewOpen = (): boolean =>
   typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
 
+type Loaded = {
+  readonly hosts: readonly StoredHost[];
+  readonly focus: HostFocus | null;
+  readonly address: ResolvedAddress | undefined;
+};
+
 export function App() {
   const [store] = useState(hostStore);
-  // The host list resolves once: switching hosts reloads the page, so nothing
-  // downstream reacts to store changes after this load.
-  const [loaded, setLoaded] = useState<{
-    hosts: readonly StoredHost[];
-    activeHostKey: string | null;
-    address: ResolvedAddress | undefined;
-  }>();
+  const registry = useMemo(createHostRuntimeRegistry, []);
+  // Conversation each host last showed, for the sidebar's "focus this host"
+  // action and for restoring the focus after a forget.
+  const lastByHost = useRef(new Map<string, ConversationId>());
+  // A pairing can finish before the initial list read; remember it and merge
+  // it into the first snapshot instead of dropping its runtime.
+  const pendingPairings = useRef(new Map<string, StoredHost>());
+  const [loaded, setLoaded] = useState<Loaded>();
   useEffect(() => {
     let live = true;
     void store
@@ -78,14 +105,23 @@ export function App() {
       })
       .then((hosts) => {
         if (!live) return;
-        const activeHostKey = localStorage.getItem(ACTIVE_HOST_KEY);
+        let merged = [...hosts];
+        for (const pending of pendingPairings.current.values()) {
+          const existing = merged.find((each) => each.hostKey === pending.hostKey);
+          merged = [
+            ...merged.filter((each) => each.hostKey !== pending.hostKey),
+            existing === undefined ? pending : mergeStoredHost(existing, pending),
+          ];
+        }
+        pendingPairings.current.clear();
+        const focus = readFocus(localStorage, merged) ?? null;
+        seedRememberedFocus(lastByHost.current, focus);
         setLoaded({
-          hosts,
-          activeHostKey,
-          // Resolve exactly once: pairing clears the fragment before it updates
-          // the list, so re-resolving on render would flip a pair address into
-          // a device one and remount the client — a second connection.
-          address: resolveAddress(window.location.hash, window.location, hosts, activeHostKey),
+          hosts: merged,
+          focus,
+          // Only a live fragment (#token=…, #pair=…) resolves to a one-shot
+          // screen. Stored hosts all run at once; their focus is separate.
+          address: resolveAddress(window.location.hash, window.location, merged, focus?.hostKey ?? null),
         });
       });
     return () => {
@@ -102,101 +138,283 @@ export function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  const rememberedFocus = useCallback(
+    (hostKey: string): HostFocus => rememberedHostFocus(lastByHost.current, hostKey),
+    [],
+  );
+
+  const focusHost = useCallback(
+    (hostKey: string): void => {
+      // A one-shot token/pair screen must yield to the stored host the user
+      // picked — including the address bar, or a refresh returns to it.
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      setLoaded((prev) =>
+        prev === undefined
+          ? prev
+          : {
+              ...prev,
+              address: undefined,
+              focus: rememberedFocus(hostKey),
+            },
+      );
+    },
+    [rememberedFocus],
+  );
+
+  const focusConversation = useCallback((ref: ConversationRef): void => {
+    setLoaded((prev) => {
+      // A notification outlives the runtime it came from; clicking it after a
+      // forget must not leave the app focused on a host that no longer exists.
+      if (prev === undefined || !prev.hosts.some((host) => host.hostKey === ref.hostKey)) return prev;
+      lastByHost.current.set(ref.hostKey, ref.conversationId);
+      return { ...prev, focus: { ...ref } };
+    });
+  }, []);
+
+  const rememberConversation = useCallback((ref: ConversationRef): void => {
+    setLoaded((prev) => {
+      if (prev === undefined || !prev.hosts.some((host) => host.hostKey === ref.hostKey)) return prev;
+      // A background create lands in that host's remembered slot without
+      // stealing focus from wherever the user moved.
+      lastByHost.current.set(ref.hostKey, ref.conversationId);
+      return prev;
+    });
+  }, []);
+
+  const focusDraft = useCallback((hostKey: string): void => {
+    lastByHost.current.delete(hostKey);
+    setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { hostKey } }));
+  }, []);
+
+  const removeHost = useCallback(
+    async (hostKey: string, clearAddress: boolean): Promise<void> => {
+      lastByHost.current.delete(hostKey);
+      if (clearAddress) {
+        // A live #token=…/#pair=… fragment outlives the stored list; drop it so
+        // the emptied list can land on the no-link screen instead of reconnecting.
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+      await store.remove(hostKey).catch((error: unknown) => {
+        console.error("Could not remove the host", error);
+      });
+      setLoaded((prev) => {
+        if (prev === undefined) return prev;
+        const hosts = prev.hosts.filter((each) => each.hostKey !== hostKey);
+        const address = clearAddress ? undefined : prev.address;
+        if (prev.focus?.hostKey !== hostKey) return { ...prev, hosts, address };
+        return {
+          ...prev,
+          hosts,
+          address,
+          focus: hosts[0] === undefined ? null : rememberedFocus(hosts[0].hostKey),
+        };
+      });
+    },
+    [rememberedFocus, store],
+  );
+
+  /** Remove a superseded identity without treating it as a user forget. */
+  const dropHost = useCallback(
+    (hostKey: string): Promise<void> => removeHost(hostKey, false),
+    [removeHost],
+  );
+
+  const forget = useCallback(
+    async (hostKey: string): Promise<void> => {
+      // Account adoption can link this host in the store without touching the
+      // loaded snapshot (or another tab may have done it), so read the latest
+      // record before deciding whether forgetting should decline it.
+      const persisted = await store.list().catch(() => loaded?.hosts ?? []);
+      const host = persisted.find((each) => each.hostKey === hostKey)
+        ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
+      if (host?.account !== undefined) {
+        // A forgotten account host is declined so the next account refresh
+        // cannot silently register it again (ADR-0035 §5).
+        browserDeclined.add(host.account);
+        cancelAccountRegistration(host.account.hostId);
+      }
+      await removeHost(hostKey, true);
+    },
+    [loaded?.hosts, removeHost, store],
+  );
+
+  const paired = useCallback(
+    async (host: StoredHost): Promise<void> => {
+      await store.save(host);
+      setLoaded((prev) => {
+        if (prev === undefined) {
+          const pending = pendingPairings.current.get(host.hostKey);
+          pendingPairings.current.set(host.hostKey, pending === undefined ? host : mergeStoredHost(pending, host));
+          return prev;
+        }
+        const existing = prev.hosts.find((each) => each.hostKey === host.hostKey);
+        return {
+          ...prev,
+          // A first host (auto-registered into an empty device) still needs a
+          // focus to paint; an existing focus is never moved by registration.
+          focus: prev.focus ?? { hostKey: host.hostKey },
+          hosts: [
+            ...prev.hosts.filter((each) => each.hostKey !== host.hostKey),
+            existing === undefined ? host : mergeStoredHost(existing, host),
+          ],
+        };
+      });
+    },
+    [store],
+  );
+
+  const setName = useCallback(
+    async (hostKey: string, name: string): Promise<void> => {
+      await store.setName(hostKey, name);
+      setLoaded((prev) =>
+        prev === undefined
+          ? prev
+          : {
+              ...prev,
+              hosts: prev.hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)),
+            },
+      );
+    },
+    [store],
+  );
+
+  const endpoints = useCallback(
+    async (hostKey: string, endpointSet: Parameters<HostsState["endpoints"]>[1]): Promise<void> => {
+      await store.updateEndpoints(hostKey, endpointSet);
+      setLoaded((prev) =>
+        prev === undefined
+          ? prev
+          : {
+              ...prev,
+              hosts: prev.hosts.map((each) =>
+                each.hostKey === hostKey ? updateStoredHostEndpoints(each, endpointSet) : each,
+              ),
+            },
+      );
+    },
+    [store],
+  );
+
+  const setConnection = useCallback(
+    async (hostKey: string, change: Parameters<HostsState["setConnection"]>[1]): Promise<void> => {
+      await store.updateConnection(hostKey, change);
+      setLoaded((prev) =>
+        prev === undefined
+          ? prev
+          : {
+              ...prev,
+              hosts: prev.hosts.map((each) =>
+                each.hostKey === hostKey ? updateStoredHostConnection(each, change) : each,
+              ),
+            },
+      );
+    },
+    [store],
+  );
+
   const state = useMemo<HostsState>(
     () =>
       loaded === undefined
         ? {
             store,
             hosts: [],
-            activeHostKey: null,
+            focus: null,
             paired: () => Promise.resolve(),
             setName: () => Promise.resolve(),
             endpoints: () => Promise.resolve(),
             setConnection: () => Promise.resolve(),
+            focusHost: () => {},
+            focusConversation: () => {},
+            rememberConversation: () => {},
+            focusDraft: () => {},
+            forget: () => Promise.resolve(),
+            dropHost: () => Promise.resolve(),
           }
         : {
             store,
             hosts: loaded.hosts,
-            activeHostKey: loaded.activeHostKey,
-            paired: async (host) => {
-              await store.save(host);
-              localStorage.setItem(ACTIVE_HOST_KEY, host.hostKey);
-              setLoaded((prev) => {
-                if (prev === undefined) return prev;
-                const existing = prev.hosts.find((each) => each.hostKey === host.hostKey);
-                return {
-                  ...prev,
-                  hosts: [
-                    ...prev.hosts.filter((each) => each.hostKey !== host.hostKey),
-                    existing === undefined ? host : mergeStoredHost(existing, host),
-                  ],
-                  activeHostKey: host.hostKey,
-                };
-              });
-            },
-            // A settings-stream rename lands here: the in-memory list moves
-            // the same way the store did — order and selection untouched.
-            setName: async (hostKey, name) => {
-              await store.setName(hostKey, name);
-              setLoaded((prev) =>
-                prev === undefined
-                  ? prev
-                  : {
-                      ...prev,
-                      hosts: prev.hosts.map((each) => (each.hostKey === hostKey ? { ...each, name } : each)),
-                    },
-              );
-            },
-            // A hello's remote set is an address-only update: identity,
-            // account, name and selection stay untouched, and a forgotten
-            // host is not resurrected.
-            endpoints: async (hostKey, endpointSet) => {
-              await store.updateEndpoints(hostKey, endpointSet);
-              setLoaded((prev) =>
-                prev === undefined
-                  ? prev
-                  : {
-                      ...prev,
-                      hosts: prev.hosts.map((each) =>
-                        each.hostKey === hostKey
-                          ? updateStoredHostEndpoints(each, endpointSet)
-                          : each,
-                      ),
-                    },
-              );
-            },
-            // A connection preference is device-local and address-free: the
-            // stored entry moves in place, and a forgotten host is never
-            // resurrected by a late write.
-            setConnection: async (hostKey, change) => {
-              await store.updateConnection(hostKey, change);
-              setLoaded((prev) =>
-                prev === undefined
-                  ? prev
-                  : {
-                      ...prev,
-                      hosts: prev.hosts.map((each) =>
-                        each.hostKey === hostKey ? updateStoredHostConnection(each, change) : each,
-                      ),
-                    },
-              );
-            },
+            focus: loaded.focus,
+            paired,
+            setName,
+            endpoints,
+            setConnection,
+            focusHost,
+            focusConversation,
+            rememberConversation,
+            focusDraft,
+            forget,
+            dropHost,
           },
-    [store, loaded],
+    [dropHost, endpoints, focusConversation, focusDraft, focusHost, forget, loaded, paired, rememberConversation, setConnection, setName, store],
   );
+
+  useEffect(() => {
+    if (loaded === undefined) return;
+    writeFocus(localStorage, loaded.focus ?? undefined);
+  }, [loaded?.focus]);
+
   if (loaded === undefined) return <Centered>{null}</Centered>;
-  const { address } = loaded;
+  const { address, focus, hosts } = loaded;
+  const pairedHost = (host: StoredHost): void => {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    setLoaded((prev) =>
+      prev === undefined
+        ? prev
+        : {
+            ...prev,
+            address: undefined,
+            focus: focusPairedHost(lastByHost.current, prev.focus, host.hostKey),
+          },
+    );
+  };
   return (
     <HostsContext.Provider value={state}>
-      <AccountProvider>
-        {address === undefined ? (
-          <Centered>
-            <NoHostLink />
-          </Centered>
-        ) : (
-          <Connected address={address} />
-        )}
-      </AccountProvider>
+      <HostRuntimesContext.Provider value={registry}>
+        <AccountProvider>
+          {address?.kind === "token" ? (
+            <RemoteWorkbench
+              options={address}
+              connectionKey={`${address.url} ${address.token}`}
+              label={address.url}
+            />
+          ) : address?.kind === "pair" ? (
+            <PairConfirm address={address} onPairedHost={pairedHost} />
+          ) : hosts.length === 0 ? (
+            <Centered>
+              <NoHostLink />
+            </Centered>
+          ) : (
+            <HostRuntimes
+              hosts={hosts}
+              focus={focus}
+              renderWorkbench={({
+                host,
+                remote,
+                device,
+                rejected,
+                retry,
+                opening,
+                cancelOpening,
+                openConversation,
+              }) => (
+                <Workbench
+                  remote={remote}
+                  wsUrl={host.url}
+                  rejected={rejected}
+                  device={device}
+                  hostKey={host.hostKey}
+                  onReconnect={retry}
+                  notify={false}
+                  hostOpening={opening}
+                  hostOpen={openConversation}
+                  hostCancelOpening={cancelOpening}
+                />
+              )}
+            />
+          )}
+        </AccountProvider>
+      </HostRuntimesContext.Provider>
     </HostsContext.Provider>
   );
 }
@@ -229,39 +447,24 @@ function NoHostLink() {
   );
 }
 
-export function Centered({ children }: { children: ReactNode }) {
-  // These screens have no header to drag the hidden-title-bar window by.
-  const reserveStrip = hostWindowChrome().reserveMacTrafficLights;
-  return (
-    <VStack style={page} isScrollable>
-      {reserveStrip ? <div aria-hidden="true" className="pinomad-drag fixed inset-x-0 top-0 h-10" /> : null}
-      <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
-        {children}
-      </VStack>
-    </VStack>
-  );
-}
-
-function Connected({ address }: { address: ResolvedAddress }) {
-  if (address.kind === "token") {
-    return <RemoteWorkbench options={address} connectionKey={`${address.url} ${address.token}`} label={address.url} />;
-  }
-  if (address.kind === "pair") return <PairConfirm address={address} />;
-  return <SecureClient address={address} />;
-}
-
 /**
  * A pair link opens a socket only after the user has seen which host it is:
  * pairing with an attacker-controlled host would register this device — for
  * every pair link, browser QR or pasted, one uniform rule.
  */
-function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "pair" }> }) {
+function PairConfirm({
+  address,
+  onPairedHost,
+}: {
+  address: Extract<ResolvedAddress, { kind: "pair" }>;
+  onPairedHost?: (host: StoredHost) => void;
+}) {
   const [confirmed, setConfirmed] = useState(false);
   const cancel = (): void => {
     history.replaceState(null, "", window.location.pathname + window.location.search);
     window.location.reload();
   };
-  if (confirmed) return <SecureClient address={address} />;
+  if (confirmed) return <SecureClient address={address} {...(onPairedHost === undefined ? {} : { onPairedHost })} />;
   const target = new URL(address.url);
   return (
     <Centered>
@@ -279,18 +482,19 @@ function PairConfirm({ address }: { address: Extract<ResolvedAddress, { kind: "p
   );
 }
 
-type RemoteConnect = (options: RemoteDurableOptions) => Promise<RemoteDurable>;
-
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
 export function SecureClient({
   address,
   connect,
+  onPairedHost,
 }: {
   address: Extract<ResolvedAddress, { kind: "pair" | "device" }>;
   /** Test seam, matching useRemoteDurable's connect override. */
   connect?: RemoteConnect;
+  /** A pair that reached message 2 and saved: the app can replace the one-shot flow with its runtime. */
+  onPairedHost?: (host: StoredHost) => void;
 }) {
-  const { store, hosts, paired, endpoints, setConnection } = useHosts();
+  const { hosts, paired, endpoints, setConnection, forget } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   // A pairing whose save failed (e.g. locked keychain): the device key would
   // die with the process, and the spent invite can't pair again — surface it
@@ -348,39 +552,15 @@ export function SecureClient({
     // A pair address holds off opening the socket until the label resolves —
     // the name travels inside the first handshake.
     if (address.kind === "pair" && pairName === undefined) return undefined;
-    const hostKey = fromBase64Url(address.hostKey);
-    const rtc =
-      rtcPlatform === undefined
-        ? undefined
-        : {
-            platform: rtcPlatform,
-            hostKey,
-            device,
-            signalOnlyHint: stored?.rtcSignalOnly === true,
-            openSignalTransport: (candidate: RemoteCandidate) =>
-              secureWebSocketTransport({
-                url: candidate.url,
-                hostKey,
-                device,
-                prologue: SIGNAL_PROLOGUE,
-              }),
-            onSignalOnly: (signalOnly: boolean) => setConnection(address.hostKey, { rtcSignalOnly: signalOnly }),
-            onSignalOnlyError: (error: Error) => console.error("Could not store the host's RTC hint", error),
-          };
-    return {
+    return secureOptions({
+      hostKey: address.hostKey,
+      device,
+      target,
       candidates,
-      legacyUrl: target.url,
-      pageProtocol: window.location.protocol,
-      ...(stored?.connectionMode === undefined ? {} : { connectionMode: stored.connectionMode }),
-      ...(rtc === undefined ? {} : { rtc }),
+      stored,
+      rtcPlatform,
       ...(pairing === undefined ? {} : { pairing }),
-      openTransport: (candidate, currentPairing) =>
-        secureWebSocketTransport({
-          url: candidate.url,
-          hostKey,
-          device,
-          ...(currentPairing === undefined ? {} : { pairing: currentPairing }),
-        }),
+      setConnection,
       onPaired: () => {
         if (pairedRef.current) return;
         pairedRef.current = true;
@@ -393,10 +573,13 @@ export function SecureClient({
           ...(endpointSet === undefined ? {} : { endpointSet }),
         };
         const saved = stored === undefined ? host : mergeStoredHost(stored, host);
-        void paired(saved).catch((error: unknown) => {
-          console.error("Could not save the paired host", error);
-          setUnsaved(saved);
-        });
+        void paired(saved).then(
+          () => onPairedHost?.(saved),
+          (error: unknown) => {
+            console.error("Could not save the paired host", error);
+            setUnsaved(saved);
+          },
+        );
         // The fragment held a one-time secret; it must not linger in history.
         history.replaceState(null, "", window.location.pathname + window.location.search);
       },
@@ -407,8 +590,8 @@ export function SecureClient({
           console.error("Could not store the host's remote endpoints", error),
         );
       },
-    };
-  }, [address, candidates, device, endpoints, paired, pairName, pairing, rtcPlatform, setConnection, stored, target]);
+    });
+  }, [address, candidates, device, endpoints, onPairedHost, paired, pairName, pairing, rtcPlatform, setConnection, stored, target]);
   if (options === undefined) return <Centered>{null}</Centered>;
   const rejected =
     address.kind === "pair" ? (
@@ -434,7 +617,7 @@ export function SecureClient({
       <VStack gap={4} hAlign="center">
         <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
         <RepairViaAccount hostKey={address.hostKey} />
-        <Button label="Forget this host" variant="secondary" onClick={() => forgetHost(store, address.hostKey)} />
+        <Button label="Forget this host" variant="secondary" onClick={() => void forget(address.hostKey)} />
       </VStack>
     );
   const notice =
@@ -450,7 +633,10 @@ export function SecureClient({
             variant="ghost"
             onClick={() => {
               void paired(unsaved).then(
-                () => setUnsaved(undefined),
+                () => {
+                  setUnsaved(undefined);
+                  onPairedHost?.(unsaved);
+                },
                 (error: unknown) => console.error("Could not save the paired host", error),
               );
             }}
@@ -523,7 +709,7 @@ export function RemoteWorkbench({
       <Centered>
         {notice === undefined ? null : <div className="w-full max-w-md">{notice}</div>}
         {state.mismatch !== undefined ? (
-          <VersionMismatch wsUrl={label} mismatch={state.mismatch} />
+          <VersionMismatch wsUrl={label} mismatch={state.mismatch} {...(hostKey === undefined ? {} : { hostKey })} />
         ) : rejected !== undefined && state.unauthorized ? (
           rejected
         ) : (
@@ -550,7 +736,7 @@ export function RemoteWorkbench({
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        <HostsFallback {...(hostKey === undefined ? {} : { onRetry: () => setAttempt(attempt + 1) })} />
+        <HostsFallback />
       </Centered>
     );
   }
@@ -567,55 +753,6 @@ export function RemoteWorkbench({
   );
 }
 
-/**
- * The host speaks a protocol this bundle doesn't. A page the host itself
- * serves reloads once to fetch the matching bundle — the sessionStorage
- * marker is the loop guard (a still-mismatching reload shows the banner);
- * a successful connect clears it so the next upgrade reloads again.
- */
-const RELOADED_KEY = "pinomad.reloadedForProtocol";
-
-export function VersionMismatch({ wsUrl, mismatch }: { wsUrl: string; mismatch: ProtocolMismatch }) {
-  const update = useAppUpdate();
-  const hasUpdater = window.pinomadDesktop?.updates !== undefined;
-  const [reloading] = useState(() => {
-    // The desktop bundle is local: a reload cannot fetch a newer client, so a
-    // client-older host triggers an update check below instead. The browser
-    // keeps the reload-once self-heal for pages the host itself served.
-    if (mismatch.direction === "client-older" && hasUpdater) return false;
-    if (!servedByHost(wsUrl, window.location)) return false;
-    if (sessionStorage.getItem(RELOADED_KEY) === String(mismatch.hostMajor)) return false;
-    sessionStorage.setItem(RELOADED_KEY, String(mismatch.hostMajor));
-    window.location.reload();
-    return true;
-  });
-  useEffect(() => {
-    // check() itself dedupes an in-flight check or a finished download.
-    if (mismatch.direction === "client-older") void window.pinomadDesktop?.updates?.check();
-  }, [mismatch.direction]);
-  if (reloading) return null;
-  const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
-  return mismatch.direction === "client-older" ? (
-    // Same gap the Centered screens use between the banner and the switcher.
-    <VStack gap={4}>
-      <Banner
-        status="error"
-        container="section"
-        title="Client out of date"
-        description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
-      />
-      {hasUpdater ? <UpdateStatusNote update={update} /> : null}
-    </VStack>
-  ) : (
-    <Banner
-      status="error"
-      container="section"
-      title="Host out of date"
-      description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
-    />
-  );
-}
-
 function Workbench({
   remote,
   wsUrl,
@@ -624,6 +761,10 @@ function Workbench({
   notice,
   hostKey,
   onReconnect,
+  notify = true,
+  hostOpening,
+  hostOpen,
+  hostCancelOpening,
 }: {
   remote: RemoteDurable;
   wsUrl: string;
@@ -632,40 +773,83 @@ function Workbench({
   notice?: ReactNode;
   hostKey?: string;
   onReconnect?: () => void;
+  /** False when the host runtime owns the notification baseline (multi-host). */
+  notify?: boolean;
+  /** The ready host's opening tracker; absent for token clients. */
+  hostOpening?: Opening;
+  hostOpen?: (id: ConversationId) => void;
+  hostCancelOpening?: () => void;
 }) {
   const view = useDurableView(remote);
+  const { focus, focusConversation, focusDraft, rememberConversation } = useHosts();
+  // A draft create resolves after an arbitrary delay. Record the latest focus
+  // so a same-host selection made while it was in flight wins.
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  // A draft create resolves after an arbitrary delay; if focus moved to
+  // another host meanwhile, this workbench is gone and must not pull it back.
+  const live = useRef(true);
+  useEffect(() => {
+    // StrictMode runs the cleanup/setup pair once on mount; restore the flag
+    // in setup so the still-mounted workbench keeps handling its create.
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   // The 5.12 name the connected host announced rides back into the stored
-  // entry — bound to this connection's hostKey, not the selected host.
+  // entry — bound to this connection's hostKey, not whichever host is focused.
   useHostNameSync(hostKey, view.settings);
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
   const [drafting, setDrafting] = useState(true);
-  const [draft, setDraft] = useState<Home>({ kind: "chat" });
+  // The draft home lives on the host's new-draft slot: it survives this
+  // workbench being unmounted by a focus switch.
+  const newDraftSlot = useComposerSlot();
+  const draft = useComposerSlotState(newDraftSlot).home;
   // The shown conversation's identity decides drafting; creating or selecting one
   // leaves it, archiving the shown one or "New chat" enters it.
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
   // Opening a conversation moves the main column to it at once; the remote
   // only shows it once its snapshot lands, so until then the column holds a
   // skeleton (or, if the switch failed, says so) instead of the old one.
-  const { opening, open, cancel: cancelOpening } = useConversationOpening(remote);
+  // A stored host shares its focus effect's tracker; token clients keep their own.
+  const localOpening = useConversationOpening(remote);
+  const opening = hostOpening ?? localOpening.opening;
+  const openTarget = hostOpen ?? localOpening.open;
+  const cancelOpening = hostCancelOpening ?? localOpening.cancel;
   const openConversation = useCallback(
     (id: ConversationId): void => {
-      // "New chat" only flips local drafting — opening the conversation that
-      // is still selected underneath must leave the draft explicitly.
       setDrafting(false);
-      open(id);
+      // For a stored host the focus effect performs the one switch; a token
+      // client has no focus entry and opens directly.
+      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
+      else openTarget(id);
     },
-    [open],
+    [focusConversation, hostKey, openTarget],
   );
-  useRunNotifications(view, openConversation);
+  useRunNotifications(
+    view,
+    hostKey,
+    drafting ? undefined : view.conversation?.conversation.id,
+    (ref) => {
+      if (hostKey === undefined) {
+        setDrafting(false);
+        openTarget(ref.conversationId);
+      } else {
+        focusConversation(ref);
+      }
+    },
+    notify,
+  );
   const loading = !drafting && opening !== undefined && view.conversation?.conversation.id !== opening.id;
   const failed = loading && opening.failed;
   const conversation = drafting || loading ? undefined : view.conversation;
   // A switch the connection dropped retries once the host is back; one the
   // host refused while connected waits for the reader's "Try again".
   useEffect(() => {
-    if (failed && view.connection === "connected") open(opening.id);
-  }, [view.connection]);
+    if (failed && view.connection === "connected") openTarget(opening.id);
+  }, [failed, openTarget, opening?.id, view.connection]);
   const shownId = drafting ? undefined : loading ? opening.id : view.conversation?.conversation.id;
   const busy = conversation !== undefined && isBusy(conversation);
   // Below this the chat column would be squeezed; the panel opens as a dialog.
@@ -756,7 +940,8 @@ function Workbench({
   );
   const startDraft = (home: Home): void => {
     cancelOpening();
-    setDraft(home);
+    if (hostKey !== undefined) focusDraft(hostKey);
+    newDraftSlot.setHome(home);
     setDrafting(true);
   };
   const [forkTarget, setForkTarget] = useState<string>();
@@ -764,8 +949,8 @@ function Workbench({
   // A successful connect clears the reload-once marker so the next host
   // upgrade may auto-reload again.
   useEffect(() => {
-    if (view.connection === "connected") sessionStorage.removeItem(RELOADED_KEY);
-  }, [view.connection]);
+    if (view.connection === "connected") sessionStorage.removeItem(reloadedKey(hostKey));
+  }, [hostKey, view.connection]);
   // Only a 4401 close means the pairing itself is bad — other terminal closes
   // (4400's rejected frame, say) keep the disconnect banner and their notice.
   if (view.unauthorized === true && rejected !== undefined) {
@@ -777,7 +962,11 @@ function Workbench({
     );
   }
   return (
-    <ImageSourceProvider load={imageLoad} retryKey={imageRetryKey}>
+    <ImageSourceProvider
+      load={imageLoad}
+      retryKey={imageRetryKey}
+      {...(hostKey === undefined ? {} : { source: hostKey })}
+    >
       <AppFrame
         view={view}
         remote={remote}
@@ -795,7 +984,7 @@ function Workbench({
         banner={
           <>
             {notice}
-            <ConnectionBanner view={view} wsUrl={wsUrl} />
+            <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
           </>
         }
         onDraft={startDraft}
@@ -814,10 +1003,33 @@ function Workbench({
           <DraftHome
             view={view}
             remote={remote}
+            hostKey={hostKey}
             draft={draft}
             onDraft={startDraft}
             onCreated={() => {
-              if (!narrow) changeOverview(true);
+              const id = remote.view.current().conversation?.conversation.id;
+              if (id === undefined) return;
+              const stillDrafting =
+                hostKey === undefined
+                || (focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === undefined);
+              if (!live.current) {
+                // The create landed while another host was focused. Remember
+                // it for this host, but do not pull focus back.
+                if (hostKey !== undefined) rememberConversation({ hostKey, conversationId: id });
+                return;
+              }
+              if (stillDrafting) {
+                openConversation(id);
+                if (!narrow) changeOverview(true);
+                return;
+              }
+              // A same-host selection made while the create was in flight wins;
+              // otherwise this host simply remembers its new conversation.
+              const choseAnotherConversation =
+                focusRef.current?.hostKey === hostKey && focusRef.current.conversationId !== undefined;
+              if (hostKey !== undefined && !choseAnotherConversation) {
+                rememberConversation({ hostKey, conversationId: id });
+              }
             }}
             connected={view.connection === "connected"}
           />
@@ -825,7 +1037,7 @@ function Workbench({
           <ChatLayout
             // Keyed by the shown id, so the skeleton and the content that
             // replaces it share one layout and dock.
-            key={shownId}
+            key={`${hostKey ?? "local"}:${shownId}`}
             // The room the overview card needs goes inside the scroll area,
             // so the scrollbar stays on the column's edge.
             className={`motion-safe:transition-[padding] motion-safe:duration-200 motion-safe:ease-out${
@@ -850,6 +1062,7 @@ function Workbench({
                       takeBack={takeBackForShown}
                       externalEditLocked={takingBackHere}
                       onEditorStateChange={setEditorState}
+                      source={hostKey}
                       onTakeBack={() => {
                         setTakeBack(undefined);
                         setTakingBack(undefined);
@@ -864,7 +1077,7 @@ function Workbench({
                 <ConversationUnavailable
                   missing={shownSummary === undefined}
                   connected={view.connection === "connected"}
-                  onRetry={() => open(opening.id)}
+                  onRetry={() => openTarget(opening.id)}
                 />
               ) : (
                 <EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />
@@ -1047,9 +1260,19 @@ function ChangesDialog({ view, remote, busy, onClose }: { view: DurableView; rem
   );
 }
 
-function ConnectionBanner({ view, wsUrl }: { view: DurableView; wsUrl: string }) {
+function ConnectionBanner({
+  view,
+  wsUrl,
+  hostKey,
+}: {
+  view: DurableView;
+  wsUrl: string;
+  hostKey?: string;
+}) {
   if (view.connection === "outdated") {
-    return view.protocolMismatch === undefined ? null : <VersionMismatch wsUrl={wsUrl} mismatch={view.protocolMismatch} />;
+    return view.protocolMismatch === undefined ? null : (
+      <VersionMismatch wsUrl={wsUrl} mismatch={view.protocolMismatch} {...(hostKey === undefined ? {} : { hostKey })} />
+    );
   }
   if (view.connection === "reconnecting") {
     return (

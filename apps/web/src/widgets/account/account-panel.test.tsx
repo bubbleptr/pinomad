@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
-import { ACTIVE_HOST_KEY } from "../../entities/host/host-store.ts";
+import { HostsContext } from "../../entities/host/host-store.ts";
+import { fakeHosts } from "../../test/story-fixtures.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { AccountPanel, accountErrorMessage } from "./account-panel.tsx";
 
@@ -45,8 +46,16 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
   };
 }
 
-function signedIn(hosts: AccountHostMatch[], rejectedHostKeys: string[] = []): AccountState {
-  return { status: "signed-in", mode: "cookie", user: "kieran", serverOrigin: "https://nomad.example", hosts, rejectedHostKeys };
+function signedIn(hosts: AccountHostMatch[], rejectedHostKeys: string[] = []): Extract<AccountState, { status: "signed-in" }> {
+  return {
+    status: "signed-in",
+    mode: "cookie",
+    user: "kieran",
+    serverOrigin: "https://nomad.example",
+    hosts,
+    rejectedHostKeys,
+    unsavedHosts: [],
+  };
 }
 
 function renderPanel(model: AccountModel) {
@@ -121,15 +130,22 @@ describe("AccountPanel", () => {
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 
-  it("connects to the host once a failed save succeeds on retry", async () => {
-    localStorage.removeItem(ACTIVE_HOST_KEY);
-    const model = fakeModel({ ...signedIn([]), unsavedHost: stored(KEY_A) } as AccountState);
-    renderPanel(model);
+  it("focuses the host once a failed save succeeds on retry", async () => {
+    const model = fakeModel({ ...signedIn([]), unsavedHosts: [{ ...stored(KEY_A), account: { serverOrigin: "https://nomad.example", hostId: "h1" } }] });
+    const focusHost = vi.fn();
+    const hosts = { ...fakeHosts([], null), focusHost };
+    render(
+      <HostsContext.Provider value={hosts}>
+        <AccountContext.Provider value={model}>
+          <AccountPanel />
+        </AccountContext.Provider>
+      </HostsContext.Provider>,
+    );
     await act(async () => {
       await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     });
-    expect(model.retryUnsavedHost).toHaveBeenCalled();
-    expect(localStorage.getItem(ACTIVE_HOST_KEY)).toBe(KEY_A);
+    expect(model.retryUnsavedHost).toHaveBeenCalledWith("h1");
+    expect(focusHost).toHaveBeenCalledWith(KEY_A);
   });
 });
 

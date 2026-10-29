@@ -18,6 +18,8 @@ import { FileAttachmentChip } from "../../entities/attachment/file-attachments.t
 import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
 import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
+import { useComposerSlot } from "../../entities/composer/composer-context.tsx";
+import { conversationDraftKey } from "../../entities/composer/composer-store.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
@@ -33,9 +35,10 @@ import { QueuedList } from "./queued-list.tsx";
 async function resolveImages(
   images: readonly ViewImage[],
   load: (ref: string) => Promise<MessageImage>,
+  source?: string,
 ): Promise<MessageImage[] | undefined> {
   try {
-    return await Promise.all(images.map((image) => loadImageBytes(image, load)));
+    return await Promise.all(images.map((image) => loadImageBytes(image, load, source)));
   } catch {
     return undefined;
   }
@@ -57,6 +60,7 @@ export function ConversationComposer({
   onTakeBack,
   externalEditLocked = false,
   onEditorStateChange,
+  source,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -70,9 +74,14 @@ export function ConversationComposer({
   externalEditLocked?: boolean;
   /** Let a transcript Edit disable itself while this composer holds a draft. */
   onEditorStateChange?: (state: { occupied: boolean; locked: boolean }) => void;
+  /** The hostKey answering image requests, so its in-flight work stays separate. */
+  source?: string;
 }) {
+  // The host-scoped slot keeps the draft and its uploads alive when focus
+  // moves to another host.
+  const slot = useComposerSlot(conversationDraftKey(conversation.conversation.id));
   // A plain string plus the `$` picks bound in it (ADR-0028).
-  const skillDraft = useSkillDraft();
+  const skillDraft = useSkillDraft(slot);
   const { value, setValue } = skillDraft;
   const [focusAfterEdit, setFocusAfterEdit] = useState(0);
   const [awaitingEdit, setAwaitingEdit] = useState(false);
@@ -85,6 +94,7 @@ export function ConversationComposer({
   const agent = agentOf(conversation);
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
+  const conversationId = conversation.conversation.id;
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
   // A Chat conversation has no project files; like a Chat draft, its `@`
   // offers agents only.
@@ -136,11 +146,11 @@ export function ConversationComposer({
 
   const model = summaryOf(view.models, agent.model);
   const accepts = model?.images === true;
-  const { images, pending: imagesPending, error, add, restore, remove, clear } = useImageAttachments(accepts);
+  const { images, pending: imagesPending, error, add, restore, remove, clear } = useImageAttachments(accepts, slot);
   const attachmentsEnabled =
     hostSupportsFeature(view.host?.protocol.minor ?? 0, "attachments")
     && hostSupportsCall(view.host?.protocol.minor ?? 0, "beginAttachment");
-  const files = useFileAttachments(remote, attachmentsEnabled);
+  const files = useFileAttachments(remote, attachmentsEnabled, slot);
   const attachInput = useRef<HTMLInputElement>(null);
   const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
   const addFiles = (incoming: File[]): void => {
@@ -204,7 +214,6 @@ export function ConversationComposer({
     onEditorStateChange?.({ occupied: composerOccupied, locked: editInFlight || awaitingEdit || localEditInFlight });
   }, [composerOccupied, editInFlight, awaitingEdit, localEditInFlight, onEditorStateChange]);
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
-  const conversationId = conversation.conversation.id;
   const showError = (error: unknown): void => {
     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
   };
@@ -279,7 +288,7 @@ export function ConversationComposer({
   const resolveEdit = async (copy: EditCopy): Promise<void> => {
     if (!beginAction(copy.id, "edit")) return;
     try {
-      const resolved = await resolveImages(copy.input.images, (ref) => remote.controller.image(ref));
+      const resolved = await resolveImages(copy.input.images, (ref) => remote.controller.image(ref), source);
       if (resolved === undefined) {
         // Withdrawing without every original would lose an attachment; leave
         // the queued message where it is and let the user try again.
@@ -295,7 +304,8 @@ export function ConversationComposer({
       // retry needs no refs (which may have left the host's live view since).
       copy.input = { ...copy.input, images: resolved };
       if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
-        // The skills it expanded come back bound.
+        // The slot survives this component; a focus switch while the images
+        // loaded still finds the restored draft when this composer returns.
         skillDraft.restore(copy.input.text, copy.input.skills);
         restore(resolved);
         files.restore(copy.input.attachments);

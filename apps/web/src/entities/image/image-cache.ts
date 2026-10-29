@@ -9,7 +9,10 @@ const MAX_IN_FLIGHT = 4;
 export type ImageLoader = (ref: string, variant?: ImageVariant) => Promise<ImageResult>;
 
 type QueuedLoad = {
+  /** In-flight identity: source host + ref + variant. */
   readonly key: string;
+  /** Queue quota is per source: one stuck host must not starve another. */
+  readonly source: string;
   readonly ref: string;
   readonly variant: ImageVariant;
   readonly loader: ImageLoader;
@@ -19,6 +22,10 @@ type QueuedLoad = {
 
 const keyOf = (ref: string, variant: ImageVariant): string => `${variant}:${ref}`;
 
+/** In-flight requests are per source host; fetched bytes stay content-addressed. */
+const requestKeyOf = (source: string | undefined, ref: string, variant: ImageVariant): string =>
+  `${source ?? ""}\u0000${keyOf(ref, variant)}`;
+
 export class ImageCache {
   readonly #maxBytes: number;
   /** Insertion order is the LRU order: oldest first. */
@@ -26,7 +33,8 @@ export class ImageCache {
   readonly #inflight = new Map<string, Promise<ImageResult>>();
   readonly #queue: QueuedLoad[] = [];
   #size = 0;
-  #loading = 0;
+  /** Running requests per source key; the global cap is MAX_IN_FLIGHT each. */
+  readonly #loading = new Map<string, number>();
 
   constructor(maxBytes = DEFAULT_MAX_BYTES) {
     this.#maxBytes = maxBytes;
@@ -70,17 +78,20 @@ export class ImageCache {
   /**
    * Bytes for one variant, loading equal requests once. A cached or in-flight
    * original also serves derived display requests, never the other way around.
+   * `source` (the hostKey answering) only partitions in-flight work: a slow or
+   * broken host must not hold another host's identical image.
    */
-  load(ref: string, loader: ImageLoader, variant: ImageVariant = "original"): Promise<ImageResult> {
+  load(ref: string, loader: ImageLoader, variant: ImageVariant = "original", source?: string): Promise<ImageResult> {
     const cached = this.get(ref, variant);
     if (cached !== undefined) return Promise.resolve(cached);
-    const key = keyOf(ref, variant);
+    const sourceKey = source ?? "";
+    const key = requestKeyOf(source, ref, variant);
     const inflight = this.#inflight.get(key)
-      ?? (variant === "original" ? undefined : this.#inflight.get(keyOf(ref, "original")));
+      ?? (variant === "original" ? undefined : this.#inflight.get(requestKeyOf(source, ref, "original")));
     if (inflight !== undefined) return inflight;
 
     const promise = new Promise<ImageResult>((resolve, reject) => {
-      this.#queue.push({ key, ref, variant, loader, resolve, reject });
+      this.#queue.push({ key, source: sourceKey, ref, variant, loader, resolve, reject });
     });
     this.#inflight.set(key, promise);
     this.#pump();
@@ -93,14 +104,16 @@ export class ImageCache {
     this.#inflight.clear();
     this.#queue.length = 0;
     this.#size = 0;
-    this.#loading = 0;
+    this.#loading.clear();
   }
 
   #pump(): void {
-    while (this.#loading < MAX_IN_FLIGHT) {
-      const job = this.#queue.shift();
+    for (;;) {
+      const index = this.#queue.findIndex((job) => (this.#loading.get(job.source) ?? 0) < MAX_IN_FLIGHT);
+      if (index === -1) return;
+      const [job] = this.#queue.splice(index, 1);
       if (job === undefined) return;
-      this.#loading += 1;
+      this.#loading.set(job.source, (this.#loading.get(job.source) ?? 0) + 1);
       let request: Promise<ImageResult>;
       try {
         request = Promise.resolve(job.variant === "original" ? job.loader(job.ref) : job.loader(job.ref, job.variant));
@@ -125,7 +138,9 @@ export class ImageCache {
 
   #finish(job: QueuedLoad): void {
     this.#inflight.delete(job.key);
-    this.#loading -= 1;
+    const remaining = (this.#loading.get(job.source) ?? 1) - 1;
+    if (remaining <= 0) this.#loading.delete(job.source);
+    else this.#loading.set(job.source, remaining);
     this.#pump();
   }
 }
@@ -134,9 +149,13 @@ export class ImageCache {
 export const imageCache = new ImageCache();
 
 /** Bytes for a view image, from the cache or the host. */
-export async function loadImageBytes(image: ViewImage, loader: ImageLoader): Promise<MessageImage> {
+export async function loadImageBytes(
+  image: ViewImage,
+  loader: ImageLoader,
+  source?: string,
+): Promise<MessageImage> {
   if ("data" in image) return image;
-  return imageCache.load(image.ref, loader);
+  return imageCache.load(image.ref, loader, "original", source);
 }
 
 /**

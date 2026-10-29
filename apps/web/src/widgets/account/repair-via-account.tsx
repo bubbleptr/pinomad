@@ -4,7 +4,7 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { useEffect, useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { switchHost } from "../../entities/host/host-store.ts";
+import { useHosts } from "../../entities/host/host-store.ts";
 import { accountErrorMessage } from "./account-panel.tsx";
 
 /**
@@ -15,6 +15,7 @@ import { accountErrorMessage } from "./account-panel.tsx";
 export function RepairViaAccount({ hostKey }: { hostKey: string }) {
   const account = useAccountModel();
   const { state } = account;
+  const { focusHost } = useHosts();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
   useEffect(() => account.hostRejected(hostKey), [account, hostKey]);
@@ -26,7 +27,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
     setError(undefined);
     void account.pairHost(match.host.hostId).then((result) => {
       setBusy(false);
-      if (result.ok) switchHost(result.value.hostKey);
+      if (result.ok) focusHost(result.value.hostKey);
       else setError(result.error);
     });
   };

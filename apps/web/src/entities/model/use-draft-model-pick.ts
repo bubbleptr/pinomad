@@ -2,15 +2,24 @@ import type { ModelRef } from "@earendil-works/pi-durable";
 import { useState } from "react";
 import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import {
+  useComposerSlotState,
+  useLocalComposerSlot,
+} from "../composer/composer-context.tsx";
+import type { ComposerSlot } from "../composer/composer-store.ts";
+import {
   clampLevel,
   reconcileDraftPick,
   resolveAgentDraft,
   summaryOf,
-  type AgentDraftOverrides,
   type AgentDraftResolution,
 } from "@pinomad/client/model.ts";
 
 const DRAFT_MODEL_KEY = "pinomad.draft.model";
+
+/** Each host keeps its own draft pick: model ids and defaults differ per host. */
+export function draftModelKey(hostKey: string | undefined): string {
+  return hostKey === undefined ? DRAFT_MODEL_KEY : `${DRAFT_MODEL_KEY}.${hostKey}`;
+}
 
 interface DraftPick {
   readonly provider: string;
@@ -18,10 +27,10 @@ interface DraftPick {
   readonly thinkingLevel: string;
 }
 
-/** The last draft pick, only when its model is still listed. */
-function readDraftPick(models: readonly ModelSummary[]): DraftPick | undefined {
+/** The last draft pick for this host, only when its model is still listed. */
+function readDraftPick(models: readonly ModelSummary[], hostKey: string | undefined): DraftPick | undefined {
   try {
-    const raw = localStorage.getItem(DRAFT_MODEL_KEY);
+    const raw = localStorage.getItem(draftModelKey(hostKey));
     if (raw === null) return undefined;
     const pick = JSON.parse(raw) as Partial<DraftPick>;
     if (
@@ -59,7 +68,7 @@ export interface DraftModelPick {
  * the remembered pick — clearing the agent returns to it untouched, and
  * picking another agent drops the overrides back to full inheritance.
  */
-export function useDraftModelPick(view: DurableView): {
+export function useDraftModelPick(view: DurableView, hostKey?: string, slot?: ComposerSlot): {
   pick: DraftModelPick;
   setModel: (model: ModelRef) => void;
   setLevel: (level: ThinkingLevel) => void;
@@ -69,7 +78,7 @@ export function useDraftModelPick(view: DurableView): {
   resolution?: AgentDraftResolution;
 } {
   const [remembered, setRemembered] = useState<DraftModelPick>(() => {
-    const stored = readDraftPick(view.models);
+    const stored = readDraftPick(view.models, hostKey);
     const model: ModelRef | undefined =
       stored !== undefined
         ? { provider: stored.provider, modelId: stored.modelId }
@@ -81,11 +90,14 @@ export function useDraftModelPick(view: DurableView): {
     const want = (stored?.thinkingLevel ?? view.defaults.thinkingLevel ?? "off") as ThinkingLevel;
     return { model, level: clampLevel(levels, want) };
   });
-  const [agent, setAgentState] = useState<string | undefined>(undefined);
-  const [overrides, setOverrides] = useState<AgentDraftOverrides>({});
+  const local = useLocalComposerSlot();
+  const active = slot ?? local;
+  const composer = useComposerSlotState(active);
+  const agent = composer.agent;
+  const overrides = composer.overrides;
 
   const remember = (model: ModelRef, level: ThinkingLevel): void => {
-    localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
+    localStorage.setItem(draftModelKey(hostKey), JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
   const resolution =
@@ -100,7 +112,7 @@ export function useDraftModelPick(view: DurableView): {
     resolution,
     setModel: (next) => {
       if (agent !== undefined) {
-        setOverrides((current) => ({ ...current, model: next }));
+        active.setOverrides({ ...overrides, model: next });
         return;
       }
       const nextLevel = clampLevel(summaryOf(view.models, next)?.thinkingLevels ?? ["off"], level);
@@ -109,17 +121,16 @@ export function useDraftModelPick(view: DurableView): {
     },
     setLevel: (next) => {
       if (agent !== undefined) {
-        setOverrides((current) => ({ ...current, level: next }));
+        active.setOverrides({ ...overrides, level: next });
         return;
       }
       setRemembered((current) => ({ ...current, level: next }));
       if (pick.model !== undefined) remember(pick.model, next);
     },
     setAgent: (next) => {
-      setAgentState(next);
       // Switching to another agent or clearing one starts from full
       // inheritance again — the overrides belonged to the previous pick.
-      setOverrides({});
+      active.setAgent(next);
     },
   };
 }

@@ -53,7 +53,7 @@ function MainColumn({
   }
   if (conversation === undefined) {
     return (
-      <DraftHome view={view} remote={remote} draft={{ kind: "project", path: PINOMAD.path }} onDraft={fn()} onCreated={fn()} connected />
+      <DraftHome view={view} remote={remote} hostKey={HOME_HOST.hostKey} draft={{ kind: "project", path: PINOMAD.path }} onDraft={fn()} onCreated={fn()} connected />
     );
   }
   return (

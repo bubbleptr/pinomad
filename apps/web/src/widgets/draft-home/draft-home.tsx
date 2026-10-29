@@ -6,6 +6,7 @@ import type { Home } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { CheckoutStrategyPicker, type CheckoutMode } from "../../entities/checkout/checkout-strategy-picker.tsx";
+import { useComposerSlot, useComposerSlotState } from "../../entities/composer/composer-context.tsx";
 import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
 import { useAtMentions, type MentionFiles } from "../../entities/agent/agent-mentions.tsx";
 import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
@@ -54,6 +55,7 @@ function problemText(problem: AgentDraftProblem): { label: string; title: string
 export function DraftHome({
   view,
   remote,
+  hostKey,
   draft,
   onDraft,
   onCreated,
@@ -61,34 +63,40 @@ export function DraftHome({
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The host owning this draft; its model pick is stored per host. */
+  hostKey?: string;
   draft: Home;
   onDraft: (home: Home) => void;
   /** The draft became a conversation, now shown; a failed create does not call it. */
   onCreated: () => void;
   connected: boolean;
 }) {
+  // The new-draft slot is per host: text, project, checkout, agent and the
+  // attachment trays survive a focus switch to another host.
+  const slot = useComposerSlot();
+  const composer = useComposerSlotState(slot);
   // A plain string plus the `$` picks bound in it (ADR-0028).
-  const skillDraft = useSkillDraft();
+  const skillDraft = useSkillDraft(slot);
   const { value, setValue } = skillDraft;
   // createConversation keeps the text and resolves after the view switches
-  // (a failure still resolves, as a notice). The ref guards synchronously —
-  // setState hasn't flushed by the time a second Enter's keydown runs.
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
+  // (a failure still resolves, as a notice). The slot guards synchronously
+  // and survives a focus switch that unmounts this screen.
+  const submitting = composer.submitting;
   // ADR-0010: project conversations default to a fresh worktree; the picker opts out.
-  const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
+  const checkoutMode = composer.checkoutMode;
+  const setCheckoutMode = (mode: CheckoutMode): void => slot.setCheckoutMode(mode);
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  const { pick, setModel, setLevel, agent, setAgent, resolution } = useDraftModelPick(view);
+  const { pick, setModel, setLevel, agent, setAgent, resolution } = useDraftModelPick(view, hostKey, slot);
   const model = summaryOf(view.models, pick.model);
   const accepts = model?.images === true;
-  const { images, pending, error, add, remove } = useImageAttachments(accepts);
+  const { images, pending, error, add, remove, clear: clearImages } = useImageAttachments(accepts, slot);
   const fileInput = useRef<HTMLInputElement>(null);
   const minor = view.host?.protocol.minor;
   const attachmentsEnabled =
     minor !== undefined
     && hostSupportsFeature(minor, "attachments")
     && hostSupportsCall(minor, "beginAttachment");
-  const files = useFileAttachments(remote, attachmentsEnabled);
+  const files = useFileAttachments(remote, attachmentsEnabled, slot);
   const attachInput = useRef<HTMLInputElement>(null);
   const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
   const addFiles = (incoming: File[]): void => {
@@ -176,16 +184,15 @@ export function DraftHome({
                 || files.uploading
                 || files.failed
                 || pending
-                || submittingRef.current
+                || submitting
                 || problem !== undefined
               ) return;
+              if (!slot.beginSubmit()) return;
               requestNotificationPermission();
               // The shown conversation changes only when the create landed.
               const shown = remote.view.current().conversation?.conversation.id;
               const sending = images;
               const attachments = files.ids();
-              submittingRef.current = true;
-              setSubmitting(true);
               // No await before the call: the draft's files are all done, and
               // click order reaches the controller's command queue intact.
               void remote.controller
@@ -202,12 +209,16 @@ export function DraftHome({
                 })
                 .then(() => {
                   const now = remote.view.current().conversation?.conversation.id;
-                  if (now !== undefined && now !== shown) onCreated();
+                  if (now !== undefined && now !== shown) {
+                    // The draft became a conversation; the host slot must not
+                    // resurrect its text or attachments on the next New chat.
+                    skillDraft.restore("", []);
+                    clearImages();
+                    files.clear();
+                    onCreated();
+                  }
                 })
-                .finally(() => {
-                  submittingRef.current = false;
-                  setSubmitting(false);
-                });
+                .finally(() => slot.endSubmit());
             }}
             isDisabled={!connected}
             submitDisabled={problem !== undefined || files.uploading || files.failed}

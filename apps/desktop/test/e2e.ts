@@ -33,7 +33,10 @@ const namedDataDir = async (hostName: string): Promise<string> => {
 
 try {
   // No remote listener: the desktop pairs over the loopback /secure path.
-  const host = await startFauxHost(defer, { dataDir: await namedDataDir("Host A"), answers: ["hello from the desktop"] });
+  const host = await startFauxHost(defer, {
+    dataDir: await namedDataDir("Host A"),
+    answers: ["hello from the desktop", "still here after B"],
+  });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
 
@@ -120,8 +123,8 @@ try {
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
 
-  // Multi-host: a second faux host pairs from Settings → Hosts, and the
-  // sidebar's host menu swaps between the two — one connection at a time.
+  // Multi-host: a second faux host pairs from Settings → Hosts. Both runtimes
+  // stay connected; the sidebar's host menu only moves focus between them.
   const hostB = await startFauxHost(defer, { dataDir: await namedDataDir("Host B"), answers: ["hello from host B"] });
   const tokenB = await connectTo(defer, hostB);
   const { url: pairB } = await tokenB.controller.createPairing();
@@ -162,22 +165,51 @@ try {
       })
       .then(() => undefined);
 
-  // The host menu lists both hosts with their status; selecting A reloads onto it.
+  // Both hosts run concurrently; selecting A only moves focus. The marker
+  // survives only if the renderer was not reloaded.
+  await page.evaluate(() => {
+    (window as unknown as { __pinomadE2ENoReload?: string }).__pinomadE2ENoReload = "kept";
+  });
   await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
   await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
-  await page.getByRole("menuitem", { name: `${labelA} (not connected)`, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
+  await page.getByText("hello from the desktop", { exact: true }).waitFor({ timeout: 30_000 });
+  const marker = await page.evaluate(
+    () => (window as unknown as { __pinomadE2ENoReload?: string }).__pinomadE2ENoReload,
+  );
+  if (marker !== "kept") throw new Error("switching hosts reloaded the window");
 
-  // A dead host lands on a failure screen that still lists the hosts.
-  await hostB.close();
+  // Switching back to B finds its conversation intact.
   await page.getByRole("button", { name: "Hosts", exact: true }).click();
-  await page.getByRole("menuitem", { name: `${labelB} (not connected)`, exact: true }).click();
-  await page.getByText("Could not connect to the host", { exact: true }).waitFor({ timeout: 30_000 });
-  await page.screenshot({ path: "/tmp/pinomad-desktop-failure-switcher.png" });
-  await page.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
+  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
+  await page.getByText("hello from host B", { exact: true }).waitFor({ timeout: 30_000 });
+
+  // B goes down while A stays connected. The focused workbench keeps its last
+  // view and reports the lost connection; the menu distinguishes the two.
+  await hostB.close();
+  await page.getByText("Host connection lost", { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
+  await page
+    .getByRole("menuitem", { name: new RegExp(`^${labelB} \\((offline|disconnected)\\)$`) })
+    .waitFor({ timeout: 30_000 });
+  await settleMenu();
+  await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher-offline.png" });
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
+  await prompt.waitFor({ timeout: 30_000 });
+  await page.getByText("hello from the desktop", { exact: true }).waitFor({ timeout: 30_000 });
+
+  // A still accepts a send while B is down.
+  await prompt.fill("still connected?");
+  await prompt.press("Enter");
+  await page.getByText("still here after B", { exact: true }).waitFor({ timeout: 30_000 });
+  await page.screenshot({ path: "/tmp/pinomad-desktop-host-a-after-b-down.png" });
 
   // The list is one encrypted blob: neither hostKey appears in plaintext.
   const blob = await readFile(join(env["PINOMAD_USER_DATA_DIR"]!, "hosts.bin"));

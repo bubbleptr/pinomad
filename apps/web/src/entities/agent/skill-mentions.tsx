@@ -19,7 +19,12 @@ import { Sparkles } from "@/shared/ui/icons";
 import type { ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { useCachedListing } from "@/shared/listing-cache";
 import { applySkillHighlights } from "./skill-highlight.ts";
-import { emptyDraft, followEdit, restoreDraft, type SkillDraft } from "./skill-bindings.ts";
+import { followEdit, type SkillDraft } from "./skill-bindings.ts";
+import {
+  useComposerSlotState,
+  useLocalComposerSlot,
+} from "../composer/composer-context.tsx";
+import type { ComposerSlot } from "../composer/composer-store.ts";
 import { SkillMentionCache, skillScopeKey, type ListedSkill } from "./skill-list.ts";
 
 // The connection owns the cache: remote identity is the host, so the key's
@@ -168,22 +173,24 @@ export interface SkillDraftState {
 }
 
 /** The composer's draft: a plain string plus the skills picked into it. */
-export function useSkillDraft(): SkillDraftState {
-  const [draft, setDraft] = useState<SkillDraft>(emptyDraft);
+export function useSkillDraft(slot?: ComposerSlot): SkillDraftState {
+  const local = useLocalComposerSlot();
+  const active = slot ?? local;
+  const draft = useComposerSlotState(active).draft;
   // Astryx calls onSelect, then emits the value with the inserted text.
   const picked = useRef<string | undefined>(undefined);
   const setValue = useCallback((next: string) => {
     const name = picked.current;
     picked.current = undefined;
-    setDraft((current) => followEdit(current, next, name));
-  }, []);
+    active.setDraft(followEdit(active.snapshot().draft, next, name));
+  }, [active]);
   const pick = useCallback((name: string) => {
     picked.current = name;
   }, []);
   const restore = useCallback((text: string, skills: readonly string[]) => {
     picked.current = undefined;
-    setDraft(restoreDraft(text, skills));
-  }, []);
+    active.restoreDraft(text, skills);
+  }, [active]);
   return { value: draft.text, draft, setValue, pick, restore };
 }
 

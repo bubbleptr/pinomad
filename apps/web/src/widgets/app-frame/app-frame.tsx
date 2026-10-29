@@ -128,6 +128,7 @@ export function AppFrame({
     <SidebarContent
       view={view}
       remote={remote}
+      {...(hostKey === undefined ? {} : { hostKey })}
       draftingChat={draftingChat}
       shownId={shownId}
       onDraft={onDraft}
@@ -158,8 +159,6 @@ export function AppFrame({
               }
               footer={
                 <SidebarFooter
-                  view={view}
-                  hostKey={hostKey}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onOpenAccount={() => setAccountOpen(true)}
                 />
@@ -235,8 +234,6 @@ export function AppFrame({
         >
           {sidebar}
           <SidebarFooter
-            view={view}
-            hostKey={hostKey}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenAccount={() => setAccountOpen(true)}
             onSelect={() => setNavOpen(false)}

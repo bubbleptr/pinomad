@@ -46,16 +46,16 @@ export type ResolvedAddress =
     };
 
 /**
- * Resolve where to connect from the fragment and the paired hosts.
- * The fragment wins: a QR link on an already-paired browser still pairs.
- * Without one, the host the user last switched to (activeHostKey) connects,
- * falling back to the first stored host.
+ * Resolve a one-shot fragment against the paired hosts. The fragment wins: a
+ * QR link on an already-paired browser still pairs. Without one, the focused
+ * host (or the first stored host) supplies the legacy device address; the
+ * multi-host app ignores that case and mounts every stored host instead.
  */
 export function resolveAddress(
   hash: string,
   location: { protocol: string; host: string },
   hosts: readonly StoredHost[],
-  activeHostKey: string | null,
+  focusedHostKey: string | null,
 ): ResolvedAddress | undefined {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const token = params.get("token");
@@ -81,7 +81,7 @@ export function resolveAddress(
     };
   }
   if (hash.replace(/^#/, "") !== "") return undefined;
-  const host = hosts.find((each) => each.hostKey === activeHostKey) ?? hosts[0];
+  const host = hosts.find((each) => each.hostKey === focusedHostKey) ?? hosts[0];
   return host === undefined ? undefined : { kind: "device", ...host };
 }
 

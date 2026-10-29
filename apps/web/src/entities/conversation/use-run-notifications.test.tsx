@@ -36,14 +36,11 @@ const organized = (...chats: ConversationNode[]): Organized => ({ chats, project
 const view = (organized: Organized, connection: DurableView["connection"] = "connected"): DurableView =>
   ({ organized, connection }) as DurableView;
 
-// A conversation whose run just ended: the first render's baseline says
-// running, the rerender's snapshot says idle.
-const useNotifications = (open: (id: ConversationId) => void) => {
-  const running = view(organized(node({ status: "running" })));
-  const idle = view(organized(node()));
-  const hook = renderHook(({ view }) => useRunNotifications(view, open), { initialProps: { view: running } });
-  return { ...hook, running, idle };
-};
+const hostA = "host-a";
+const hostB = "host-b";
+
+const running = view(organized(node({ status: "running" })));
+const idle = view(organized(node()));
 
 beforeEach(() => {
   TestNotification.instances = [];
@@ -60,48 +57,117 @@ describe("useRunNotifications", () => {
   it("notifies when a run finishes while the window is unfocused", () => {
     const open = vi.fn();
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender, idle } = useNotifications(open);
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, open),
+      { initialProps: { view: running } },
+    );
     expect(TestNotification.instances).toHaveLength(0);
 
     rerender({ view: idle });
     expect(TestNotification.instances).toHaveLength(1);
     const notification = TestNotification.instances[0]!;
     expect(notification.title).toBe("Build it");
-    expect(notification.options).toMatchObject({ body: "Finished", tag: "pinomad-conversation-1" });
+    expect(notification.options).toMatchObject({
+      body: "Finished",
+      tag: "pinomad-conversation-host-a-1",
+    });
   });
 
-  it("stays silent while the window is focused", () => {
+  it("suppresses only the conversation currently on screen", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    const { rerender, idle } = useNotifications(vi.fn());
-    rerender({ view: idle });
+    const open = vi.fn();
+    const { rerender } = renderHook(
+      ({ view, visible }) => useRunNotifications(view, hostA, visible, open),
+      { initialProps: { view: running, visible: id(1) } },
+    );
+    rerender({ view: idle, visible: id(1) });
     expect(TestNotification.instances).toHaveLength(0);
+  });
+
+  it("notifies for a run finishing in another conversation while the window is focused", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const open = vi.fn();
+    const { rerender } = renderHook(
+      ({ view, visible }) => useRunNotifications(view, hostA, visible, open),
+      { initialProps: { view: running, visible: id(2) } },
+    );
+    rerender({ view: idle, visible: id(2) });
+    expect(TestNotification.instances).toHaveLength(1);
+  });
+
+  it("notifies for another host's same conversation id", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const open = vi.fn();
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostB, undefined, open),
+      { initialProps: { view: running } },
+    );
+    rerender({ view: idle });
+    expect(TestNotification.instances).toHaveLength(1);
+    expect(TestNotification.instances[0]!.options).toMatchObject({
+      tag: "pinomad-conversation-host-b-1",
+    });
+  });
+
+  it("keeps its baseline while the focused conversation changes", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const open = vi.fn();
+    const { rerender } = renderHook(
+      ({ view, visible }) => useRunNotifications(view, hostA, visible, open),
+      { initialProps: { view: running, visible: id(1) as ConversationId | undefined } },
+    );
+    // Focus moved to another host, then back — the hook itself stayed mounted.
+    rerender({ view: running, visible: undefined });
+    rerender({ view: idle, visible: undefined });
+    expect(TestNotification.instances).toHaveLength(1);
+  });
+
+  it("closes its notices when the host runtime unmounts", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { rerender, unmount } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, vi.fn()),
+      { initialProps: { view: running } },
+    );
+    rerender({ view: idle });
+    const notification = TestNotification.instances[0]!;
+    unmount();
+    expect(notification.closed).toBe(true);
   });
 
   it("does nothing without permission", () => {
     TestNotification.permission = "denied";
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender, idle } = useNotifications(vi.fn());
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, vi.fn()),
+      { initialProps: { view: running } },
+    );
     rerender({ view: idle });
     expect(TestNotification.instances).toHaveLength(0);
   });
 
-  it("clicking the notification focuses the window, opens the conversation and closes it", () => {
+  it("clicking the notification focuses the window, opens the ref and closes it", () => {
     const open = vi.fn();
     const focus = vi.spyOn(window, "focus").mockImplementation(() => {});
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender, idle } = useNotifications(open);
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, open),
+      { initialProps: { view: running } },
+    );
     rerender({ view: idle });
 
     const notification = TestNotification.instances[0]!;
     notification.onclick!();
     expect(focus).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith(id(1));
+    expect(open).toHaveBeenCalledWith({ hostKey: hostA, conversationId: id(1) });
     expect(notification.closed).toBe(true);
   });
 
   it("keeps the baseline while disconnected and reports the missed finish on reconnect", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender, running, idle } = useNotifications(vi.fn());
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, vi.fn()),
+      { initialProps: { view: running } },
+    );
     rerender({ view: view(idle.organized, "reconnecting") });
     expect(TestNotification.instances).toHaveLength(0);
 
@@ -113,9 +179,10 @@ describe("useRunNotifications", () => {
 
   it("closes the waiting notification once the question is answered", () => {
     const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender } = renderHook(({ view }) => useRunNotifications(view, vi.fn()), {
-      initialProps: { view: view(organized(node({ status: "running" }))) },
-    });
+    const { rerender } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, id(1), vi.fn()),
+      { initialProps: { view: running } },
+    );
     rerender({ view: view(organized(node({ status: "needs-answer" }))) });
     expect(TestNotification.instances).toHaveLength(1);
     const waiting = TestNotification.instances[0]!;

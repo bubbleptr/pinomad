@@ -527,7 +527,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
 export const HOME_HOST: StoredHost = { url: "wss://kieran-mbp.tailf76614.ts.net:8787", hostKey: key("H"), privateKey: key("p"), name: "kieran-mbp" };
 export const DEVBOX_HOST: StoredHost = { url: "wss://omarchy.tailf76614.ts.net:8787", hostKey: key("D"), privateKey: key("q"), name: "omarchy" };
 
-export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST], activeHostKey: string | null = HOME_HOST.hostKey): HostsState {
+export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST], focusedHostKey: string | null = HOME_HOST.hostKey): HostsState {
   return {
     store: {
       list: fn(async () => [...hosts]),
@@ -538,11 +538,17 @@ export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST
       updateConnection: fn(async () => {}),
     },
     hosts,
-    activeHostKey,
+    focus: focusedHostKey === null ? null : { hostKey: focusedHostKey },
     paired: fn(async () => {}),
     setName: fn(async () => {}),
     endpoints: fn(async () => {}),
     setConnection: fn(async () => {}),
+    focusHost: fn(),
+    focusConversation: fn(),
+    rememberConversation: fn(),
+    focusDraft: fn(),
+    forget: fn(async () => {}),
+    dropHost: fn(async () => {}),
   };
 }
 
@@ -579,6 +585,7 @@ export const signedIn = (overrides: Partial<Extract<AccountState, { status: "sig
   serverOrigin: "https://pinomad.si",
   hosts: ACCOUNT_HOSTS,
   rejectedHostKeys: [],
+  unsavedHosts: [],
   ...overrides,
 });
 
@@ -595,7 +602,7 @@ export function fakeAccount(state: AccountState): AccountModel {
       ok: true as const,
       value: { token: "join-7f3a9c", expiresAt: Date.now() + 10 * MINUTE, command: "pinomad join https://pinomad.si join-7f3a9c" },
     })),
-    // A successful pair switches host, which reloads the canvas: stay busy instead.
+    // A successful pair focuses the new host; keep the story on the busy state instead.
     pairHost: fn(() => new Promise<never>(() => {})),
     retryUnsavedHost: fn(() => new Promise<never>(() => {})),
     hostRejected: fn(),

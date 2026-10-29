@@ -15,10 +15,10 @@ import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { ConnectionMode } from "@pinomad/protocol/connection-mode.ts";
 import type { RemoteDurable, RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
 import type { RtcCandidateEnd } from "@pinomad/protocol/rtc.ts";
-import type { ConnectionState } from "@pinomad/protocol/view.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { browserRtcAvailable } from "../../entities/host/browser-rtc.ts";
-import { forgetHost, switchHost, useHosts } from "../../entities/host/host-store.ts";
+import { connectionStatus, hostStatusText, useHostRuntimeInfos, type HostRuntimeInfo } from "../../entities/host/host-runtimes.ts";
+import { useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { Check, Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
@@ -115,20 +115,23 @@ function AddressRow({ label, end }: { label: string; end: RtcCandidateEnd }) {
 }
 
 /**
- * The paired hosts with their labels, which one is selected, and which one
- * this page's connection actually reaches — a token client is connected to
- * none of them. One connection at a time, so at most one entry is connected.
+ * The paired hosts with their labels, the focused one, and each host's own
+ * runtime status (ADR-0035 §4) — a token client is connected to none of them.
  */
-function usePairedHosts(connection: ConnectionState | undefined, connectedHostKey: string | undefined) {
-  const { store, hosts, activeHostKey } = useHosts();
+function usePairedHosts() {
+  const { hosts, focus, focusHost } = useHosts();
+  const infos = useHostRuntimeInfos();
   const labels = hostLabels(hosts);
-  const currentKey = (hosts.find((host) => host.hostKey === activeHostKey) ?? hosts[0])?.hostKey;
+  const info = (host: StoredHost): HostRuntimeInfo | undefined => infos.get(host.hostKey);
   return {
-    store,
     hosts,
+    focusHost,
     label: (host: StoredHost): string => labels.get(host.hostKey) ?? host.url,
-    isCurrent: (host: StoredHost): boolean => host.hostKey === currentKey,
-    isConnected: (host: StoredHost): boolean => host.hostKey === connectedHostKey && connection === "connected",
+    isCurrent: (host: StoredHost): boolean => focus?.hostKey === host.hostKey,
+    isConnected: (host: StoredHost): boolean => connectionStatus(info(host)) === "connected",
+    info,
+    infoOf: (hostKey: string | undefined): HostRuntimeInfo | undefined =>
+      hostKey === undefined ? undefined : infos.get(hostKey),
   };
 }
 
@@ -149,21 +152,13 @@ function HostStatusDot({ connected }: { connected: boolean }) {
   );
 }
 
-const statusText = (connected: boolean): string => (connected ? "connected" : "not connected");
-
 /**
  * The sidebar's hosts button: a list of each paired host's name and
- * connection status. Picking another host switches to it — the stored choice
- * plus a reload, like a pasted link.
+ * connection status. Picking another host focuses it; its runtime keeps
+ * running either way.
  */
-export function HostsMenu({
-  connection,
-  connectedHostKey,
-}: {
-  connection: ConnectionState | undefined;
-  connectedHostKey: string | undefined;
-}) {
-  const paired = usePairedHosts(connection, connectedHostKey);
+export function HostsMenu() {
+  const paired = usePairedHosts();
   return (
     <DropdownMenu
       hasChevron={false}
@@ -188,11 +183,11 @@ export function HostsMenu({
             label={
               <>
                 {paired.label(host)}
-                <VisuallyHidden>{`(${statusText(connected)})`}</VisuallyHidden>
+                <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>
               </>
             }
             endContent={paired.isCurrent(host) ? <Check aria-hidden="true" className="size-4" /> : undefined}
-            onClick={paired.isCurrent(host) ? undefined : () => switchHost(host.hostKey)}
+            onClick={paired.isCurrent(host) ? undefined : () => paired.focusHost(host.hostKey)}
           />
         );
       })}
@@ -201,40 +196,43 @@ export function HostsMenu({
 }
 
 /**
- * Settings → Hosts: the hosts this device has paired with, switching between
- * them, forgetting one, and pairing another. Belongs to this device, not to
- * the connected host, so it works while disconnected too.
+ * Settings → Hosts: every paired host with its own runtime status, switching
+ * focus, forgetting one, and pairing another. Belongs to this device, not to
+ * the focused host, so it works while every connection is down too.
  */
 export function HostsSection({
-  connection,
-  connectedHostKey,
-  remote,
-  hostMinor,
   rtcAvailable = browserRtcAvailable(),
-  onRetry,
 }: {
-  connection: ConnectionState | undefined;
-  connectedHostKey: string | undefined;
-  /** The live coordinator, when this page has one; the failure fallback has none. */
-  remote?: HostsRtc;
-  /** The connected host's protocol minor, for the RTC capability gate. */
-  hostMinor?: number;
   /** Test/story seam; production reads the real browser capability. */
   rtcAvailable?: boolean;
-  /** Reconnect from a failure screen after a preference change. */
-  onRetry?: () => void;
 }) {
-  const paired = usePairedHosts(connection, connectedHostKey);
-  const { setConnection } = useHosts();
+  const paired = usePairedHosts();
+  const { setConnection, forget, focus } = useHosts();
   const [forgetting, setForgetting] = useState<StoredHost>();
   const [connectionFor, setConnectionFor] = useState<StoredHost>();
   const [modeError, setModeError] = useState<string>();
-  const connected = connection === "connected";
-  const diagnostics = useRtcDiagnostics(remote, connected && connectedHostKey !== undefined);
+  const connectionInfo =
+    connectionFor === undefined ? undefined : paired.info(connectionFor);
+  const connected = connectionStatus(connectionInfo) === "connected";
+  // The row for the panel's host — or the focused one when no panel is open —
+  // carries the live path, so the list still shows where it is routing.
+  const diagnosticsHostKey = connectionFor?.hostKey ?? focus?.hostKey;
+  const diagnosticsInfo = paired.infoOf(diagnosticsHostKey);
+  const diagnosticsRemote = diagnosticsInfo?.phase === "ready" ? diagnosticsInfo.remote : undefined;
+  const diagnostics = useRtcDiagnostics(
+    diagnosticsRemote,
+    connectionStatus(diagnosticsInfo) === "connected",
+  );
   const connectedSince = useRef(Date.now());
   useEffect(() => {
     connectedSince.current = Date.now();
-  }, [connected, connectedHostKey]);
+  }, [diagnosticsRemote, diagnosticsHostKey]);
+  const connectionHost =
+    connectionFor === undefined
+      ? undefined
+      : (paired.hosts.find((host) => host.hostKey === connectionFor.hostKey) ?? connectionFor);
+  const connectionHostMinor =
+    connectionInfo?.phase === "ready" ? connectionInfo.view.host?.protocol.minor : undefined;
 
   const toggleConnection = (host: StoredHost): void => {
     setModeError(undefined);
@@ -246,20 +244,18 @@ export function HostsSection({
     setModeError(undefined);
     void setConnection(host.hostKey, { connectionMode: mode }).then(
       () => {
-        // Reconnect only the host this coordinator actually serves. A token
-        // connection has no stored host key, so changing a saved host must
-        // not tear that connection down.
-        const liveHost = connectedHostKey !== undefined && host.hostKey === connectedHostKey;
-        if (liveHost) {
-          // A closed coordinator cannot switch modes itself; remount it so
-          // the new preference is read by a fresh connection.
-          if (connection !== "closed" && remote !== undefined) remote.setConnectionMode(mode);
-          else onRetry?.();
+        const live = paired.info(host);
+        if (live === undefined) return;
+        if (live.phase !== "ready") {
+          // A connecting/failed runtime cannot switch modes itself; remount
+          // it so the new preference is read by the next attempt.
+          live.retry();
           return;
         }
-        // The failure fallback has no coordinator and no connected key; the
-        // saved selection is then the host the page failed to reach.
-        if (connectedHostKey === undefined && remote === undefined && paired.isCurrent(host)) onRetry?.();
+        // A terminal coordinator cannot switch modes itself; remount it so
+        // the new preference is read by a fresh connection.
+        if (live.view.connection === "closed" || live.view.connection === "outdated") live.retry();
+        else live.remote.setConnectionMode(mode);
       },
       (error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
@@ -270,15 +266,12 @@ export function HostsSection({
   };
 
   const description = (host: StoredHost): string => {
-    if (!paired.isConnected(host)) return "Not connected";
-    return diagnostics === undefined ? "Connected" : `Connected · ${PATH_LABEL[diagnostics.path]}`;
+    const info = paired.info(host);
+    if (connectionStatus(info) !== "connected") return hostStatusText(info);
+    return diagnosticsHostKey === host.hostKey && diagnostics !== undefined
+      ? `Connected · ${PATH_LABEL[diagnostics.path]}`
+      : "Connected";
   };
-  // The store update replaces the host object under the panel; read the
-  // current entry so the selected segment follows the write, not a snapshot.
-  const connectionHost =
-    connectionFor === undefined
-      ? undefined
-      : (paired.hosts.find((host) => host.hostKey === connectionFor.hostKey) ?? connectionFor);
 
   return (
     <VStack gap={5}>
@@ -305,7 +298,7 @@ export function HostsSection({
                         aria-label={`Switch to ${label}`}
                         variant="ghost"
                         size="sm"
-                        onClick={() => switchHost(host.hostKey)}
+                        onClick={() => paired.focusHost(host.hostKey)}
                       />
                     )}
                     <Button
@@ -386,7 +379,7 @@ export function HostsSection({
                   description={p2pStatus({
                     diagnostics,
                     mode: connectionHost.connectionMode ?? "auto",
-                    hostMinor,
+                    hostMinor: connectionHostMinor,
                     rtcAvailable,
                     connectedSince: connectedSince.current,
                   })}
@@ -425,7 +418,14 @@ export function HostsSection({
               label="Forget this host"
               variant="destructive"
               size="sm"
-              onClick={() => forgetHost(paired.store, forgetting.hostKey)}
+              onClick={() => {
+                const host = forgetting;
+                setForgetting(undefined);
+                setConnectionFor(undefined);
+                void forget(host.hostKey).catch((error: unknown) =>
+                  console.error("Could not forget the host", error),
+                );
+              }}
             />
           </HStack>
         </VStack>
@@ -444,17 +444,12 @@ export function HostsSection({
  * off a dead host — the Hosts section inline, plus Account where this client
  * can reach one (ADR-0022).
  */
-export function HostsFallback({ onRetry }: { onRetry?: () => void }) {
+export function HostsFallback() {
   const account = useAccountModel();
   const [accountOpen, setAccountOpen] = useState(false);
   return (
     <VStack gap={3} className="mt-4 w-full max-w-md">
-      <HostsSection
-        connection={undefined}
-        connectedHostKey={undefined}
-        hostMinor={undefined}
-        onRetry={onRetry}
-      />
+      <HostsSection />
       {account.state.status === "unavailable" ? null : (
         <div>
           <Button label="Account…" variant="ghost" size="sm" onClick={() => setAccountOpen(true)} />

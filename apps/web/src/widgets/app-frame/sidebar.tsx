@@ -23,8 +23,12 @@ import { clientDeviceName } from "../../address.ts";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
-const readExpandedProjects = (): Record<string, boolean> => {
-  const raw = window.localStorage.getItem(PROJECT_EXPANDED_KEY);
+/** Project folds belong to one host: the same path may exist on both. */
+const projectExpandedKey = (hostKey: string | undefined): string =>
+  hostKey === undefined ? PROJECT_EXPANDED_KEY : `${PROJECT_EXPANDED_KEY}.${hostKey}`;
+
+const readExpandedProjects = (hostKey: string | undefined): Record<string, boolean> => {
+  const raw = window.localStorage.getItem(projectExpandedKey(hostKey));
   if (raw === null) return {};
   try {
     const parsed = JSON.parse(raw) as Record<string, boolean>;
@@ -38,8 +42,8 @@ const readExpandedProjects = (): Record<string, boolean> => {
   }
 };
 
-const writeExpandedProjects = (expanded: Record<string, boolean>): void => {
-  window.localStorage.setItem(PROJECT_EXPANDED_KEY, JSON.stringify(expanded));
+const writeExpandedProjects = (hostKey: string | undefined, expanded: Record<string, boolean>): void => {
+  window.localStorage.setItem(projectExpandedKey(hostKey), JSON.stringify(expanded));
 };
 
 const flattenNodes = (nodes: readonly ConversationNode[]): ConversationNode[] =>
@@ -93,15 +97,10 @@ export function SidebarHeaderBand({
  * closed.
  */
 export function SidebarFooter({
-  view,
-  hostKey,
   onOpenSettings,
   onOpenAccount,
   onSelect,
 }: {
-  view: DurableView;
-  /** The stored host this connection is to — absent for token clients. */
-  hostKey?: string;
   onOpenSettings: () => void;
   onOpenAccount: () => void;
   onSelect?: () => void;
@@ -117,7 +116,7 @@ export function SidebarFooter({
           }}
         />
       </div>
-      <HostsMenu connection={view.connection} connectedHostKey={hostKey} />
+      <HostsMenu />
       <span className="relative inline-flex">
         <IconButton
           icon={<Settings aria-hidden="true" />}
@@ -373,6 +372,7 @@ function ConversationRow({
 export function SidebarContent({
   view,
   remote,
+  hostKey,
   draftingChat,
   shownId,
   onDraft,
@@ -381,6 +381,8 @@ export function SidebarContent({
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The stored host this tree belongs to; absent for token clients. */
+  hostKey?: string;
   draftingChat: boolean;
   shownId: ConversationId | undefined;
   onDraft: (home: Home) => void;
@@ -390,7 +392,7 @@ export function SidebarContent({
   const disabled = view.connection !== "connected";
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
-  const [expandedProjects, setExpandedProjects] = useState(readExpandedProjects);
+  const [expandedProjects, setExpandedProjects] = useState(() => readExpandedProjects(hostKey));
   const chats = useSidebarSectionExpansion("chats");
   const projects = useSidebarSectionExpansion("projects");
   const start = (home: Home): void => {
@@ -412,14 +414,14 @@ export function SidebarContent({
     setExpandedProjects((prev) => {
       if (prev[shownProjectPath] !== false) return prev;
       const next = { ...prev, [shownProjectPath]: true };
-      writeExpandedProjects(next);
+      writeExpandedProjects(hostKey, next);
       return next;
     });
-  }, [shownProjectPath]);
+  }, [hostKey, shownProjectPath]);
   const toggleProject = (path: string): void =>
     setExpandedProjects((prev) => {
       const next = { ...prev, [path]: !(prev[path] ?? true) };
-      writeExpandedProjects(next);
+      writeExpandedProjects(hostKey, next);
       return next;
     });
 
