@@ -545,6 +545,7 @@ export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST
     focusConversation: fn(),
     focusDraft: fn(),
     forget: fn(async () => {}),
+    dropHost: fn(async () => {}),
   };
 }
 

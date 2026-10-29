@@ -103,6 +103,8 @@ export interface AccountModelDeps {
   };
   /** Where a newly paired host lands — the hook wires the app's `paired`. */
   readonly paired: (host: StoredHost) => Promise<void>;
+  /** Remove a superseded identity from the store and the app's runtime table, without declining it. */
+  readonly removeHost?: (hostKey: string) => Promise<void>;
   readonly fetch?: AccountFetch;
   /** Device label for registrations; may resolve over the desktop bridge. */
   readonly name?: () => string | Promise<string>;
@@ -222,6 +224,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   const deviceName = async (): Promise<string> => (deps.name ?? (() => "This device"))();
 
+  /** A successful registration is the end of a 4401 rejection for that host. */
+  const clearRejected = (hostKey: string): void => {
+    if (!rejected.delete(hostKey)) return;
+    if (state.status === "signed-in") setState({ ...state, rejectedHostKeys: [...rejected] });
+  };
+
   /** Startup, login and every return to the foreground refresh the account hosts. */
   const watchVisibility = (): void => {
     if (stopVisibility !== undefined || typeof document === "undefined") return;
@@ -241,6 +249,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     } catch {
       return false;
     }
+    clearRejected(host.hostKey);
     forgetUnsaved(host);
     return true;
   };
@@ -327,6 +336,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           return;
         }
         const enriched = enrich(match.host.hostId, result.value);
+        clearRejected(enriched.hostKey);
         try {
           await deps.paired(enriched);
         } catch {
@@ -458,6 +468,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return result;
     }
     const enriched = enrich(hostId, result.value);
+    clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);
     } catch {
@@ -478,7 +489,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         entry.account.hostId === hostId &&
         entry.hostKey !== enriched.hostKey
       ) {
-        void deps.hosts.remove(entry.hostKey).catch(() => undefined);
+        // Removing through the app also drops the old runtime; the key change
+        // is not a user decline, so it must not write the declined set.
+        void (deps.removeHost?.(entry.hostKey) ?? deps.hosts.remove(entry.hostKey)).catch(() => undefined);
       }
     }
     if (state.status === "signed-in" && client !== undefined) await refresh(client, state.user);
@@ -588,13 +601,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
  * the host and adds its runtime; it never steals focus.
  */
 export function useAccount(): AccountModel {
-  const { store, paired } = useHosts();
+  const { store, paired, dropHost } = useHosts();
   const [model] = useState(() =>
     createAccountModel({
       origin: window.location.origin,
       bridge: window.pinomadDesktop,
       hosts: store,
       paired,
+      removeHost: dropHost,
       name: clientDeviceName,
     }),
   );

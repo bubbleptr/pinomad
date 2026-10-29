@@ -385,6 +385,7 @@ describe("useHostNameSync", () => {
       focusConversation: () => {},
       focusDraft: () => {},
       forget: () => Promise.resolve(),
+      dropHost: () => Promise.resolve(),
     };
     return { state, setName };
   };

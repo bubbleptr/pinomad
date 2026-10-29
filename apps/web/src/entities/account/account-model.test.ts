@@ -93,6 +93,7 @@ function makeModel(options: {
   locks?: { request<T>(name: string, callback: () => Promise<T>): Promise<T> };
   connect?: () => Promise<void>;
   autoRegister?: boolean;
+  removeHost?: (hostKey: string) => Promise<void>;
 }): Setup {
   const store = options.store ?? hosts();
   const paired: StoredHost[] = [];
@@ -110,6 +111,7 @@ function makeModel(options: {
     autoRegister: options.autoRegister === true,
     ...(options.declined === undefined ? {} : { declined: options.declined }),
     ...(options.locks === undefined ? {} : { locks: options.locks }),
+    ...(options.removeHost === undefined ? {} : { removeHost: options.removeHost }),
     ...(options.bridge === undefined ? {} : { bridge: options.bridge }),
   });
   return { model, calls: options.fake.calls, store, paired };
@@ -307,6 +309,36 @@ describe("account model", () => {
     expect(state.hosts[0]).toMatchObject({ status: "paired" });
   });
 
+  it("clears a 4401 rejection after a successful account re-pair", async () => {
+    const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1" } });
+    const store = hosts([entry]);
+    const offer = {
+      url: "wss://relay.example.com/c/h1",
+      hostKey: entry.hostKey,
+      secret: toBase64Url(generateKeyPair().privateKey),
+      expiresAt: Date.now() + 60_000,
+    };
+    const { model } = makeModel({
+      fake: fakeFetch(
+        { status: 401 },
+        { status: 200, body: { user: { username: "admin" } } },
+        { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+        { status: 200, body: offer },
+        { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+      ),
+      store,
+    });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    model.hostRejected(entry.hostKey);
+    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).rejectedHostKeys).toEqual([
+      entry.hostKey,
+    ]);
+
+    const result = await model.pairHost("h1");
+    expect(result.ok).toBe(true);
+    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).rejectedHostKeys).toEqual([]);
+  });
+
   it("keeps the paired record when the store save fails, for retry", async () => {
     const store = hosts();
     store.setFailSaves(true);
@@ -348,13 +380,21 @@ describe("account model", () => {
       secret: toBase64Url(generateKeyPair().privateKey),
       expiresAt: Date.now() + 60_000,
     };
-    const { model } = makeModel({ fake: fakeFetch(
-      { status: 401 },
-      { status: 200, body: { user: { username: "admin" } } },
-      { status: 200, body: [accountHost(newKey, "h1")] },
-      { status: 200, body: offer },
-      { status: 200, body: [accountHost(newKey, "h1")] },
-    ), store });
+    const removed: string[] = [];
+    const { model } = makeModel({
+      fake: fakeFetch(
+        { status: 401 },
+        { status: 200, body: { user: { username: "admin" } } },
+        { status: 200, body: [accountHost(newKey, "h1")] },
+        { status: 200, body: offer },
+        { status: 200, body: [accountHost(newKey, "h1")] },
+      ),
+      store,
+      removeHost: async (hostKey) => {
+        removed.push(hostKey);
+        await store.remove(hostKey);
+      },
+    });
     await vi.waitFor(() => {
       const state = model.state as Extract<typeof model.state, { status: "signed-in" }>;
       expect(state.hosts[0]?.status).toBe("key_changed");
@@ -362,7 +402,9 @@ describe("account model", () => {
 
     const result = await model.pairHost("h1");
     expect(result.ok).toBe(true);
-    // The old key's link is dead — only the fresh record remains.
+    // The old key's link is dead — only the fresh record remains, and the app
+    // runtime table is told through the non-declining removal path.
+    expect(removed).toEqual([old.hostKey]);
     expect(store.stored.map((each) => each.hostKey)).toEqual([newKey]);
     expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
   });

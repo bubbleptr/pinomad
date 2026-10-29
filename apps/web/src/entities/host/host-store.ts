@@ -195,6 +195,11 @@ export type HostsState = {
   readonly focusDraft: (hostKey: string) => void;
   /** Close and remove one host runtime, without reloading the page. */
   readonly forget: (hostKey: string) => Promise<void>;
+  /**
+   * Close and remove one host runtime without declining it — for a superseded
+   * identity (a key-change re-pair), not a user forget.
+   */
+  readonly dropHost: (hostKey: string) => Promise<void>;
 };
 
 const defaultState: HostsState = {
@@ -209,6 +214,7 @@ const defaultState: HostsState = {
   focusConversation: () => {},
   focusDraft: () => {},
   forget: (hostKey) => browserStore.remove(hostKey),
+  dropHost: (hostKey) => browserStore.remove(hostKey),
 };
 
 // Deep components — the sidebar footer, the connection-failure screens — read

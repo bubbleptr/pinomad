@@ -237,6 +237,39 @@ export function App() {
     setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { hostKey } }));
   }, []);
 
+  const removeHost = useCallback(
+    async (hostKey: string, clearAddress: boolean): Promise<void> => {
+      lastByHost.current.delete(hostKey);
+      if (clearAddress) {
+        // A live #token=…/#pair=… fragment outlives the stored list; drop it so
+        // the emptied list can land on the no-link screen instead of reconnecting.
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+      await store.remove(hostKey).catch((error: unknown) => {
+        console.error("Could not remove the host", error);
+      });
+      setLoaded((prev) => {
+        if (prev === undefined) return prev;
+        const hosts = prev.hosts.filter((each) => each.hostKey !== hostKey);
+        const address = clearAddress ? undefined : prev.address;
+        if (prev.focus?.hostKey !== hostKey) return { ...prev, hosts, address };
+        return {
+          ...prev,
+          hosts,
+          address,
+          focus: hosts[0] === undefined ? null : rememberedFocus(hosts[0].hostKey),
+        };
+      });
+    },
+    [rememberedFocus, store],
+  );
+
+  /** Remove a superseded identity without treating it as a user forget. */
+  const dropHost = useCallback(
+    (hostKey: string): Promise<void> => removeHost(hostKey, false),
+    [removeHost],
+  );
+
   const forget = useCallback(
     async (hostKey: string): Promise<void> => {
       // Account adoption can link this host in the store without touching the
@@ -251,27 +284,9 @@ export function App() {
         browserDeclined.add(host.account);
         cancelAccountRegistration(host.account.hostId);
       }
-      lastByHost.current.delete(hostKey);
-      // A live #token=…/#pair=… fragment outlives the stored list; drop it so
-      // the emptied list can land on the no-link screen instead of reconnecting.
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-      await store.remove(hostKey).catch((error: unknown) => {
-        console.error("Could not forget the host", error);
-      });
-      setLoaded((prev) => {
-        if (prev === undefined) return prev;
-        const hosts = prev.hosts.filter((each) => each.hostKey !== hostKey);
-        const address = prev.address?.kind === "device" ? prev.address : undefined;
-        if (prev.focus?.hostKey !== hostKey) return { ...prev, hosts, address };
-        return {
-          ...prev,
-          hosts,
-          address,
-          focus: hosts[0] === undefined ? null : rememberedFocus(hosts[0].hostKey),
-        };
-      });
+      await removeHost(hostKey, true);
     },
-    [loaded?.hosts, rememberedFocus, store],
+    [loaded?.hosts, removeHost, store],
   );
 
   const paired = useCallback(
@@ -359,6 +374,7 @@ export function App() {
             focusConversation: () => {},
             focusDraft: () => {},
             forget: () => Promise.resolve(),
+            dropHost: () => Promise.resolve(),
           }
         : {
             store,
@@ -372,8 +388,9 @@ export function App() {
             focusConversation,
             focusDraft,
             forget,
+            dropHost,
           },
-    [endpoints, focusConversation, focusDraft, focusHost, forget, loaded, paired, setConnection, setName, store],
+    [dropHost, endpoints, focusConversation, focusDraft, focusHost, forget, loaded, paired, setConnection, setName, store],
   );
 
   useEffect(() => {
