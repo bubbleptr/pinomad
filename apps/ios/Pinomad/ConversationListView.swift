@@ -95,6 +95,7 @@ struct ConversationListView: View {
             }
         }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
+        .reconnectingTitle(model)
     }
 
     /// Every paired machine in stored order — positions do not jump when

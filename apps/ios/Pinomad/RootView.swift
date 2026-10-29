@@ -192,29 +192,19 @@ private struct FailureView: View {
     }
 }
 
-/// The live connection's trouble, above a page's content: reconnecting on
-/// its own, or closed and waiting for the reader to reconnect.
+/// A connection that closed and waits for the reader, above a page's
+/// content. Reconnecting on its own is `reconnectingTitle()`'s, in the bar.
 struct ConnectionBanner: View {
     let model: AppModel
+
+    private var closed: Bool {
+        model.phase == .connected && model.snapshot?.connection == .closed
+    }
 
     var body: some View {
         // The parent animates so the bar slides in and out, not only swaps.
         ZStack {
-            content.transition(.move(edge: .top).combined(with: .opacity))
-        }
-        .animation(Motion.reveal, value: model.phase == .connected ? model.snapshot?.connection : nil)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let connection = model.snapshot?.connection, model.phase == .connected {
-            switch connection {
-            case .reconnecting:
-                bar {
-                    ProgressView().controlSize(.small)
-                    Text("Reconnecting…")
-                }
-            case .closed:
+            if closed {
                 bar {
                     Image(.cloudOff)
                     Text("Disconnected")
@@ -223,10 +213,10 @@ struct ConnectionBanner: View {
                         .buttonStyle(.tactile(.bordered))
                         .controlSize(.small)
                 }
-            case .connected, .outdated:
-                EmptyView()
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .animation(Motion.reveal, value: closed)
     }
 
     private func bar(@ViewBuilder _ content: () -> some View) -> some View {
@@ -238,6 +228,26 @@ struct ConnectionBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(.regular, in: .rect(cornerRadius: 16))
             .padding(.horizontal, 12)
+    }
+}
+
+extension View {
+    /// "Connecting…" in place of the bar's title while a reconnect outlasts
+    /// its grace window (the messaging apps' spot); the page itself stays put.
+    func reconnectingTitle(_ model: AppModel) -> some View {
+        toolbar {
+            if model.phase == .connected && model.showsReconnecting {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Connecting…")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 }
 

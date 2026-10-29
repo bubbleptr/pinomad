@@ -89,7 +89,18 @@ final class AppModel {
     private var nextModal: Modal?
     /// The newest published view — the list and the open conversation
     /// both read straight off it; nothing here re-derives its contents.
-    private(set) var snapshot: ClientSnapshot?
+    private(set) var snapshot: ClientSnapshot? {
+        didSet {
+            reconnectNotice.observe(reconnecting: snapshot?.connection == .reconnecting, at: .now)
+            refreshReconnectNotice()
+        }
+    }
+    /// "Connecting…" in the bar: on once a reconnect outlasts its grace
+    /// window, so the quick redial after a trip to the background shows nothing.
+    private(set) var showsReconnecting = false
+    private var reconnectNotice = ReconnectNotice()
+    private var reconnectNoticeDeadline: ContinuousClock.Instant?
+    private var reconnectNoticeTimer: Task<Void, Never>?
     /// NavigationStack path.
     var navPath: [Route] = []
     /// Live answer streams, keyed by run entry id — the model side feeds
@@ -291,6 +302,12 @@ final class AppModel {
     }
 
     func didEnterForeground() {
+        // Only a real return: Control Center or a banner goes through
+        // .inactive and back without suspending anything.
+        if isInBackground {
+            reconnectNotice.restart(at: .now)
+            refreshReconnectNotice()
+        }
         isInBackground = false
         session?.notifyForeground()
         Task { [weak self] in
@@ -301,6 +318,24 @@ final class AppModel {
     func didEnterBackground() {
         isInBackground = true
         session?.notifyBackground()
+    }
+
+    /// Show "Connecting…" if the grace window is over, else wake at its end.
+    /// Snapshots stream in while connected, so the timer is only replaced
+    /// when the deadline itself moves.
+    private func refreshReconnectNotice() {
+        let visible = reconnectNotice.isVisible(at: .now)
+        if showsReconnecting != visible { showsReconnecting = visible }
+        let deadline = visible ? nil : reconnectNotice.deadline
+        guard deadline != reconnectNoticeDeadline else { return }
+        reconnectNoticeDeadline = deadline
+        reconnectNoticeTimer?.cancel()
+        reconnectNoticeTimer = deadline.map { deadline in
+            Task { [weak self] in
+                guard (try? await Task.sleep(until: deadline, clock: .continuous)) != nil else { return }
+                self?.refreshReconnectNotice()
+            }
+        }
     }
 
     /// Show and talk to a conversation — command-class, so a refused

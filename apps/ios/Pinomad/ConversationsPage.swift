@@ -45,10 +45,11 @@ struct ConversationsPage: View {
                 }
             }
         }
-        // Kept for the back button's history menu, not drawn in the bar.
+        // Kept for the back button's history menu, not drawn in the bar —
+        // except as the slot "Connecting…" takes over.
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(removing: .title)
+        .toolbar(removing: model.showsReconnecting ? nil : .title)
         .searchable(text: $query, prompt: "Search conversations")
         .toolbar {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -74,6 +75,7 @@ struct ConversationsPage: View {
             if let renameError { Text(renameError) }
         }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
+        .reconnectingTitle(model)
     }
 
     private var rows: [(node: ConversationNode, project: String?)] {
