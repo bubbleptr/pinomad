@@ -638,8 +638,13 @@ describe("automatic registration", () => {
     await Promise.resolve();
     expect(names[0]).toBe(`pinomad.autoRegister:${ORIGIN}:h1`);
     expect(pairingCalls(fake.calls)).toBe(0);
-    // The winning tab's record still has to reach this page's runtime table.
+    // The winning tab's record still has to reach this page's runtime table
+    // and its account matches; otherwise the panel keeps offering Pair.
     expect(setup.paired).toEqual([linked]);
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("paired");
+    });
   });
 
   it("keeps a failed save in a per-host recovery slot and never generates a second key", async () => {

@@ -79,10 +79,9 @@ export function DraftHome({
   const skillDraft = useSkillDraft(slot);
   const { value, setValue } = skillDraft;
   // createConversation keeps the text and resolves after the view switches
-  // (a failure still resolves, as a notice). The ref guards synchronously —
-  // setState hasn't flushed by the time a second Enter's keydown runs.
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
+  // (a failure still resolves, as a notice). The slot guards synchronously
+  // and survives a focus switch that unmounts this screen.
+  const submitting = composer.submitting;
   // ADR-0010: project conversations default to a fresh worktree; the picker opts out.
   const checkoutMode = composer.checkoutMode;
   const setCheckoutMode = (mode: CheckoutMode): void => slot.setCheckoutMode(mode);
@@ -185,16 +184,15 @@ export function DraftHome({
                 || files.uploading
                 || files.failed
                 || pending
-                || submittingRef.current
+                || submitting
                 || problem !== undefined
               ) return;
+              if (!slot.beginSubmit()) return;
               requestNotificationPermission();
               // The shown conversation changes only when the create landed.
               const shown = remote.view.current().conversation?.conversation.id;
               const sending = images;
               const attachments = files.ids();
-              submittingRef.current = true;
-              setSubmitting(true);
               // No await before the call: the draft's files are all done, and
               // click order reaches the controller's command queue intact.
               void remote.controller
@@ -220,10 +218,7 @@ export function DraftHome({
                     onCreated();
                   }
                 })
-                .finally(() => {
-                  submittingRef.current = false;
-                  setSubmitting(false);
-                });
+                .finally(() => slot.endSubmit());
             }}
             isDisabled={!connected}
             submitDisabled={problem !== undefined || files.uploading || files.failed}

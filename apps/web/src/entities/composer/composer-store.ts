@@ -45,6 +45,9 @@ export interface ComposerSlotState {
   readonly checkoutMode: CheckoutMode;
   readonly agent: string | undefined;
   readonly overrides: AgentDraftOverrides;
+  /** A createConversation call is in flight; it lives on the slot so a focus
+      switch and remount cannot submit the same draft twice. */
+  readonly submitting: boolean;
 }
 
 const initialState = (): ComposerSlotState => ({
@@ -58,6 +61,7 @@ const initialState = (): ComposerSlotState => ({
   checkoutMode: "worktree",
   agent: undefined,
   overrides: {},
+  submitting: false,
 });
 
 export class ComposerSlot {
@@ -112,6 +116,17 @@ export class ComposerSlot {
 
   setOverrides(overrides: AgentDraftOverrides): void {
     this.#set({ overrides });
+  }
+
+  /** Reserve the create call synchronously; false means one is already in flight. */
+  beginSubmit(): boolean {
+    if (this.#state.submitting) return false;
+    this.#set({ submitting: true });
+    return true;
+  }
+
+  endSubmit(): void {
+    if (this.#state.submitting) this.#set({ submitting: false });
   }
 
   addImages(files: File[], accepts: boolean): void {

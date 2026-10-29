@@ -27,6 +27,16 @@ describe("HostComposerStore", () => {
     expect(second.slot("new").snapshot().home).toEqual({ kind: "chat" });
   });
 
+  it("single-flights a create call on the slot", () => {
+    const slot = new HostComposerStore().slot("new");
+    expect(slot.beginSubmit()).toBe(true);
+    expect(slot.beginSubmit()).toBe(false);
+    expect(slot.snapshot().submitting).toBe(true);
+    slot.endSubmit();
+    expect(slot.snapshot().submitting).toBe(false);
+    expect(slot.beginSubmit()).toBe(true);
+  });
+
   it("keeps conversation slots apart", () => {
     const store = new HostComposerStore();
     store.slot("conversation:1").restoreDraft("one", []);

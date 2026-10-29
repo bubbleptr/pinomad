@@ -289,7 +289,7 @@ function ReadyHost({
 }) {
   const view = useDurableView(remote);
   const registry = useContext(HostRuntimesContext);
-  const { focusConversation, forget } = useHosts();
+  const { focusConversation, focusDraft, forget } = useHosts();
   useEffect(() => {
     registry?.publish(host.hostKey, { phase: "ready", remote, view, retry });
   }, [host.hostKey, registry, remote, retry, view]);
@@ -300,7 +300,8 @@ function ReadyHost({
     [host.hostKey, registry],
   );
   useHostNameSync(host.hostKey, view.settings);
-  useConversationFocus(remote, view, focusTarget);
+  const focusDraftHere = useCallback(() => focusDraft(host.hostKey), [focusDraft, host.hostKey]);
+  useConversationFocus(remote, view, focusTarget, focusDraftHere);
   useRunNotifications(
     view,
     host.hostKey,

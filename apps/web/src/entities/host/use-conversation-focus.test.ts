@@ -75,6 +75,23 @@ describe("useConversationFocus", () => {
     expect(fake.switchConversation).toHaveBeenCalledWith(id(1));
   });
 
+  it("clears focus when the shown conversation is archived instead of reopening it", () => {
+    const fake = fakeRemote();
+    const unavailable = vi.fn();
+    const { rerender } = renderHook(
+      ({ target, current }) => useConversationFocus(fake.remote, current, target, unavailable),
+      { initialProps: { target: id(5) as ConversationId | undefined, current: view({ conversation: 5 }) } },
+    );
+    // Shown already: no switch, just remember that this target landed.
+    expect(fake.switchConversation).not.toHaveBeenCalled();
+
+    // Archive/unsubscribe makes the host drop the conversation while focus
+    // still points at it.
+    rerender({ target: id(5), current: view() });
+    expect(unavailable).toHaveBeenCalledTimes(1);
+    expect(fake.switchConversation).not.toHaveBeenCalled();
+  });
+
   it("does not re-switch the already shown conversation", () => {
     const fake = fakeRemote();
     const { rerender } = renderHook(

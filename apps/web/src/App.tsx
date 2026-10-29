@@ -162,6 +162,16 @@ export function App() {
     });
   }, []);
 
+  const rememberConversation = useCallback((ref: ConversationRef): void => {
+    setLoaded((prev) => {
+      if (prev === undefined || !prev.hosts.some((host) => host.hostKey === ref.hostKey)) return prev;
+      // A background create lands in that host's remembered slot without
+      // stealing focus from wherever the user moved.
+      lastByHost.current.set(ref.hostKey, ref.conversationId);
+      return prev;
+    });
+  }, []);
+
   const focusDraft = useCallback((hostKey: string): void => {
     lastByHost.current.delete(hostKey);
     setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { hostKey } }));
@@ -306,6 +316,7 @@ export function App() {
             setConnection: () => Promise.resolve(),
             focusHost: () => {},
             focusConversation: () => {},
+            rememberConversation: () => {},
             focusDraft: () => {},
             forget: () => Promise.resolve(),
             dropHost: () => Promise.resolve(),
@@ -320,11 +331,12 @@ export function App() {
             setConnection,
             focusHost,
             focusConversation,
+            rememberConversation,
             focusDraft,
             forget,
             dropHost,
           },
-    [dropHost, endpoints, focusConversation, focusDraft, focusHost, forget, loaded, paired, setConnection, setName, store],
+    [dropHost, endpoints, focusConversation, focusDraft, focusHost, forget, loaded, paired, rememberConversation, setConnection, setName, store],
   );
 
   useEffect(() => {
@@ -735,7 +747,7 @@ function Workbench({
   notify?: boolean;
 }) {
   const view = useDurableView(remote);
-  const { focus, focusConversation, focusDraft } = useHosts();
+  const { focus, focusConversation, focusDraft, rememberConversation } = useHosts();
   // A draft create resolves after an arbitrary delay. Record the latest focus
   // so a same-host selection made while it was in flight wins.
   const focusRef = useRef(focus);
@@ -949,16 +961,29 @@ function Workbench({
             draft={draft}
             onDraft={startDraft}
             onCreated={() => {
-              if (!live.current) return;
-              // Another host unmounts this workbench; a same-host selection
-              // leaves it mounted but moves the focus off the draft.
+              const id = remote.view.current().conversation?.conversation.id;
+              if (id === undefined) return;
               const stillDrafting =
                 hostKey === undefined
                 || (focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === undefined);
-              if (!stillDrafting) return;
-              const id = remote.view.current().conversation?.conversation.id;
-              if (id !== undefined) openConversation(id);
-              if (!narrow) changeOverview(true);
+              if (!live.current) {
+                // The create landed while another host was focused. Remember
+                // it for this host, but do not pull focus back.
+                if (hostKey !== undefined) rememberConversation({ hostKey, conversationId: id });
+                return;
+              }
+              if (stillDrafting) {
+                openConversation(id);
+                if (!narrow) changeOverview(true);
+                return;
+              }
+              // A same-host selection made while the create was in flight wins;
+              // otherwise this host simply remembers its new conversation.
+              const choseAnotherConversation =
+                focusRef.current?.hostKey === hostKey && focusRef.current.conversationId !== undefined;
+              if (hostKey !== undefined && !choseAnotherConversation) {
+                rememberConversation({ hostKey, conversationId: id });
+              }
             }}
             connected={view.connection === "connected"}
           />

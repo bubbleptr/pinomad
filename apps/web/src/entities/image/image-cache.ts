@@ -11,6 +11,8 @@ export type ImageLoader = (ref: string, variant?: ImageVariant) => Promise<Image
 type QueuedLoad = {
   /** In-flight identity: source host + ref + variant. */
   readonly key: string;
+  /** Queue quota is per source: one stuck host must not starve another. */
+  readonly source: string;
   readonly ref: string;
   readonly variant: ImageVariant;
   readonly loader: ImageLoader;
@@ -31,7 +33,8 @@ export class ImageCache {
   readonly #inflight = new Map<string, Promise<ImageResult>>();
   readonly #queue: QueuedLoad[] = [];
   #size = 0;
-  #loading = 0;
+  /** Running requests per source key; the global cap is MAX_IN_FLIGHT each. */
+  readonly #loading = new Map<string, number>();
 
   constructor(maxBytes = DEFAULT_MAX_BYTES) {
     this.#maxBytes = maxBytes;
@@ -81,13 +84,14 @@ export class ImageCache {
   load(ref: string, loader: ImageLoader, variant: ImageVariant = "original", source?: string): Promise<ImageResult> {
     const cached = this.get(ref, variant);
     if (cached !== undefined) return Promise.resolve(cached);
+    const sourceKey = source ?? "";
     const key = requestKeyOf(source, ref, variant);
     const inflight = this.#inflight.get(key)
       ?? (variant === "original" ? undefined : this.#inflight.get(requestKeyOf(source, ref, "original")));
     if (inflight !== undefined) return inflight;
 
     const promise = new Promise<ImageResult>((resolve, reject) => {
-      this.#queue.push({ key, ref, variant, loader, resolve, reject });
+      this.#queue.push({ key, source: sourceKey, ref, variant, loader, resolve, reject });
     });
     this.#inflight.set(key, promise);
     this.#pump();
@@ -100,14 +104,16 @@ export class ImageCache {
     this.#inflight.clear();
     this.#queue.length = 0;
     this.#size = 0;
-    this.#loading = 0;
+    this.#loading.clear();
   }
 
   #pump(): void {
-    while (this.#loading < MAX_IN_FLIGHT) {
-      const job = this.#queue.shift();
+    for (;;) {
+      const index = this.#queue.findIndex((job) => (this.#loading.get(job.source) ?? 0) < MAX_IN_FLIGHT);
+      if (index === -1) return;
+      const [job] = this.#queue.splice(index, 1);
       if (job === undefined) return;
-      this.#loading += 1;
+      this.#loading.set(job.source, (this.#loading.get(job.source) ?? 0) + 1);
       let request: Promise<ImageResult>;
       try {
         request = Promise.resolve(job.variant === "original" ? job.loader(job.ref) : job.loader(job.ref, job.variant));
@@ -132,7 +138,9 @@ export class ImageCache {
 
   #finish(job: QueuedLoad): void {
     this.#inflight.delete(job.key);
-    this.#loading -= 1;
+    const remaining = (this.#loading.get(job.source) ?? 1) - 1;
+    if (remaining <= 0) this.#loading.delete(job.source);
+    else this.#loading.set(job.source, remaining);
     this.#pump();
   }
 }

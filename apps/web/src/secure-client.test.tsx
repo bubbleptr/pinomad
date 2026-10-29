@@ -69,6 +69,7 @@ function Harness({
     focus: null,
     focusHost: () => {},
     focusConversation: () => {},
+    rememberConversation: () => {},
     focusDraft: () => {},
     forget: async (hostKey) => {
       const next = hosts.filter((each) => each.hostKey !== hostKey);

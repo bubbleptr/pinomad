@@ -543,6 +543,7 @@ export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST
     setConnection: fn(async () => {}),
     focusHost: fn(),
     focusConversation: fn(),
+    rememberConversation: fn(),
     focusDraft: fn(),
     forget: fn(async () => {}),
     dropHost: fn(async () => {}),

@@ -60,6 +60,45 @@ describe("DraftHome attachment uploads", () => {
     );
   });
 
+  it("does not create twice when the screen unmounts during submit", async () => {
+    let resolveCreate!: () => void;
+    const createConversation = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    const view = fakeView();
+    const remote = fakeRemote(view, { createConversation });
+    const store = new HostComposerStore();
+    const renderDraft = () =>
+      render(
+        <HostComposerContext.Provider value={store}>
+          <DraftHome
+            view={view}
+            remote={remote}
+            draft={store.slot("new").snapshot().home}
+            onDraft={() => {}}
+            onCreated={() => {}}
+            connected
+          />
+        </HostComposerContext.Provider>,
+      );
+    const first = renderDraft();
+    const editable = document.querySelector<HTMLElement>('[aria-multiline="true"]')!;
+    editable.textContent = "send exactly once";
+    fireEvent.input(editable);
+    fireEvent.keyDown(editable, { key: "Enter" });
+    expect(createConversation).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const second = renderDraft();
+    const again = second.container.querySelector<HTMLElement>('[aria-multiline="true"]')!;
+    fireEvent.keyDown(again, { key: "Enter" });
+    expect(createConversation).toHaveBeenCalledTimes(1);
+    await act(async () => resolveCreate());
+  });
+
   it("keeps a half-written draft and its upload after the screen unmounts", async () => {
     let finish!: (value: { received: number; complete: boolean }) => void;
     const appendAttachment = vi.fn(

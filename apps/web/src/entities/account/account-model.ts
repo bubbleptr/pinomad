@@ -346,9 +346,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           // Another tab won the lock and saved the pairing. Sync that record
           // into this page's runtime table even though this flight is done.
           if (fresh?.stored !== undefined) {
-            await deps.paired(fresh.stored).catch((error: unknown) =>
-              console.error("Could not sync a host paired by another tab", error),
-            );
+            let synced = true;
+            await deps.paired(fresh.stored).catch((error: unknown) => {
+              synced = false;
+              console.error("Could not sync a host paired by another tab", error);
+            });
+            // The local table is paired now; republish the match so the
+            // account panel stops showing Pair for this host.
+            if (synced && client === active) await refresh(active, user);
           }
           return;
         }

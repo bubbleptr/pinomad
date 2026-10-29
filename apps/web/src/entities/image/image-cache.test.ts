@@ -126,6 +126,22 @@ describe("ImageCache", () => {
     await expect(working).resolves.toEqual(image("ok"));
   });
 
+  it("reserves the in-flight slots per source host", async () => {
+    const cache = new ImageCache();
+    const hanging = vi.fn(() => new Promise<MessageImage>(() => {}));
+    const busy = Array.from({ length: 4 }, (_, index) =>
+      cache.load(`ref-a-${index}`, hanging, "original", "host-a"),
+    );
+    expect(hanging).toHaveBeenCalledTimes(4);
+
+    // A's four slots are full, but B still gets its own.
+    const loaderB = vi.fn(async () => image("b"));
+    await expect(cache.load("ref-b", loaderB, "original", "host-b")).resolves.toEqual(image("b"));
+    expect(loaderB).toHaveBeenCalledTimes(1);
+    // Keep the hung promises referenced so the test does not look like a leak.
+    expect(busy).toHaveLength(4);
+  });
+
   it("does not remember a failed load, so the next attempt can succeed", async () => {
     const cache = new ImageCache();
     const bytes = image("aGVsbG8=");

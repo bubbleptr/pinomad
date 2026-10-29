@@ -383,6 +383,7 @@ describe("useHostNameSync", () => {
       setConnection: () => Promise.resolve(),
       focusHost: () => {},
       focusConversation: () => {},
+      rememberConversation: () => {},
       focusDraft: () => {},
       forget: () => Promise.resolve(),
       dropHost: () => Promise.resolve(),

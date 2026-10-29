@@ -191,6 +191,8 @@ export type HostsState = {
   readonly focusHost: (hostKey: string) => void;
   /** Focus one conversation, releasing every other host's conversation stream. */
   readonly focusConversation: (ref: ConversationRef) => void;
+  /** Remember a host's conversation without moving focus (a background create). */
+  readonly rememberConversation: (ref: ConversationRef) => void;
   /** Focus a host's draft, clearing its remembered conversation. */
   readonly focusDraft: (hostKey: string) => void;
   /** Close and remove one host runtime, without reloading the page. */
@@ -212,6 +214,7 @@ const defaultState: HostsState = {
   setConnection: (hostKey, change) => browserStore.updateConnection(hostKey, change),
   focusHost: () => {},
   focusConversation: () => {},
+  rememberConversation: () => {},
   focusDraft: () => {},
   forget: (hostKey) => browserStore.remove(hostKey),
   dropHost: (hostKey) => browserStore.remove(hostKey),
