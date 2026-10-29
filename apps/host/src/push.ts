@@ -45,6 +45,7 @@ export const PushDoc = defineDoc<PushRegistry>({
   scope: "session",
   initial: () => ({ registrations: [] }),
   migrate: () => ({ registrations: [] }),
+  checkpointWhen: () => false,
 });
 
 // Apple does not fix token lengths; today's are 32 bytes (64 hex). 256 hex

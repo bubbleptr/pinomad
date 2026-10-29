@@ -3,10 +3,12 @@
 // into a temp prefix and exercise the packaged entry points. Needs registry
 // access (external deps install at `npm i -g` time); not part of bun run test.
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { hostPiStack } from "./src/pi-stack.ts";
 
 const fail = (message: string): never => {
   console.error(`smoke: ${message}`);
@@ -15,8 +17,48 @@ const fail = (message: string): never => {
 
 const tgz = process.argv[2];
 if (tgz === undefined) fail("usage: bun apps/cli/smoke.ts <pinomad-*.tgz>");
-const version = /pinomad-(.+)\.tgz$/.exec(tgz)?.[1];
+const version = /^pinomad-(.+)\.tgz$/.exec(basename(tgz))?.[1];
 if (version === undefined) fail(`cannot read version from ${tgz}`);
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const pi = await hostPiStack(root);
+
+type InstalledPi = { readonly path: string; readonly version: string };
+
+/** Read every physical @earendil-works package under one node_modules tree. */
+async function scanPi(nodeModules: string, found: Map<string, InstalledPi[]>): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(nodeModules, { withFileTypes: true });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return;
+    throw error;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === ".bin") continue;
+    const dirs = entry.name.startsWith("@")
+      ? (await readdir(join(nodeModules, entry.name), { withFileTypes: true }))
+          .filter((child) => child.isDirectory())
+          .map((child) => join(nodeModules, entry.name, child.name))
+      : [join(nodeModules, entry.name)];
+    for (const dir of dirs) {
+      const manifestPath = join(dir, "package.json");
+      let manifest: { name?: string; version?: string };
+      try {
+        manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { name?: string; version?: string };
+      } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") continue;
+        throw error;
+      }
+      if (manifest.name?.startsWith("@earendil-works/")) {
+        if (manifest.version === undefined) throw new Error(`${manifestPath} has no version`);
+        const copies = found.get(manifest.name) ?? [];
+        copies.push({ path: dir, version: manifest.version });
+        found.set(manifest.name, copies);
+      }
+      await scanPi(join(dir, "node_modules"), found);
+    }
+  }
+}
 
 const freePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
@@ -78,6 +120,26 @@ const work = await mkdtemp(join(tmpdir(), "pinomad-smoke-data-"));
 try {
   const install = await run("npm", ["install", "-g", "--prefix", prefix, tgz]);
   if (install.code !== 0) fail(`npm install failed:\n${install.output}`);
+
+  const installed = new Map<string, InstalledPi[]>();
+  await scanPi(join(prefix, "lib", "node_modules"), installed);
+  for (const [name, pinnedVersion] of pi.packages) {
+    const copies = installed.get(name) ?? [];
+    if (copies.length !== 1) {
+      fail(
+        `${name}: expected one copy at ${pinnedVersion}, found ${copies.length}` +
+          (copies.length === 0 ? "" : ` (${copies.map((copy) => copy.path).join(", ")})`),
+      );
+    }
+    if (copies[0]!.version !== pinnedVersion) {
+      fail(`${name}: installed ${copies[0]!.version}, expected ${pinnedVersion}`);
+    }
+  }
+  for (const name of installed.keys()) {
+    if (!pi.packages.has(name)) fail(`${name}: not in the pinned pi stack`);
+  }
+  console.log(`smoke: pi stack ${pi.version} — ${pi.packages.size} packages, one copy each`);
+
   const bin = join(prefix, "bin", "pinomad");
 
   const ver = await run(bin, ["--version"]);

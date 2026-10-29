@@ -29,6 +29,7 @@ const QuestionDoc = defineDoc<QuestionDocState>({
   history: "latest",
   fork: "initial",
   initial: () => ({ requests: [] }),
+  checkpointWhen: () => false,
 });
 
 const resolutionOf = (value: Readonly<QuestionDocState> | null, requestId: string): QuestionResolution | undefined =>

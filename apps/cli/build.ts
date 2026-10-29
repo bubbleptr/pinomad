@@ -7,6 +7,7 @@ import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/prom
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostPiStack } from "./src/pi-stack.ts";
 
 // Just enough of the Bun API this script uses; it never runs under Node and
 // bun-types is not a dependency.
@@ -71,6 +72,22 @@ for (const dir of ["apps/host", "apps/server", "packages/protocol"]) {
     }
     optionalDependencies[name] = range;
   }
+}
+
+// npm ignores `overrides` and `npm-shrinkwrap.json` declared by an installed
+// package, so a direct exact dependency is the pin that survives `npm i -g`.
+// Naming the whole pi stack, including packages we only reach through upstream,
+// hoists one copy at the version apps/host pins; upstream ranges then dedupe.
+const pi = await hostPiStack(root);
+for (const [name, version] of pi.packages) {
+  const existing = dependencies[name];
+  if (existing !== undefined && existing !== version) {
+    fail(`conflicting pi versions for ${name}: ${existing} vs ${version}`);
+  }
+  dependencies[name] = version;
+}
+for (const name of Object.keys(dependencies)) {
+  if (name.startsWith("@earendil-works/") && !pi.packages.has(name)) fail(`unpinned pi dependency ${name}`);
 }
 
 await rm(out, { recursive: true, force: true });

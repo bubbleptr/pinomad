@@ -12,4 +12,5 @@ export const TitleDoc = defineDoc<{ title?: string; source?: "auto" | "manual" }
   history: "latest",
   fork: "initial",
   initial: () => ({}),
+  checkpointWhen: () => false,
 });
