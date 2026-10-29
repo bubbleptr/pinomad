@@ -271,12 +271,14 @@ function ConversationRow({
   shown,
   disabled,
   remote,
+  onOpen,
   onSelect,
 }: {
   node: ConversationNode;
   shown: ConversationId | undefined;
   disabled: boolean;
   remote: RemoteDurable;
+  onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
   const { summary } = node;
@@ -307,7 +309,7 @@ function ConversationRow({
         </span>
       }
       onClick={() => {
-        void remote.controller.switchConversation(summary.id);
+        onOpen(summary.id);
         onSelect?.();
       }}
     />
@@ -374,6 +376,7 @@ export function SidebarContent({
   draftingChat,
   shownId,
   onDraft,
+  onOpen,
   onSelect,
 }: {
   view: DurableView;
@@ -381,6 +384,7 @@ export function SidebarContent({
   draftingChat: boolean;
   shownId: ConversationId | undefined;
   onDraft: (home: Home) => void;
+  onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
   const disabled = view.connection !== "connected";
@@ -460,6 +464,7 @@ export function SidebarContent({
                   shown={shownId}
                   disabled={disabled}
                   remote={remote}
+                  onOpen={onOpen}
                   onSelect={onSelect}
                 />
               ))
@@ -520,6 +525,7 @@ export function SidebarContent({
                             shown={shownId}
                             disabled={disabled}
                             remote={remote}
+                            onOpen={onOpen}
                             onSelect={onSelect}
                           />
                         ))

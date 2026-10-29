@@ -46,6 +46,7 @@ export function AppFrame({
   draftingChat,
   draftLabel,
   conversation,
+  shownId,
   summary,
   parentSummary,
   banner,
@@ -59,6 +60,7 @@ export function AppFrame({
   onPanelTab,
   openInPanel,
   openInMain,
+  onOpen,
   children,
 }: {
   view: DurableView;
@@ -72,7 +74,10 @@ export function AppFrame({
   drafting: boolean;
   draftingChat: boolean;
   draftLabel: string;
+  /** Undefined while the opened conversation is still loading (or failed to). */
   conversation: DurableView["conversation"];
+  /** The conversation the main column is on — set at once on open, before its view lands. */
+  shownId: ConversationId | undefined;
   summary: ConversationSummary | undefined;
   parentSummary: ConversationSummary | undefined;
   banner?: ReactNode;
@@ -88,6 +93,8 @@ export function AppFrame({
   onPanelTab: (tab: PanelTab) => void;
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   openInMain: (id: ConversationId) => void;
+  /** Show a conversation in the main column; Workbench tracks it while it loads. */
+  onOpen: (id: ConversationId) => void;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
@@ -102,10 +109,9 @@ export function AppFrame({
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
   };
-  const openConversation = (id: ConversationId): void => void remote.controller.switchConversation(id);
   // A fork or subagent of the shown family still at work: the closed panel's
   // button carries a dot so the activity is not out of sight entirely.
-  const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
+  const root = shownId === undefined ? undefined : rootOf(view.organized, shownId);
   const liveActivity = root !== undefined && anyAtWork(root.children);
   // A subagent's role comes from the delegating call; a top-level conversation
   // or fork shows the agent it currently runs as.
@@ -123,8 +129,9 @@ export function AppFrame({
       view={view}
       remote={remote}
       draftingChat={draftingChat}
-      shownId={conversation?.conversation.id}
+      shownId={shownId}
       onDraft={onDraft}
+      onOpen={onOpen}
       onSelect={() => setNavOpen(false)}
     />
   );
@@ -173,8 +180,8 @@ export function AppFrame({
             title={drafting ? draftLabel : displayName(summary)}
             agent={headerAgent}
             parentSummary={parentSummary}
-            onBackToParent={openConversation}
-            showOverview={conversation !== undefined}
+            onBackToParent={onOpen}
+            showOverview={shownId !== undefined}
             overviewOpen={overviewOpen}
             onOverviewChange={onOverviewChange}
             panelOpen={panelOpen}
