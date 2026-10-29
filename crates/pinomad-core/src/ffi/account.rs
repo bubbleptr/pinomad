@@ -9,7 +9,7 @@ use crate::account as core;
 use crate::ffi::hosts::{EndpointSet, StoredHost, StoredHostAccount};
 
 pub use crate::account::{
-    AccountError, AccountHost, AccountHostPairing, AccountHostStatus, AccountHttpHeader,
+    AccountError, AccountHost, AccountHostPairing, AccountHostRef, AccountHostStatus, AccountHttpHeader,
     AccountHttpRequest, AccountOp, AccountOpKind, AccountUser, AccountsProbe, JoinToken,
     LoginSuccess,
 };
@@ -84,6 +84,9 @@ pub struct AccountHostMatch {
     /// The stored entry shares the Noise key but predates account linkage —
     /// persisting `{...stored, account}` adopts the association.
     pub linkable: bool,
+    /// Eligible for server-vouched automatic registration (M8): unpaired,
+    /// outside the declined set, and the local list was read.
+    pub auto_register: bool,
 }
 
 fn to_core(host: &StoredHost) -> crate::stored_host::StoredHost {
@@ -181,20 +184,24 @@ pub fn normalize_server_origin(origin: String) -> String {
 /// Pair the server's account hosts against the stored pairings: `paired`
 /// (account-linked or same Noise key), `unpaired`, or `key_changed` — a
 /// link whose pinned key diverged is reported, never silently re-paired.
+/// `declined` and `stored_read` only decide `auto_register` (M8).
 #[uniffi::export]
 pub fn match_account_hosts(
     server_origin: String,
     hosts: Vec<AccountHost>,
     stored: Vec<StoredHost>,
+    declined: Vec<AccountHostRef>,
+    stored_read: bool,
 ) -> Vec<AccountHostMatch> {
     let stored_core: Vec<crate::stored_host::StoredHost> = stored.iter().map(to_core).collect();
-    core::match_account_hosts(&server_origin, &hosts, &stored_core)
+    core::match_account_hosts(&server_origin, &hosts, &stored_core, &declined, stored_read)
         .iter()
         .map(|m| AccountHostMatch {
             host: m.host.clone(),
             status: m.status,
             stored: m.stored.as_ref().map(from_core),
             linkable: m.linkable,
+            auto_register: m.auto_register,
         })
         .collect()
 }

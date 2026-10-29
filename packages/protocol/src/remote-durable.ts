@@ -3214,6 +3214,7 @@ class RemoteClient {
         }),
       switchConversation: (id) => this.#command(() => this.#switch(id)),
       showSide: (id) => this.#command(() => this.#showSide(id)),
+      clearConversation: () => this.#command(() => this.#clear()),
       fork: (entryId, prompt, removeTools, options) =>
         this.#command(async () => {
           const { conversationId: forked } = await this.#call("fork", {
@@ -3396,6 +3397,16 @@ class RemoteClient {
     this.#current = undefined;
     this.#release(previous, this.#side);
     this.#refresh();
+  }
+
+  /**
+   * Release both slots in order: the main releases first while the side still
+   * keeps any streams they share, then the side releases the rest. Host-level
+   * streams are never touched because they are not in either slot.
+   */
+  async #clear(): Promise<void> {
+    this.#unshow();
+    await this.#showSide(undefined);
   }
 
   /** Show a second conversation beside the main one, or close it. */

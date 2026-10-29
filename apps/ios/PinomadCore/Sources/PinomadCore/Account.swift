@@ -445,10 +445,14 @@ public enum AccountHosts {
         rejectedHostKeys: Set<String>
     ) -> AccountReconciliation {
         let origin = normalizeServerOrigin(origin: serverOrigin)
+        // Declined identities and a failed stored-list read arrive with the
+        // automatic-registration work; reconciliation itself stays unchanged.
         let matches = matchAccountHosts(
             serverOrigin: origin,
             hosts: hosts,
-            stored: stored.hosts.map { $0.ffi })
+            stored: stored.hosts.map { $0.ffi },
+            declined: [],
+            storedRead: true)
 
         var next = stored
         var changed = false

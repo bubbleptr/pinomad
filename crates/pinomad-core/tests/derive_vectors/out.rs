@@ -620,6 +620,7 @@ pub fn account_match_json(m: &AccountHostMatch) -> Json {
         ("status", Some(s(m.status.as_str()))),
         ("stored", m.stored.as_ref().map(|host| stored_host_json(Some(host)))),
         ("linkable", Some(Json::Bool(m.linkable))),
+        ("autoRegister", Some(Json::Bool(m.auto_register))),
     ])
 }
 

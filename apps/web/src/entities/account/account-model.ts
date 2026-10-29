@@ -149,9 +149,19 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       });
       return rows;
     }
-    const stored = await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
+    // A failed read is not an empty list: it keeps the matching verdicts but
+    // makes every host ineligible for automatic registration until it works.
+    let stored: readonly StoredHost[];
+    let storedRead = true;
+    try {
+      stored = await deps.hosts.list();
+    } catch {
+      stored = [];
+      storedRead = false;
+    }
     if (client !== active) return { ok: false, error: { code: "stale" } };
-    const matches = matchAccountHosts(active.origin, rows.value, stored);
+    // Declined identities arrive with the automatic-registration work (#426/#428).
+    const matches = matchAccountHosts(active.origin, rows.value, stored, [], storedRead);
     // Adopt pre-account pairings: same Noise key, no link yet — bookkeeping,
     // not a re-pair, so a failed save is unremarkable.
     for (const match of matches) {

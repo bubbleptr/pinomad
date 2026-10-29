@@ -304,6 +304,9 @@ pub enum Call {
     ToggleTasks,
     SwitchConversation { id: u64 },
     ShowSide { id: Option<u64> },
+    /// Release both the main and side conversation subscriptions, keeping
+    /// host-level streams and the connection (M8 focus handoff).
+    ClearConversation,
     Fork {
         entry_id: String,
         prompt: String,
@@ -795,6 +798,8 @@ enum Step {
     UnsideIfArchived { id: u64, archived: bool },
     /// showSide(undefined), reachable as its own step for Call::ShowSide.
     Unside,
+    /// clearConversation: release the main slot, then the side slot.
+    ClearConversation,
     ToggleTasks,
     Done { value: DoneValue },
 }
@@ -4146,6 +4151,7 @@ impl RemoteDurable {
                 Some(id) => steps.push_back(Step::Show { target: ShowTarget::Id(*id), slot: Slot::Side }),
                 None => steps.push_back(Step::Unside),
             },
+            Call::ClearConversation => steps.push_back(Step::ClearConversation),
             Call::Fork { entry_id, prompt, remove_tools, show } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
@@ -4486,6 +4492,11 @@ impl RemoteDurable {
                         return self.fail_op(index, &error);
                     }
                 }
+                Step::ClearConversation => {
+                    if let Err(error) = self.clear_conversation() {
+                        return self.fail_op(index, &error);
+                    }
+                }
                 Step::ToggleTasks => {
                     let tasks = key("tasks");
                     if self.wanted.remove(&tasks) {
@@ -4658,6 +4669,14 @@ impl RemoteDurable {
             self.fresh.remove(&stream);
             self.send(ClientFrame::Unsubscribe { stream: U16String(stream) });
         }
+    }
+
+    /// Drop both slots: the main first while the side still keeps shared
+    /// streams, then the side. Host-level subscriptions are not slot streams,
+    /// so they stay. Pending work already on the connection is untouched.
+    fn clear_conversation(&mut self) -> Result<(), String> {
+        self.unshow()?;
+        self.show_side(None)
     }
 
     /// `#unshow` — drop the main slot.

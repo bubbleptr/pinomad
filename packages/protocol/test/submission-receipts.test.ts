@@ -840,6 +840,38 @@ describe("logical submissions", () => {
       remote2.close();
     }
   });
+
+  it("keeps an unsettled submission's conversation across clearConversation", async () => {
+    vi.useFakeTimers();
+    const host = createHost();
+    const remote = await connected(host);
+    try {
+      host.setSubmitAnswer(() => undefined);
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      await waitForCall(host, "submit", 1);
+      vi.advanceTimersByTime(30_000);
+      await submit;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "unknown");
+
+      await remote.controller.clearConversation();
+      expect(remote.view.current().conversation).toBeUndefined();
+
+      // Recovery reads the submission's fixed target, not the slot the focus
+      // used to point at. A null query is the only reason to resend.
+      host.setSubmissionAnswer(() => ({ ok: true, value: null }));
+      const retry = remote.controller.retrySubmission("r1");
+      const query = await waitForCall(host, "submission", 1);
+      expect(query.args).toMatchObject({ conversationId: 1, requestId: "r1" });
+      const resent = await waitForCall(host, "submit", 2);
+      expect(resent.args).toMatchObject({ conversationId: 1, requestId: "r1" });
+      host.answer(resent, { ok: true, value: { submissionId: 7, entry: 42 } });
+      await retry;
+      await waitFor(remote, (view) => view.submissions?.[0]?.phase === "inFlight");
+    } finally {
+      remote.close();
+      vi.useRealTimers();
+    }
+  });
 });
 
 async function waitForCall(host: ReturnType<typeof createHost>, method: string, count: number): Promise<CallFrame> {

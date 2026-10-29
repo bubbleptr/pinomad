@@ -779,7 +779,7 @@ expect_text(case), "{name}");
 
 use pinomad_core::account::{
     account_pairing_link, account_probe_request, account_request, account_response, is_secure_server_origin,
-    match_account_hosts, normalize_server_origin, probe_verdict,
+    match_account_hosts, normalize_server_origin, probe_verdict, AccountHostRef,
 };
 
 #[test]
@@ -870,7 +870,24 @@ fn account_host_matches_replay() {
             .iter()
             .map(derive_vectors::input::stored_host_full)
             .collect();
-        let matches = match_account_hosts(&as_text(field(case, "origin")), &hosts, &stored);
+        let declined_json = Json::parse(&as_text(field(case, "declined"))).unwrap();
+        let declined: Vec<AccountHostRef> = declined_json
+            .as_array()
+            .expect("declined array")
+            .iter()
+            .map(|entry| AccountHostRef {
+                server_origin: as_text(entry.get("serverOrigin").expect("serverOrigin")),
+                host_id: as_text(entry.get("hostId").expect("hostId")),
+            })
+            .collect();
+        let stored_read = field(case, "storedRead").truthy();
+        let matches = match_account_hosts(
+            &as_text(field(case, "origin")),
+            &hosts,
+            &stored,
+            &declined,
+            stored_read,
+        );
         let got = Json::array(matches.iter().map(derive_vectors::out::account_match_json).collect());
         assert_eq!(norm(&got), expect_text(case), "{name}");
     }
