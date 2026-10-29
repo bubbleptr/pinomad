@@ -2265,9 +2265,12 @@ class RemoteClient {
     // host has not answered this connection — waiting hands us its new value,
     // never the stale one left over from before the reconnect.
     const stale = this.#conversationStreams(id).filter((stream) => this.#wanted.has(stream) && !this.#fresh.has(stream));
+    // Mark the missing streams wanted before taking their snapshot waiters:
+    // #snapshot refuses to wait for a stream nobody wants, so a clear that
+    // released it can never hang this acquire.
+    for (const stream of missing) this.#wanted.add(stream);
     const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
     for (const stream of missing) {
-      this.#wanted.add(stream);
       // Before the hello the minor is not known yet; the hello's #wanted loop
       // sends this stream with the right form once it has read the version.
       if (this.#helloReceived) this.#subscribe(stream);
