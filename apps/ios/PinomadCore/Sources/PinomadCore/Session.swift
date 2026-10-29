@@ -252,6 +252,13 @@ public final class PinomadSession: @unchecked Sendable {
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
 
+    /// The conversation the core shows right now — read once a switch
+    /// settles to tell whether it landed. A fresh snapshot, so it costs a
+    /// compute: call it off the main actor.
+    public var shownConversationNow: UInt64? {
+        client.snapshot()?.conversation?.id
+    }
+
     /// Request-class: the outcome and a host refusal both come back here,
     /// never as a notice. `target` is explicit so a conversation switch while
     /// the call is in flight cannot redirect it.

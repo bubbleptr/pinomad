@@ -164,6 +164,8 @@ final class AppModel {
     /// Bumped when the reader acts at the transcript's end (sends, starts
     /// typing) — the transcript jumps back to its end on each change.
     var transcriptPin = 0
+    /// Which conversation page's open settled without showing it.
+    var opening = ConversationOpening()
     /// A sheet is up and shows the toasts itself — the root stack steps
     /// aside so a notice isn't drawn twice.
     var sheetShowsToasts = false
@@ -339,10 +341,22 @@ final class AppModel {
     }
 
     /// Show and talk to a conversation — command-class, so a refused
-    /// switch surfaces as a snapshot notice, not a thrown error.
+    /// switch surfaces as a snapshot notice, not a thrown error. Its page
+    /// loads meanwhile; whether the switch landed is read once it settles,
+    /// so a refused one stops loading (`opening.failed`). A disconnect
+    /// doesn't settle it: the core keeps waiting for the snapshot across the
+    /// reconnect, so the page stays on its skeleton (the bar says
+    /// "Connecting…" after its grace period) and loads once the host is back.
     func openConversation(_ id: UInt64) {
+        let attempt = opening.begin(id)
         Task { [weak self] in
-            _ = try? await self?.session?.invoke(.switchConversation(id: id))
+            guard let session = self?.session else {
+                self?.opening.settle(id, attempt: attempt, shown: nil)
+                return
+            }
+            _ = try? await session.invoke(.switchConversation(id: id))
+            let shown = await Task.detached { session.shownConversationNow }.value
+            self?.opening.settle(id, attempt: attempt, shown: shown)
         }
     }
 

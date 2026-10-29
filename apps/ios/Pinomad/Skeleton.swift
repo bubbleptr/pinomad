@@ -117,7 +117,8 @@ struct GroupRowsSkeleton: View {
 
 /// A conversation while its first view is on its way: a sent message and
 /// the run's reply, in the transcript's spacing, settled at the bottom
-/// where the transcript opens.
+/// where the transcript opens. Hidden for its first moment, so a fast load
+/// goes straight to the content instead of flashing bones.
 struct ConversationSkeleton: View {
     var body: some View {
         Skeleton(label: "Loading conversation…") {
@@ -131,6 +132,7 @@ struct ConversationSkeleton: View {
             .padding(.vertical, 12)
             .frame(maxHeight: .infinity, alignment: .bottom)
         }
+        .revealAfterDelay()
     }
 
     private func bubble(width: CGFloat) -> some View {
@@ -147,5 +149,69 @@ struct ConversationSkeleton: View {
                 Bone(width: width, height: 12)
             }
         }
+    }
+}
+
+/// The composer's card while the conversation it would send to loads, in
+/// the card's place and height so the real one replaces it without a jump.
+struct ComposerSkeleton: View {
+    var body: some View {
+        Skeleton(label: "") {
+            Bone(height: 92, cornerRadius: 26)
+        }
+        .accessibilityHidden(true)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .revealAfterDelay()
+    }
+}
+
+/// The opened conversation could not be shown: the host refused or ended
+/// it. A disconnect alone doesn't land here — the open waits across the
+/// reconnect. `missing` means the host's list no longer has it, so retrying
+/// cannot help.
+struct ConversationUnavailable: View {
+    let missing: Bool
+    let connected: Bool
+    let retry: () -> Void
+
+    var body: some View {
+        if missing {
+            ContentUnavailableView {
+                Label("Conversation not found", image: .messageCircle)
+            } description: {
+                Text("It was archived or deleted on another device.")
+            }
+        } else {
+            ContentUnavailableView {
+                Label("Couldn't open this conversation", image: .triangleAlert)
+            } description: {
+                Text(connected ? "The host didn't send it." : "The connection dropped before it arrived.")
+            } actions: {
+                Button("Retry", action: retry)
+                    .buttonStyle(.tactile(.borderedProminent))
+                    .disabled(!connected)
+            }
+        }
+    }
+}
+
+extension View {
+    /// Hidden for the first moment, then faded in — a placeholder for a
+    /// load that is usually fast. Under Reduce Motion it appears at once.
+    func revealAfterDelay() -> some View { modifier(DelayedReveal()) }
+}
+
+private struct DelayedReveal: ViewModifier {
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .task {
+                guard (try? await Task.sleep(for: .milliseconds(150))) != nil else { return }
+                withAnimation(reduceMotion ? nil : Motion.reveal) { shown = true }
+            }
     }
 }
