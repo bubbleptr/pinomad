@@ -405,13 +405,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     return parsed.endpointSet;
   };
   const currentEndpointSet = (): EndpointSet => checkedEndpointSet(currentAdvertisement().endpoints);
-  const register = (connection: GatewayConnection, devicePublicKey?: string, joined?: DeviceEntry): void => {
-    // A server-vouched device announces itself to every client already online
-    // (ADR-0022 §6); broadcast before the newcomer joins `clients` — the
-    // notice would only tell it about itself.
-    if (joined?.source === "account") {
-      broadcast("info", `New device "${joined.name}" joined through your account`);
-    }
+  const register = (connection: GatewayConnection, devicePublicKey?: string): void => {
     const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, imageVariants, {
       devicePublicKey,
       rtcHello,
