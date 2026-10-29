@@ -91,7 +91,9 @@ private struct ComposerTextView: UIViewRepresentable {
     func updateUIView(_ view: ComposerUITextView, context: Context) {
         context.coordinator.parent = self
         applyMetrics(to: view)
-        view.isEditable = enabled
+        // Disabling the field the keyboard belongs to waits for the deferred
+        // resign below; flipping it here would drop the keyboard mid-update.
+        if enabled || !view.isFirstResponder { view.isEditable = enabled }
         view.accessibilityLabel = placeholder
 
         let length = (text as NSString).length
@@ -110,7 +112,16 @@ private struct ComposerTextView: UIViewRepresentable {
             if focused, !view.isFirstResponder { view.becomeFirstResponder() }
             if !focused, view.isFirstResponder { view.resignFirstResponder() }
         } else if view.isFirstResponder {
-            view.resignFirstResponder()
+            // Resigning inside SwiftUI's update applies the keyboard's
+            // safe-area change without the keyboard's animation: the card
+            // snaps to the bottom while the keyboard still slides over it,
+            // so on send the composer blinks out. After the update, the
+            // card rides down with the keyboard.
+            DispatchQueue.main.async { [weak view, coordinator = context.coordinator] in
+                guard let view, !coordinator.parent.enabled else { return }
+                view.resignFirstResponder()
+                view.isEditable = false
+            }
         }
     }
 
