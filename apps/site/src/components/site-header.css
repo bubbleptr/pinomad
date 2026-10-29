@@ -1,0 +1,203 @@
+/* The site header (site-header.tsx), shared by the landing page and the Fumadocs pages.
+   Each stylesheet maps its own colours onto the --header-* tokens; the rest is here, so
+   the bar has the same size, type and spacing whichever page it is on.
+
+   Tokens: --header-bg, --header-fg, --header-fg-muted, --header-border,
+   --header-border-strong. */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--header-border);
+  background: color-mix(in oklch, var(--header-bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  color: var(--header-fg);
+  font-family: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.site-header *,
+.site-header *::before,
+.site-header *::after {
+  box-sizing: border-box;
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 87.5rem;
+  height: 3.5rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+.site-header .brand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.625rem;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.site-header .brand img {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: 1rem;
+}
+
+/* Search, theme and the like (Fumadocs pages only) sit before the fixed actions, which
+   keep the same place on every page. */
+.header-end {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.header-actions,
+.site-menu-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.site-header :is(.header-nav, .site-menu-links, .header-actions, .site-menu-actions) a {
+  color: var(--header-fg-muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.site-header :is(.header-nav, .site-menu-links) a,
+.site-header .header-link {
+  padding: 0.5rem;
+}
+
+.site-header :is(.header-nav, .site-menu-links, .header-actions, .site-menu-actions) a:hover,
+.site-header a[aria-current="page"] {
+  color: var(--header-fg);
+}
+
+.site-header .header-icon {
+  display: inline-flex;
+}
+
+.site-header .header-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* The one bordered item in the bar: where a returning visitor goes next. */
+.site-header .app-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  margin-inline-start: 0.25rem;
+  padding: 0.35rem 0.95rem;
+  border: 1px solid var(--header-border-strong);
+  border-radius: 999px;
+  color: var(--header-fg);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.site-header .app-link:hover {
+  border-color: var(--header-fg-muted);
+}
+
+/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
+html:not([data-app-user]) .when-signed-in,
+html[data-app-user] .when-signed-out {
+  display: none;
+}
+
+.menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-inline-end: -0.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  color: var(--header-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.menu-button:hover {
+  color: var(--header-fg);
+}
+
+.menu-button svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* The phone menu: a sheet under the bar with the section links, then the actions. */
+.site-menu {
+  position: fixed;
+  inset: 3.5rem 0 auto;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 1rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--header-border);
+  background: var(--header-bg);
+  color: var(--header-fg);
+}
+
+.site-menu:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.site-menu-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.site-menu-links a {
+  font-size: 1rem;
+}
+
+.site-menu-actions {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--header-border);
+}
+
+.site-menu-actions .app-link {
+  margin-inline-start: auto;
+}
+
+@media (max-width: 47.99rem) {
+  .header-nav,
+  .header-actions {
+    display: none;
+  }
+
+  .menu-button {
+    display: inline-flex;
+  }
+}

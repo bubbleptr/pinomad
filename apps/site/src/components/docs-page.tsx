@@ -1,13 +1,13 @@
 import { notFound } from "@tanstack/react-router";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import defaultMdxComponents from "fumadocs-ui/mdx";
-import { DocsLayout } from "fumadocs-ui/layouts/docs";
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/layouts/docs/page";
+import { DocsLayout } from "fumadocs-ui/layouts/notebook";
+import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/layouts/notebook/page";
 import { Suspense, use } from "react";
 import { loadDocsPage } from "@/lib/content-data.ts";
 import type { Lang } from "@/lib/i18n.ts";
 import { docs, source } from "@/lib/source.ts";
-import { baseOptions, Shell } from "./shell.tsx";
+import { docsLayout, Shell } from "./shell.tsx";
 
 type DocsData = Awaited<ReturnType<typeof loadDocsPage>>;
 
@@ -42,7 +42,7 @@ export function DocsRoutePage({ lang, data }: { lang: Lang; data: DocsData }) {
   const { path, pageTree } = useFumadocsLoader(data);
   return (
     <Shell lang={lang}>
-      <DocsLayout {...baseOptions(lang)} tree={pageTree}>
+      <DocsLayout {...docsLayout} tree={pageTree}>
         <Suspense>
           <Content path={path} />
         </Suspense>

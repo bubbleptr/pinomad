@@ -1,29 +1,6 @@
 /* Near-black and white, no accent colour: the product does the talking. Everything is in this
-   file — no style props and no <style> inside the SVGs — so the page runs under style-src 'self'. */
-
-@font-face {
-  font-family: Montserrat;
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-normal.woff2")
-    format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-
-@font-face {
-  font-family: Montserrat;
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2")
-    format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
+   file and the ones landing.css imports beside it — no style props and no <style> inside the
+   SVGs — so the page runs under style-src 'self'. */
 
 :root {
   color-scheme: dark;
@@ -174,103 +151,17 @@ code {
 }
 
 /* —— Header ——
-   A plain sticky bar, laid out like the Fumadocs bar on blog and changelog: same
-   width, height, and brand size, links beside the brand, language, GitHub and the
-   app link at the far end, so following a header link leaves everything in place. */
+   The shared bar (components/site-header.css) in the page's colours. */
 .site-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--bg) 82%, transparent);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
-  backdrop-filter: blur(12px) saturate(160%);
-  color: var(--fg);
-}
-
-.header-bar {
-  display: flex;
-  align-items: center;
-  max-width: 87.5rem;
-  min-height: 3.5rem;
-  margin-inline: auto;
-  padding-inline: 1rem;
+  --header-bg: var(--bg);
+  --header-fg: var(--fg);
+  --header-fg-muted: var(--fg-2);
+  --header-border: var(--border);
+  --header-border-strong: var(--border-strong);
 }
 
 section[id] {
   scroll-margin-top: 5rem;
-}
-
-.brand {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 0.625rem;
-  font-weight: 600;
-  line-height: 1.5;
-  text-decoration: none;
-}
-
-.brand img {
-  width: 1.375rem;
-  height: 1.375rem;
-}
-
-.header-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-inline-start: 1.5rem;
-  font-size: 0.875rem;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-inline-start: auto;
-  font-size: 0.875rem;
-}
-
-:is(.header-nav, .header-actions) a {
-  color: var(--fg-2);
-  line-height: 1.25rem;
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-:is(.header-nav, .header-actions) a:not(.app-link) {
-  padding: 0.5rem;
-}
-
-.icon-link {
-  display: inline-flex;
-}
-
-.icon-link .icon {
-  width: 1.125rem;
-  height: 1.125rem;
-}
-
-/* The one bordered item in the bar: where a returning visitor goes next. */
-.header-actions .app-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.25rem;
-  margin-inline-start: 0.25rem;
-  padding: 0.35rem 0.95rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  color: var(--fg);
-  font-weight: 500;
-}
-
-.header-actions .app-link:hover {
-  border-color: var(--fg-3);
-}
-
-:is(.header-nav, .header-actions) a:hover {
-  color: var(--fg);
 }
 
 /* —— Type —— */
@@ -1373,17 +1264,4 @@ html[lang="zh-CN"] .eyebrow {
     animation: none !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* On phones the page links go; brand on the left, language, GitHub and the app on the right. */
-@media (max-width: 40rem) {
-  .header-nav {
-    display: none;
-  }
-}
-
-/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
-html:not([data-app-user]) .when-signed-in,
-html[data-app-user] .when-signed-out {
-  display: none;
 }

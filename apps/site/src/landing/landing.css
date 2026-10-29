@@ -10,6 +10,8 @@
 @layer theme, landing, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
+@import "../styles/montserrat.css" layer(landing);
+@import "../components/site-header.css" layer(landing);
 @import "./page.css" layer(landing);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 

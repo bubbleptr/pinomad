@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { loadBlogPost, type loadBlogIndex } from "@/lib/content-data.ts";
 import { formatDate, type Lang } from "@/lib/i18n.ts";
 import { blog, blogPosts } from "@/lib/source.ts";
-import { baseOptions, Shell } from "./shell.tsx";
+import { homeLayout, Shell } from "./shell.tsx";
 
 const copy = {
   en: { title: "Blog", lead: "Releases, design notes, and what we're working on." },
@@ -17,7 +17,7 @@ type BlogIndex = Awaited<ReturnType<typeof loadBlogIndex>>;
 export function BlogIndexPage({ lang, posts }: { lang: Lang; posts: BlogIndex }) {
   return (
     <Shell lang={lang}>
-      <HomeLayout {...baseOptions(lang)}>
+      <HomeLayout {...homeLayout}>
         <div className="mx-auto w-full max-w-3xl px-4 py-12">
           <h1 className="text-3xl font-semibold">{copy[lang].title}</h1>
           <p className="mt-2 text-fd-muted-foreground">{copy[lang].lead}</p>
@@ -54,7 +54,7 @@ export function BlogPostPage({ lang, path }: { lang: Lang; path: string }) {
   const MDX = post.body;
   return (
     <Shell lang={lang}>
-      <HomeLayout {...baseOptions(lang)}>
+      <HomeLayout {...homeLayout}>
         <article className="mx-auto w-full max-w-3xl px-4 py-12">
           <time className="text-sm text-fd-muted-foreground" dateTime={post.date}>
             {formatDate(lang, post.date)}

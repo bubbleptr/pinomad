@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
+@import "./montserrat.css";
+@import "../components/site-header.css";
 
 @source "../components";
 
@@ -8,8 +10,28 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* The app link reads "Sign in" until public/app-hint.js marks a visitor who uses the web app. */
-html:not([data-app-user]) .when-signed-in,
-html[data-app-user] .when-signed-out {
-  display: none;
+/* The shared header (components/site-header.css) in the Fumadocs colours, so it
+   follows the theme switch. */
+.site-header {
+  --header-bg: var(--color-fd-background);
+  --header-fg: var(--color-fd-foreground);
+  --header-fg-muted: var(--color-fd-muted-foreground);
+  --header-border: var(--color-fd-border);
+  --header-border-strong: color-mix(in oklch, var(--color-fd-foreground) 22%, transparent);
+}
+
+/* Docs: the header spans the full width above the sidebar, the page and the table of
+   contents, and the layout is as wide as the header's bar so the brand lines up with
+   the sidebar. The sidebar and the table of contents stick below the header. */
+#nd-notebook-layout {
+  --fd-layout-width: 87.5rem;
+  --fd-header-height: 3.5rem;
+}
+
+/* Spanning the outer columns, whose minimum is min-content, the header's own width
+   would widen them and squeeze the page; contain keeps it out of that sizing. */
+#nd-notebook-layout > .site-header {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  contain: inline-size;
 }
