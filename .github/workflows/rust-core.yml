@@ -2,7 +2,8 @@ name: Rust core
 
 # iOS gate for the Rust client core (ADR-0024 §12): builds the xcframework,
 # runs the Swift tests, and builds the app. The Linux checks (typecheck, test,
-# build) live in ci.yml and run on every non-doc PR.
+# build) live in ci.yml. packages/protocol and packages/client stay in the list
+# because the core mirrors their client-side behavior (AGENTS.md).
 on:
   pull_request:
     paths:
@@ -13,10 +14,7 @@ on:
       - "packages/protocol/**"
       - "packages/client/**"
       - "packages/agent-chat-kit/**"
-      - "apps/host/**"
       - "apps/ios/**"
-      - "package.json"
-      - "bun.lock"
       - ".github/workflows/rust-core.yml"
 
 permissions:
