@@ -1,4 +1,4 @@
-# Server image for container platforms (Zeabur etc.): the published npm package,
+# Server image for container platforms: the published npm package,
 # pinned, so the server hosts the same web client build as that release.
 # Bump PINOMAD_VERSION together with the hosts (apps/site/content/docs/remote-access.zh.md "升级").
 FROM node:26-slim
