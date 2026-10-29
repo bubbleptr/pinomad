@@ -59,7 +59,7 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 function PanelContent({
   view,
   remote,
-  conversation,
+  shownId,
   tab,
   onTabChange,
   openInPanel,
@@ -67,18 +67,23 @@ function PanelContent({
 }: {
   view: DurableView;
   remote: RemoteDurable;
-  /** The draft-gated conversation — while drafting, the family is empty. */
-  conversation: DurableView["conversation"];
+  /** The main column's conversation, loaded or not — while drafting, the family is empty. */
+  shownId: ConversationId | undefined;
   tab: PanelTab;
   onTabChange: (tab: PanelTab) => void;
   openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
   const now = useNow(60_000);
-  const side = view.side;
-  const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
   // The family is whatever the main column shows — the panel is its sibling.
-  const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
+  const root = shownId === undefined ? undefined : rootOf(view.organized, shownId);
+  // Opening another family closes the side only once that family has loaded
+  // (the close queues behind the switch); until then its detail is not ours.
+  const side =
+    view.side !== undefined && root !== undefined && rootOf(view.organized, view.side.id)?.summary.id === root.summary.id
+      ? view.side
+      : undefined;
+  const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
   const threads = root === undefined ? [] : threadsOf(root);
   const groups = root === undefined ? [] : taskGroupsOf(root);
   const taskCount = groups.reduce((total, group) => total + group.tasks.length, 0);
@@ -516,7 +521,7 @@ function TaskDetail({
 export function SidePanel({
   view,
   remote,
-  conversation,
+  shownId,
   narrow,
   open,
   onOpenChange,
@@ -527,8 +532,8 @@ export function SidePanel({
 }: {
   view: DurableView;
   remote: RemoteDurable;
-  /** The draft-gated main conversation; the family comes from it, not view.conversation. */
-  conversation: DurableView["conversation"];
+  /** The main column's conversation, loaded or not; the family comes from it, not view.conversation. */
+  shownId: ConversationId | undefined;
   narrow: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -553,7 +558,7 @@ export function SidePanel({
               <PanelContent
                 view={view}
                 remote={remote}
-                conversation={conversation}
+                shownId={shownId}
                 tab={tab}
                 onTabChange={onTabChange}
                 openInPanel={openInPanel}
@@ -573,7 +578,7 @@ export function SidePanel({
         <PanelContent
           view={view}
           remote={remote}
-          conversation={conversation}
+          shownId={shownId}
           tab={tab}
           onTabChange={onTabChange}
           openInPanel={openInPanel}

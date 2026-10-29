@@ -16,13 +16,41 @@ import {
   withHosts,
 } from "../../test/story-fixtures.tsx";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
+import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ConversationComposer } from "../composer/conversation-composer.tsx";
 import { DraftHome } from "../draft-home/draft-home.tsx";
 import { AppFrame } from "./app-frame.tsx";
 
-/** The main column App puts inside the frame: the transcript over its composer, or the draft screen. */
-function MainColumn({ view, remote, narrow }: { view: DurableView; remote: RemoteDurable; narrow: boolean }) {
+/**
+ * The main column App puts inside the frame: the transcript over its
+ * composer, the skeleton while an opened conversation loads, or the draft screen.
+ */
+function MainColumn({
+  view,
+  remote,
+  narrow,
+  loading,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  narrow: boolean;
+  loading: boolean;
+}) {
   const conversation = view.conversation;
+  if (loading) {
+    return (
+      <ChatLayout
+        style={{ flex: 1, minHeight: 0 }}
+        composer={
+          <div className="mx-auto w-full max-w-[44rem]">
+            <ComposerSkeleton />
+          </div>
+        }
+      >
+        <ConversationSkeleton />
+      </ChatLayout>
+    );
+  }
   if (conversation === undefined) {
     return (
       <DraftHome view={view} remote={remote} draft={{ kind: "project", path: PINOMAD.path }} onDraft={fn()} onCreated={fn()} connected />
@@ -77,6 +105,7 @@ const meta = {
     draftingChat: false,
     draftLabel: "New conversation",
     conversation: view.conversation,
+    shownId: PARSER_ID,
     summary: summaryOf(PARSER_ID),
     parentSummary: undefined,
     onDraft: fn(),
@@ -89,11 +118,17 @@ const meta = {
     onPanelTab: fn(),
     openInPanel: fn(),
     openInMain: fn(),
+    onOpen: fn(),
     children: null,
   },
   render: (args) => (
     <AppFrame {...args}>
-      <MainColumn view={args.view} remote={args.remote} narrow={args.narrow} />
+      <MainColumn
+        view={args.view}
+        remote={args.remote}
+        narrow={args.narrow}
+        loading={args.conversation === undefined && args.shownId !== undefined}
+      />
     </AppFrame>
   ),
 } satisfies Meta<typeof AppFrame>;
@@ -107,8 +142,11 @@ export const WithOverviewAndPanel: Story = { args: { overviewOpen: true, panelOp
 
 const drafting = fakeView({ conversation: undefined, home: undefined, checkout: undefined, docs: [] });
 export const Drafting: Story = {
-  args: { view: drafting, remote: fakeRemote(drafting), drafting: true, conversation: undefined, summary: undefined },
+  args: { view: drafting, remote: fakeRemote(drafting), drafting: true, conversation: undefined, shownId: undefined, summary: undefined },
 };
+
+/** A conversation opened from the sidebar, before its view lands: title and selection move at once. */
+export const Opening: Story = { args: { conversation: undefined } };
 
 /** Every notice also lands as a toast. */
 const noticed = fakeView({ notices: [{ id: 1, level: "error", message: "Model anthropic/claude-opus-5-5 is overloaded; retrying in 8s" }] });

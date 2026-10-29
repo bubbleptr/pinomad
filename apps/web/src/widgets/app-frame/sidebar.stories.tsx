@@ -21,7 +21,7 @@ const meta = {
   component: SidebarContent,
   decorators: [withHosts(), withAccount(signedIn())],
   parameters: { canvasWidth: "full" },
-  args: { view, remote: fakeRemote(view), draftingChat: false, shownId: PARSER_ID, onDraft: fn() },
+  args: { view, remote: fakeRemote(view), draftingChat: false, shownId: PARSER_ID, onDraft: fn(), onOpen: fn() },
   render: (args) => (
     <div className="h-[calc(100vh-3rem)] w-[260px]">
       <SideNav

@@ -19,11 +19,13 @@ import { candidatePlan, preferredLegacyUrl, type RemoteCandidate } from "@pinoma
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
+import { useConversationOpening } from "./entities/conversation/use-conversation-opening.ts";
 import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
+import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
 import type { PanelTab } from "./widgets/side-panel/side-panel.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -642,14 +644,29 @@ function Workbench({
   // The shown conversation's identity decides drafting; creating or selecting one
   // leaves it, archiving the shown one or "New chat" enters it.
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
-  const openFromNotification = (id: ConversationId): void => {
-    // switchConversation is a no-op for the already-selected id, and "New chat"
-    // only flips local drafting — leave the draft explicitly in that case.
-    if (id === view.conversation?.conversation.id) setDrafting(false);
-    else void remote.controller.switchConversation(id);
-  };
-  useRunNotifications(view, openFromNotification);
-  const conversation = drafting ? undefined : view.conversation;
+  // Opening a conversation moves the main column to it at once; the remote
+  // only shows it once its snapshot lands, so until then the column holds a
+  // skeleton (or, if the switch failed, says so) instead of the old one.
+  const { opening, open, cancel: cancelOpening } = useConversationOpening(remote);
+  const openConversation = useCallback(
+    (id: ConversationId): void => {
+      // "New chat" only flips local drafting — opening the conversation that
+      // is still selected underneath must leave the draft explicitly.
+      setDrafting(false);
+      open(id);
+    },
+    [open],
+  );
+  useRunNotifications(view, openConversation);
+  const loading = !drafting && opening !== undefined && view.conversation?.conversation.id !== opening.id;
+  const failed = loading && opening.failed;
+  const conversation = drafting || loading ? undefined : view.conversation;
+  // A switch the connection dropped retries once the host is back; one the
+  // host refused while connected waits for the reader's "Try again".
+  useEffect(() => {
+    if (failed && view.connection === "connected") open(opening.id);
+  }, [view.connection]);
+  const shownId = drafting ? undefined : loading ? opening.id : view.conversation?.conversation.id;
   const busy = conversation !== undefined && isBusy(conversation);
   // Below this the chat column would be squeezed; the panel opens as a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
@@ -692,16 +709,17 @@ function Workbench({
   // the family root stays the same, so the close rule below must not fire for it.
   const openInMain = useCallback(
     (id: ConversationId) => {
-      void remote.controller.switchConversation(id);
+      openConversation(id);
       void remote.controller.showSide(undefined);
       // On a phone the panel is a fullscreen dialog: leaving it up would hide
       // the conversation it just promoted.
       if (narrow) setPanelOpen(false);
     },
-    [remote, narrow],
+    [remote, narrow, openConversation],
   );
-  const familyRootId =
-    conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id)?.summary.id;
+  // Keyed on the shown id, not the loaded view: a different family's side
+  // closes at the click, and loading inside one family keeps it.
+  const familyRootId = shownId === undefined ? undefined : rootOf(view.organized, shownId)?.summary.id;
   // A different family root — another sidebar row, a new conversation, the
   // draft — ends whatever the side was showing.
   useEffect(() => {
@@ -710,10 +728,7 @@ function Workbench({
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
   // Any conversation with a parent — fork or subagent — offers a breadcrumb
   // back to the conversation it belongs to.
-  const shownSummary =
-    conversation === undefined
-      ? undefined
-      : findConversation(view.organized, conversation.conversation.id)?.summary;
+  const shownSummary = shownId === undefined ? undefined : findConversation(view.organized, shownId)?.summary;
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
@@ -740,6 +755,7 @@ function Workbench({
     [view.organized],
   );
   const startDraft = (home: Home): void => {
+    cancelOpening();
     setDraft(home);
     setDrafting(true);
   };
@@ -773,6 +789,7 @@ function Workbench({
         draftingChat={drafting && draft.kind === "chat"}
         draftLabel={draftLabel}
         conversation={conversation}
+        shownId={shownId}
         summary={shownSummary}
         parentSummary={parentSummary}
         banner={
@@ -791,8 +808,9 @@ function Workbench({
         onPanelTab={setPanelTab}
         openInPanel={openInPanel}
         openInMain={openInMain}
+        onOpen={openConversation}
       >
-        {conversation === undefined ? (
+        {shownId === undefined ? (
           <DraftHome
             view={view}
             remote={remote}
@@ -805,7 +823,9 @@ function Workbench({
           />
         ) : (
           <ChatLayout
-            key={conversation.conversation.id}
+            // Keyed by the shown id, so the skeleton and the content that
+            // replaces it share one layout and dock.
+            key={shownId}
             // The room the overview card needs goes inside the scroll area,
             // so the scrollbar stays on the column's edge.
             className={`motion-safe:transition-[padding] motion-safe:duration-200 motion-safe:ease-out${
@@ -816,76 +836,94 @@ function Workbench({
               // Same 44rem centered column as the message list, so the
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
-                <VStack gap={1}>
-                  <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
-                  <ConversationComposer
-                    view={view}
-                    remote={remote}
-                    conversation={conversation}
-                    busy={busy}
-                    narrow={narrow}
-                    takeBack={takeBackForShown}
-                    externalEditLocked={takingBackHere}
-                    onEditorStateChange={setEditorState}
-                    onTakeBack={() => {
-                      setTakeBack(undefined);
-                      setTakingBack(undefined);
-                    }}
-                  />
-                </VStack>
+                {conversation === undefined ? (
+                  failed ? null : <ComposerSkeleton />
+                ) : (
+                  <VStack gap={1}>
+                    <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
+                    <ConversationComposer
+                      view={view}
+                      remote={remote}
+                      conversation={conversation}
+                      busy={busy}
+                      narrow={narrow}
+                      takeBack={takeBackForShown}
+                      externalEditLocked={takingBackHere}
+                      onEditorStateChange={setEditorState}
+                      onTakeBack={() => {
+                        setTakeBack(undefined);
+                        setTakingBack(undefined);
+                      }}
+                    />
+                  </VStack>
+                )}
               </div>
             }
-            emptyState={<EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />}
+            emptyState={
+              failed ? (
+                <ConversationUnavailable
+                  missing={shownSummary === undefined}
+                  connected={view.connection === "connected"}
+                  onRetry={() => open(opening.id)}
+                />
+              ) : (
+                <EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />
+              )
+            }
           >
-            <ConversationTranscript
-              conversation={conversation}
-              docs={view.docs}
-              submissions={view.submissions}
-              toolPresentations={view.toolPresentations}
-              connected={view.connection === "connected"}
-              canFork={canFork}
-              openInPanel={openInPanel}
-              onFork={setForkTarget}
-              forksAt={forksAtForShown}
-              summaryOf={summaryOf}
-              submissionEditDisabled={submissionEditDisabled}
-              submissionEditTooltip={submissionEditTooltip}
-              // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
-              onRetry={
-                shownSummary?.kind === "subagent"
-                  ? undefined
-                  : async ({ text, images, skills, attachments, requestId }) => {
-                      requestNotificationPermission();
-                      // Refs go back as refs (outgoingImage), never downloaded first.
-                      await remote.controller.submit(text, "followUp", {
-                        requestId,
-                        images: images.map(outgoingImage),
-                        ...(images.some((image) => !("data" in image)) ? { imageViews: images } : {}),
-                        skills,
-                        ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
-                        ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
-                      });
-                    }
-              }
-              onRetrySubmission={(requestId) => {
-                void remote.controller.retrySubmission(requestId).catch(() => {});
-              }}
-              onEditSubmission={(requestId) => {
-                const origin = shownConversationId;
-                if (submissionEditDisabled || origin === undefined) return;
-                setTakingBack(origin);
-                void remote.controller
-                  .takeBackSubmission(requestId)
-                  .then((draft) => {
-                    if (draft !== undefined) setTakeBack({ conversationId: origin, draft });
-                    else setTakingBack(undefined);
-                  })
-                  .catch((error: unknown) => {
-                    setTakingBack(undefined);
-                    toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
-                  });
-              }}
-            />
+            {conversation === undefined ? (
+              failed ? null : <ConversationSkeleton />
+            ) : (
+              <ConversationTranscript
+                conversation={conversation}
+                docs={view.docs}
+                submissions={view.submissions}
+                toolPresentations={view.toolPresentations}
+                connected={view.connection === "connected"}
+                canFork={canFork}
+                openInPanel={openInPanel}
+                onFork={setForkTarget}
+                forksAt={forksAtForShown}
+                summaryOf={summaryOf}
+                submissionEditDisabled={submissionEditDisabled}
+                submissionEditTooltip={submissionEditTooltip}
+                // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
+                onRetry={
+                  shownSummary?.kind === "subagent"
+                    ? undefined
+                    : async ({ text, images, skills, attachments, requestId }) => {
+                        requestNotificationPermission();
+                        // Refs go back as refs (outgoingImage), never downloaded first.
+                        await remote.controller.submit(text, "followUp", {
+                          requestId,
+                          images: images.map(outgoingImage),
+                          ...(images.some((image) => !("data" in image)) ? { imageViews: images } : {}),
+                          skills,
+                          ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
+                          ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
+                        });
+                      }
+                }
+                onRetrySubmission={(requestId) => {
+                  void remote.controller.retrySubmission(requestId).catch(() => {});
+                }}
+                onEditSubmission={(requestId) => {
+                  const origin = shownConversationId;
+                  if (submissionEditDisabled || origin === undefined) return;
+                  setTakingBack(origin);
+                  void remote.controller
+                    .takeBackSubmission(requestId)
+                    .then((draft) => {
+                      if (draft !== undefined) setTakeBack({ conversationId: origin, draft });
+                      else setTakingBack(undefined);
+                    })
+                    .catch((error: unknown) => {
+                      setTakingBack(undefined);
+                      toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+                    });
+                }}
+              />
+            )}
           </ChatLayout>
         )}
       </AppFrame>
