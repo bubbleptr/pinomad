@@ -211,7 +211,7 @@ export function AppFrame({
               <SidePanel
                 view={view}
                 remote={remote}
-                conversation={conversation}
+                shownId={shownId}
                 narrow={false}
                 open={panelOpen}
                 onOpenChange={onPanelOpen}
@@ -247,7 +247,7 @@ export function AppFrame({
         <SidePanel
           view={view}
           remote={remote}
-          conversation={conversation}
+          shownId={shownId}
           narrow
           open={panelOpen}
           onOpenChange={onPanelOpen}
