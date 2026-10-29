@@ -3,7 +3,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
-import { FOCUS_KEY, LEGACY_ACTIVE_HOST_KEY, readFocus, writeFocus } from "./focus.ts";
+import { FOCUS_KEY, LEGACY_ACTIVE_HOST_KEY, focusPairedHost, readFocus, writeFocus } from "./focus.ts";
 
 const host = (): StoredHost => ({
   url: "wss://example/secure",
@@ -38,6 +38,28 @@ describe("focus storage", () => {
     localStorage.setItem(FOCUS_KEY, "not json");
     expect(readFocus(localStorage, [a])).toEqual({ hostKey: a.hostKey });
     expect(readFocus(localStorage, [])).toBeUndefined();
+  });
+
+  it("keeps the outgoing host's conversation when focusing a newly paired host", () => {
+    const last = new Map<string, ConversationId>([["host-a", 1 as ConversationId]]);
+    expect(focusPairedHost(last, { hostKey: "host-a", conversationId: 1 as ConversationId }, "host-b")).toEqual({
+      hostKey: "host-b",
+    });
+    expect(last.get("host-a")).toBe(1);
+  });
+
+  it("keeps a host's conversation when the same host is paired again", () => {
+    const last = new Map<string, ConversationId>([["host-a", 1 as ConversationId]]);
+    expect(focusPairedHost(last, { hostKey: "host-a", conversationId: 1 as ConversationId }, "host-a")).toEqual({
+      hostKey: "host-a",
+    });
+    expect(last.get("host-a")).toBe(1);
+  });
+
+  it("captures the live conversation before a new pairing moves focus", () => {
+    const last = new Map<string, ConversationId>();
+    focusPairedHost(last, { hostKey: "host-a", conversationId: 2 as ConversationId }, "host-b");
+    expect(last.get("host-a")).toBe(2);
   });
 
   it("drops an invalid conversation id instead of restoring half a ref", () => {

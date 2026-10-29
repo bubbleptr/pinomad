@@ -46,7 +46,13 @@ import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/prot
 import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { clientDeviceName, resolveAddress, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
-import { readFocus, writeFocus, type ConversationRef, type HostFocus } from "./entities/host/focus.ts";
+import {
+  focusPairedHost,
+  readFocus,
+  writeFocus,
+  type ConversationRef,
+  type HostFocus,
+} from "./entities/host/focus.ts";
 import { browserDeclined, cancelAccountRegistration } from "./entities/account/declined.ts";
 import {
   createHostRuntimeRegistry,
@@ -349,10 +355,15 @@ export function App() {
   if (loaded === undefined) return <Centered>{null}</Centered>;
   const { address, focus, hosts } = loaded;
   const pairedHost = (host: StoredHost): void => {
-    lastByHost.current.delete(host.hostKey);
     history.replaceState(null, "", window.location.pathname + window.location.search);
     setLoaded((prev) =>
-      prev === undefined ? prev : { ...prev, address: undefined, focus: { hostKey: host.hostKey } },
+      prev === undefined
+        ? prev
+        : {
+            ...prev,
+            address: undefined,
+            focus: focusPairedHost(lastByHost.current, prev.focus, host.hostKey),
+          },
     );
   };
   return (

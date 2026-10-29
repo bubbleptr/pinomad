@@ -63,6 +63,22 @@ export function readFocus(storage: FocusStorage, hosts: readonly StoredHost[]): 
   return { hostKey: hosts[0]!.hostKey };
 }
 
+/**
+ * Finish a manual pairing by focusing the new host. Snapshot the outgoing
+ * host's live conversation first so switching back restores it; re-pairing
+ * the same host keeps its remembered conversation rather than clearing it.
+ */
+export function focusPairedHost(
+  lastByHost: Map<string, ConversationId>,
+  current: HostFocus | null | undefined,
+  nextHostKey: string,
+): HostFocus {
+  if (current?.conversationId !== undefined) lastByHost.set(current.hostKey, current.conversationId);
+  // A different host starts on its draft even if an old entry survived.
+  if (current?.hostKey !== nextHostKey) lastByHost.delete(nextHostKey);
+  return { hostKey: nextHostKey };
+}
+
 export function writeFocus(storage: FocusStorage, focus: HostFocus | undefined): void {
   if (focus === undefined) {
     storage.removeItem(FOCUS_KEY);
