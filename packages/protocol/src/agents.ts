@@ -68,3 +68,5 @@ export function agentRoleProblem(role: {
   }
   return undefined;
 }
+
+// CI probe
