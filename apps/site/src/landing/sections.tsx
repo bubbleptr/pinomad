@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { buttonVariants } from "@/components/ui/button.tsx";
@@ -10,7 +10,7 @@ import { shot } from "./shots.ts";
 // The landing page's sections. The interactive parts (the durable diagram, the
 // get-started copy button) live in their own files.
 
-export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: string; lead?: string }) {
+export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: ReactNode; lead?: string }) {
   return (
     <>
       <p className="eyebrow">{eyebrow}</p>

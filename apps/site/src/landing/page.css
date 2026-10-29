@@ -369,13 +369,10 @@ html[lang="zh-CN"] .eyebrow {
   text-align: center;
 }
 
-.hero h1 {
-  max-width: 16ch;
-  margin-inline: auto;
-}
-
-html[lang="zh-CN"] .hero h1 {
-  max-width: 13em;
+/* Two lines, one per selling point; a line wraps only when the screen is too
+   narrow to hold it. */
+.hero h1 .line {
+  display: block;
 }
 
 .hero .lead {
@@ -1057,7 +1054,7 @@ html[lang="zh-CN"] .hero h1 {
 
 @media (min-width: 56rem) {
   .roadmap {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .plan-lead {

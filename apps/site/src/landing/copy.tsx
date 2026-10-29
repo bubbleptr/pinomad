@@ -61,7 +61,7 @@ export interface LandingCopy {
   };
   connection: {
     eyebrow: string;
-    title: string;
+    title: ReactNode;
     lead: string;
     chips: { name: string; text: string }[];
     more: Link;
@@ -79,6 +79,7 @@ export interface LandingCopy {
     title: string;
     lead: string;
     notes: ReactNode[];
+    more: Link;
     terminal: string;
     copy: string;
     copied: string;
@@ -108,7 +109,11 @@ export const copy: Record<Lang, LandingCopy> = {
     home: "PiNomad home",
     primaryNav: "Primary",
     hero: {
-      title: "The open-source coding agent that goes where you go.",
+      title: (
+        <>
+          <span className="line">The durable coding agent,</span> <span className="line">reachable from anywhere.</span>
+        </>
+      ),
       lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
@@ -178,8 +183,8 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     connection: {
       eyebrow: "Connection",
-      title: "Reach your host from anywhere, privately",
-      lead: "Pair a device once with a one-time QR code. Everything after that is end-to-end encrypted with Noise: it goes peer-to-peer when the network allows, and otherwise through a relay that only ever sees ciphertext. Revoke any device from the host.",
+      title: "Reach your agent from anywhere, end-to-end encrypted",
+      lead: "Scan a one-time QR code to pair a device and establish a Noise end-to-end encrypted channel. Devices connect directly over WebRTC P2P (LAN, tailnet, or public internet) and fall back to a ciphertext-only relay when NAT gets in the way. Revoke any device at any time.",
       chips: [
         { name: "P2P", text: " over your LAN, tailnet, or the public internet" },
         { name: "Relay", text: " that only sees ciphertext" },
@@ -199,7 +204,7 @@ export const copy: Record<Lang, LandingCopy> = {
       items: [
         {
           title: "One host, many execution environments",
-          body: "Keep the host on your main machine and point a project at a Windows, macOS, Linux, or Android machine. The model thinks on the host; the tools run on the other machine over SSH, through pi-env.",
+          body: "Keep the host on your main machine and point a project at a Windows, macOS, Linux, or Android machine over SSH. The model plans on the host; shell and file tools run on the other machine.",
           link: { text: "#363", href: issue(363) },
         },
         {
@@ -209,13 +214,13 @@ export const copy: Record<Lang, LandingCopy> = {
         },
         {
           title: "An open plugin protocol",
-          body: "PiNomad's own features already use the extension protocol. Once it settles, it opens up, and anyone can write plugins that add tools and new ways to present results.",
-          link: { text: "ADR-0004", href: adr4 },
+          body: "Write plugins that add custom tools and structured result cards, rendered the same way in the web, Mac, and iPhone clients.",
+          link: { text: "Design decision", href: adr4 },
         },
       ],
       diagram: {
         label:
-          "Planned: the host keeps running the model and reaches Windows, macOS, Linux, and Android machines over SSH through pi-env; the tools run on those machines.",
+          "Planned: the host keeps running the model and reaches Windows, macOS, Linux, and Android machines over SSH; the tools run on those machines.",
         host: "Host",
         machines: ["Windows", "macOS", "Linux", "Android"],
       },
@@ -225,14 +230,18 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "Install, start the host, open a client",
       lead: "Free and open source under Apache-2.0. The host needs Node 25+ on macOS or Linux.",
       notes: [
-        "Then sign in to a model provider under Settings → Providers: a subscription you already pay for, an API key, or your own compatible endpoint.",
-        "It's an early version, and things still change between releases.",
+        <>
+          Sign in with your Claude, ChatGPT, or Copilot subscription, an API key, or a local Ollama or vLLM endpoint under
+          Settings → Providers. Ready to keep it running? <code>pinomad service install</code> registers the host as a
+          background LaunchAgent on macOS or a systemd service on Linux.
+        </>,
       ],
+      more: { text: "Full setup guide and service options", href: "/docs/" },
       terminal: "Terminal",
       copy: "Copy",
       copied: "Copied",
       copyFailed: "Copy failed",
-      hostComment: "# starts the host on this machine",
+      hostComment: "# starts the host on your machine",
       linkComment: "# in another terminal: prints a web client link",
       clientsTitle: "Clients",
       clients: [
@@ -276,8 +285,11 @@ export const copy: Record<Lang, LandingCopy> = {
     hero: {
       title: (
         <>
-          <span className="nowrap">跑在你机器上、</span>
-          <span className="nowrap">在哪都能接手的</span> <span className="nowrap">开源 coding agent</span>
+          <span className="line">
+            <span className="nowrap">持久可靠的</span>
+            <span className="nowrap">编码智能体，</span>
+          </span>
+          <span className="line">随时随地都能连上</span>
         </>
       ),
       lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
@@ -345,8 +357,14 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     connection: {
       eyebrow: "连接",
-      title: "在哪都能连上宿主，内容只有你看得到",
-      lead: "扫一次二维码完成配对，之后全程 Noise 端到端加密。能直连就走 P2P，不通再经中继，中继只看得到密文。设备可以随时吊销。",
+      title: (
+        <>
+          <span className="nowrap">在哪都能连上</span>
+          <span className="nowrap">你的 agent，</span>
+          <span className="nowrap">全程端到端加密</span>
+        </>
+      ),
+      lead: "扫一次二维码即可完成设备公钥配对，建立基于 Noise 协议的端到端加密通道。客户端优先走 WebRTC 点对点直连（支持局域网、Tailscale 或公网打洞）；遇到复杂网络自动回落到只转发密文的中继。设备权限随时可以吊销。",
       chips: [
         { name: "P2P", text: "（直连）：局域网、tailnet 或公网" },
         { name: "中继", text: "：只转发密文" },
@@ -365,7 +383,7 @@ export const copy: Record<Lang, LandingCopy> = {
       items: [
         {
           title: "一台宿主，多个执行环境",
-          body: "宿主留在主力机上，项目指向另一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，工具经 pi-env 用 SSH 在那台机器上执行。",
+          body: "宿主留在主力机上，把项目通过 SSH 指向另一台 Windows、macOS、Linux 或 Android 机器：模型在宿主上思考，读写文件和执行命令都在那台机器上。",
           link: { text: "#363", href: issue(363) },
         },
         {
@@ -375,12 +393,12 @@ export const copy: Record<Lang, LandingCopy> = {
         },
         {
           title: "开放插件协议",
-          body: "PiNomad 自己的功能就是用这套扩展协议写的，稳定后对外开放，谁都能写插件加工具和展示方式。",
-          link: { text: "ADR-0004", href: adr4 },
+          body: "对外开放插件协议，谁都能写插件，添加自定义工具和结构化的结果卡片，在 Web、Mac 和 iPhone 上统一渲染。",
+          link: { text: "设计决策", href: adr4 },
         },
       ],
       diagram: {
-        label: "规划中：模型继续跑在宿主上，宿主通过 pi-env 用 SSH 连到 Windows、macOS、Linux 和 Android 机器，工具在这些机器上执行。",
+        label: "规划中：模型继续跑在宿主上，宿主用 SSH 连到 Windows、macOS、Linux 和 Android 机器，工具在这些机器上执行。",
         host: "宿主",
         machines: ["Windows", "macOS", "Linux", "Android"],
       },
@@ -390,9 +408,13 @@ export const copy: Record<Lang, LandingCopy> = {
       title: "三条命令跑起来",
       lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
       notes: [
-        "然后在 Settings → Providers 接入模型：已有订阅、API key 或兼容 endpoint 都行。",
-        "目前是早期版本，版本之间还会有变化。",
+        <>
+          打开客户端后，在 Settings → Providers 登录已有的 Claude / ChatGPT / Copilot 订阅，或填入 API Key、本地
+          Ollama / vLLM 端点。需要常驻后台时，运行 <code>pinomad service install</code> 即可注册为 macOS LaunchAgent 或
+          Linux systemd 服务。
+        </>,
       ],
+      more: { text: "查看完整上手指南与常驻服务配置", href: "/zh/docs/" },
       terminal: "终端",
       copy: "复制",
       copied: "已复制",

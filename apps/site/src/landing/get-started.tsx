@@ -21,6 +21,11 @@ export function GetStarted({ t }: { t: LandingCopy["start"] }) {
               {note}
             </p>
           ))}
+          <p className="section-link">
+            <a className="text-link" href={t.more.href}>
+              {t.more.text}
+            </a>
+          </p>
         </div>
         <div className="code-card">
           <div className="code-card-header">
