@@ -210,7 +210,7 @@ private struct DelayedReveal: ViewModifier {
             .opacity(shown ? 1 : 0)
             .task {
                 guard (try? await Task.sleep(for: .milliseconds(150))) != nil else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { shown = true }
+                withAnimation(reduceMotion ? nil : Motion.reveal) { shown = true }
             }
     }
 }

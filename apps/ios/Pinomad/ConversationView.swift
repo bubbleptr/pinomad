@@ -67,7 +67,7 @@ struct ConversationView: View {
         let failed = conversation == nil && model.opening.failed == conversationId
         // Skeleton, content and the failure state cross-fade; under Reduce
         // Motion they swap at once.
-        let swap: Animation? = reduceMotion ? nil : .easeOut(duration: 0.2)
+        let swap: Animation? = reduceMotion ? nil : Motion.reveal
         let phase = conversation != nil ? 2 : failed ? 1 : 0
         ZStack {
             if let conversation {
