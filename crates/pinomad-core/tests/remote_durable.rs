@@ -944,6 +944,57 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
 }
 
 #[test]
+fn clear_conversation_releases_its_stream_from_the_reconnect_barrier() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    let host_streams: Vec<String> = h
+        .host
+        .subscribes()
+        .into_iter()
+        .filter(|stream| !stream.starts_with("conversation:") && !stream.starts_with("doc:"))
+        .collect();
+    assert!(!host_streams.is_empty());
+    // Hold the host-level snapshots so the reconnect shell is not ready and
+    // sync_gate stays false; the clear can then run before the barrier.
+    for stream in &host_streams {
+        h.host.held.insert(stream.clone());
+    }
+    h.host.held.insert("conversation:1".to_string());
+
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert_eq!(h.connection(), "reconnecting");
+
+    h.invoke(2, Call::ClearConversation);
+    assert!(h.view_get("conversation").is_none());
+
+    for stream in &host_streams {
+        let value = snapshot_for(stream, &h.host.snapshots);
+        h.deliver(obj(&[
+            ("type", Json::from("snapshot")),
+            ("stream", Json::from(stream.clone())),
+            ("value", value),
+        ]));
+    }
+    // The held conversation snapshot arrives after its subscription was
+    // released; it must not be what the barrier is still waiting for.
+    h.deliver(obj(&[
+        ("type", Json::from("snapshot")),
+        ("stream", Json::from("conversation:1")),
+        ("value", obj(&[
+            ("conversation", obj(&[("id", Json::from(1.0))])),
+            ("entries", Json::array(vec![])),
+        ])),
+    ]));
+
+    // A later op must go out instead of waiting behind a gate that can never
+    // open until the sync timer closes the healthy connection.
+    h.invoke(3, Call::CreatePairing);
+    assert_eq!(h.host.method("createPairing").len(), 1);
+    assert_eq!(h.connection(), "connected");
+}
+
+#[test]
 fn subscriptions_wait_for_the_hello() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
