@@ -207,13 +207,14 @@ export function App() {
 
   const focusHost = useCallback(
     (hostKey: string): void => {
+      // A one-shot token/pair screen must yield to the stored host the user
+      // picked — including the address bar, or a refresh returns to it.
+      history.replaceState(null, "", window.location.pathname + window.location.search);
       setLoaded((prev) =>
         prev === undefined
           ? prev
           : {
               ...prev,
-              // A one-shot token/pair screen must yield to the stored host the
-              // user picked; there is no reload to clear its fragment anymore.
               address: undefined,
               focus: rememberedFocus(hostKey),
             },
@@ -546,6 +547,7 @@ function HostRuntime({
       <ReadyHost
         host={host}
         remote={state.remote}
+        device={device}
         focused={focused}
         focusTarget={focusTarget}
         retry={retry}
@@ -629,12 +631,14 @@ function HostFailure({
 function ReadyHost({
   host,
   remote,
+  device,
   focused,
   focusTarget,
   retry,
 }: {
   host: StoredHost;
   remote: RemoteDurable;
+  device: KeyPair;
   focused: boolean;
   focusTarget: ConversationId | undefined;
   retry: () => void;
@@ -674,6 +678,7 @@ function ReadyHost({
       remote={remote}
       wsUrl={host.url}
       rejected={rejected}
+      device={device}
       hostKey={host.hostKey}
       onReconnect={retry}
       notify={false}
@@ -1109,7 +1114,11 @@ function Workbench({
   notify?: boolean;
 }) {
   const view = useDurableView(remote);
-  const { focusConversation, focusDraft } = useHosts();
+  const { focus, focusConversation, focusDraft } = useHosts();
+  // A draft create resolves after an arbitrary delay. Record the latest focus
+  // so a same-host selection made while it was in flight wins.
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
   // A draft create resolves after an arbitrary delay; if focus moved to
   // another host meanwhile, this workbench is gone and must not pull it back.
   const live = useRef(true);
@@ -1312,6 +1321,12 @@ function Workbench({
             onDraft={startDraft}
             onCreated={() => {
               if (!live.current) return;
+              // Another host unmounts this workbench; a same-host selection
+              // leaves it mounted but moves the focus off the draft.
+              const stillDrafting =
+                hostKey === undefined
+                || (focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === undefined);
+              if (!stillDrafting) return;
               const id = remote.view.current().conversation?.conversation.id;
               if (id !== undefined) openConversation(id);
               if (!narrow) changeOverview(true);

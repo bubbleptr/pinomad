@@ -18,6 +18,11 @@ import { FileAttachmentChip } from "../../entities/attachment/file-attachments.t
 import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
 import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
+import {
+  clearQueuedEditRecovery,
+  saveQueuedEditRecovery,
+  takeQueuedEditRecovery,
+} from "../../entities/conversation/queued-edit-recovery.ts";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
@@ -89,7 +94,17 @@ export function ConversationComposer({
   const agent = agentOf(conversation);
   const status = statusText(conversation);
   const disconnected = view.connection !== "connected";
+  const conversationId = conversation.conversation.id;
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
+  // The queue edit's destructive step must not run after focus unmounted this
+  // composer; StrictMode's mount cleanup/setup pair restores the flag.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   // A Chat conversation has no project files; like a Chat draft, its `@`
   // offers agents only.
   const fileSource: MentionFiles | undefined =
@@ -145,6 +160,19 @@ export function ConversationComposer({
     hostSupportsFeature(view.host?.protocol.minor ?? 0, "attachments")
     && hostSupportsCall(view.host?.protocol.minor ?? 0, "beginAttachment");
   const files = useFileAttachments(remote, attachmentsEnabled);
+  // A withdraw that landed while this composer was unmounted left its draft
+  // here; the next mount for the same host+conversation restores it.
+  const recoveryChecked = useRef(false);
+  useEffect(() => {
+    if (recoveryChecked.current) return;
+    recoveryChecked.current = true;
+    const recovery = takeQueuedEditRecovery(source, conversationId);
+    if (recovery === undefined) return;
+    skillDraft.restore(recovery.text, recovery.skills);
+    restore(recovery.images);
+    files.restore(recovery.attachments);
+    setFocusAfterEdit((count) => count + 1);
+  }, []);
   const attachInput = useRef<HTMLInputElement>(null);
   const [fileSubmitError, setFileSubmitError] = useState<string | undefined>(undefined);
   const addFiles = (incoming: File[]): void => {
@@ -208,7 +236,6 @@ export function ConversationComposer({
     onEditorStateChange?.({ occupied: composerOccupied, locked: editInFlight || awaitingEdit || localEditInFlight });
   }, [composerOccupied, editInFlight, awaitingEdit, localEditInFlight, onEditorStateChange]);
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
-  const conversationId = conversation.conversation.id;
   const showError = (error: unknown): void => {
     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
   };
@@ -298,11 +325,28 @@ export function ConversationComposer({
       // The copy survives a lost withdraw reply by bytes alone, so a reconnect
       // retry needs no refs (which may have left the host's live view since).
       copy.input = { ...copy.input, images: resolved };
+      if (!live.current) {
+        // Focus left while the images were loading: leave the queue untouched.
+        editCopy.current = null;
+        return;
+      }
       if ((await remote.controller.withdrawQueued(copy.id, copy.conversationId)) === "withdrawn") {
+        saveQueuedEditRecovery(source, copy.conversationId, {
+          text: copy.input.text,
+          skills: copy.input.skills,
+          images: resolved,
+          attachments: copy.input.attachments,
+        });
+        if (!live.current) {
+          // The withdraw landed after unmount; the next mount restores it.
+          editCopy.current = null;
+          return;
+        }
         // The skills it expanded come back bound.
         skillDraft.restore(copy.input.text, copy.input.skills);
         restore(resolved);
         files.restore(copy.input.attachments);
+        clearQueuedEditRecovery(source, copy.conversationId);
         editCopy.current = null;
         setAwaitingEdit(false);
         setFocusAfterEdit((count) => count + 1);

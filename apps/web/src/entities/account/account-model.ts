@@ -241,9 +241,24 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     stopVisibility = () => document.removeEventListener("visibilitychange", onVisibility);
   };
 
+  const declinedHost = (host: StoredHost): boolean =>
+    host.account !== undefined
+    && declined.list().some(
+      (entry) =>
+        normalizeServerOrigin(entry.serverOrigin) === normalizeServerOrigin(host.account!.serverOrigin)
+        && entry.hostId === host.account!.hostId,
+    );
+
   /** Save a slot without generating a new key; leaves it queued on failure. */
   const savePending = async (active: AccountClient, host: StoredHost): Promise<boolean> => {
     if (client !== active) return false;
+    if (declinedHost(host)) {
+      // The user forgot this host while its save was still failing; retrying
+      // the save would resurrect it on the next foreground refresh.
+      unsaved.delete(storedSlot(host));
+      publishUnsaved();
+      return false;
+    }
     try {
       await deps.paired(host);
     } catch {

@@ -612,6 +612,27 @@ describe("automatic registration", () => {
     expect((setup.model.state as Extract<typeof setup.model.state, { status: "signed-in" }>).unsavedHosts).toEqual([]);
   });
 
+  it("does not resurrect a forgotten host from a failed-save slot", async () => {
+    const store = hosts();
+    store.setFailSaves(true);
+    const declined = createDeclinedStore(localStorage);
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, declined, autoRegister: true });
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.unsavedHosts.length : 0).toBe(1);
+    });
+
+    declined.add({ serverOrigin: ORIGIN, hostId: "h1" });
+    store.setFailSaves(false);
+    await setup.model.refreshHosts();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.unsavedHosts : undefined).toEqual([]);
+    });
+    expect(store.stored).toEqual([]);
+  });
+
   it("drops an in-flight registration after sign-out", async () => {
     const store = hosts();
     let releaseConnect!: () => void;
