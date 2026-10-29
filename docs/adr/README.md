@@ -29,7 +29,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | ADR | 一句话 |
 | --- | --- |
 | [0006](0006-host-tools-and-context-sources.md) | 宿主默认提供编码工具、默认不审批，上下文只从项目和 `~/.agents` 读取 |
-| [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除 |
+| [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除（多宿主分组由 0035 补充） |
 | [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作（fork 部分由 0019 修订） |
 | [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval` |
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
@@ -54,9 +54,10 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0018](0018-protocol-compatibility.md) | 协议兼容：hello 带 `{ major, minor }`，同一主版本内只增不删；两端对不认识的内容回错误或忽略，不断开；上游数据结构靠契约快照盯着；宿主只支持当前主版本 |
 | [0025](0025-push-via-server-apns.md) | 推送直连 APNs，按环境分开的密钥只放在服务端；宿主经控制连接请服务端发，服务端只转发不保存；开放注册前要先让服务端核对 token 归属 |
 | [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |
-| [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（暂不开放注册），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上 |
+| [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（暂不开放注册），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上（§6 广播由 0035 修订，§8 由 0035 补充） |
 | [0032](0032-multi-endpoint-pairing-and-failover.md) | 远程访问携带多候选：配对邀请和 hello 发布 remote endpoint 集合，loopback 保持 client-local，Auto relay 优先、direct 兜底，候选级失败、整轮汇总，paired 与 ready 分离；不做服务端地址目录 |
 | [0033](0033-webrtc-p2p-and-signal-connections.md) | WebRTC DataChannel 作为第四种载体：独立信令 prologue、非 trickle 宿主作答、按库区分"已接收"的载体契约、简化切换（不回退双业务状态），不引入 TURN 和服务端信令接口；移动端锁 str0m |
+| [0035](0035-multi-host-clients.md) | 客户端同时连接所有已配对宿主：全局 `{ hostKey, conversationId }` 引用、单一聚焦（失焦释放对话订阅）、每台宿主独立运行时与三维状态、带 `declined` 的自动登记、按可见对话压制通知；去掉账号设备加入广播 |
 
 ## 遗留项的去向
 
@@ -93,4 +94,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0008 §1：安全通道的传输只有 WebSocket | 由 0033 补充 DataChannel 载体和只走信令的 Noise 连接 |
 | 0024 §3：平台层职责 | 由 0033 补充 WebRTC 载体：Node 宿主用 node-datachannel，iOS 用 str0m |
 | 0016：原生依赖的可选包分发 | 由 0033 补充：node-datachannel 的平台包走 optionalDependencies，`--omit=optional` 时宿主降级为无 `hello.rtc` |
+| 0007 §1：工作组织是"项目 → 对话" | 由 0035 补充：客户端在"项目 → 对话"上面加一层宿主，按已配对宿主顺序分组，对话用 `{ hostKey, conversationId }` 标识 |
+| 0022 §6：新设备经账号加入时向所有在线设备广播提示 | 由 0035 修订：不再广播，只在宿主的设备列表里实时显示并标出"账号"来源 |
+| 0022 §8、后果：多宿主由客户端汇总，客户端同时连多台宿主 | 由 0035 决定：同时连接所有已配对宿主、单一聚焦释放非聚焦对话订阅、每台宿主独立运行时、带 `declined` 的自动登记 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
