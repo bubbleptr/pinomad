@@ -61,6 +61,7 @@ const sameModel = (a: ModelSummary, b: ModelSummary): boolean =>
   && a.modelId === b.modelId
   && a.name === b.name
   && a.contextWindow === b.contextWindow
+  && a.images === b.images
   && sameList(a.thinkingLevels, b.thinkingLevels, (x, y) => x === y);
 
 const sameLogin = (a: StoredLogin, b: StoredLogin): boolean =>

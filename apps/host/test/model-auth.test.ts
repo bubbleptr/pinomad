@@ -248,6 +248,28 @@ describe("openModelAuth", () => {
     expect(opus.thinkingLevels.length).toBeGreaterThan(1);
   });
 
+  it("republishes a model whose only change on re-save is taking images", async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "vision", modalities: { input: ["text", "image"] } }] }));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    const endpoint = { ...OLLAMA, baseUrl, models: ["vision"] };
+    const { modelAuth } = await fixture({
+      // Only a provider with a credential lists its models.
+      auth: { [OLLAMA.id]: { type: "api_key", key: "sk-local" } },
+      models: { providers: { [OLLAMA.id]: { ...endpoint, models: [{ id: "vision" }] } } },
+    });
+    expect(modelAuth.models.value.find((m) => m.modelId === "vision")!.images).toBe(false);
+
+    await modelAuth.saveCustomProvider(endpoint);
+
+    expect(modelAuth.models.value.find((m) => m.modelId === "vision")!.images).toBe(true);
+  });
+
   it("asks an Anthropic endpoint at /v1/models, since its base URL is the root the SDK adds /v1 to", async () => {
     const seen: { url?: string; key?: string | string[] }[] = [];
     const server = createServer((request, response) => {
