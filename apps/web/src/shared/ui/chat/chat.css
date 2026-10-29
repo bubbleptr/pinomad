@@ -34,6 +34,27 @@
   }
 }
 
+/* —— Conversation skeleton ——
+   Invisible for its first moment, so a conversation that loads fast swaps
+   straight in without a flash of bones; a slow one fades them in. Reduced
+   motion keeps the wait and drops the fade. */
+
+.chat-skeleton {
+  animation: chat-skeleton-reveal var(--duration-fast-max) ease-out 150ms both;
+}
+
+@keyframes chat-skeleton-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-skeleton {
+    animation-duration: 0s;
+  }
+}
+
 /* —— Markdown —— */
 
 /* Layout is ours; heading type scale is too. Astryx compact only tightens

@@ -34,10 +34,12 @@ export const WEBSITE: Project = { path: "/Users/kieran/code/website", name: "web
 export const PARSER_ID = id(1);
 export const FORK_ID = id(4);
 export const SUBAGENT_ID = id(5);
+/** A conversation of another family, with no forks or subagents. */
+export const DARK_MODE_ID = id(2);
 
 const summaries: ConversationSummary[] = [
   { id: PARSER_ID, kind: "conversation", title: "Fix the parser's trailing-comma bug", updatedAt: now - 3 * MINUTE },
-  { id: id(2), kind: "conversation", title: "Add a dark mode toggle", status: "running", updatedAt: now - MINUTE, activity: { tool: "edit", target: "src/theme.ts" } },
+  { id: DARK_MODE_ID, kind: "conversation", title: "Add a dark mode toggle", status: "running", updatedAt: now - MINUTE, activity: { tool: "edit", target: "src/theme.ts" } },
   { id: id(3), kind: "conversation", title: "Explain Rust's borrow checker", status: "needs-answer", updatedAt: now - 40 * MINUTE },
   { id: FORK_ID, kind: "fork", parent: PARSER_ID, forkedAt: "4", title: "Try a recursive-descent rewrite", updatedAt: now - 10 * MINUTE },
   {
@@ -59,7 +61,7 @@ const index: HostIndex = {
   projects: [PINOMAD, WEBSITE],
   conversations: [
     { id: PARSER_ID, home: { kind: "project", path: PINOMAD.path }, createdAt: now - 60 * MINUTE },
-    { id: id(2), home: { kind: "project", path: WEBSITE.path }, createdAt: now - 20 * MINUTE },
+    { id: DARK_MODE_ID, home: { kind: "project", path: WEBSITE.path }, createdAt: now - 20 * MINUTE },
     { id: id(3), home: { kind: "chat" }, createdAt: now - 50 * MINUTE },
     { id: id(6), home: { kind: "project", path: PINOMAD.path }, createdAt: now - 3 * 60 * MINUTE },
     { id: id(7), home: { kind: "chat" }, createdAt: now - 10 * 24 * 60 * MINUTE, archived: true },

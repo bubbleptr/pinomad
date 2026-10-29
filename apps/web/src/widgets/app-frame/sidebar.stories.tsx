@@ -28,7 +28,7 @@ const meta = {
     draftingChat: false,
     shownId: PARSER_ID,
     onDraft: fn(),
-    onOpenConversation: fn(),
+    onOpen: fn(),
   },
   render: (args) => (
     <div className="h-[calc(100vh-3rem)] w-[260px]">

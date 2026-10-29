@@ -376,7 +376,7 @@ export function SidebarContent({
   draftingChat,
   shownId,
   onDraft,
-  onOpenConversation,
+  onOpen,
   onSelect,
 }: {
   view: DurableView;
@@ -386,17 +386,13 @@ export function SidebarContent({
   draftingChat: boolean;
   shownId: ConversationId | undefined;
   onDraft: (home: Home) => void;
-  onOpenConversation?: (id: ConversationId) => void;
+  onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
   const disabled = view.connection !== "connected";
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const [expandedProjects, setExpandedProjects] = useState(() => readExpandedProjects(hostKey));
-  const openConversation = (id: ConversationId): void => {
-    if (onOpenConversation !== undefined) onOpenConversation(id);
-    else void remote.controller.switchConversation(id);
-  };
   const chats = useSidebarSectionExpansion("chats");
   const projects = useSidebarSectionExpansion("projects");
   const start = (home: Home): void => {
@@ -470,7 +466,7 @@ export function SidebarContent({
                   shown={shownId}
                   disabled={disabled}
                   remote={remote}
-                  onOpen={openConversation}
+                  onOpen={onOpen}
                   onSelect={onSelect}
                 />
               ))
@@ -531,7 +527,7 @@ export function SidebarContent({
                             shown={shownId}
                             disabled={disabled}
                             remote={remote}
-                            onOpen={openConversation}
+                            onOpen={onOpen}
                             onSelect={onSelect}
                           />
                         ))

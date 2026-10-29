@@ -79,7 +79,7 @@ describe("useConversationFocus", () => {
     const fake = fakeRemote();
     const unavailable = vi.fn();
     const { rerender } = renderHook(
-      ({ target, current }) => useConversationFocus(fake.remote, current, target, unavailable),
+      ({ target, current }) => useConversationFocus(fake.remote, current, target, { onUnavailable: unavailable }),
       { initialProps: { target: id(5) as ConversationId | undefined, current: view({ conversation: 5 }) } },
     );
     // Shown already: no switch, just remember that this target landed.

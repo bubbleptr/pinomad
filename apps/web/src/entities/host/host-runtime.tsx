@@ -25,6 +25,7 @@ import { HostsFallback } from "../../widgets/app-frame/hosts.tsx";
 import { RepairViaAccount } from "../../widgets/account/repair-via-account.tsx";
 import { VersionMismatch } from "../../widgets/app-frame/version-mismatch.tsx";
 import { useRunNotifications } from "../conversation/use-run-notifications.ts";
+import { useConversationOpening, type Opening } from "../conversation/use-conversation-opening.ts";
 import { HostComposerContext } from "../composer/composer-context.tsx";
 import { HostComposerStore } from "../composer/composer-store.ts";
 import { createBrowserRtcPlatform } from "./browser-rtc.ts";
@@ -42,6 +43,9 @@ export type HostWorkbenchRenderer = (input: {
   device: KeyPair;
   rejected: ReactNode;
   retry: () => void;
+  opening: Opening | undefined;
+  cancelOpening: () => void;
+  openConversation: (id: ConversationId) => void;
 }) => ReactNode;
 
 /** Every paired host runs at once; only the focused one paints the workbench. */
@@ -300,8 +304,13 @@ function ReadyHost({
     [host.hostKey, registry],
   );
   useHostNameSync(host.hostKey, view.settings);
+  const { opening, open, cancel } = useConversationOpening(remote);
   const focusDraftHere = useCallback(() => focusDraft(host.hostKey), [focusDraft, host.hostKey]);
-  useConversationFocus(remote, view, focusTarget, focusDraftHere);
+  useConversationFocus(remote, view, focusTarget, {
+    open,
+    cancel,
+    onUnavailable: focusDraftHere,
+  });
   useRunNotifications(
     view,
     host.hostKey,
@@ -318,5 +327,14 @@ function ReadyHost({
       <Button label="Forget this host" variant="secondary" onClick={() => void forget(host.hostKey)} />
     </VStack>
   );
-  return renderWorkbench({ host, remote, device, rejected, retry });
+  return renderWorkbench({
+    host,
+    remote,
+    device,
+    rejected,
+    retry,
+    opening,
+    cancelOpening: cancel,
+    openConversation: open,
+  });
 }

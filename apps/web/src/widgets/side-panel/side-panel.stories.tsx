@@ -5,6 +5,7 @@ import {
   fakeView,
   FORK_ID,
   forkConversation,
+  PARSER_ID,
   SUBAGENT_ID,
   subagentConversation,
 } from "../../test/story-fixtures.tsx";
@@ -26,7 +27,7 @@ const meta = {
   args: {
     view,
     remote: fakeRemote(view),
-    conversation: view.conversation,
+    shownId: PARSER_ID,
     narrow: false,
     open: true,
     onOpenChange: fn(),
@@ -75,7 +76,7 @@ const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentC
 export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemote(withSubagent), tab: "tasks" } };
 
 /** While drafting there is no family to list. */
-export const Drafting: Story = { args: { conversation: undefined } };
+export const Drafting: Story = { args: { shownId: undefined } };
 
 /** On a phone the panel is a fullscreen dialog. */
 export const Narrow: Story = { args: { narrow: true } };
