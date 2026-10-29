@@ -1,4 +1,4 @@
-// Data-directory lock, same mechanism as the host (apps/host/src/host.ts):
+// Data-directory lock, same mechanism as the host (apps/host/src/host.ts): (CI probe)
 // proper-lockfile on the directory itself. SQLite has no cross-process writer
 // protection worth trusting here — a second server would corrupt state.
 // Duplicated rather than shared so the host is untouched.
