@@ -223,8 +223,13 @@ export function App() {
   );
 
   const focusConversation = useCallback((ref: ConversationRef): void => {
-    lastByHost.current.set(ref.hostKey, ref.conversationId);
-    setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { ...ref } }));
+    setLoaded((prev) => {
+      // A notification outlives the runtime it came from; clicking it after a
+      // forget must not leave the app focused on a host that no longer exists.
+      if (prev === undefined || !prev.hosts.some((host) => host.hostKey === ref.hostKey)) return prev;
+      lastByHost.current.set(ref.hostKey, ref.conversationId);
+      return { ...prev, focus: { ...ref } };
+    });
   }, []);
 
   const focusDraft = useCallback((hostKey: string): void => {
@@ -234,7 +239,12 @@ export function App() {
 
   const forget = useCallback(
     async (hostKey: string): Promise<void> => {
-      const host = loaded?.hosts.find((each) => each.hostKey === hostKey);
+      // Account adoption can link this host in the store without touching the
+      // loaded snapshot (or another tab may have done it), so read the latest
+      // record before deciding whether forgetting should decline it.
+      const persisted = await store.list().catch(() => loaded?.hosts ?? []);
+      const host = persisted.find((each) => each.hostKey === hostKey)
+        ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
       if (host?.account !== undefined) {
         // A forgotten account host is declined so the next account refresh
         // cannot silently register it again (ADR-0035 §5).
@@ -486,7 +496,9 @@ function HostRuntime({
   );
   const state = useRemoteDurable(
     options,
-    `${host.hostKey} ${attempt}`,
+    // Re-pairing the same host after a revocation keeps hostKey but replaces
+    // the device key; that is a new identity and needs a fresh connection.
+    `${host.hostKey} ${host.privateKey} ${attempt}`,
     connect === undefined ? undefined : { connect },
   );
 
@@ -1081,6 +1093,17 @@ function Workbench({
 }) {
   const view = useDurableView(remote);
   const { focusConversation, focusDraft } = useHosts();
+  // A draft create resolves after an arbitrary delay; if focus moved to
+  // another host meanwhile, this workbench is gone and must not pull it back.
+  const live = useRef(true);
+  useEffect(() => {
+    // StrictMode runs the cleanup/setup pair once on mount; restore the flag
+    // in setup so the still-mounted workbench keeps handling its create.
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not whichever host is focused.
   useHostNameSync(hostKey, view.settings);
@@ -1271,6 +1294,7 @@ function Workbench({
             draft={draft}
             onDraft={startDraft}
             onCreated={() => {
+              if (!live.current) return;
               const id = remote.view.current().conversation?.conversation.id;
               if (id !== undefined) openConversation(id);
               if (!narrow) changeOverview(true);

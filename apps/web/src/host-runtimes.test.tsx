@@ -85,6 +85,36 @@ describe("HostRuntimes", () => {
     expect(closeB).not.toHaveBeenCalled();
   });
 
+  it("reconnects when a re-pair replaces the device key", async () => {
+    const remoteOld = connected(1);
+    const remoteNew = connected(1);
+    const connect = vi
+      .fn<(options: RemoteDurableOptions) => Promise<RemoteDurable>>()
+      .mockResolvedValueOnce(remoteOld)
+      .mockResolvedValueOnce(remoteNew);
+    const registry = createHostRuntimeRegistry();
+    const focus = { hostKey: HOME_HOST.hostKey, conversationId: id(2) };
+    const original = [HOME_HOST];
+    const hostState = fakeHosts(original, HOME_HOST.hostKey);
+    const renderHosts = (hosts: StoredHost[]) => (
+      <HostsContext.Provider value={hostState}>
+        <HostRuntimesContext.Provider value={registry}>
+          <HostRuntimes hosts={hosts} focus={focus} connect={connect} />
+        </HostRuntimesContext.Provider>
+      </HostsContext.Provider>
+    );
+    const { rerender } = render(renderHosts(original));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+
+    const rotated: StoredHost = {
+      ...HOME_HOST,
+      privateKey: toBase64Url(generateKeyPair().privateKey),
+    };
+    rerender(renderHosts([rotated]));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+    expect(remoteOld.close).toHaveBeenCalled();
+  });
+
   it("contains a failed host without disturbing the ready ones", async () => {
     const remoteA = connected(1);
     const registry = createHostRuntimeRegistry();

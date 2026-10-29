@@ -122,6 +122,18 @@ describe("useRunNotifications", () => {
     expect(TestNotification.instances).toHaveLength(1);
   });
 
+  it("closes its notices when the host runtime unmounts", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { rerender, unmount } = renderHook(
+      ({ view }) => useRunNotifications(view, hostA, undefined, vi.fn()),
+      { initialProps: { view: running } },
+    );
+    rerender({ view: idle });
+    const notification = TestNotification.instances[0]!;
+    unmount();
+    expect(notification.closed).toBe(true);
+  });
+
   it("does nothing without permission", () => {
     TestNotification.permission = "denied";
     vi.spyOn(document, "hasFocus").mockReturnValue(false);

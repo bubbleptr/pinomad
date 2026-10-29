@@ -22,6 +22,15 @@ export function useRunNotifications(
   // latest without re-running on it.
   const openConversation = useRef(open);
   openConversation.current = open;
+  useEffect(
+    () => () => {
+      // A forgotten host's runtime unmounts; its stale notices must not point
+      // at a host the app no longer has.
+      for (const notification of shown.current.values()) notification.close();
+      shown.current.clear();
+    },
+    [],
+  );
   useEffect(() => {
     if (!enabled) return;
     if (view.connection !== "connected") return;

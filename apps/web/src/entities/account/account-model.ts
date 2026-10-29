@@ -303,7 +303,16 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         const stored = await deps.hosts.list().catch(() => undefined);
         if (stored === undefined || flight.cancelled || !live(active, started)) return;
         const fresh = matchAccountHosts(active.origin, [match.host], stored, declined.list(), true)[0];
-        if (fresh?.autoRegister !== true) return;
+        if (fresh?.autoRegister !== true) {
+          // Another tab won the lock and saved the pairing. Sync that record
+          // into this page's runtime table even though this flight is done.
+          if (fresh?.stored !== undefined) {
+            await deps.paired(fresh.stored).catch((error: unknown) =>
+              console.error("Could not sync a host paired by another tab", error),
+            );
+          }
+          return;
+        }
         const pending = unsaved.get(slotKey(active.origin, match.host.hostId));
         if (pending !== undefined) {
           if (await savePending(active, pending) && client === active) await refresh(active, user);
@@ -374,8 +383,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     for (const match of matches) {
       if (match.linkable && match.stored !== undefined) {
         const host = match.stored;
-        void deps.hosts
-          .save({ ...host, account: { serverOrigin: active.origin, hostId: match.host.hostId } })
+        // Through `paired`, not the raw store: the app's in-memory list must
+        // learn the account link too, or a later forget cannot decline it.
+        void deps.paired({ ...host, account: { serverOrigin: active.origin, hostId: match.host.hostId } })
           .catch(() => undefined);
       }
     }

@@ -151,15 +151,17 @@ describe("account model", () => {
   it("adopts a pre-account pairing by persisting the link", async () => {
     const entry = storedHost();
     const store = hosts([entry]);
-    const { model } = makeModel({ fake: fakeFetch(
+    const setup = makeModel({ fake: fakeFetch(
       { status: 401 },
       { status: 200, body: { user: { username: "admin" } } },
       { status: 200, body: [accountHost(entry.hostKey, "h-1")] },
     ), store });
-    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
     await vi.waitFor(() =>
       expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h-1" }),
     );
+    // The app's in-memory list learns the link too, so a later forget declines it.
+    expect(setup.paired).toEqual([{ ...entry, account: { serverOrigin: ORIGIN, hostId: "h-1" } }]);
   });
 
   it("cookie mode: signed-out when the probe says enabled but there is no session", async () => {
@@ -546,7 +548,8 @@ describe("automatic registration", () => {
     await Promise.resolve();
     expect(names[0]).toBe(`pinomad.autoRegister:${ORIGIN}:h1`);
     expect(pairingCalls(fake.calls)).toBe(0);
-    expect(setup.paired).toEqual([]);
+    // The winning tab's record still has to reach this page's runtime table.
+    expect(setup.paired).toEqual([linked]);
   });
 
   it("keeps a failed save in a per-host recovery slot and never generates a second key", async () => {
