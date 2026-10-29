@@ -8,6 +8,7 @@ apps/ios/PinomadCore/Vendor/
 apps/ios/PinomadCore/Sources/PinomadCore/Generated/
 apps/ios/**/build/
 apps/ios/**/.swiftpm/
+.build/
 xcuserdata/
 target/
 storybook-static/
