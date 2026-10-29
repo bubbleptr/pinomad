@@ -4,7 +4,7 @@
 
 ## 现在
 
-下一阶段待定。没定之前，新问题先进 Backlog。
+[M8 多宿主](https://github.com/bubbleptr/pinomad/milestone/6)：一个客户端同时连着所有宿主，按「机器 → 项目 → 对话」浏览，不再靠切换。先定多连接的客户端模型（ADR-0035），再做 Web/桌面，然后是 iOS。跨宿主的 agent 协作排在它后面。
 
 ## 以后
 
