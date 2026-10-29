@@ -87,6 +87,29 @@ describe("gateway attachments", () => {
     expect(chat).toBe(client.view.current().conversation!.conversation.id);
   });
 
+  it("finishes an upload started before clearConversation and submits it by fixed target", async () => {
+    const host = await startFauxHost(defer, { answers: ["done", "again"] });
+    const client = await connectTo(defer, host);
+    const chat = await startChat(client, "hi");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "done");
+
+    const bytes = Buffer.from("hello");
+    const id = await client.controller.beginAttachment("a.txt", bytes.length);
+    await client.controller.clearConversation();
+    expect(client.view.current().conversation).toBeUndefined();
+    // Uploads belong to the connection, not to the released subscription.
+    expect(await client.controller.appendAttachment(id, 0, bytes.toString("base64"))).toEqual({
+      received: bytes.length,
+      complete: true,
+    });
+    await client.controller.submit("look", "followUp", { target: chat, attachments: [id] });
+    await client.controller.switchConversation(chat);
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "again");
+    expect(parseAttachmentBlock((userContents(client.view.current().conversation!)[1] as { text: string }).text)).toEqual([
+      { id, name: "a.txt", size: bytes.length },
+    ]);
+  });
+
   it("derives the fallback title from text blocks only", async () => {
     const host = await startFauxHost(defer, { answers: ["seen", "again"] });
     const client = await connectTo(defer, host);

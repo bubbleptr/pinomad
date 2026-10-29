@@ -78,9 +78,9 @@ describe("AccountPanel", () => {
     renderPanel(
       fakeModel(
         signedIn([
-          { host: host({ name: "up", hostId: "u".repeat(43) }), status: "unpaired", linkable: false },
-          { host: host({ name: "down", hostId: "d".repeat(43), online: false, pairing: "offline" }), status: "unpaired", linkable: false },
-          { host: host({ name: "old", hostId: "o".repeat(43), pairing: "host_too_old" }), status: "unpaired", linkable: false },
+          { host: host({ name: "up", hostId: "u".repeat(43) }), status: "unpaired", linkable: false, autoRegister: true },
+          { host: host({ name: "down", hostId: "d".repeat(43), online: false, pairing: "offline" }), status: "unpaired", linkable: false, autoRegister: true },
+          { host: host({ name: "old", hostId: "o".repeat(43), pairing: "host_too_old" }), status: "unpaired", linkable: false, autoRegister: true },
         ]),
       ),
     );
@@ -91,7 +91,7 @@ describe("AccountPanel", () => {
   });
 
   it("reports a key change and re-pairs only on an explicit click", async () => {
-    const model = fakeModel(signedIn([{ host: host({ noisePublicKey: KEY_B }), status: "key_changed", stored: stored(KEY_A), linkable: false }]));
+    const model = fakeModel(signedIn([{ host: host({ noisePublicKey: KEY_B }), status: "key_changed", stored: stored(KEY_A), linkable: false, autoRegister: false }]));
     renderPanel(model);
     expect(within(row("box")).getByText("Key changed")).toBeTruthy();
     expect(model.pairHost).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe("AccountPanel", () => {
   });
 
   it("offers a re-pair for a host that refused this device instead of Connect", () => {
-    renderPanel(fakeModel(signedIn([{ host: host({}), status: "paired", stored: stored(KEY_A), linkable: false }], [KEY_A])));
+    renderPanel(fakeModel(signedIn([{ host: host({}), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false }], [KEY_A])));
     expect(within(row("box")).queryByRole("button", { name: "Connect" })).toBeNull();
     expect(within(row("box")).getByRole("button", { name: "Pair again" })).toBeEnabled();
   });

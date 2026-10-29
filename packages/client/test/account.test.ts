@@ -283,7 +283,7 @@ describe("matchAccountHosts", () => {
       accountHost({ hostId: OTHER_ID, noisePublicKey: twin.hostKey }),
       accountHost({ hostId: "unpaired-id", noisePublicKey: toBase64Url(generateKeyPair().publicKey) }),
     ];
-    const matches = matchAccountHosts(ORIGIN, hosts, [linked, twin, stranger]);
+    const matches = matchAccountHosts(ORIGIN, hosts, [linked, twin, stranger], [], true);
     expect(matches.map((m) => m.status)).toEqual(["paired", "paired", "unpaired"]);
     expect(matches[0]!.stored).toBe(linked);
     expect(matches[0]!.linkable).toBe(false);
@@ -297,7 +297,7 @@ describe("matchAccountHosts", () => {
   it("reports a changed Noise key without offering to re-pair", () => {
     const entry = stored({ account: { serverOrigin: ORIGIN, hostId: HOST_ID } });
     const rotated = accountHost({ noisePublicKey: toBase64Url(generateKeyPair().publicKey) });
-    const [match] = matchAccountHosts(ORIGIN, [rotated], [entry]);
+    const [match] = matchAccountHosts(ORIGIN, [rotated], [entry], [], true);
     expect(match).toMatchObject({ status: "key_changed", stored: entry, linkable: false });
   });
 
@@ -307,15 +307,66 @@ describe("matchAccountHosts", () => {
     const stale = stored({ account: { serverOrigin: ORIGIN, hostId: HOST_ID } });
     const fresh = stored({ account: { serverOrigin: ORIGIN, hostId: HOST_ID } });
     const host = accountHost({ noisePublicKey: fresh.hostKey });
-    const [match] = matchAccountHosts(ORIGIN, [host], [stale, fresh]);
+    const [match] = matchAccountHosts(ORIGIN, [host], [stale, fresh], [], true);
     expect(match).toMatchObject({ status: "paired", stored: fresh, linkable: false });
   });
 
   it("scopes the account link by origin: the same hostId elsewhere doesn't match", () => {
     const entry = stored({ account: { serverOrigin: "https://other.example.com", hostId: HOST_ID } });
     const host = accountHost({ noisePublicKey: toBase64Url(generateKeyPair().publicKey) });
-    const [match] = matchAccountHosts(ORIGIN, [host], [entry]);
+    const [match] = matchAccountHosts(ORIGIN, [host], [entry], [], true);
     expect(match!.status).toBe("unpaired");
+  });
+
+  it("offers auto-registration only to unpaired hosts outside the declined set", () => {
+    const pairedKey = toBase64Url(generateKeyPair().publicKey);
+    const paired = stored({ hostKey: pairedKey, account: { serverOrigin: ORIGIN, hostId: "paired-id" } });
+    const changed = stored({ account: { serverOrigin: ORIGIN, hostId: "changed-id" } });
+    const hosts = [
+      accountHost({ hostId: "fresh-id" }),
+      accountHost({ hostId: "declined-id" }),
+      accountHost({ hostId: "changed-id", noisePublicKey: toBase64Url(generateKeyPair().publicKey) }),
+      accountHost({ hostId: "paired-id", noisePublicKey: pairedKey }),
+    ];
+    const matches = matchAccountHosts(
+      ORIGIN,
+      hosts,
+      [paired, changed],
+      [{ serverOrigin: `${ORIGIN}/`, hostId: "declined-id" }],
+      true,
+    );
+    expect(matches.map((match) => match.status)).toEqual(["unpaired", "unpaired", "key_changed", "paired"]);
+    expect(matches.map((match) => match.autoRegister)).toEqual([true, false, false, false]);
+  });
+
+  it("never auto-registers when the stored list could not be read", () => {
+    const host = accountHost();
+    const [failed] = matchAccountHosts(ORIGIN, [host], [], [], false);
+    expect(failed).toMatchObject({ status: "unpaired", autoRegister: false });
+    // The same host with a successful (empty) read is eligible: an empty list
+    // means "nothing paired", not "we don't know".
+    const [read] = matchAccountHosts(ORIGIN, [host], [], [], true);
+    expect(read!.autoRegister).toBe(true);
+  });
+
+  it("scopes declined entries by normalized origin and host id", () => {
+    const host = accountHost({ hostId: "declined-id" });
+    const [elsewhere] = matchAccountHosts(
+      ORIGIN,
+      [host],
+      [],
+      [{ serverOrigin: "https://other.example.com", hostId: "declined-id" }],
+      true,
+    );
+    expect(elsewhere!.autoRegister).toBe(true);
+    const [declined] = matchAccountHosts(
+      ORIGIN,
+      [host],
+      [],
+      [{ serverOrigin: `${ORIGIN}:443/`, hostId: "declined-id" }],
+      true,
+    );
+    expect(declined!.autoRegister).toBe(false);
   });
 });
 

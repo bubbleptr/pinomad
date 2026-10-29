@@ -944,6 +944,57 @@ fn conversation_freshness_waits_for_the_reconnect_snapshot() {
 }
 
 #[test]
+fn clear_conversation_releases_its_stream_from_the_reconnect_barrier() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    let host_streams: Vec<String> = h
+        .host
+        .subscribes()
+        .into_iter()
+        .filter(|stream| !stream.starts_with("conversation:") && !stream.starts_with("doc:"))
+        .collect();
+    assert!(!host_streams.is_empty());
+    // Hold the host-level snapshots so the reconnect shell is not ready and
+    // sync_gate stays false; the clear can then run before the barrier.
+    for stream in &host_streams {
+        h.host.held.insert(stream.clone());
+    }
+    h.host.held.insert("conversation:1".to_string());
+
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert_eq!(h.connection(), "reconnecting");
+
+    h.invoke(2, Call::ClearConversation);
+    assert!(h.view_get("conversation").is_none());
+
+    for stream in &host_streams {
+        let value = snapshot_for(stream, &h.host.snapshots);
+        h.deliver(obj(&[
+            ("type", Json::from("snapshot")),
+            ("stream", Json::from(stream.clone())),
+            ("value", value),
+        ]));
+    }
+    // The held conversation snapshot arrives after its subscription was
+    // released; it must not be what the barrier is still waiting for.
+    h.deliver(obj(&[
+        ("type", Json::from("snapshot")),
+        ("stream", Json::from("conversation:1")),
+        ("value", obj(&[
+            ("conversation", obj(&[("id", Json::from(1.0))])),
+            ("entries", Json::array(vec![])),
+        ])),
+    ]));
+
+    // A later op must go out instead of waiting behind a gate that can never
+    // open until the sync timer closes the healthy connection.
+    h.invoke(3, Call::CreatePairing);
+    assert_eq!(h.host.method("createPairing").len(), 1);
+    assert_eq!(h.connection(), "connected");
+}
+
+#[test]
 fn subscriptions_wait_for_the_hello() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut remote = RemoteDurable::new(RemoteDurableOptions {
@@ -1021,6 +1072,53 @@ fn side_shares_streams_with_main() {
 
     h.invoke(3, Call::ShowSide { id: None });
     assert!(h.host.unsubscribes().is_empty());
+}
+
+#[test]
+fn clears_both_slots_and_releases_their_streams() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::ShowSide { id: Some(2) });
+    let host_streams: Vec<String> = h
+        .host
+        .subscribes()
+        .into_iter()
+        .filter(|stream| !stream.starts_with("conversation:") && !stream.starts_with("doc:"))
+        .collect();
+
+    h.invoke(3, Call::ClearConversation);
+
+    assert_eq!(h.ops.get(&3), Some(&Ok(None)));
+    assert!(h.view_get("conversation").is_none());
+    assert!(h.view_get("side").is_none());
+    let released = h.host.unsubscribes();
+    for stream in [
+        "conversation:1".to_string(),
+        format!("doc:{DOC_KIND}:1"),
+        "conversation:2".to_string(),
+        format!("doc:{DOC_KIND}:2"),
+    ] {
+        assert!(released.contains(&stream), "released {stream}: {released:?}");
+    }
+    // Clearing a focus is not closing the connection: host-wide streams stay.
+    assert!(!host_streams.is_empty());
+    for stream in host_streams {
+        assert!(!released.contains(&stream), "host stream {stream} stayed");
+    }
+}
+
+#[test]
+fn clearing_a_shared_main_and_side_unsubscribes_once() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::ShowSide { id: Some(1) });
+    h.invoke(3, Call::ClearConversation);
+    assert_eq!(
+        h.host.unsubscribes().iter().filter(|stream| *stream == "conversation:1").count(),
+        1
+    );
+    assert!(h.view_get("conversation").is_none());
+    assert!(h.view_get("side").is_none());
 }
 
 #[test]
@@ -1978,6 +2076,63 @@ fn image_derived_requests_degrade_to_original_before_5_20() {
 }
 
 #[test]
+fn clear_conversation_keeps_uploads_and_pending_reads_on_the_connection() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    let attachment = "A".repeat(22);
+    h.set_result("beginAttachment", obj(&[("attachmentId", Json::from(attachment.clone()))]));
+    // Both an unqueued read and an upload are already on the connection when
+    // the focus clears. Neither belongs to the released subscription.
+    h.host.hung_methods.insert("image".to_string());
+    h.invoke(2, Call::Image { ref_: "abc".to_string(), variant: ImageVariant::Original });
+    h.invoke(3, Call::BeginAttachment { name: "a.txt".to_string(), size: 5 });
+    assert_eq!(
+        h.ops.get(&3),
+        Some(&Ok(Some(obj(&[("attachmentId", Json::from(attachment.clone()))]))))
+    );
+
+    h.invoke(4, Call::ClearConversation);
+    assert_eq!(h.ops.get(&4), Some(&Ok(None)));
+    assert!(h.view_get("conversation").is_none());
+
+    h.set_result("appendAttachment", obj(&[("received", Json::from(5.0)), ("complete", Json::Bool(true))]));
+    h.invoke(
+        5,
+        Call::AppendAttachment {
+            attachment_id: attachment.clone(),
+            offset: 0,
+            data: "aGVsbG8=".to_string(),
+        },
+    );
+    assert_eq!(
+        h.ops.get(&5),
+        Some(&Ok(Some(obj(&[("received", Json::from(5.0)), ("complete", Json::Bool(true))]))))
+    );
+
+    let bytes = obj(&[("data", Json::from("aGVsbG8=")), ("mimeType", Json::from("image/png"))]);
+    h.host.hung_methods.remove("image");
+    h.answer_last("image", bytes.clone());
+    assert_eq!(h.ops.get(&2), Some(&Ok(Some(bytes))));
+
+    h.invoke(6, Call::Submit {
+        text: "look".to_string(),
+        when_busy: "followUp".to_string(),
+        target: Some(1),
+        request_id: None,
+        images: vec![],
+        skills: None,
+        attachments: vec![attachment.clone()],
+    });
+    let submit = &h.host.method("submit")[0];
+    let args = submit.get("args").expect("args");
+    assert_eq!(num_id(args.get("conversationId").unwrap()), Some(1));
+    assert_eq!(
+        args.get("attachments").cloned(),
+        Some(Json::array(vec![Json::from(attachment)]))
+    );
+}
+
+#[test]
 fn list_skills_needs_a_5_13_host() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(12.0))]);
     let mut h = Harness::new(host);
@@ -2535,6 +2690,48 @@ fn logical_submit_reconnect_resends_only_after_null() {
     h.fire_timer();
     h.snapshot("conversation:1", user_view(vec![logical_user_entry(42, "hello")]));
     assert!(h.submissions().is_empty());
+    let submits = h.host.method("submit");
+    assert_eq!(submits.len(), 2);
+    let args = submits[1].get("args").expect("args");
+    assert_eq!(args.get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(), "r1");
+    assert_eq!(num_id(args.get("conversationId").unwrap()), Some(1));
+}
+
+#[test]
+fn clear_conversation_keeps_an_unknown_submissions_fixed_target() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.host.hung_methods.insert("submit".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    let timer = h
+        .deadlines
+        .iter()
+        .find_map(|(timer, delay)| (*delay == 30_000).then_some(*timer))
+        .expect("submission deadline");
+    h.deadlines.retain(|(armed, _)| *armed != timer);
+    h.handle(Event::TimerFired { timer });
+    assert_eq!(
+        h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
+        "unknown"
+    );
+
+    h.invoke(2, Call::ClearConversation);
+    assert!(h.view_get("conversation").is_none());
+
+    // Recovery reads the row's fixed target, not the slot the focus used to
+    // point at. A null query is the only reason to resend.
+    h.host.hung_methods.remove("submit");
+    h.set_result("submission", Json::Null);
+    h.set_result("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.invoke(3, Call::RetrySubmission { request_id: "r1".to_string() });
+
+    let query = &h.host.method("submission")[0];
+    let args = query.get("args").expect("args");
+    assert_eq!(num_id(args.get("conversationId").unwrap()), Some(1));
+    assert_eq!(args.get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(), "r1");
     let submits = h.host.method("submit");
     assert_eq!(submits.len(), 2);
     let args = submits[1].get("args").expect("args");

@@ -8,6 +8,7 @@
 // never reaches `account_response` — the platform reports `code: "network"`
 // itself, like the reference's fetch seam does.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use url::{Host, Url};
@@ -485,6 +486,16 @@ pub fn is_secure_server_origin(origin: &str) -> bool {
 
 // ─── Stored-host matching ───────────────────────────────────────────────────
 
+/// One account-host identity: the server that vouches for it plus its hostId.
+/// The declined set stores these so a forgotten or refused account host is not
+/// silently registered again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountHostRef {
+    pub server_origin: String,
+    pub host_id: String,
+}
+
 /// How an account-bound host relates to the pairings this device stored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -523,6 +534,11 @@ pub struct AccountHostMatch {
     /// linkage existed — the caller may persist `{...stored, account}` to
     /// adopt the association. False when the match already carries the link.
     pub linkable: bool,
+    /// Whether this client may register the host through the account without
+    /// asking the user (M8): only an unpaired host, outside the declined set,
+    /// when the local pairing list was actually read. A failed read is not an
+    /// empty list.
+    pub auto_register: bool,
 }
 
 /// Pair the server's account hosts against the device's stored pairings.
@@ -530,15 +546,37 @@ pub struct AccountHostMatch {
 /// serverOrigin+hostId is paired (or `key_changed` when the keys diverged);
 /// an unlinked entry with the same key counts as paired and may adopt the
 /// link.
+///
+/// `declined` holds identities the user forgot or the host refused;
+/// `stored_read` is false when the local pairing list could not be loaded,
+/// which must not be mistaken for an empty list. Both only affect
+/// `auto_register`: the verdict still describes the pairing the client has.
 pub fn match_account_hosts(
     server_origin: &str,
     hosts: &[AccountHost],
     stored: &[StoredHost],
+    declined: &[AccountHostRef],
+    stored_read: bool,
 ) -> Vec<AccountHostMatch> {
     let origin = normalize_server_origin(server_origin);
+    let declined_keys: HashSet<String> = declined
+        .iter()
+        .map(|entry| format!("{}\u{0}{}", normalize_server_origin(&entry.server_origin), entry.host_id))
+        .collect();
     hosts
         .iter()
         .map(|host| {
+            let match_for = |status: AccountHostStatus, stored: Option<StoredHost>, linkable: bool| {
+                AccountHostMatch {
+                    host: host.clone(),
+                    status,
+                    stored,
+                    linkable,
+                    auto_register: stored_read
+                        && status == AccountHostStatus::Unpaired
+                        && !declined_keys.contains(&format!("{origin}\u{0}{}", host.host_id)),
+                }
+            };
             // Several entries may share a link — an explicit re-pair after a
             // key change stores a fresh record without deleting the stale
             // one. The entry whose key still matches wins; only a link with
@@ -553,37 +591,17 @@ pub fn match_account_hosts(
                 })
                 .collect();
             if let Some(exact) = linked.iter().find(|entry| entry.host_key == host.noise_public_key) {
-                return AccountHostMatch {
-                    host: host.clone(),
-                    status: AccountHostStatus::Paired,
-                    stored: Some((*exact).clone()),
-                    linkable: false,
-                };
+                return match_for(AccountHostStatus::Paired, Some((*exact).clone()), false);
             }
             if let Some(first) = linked.first() {
-                return AccountHostMatch {
-                    host: host.clone(),
-                    status: AccountHostStatus::KeyChanged,
-                    stored: Some((*first).clone()),
-                    linkable: false,
-                };
+                return match_for(AccountHostStatus::KeyChanged, Some((*first).clone()), false);
             }
             // The twin check does not exclude linked entries — an entry
             // bound elsewhere with the same key still counts as paired.
             if let Some(twin) = stored.iter().find(|entry| entry.host_key == host.noise_public_key) {
-                return AccountHostMatch {
-                    host: host.clone(),
-                    status: AccountHostStatus::Paired,
-                    stored: Some(twin.clone()),
-                    linkable: twin.account.is_none(),
-                };
+                return match_for(AccountHostStatus::Paired, Some(twin.clone()), twin.account.is_none());
             }
-            AccountHostMatch {
-                host: host.clone(),
-                status: AccountHostStatus::Unpaired,
-                stored: None,
-                linkable: false,
-            }
+            match_for(AccountHostStatus::Unpaired, None, false)
         })
         .collect()
 }

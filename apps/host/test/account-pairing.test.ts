@@ -192,9 +192,9 @@ describe("server-vouched pairing end to end", () => {
     const entry = tokenClient.view.current().devices[0]!;
     expect(entry.name).toBe("vouched phone");
     expect(entry.source).toBe("account");
-    await waitForView(tokenClient.view, (view) =>
-      view.notices.some((notice) => notice.message === 'New device "vouched phone" joined through your account'),
-    );
+    // Registration no longer broadcasts to connected devices (ADR-0022 §6).
+    await tokenClient.controller.createPairing();
+    expect(tokenClient.view.current().notices).toEqual([]);
   });
 
   it("forwards the direct candidate alongside the relay and keeps the legacy url", async () => {

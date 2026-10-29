@@ -670,7 +670,9 @@ async function accountVector(): Promise<VectorFile> {
       origin: c.origin,
       hosts: wire(c.hosts),
       stored: wire(c.stored),
-      expect: expect(wire(matchAccountHosts(c.origin, c.hosts, c.stored))),
+      declined: wire(c.declined ?? []),
+      storedRead: c.storedRead ?? true,
+      expect: expect(wire(matchAccountHosts(c.origin, c.hosts, c.stored, c.declined ?? [], c.storedRead ?? true))),
     })),
     accountPairingFragment: OFFER_CASES.map((c) => ({
       name: c.name,

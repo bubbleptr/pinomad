@@ -152,7 +152,7 @@ describe("account client against a real server", () => {
 
     // matchAccountHosts before pairing: unpaired.
     const store: StoredHost[] = [];
-    expect(matchAccountHosts(server.origin, hosts, store)[0]).toMatchObject({ status: "unpaired" });
+    expect(matchAccountHosts(server.origin, hosts, store, [], true)[0]).toMatchObject({ status: "unpaired", autoRegister: true });
 
     // Pair through the account: the offer becomes a StoredHost with the link.
     const paired = await pairViaAccount(client, hostId, "account-test device");
@@ -167,7 +167,7 @@ describe("account client against a real server", () => {
 
     // The match flips to paired, and the stored record reconnects on its own
     // key — no invite needed.
-    expect(matchAccountHosts(server.origin, hosts, store)[0]).toMatchObject({ status: "paired", linkable: false });
+    expect(matchAccountHosts(server.origin, hosts, store, [], true)[0]).toMatchObject({ status: "paired", linkable: false, autoRegister: false });
     const remote = await connectDevice(record.url, record.hostKey, record.privateKey);
     expect(remote.view.current().connection).toBe("connected");
   });
@@ -219,9 +219,10 @@ describe("account client against a real server", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(observer.view.current().devices).toHaveLength(0);
     const hosts = unwrap(await client.listHosts());
-    expect(matchAccountHosts(server.origin, hosts, [record])[0]).toMatchObject({
+    expect(matchAccountHosts(server.origin, hosts, [record], [], true)[0]).toMatchObject({
       status: "paired",
       stored: record,
+      autoRegister: false,
     });
   });
 });

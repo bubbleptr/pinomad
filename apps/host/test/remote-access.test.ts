@@ -375,7 +375,7 @@ describe("account-source admission", () => {
     return { host, dataDir: dir.path };
   }
 
-  it("admits a server-vouched device as source account and tells online clients; qr pairing stays quiet", async () => {
+  it("admits a server-vouched device as source account without broadcasting; qr pairing stays quiet", async () => {
     const { host } = await joinedHost();
     const tokenClient = await connectTo(defer, host);
 
@@ -396,10 +396,10 @@ describe("account-source admission", () => {
     await waitForView(tokenClient.view, (view) => view.devices.length === 2);
     const entry = devicesOf(tokenClient).find((each) => each.publicKey === toBase64Url(laptop.publicKey));
     expect(entry?.source).toBe("account");
-    await waitForView(tokenClient.view, (view) =>
-      view.notices.some((notice) => notice.message === 'New device "account laptop" joined through your account'),
-    );
-    // The newcomer was not yet a client when the notice went out.
+    // No broadcast (ADR-0022 §6, revised for M8): a notice would have reached
+    // this client before a later call's result.
+    await tokenClient.controller.createPairing();
+    expect(tokenClient.view.current().notices).toEqual([]);
     expect(remote.view.current().notices).toEqual([]);
   });
 

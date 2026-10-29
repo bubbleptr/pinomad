@@ -452,6 +452,23 @@ export interface AccountHostMatch {
    * the association. False when the match already carries the link.
    */
   readonly linkable: boolean;
+  /**
+   * Whether this client may register the host through the account without
+   * asking the user (M8): only an unpaired host, outside the declined set,
+   * when the local pairing list was actually read. A failed read is not an
+   * empty list.
+   */
+  readonly autoRegister: boolean;
+}
+
+/**
+ * One account-host identity: the server that vouches for it plus its hostId.
+ * The declined set stores these so a forgotten or refused account host is not
+ * silently registered again.
+ */
+export interface AccountHostRef {
+  readonly serverOrigin: string;
+  readonly hostId: string;
 }
 
 /**
@@ -459,14 +476,34 @@ export interface AccountHostMatch {
  * Identity is the Noise key: a stored entry whose `account` link matches
  * serverOrigin+hostId is paired (or `key_changed` when the keys diverged);
  * an unlinked entry with the same key counts as paired and may adopt the link.
+ *
+ * `declined` holds identities the user forgot or the host refused; `storedRead`
+ * is false when the local pairing list could not be loaded, which must not be
+ * mistaken for an empty list. Both only affect `autoRegister`: the verdict
+ * still describes the pairing the client actually has.
  */
 export function matchAccountHosts(
   serverOrigin: string,
   hosts: readonly AccountHost[],
   stored: readonly StoredHost[],
+  declined: readonly AccountHostRef[],
+  storedRead: boolean,
 ): AccountHostMatch[] {
   const origin = normalizeServerOrigin(serverOrigin);
+  const declinedKeys = new Set(
+    declined.map((entry) => `${normalizeServerOrigin(entry.serverOrigin)}\u0000${entry.hostId}`),
+  );
   return hosts.map((host) => {
+    const match = (status: AccountHostStatus, stored?: StoredHost, linkable = false): AccountHostMatch => ({
+      host,
+      status,
+      ...(stored === undefined ? {} : { stored }),
+      linkable,
+      autoRegister:
+        storedRead
+        && status === "unpaired"
+        && !declinedKeys.has(`${origin}\u0000${host.hostId}`),
+    });
     // Several entries may share a link — an explicit re-pair after a key
     // change stores a fresh record without deleting the stale one. The entry
     // whose key still matches wins; only a link with no matching key at all
@@ -478,11 +515,11 @@ export function matchAccountHosts(
         each.account.hostId === host.hostId,
     );
     const exact = linked.find((each) => each.hostKey === host.noisePublicKey);
-    if (exact !== undefined) return { host, status: "paired" as const, stored: exact, linkable: false };
-    if (linked.length > 0) return { host, status: "key_changed" as const, stored: linked[0], linkable: false };
+    if (exact !== undefined) return match("paired", exact);
+    if (linked.length > 0) return match("key_changed", linked[0]);
     const twin = stored.find((each) => each.hostKey === host.noisePublicKey);
-    if (twin !== undefined) return { host, status: "paired" as const, stored: twin, linkable: twin.account === undefined };
-    return { host, status: "unpaired" as const, linkable: false };
+    if (twin !== undefined) return match("paired", twin, twin.account === undefined);
+    return match("unpaired");
   });
 }
 

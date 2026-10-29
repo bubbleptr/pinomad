@@ -474,6 +474,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     toggleTasks: fn(async () => {}),
     switchConversation: fn(async () => {}),
     showSide: fn(async () => {}),
+    clearConversation: fn(async () => {}),
     fork: fn(async () => {}),
     answer: fn(async () => {}),
     changes: fn(async () => ({ available: true as const, base: "c0ffee0", patch: PATCH, truncated: false, branch: "pinomad/1-parser" })),
@@ -559,12 +560,13 @@ function accountHost(overrides: Partial<AccountHost>): AccountHost {
 }
 
 export const ACCOUNT_HOSTS: readonly AccountHostMatch[] = [
-  { host: accountHost({}), status: "paired", stored: HOME_HOST, linkable: false },
-  { host: accountHost({ hostId: "o".repeat(43), name: "omarchy", noisePublicKey: key("E"), lastSeenAt: now - 3 * MINUTE }), status: "unpaired", linkable: false },
+  { host: accountHost({}), status: "paired", stored: HOME_HOST, linkable: false, autoRegister: false },
+  { host: accountHost({ hostId: "o".repeat(43), name: "omarchy", noisePublicKey: key("E"), lastSeenAt: now - 3 * MINUTE }), status: "unpaired", linkable: false, autoRegister: true },
   {
     host: accountHost({ hostId: "s".repeat(43), name: "studio", noisePublicKey: key("F"), online: false, lastSeenAt: now - 2 * 24 * 60 * MINUTE, pairing: "offline" }),
     status: "unpaired",
     linkable: false,
+    autoRegister: true,
   },
 ];
 

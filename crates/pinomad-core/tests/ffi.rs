@@ -534,6 +534,16 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
 }
 
 #[test]
+fn ffi_clears_the_shown_conversation() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::SwitchConversation { id: 1 });
+    assert!(h.client.snapshot().unwrap().conversation.is_some());
+    h.invoke(2, FfiCall::ClearConversation);
+    assert!(h.client.snapshot().unwrap().conversation.is_none());
+    assert_eq!(h.ops.get(&2), Some(&Ok(CallResult::Unit)));
+}
+
+#[test]
 fn ffi_sends_image_refs_and_keeps_bytes_inline() {
     let mut h = Harness::new();
     h.invoke(1, FfiCall::SwitchConversation { id: 1 });
@@ -2051,7 +2061,7 @@ fn account_probe_and_origin_helpers() {
 #[test]
 fn account_pairing_link_and_host_matching() {
     use pinomad_core::ffi::{
-        AccountHost, AccountHostPairing, AccountHostStatus, EndpointRole, EndpointSet,
+        AccountHost, AccountHostPairing, AccountHostRef, AccountHostStatus, EndpointRole, EndpointSet,
         HostEndpoint, PairingOffer, StoredHostAccount, account_pairing_link, match_account_hosts,
         pairing_target,
     };
@@ -2114,13 +2124,36 @@ fn account_pairing_link_and_host_matching() {
         connection_mode: None,
         rtc_signal_only: None,
     };
-    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host.clone()], vec![linked]);
+    let matches = match_account_hosts(
+        "https://relay.example.com".to_string(),
+        vec![host.clone()],
+        vec![linked],
+        vec![],
+        true,
+    );
     assert_eq!(matches[0].status, AccountHostStatus::Paired);
     assert_eq!(matches[0].stored.as_ref().map(|s| s.host_key.as_str()), Some(secret));
     assert!(!matches[0].linkable);
-    // Nothing stored: unpaired.
-    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host], vec![]);
+    assert!(!matches[0].auto_register);
+    // Nothing stored: unpaired, and eligible for automatic registration.
+    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host.clone()], vec![], vec![], true);
     assert_eq!(matches[0].status, AccountHostStatus::Unpaired);
+    assert!(matches[0].auto_register);
+    // A declined account host or a failed local read never qualifies.
+    let declined = AccountHostRef {
+        server_origin: "https://relay.example.com".to_string(),
+        host_id: key.to_string(),
+    };
+    let matches = match_account_hosts(
+        "https://relay.example.com".to_string(),
+        vec![host.clone()],
+        vec![],
+        vec![declined],
+        true,
+    );
+    assert!(!matches[0].auto_register);
+    let matches = match_account_hosts("https://relay.example.com".to_string(), vec![host], vec![], vec![], false);
+    assert!(!matches[0].auto_register);
 }
 
 #[test]

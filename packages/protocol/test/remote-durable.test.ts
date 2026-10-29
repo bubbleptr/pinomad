@@ -327,6 +327,72 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("clears both slots and releases their streams but keeps host-level streams", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(2));
+      const hostStreams = subscribes(sent).filter((stream) => !stream.startsWith("conversation:") && !stream.startsWith("doc:"));
+
+      await remote.controller.clearConversation();
+
+      const view = remote.view.current();
+      expect(view.conversation).toBeUndefined();
+      expect(view.side).toBeUndefined();
+      expect(view.connection).toBe("connected");
+      const released = unsubscribes(sent);
+      expect(released).toEqual(
+        expect.arrayContaining(["conversation:1", `doc:${DOC.kind}:1`, "conversation:2", `doc:${DOC.kind}:2`]),
+      );
+      // Clearing a focus is not closing the connection: host-wide streams stay.
+      expect(hostStreams.length).toBeGreaterThan(0);
+      for (const stream of hostStreams) expect(released).not.toContain(stream);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("clears a shared main and side without unsubscribing twice", async () => {
+    const { transport, sent } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.switchConversation(id(1));
+      await remote.controller.showSide(id(1));
+      await remote.controller.clearConversation();
+      expect(unsubscribes(sent).filter((stream) => stream === "conversation:1")).toHaveLength(1);
+      expect(remote.view.current().conversation).toBeUndefined();
+      expect(remote.view.current().side).toBeUndefined();
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("keeps an attachment upload running after the focus is cleared", async () => {
+    const attachment = "A".repeat(22);
+    const { transport, sent } = fakeTransport([{}], undefined, (frame) =>
+      frame.method === "beginAttachment"
+        ? { ok: true, value: { attachmentId: attachment } }
+        : frame.method === "appendAttachment"
+          ? { ok: true, value: { received: 5, complete: true } }
+          : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.switchConversation(id(1));
+      expect(await remote.controller.beginAttachment("a.txt", 5)).toBe(attachment);
+      await remote.controller.clearConversation();
+      expect(await remote.controller.appendAttachment(attachment, 0, "aGVsbG8=")).toEqual({ received: 5, complete: true });
+      // A submission made after clearing has to name its conversation: the
+      // slot no longer points at one.
+      await remote.controller.submit("look", "followUp", { target: id(1), attachments: [attachment] });
+      const submit = sent.find((frame) => frame.type === "call" && frame.method === "submit")!;
+      expect(submit.args).toMatchObject({ conversationId: 1, attachments: [attachment] });
+    } finally {
+      remote.close();
+    }
+  });
+
   it("targets submit, answer and abort at a chosen conversation", async () => {
     const { transport, sent } = fakeTransport([{}]);
     const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
@@ -780,6 +846,32 @@ it("closes the side when the archive removes it or its root", async () => {
       const main = remote.view.current().conversation as { conversation: { id: number; marker?: string } };
       expect(main.conversation.id).toBe(2);
       expect(main.conversation.marker).toBe("new");
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("clears while a reconnect's conversation snapshot is still held without keeping the sync gate closed", async () => {
+    const { transport, sent, hold, disconnect } = fakeTransport([{}]);
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await remote.controller.switchConversation(id(1));
+      // The reconnect barrier waits for this stream, but clear drops the
+      // subscription before its snapshot can arrive. The barrier must settle
+      // on the released stream instead of holding every later call until the
+      // sync deadline closes a healthy connection.
+      hold("conversation:1" as StreamName);
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected");
+
+      await remote.controller.clearConversation();
+      expect(remote.view.current().conversation).toBeUndefined();
+
+      const pairing = remote.controller.createPairing().catch(() => undefined);
+      await expect
+        .poll(() => sent.some((frame) => frame.type === "call" && frame.method === "createPairing"), { timeout: 2000 })
+        .toBe(true);
+      await pairing;
     } finally {
       remote.close();
     }

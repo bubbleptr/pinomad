@@ -2225,6 +2225,9 @@ class RemoteClient {
 
   /** Resolve at the stream's next snapshot; reject if the host ends it instead. */
   #snapshot(stream: StreamName, endSatisfies = false): Promise<void> {
+    // A stream released between the sync barrier's list and this call needs
+    // no snapshot; waiting would hang the barrier (clear during a reconnect).
+    if (!this.#wanted.has(stream)) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const waiters = this.#snapshotWaiters.get(stream) ?? [];
       waiters.push({ resolve, reject, endSatisfies });
@@ -2262,9 +2265,12 @@ class RemoteClient {
     // host has not answered this connection — waiting hands us its new value,
     // never the stale one left over from before the reconnect.
     const stale = this.#conversationStreams(id).filter((stream) => this.#wanted.has(stream) && !this.#fresh.has(stream));
+    // Mark the missing streams wanted before taking their snapshot waiters:
+    // #snapshot refuses to wait for a stream nobody wants, so a clear that
+    // released it can never hang this acquire.
+    for (const stream of missing) this.#wanted.add(stream);
     const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
     for (const stream of missing) {
-      this.#wanted.add(stream);
       // Before the hello the minor is not known yet; the hello's #wanted loop
       // sends this stream with the right form once it has read the version.
       if (this.#helloReceived) this.#subscribe(stream);
@@ -2280,6 +2286,11 @@ class RemoteClient {
       this.#wanted.delete(stream);
       this.#values.delete(stream);
       this.#fresh.delete(stream);
+      // No snapshot will ever be accepted for this stream again, so a sync
+      // barrier waiting on it must settle now. Otherwise a clear during a
+      // reconnect would hold every later call until the sync timer kills a
+      // healthy connection.
+      for (const waiter of this.#snapshotWaiters.get(stream)?.splice(0) ?? []) waiter.resolve();
       this.#send({ type: "unsubscribe", stream });
     }
   }
@@ -3214,6 +3225,7 @@ class RemoteClient {
         }),
       switchConversation: (id) => this.#command(() => this.#switch(id)),
       showSide: (id) => this.#command(() => this.#showSide(id)),
+      clearConversation: () => this.#command(() => this.#clear()),
       fork: (entryId, prompt, removeTools, options) =>
         this.#command(async () => {
           const { conversationId: forked } = await this.#call("fork", {
@@ -3396,6 +3408,16 @@ class RemoteClient {
     this.#current = undefined;
     this.#release(previous, this.#side);
     this.#refresh();
+  }
+
+  /**
+   * Release both slots in order: the main releases first while the side still
+   * keeps any streams they share, then the side releases the rest. Host-level
+   * streams are never touched because they are not in either slot.
+   */
+  async #clear(): Promise<void> {
+    this.#unshow();
+    await this.#showSide(undefined);
   }
 
   /** Show a second conversation beside the main one, or close it. */

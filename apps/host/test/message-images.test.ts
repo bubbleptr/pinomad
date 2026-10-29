@@ -217,6 +217,31 @@ describe("message images", () => {
     await expect.poll(async () => (await raw.call("image", { ref })).ok).toBe(false);
   });
 
+  it("answers a request issued before clearConversation and refuses new ones until shown again", async () => {
+    const host = await startFauxHost(defer, { answers: ["seen"] });
+    const client = await connectTo(defer, host);
+    await client.controller.createConversation({ kind: "chat" }, "look", { images: [PNG] });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "seen");
+    const id = client.view.current().conversation!.conversation.id;
+    const ref = (userContents(client.view.current().conversation!)[0] as { ref?: string }[]).find(
+      (block) => block.ref !== undefined,
+    )!.ref!;
+
+    // The call frame already left; clearing only drops the subscription that
+    // authorized it on the host, so the host still answers this one.
+    const pending = client.controller.image(ref);
+    await client.controller.clearConversation();
+    expect(client.view.current().conversation).toBeUndefined();
+    await expect(pending).resolves.toEqual(PNG);
+
+    // A fresh request has no live ref subscription behind it (ADR-0027: the
+    // host authorizes by current view), so it is refused until the
+    // conversation is shown again.
+    await expect(client.controller.image(ref)).rejects.toThrow("Unknown image");
+    await client.controller.switchConversation(id);
+    await expect(client.controller.image(ref)).resolves.toEqual(PNG);
+  });
+
   it("resolves a submitted ref before its first await, so an immediate unsubscribe cannot invalidate it", async () => {
     const host = await startFauxHost(defer, { answers: ["seen", "again"] });
     const client = await connectTo(defer, host);

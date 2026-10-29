@@ -230,6 +230,10 @@ export interface MatchCase {
   origin: string;
   hosts: AccountHost[];
   stored: StoredHost[];
+  /** serverOrigin + hostId entries the user's devices declined to auto-register. */
+  declined?: { serverOrigin: string; hostId: string }[];
+  /** false models a failed local pairing-list read, not an empty one. */
+  storedRead?: boolean;
 }
 
 export const MATCH_CASES: MatchCase[] = [
@@ -305,6 +309,37 @@ export const MATCH_CASES: MatchCase[] = [
     origin: ACCOUNT_ORIGIN,
     hosts: [host(HOST_ID_B, NOISE_B, "offline")],
     stored: [],
+    // Eligibility only asks about trust and the read; the attempt itself may
+    // still fail because the host is offline.
+    storedRead: true,
+  },
+  {
+    name: "unpaired-declined",
+    origin: ACCOUNT_ORIGIN,
+    hosts: [host(HOST_ID_A, NOISE_C)],
+    stored: [],
+    declined: [{ serverOrigin: `${ACCOUNT_ORIGIN}/`, hostId: HOST_ID_A }],
+  },
+  {
+    name: "declined-other-origin",
+    origin: ACCOUNT_ORIGIN,
+    hosts: [host(HOST_ID_A, NOISE_C)],
+    stored: [],
+    declined: [{ serverOrigin: "https://other.example.com", hostId: HOST_ID_A }],
+  },
+  {
+    name: "key-changed-declined",
+    origin: ACCOUNT_ORIGIN,
+    hosts: [host(HOST_ID_A, NOISE_ROTATED)],
+    stored: [stored(STORE_KEY_C, { serverOrigin: ACCOUNT_ORIGIN, hostId: HOST_ID_A })],
+    declined: [{ serverOrigin: ACCOUNT_ORIGIN, hostId: HOST_ID_A }],
+  },
+  {
+    name: "stored-read-failed",
+    origin: ACCOUNT_ORIGIN,
+    hosts: [host(HOST_ID_A, NOISE_C)],
+    stored: [],
+    storedRead: false,
   },
 ];
 

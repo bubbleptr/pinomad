@@ -596,70 +596,126 @@
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "twin-linkable",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"},\"linkable\":true}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"},\"linkable\":true,\"autoRegister\":false}]"
     },
     {
       "name": "unpaired",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"BSpQdzrI2Rdz8tyWYuEvDe_pFeQVuKHI4gpaPWqyuEM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":true}]"
     },
     {
       "name": "key-changed",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "stale-and-fresh-link",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GKb4waf93yK9QQE4959ymM040dClQtQmbVVr6GCdiGI\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"vOBZv1sqt6kfPoY6zwyE0-u-BMqEkAlLBStbFa-rF0M\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "linked-shadows-twin",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\"}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "other-origin-same-key",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "other-origin-other-key",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":true}]"
     },
     {
       "name": "origin-normalizes",
       "origin": "https://relay.example.com:443/",
       "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
       "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
-      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"paired\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
     },
     {
       "name": "host-offline-row",
       "origin": "https://relay.example.com",
       "hosts": "[{\"hostId\":\"l8OxC01sEzp46l3MHPZCHT-Brjex9ijOFMpvzncw8zM\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"offline\"}]",
       "stored": "[]",
-      "expect": "[{\"host\":{\"hostId\":\"l8OxC01sEzp46l3MHPZCHT-Brjex9ijOFMpvzncw8zM\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"offline\"},\"status\":\"unpaired\",\"linkable\":false}]"
+      "declined": "[]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"l8OxC01sEzp46l3MHPZCHT-Brjex9ijOFMpvzncw8zM\",\"name\":\"omarchy\",\"noisePublicKey\":\"WFV4TLPIx5bYSsk-j0pT2rC7MegJYAQs-ofwOkKTswg\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"offline\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":true}]"
+    },
+    {
+      "name": "unpaired-declined",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[]",
+      "declined": "[{\"serverOrigin\":\"https://relay.example.com/\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":false}]"
+    },
+    {
+      "name": "declined-other-origin",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[]",
+      "declined": "[{\"serverOrigin\":\"https://other.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":true}]"
+    },
+    {
+      "name": "key-changed-declined",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}}]",
+      "declined": "[{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}]",
+      "storedRead": true,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"eB-quQhDAVDazN1vnWxQhuNPc6k-u6onF2XlA27fxRk\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"key_changed\",\"stored\":{\"url\":\"wss://relay.example.com/c/x\",\"hostKey\":\"GX_CxWfcA-4qrfDthmgdrCTap26DylVYdd075zduUwY\",\"privateKey\":\"8T_vPvqVmKKiP8dWv2iP6LvX9s-VKLuu87REJojwqzE\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\"}},\"linkable\":false,\"autoRegister\":false}]"
+    },
+    {
+      "name": "stored-read-failed",
+      "origin": "https://relay.example.com",
+      "hosts": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"}]",
+      "stored": "[]",
+      "declined": "[]",
+      "storedRead": false,
+      "expect": "[{\"host\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"foHpFuOvzbMe902NuSPyuhW4KhqmWU6iKNzfJ9e1T2w\",\"online\":true,\"lastSeenAt\":1,\"pairing\":\"available\"},\"status\":\"unpaired\",\"linkable\":false,\"autoRegister\":false}]"
     }
   ],
   "accountPairingFragment": [

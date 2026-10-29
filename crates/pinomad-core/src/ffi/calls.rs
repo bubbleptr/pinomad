@@ -203,6 +203,9 @@ pub enum FfiCall {
     },
     /// Show and talk to another conversation.
     SwitchConversation { id: u64 },
+    /// Release the shown conversation's subscriptions; host-level streams and
+    /// the connection stay. Pending submissions and uploads keep running.
+    ClearConversation,
     /// The shown conversation's thinking level.
     SetThinkingLevel { level: ThinkingLevel },
     SetModel { model: ModelRef },
@@ -410,6 +413,7 @@ impl FfiCall {
                 attachments,
             },
             FfiCall::SwitchConversation { id } => Call::SwitchConversation { id },
+            FfiCall::ClearConversation => Call::ClearConversation,
             FfiCall::SetThinkingLevel { level } => Call::SetThinkingLevel {
                 level: level.as_str().to_string(),
             },

@@ -304,6 +304,9 @@ pub enum Call {
     ToggleTasks,
     SwitchConversation { id: u64 },
     ShowSide { id: Option<u64> },
+    /// Release both the main and side conversation subscriptions, keeping
+    /// host-level streams and the connection (M8 focus handoff).
+    ClearConversation,
     Fork {
         entry_id: String,
         prompt: String,
@@ -795,6 +798,8 @@ enum Step {
     UnsideIfArchived { id: u64, archived: bool },
     /// showSide(undefined), reachable as its own step for Call::ShowSide.
     Unside,
+    /// clearConversation: release the main slot, then the side slot.
+    ClearConversation,
     ToggleTasks,
     Done { value: DoneValue },
 }
@@ -1025,6 +1030,10 @@ pub struct RemoteDurable {
     dial: Option<DialAttempt>,
     round_timer: Option<u32>,
     reconnect_remaining: Option<HashSet<Vec<u16>>>,
+    /// A released stream completed the reconnect barrier while an op was
+    /// being driven. Finish after the current event so #release never
+    /// re-enters invoke through finish_reconnect.
+    reconnect_finish_pending: bool,
     /// A reconnect's shell is visible, but calls wait for its conversation and
     /// doc snapshots before entering a ciphertext FIFO.
     sync_gate: bool,
@@ -1169,6 +1178,7 @@ impl RemoteDurable {
             dial: None,
             round_timer: None,
             reconnect_remaining: None,
+            reconnect_finish_pending: false,
             sync_gate: false,
             sync_queue: VecDeque::new(),
             next_conn: 0,
@@ -1342,6 +1352,12 @@ impl RemoteDurable {
             Event::RtcClosed { peer, reason } => self.rtc_closed(peer, reason),
             Event::RtcSelectedCandidate { peer, local, remote } => self.rtc_selected(peer, local, remote),
             Event::SetConnectionMode { mode } => self.set_connection_mode(mode),
+        }
+        // #release can complete the reconnect barrier from inside an op's
+        // step, where finish_reconnect's queued-op replay would re-enter the
+        // handler. Defer it to the end of the event.
+        if self.reconnect_finish_pending {
+            self.finish_reconnect();
         }
         if self.view_dirty {
             self.version += 1;
@@ -4146,6 +4162,7 @@ impl RemoteDurable {
                 Some(id) => steps.push_back(Step::Show { target: ShowTarget::Id(*id), slot: Slot::Side }),
                 None => steps.push_back(Step::Unside),
             },
+            Call::ClearConversation => steps.push_back(Step::ClearConversation),
             Call::Fork { entry_id, prompt, remove_tools, show } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
@@ -4486,6 +4503,11 @@ impl RemoteDurable {
                         return self.fail_op(index, &error);
                     }
                 }
+                Step::ClearConversation => {
+                    if let Err(error) = self.clear_conversation() {
+                        return self.fail_op(index, &error);
+                    }
+                }
                 Step::ToggleTasks => {
                     let tasks = key("tasks");
                     if self.wanted.remove(&tasks) {
@@ -4656,8 +4678,40 @@ impl RemoteDurable {
             self.wanted.remove(&stream);
             self.values.remove(&stream);
             self.fresh.remove(&stream);
+            // The stream will never deliver a snapshot again; a reconnect
+            // barrier must not keep waiting for it. Releasing the last
+            // non-host stream can complete the barrier once host-level
+            // streams are already fresh.
+            if let Some(remaining) = &mut self.reconnect_remaining {
+                remaining.remove(&stream);
+            }
             self.send(ClientFrame::Unsubscribe { stream: U16String(stream) });
         }
+        self.note_reconnect_barrier_complete();
+    }
+
+    /// Mark a released stream's barrier completion for the end of the event.
+    fn note_reconnect_barrier_complete(&mut self) {
+        let Some(remaining) = &self.reconnect_remaining else {
+            return;
+        };
+        if !remaining.is_empty() || self.state.is_none() {
+            return;
+        }
+        let host_ready = host_streams(self.host_minor)
+            .into_iter()
+            .all(|name| self.fresh.contains(&key(name)));
+        if host_ready {
+            self.reconnect_finish_pending = true;
+        }
+    }
+
+    /// Drop both slots: the main first while the side still keeps shared
+    /// streams, then the side. Host-level subscriptions are not slot streams,
+    /// so they stay. Pending work already on the connection is untouched.
+    fn clear_conversation(&mut self) -> Result<(), String> {
+        self.unshow()?;
+        self.show_side(None)
     }
 
     /// `#unshow` — drop the main slot.
@@ -5757,6 +5811,10 @@ impl RemoteDurable {
 
     /// A reconnect's fresh snapshots arrived: the connection is usable again.
     fn finish_reconnect(&mut self) {
+        self.reconnect_finish_pending = false;
+        if self.reconnect_remaining.is_none() {
+            return;
+        }
         self.reconnect_remaining = None;
         self.set_field("connection", Json::from(CONNECTED));
         if let Err(error) = self.refresh() {
