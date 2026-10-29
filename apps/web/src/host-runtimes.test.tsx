@@ -7,7 +7,7 @@ import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remo
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
-import { HostRuntimes } from "./App.tsx";
+import { HostRuntimes } from "./entities/host/host-runtime.tsx";
 import { createHostRuntimeRegistry, HostRuntimesContext } from "./entities/host/host-runtimes.ts";
 import { HostsContext } from "./entities/host/host-store.ts";
 import { fakeHosts, fakeRemote, fakeView, HOME_HOST, DEVBOX_HOST } from "./test/story-fixtures.tsx";
@@ -51,6 +51,7 @@ describe("HostRuntimes", () => {
         <HostRuntimesContext.Provider value={registry}>
           <HostRuntimes
             hosts={hosts}
+            renderWorkbench={() => null}
             focus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
             connect={connect}
           />
@@ -70,6 +71,7 @@ describe("HostRuntimes", () => {
         <HostRuntimesContext.Provider value={registry}>
           <HostRuntimes
             hosts={hosts}
+            renderWorkbench={() => null}
             focus={{ hostKey: DEVBOX_HOST.hostKey, conversationId: id(3) }}
             connect={connect}
           />
@@ -99,7 +101,7 @@ describe("HostRuntimes", () => {
     const renderHosts = (hosts: StoredHost[]) => (
       <HostsContext.Provider value={hostState}>
         <HostRuntimesContext.Provider value={registry}>
-          <HostRuntimes hosts={hosts} focus={focus} connect={connect} />
+          <HostRuntimes hosts={hosts} focus={focus} connect={connect} renderWorkbench={() => null} />
         </HostRuntimesContext.Provider>
       </HostsContext.Provider>
     );
@@ -131,6 +133,7 @@ describe("HostRuntimes", () => {
         <HostRuntimesContext.Provider value={registry}>
           <HostRuntimes
             hosts={hosts}
+            renderWorkbench={() => null}
             focus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
             connect={connect}
           />
@@ -146,7 +149,7 @@ describe("HostRuntimes", () => {
     rerender(
       <HostsContext.Provider value={hostState}>
         <HostRuntimesContext.Provider value={registry}>
-          <HostRuntimes hosts={hosts} focus={{ hostKey: HOME_HOST.hostKey }} connect={connect} />
+          <HostRuntimes hosts={hosts} focus={{ hostKey: HOME_HOST.hostKey }} connect={connect} renderWorkbench={() => null} />
         </HostRuntimesContext.Provider>
       </HostsContext.Provider>,
     );

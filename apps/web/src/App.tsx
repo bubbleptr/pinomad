@@ -20,12 +20,12 @@ import {
   useState,
 } from "react";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
-import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
+
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
-import { candidatePlan, preferredLegacyUrl, type RemoteCandidate } from "@pinomad/protocol/remote-candidates.ts";
+import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
@@ -37,12 +37,12 @@ import { ConversationTranscript } from "./widgets/chat/conversation-transcript.t
 import type { PanelTab } from "./widgets/side-panel/side-panel.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
-import type { PairingContext, RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
+import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { DurableView, ProtocolMismatch } from "@pinomad/protocol/view.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
-import { fromBase64Url, secureWebSocketTransport, SIGNAL_PROLOGUE, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { clientDeviceName, resolveAddress, servedByHost, type ResolvedAddress, type StoredHost } from "./address.ts";
+import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
+import { clientDeviceName, resolveAddress, type ResolvedAddress, type StoredHost } from "./address.ts";
 import { HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } from "./entities/host/host-store.ts";
 import { readFocus, writeFocus, type ConversationRef, type HostFocus } from "./entities/host/focus.ts";
 import { browserDeclined, cancelAccountRegistration } from "./entities/account/declined.ts";
@@ -50,35 +50,24 @@ import {
   createHostRuntimeRegistry,
   HostRuntimesContext,
 } from "./entities/host/host-runtimes.ts";
-import { useConversationFocus } from "./entities/host/use-conversation-focus.ts";
-import { useAppUpdate } from "./entities/app-update/use-app-update.ts";
-import { UpdateStatusNote } from "./entities/app-update/update-status-note.tsx";
+import { useComposerSlot, useComposerSlotState } from "./entities/composer/composer-context.tsx";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
 import { AccountPanel } from "./widgets/account/account-panel.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
-import { hostWindowChrome } from "./shared/host-chrome.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
+import { secureOptions } from "./entities/host/secure-options.ts";
+import { HostRuntimes, type RemoteConnect } from "./entities/host/host-runtime.tsx";
+import { Centered } from "./shared/ui/centered.tsx";
+import { reloadedKey, VersionMismatch } from "./widgets/app-frame/version-mismatch.tsx";
 
-const page: CSSProperties = {
-  height: "100dvh",
-  width: "100%",
-  backgroundColor: "var(--color-background-body)",
-  color: "var(--color-text-primary)",
-};
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
 const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 const readOverviewOpen = (): boolean =>
   typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
-
-const RELOADED_KEY = "pinomad.reloadedForProtocol";
-
-/** The reload-once guard is per host: one outdated host must not trip another. */
-const reloadedKey = (hostKey: string | undefined): string =>
-  hostKey === undefined ? RELOADED_KEY : `${RELOADED_KEY}.${hostKey}`;
 
 type Loaded = {
   readonly hosts: readonly StoredHost[];
@@ -86,84 +75,15 @@ type Loaded = {
   readonly address: ResolvedAddress | undefined;
 };
 
-type RtcPlatform = ReturnType<typeof createBrowserRtcPlatform>;
-
-/**
- * The candidate-mode options every secure client builds: a stored host's RTC
- * coordinator and transport, plus the optional one-time pairing context. The
- * multi-host runtimes and the one-shot pair flow must not drift apart.
- */
-function secureOptions({
-  hostKey,
-  device,
-  target,
-  candidates,
-  stored,
-  pairing,
-  rtcPlatform,
-  onPaired,
-  onEndpointSet,
-  setConnection,
-}: {
-  hostKey: string;
-  device: KeyPair;
-  target: { readonly url: string; readonly endpointSet?: EndpointSet };
-  candidates: readonly RemoteCandidate[];
-  stored?: StoredHost;
-  pairing?: PairingContext;
-  rtcPlatform: RtcPlatform;
-  onPaired?: () => void;
-  onEndpointSet: (endpointSet: EndpointSet) => void;
-  setConnection: (hostKey: string, change: { rtcSignalOnly: boolean }) => Promise<void>;
-}): RemoteDurableOptions {
-  const hostKeyBytes = fromBase64Url(hostKey);
-  const rtc =
-    rtcPlatform === undefined
-      ? undefined
-      : {
-          platform: rtcPlatform,
-          hostKey: hostKeyBytes,
-          device,
-          signalOnlyHint: stored?.rtcSignalOnly === true,
-          openSignalTransport: (candidate: RemoteCandidate) =>
-            secureWebSocketTransport({
-              url: candidate.url,
-              hostKey: hostKeyBytes,
-              device,
-              prologue: SIGNAL_PROLOGUE,
-            }),
-          onSignalOnly: (signalOnly: boolean) => {
-            void setConnection(hostKey, { rtcSignalOnly: signalOnly }).catch((error: unknown) =>
-              console.error("Could not store the host's RTC hint", error),
-            );
-          },
-          onSignalOnlyError: (error: Error) => console.error("Could not store the host's RTC hint", error),
-        };
-  return {
-    candidates,
-    legacyUrl: target.url,
-    pageProtocol: window.location.protocol,
-    ...(stored?.connectionMode === undefined ? {} : { connectionMode: stored.connectionMode }),
-    ...(pairing === undefined ? {} : { pairing }),
-    ...(rtc === undefined ? {} : { rtc }),
-    ...(onPaired === undefined ? {} : { onPaired }),
-    openTransport: (candidate: RemoteCandidate, currentPairing: PairingContext | undefined) =>
-      secureWebSocketTransport({
-        url: candidate.url,
-        hostKey: hostKeyBytes,
-        device,
-        ...(currentPairing === undefined ? {} : { pairing: currentPairing }),
-      }),
-    onEndpointSet,
-  };
-}
-
 export function App() {
   const [store] = useState(hostStore);
   const registry = useMemo(createHostRuntimeRegistry, []);
   // Conversation each host last showed, for the sidebar's "focus this host"
   // action and for restoring the focus after a forget.
   const lastByHost = useRef(new Map<string, ConversationId>());
+  // A pairing can finish before the initial list read; remember it and merge
+  // it into the first snapshot instead of dropping its runtime.
+  const pendingPairings = useRef(new Map<string, StoredHost>());
   const [loaded, setLoaded] = useState<Loaded>();
   useEffect(() => {
     let live = true;
@@ -175,14 +95,23 @@ export function App() {
       })
       .then((hosts) => {
         if (!live) return;
-        const focus = readFocus(localStorage, hosts) ?? null;
+        let merged = [...hosts];
+        for (const pending of pendingPairings.current.values()) {
+          const existing = merged.find((each) => each.hostKey === pending.hostKey);
+          merged = [
+            ...merged.filter((each) => each.hostKey !== pending.hostKey),
+            existing === undefined ? pending : mergeStoredHost(existing, pending),
+          ];
+        }
+        pendingPairings.current.clear();
+        const focus = readFocus(localStorage, merged) ?? null;
         if (focus?.conversationId !== undefined) lastByHost.current.set(focus.hostKey, focus.conversationId);
         setLoaded({
-          hosts,
+          hosts: merged,
           focus,
           // Only a live fragment (#token=…, #pair=…) resolves to a one-shot
           // screen. Stored hosts all run at once; their focus is separate.
-          address: resolveAddress(window.location.hash, window.location, hosts, focus?.hostKey ?? null),
+          address: resolveAddress(window.location.hash, window.location, merged, focus?.hostKey ?? null),
         });
       });
     return () => {
@@ -294,7 +223,11 @@ export function App() {
     async (host: StoredHost): Promise<void> => {
       await store.save(host);
       setLoaded((prev) => {
-        if (prev === undefined) return prev;
+        if (prev === undefined) {
+          const pending = pendingPairings.current.get(host.hostKey);
+          pendingPairings.current.set(host.hostKey, pending === undefined ? host : mergeStoredHost(pending, host));
+          return prev;
+        }
         const existing = prev.hosts.find((each) => each.hostKey === host.hostKey);
         return {
           ...prev,
@@ -425,267 +358,27 @@ export function App() {
               <NoHostLink />
             </Centered>
           ) : (
-            <HostRuntimes hosts={hosts} focus={focus} />
+            <HostRuntimes
+              hosts={hosts}
+              focus={focus}
+              renderWorkbench={({ host, remote, device, rejected, retry }) => (
+                <Workbench
+                  remote={remote}
+                  wsUrl={host.url}
+                  rejected={rejected}
+                  device={device}
+                  hostKey={host.hostKey}
+                  onReconnect={retry}
+                  notify={false}
+                />
+              )}
+            />
           )}
         </AccountProvider>
       </HostRuntimesContext.Provider>
     </HostsContext.Provider>
   );
 }
-
-/** Every paired host runs at once; only the focused one paints the workbench. */
-export function HostRuntimes({
-  hosts,
-  focus,
-  connect,
-}: {
-  hosts: readonly StoredHost[];
-  focus: HostFocus | null;
-  /** Test seam forwarded to every host's useRemoteDurable. */
-  connect?: RemoteConnect;
-}) {
-  return (
-    <>
-      {hosts.map((host) => (
-        <HostRuntime
-          key={host.hostKey}
-          host={host}
-          focused={focus?.hostKey === host.hostKey}
-          focusTarget={focus?.hostKey === host.hostKey ? focus.conversationId : undefined}
-          {...(connect === undefined ? {} : { connect })}
-        />
-      ))}
-    </>
-  );
-}
-
-/**
- * One paired host's connection. It stays mounted while another host is
- * focused; losing focus only releases its conversation subscriptions
- * (ADR-0035 §2), never the connection itself.
- */
-function HostRuntime({
-  host,
-  focused,
-  focusTarget,
-  connect,
-}: {
-  host: StoredHost;
-  focused: boolean;
-  focusTarget: ConversationId | undefined;
-  connect?: RemoteConnect;
-}) {
-  const { endpoints, setConnection } = useHosts();
-  const registry = useContext(HostRuntimesContext);
-  const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  const device = useMemo<KeyPair>(
-    () => keyPairFromPrivate(fromBase64Url(host.privateKey)),
-    [host.privateKey],
-  );
-  const target = useMemo(
-    () => ({ url: host.url, endpointSet: host.endpointSet }),
-    [host.url, host.endpointSet],
-  );
-  const candidates = useMemo(
-    () => candidatePlan(target.url, target.endpointSet, { pageProtocol: window.location.protocol }),
-    [target],
-  );
-  const rtcPlatform = useMemo(() => createBrowserRtcPlatform(), []);
-  const options = useMemo<RemoteDurableOptions>(
-    () =>
-      secureOptions({
-        hostKey: host.hostKey,
-        device,
-        target,
-        candidates,
-        stored: host,
-        rtcPlatform,
-        setConnection,
-        // A validated hello set, including an explicit empty one, is an
-        // address-only update keyed by hostKey; identity and account stay put.
-        onEndpointSet: (endpointSet) => {
-          void endpoints(host.hostKey, endpointSet).catch((error: unknown) =>
-            console.error("Could not store the host's remote endpoints", error),
-          );
-        },
-      }),
-    [candidates, device, endpoints, host, rtcPlatform, setConnection, target],
-  );
-  const state = useRemoteDurable(
-    options,
-    // Re-pairing the same host after a revocation keeps hostKey but replaces
-    // the device key; that is a new identity and needs a fresh connection.
-    `${host.hostKey} ${host.privateKey} ${attempt}`,
-    connect === undefined ? undefined : { connect },
-  );
-
-  useEffect(() => {
-    if (registry === undefined || state.status === "ready") return;
-    if (state.status === "connecting") {
-      registry.publish(host.hostKey, { phase: "connecting", retry });
-      return;
-    }
-    registry.publish(host.hostKey, {
-      phase: "failed",
-      error: state.error,
-      unauthorized: state.unauthorized,
-      ...(state.mismatch === undefined ? {} : { mismatch: state.mismatch }),
-      retry,
-    });
-  }, [host.hostKey, registry, retry, state]);
-
-  useEffect(
-    () => () => {
-      registry?.remove(host.hostKey);
-    },
-    [host.hostKey, registry],
-  );
-
-  if (state.status === "ready") {
-    return (
-      <ReadyHost
-        host={host}
-        remote={state.remote}
-        device={device}
-        focused={focused}
-        focusTarget={focusTarget}
-        retry={retry}
-      />
-    );
-  }
-  if (!focused) return null;
-  if (state.status === "connecting") {
-    return (
-      <Centered>
-        <EmptyState title="Connecting" description={host.url} />
-      </Centered>
-    );
-  }
-  return <HostFailure host={host} state={state} retry={retry} />;
-}
-
-/** The focused host failed before its first view; other hosts keep running. */
-function HostFailure({
-  host,
-  state,
-  retry,
-}: {
-  host: StoredHost;
-  state: Extract<ReturnType<typeof useRemoteDurable>, { status: "failed" }>;
-  retry: () => void;
-}) {
-  const { forget } = useHosts();
-  if (state.mismatch !== undefined) {
-    return (
-      <Centered>
-        <VersionMismatch wsUrl={host.url} mismatch={state.mismatch} hostKey={host.hostKey} />
-        <HostsFallback />
-      </Centered>
-    );
-  }
-  if (state.unauthorized) {
-    return (
-      <Centered>
-        <VStack gap={4} hAlign="center">
-          <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-          <RepairViaAccount hostKey={host.hostKey} />
-          <Button
-            label="Forget this host"
-            variant="secondary"
-            onClick={() => void forget(host.hostKey)}
-          />
-        </VStack>
-        <HostsFallback />
-      </Centered>
-    );
-  }
-  return (
-    <Centered>
-      <VStack gap={4} hAlign="center">
-        <Banner
-          status="error"
-          title={state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}
-          description={
-            state.direct === undefined
-              ? state.error
-              : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."
-          }
-        />
-        {state.direct === undefined ? null : (
-          <Text type="supporting" style={{ textAlign: "center" }}>
-            {`Details: ${state.direct.reason}`}
-          </Text>
-        )}
-        <Button label="Retry" variant="secondary" onClick={retry} />
-      </VStack>
-      <HostsFallback />
-    </Centered>
-  );
-}
-
-/**
- * A ready host keeps its notification baseline and view subscription even
- * while another host is on screen; only its workbench is unmounted.
- */
-function ReadyHost({
-  host,
-  remote,
-  device,
-  focused,
-  focusTarget,
-  retry,
-}: {
-  host: StoredHost;
-  remote: RemoteDurable;
-  device: KeyPair;
-  focused: boolean;
-  focusTarget: ConversationId | undefined;
-  retry: () => void;
-}) {
-  const view = useDurableView(remote);
-  const registry = useContext(HostRuntimesContext);
-  const { focusConversation, forget } = useHosts();
-  useEffect(() => {
-    registry?.publish(host.hostKey, { phase: "ready", remote, view, retry });
-  }, [host.hostKey, registry, remote, retry, view]);
-  useEffect(
-    () => () => {
-      registry?.remove(host.hostKey);
-    },
-    [host.hostKey, registry],
-  );
-  useHostNameSync(host.hostKey, view.settings);
-  useConversationFocus(remote, view, focusTarget);
-  useRunNotifications(
-    view,
-    host.hostKey,
-    // A focused draft shows no conversation even while the previous one is
-    // still in the view for the moment its release takes.
-    focused && focusTarget !== undefined ? view.conversation?.conversation.id : undefined,
-    focusConversation,
-  );
-  if (!focused) return null;
-  const rejected = (
-    <VStack gap={4} hAlign="center">
-      <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-      <RepairViaAccount hostKey={host.hostKey} />
-      <Button label="Forget this host" variant="secondary" onClick={() => void forget(host.hostKey)} />
-    </VStack>
-  );
-  return (
-    <Workbench
-      remote={remote}
-      wsUrl={host.url}
-      rejected={rejected}
-      device={device}
-      hostKey={host.hostKey}
-      onReconnect={retry}
-      notify={false}
-    />
-  );
-}
-
 
 /**
  * Where a client with no stored pairing lands: sign in to pick a host from
@@ -710,19 +403,6 @@ function NoHostLink() {
       <VStack gap={2}>
         <Text type="supporting">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
         <PairingLinkForm />
-      </VStack>
-    </VStack>
-  );
-}
-
-export function Centered({ children }: { children: ReactNode }) {
-  // These screens have no header to drag the hidden-title-bar window by.
-  const reserveStrip = hostWindowChrome().reserveMacTrafficLights;
-  return (
-    <VStack style={page} isScrollable>
-      {reserveStrip ? <div aria-hidden="true" className="pinomad-drag fixed inset-x-0 top-0 h-10" /> : null}
-      <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
-        {children}
       </VStack>
     </VStack>
   );
@@ -762,8 +442,6 @@ function PairConfirm({
     </Centered>
   );
 }
-
-type RemoteConnect = (options: RemoteDurableOptions) => Promise<RemoteDurable>;
 
 /** A secure-channel client: pairing on first sight of the QR link, stored key after. */
 export function SecureClient({
@@ -1036,63 +714,6 @@ export function RemoteWorkbench({
   );
 }
 
-/**
- * The host speaks a protocol this bundle doesn't. A page the host itself
- * serves reloads once to fetch the matching bundle — the per-host
- * sessionStorage marker is the loop guard (a still-mismatching reload shows
- * the banner); a successful connect clears it so the next upgrade reloads.
- */
-export function VersionMismatch({
-  wsUrl,
-  mismatch,
-  hostKey,
-}: {
-  wsUrl: string;
-  mismatch: ProtocolMismatch;
-  /** The paired host whose reload marker this is; absent for token clients. */
-  hostKey?: string;
-}) {
-  const marker = reloadedKey(hostKey);
-  const update = useAppUpdate();
-  const hasUpdater = window.pinomadDesktop?.updates !== undefined;
-  const [reloading] = useState(() => {
-    // The desktop bundle is local: a reload cannot fetch a newer client, so a
-    // client-older host triggers an update check below instead. The browser
-    // keeps the reload-once self-heal for pages the host itself served.
-    if (mismatch.direction === "client-older" && hasUpdater) return false;
-    if (!servedByHost(wsUrl, window.location)) return false;
-    if (sessionStorage.getItem(marker) === String(mismatch.hostMajor)) return false;
-    sessionStorage.setItem(marker, String(mismatch.hostMajor));
-    window.location.reload();
-    return true;
-  });
-  useEffect(() => {
-    // check() itself dedupes an in-flight check or a finished download.
-    if (mismatch.direction === "client-older") void window.pinomadDesktop?.updates?.check();
-  }, [mismatch.direction]);
-  if (reloading) return null;
-  const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
-  return mismatch.direction === "client-older" ? (
-    // Same gap the Centered screens use between the banner and the switcher.
-    <VStack gap={4}>
-      <Banner
-        status="error"
-        container="section"
-        title="Client out of date"
-        description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
-      />
-      {hasUpdater ? <UpdateStatusNote update={update} /> : null}
-    </VStack>
-  ) : (
-    <Banner
-      status="error"
-      container="section"
-      title="Host out of date"
-      description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
-    />
-  );
-}
-
 function Workbench({
   remote,
   wsUrl,
@@ -1136,7 +757,10 @@ function Workbench({
   // `drafting` starts true: after connect nothing is shown, and the composer
   // creates a conversation at the draft's home instead of prompting it.
   const [drafting, setDrafting] = useState(true);
-  const [draft, setDraft] = useState<Home>({ kind: "chat" });
+  // The draft home lives on the host's new-draft slot: it survives this
+  // workbench being unmounted by a focus switch.
+  const newDraftSlot = useComposerSlot();
+  const draft = useComposerSlotState(newDraftSlot).home;
   // The shown conversation's identity decides drafting; creating or selecting one
   // leaves it, archiving the shown one or "New chat" enters it.
   useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
@@ -1196,16 +820,24 @@ function Workbench({
   );
   // "Open in main" promotes a thread to the main column and closes the side —
   // the family root stays the same, so the close rule below must not fire for it.
+  const focusOrSwitch = useCallback(
+    (id: ConversationId) => {
+      // For a stored host the focus effect owns the switch; a token client has
+      // no focus entry and switches directly.
+      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
+      else void remote.controller.switchConversation(id);
+    },
+    [focusConversation, hostKey, remote],
+  );
   const openInMain = useCallback(
     (id: ConversationId) => {
-      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
-      void remote.controller.switchConversation(id);
+      focusOrSwitch(id);
       void remote.controller.showSide(undefined);
       // On a phone the panel is a fullscreen dialog: leaving it up would hide
       // the conversation it just promoted.
       if (narrow) setPanelOpen(false);
     },
-    [focusConversation, hostKey, remote, narrow],
+    [focusOrSwitch, remote, narrow],
   );
   const familyRootId =
     conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id)?.summary.id;
@@ -1248,15 +880,12 @@ function Workbench({
   );
   const startDraft = (home: Home): void => {
     if (hostKey !== undefined) focusDraft(hostKey);
-    setDraft(home);
+    newDraftSlot.setHome(home);
     setDrafting(true);
   };
   const openConversation = useCallback(
-    (id: ConversationId): void => {
-      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
-      void remote.controller.switchConversation(id);
-    },
-    [focusConversation, hostKey, remote],
+    (id: ConversationId): void => focusOrSwitch(id),
+    [focusOrSwitch],
   );
   const [forkTarget, setForkTarget] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);

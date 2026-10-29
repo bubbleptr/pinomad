@@ -37,6 +37,22 @@ export interface AccountLocks {
   request<T>(name: string, callback: () => Promise<T>): Promise<T>;
 }
 
+/** Foreground transitions; the model refreshes the account hosts on each. */
+export interface AccountVisibility {
+  subscribe(listener: () => void): () => void;
+}
+
+const browserVisibility: AccountVisibility = {
+  subscribe(listener) {
+    if (typeof document === "undefined") return () => {};
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") listener();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  },
+};
+
 export type AccountState =
   | { readonly status: "checking" }
   /** The page's origin doesn't run accounts — a host's own port, a dev server, an accounts-less relay. */
@@ -114,6 +130,8 @@ export interface AccountModelDeps {
   readonly declined?: DeclinedStore;
   /** Cross-tab registration lock; defaults to navigator.locks when available. */
   readonly locks?: AccountLocks;
+  /** Foreground source; defaults to the document. */
+  readonly visibility?: AccountVisibility;
   /** Test seam: turn automatic registration off for account-only cases. */
   readonly autoRegister?: boolean;
 }
@@ -232,13 +250,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   /** Startup, login and every return to the foreground refresh the account hosts. */
   const watchVisibility = (): void => {
-    if (stopVisibility !== undefined || typeof document === "undefined") return;
-    const onVisibility = (): void => {
-      if (document.visibilityState !== "visible") return;
+    if (stopVisibility !== undefined) return;
+    stopVisibility = (deps.visibility ?? browserVisibility).subscribe(() => {
       if (client !== undefined && state.status === "signed-in") void refresh(client, state.user);
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    stopVisibility = () => document.removeEventListener("visibilitychange", onVisibility);
+    });
   };
 
   const declinedHost = (host: StoredHost): boolean =>
@@ -386,9 +401,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         signedOut();
         return rows;
       }
-      // A failed refresh keeps the session and the previous list.
+      // A failed refresh keeps the session and the previous list. The
+      // visibility watcher must still start: a recovered network should get a
+      // chance to refresh and auto-register the account's hosts.
       const previous = state.status === "signed-in" ? state.hosts : [];
       setState(signedInState(active, user, previous, { hostsError: rows.error }));
+      watchVisibility();
       return rows;
     }
     // A failed read is not an empty list: it keeps the matching verdicts but

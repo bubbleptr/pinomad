@@ -5,7 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
-import { createAccountModel, type AccountLocks, type AccountModel } from "./account-model.ts";
+import {
+  createAccountModel,
+  type AccountLocks,
+  type AccountModel,
+  type AccountVisibility,
+} from "./account-model.ts";
 import { createDeclinedStore, type DeclinedStore } from "./declined.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import type { StoredHost } from "../host/host-store.ts";
@@ -94,6 +99,7 @@ function makeModel(options: {
   connect?: () => Promise<void>;
   autoRegister?: boolean;
   removeHost?: (hostKey: string) => Promise<void>;
+  visibility?: AccountVisibility;
 }): Setup {
   const store = options.store ?? hosts();
   const paired: StoredHost[] = [];
@@ -112,6 +118,7 @@ function makeModel(options: {
     ...(options.declined === undefined ? {} : { declined: options.declined }),
     ...(options.locks === undefined ? {} : { locks: options.locks }),
     ...(options.removeHost === undefined ? {} : { removeHost: options.removeHost }),
+    ...(options.visibility === undefined ? {} : { visibility: options.visibility }),
     ...(options.bridge === undefined ? {} : { bridge: options.bridge }),
   });
   return { model, calls: options.fake.calls, store, paired };
@@ -491,6 +498,47 @@ describe("automatic registration", () => {
   };
   const pairingCalls = (calls: { url: string }[]): number =>
     calls.filter((call) => call.url.endsWith("/pairing")).length;
+
+  it("retries the host list on returning to the foreground after an initial failure", async () => {
+    const listeners = new Set<() => void>();
+    const visibility: AccountVisibility = {
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const base = routeFetch(() => [row()]);
+    let firstHosts = true;
+    const impl: AccountFetch = (url, init) => {
+      if (firstHosts && url.endsWith("/api/hosts") && (init?.method ?? "GET") === "GET") {
+        firstHosts = false;
+        return Promise.resolve(response(500, { error: "network" }));
+      }
+      return base.impl(url, init);
+    };
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    const setup = makeModel({
+      fake: { impl, calls: base.calls },
+      store,
+      declined,
+      visibility,
+      autoRegister: true,
+    });
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status).toBe("signed-in");
+      if (state.status === "signed-in") expect(state.hostsError).toBeDefined();
+    });
+    expect(listeners.size).toBe(1);
+
+    for (const listener of listeners) listener();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("paired");
+    });
+    expect(setup.paired).toHaveLength(1);
+  });
 
   it("registers an eligible unpaired host through the account", async () => {
     const store = hosts();

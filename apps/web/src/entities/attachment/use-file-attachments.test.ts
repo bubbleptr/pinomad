@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { HostComposerStore } from "../composer/composer-store.ts";
 import { useFileAttachments } from "./use-file-attachments.ts";
 
 const file = (name: string, bytes: string, type = "text/plain"): File => {
@@ -122,6 +123,56 @@ describe("useFileAttachments", () => {
     expect(result.current.entries).toHaveLength(0);
     await act(async () => finish({ received: 5, complete: true }));
     expect(result.current.entries).toHaveLength(0);
+  });
+
+  it("keeps uploading and restores the tray after the composer unmounts", async () => {
+    let finish!: (value: { received: number; complete: boolean }) => void;
+    const appendAttachment = vi.fn(
+      () =>
+        new Promise<{ received: number; complete: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const remote = remoteWith({ beginAttachment: async () => "F".repeat(22), appendAttachment });
+    const store = new HostComposerStore();
+    store.setRemote(remote);
+    const slot = store.slot("conversation:1");
+
+    const first = renderHook(() => useFileAttachments(remote, true, slot));
+    act(() => first.result.current.add([file("a.txt", "hello")]));
+    await waitFor(() => expect(first.result.current.uploading).toBe(true));
+    first.unmount();
+
+    await act(async () => finish({ received: 5, complete: true }));
+    const second = renderHook(() => useFileAttachments(remote, true, slot));
+    await waitFor(() => expect(second.result.current.entries[0]?.status).toBe("done"));
+    expect(second.result.current.entries[0]).toMatchObject({ name: "a.txt", status: "done" });
+    expect(second.result.current.ids()).toEqual(["F".repeat(22)]);
+  });
+
+  it("keeps uploading and restores the tray after the composer unmounts", async () => {
+    let finish!: (value: { received: number; complete: boolean }) => void;
+    const appendAttachment = vi.fn(
+      () =>
+        new Promise<{ received: number; complete: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const remote = remoteWith({ beginAttachment: async () => "F".repeat(22), appendAttachment });
+    const store = new HostComposerStore();
+    store.setRemote(remote);
+    const slot = store.slot("conversation:1");
+
+    const first = renderHook(() => useFileAttachments(remote, true, slot));
+    act(() => first.result.current.add([file("a.txt", "hello")]));
+    await waitFor(() => expect(first.result.current.uploading).toBe(true));
+    first.unmount();
+
+    await act(async () => finish({ received: 5, complete: true }));
+    const second = renderHook(() => useFileAttachments(remote, true, slot));
+    await waitFor(() => expect(second.result.current.entries[0]?.status).toBe("done"));
+    expect(second.result.current.entries[0]).toMatchObject({ name: "a.txt", status: "done" });
+    expect(second.result.current.ids()).toEqual(["F".repeat(22)]);
   });
 
   it("restores a queued edit's ids without bytes", () => {

@@ -47,11 +47,6 @@ export function terminalReason(info: HostRuntimeInfo | undefined): TerminalReaso
   return "closed";
 }
 
-/** A 4401 from the host: keep the record, but stop treating it as a live pairing. */
-export function isRevoked(info: HostRuntimeInfo | undefined): boolean {
-  return info?.phase === "failed" ? info.unauthorized : info?.phase === "ready" && info.view.unauthorized === true;
-}
-
 export class HostRuntimeRegistry {
   readonly #info = new Map<string, HostRuntimeInfo>();
   readonly #listeners = new Set<() => void>();

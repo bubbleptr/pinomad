@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
 import type { ConversationSummary, DurableController, LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { fakeRemote, fakeView, PARSER_ID, PINOMAD } from "../../test/story-fixtures.tsx";
+import { HostComposerContext } from "../../entities/composer/composer-context.tsx";
+import { HostComposerStore } from "../../entities/composer/composer-store.ts";
 import { ConversationComposer } from "./conversation-composer.tsx";
 
 function setup(options: {
@@ -15,6 +17,7 @@ function setup(options: {
   summary?: ConversationSummary;
   controller?: Partial<DurableController>;
   submissions?: readonly LogicalSubmission[];
+  store?: HostComposerStore;
 } = {}) {
   const base = fakeView({
     ...(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } }),
@@ -34,13 +37,22 @@ function setup(options: {
     ...(options.listCommands === undefined ? {} : { listCommands: vi.fn(options.listCommands) }),
     ...options.controller,
   });
-  render(<ConversationComposer view={view} remote={remote} conversation={view.conversation!} busy={false} narrow={false} />);
+  const composer = (
+    <ConversationComposer view={view} remote={remote} conversation={view.conversation!} busy={false} narrow={false} />
+  );
+  const rendered = render(
+    options.store === undefined ? (
+      composer
+    ) : (
+      <HostComposerContext.Provider value={options.store}>{composer}</HostComposerContext.Provider>
+    ),
+  );
   const editable = document.querySelector<HTMLElement>('[aria-multiline="true"]')!;
   const type = (text: string): void => {
     editable.textContent = text;
     fireEvent.input(editable);
   };
-  return { remote, editable, type };
+  return { remote, editable, type, unmount: rendered.unmount };
 }
 
 describe("ConversationComposer commands", () => {
@@ -146,6 +158,38 @@ describe("ConversationComposer attachment uploads", () => {
       attachments: ["A".repeat(22)],
       attachmentDetails: [{ id: "A".repeat(22), name: "notes.txt", size: 5 }],
     });
+  });
+
+  it("keeps the text and an in-flight upload after the composer unmounts", async () => {
+    let finish!: (value: { received: number; complete: boolean }) => void;
+    const appendAttachment = vi.fn(
+      () =>
+        new Promise<{ received: number; complete: boolean }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const store = new HostComposerStore();
+    const first = setup({
+      store,
+      controller: {
+        beginAttachment: vi.fn(async () => "G".repeat(22)),
+        appendAttachment,
+      },
+    });
+    const picker = document.querySelector<HTMLInputElement>('input[type="file"]:not([accept])')!;
+    fireEvent.change(picker, {
+      target: { files: [new File(["hello"], "notes.txt", { type: "text/plain" })] },
+    });
+    await waitFor(() => expect(appendAttachment).toHaveBeenCalled());
+    first.type("half-written message");
+    first.unmount();
+
+    await act(async () => finish({ received: 5, complete: true }));
+    const second = setup({ store });
+    await waitFor(() =>
+      expect(screen.getByTestId("file-attachment-chip").getAttribute("data-status")).toBe("done"),
+    );
+    expect(second.editable.textContent).toBe("half-written message");
   });
 });
 

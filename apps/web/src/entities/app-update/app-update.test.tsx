@@ -3,7 +3,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionMismatch } from "../../App.tsx";
+import { VersionMismatch } from "../../widgets/app-frame/version-mismatch.tsx";
 import { SidebarFooter } from "../../widgets/app-frame/sidebar.tsx";
 import { UpdatesSection } from "../../widgets/app-frame/updates-section.tsx";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
