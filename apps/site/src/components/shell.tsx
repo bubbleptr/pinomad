@@ -47,8 +47,6 @@ export const homeLayout = { i18n: false, slots: { header: HomeHeader } } satisfi
 export const docsLayout = {
   i18n: false,
   nav: { mode: "top" },
-  // The collapse button lives in Fumadocs' header, which isn't rendered.
-  sidebar: { collapsible: false },
   slots: { header: DocsHeader },
 } satisfies Partial<DocsLayoutProps>;
 
@@ -59,23 +57,36 @@ function HomeHeader() {
 
 function DocsHeader() {
   const { slots } = useNotebookLayout();
-  const SidebarTrigger = slots.sidebar?.trigger;
+  const sidebar = slots.sidebar;
+  const button = "inline-flex size-9 items-center justify-center rounded-lg text-fd-muted-foreground hover:text-fd-foreground";
   return (
     <PageHeader
       tools={
         <>
           <SearchAndTheme slots={slots} />
-          {SidebarTrigger && (
-            <SidebarTrigger className="inline-flex size-9 items-center justify-center rounded-lg text-fd-muted-foreground hover:text-fd-foreground md:hidden">
-              <svg viewBox="0 0 24 24" className="size-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 3v18" />
-              </svg>
-            </SidebarTrigger>
+          {/* Collapses the sidebar on wide screens; opens it as a drawer on phones. */}
+          {sidebar && (
+            <>
+              <sidebar.collapseTrigger className={`${button} max-md:hidden`}>
+                <SidebarIcon />
+              </sidebar.collapseTrigger>
+              <sidebar.trigger className={`${button} md:hidden`}>
+                <SidebarIcon />
+              </sidebar.trigger>
+            </>
           )}
         </>
       }
     />
+  );
+}
+
+function SidebarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+    </svg>
   );
 }
 
