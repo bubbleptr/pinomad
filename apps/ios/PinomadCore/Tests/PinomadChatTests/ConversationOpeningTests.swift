@@ -2,8 +2,8 @@ import Testing
 @testable import PinomadChat
 
 @Suite struct ConversationOpeningTests {
-    /// A switch the host refused or the connection dropped settles without
-    /// the conversation on screen: its page says so instead of loading forever.
+    /// A switch the host refused settles without the conversation on
+    /// screen: its page says so instead of loading forever.
     @Test func failsOnlyWhenTheSwitchSettlesWithoutShowingIt() {
         var opening = ConversationOpening()
         let shown = opening.begin(1)

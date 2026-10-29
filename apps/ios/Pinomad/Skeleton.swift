@@ -166,9 +166,10 @@ struct ComposerSkeleton: View {
     }
 }
 
-/// The opened conversation could not be shown: the host ended it or the
-/// connection dropped before it arrived. `missing` means the host's list no
-/// longer has it, so retrying cannot help.
+/// The opened conversation could not be shown: the host refused or ended
+/// it. A disconnect alone doesn't land here — the open waits across the
+/// reconnect. `missing` means the host's list no longer has it, so retrying
+/// cannot help.
 struct ConversationUnavailable: View {
     let missing: Bool
     let connected: Bool

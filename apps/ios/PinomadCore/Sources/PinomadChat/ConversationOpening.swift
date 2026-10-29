@@ -1,9 +1,11 @@
 /// Which conversation page's open settled without the conversation on
 /// screen. A conversation page shows at once and loads behind a skeleton;
-/// the switch is command-class (a refusal becomes a notice) and a dropped
-/// connection ends it too, so its outcome is read from what the core shows
-/// once it settles. Only the latest open decides: going back from a child
-/// page reopens the parent, and the child's late outcome is stale by then.
+/// the switch is command-class (a refusal becomes a notice), so its outcome
+/// is read from what the core shows once it settles. A disconnect doesn't
+/// settle it — the core waits for the snapshot across the reconnect — so
+/// offline the page keeps loading. Only the latest open decides: going back
+/// from a child page reopens the parent, and the child's late outcome is
+/// stale by then.
 public struct ConversationOpening: Sendable {
     public private(set) var failed: UInt64?
     private var latest = 0

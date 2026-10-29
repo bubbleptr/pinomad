@@ -343,7 +343,10 @@ final class AppModel {
     /// Show and talk to a conversation — command-class, so a refused
     /// switch surfaces as a snapshot notice, not a thrown error. Its page
     /// loads meanwhile; whether the switch landed is read once it settles,
-    /// so a refused or dropped one stops loading (`opening.failed`).
+    /// so a refused one stops loading (`opening.failed`). A disconnect
+    /// doesn't settle it: the core keeps waiting for the snapshot across the
+    /// reconnect, so the page stays on its skeleton (the bar says
+    /// "Connecting…" after its grace period) and loads once the host is back.
     func openConversation(_ id: UInt64) {
         let attempt = opening.begin(id)
         Task { [weak self] in

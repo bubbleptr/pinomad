@@ -217,8 +217,8 @@ struct ConversationView: View {
         .task {
             model.openConversation(conversationId)
         }
-        // An open the connection dropped retries once it is back; one the
-        // host refused while connected waits for Retry.
+        // A failed open seen offline (the session was gone when it began)
+        // retries once connected; one the host refused waits for Retry.
         .onChange(of: connected) { _, connected in
             if connected, failed { model.openConversation(conversationId) }
         }
