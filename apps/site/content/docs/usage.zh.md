@@ -77,7 +77,7 @@ Settings → Providers 管理宿主能用哪些模型，任何一台已配对设
 
 - **Subscription**：用已经在付费的订阅登录（Claude Pro/Max、ChatGPT Plus/Pro、GitHub Copilot、SuperGrok / X Premium、Kimi Code、Meta Muse），OpenRouter 等账号登录也在这里。有的会给一个链接，在任意设备的浏览器里批准后把页面给出的 code 贴回来；有的显示一个设备码，到 provider 的网站输入。
 - **API key**：pi 支持的 provider 都在这里，Cloudflare、Vertex、Bedrock 这类要多填几项的会在同一个表单里一步步问。
-- **Custom endpoint**：自己的 OpenAI / Anthropic / Gemini 兼容服务（Ollama、LM Studio、vLLM、网关）。填 base URL 和模型 id，"Fetch from /models" 由宿主去问 endpoint 有哪些模型。
+- **Custom endpoint**：自己的 OpenAI / Anthropic / Gemini 兼容服务（Ollama、LM Studio、vLLM、网关）。填 base URL 和模型 id，"Fetch from /models" 由宿主去问 endpoint 有哪些模型。保存时宿主还会读 `/models` 里每个模型的上下文窗口、最大输出、是否支持思考和图片输入，写进 `models.json`；endpoint 没报的项按 pi 的默认值（128k 窗口、16k 输出、不思考、只收文字）。在 `models.json` 里手改过的字段优先，重新保存不会覆盖。
 
 一个 provider 只存一份凭据，换登录方式会替换掉原来的。凭据存在数据目录的 `auth.json`，自定义 endpoint 存在 `models.json`（pi 的 models.json 格式，可以在宿主停止时手改）。宿主环境变量里的 key（例如 `GEMINI_API_KEY`）照样生效，在列表里标为来自环境变量。从旧版本升级不会带上 `~/.pi/agent` 里的登录，要在这里重新登录。代理、重试、压缩这些 pi 的 harness 设置写在 `settings.json` 的 `"pi"` 键下，格式同 pi 的 settings.json，只能手改，宿主启动时读。
 

@@ -200,7 +200,74 @@ describe("openModelAuth", () => {
 
     await modelAuth.saveCustomProvider({ ...OLLAMA, baseUrl }, "sk-stored");
     await modelAuth.listEndpointModels({ api: "openai-completions", baseUrl, providerId: OLLAMA.id });
-    expect(seen[1]!.authorization).toBe("Bearer sk-stored");
+    expect(seen.at(-1)!.authorization).toBe("Bearer sk-stored");
+  });
+
+  it("saves the limits and abilities the endpoint's /models reports, under fields set by hand", async () => {
+    const seen: IncomingHttpHeaders[] = [];
+    const server = createServer((request, response) => {
+      seen.push(request.headers);
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          object: "list",
+          data: [
+            {
+              id: "gateway/opus",
+              context_window: 1_000_000,
+              max_output_tokens: 128_000,
+              reasoning: true,
+              modalities: { input: ["text", "image"] },
+            },
+            // Values pi would reject are left to pi's defaults, not written.
+            { id: "gateway/broken", context_length: "big", max_output_tokens: 0 },
+            { id: "gateway/tuned", context_length: 400_000 },
+          ],
+        }),
+      );
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    const endpoint = { ...OLLAMA, baseUrl, models: ["gateway/opus", "gateway/broken", "gateway/tuned"] };
+    const { modelsPath, modelAuth } = await fixture({
+      models: { providers: { [OLLAMA.id]: { ...endpoint, models: [{ id: "gateway/tuned", contextWindow: 64_000 }] } } },
+    });
+
+    await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
+
+    expect(seen[0]!.authorization).toBe("Bearer sk-gateway");
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      { id: "gateway/opus", contextWindow: 1_000_000, maxTokens: 128_000, reasoning: true, input: ["text", "image"] },
+      { id: "gateway/broken" },
+      { id: "gateway/tuned", contextWindow: 64_000 },
+    ]);
+    const opus = modelAuth.models.value.find((m) => m.modelId === "gateway/opus")!;
+    expect(opus).toMatchObject({ contextWindow: 1_000_000, images: true });
+    expect(opus.thinkingLevels.length).toBeGreaterThan(1);
+  });
+
+  it("republishes a model whose only change on re-save is taking images", async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "vision", modalities: { input: ["text", "image"] } }] }));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    const endpoint = { ...OLLAMA, baseUrl, models: ["vision"] };
+    const { modelAuth } = await fixture({
+      // Only a provider with a credential lists its models.
+      auth: { [OLLAMA.id]: { type: "api_key", key: "sk-local" } },
+      models: { providers: { [OLLAMA.id]: { ...endpoint, models: [{ id: "vision" }] } } },
+    });
+    expect(modelAuth.models.value.find((m) => m.modelId === "vision")!.images).toBe(false);
+
+    await modelAuth.saveCustomProvider(endpoint);
+
+    expect(modelAuth.models.value.find((m) => m.modelId === "vision")!.images).toBe(true);
   });
 
   it("asks an Anthropic endpoint at /v1/models, since its base URL is the root the SDK adds /v1 to", async () => {
