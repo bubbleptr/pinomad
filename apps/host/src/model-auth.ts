@@ -391,6 +391,16 @@ export async function openModelAuth(
         if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Use an http:// or https:// base URL");
         const ids = [...new Set(input.models.map((model) => model.trim()).filter((model) => model !== ""))];
         if (ids.length === 0) throw new Error("Add at least one model");
+        const key =
+          typeof apiKey === "string" && apiKey !== ""
+            ? apiKey
+            : apiKey !== null && custom.has(input.id)
+              ? (await runtime.getAuth(input.id))?.auth.apiKey
+              : undefined;
+        // An endpoint whose /models can't be read still saves; its models get pi's defaults.
+        const reported = new Map(
+          (await fetchEndpointModels(input.api, input.baseUrl, key).catch(() => [])).map((model) => [model.id, model]),
+        );
 
         await updateModelsFile((file) => {
           const previous = file.providers[input.id] ?? {};
@@ -402,8 +412,8 @@ export async function openModelAuth(
             name,
             api: input.api,
             baseUrl: input.baseUrl,
-            // A model the user tuned by hand keeps its fields.
-            models: ids.map((id) => previousModels.get(id) ?? { id }),
+            // A field the user tuned by hand beats what the endpoint reports.
+            models: ids.map((id) => ({ ...reported.get(id), ...(previousModels.get(id) ?? { id }) })),
           };
         });
         await runtime.refresh({ providers: [input.id], allowNetwork: false });
@@ -430,7 +440,7 @@ export async function openModelAuth(
       if (key === undefined && input.providerId !== undefined && custom.has(input.providerId)) {
         key = (await runtime.getAuth(input.providerId))?.auth.apiKey;
       }
-      return fetchEndpointModels(input.api, input.baseUrl, key);
+      return (await fetchEndpointModels(input.api, input.baseUrl, key)).map((model) => model.id);
     },
 
     close() {
@@ -448,7 +458,11 @@ export async function openModelAuth(
  * The endpoint's model list in its own dialect: `GET {baseUrl}/models`,
  * except Anthropic, whose base URL is the root its SDK adds `/v1/…` to.
  */
-async function fetchEndpointModels(api: CustomProviderApi, baseUrl: string, key: string | undefined): Promise<string[]> {
+async function fetchEndpointModels(
+  api: CustomProviderApi,
+  baseUrl: string,
+  key: string | undefined,
+): Promise<EndpointModel[]> {
   const base = baseUrl.replace(/\/+$/, "");
   const url = new URL(api === "anthropic-messages" ? `${base}/v1/models` : `${base}/models`);
   const headers: Record<string, string> = { accept: "application/json" };
@@ -468,11 +482,58 @@ async function fetchEndpointModels(api: CustomProviderApi, baseUrl: string, key:
     throw new Error(`Couldn't reach ${url.host} from the host: ${reason}`);
   }
   if (!response.ok) throw new Error(`${url.host} answered ${response.status} for /models`);
-  const body = (await response.json()) as { data?: { id?: unknown }[]; models?: { name?: unknown }[] };
-  const ids =
+  const body = (await response.json()) as { data?: Listed[]; models?: Listed[] };
+  const models =
     api === "google-generative-ai"
-      ? (body.models ?? []).flatMap((model) => (typeof model.name === "string" ? [model.name.replace(/^models\//, "")] : []))
-      : (body.data ?? []).flatMap((model) => (typeof model.id === "string" ? [model.id] : []));
-  if (ids.length === 0) throw new Error(`${url.host} listed no models`);
-  return ids;
+      ? (body.models ?? []).flatMap((model) =>
+          typeof model.name === "string"
+            ? [
+                endpointModel(model.name.replace(/^models\//, ""), {
+                  contextWindow: positive(model.inputTokenLimit),
+                  maxTokens: positive(model.outputTokenLimit),
+                  reasoning: model.thinking === true,
+                  image: false,
+                }),
+              ]
+            : [],
+        )
+      : (body.data ?? []).flatMap((model) =>
+          typeof model.id === "string"
+            ? [
+                endpointModel(model.id, {
+                  contextWindow:
+                    positive(model.context_window) ?? positive(model.context_length) ?? positive(model.max_input_tokens),
+                  maxTokens: positive(model.max_output_tokens),
+                  reasoning: model.reasoning === true,
+                  image: Array.isArray(model.modalities?.input) && model.modalities.input.includes("image"),
+                }),
+              ]
+            : [],
+        );
+  if (models.length === 0) throw new Error(`${url.host} listed no models`);
+  return models;
+}
+
+/** One entry of a /models answer; fields beyond the id are each gateway's own. */
+type Listed = Record<string, unknown> & { readonly modalities?: { readonly input?: unknown } };
+
+/** A `models.json` model entry: the id, plus what the endpoint reported where pi would otherwise default. */
+type EndpointModel = { readonly id: string } & Record<string, unknown>;
+
+/** pi rejects a non-positive `contextWindow` or `maxTokens`, and a rejected entry fails the whole save. */
+const positive = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+
+/** pi's defaults for a bare id are a 128k window, 16k output, no reasoning and text only. */
+function endpointModel(
+  id: string,
+  reported: { contextWindow?: number; maxTokens?: number; reasoning: boolean; image: boolean },
+): EndpointModel {
+  return {
+    id,
+    ...(reported.contextWindow === undefined ? {} : { contextWindow: reported.contextWindow }),
+    ...(reported.maxTokens === undefined ? {} : { maxTokens: reported.maxTokens }),
+    ...(reported.reasoning ? { reasoning: true } : {}),
+    ...(reported.image ? { input: ["text", "image"] } : {}),
+  };
 }
