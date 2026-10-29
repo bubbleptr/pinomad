@@ -17,6 +17,7 @@ struct ConversationView: View {
     /// and returning to the foreground both re-read it (the Web's useToday).
     @State private var clock = MessageClock(calendar: .autoupdatingCurrent)
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingOverview = false
     /// A subagent picked in the overview, pushed once the sheet is gone —
     /// pushing under a presented sheet glitches the transition.
@@ -63,7 +64,12 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
-        Group {
+        let failed = conversation == nil && model.opening.failed == conversationId
+        // Skeleton, content and the failure state cross-fade; under Reduce
+        // Motion they swap at once.
+        let swap: Animation? = reduceMotion ? nil : .easeOut(duration: 0.2)
+        let phase = conversation != nil ? 2 : failed ? 1 : 0
+        ZStack {
             if let conversation {
                 if autoScroll {
                     // Debug-only: a scripted scroll drives the transcript
@@ -109,11 +115,19 @@ struct ConversationView: View {
                         entries(conversation, subagentSummaries: subagentSummaries,
                                 isSubagent: isSubagent)
                     }
+                    .transition(.opacity)
                 }
+            } else if failed {
+                ConversationUnavailable(missing: node == nil, connected: connected) {
+                    model.openConversation(conversationId)
+                }
+                .transition(.opacity)
             } else {
                 ConversationSkeleton()
+                    .transition(.opacity)
             }
         }
+        .animation(swap, value: phase)
         .environment(\.inlineImageAction, InlineImageAction { image in
             model.viewing = MessageImage(data: image.data, mimeType: image.mimeType, ref: image.ref)
         })
@@ -136,26 +150,33 @@ struct ConversationView: View {
         // A bar, not a plain inset: the transcript scrolling under it gets
         // the system's soft edge instead of a hard cut at the card.
         .safeAreaBar(edge: .bottom) {
-            if isSubagent {
-                // A subagent belongs to its delegating task; the reader only
-                // observes it. No composer, so nothing here can submit,
-                // stop, compact, or change its model.
-                Text("Subagent conversations are read-only")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            } else if let conversation {
-                ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
-                    // The agent at work, in the empty strip under the card:
-                    // hung from the bar's bottom edge down past the home
-                    // indicator; with the keyboard up, the keyboard covers it.
-                    .overlay(alignment: .bottom) {
-                        WorkingDots(active: conversation.busy)
-                            .frame(height: 44)
-                            .alignmentGuide(.bottom) { $0[.top] }
-                    }
+            ZStack {
+                if isSubagent {
+                    // A subagent belongs to its delegating task; the reader only
+                    // observes it. No composer, so nothing here can submit,
+                    // stop, compact, or change its model.
+                    Text("Subagent conversations are read-only")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                } else if let conversation {
+                    ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
+                        // The agent at work, in the empty strip under the card:
+                        // hung from the bar's bottom edge down past the home
+                        // indicator; with the keyboard up, the keyboard covers it.
+                        .overlay(alignment: .bottom) {
+                            WorkingDots(active: conversation.busy)
+                                .frame(height: 44)
+                                .alignmentGuide(.bottom) { $0[.top] }
+                        }
+                        .transition(.opacity)
+                } else if !failed {
+                    ComposerSkeleton()
+                        .transition(.opacity)
+                }
             }
+            .animation(swap, value: phase)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .environment(\.questionPageMaxHeight, max((pageHeight ?? 800) * 0.4, 160))
@@ -195,6 +216,11 @@ struct ConversationView: View {
         }
         .task {
             model.openConversation(conversationId)
+        }
+        // An open the connection dropped retries once it is back; one the
+        // host refused while connected waits for Retry.
+        .onChange(of: connected) { _, connected in
+            if connected, failed { model.openConversation(conversationId) }
         }
         .task(id: scenePhase) {
             // A suspended app's timer does not run; the active pass is what
