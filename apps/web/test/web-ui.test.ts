@@ -120,7 +120,7 @@ async function openHostsMenu(page: Page): Promise<void> {
 
 /**
  * A localStorage-backed stand-in for the Electron preload bridge, so the
- * paired-host list survives the page reloads that switch hosts.
+ * paired-host list survives the reloads that open a pasted pairing link.
  */
 async function stubDesktopBridge(context: BrowserContext): Promise<void> {
   await context.addInitScript(() => {
@@ -2981,7 +2981,11 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await composer.fill("hello A");
   await composer.press("Enter");
   await page.getByText("host A answer", { exact: true }).waitFor();
-  expect(sockets.a).toBe(2);
+  // Pairing hands the one-shot flow over to the host's long-lived runtime, so
+  // the socket count is not the old single-mount number. Later switches must
+  // not add another one.
+  const socketsAAfterPair = sockets.a;
+  expect(socketsAAfterPair).toBeGreaterThan(0);
 
   // Pair host B from Settings → Hosts — a second pairing never warns about
   // replacing in multi-host mode.
@@ -2996,24 +3000,28 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await composer.press("Enter");
   await page.getByText("host B answer", { exact: true }).waitFor();
   await waitForView(tokenB.view, (view) => view.devices.length === 1);
-  expect(sockets.b).toBe(2);
+  expect(sockets.b).toBeGreaterThan(0);
 
-  // The host menu lists both hosts with their status; selecting A reconnects
-  // to it (the "hello A" conversation only exists on A).
+  // Both hosts stay connected at once. Pasting B's link reloaded the page, so
+  // sample A's socket count after that reload; switching focus must not add one.
+  const socketsABeforeSwitch = sockets.a;
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
-  await page.getByRole("menuitem", { name: `${labelA} (not connected)`, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
-  expect(sockets.a).toBe(4);
+  expect(sockets.a).toBe(socketsABeforeSwitch);
 
-  // A dead host lands on a failure screen that still lists the hosts.
+  // A host that drops keeps its last view and reconnects in the background;
+  // focus lands on it with the disconnect banner, and the menu still switches
+  // to the healthy host without touching A's connection.
   await hostB.close();
   await openHostsMenu(page);
-  await page.getByRole("menuitem", { name: `${labelB} (not connected)`, exact: true }).click();
-  await page.getByText("Could not connect to the host", { exact: true }).waitFor();
-  await page.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).click();
+  await page.getByText("Host connection lost", { exact: true }).waitFor();
+  await openHostsMenu(page);
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
   await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
-  expect(sockets.a).toBe(6);
+  expect(sockets.a).toBe(socketsABeforeSwitch);
 });
 
 it("forgets a host from Settings → Hosts only after confirmation", async () => {
@@ -3064,7 +3072,7 @@ it("forgets a host from Settings → Hosts only after confirmation", async () =>
   expect(await storedHostCount(page)).toBe(2);
   await settings.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).waitFor();
 
-  // Confirming forgets B: the reload lands on A, the only host left.
+  // Confirming forgets B: focus falls back to A, the only host left.
   await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
   await settings.getByRole("button", { name: "Forget this host", exact: true }).click();
   await openHostsMenu(page);
@@ -3076,8 +3084,8 @@ it("forgets a host from Settings → Hosts only after confirmation", async () =>
   await page.getByText("host A answer", { exact: true }).waitFor();
 
   // Forgetting under a live #token fragment must not resurrect the fragment's
-  // address: clearing it before the reload is what lets the emptied list land
-  // on the no-link screen (the pairing-link form only exists there).
+  // address: clearing it is what lets the emptied list land on the no-link
+  // screen (the pairing-link form only exists there).
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(hostB.token)}&url=${encodeURIComponent(hostB.url)}`);
   await prompt(page).waitFor();
   const lastSettings = await openSettings(page, "Hosts");

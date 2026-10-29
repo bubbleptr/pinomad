@@ -50,6 +50,7 @@ export function AppFrame({
   parentSummary,
   banner,
   onDraft,
+  onOpenConversation,
   onOpenChanges,
   overviewOpen,
   onOverviewChange,
@@ -77,6 +78,7 @@ export function AppFrame({
   parentSummary: ConversationSummary | undefined;
   banner?: ReactNode;
   onDraft: (home: Home) => void;
+  onOpenConversation: (id: ConversationId) => void;
   onOpenChanges: () => void;
   /** The overview card's open state lives in Workbench — starting a conversation opens it. */
   overviewOpen: boolean;
@@ -102,7 +104,7 @@ export function AppFrame({
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
     setSidebarOpen(!sidebarOpen);
   };
-  const openConversation = (id: ConversationId): void => void remote.controller.switchConversation(id);
+  const openConversation = (id: ConversationId): void => onOpenConversation(id);
   // A fork or subagent of the shown family still at work: the closed panel's
   // button carries a dot so the activity is not out of sight entirely.
   const root = conversation === undefined ? undefined : rootOf(view.organized, conversation.conversation.id);
@@ -122,9 +124,11 @@ export function AppFrame({
     <SidebarContent
       view={view}
       remote={remote}
+      {...(hostKey === undefined ? {} : { hostKey })}
       draftingChat={draftingChat}
       shownId={conversation?.conversation.id}
       onDraft={onDraft}
+      onOpenConversation={onOpenConversation}
       onSelect={() => setNavOpen(false)}
     />
   );
@@ -151,8 +155,6 @@ export function AppFrame({
               }
               footer={
                 <SidebarFooter
-                  view={view}
-                  hostKey={hostKey}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onOpenAccount={() => setAccountOpen(true)}
                 />
@@ -228,8 +230,6 @@ export function AppFrame({
         >
           {sidebar}
           <SidebarFooter
-            view={view}
-            hostKey={hostKey}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenAccount={() => setAccountOpen(true)}
             onSelect={() => setNavOpen(false)}

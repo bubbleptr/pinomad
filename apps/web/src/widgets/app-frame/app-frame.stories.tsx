@@ -25,7 +25,7 @@ function MainColumn({ view, remote, narrow }: { view: DurableView; remote: Remot
   const conversation = view.conversation;
   if (conversation === undefined) {
     return (
-      <DraftHome view={view} remote={remote} draft={{ kind: "project", path: PINOMAD.path }} onDraft={fn()} onCreated={fn()} connected />
+      <DraftHome view={view} remote={remote} hostKey={HOME_HOST.hostKey} draft={{ kind: "project", path: PINOMAD.path }} onDraft={fn()} onCreated={fn()} connected />
     );
   }
   return (
@@ -80,6 +80,7 @@ const meta = {
     summary: summaryOf(PARSER_ID),
     parentSummary: undefined,
     onDraft: fn(),
+    onOpenConversation: fn(),
     onOpenChanges: fn(),
     overviewOpen: false,
     onOverviewChange: fn(),

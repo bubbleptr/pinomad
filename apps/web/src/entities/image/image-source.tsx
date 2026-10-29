@@ -20,6 +20,8 @@ import { imageSrc } from "./image-url.ts";
 type ImageSource = {
   readonly load: ImageLoader;
   readonly retryKey: number;
+  /** The host answering these requests; only in-flight work is partitioned by it. */
+  readonly source?: string;
 };
 
 const ImageSourceContext = createContext<ImageSource | undefined>(undefined);
@@ -27,14 +29,17 @@ const ImageSourceContext = createContext<ImageSource | undefined>(undefined);
 export function ImageSourceProvider({
   load,
   retryKey = 0,
+  source,
   children,
 }: {
   load: ImageLoader;
   /** Bumped by `useImageRetryKey` once a reconnection's snapshots are usable. */
   retryKey?: number;
+  /** The focused host's key, so another host's identical in-flight image cannot block this one. */
+  source?: string;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ load, retryKey }), [load, retryKey]);
+  const value = useMemo(() => ({ load, retryKey, ...(source === undefined ? {} : { source }) }), [load, retryKey, source]);
   return <ImageSourceContext.Provider value={value}>{children}</ImageSourceContext.Provider>;
 }
 
@@ -127,10 +132,11 @@ export function useImageSrc(
 ): ImageSrc {
   const source = useContext(ImageSourceContext);
   const ref = image !== undefined && "ref" in image ? image.ref : undefined;
-  const requestKey = ref === undefined ? undefined : `${variant}:${ref}`;
+  const requestKey = ref === undefined ? undefined : `${source?.source ?? ""}:${variant}:${ref}`;
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const retryKey = source?.retryKey ?? 0;
   const load = source?.load;
+  const sourceKey = source?.source;
 
   useEffect(() => {
     if (ref === undefined || requestKey === undefined) return;
@@ -144,8 +150,10 @@ export function useImageSrc(
     // A fresh request replaces a previous failure for this same ref.
     setLoaded(undefined);
     const requested = variant === "original"
-      ? imageCache.load(ref, load)
-      : imageCache.load(ref, load, variant).catch(() => imageCache.load(ref, load));
+      ? imageCache.load(ref, load, "original", sourceKey)
+      : imageCache
+          .load(ref, load, variant, sourceKey)
+          .catch(() => imageCache.load(ref, load, "original", sourceKey));
     requested.then(
       (bytes) => {
         if (!cancelled) setLoaded({ key: requestKey, image: bytes });
@@ -157,7 +165,7 @@ export function useImageSrc(
     return () => {
       cancelled = true;
     };
-  }, [ref, requestKey, visible, retryKey, load, variant, attempt]);
+  }, [ref, requestKey, visible, retryKey, load, sourceKey, variant, attempt]);
 
   if (image === undefined) return { status: "loading" };
   if ("data" in image) return { status: "ready", src: imageSrc(image) };

@@ -33,9 +33,10 @@ import { QueuedList } from "./queued-list.tsx";
 async function resolveImages(
   images: readonly ViewImage[],
   load: (ref: string) => Promise<MessageImage>,
+  source?: string,
 ): Promise<MessageImage[] | undefined> {
   try {
-    return await Promise.all(images.map((image) => loadImageBytes(image, load)));
+    return await Promise.all(images.map((image) => loadImageBytes(image, load, source)));
   } catch {
     return undefined;
   }
@@ -57,6 +58,7 @@ export function ConversationComposer({
   onTakeBack,
   externalEditLocked = false,
   onEditorStateChange,
+  source,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -70,6 +72,8 @@ export function ConversationComposer({
   externalEditLocked?: boolean;
   /** Let a transcript Edit disable itself while this composer holds a draft. */
   onEditorStateChange?: (state: { occupied: boolean; locked: boolean }) => void;
+  /** The hostKey answering image requests, so its in-flight work stays separate. */
+  source?: string;
 }) {
   // A plain string plus the `$` picks bound in it (ADR-0028).
   const skillDraft = useSkillDraft();
@@ -279,7 +283,7 @@ export function ConversationComposer({
   const resolveEdit = async (copy: EditCopy): Promise<void> => {
     if (!beginAction(copy.id, "edit")) return;
     try {
-      const resolved = await resolveImages(copy.input.images, (ref) => remote.controller.image(ref));
+      const resolved = await resolveImages(copy.input.images, (ref) => remote.controller.image(ref), source);
       if (resolved === undefined) {
         // Withdrawing without every original would lose an attachment; leave
         // the queued message where it is and let the user try again.

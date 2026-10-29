@@ -52,9 +52,7 @@ beforeEach(() => {
 });
 
 describe("SidebarFooter update indicator", () => {
-  const footer = (
-    <SidebarFooter view={{ connection: "connected", settings: null } as never} onOpenSettings={() => {}} onOpenAccount={() => {}} />
-  );
+  const footer = <SidebarFooter onOpenSettings={() => {}} onOpenAccount={() => {}} />;
 
   it("marks Settings only once an update is downloaded", async () => {
     const updates = fakeUpdates({ state: "idle", currentVersion: "0.1.0" });

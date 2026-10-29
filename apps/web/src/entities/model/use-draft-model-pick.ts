@@ -12,16 +12,21 @@ import {
 
 const DRAFT_MODEL_KEY = "pinomad.draft.model";
 
+/** Each host keeps its own draft pick: model ids and defaults differ per host. */
+export function draftModelKey(hostKey: string | undefined): string {
+  return hostKey === undefined ? DRAFT_MODEL_KEY : `${DRAFT_MODEL_KEY}.${hostKey}`;
+}
+
 interface DraftPick {
   readonly provider: string;
   readonly modelId: string;
   readonly thinkingLevel: string;
 }
 
-/** The last draft pick, only when its model is still listed. */
-function readDraftPick(models: readonly ModelSummary[]): DraftPick | undefined {
+/** The last draft pick for this host, only when its model is still listed. */
+function readDraftPick(models: readonly ModelSummary[], hostKey: string | undefined): DraftPick | undefined {
   try {
-    const raw = localStorage.getItem(DRAFT_MODEL_KEY);
+    const raw = localStorage.getItem(draftModelKey(hostKey));
     if (raw === null) return undefined;
     const pick = JSON.parse(raw) as Partial<DraftPick>;
     if (
@@ -59,7 +64,7 @@ export interface DraftModelPick {
  * the remembered pick — clearing the agent returns to it untouched, and
  * picking another agent drops the overrides back to full inheritance.
  */
-export function useDraftModelPick(view: DurableView): {
+export function useDraftModelPick(view: DurableView, hostKey?: string): {
   pick: DraftModelPick;
   setModel: (model: ModelRef) => void;
   setLevel: (level: ThinkingLevel) => void;
@@ -69,7 +74,7 @@ export function useDraftModelPick(view: DurableView): {
   resolution?: AgentDraftResolution;
 } {
   const [remembered, setRemembered] = useState<DraftModelPick>(() => {
-    const stored = readDraftPick(view.models);
+    const stored = readDraftPick(view.models, hostKey);
     const model: ModelRef | undefined =
       stored !== undefined
         ? { provider: stored.provider, modelId: stored.modelId }
@@ -85,7 +90,7 @@ export function useDraftModelPick(view: DurableView): {
   const [overrides, setOverrides] = useState<AgentDraftOverrides>({});
 
   const remember = (model: ModelRef, level: ThinkingLevel): void => {
-    localStorage.setItem(DRAFT_MODEL_KEY, JSON.stringify({ ...model, thinkingLevel: level }));
+    localStorage.setItem(draftModelKey(hostKey), JSON.stringify({ ...model, thinkingLevel: level }));
   };
 
   const resolution =

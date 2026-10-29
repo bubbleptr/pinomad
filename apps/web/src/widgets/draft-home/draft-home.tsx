@@ -54,6 +54,7 @@ function problemText(problem: AgentDraftProblem): { label: string; title: string
 export function DraftHome({
   view,
   remote,
+  hostKey,
   draft,
   onDraft,
   onCreated,
@@ -61,6 +62,8 @@ export function DraftHome({
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The host owning this draft; its model pick is stored per host. */
+  hostKey?: string;
   draft: Home;
   onDraft: (home: Home) => void;
   /** The draft became a conversation, now shown; a failed create does not call it. */
@@ -78,7 +81,7 @@ export function DraftHome({
   // ADR-0010: project conversations default to a fresh worktree; the picker opts out.
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>("worktree");
   const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  const { pick, setModel, setLevel, agent, setAgent, resolution } = useDraftModelPick(view);
+  const { pick, setModel, setLevel, agent, setAgent, resolution } = useDraftModelPick(view, hostKey);
   const model = summaryOf(view.models, pick.model);
   const accepts = model?.images === true;
   const { images, pending, error, add, remove } = useImageAttachments(accepts);

@@ -89,6 +89,43 @@ describe("ImageCache", () => {
     expect(cache.peek("c")).toBe(c);
   });
 
+  it("separates in-flight requests by source host while sharing fetched bytes", async () => {
+    const cache = new ImageCache();
+    let resolveA!: (value: MessageImage) => void;
+    let resolveB!: (value: MessageImage) => void;
+    const loadA = vi.fn(() => new Promise<MessageImage>((done) => (resolveA = done)));
+    const loadB = vi.fn(() => new Promise<MessageImage>((done) => (resolveB = done)));
+
+    const fromA = cache.load("ref-shared", loadA, "original", "host-a");
+    const fromB = cache.load("ref-shared", loadB, "original", "host-b");
+    expect(loadA).toHaveBeenCalledTimes(1);
+    expect(loadB).toHaveBeenCalledTimes(1);
+
+    // One host failing must not reject the other host's request.
+    resolveA({ data: "a", mimeType: "image/png" });
+    await expect(fromA).resolves.toEqual({ data: "a", mimeType: "image/png" });
+    resolveB({ data: "a", mimeType: "image/png" });
+    await expect(fromB).resolves.toEqual({ data: "a", mimeType: "image/png" });
+
+    // Once the bytes are in, any source serves them without another request.
+    const loadC = vi.fn(async () => ({ data: "c", mimeType: "image/png" }) as MessageImage);
+    await expect(cache.load("ref-shared", loadC, "original", "host-c")).resolves.toEqual({
+      data: "a",
+      mimeType: "image/png",
+    });
+    expect(loadC).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed source from dragging down another source's in-flight request", async () => {
+    const cache = new ImageCache();
+    const failing = cache.load("ref-x", async () => {
+      throw new Error("host offline");
+    }, "original", "host-a");
+    const working = cache.load("ref-x", async () => image("ok"), "original", "host-b");
+    await expect(failing).rejects.toThrow("host offline");
+    await expect(working).resolves.toEqual(image("ok"));
+  });
+
   it("does not remember a failed load, so the next attempt can succeed", async () => {
     const cache = new ImageCache();
     const bytes = image("aGVsbG8=");

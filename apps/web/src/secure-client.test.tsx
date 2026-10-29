@@ -66,7 +66,15 @@ function Harness({
   const state: HostsState = {
     store,
     hosts,
-    activeHostKey: null,
+    focus: null,
+    focusHost: () => {},
+    focusConversation: () => {},
+    focusDraft: () => {},
+    forget: async (hostKey) => {
+      const next = hosts.filter((each) => each.hostKey !== hostKey);
+      observed.hosts = next;
+      setHosts(next);
+    },
     paired: async (host) => {
       observed.pairedCalls += 1;
       if (failSave === true) throw new Error("keychain locked");

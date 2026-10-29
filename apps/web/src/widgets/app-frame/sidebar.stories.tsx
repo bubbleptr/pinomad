@@ -21,12 +21,20 @@ const meta = {
   component: SidebarContent,
   decorators: [withHosts(), withAccount(signedIn())],
   parameters: { canvasWidth: "full" },
-  args: { view, remote: fakeRemote(view), draftingChat: false, shownId: PARSER_ID, onDraft: fn() },
+  args: {
+    view,
+    remote: fakeRemote(view),
+    hostKey: HOME_HOST.hostKey,
+    draftingChat: false,
+    shownId: PARSER_ID,
+    onDraft: fn(),
+    onOpenConversation: fn(),
+  },
   render: (args) => (
     <div className="h-[calc(100vh-3rem)] w-[260px]">
       <SideNav
         header={<SidebarHeaderBand onCollapse={fn()} />}
-        footer={<SidebarFooter view={args.view} hostKey={HOME_HOST.hostKey} onOpenSettings={fn()} onOpenAccount={fn()} />}
+        footer={<SidebarFooter onOpenSettings={fn()} onOpenAccount={fn()} />}
       >
         <SidebarContent {...args} />
       </SideNav>

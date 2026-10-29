@@ -22,9 +22,20 @@ import {
 import { clientDeviceName } from "../../address.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import { useHosts, type StoredHost } from "../host/host-store.ts";
+import {
+  browserDeclined,
+  cancelAccountRegistration,
+  onAccountRegistrationCancel,
+  type DeclinedStore,
+} from "./declined.ts";
 
 /** How this client authenticates to the account API (ADR-0022 §2). */
 export type AccountMode = "cookie" | "bearer";
+
+/** The Web Locks surface the multi-tab registration guard needs. */
+export interface AccountLocks {
+  request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+}
 
 export type AccountState =
   | { readonly status: "checking" }
@@ -50,11 +61,11 @@ export type AccountState =
        */
       readonly rejectedHostKeys: readonly string[];
       /**
-       * A host the account pairing registered but whose save failed — the
-       * device key dies with the page if it isn't persisted, so it stays
-       * here for `retryUnsavedHost`.
+       * Hosts the account pairing registered but whose save failed — the
+       * device key dies with the page if it isn't persisted. One slot per
+       * account hostId, so a multi-host round keeps every handshake.
        */
-      readonly unsavedHost?: StoredHost;
+      readonly unsavedHosts: readonly StoredHost[];
     };
 
 export interface AccountModel {
@@ -69,12 +80,12 @@ export interface AccountModel {
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /**
    * The explicit "pair this account host" action: vouched offer → the usual
-   * IK pairing → persisted with its account link. Never invoked by the model
-   * itself — a rejected stored host is reported via hostRejected, not repaired.
+   * IK pairing → persisted with its account link. It removes the host from the
+   * declined set; automatic registration never does.
    */
   pairHost(hostId: string): Promise<AccountResult<StoredHost>>;
-  /** Retry persisting `state.unsavedHost` after a failed save. */
-  retryUnsavedHost(): Promise<AccountResult<void>>;
+  /** Retry persisting one saved slot (or every slot) after a failed save. */
+  retryUnsavedHost(hostId?: string): Promise<AccountResult<void>>;
   /** Mark a stored host's connection as refused by the host (4401). Pure bookkeeping. */
   hostRejected(hostKey: string): void;
 }
@@ -97,9 +108,33 @@ export interface AccountModelDeps {
   readonly name?: () => string | Promise<string>;
   /** pairViaAccount's transport seam — tests substitute a stub. */
   readonly connect?: (args: PairConnectArgs) => Promise<void>;
+  /** Persisted declined identities; defaults to this renderer's localStorage set. */
+  readonly declined?: DeclinedStore;
+  /** Cross-tab registration lock; defaults to navigator.locks when available. */
+  readonly locks?: AccountLocks;
+  /** Test seam: turn automatic registration off for account-only cases. */
+  readonly autoRegister?: boolean;
 }
 
 const fail = (code: string): AccountResult<never> => ({ ok: false, error: { code } });
+
+/** Host refusals that mean "do not ask this host again on my behalf". */
+const DECLINED_CODES = new Set(["pair_rejected", "disabled"]);
+
+const browserLocks: AccountLocks | undefined =
+  typeof navigator !== "undefined" && navigator.locks !== undefined
+    ? {
+        request: async (name, callback) => await navigator.locks.request(name, () => callback()),
+      }
+    : undefined;
+
+const slotKey = (serverOrigin: string, hostId: string): string =>
+  `${normalizeServerOrigin(serverOrigin)}\u0000${hostId}`;
+
+const storedSlot = (host: StoredHost): string =>
+  host.account === undefined
+    ? host.hostKey
+    : slotKey(host.account.serverOrigin, host.account.hostId);
 
 export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const listeners = new Set<() => void>();
@@ -109,19 +144,200 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   let mode: AccountMode = deps.bridge === undefined ? "cookie" : "bearer";
   let lastOrigin: string | undefined;
   const rejected = new Set<string>();
+  const declined = deps.declined ?? browserDeclined;
+  const autoRegisterEnabled = deps.autoRegister !== false;
+  /** Save-failed identities, keyed by account hostId (or hostKey when unlinked). */
+  const unsaved = new Map<string, StoredHost>();
+  /** Bumped on sign-out and by an explicit cancel; flights compare it before acting. */
+  let epoch = 0;
+  interface Flight {
+    cancelled: boolean;
+    promise: Promise<void>;
+  }
+  const flights = new Map<string, Flight>();
+  let stopVisibility: (() => void) | undefined;
+
+  onAccountRegistrationCancel((hostId) => {
+    for (const [key, flight] of flights) {
+      if (hostId !== undefined && !key.endsWith(`\u0000${hostId}`)) continue;
+      flight.cancelled = true;
+      flights.delete(key);
+    }
+  });
 
   const setState = (next: AccountState): void => {
     state = next;
     for (const listener of listeners) listener();
   };
 
+  const publishUnsaved = (): void => {
+    if (state.status === "signed-in") setState({ ...state, unsavedHosts: [...unsaved.values()] });
+  };
+
+  const rememberUnsaved = (host: StoredHost): void => {
+    unsaved.set(storedSlot(host), host);
+    publishUnsaved();
+  };
+
+  const forgetUnsaved = (host: StoredHost): void => {
+    if (unsaved.delete(storedSlot(host))) publishUnsaved();
+  };
+
+  const stopWatching = (): void => {
+    stopVisibility?.();
+    stopVisibility = undefined;
+  };
+
   const signedOut = (): void => {
     client = undefined;
+    epoch += 1;
+    for (const flight of flights.values()) flight.cancelled = true;
+    flights.clear();
+    unsaved.clear();
+    stopWatching();
     setState({
       status: "signed-out",
       mode,
       ...(lastOrigin === undefined ? {} : { serverOrigin: lastOrigin }),
     });
+  };
+
+  const signedInState = (
+    active: AccountClient,
+    user: string,
+    hosts: readonly AccountHostMatch[],
+    extra?: { hostsError?: AccountError },
+  ): Extract<AccountState, { status: "signed-in" }> => ({
+    status: "signed-in",
+    mode,
+    user,
+    serverOrigin: active.origin,
+    hosts,
+    rejectedHostKeys: [...rejected],
+    unsavedHosts: [...unsaved.values()],
+    ...extra,
+  });
+
+  const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
+
+  const deviceName = async (): Promise<string> => (deps.name ?? (() => "This device"))();
+
+  /** Startup, login and every return to the foreground refresh the account hosts. */
+  const watchVisibility = (): void => {
+    if (stopVisibility !== undefined || typeof document === "undefined") return;
+    const onVisibility = (): void => {
+      if (document.visibilityState !== "visible") return;
+      if (client !== undefined && state.status === "signed-in") void refresh(client, state.user);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    stopVisibility = () => document.removeEventListener("visibilitychange", onVisibility);
+  };
+
+  /** Save a slot without generating a new key; leaves it queued on failure. */
+  const savePending = async (active: AccountClient, host: StoredHost): Promise<boolean> => {
+    if (client !== active) return false;
+    try {
+      await deps.paired(host);
+    } catch {
+      return false;
+    }
+    forgetUnsaved(host);
+    return true;
+  };
+
+  const retryPending = async (active: AccountClient): Promise<number> => {
+    let saved = 0;
+    for (const host of [...unsaved.values()]) {
+      if (!(await savePending(active, host))) return saved;
+      saved += 1;
+    }
+    return saved;
+  };
+
+  const handlePairFailure = (active: AccountClient, hostId: string, error: AccountError): void => {
+    if (live(active, epoch) === false) return;
+    if (isUnauthenticated(error)) {
+      signedOut();
+      return;
+    }
+    if (DECLINED_CODES.has(error.code)) {
+      declined.add({ serverOrigin: active.origin, hostId });
+    }
+  };
+
+  const accountName = (hostId: string): string | undefined =>
+    state.status === "signed-in"
+      ? state.hosts.find((match) => match.host.hostId === hostId)?.host.name
+      : undefined;
+
+  const enrich = (hostId: string, host: StoredHost): StoredHost => {
+    const announced = accountName(hostId);
+    return announced === undefined || announced === "" ? host : { ...host, name: announced };
+  };
+
+  const autoRegisterRound = async (
+    active: AccountClient,
+    user: string,
+    matches: readonly AccountHostMatch[],
+    storedRead: boolean,
+  ): Promise<void> => {
+    if (!autoRegisterEnabled || !storedRead) return;
+    const recovered = await retryPending(active);
+    if (!live(active, epoch)) return;
+    if (recovered > 0) {
+      // The saved slots change the matches; publish them before deciding what
+      // else is eligible, without pairing anyone a second time.
+      await refresh(active, user);
+      return;
+    }
+    for (const match of matches) {
+      if (!match.autoRegister) continue;
+      const key = slotKey(active.origin, match.host.hostId);
+      if (flights.has(key)) continue;
+      const started = epoch;
+      const flight: Flight = { cancelled: false, promise: Promise.resolve() };
+      const run = async (): Promise<void> => {
+        if (flight.cancelled || !live(active, started)) return;
+        // The lock winner re-reads the list: another tab may have registered
+        // while this one waited.
+        const stored = await deps.hosts.list().catch(() => undefined);
+        if (stored === undefined || flight.cancelled || !live(active, started)) return;
+        const fresh = matchAccountHosts(active.origin, [match.host], stored, declined.list(), true)[0];
+        if (fresh?.autoRegister !== true) return;
+        const pending = unsaved.get(slotKey(active.origin, match.host.hostId));
+        if (pending !== undefined) {
+          if (await savePending(active, pending) && client === active) await refresh(active, user);
+          return;
+        }
+        const result = await pairViaAccount(active, match.host.hostId, await deviceName(), deps.connect, {
+          pageProtocol: window.location.protocol,
+        });
+        if (flight.cancelled || !live(active, started)) return;
+        if (!result.ok) {
+          handlePairFailure(active, match.host.hostId, result.error);
+          return;
+        }
+        const enriched = enrich(match.host.hostId, result.value);
+        try {
+          await deps.paired(enriched);
+        } catch {
+          rememberUnsaved(enriched);
+          return;
+        }
+        if (client === active) await refresh(active, user);
+      };
+      const promise = (async () => {
+        const locks = deps.locks ?? browserLocks;
+        if (locks === undefined) await run();
+        else await locks.request(`pinomad.autoRegister:${normalizeServerOrigin(active.origin)}:${match.host.hostId}`, run);
+      })().catch((error: unknown) => {
+        console.error("Could not auto-register an account host", error);
+      }).finally(() => {
+        if (flights.get(key) === flight) flights.delete(key);
+      });
+      flight.promise = promise;
+      flights.set(key, flight);
+    }
   };
 
   const refresh = async (active: AccountClient, user: string): Promise<AccountResult<readonly AccountHostMatch[]>> => {
@@ -138,15 +354,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       }
       // A failed refresh keeps the session and the previous list.
       const previous = state.status === "signed-in" ? state.hosts : [];
-      setState({
-        status: "signed-in",
-        mode,
-        user,
-        serverOrigin: active.origin,
-        hosts: previous,
-        hostsError: rows.error,
-        rejectedHostKeys: [...rejected],
-      });
+      setState(signedInState(active, user, previous, { hostsError: rows.error }));
       return rows;
     }
     // A failed read is not an empty list: it keeps the matching verdicts but
@@ -160,8 +368,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       storedRead = false;
     }
     if (client !== active) return { ok: false, error: { code: "stale" } };
-    // Declined identities arrive with the automatic-registration work (#426/#428).
-    const matches = matchAccountHosts(active.origin, rows.value, stored, [], storedRead);
+    const matches = matchAccountHosts(active.origin, rows.value, stored, declined.list(), storedRead);
     // Adopt pre-account pairings: same Noise key, no link yet — bookkeeping,
     // not a re-pair, so a failed save is unremarkable.
     for (const match of matches) {
@@ -172,14 +379,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           .catch(() => undefined);
       }
     }
-    setState({
-      status: "signed-in",
-      mode,
-      user,
-      serverOrigin: active.origin,
-      hosts: matches,
-      rejectedHostKeys: [...rejected],
-    });
+    setState(signedInState(active, user, matches));
+    watchVisibility();
+    void autoRegisterRound(active, user, matches, storedRead);
     return { ok: true, value: matches };
   };
 
@@ -227,6 +429,51 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     await refresh(candidate, me.value.user.username);
   };
   void init();
+
+  const pairHost = async (hostId: string): Promise<AccountResult<StoredHost>> => {
+    if (client === undefined) return fail("unauthenticated");
+    const active = client;
+    declined.remove({ serverOrigin: active.origin, hostId });
+    // An explicit join wins over an automatic round already in flight.
+    cancelAccountRegistration(hostId);
+    const pending = unsaved.get(slotKey(active.origin, hostId));
+    if (pending !== undefined) {
+      return (await savePending(active, pending)) ? { ok: true, value: pending } : fail("pairing_not_saved");
+    }
+    const result = await pairViaAccount(active, hostId, await deviceName(), deps.connect, {
+      pageProtocol: window.location.protocol,
+    });
+    if (!result.ok) {
+      handlePairFailure(active, hostId, result.error);
+      return result;
+    }
+    const enriched = enrich(hostId, result.value);
+    try {
+      await deps.paired(enriched);
+    } catch {
+      // The invite is spent and the device registered — a failed save must
+      // not orphan the key. Keep the record for retryUnsavedHost.
+      rememberUnsaved(enriched);
+      return fail("pairing_not_saved");
+    }
+    forgetUnsaved(enriched);
+    // A re-pair after a key change stored a fresh record under the new key;
+    // the stale linked record can never connect again — drop it so it stops
+    // matching this account host.
+    const stored = await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
+    for (const entry of stored) {
+      if (
+        entry.account !== undefined &&
+        normalizeServerOrigin(entry.account.serverOrigin) === active.origin &&
+        entry.account.hostId === hostId &&
+        entry.hostKey !== enriched.hostKey
+      ) {
+        void deps.hosts.remove(entry.hostKey).catch(() => undefined);
+      }
+    }
+    if (state.status === "signed-in" && client !== undefined) await refresh(client, state.user);
+    return { ok: true, value: enriched };
+  };
 
   return {
     get state() {
@@ -300,59 +547,22 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return result;
     },
 
-    pairHost: async (hostId) => {
-      if (client === undefined) return fail("unauthenticated");
-      const name = deps.name ?? (() => "This device");
-      const result = await pairViaAccount(client, hostId, await name(), deps.connect, {
-        pageProtocol: window.location.protocol,
-      });
-      if (!result.ok) {
-        if (isUnauthenticated(result.error)) signedOut();
-        return result;
-      }
-      // The account row already knows the machine's name — the stored entry
-      // carries it so labels need not wait for the settings stream (5.12).
-      const announced = state.status === "signed-in"
-        ? state.hosts.find((match) => match.host.hostId === hostId)?.host.name
-        : undefined;
-      const enriched: StoredHost =
-        announced === undefined || announced === "" ? result.value : { ...result.value, name: announced };
-      rejected.delete(enriched.hostKey);
-      try {
-        await deps.paired(enriched);
-      } catch {
-        // The invite is spent and the device registered — a failed save must
-        // not orphan the key. Keep the record for retryUnsavedHost.
-        if (state.status === "signed-in") setState({ ...state, unsavedHost: enriched });
-        return { ok: false, error: { code: "pairing_not_saved" } };
-      }
-      // A re-pair after a key change stored a fresh record under the new key;
-      // the stale linked record can never connect again — drop it so it stops
-      // matching this account host.
-      const stored = await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
-      for (const entry of stored) {
-        if (
-          entry.account !== undefined &&
-          normalizeServerOrigin(entry.account.serverOrigin) === client.origin &&
-          entry.account.hostId === hostId &&
-          entry.hostKey !== enriched.hostKey
-        ) {
-          void deps.hosts.remove(entry.hostKey).catch(() => undefined);
-        }
-      }
-      if (state.status === "signed-in" && client !== undefined) await refresh(client, state.user);
-      return { ok: true, value: enriched };
-    },
+    pairHost,
 
-    retryUnsavedHost: async () => {
-      const pending = state.status === "signed-in" ? state.unsavedHost : undefined;
-      if (pending === undefined) return fail("nothing_pending");
-      try {
-        await deps.paired(pending);
-      } catch {
-        return fail("pairing_not_saved");
+    retryUnsavedHost: async (hostId) => {
+      if (state.status !== "signed-in") return fail("nothing_pending");
+      const wanted =
+        hostId === undefined
+          ? [...unsaved.values()]
+          : [unsaved.get(slotKey(state.serverOrigin, hostId))].filter(
+              (host): host is StoredHost => host !== undefined,
+            );
+      if (wanted.length === 0) return fail("nothing_pending");
+      const active = client;
+      if (active === undefined) return fail("unauthenticated");
+      for (const host of wanted) {
+        if (!(await savePending(active, host))) return fail("pairing_not_saved");
       }
-      if (state.status === "signed-in") setState({ ...state, unsavedHost: undefined });
       return { ok: true, value: undefined };
     },
 
@@ -364,8 +574,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 }
 
 /**
- * The app's account model, bound to the shared host store: `paired` both
- * persists and marks the host active so a fresh pairing connects next load.
+ * The app's account model, bound to the shared host store: `paired` persists
+ * the host and adds its runtime; it never steals focus.
  */
 export function useAccount(): AccountModel {
   const { store, paired } = useHosts();

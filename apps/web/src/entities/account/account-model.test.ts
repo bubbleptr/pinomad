@@ -1,16 +1,19 @@
 // The account model against scripted fetches: mode detection, login in both
 // credential styles, host-list matching against the stored hosts, and the
 // "rejected host never auto-repairs" pin.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
-import { createAccountModel, type AccountModel } from "./account-model.ts";
+import { createAccountModel, type AccountLocks, type AccountModel } from "./account-model.ts";
+import { createDeclinedStore, type DeclinedStore } from "./declined.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import type { StoredHost } from "../host/host-store.ts";
 
 const ORIGIN = "https://relay.example.com";
 const USER = { user: { username: "admin" }, expiresAt: 1 };
+
+beforeEach(() => localStorage.clear());
 
 /** A fetch stand-in: records calls, answers from a script. */
 const fakeFetch = (...script: { status: number; body?: unknown }[]) => {
@@ -28,17 +31,21 @@ const fakeFetch = (...script: { status: number; body?: unknown }[]) => {
   return { impl, calls };
 };
 
-const hosts = (initial: StoredHost[] = []) => {
+const hosts = (initial: StoredHost[] = [], options?: { failList?: boolean }) => {
   const stored: StoredHost[] = [...initial];
   const saved: StoredHost[] = [];
   let failSaves = false;
+  let failList = options?.failList === true;
   return {
     stored,
     saved,
     setFailSaves: (value: boolean) => {
       failSaves = value;
     },
-    list: () => Promise.resolve([...stored]),
+    setFailList: (value: boolean) => {
+      failList = value;
+    },
+    list: () => (failList ? Promise.reject(new Error("store unavailable")) : Promise.resolve([...stored])),
     save: (host: StoredHost) => {
       if (failSaves) return Promise.reject(new Error("store unavailable"));
       saved.push(host);
@@ -82,6 +89,10 @@ function makeModel(options: {
   fake: ReturnType<typeof fakeFetch>;
   store?: ReturnType<typeof hosts>;
   bridge?: DesktopBridge;
+  declined?: DeclinedStore;
+  locks?: { request<T>(name: string, callback: () => Promise<T>): Promise<T> };
+  connect?: () => Promise<void>;
+  autoRegister?: boolean;
 }): Setup {
   const store = options.store ?? hosts();
   const paired: StoredHost[] = [];
@@ -94,7 +105,11 @@ function makeModel(options: {
       return store.save(host);
     },
     name: () => "test device",
-    connect: () => Promise.resolve(),
+    connect: options.connect ?? (() => Promise.resolve()),
+    // Auto-registration has its own suite; keep the older cases focused.
+    autoRegister: options.autoRegister === true,
+    ...(options.declined === undefined ? {} : { declined: options.declined }),
+    ...(options.locks === undefined ? {} : { locks: options.locks }),
     ...(options.bridge === undefined ? {} : { bridge: options.bridge }),
   });
   return { model, calls: options.fake.calls, store, paired };
@@ -311,14 +326,14 @@ describe("account model", () => {
     // swallow the identity; it waits in state for a retry.
     const result = await model.pairHost("h1");
     expect(result).toEqual({ ok: false, error: { code: "pairing_not_saved" } });
-    const pending = (model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHost;
+    const pending = (model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHosts[0];
     expect(pending).toBeDefined();
     expect(store.stored).toHaveLength(0);
 
     store.setFailSaves(false);
     expect(await model.retryUnsavedHost()).toEqual({ ok: true, value: undefined });
     expect(store.stored).toEqual([pending]);
-    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHost).toBeUndefined();
+    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).unsavedHosts).toEqual([]);
   });
 
   it("drops the stale linked record when a key-changed host is re-paired", async () => {
@@ -394,5 +409,180 @@ describe("account model", () => {
     expect(result.ok).toBe(true);
     expect(model.state.status).toBe("signed-out");
     await expect(model.refreshHosts()).resolves.toEqual({ ok: false, error: { code: "unauthenticated" } });
+  });
+});
+
+describe("automatic registration", () => {
+  const keyA = toBase64Url(generateKeyPair().publicKey);
+  const row = (key = keyA, hostId = "h1") => accountHost(key, hostId);
+  const offer = (key = keyA) => ({
+    url: "wss://relay.example.com/c/h1",
+    hostKey: key,
+    secret: toBase64Url(generateKeyPair().privateKey),
+    expiresAt: Date.now() + 60_000,
+  });
+  const response = (status: number, body: unknown) => ({
+    status,
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(typeof body === "string" ? body : JSON.stringify(body)),
+  });
+  /** A cookie-mode account server whose host list reflects the live store. */
+  const routeFetch = (hostRows: () => unknown[], pairingOffer = offer()) => {
+    const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+    let meCalls = 0;
+    const impl: AccountFetch = (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/me")) {
+        meCalls += 1;
+        return Promise.resolve(meCalls === 1 ? response(401, undefined) : response(200, USER));
+      }
+      if (url.endsWith("/api/hosts") && (init?.method ?? "GET") === "GET") {
+        return Promise.resolve(response(200, hostRows()));
+      }
+      if (url.endsWith("/api/hosts/h1/pairing")) return Promise.resolve(response(200, pairingOffer));
+      if (url.endsWith("/api/logout")) return Promise.resolve(response(204, undefined));
+      return Promise.resolve(response(404, { error: "not_found" }));
+    };
+    return { impl, calls };
+  };
+  const pairingCalls = (calls: { url: string }[]): number =>
+    calls.filter((call) => call.url.endsWith("/pairing")).length;
+
+  it("registers an eligible unpaired host through the account", async () => {
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, declined, autoRegister: true });
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status).toBe("signed-in");
+      if (state.status === "signed-in") expect(state.hosts[0]?.status).toBe("paired");
+    });
+    expect(setup.paired).toHaveLength(1);
+    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    expect(pairingCalls(fake.calls)).toBe(1);
+  });
+
+  it("adds a host that refuses account vouching to the declined set", async () => {
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    const connect = vi.fn(() =>
+      Promise.reject(Object.assign(new Error("pairing refused"), { code: 4401 })),
+    );
+    const fake = routeFetch(() => [row()]);
+    makeModel({ fake, store, declined, connect, autoRegister: true });
+    await vi.waitFor(() =>
+      expect(declined.list()).toContainEqual({ serverOrigin: ORIGIN, hostId: "h1" }),
+    );
+    expect(store.stored).toEqual([]);
+  });
+
+  it("does not auto-register a declined identity", async () => {
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    declined.add({ serverOrigin: ORIGIN, hostId: "h1" });
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, declined, autoRegister: true });
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+    await Promise.resolve();
+    expect(pairingCalls(fake.calls)).toBe(0);
+    expect(store.stored).toEqual([]);
+  });
+
+  it("does not register when the local pairing list could not be read", async () => {
+    const store = hosts([], { failList: true });
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, autoRegister: true });
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+    await Promise.resolve();
+    expect(pairingCalls(fake.calls)).toBe(0);
+  });
+
+  it("keeps one flight per host across overlapping refreshes", async () => {
+    const store = hosts();
+    let releaseConnect!: () => void;
+    const connect = vi.fn(
+      () => new Promise<void>((resolve) => {
+        releaseConnect = resolve;
+      }),
+    );
+    const request = vi.fn((_name: string, callback: () => Promise<unknown>) => callback());
+    const locks = { request } as unknown as AccountLocks;
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, connect, locks, autoRegister: true });
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    await setup.model.refreshHosts();
+    await setup.model.refreshHosts();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(pairingCalls(fake.calls)).toBe(1);
+
+    releaseConnect();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("paired");
+    });
+    expect(setup.paired).toHaveLength(1);
+  });
+
+  it("rechecks the local list under the Web Lock before registering", async () => {
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    const linked: StoredHost = {
+      ...storedHost({ hostKey: keyA }),
+      account: { serverOrigin: ORIGIN, hostId: "h1" },
+    };
+    const names: string[] = [];
+    const locks = {
+      request: async <T,>(name: string, callback: () => Promise<T>): Promise<T> => {
+        names.push(name);
+        // Another tab won the race while this one waited for the lock.
+        store.stored.push(linked);
+        return callback();
+      },
+    };
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, declined, locks, autoRegister: true });
+    await vi.waitFor(() => expect(names).toHaveLength(1));
+    await Promise.resolve();
+    expect(names[0]).toBe(`pinomad.autoRegister:${ORIGIN}:h1`);
+    expect(pairingCalls(fake.calls)).toBe(0);
+    expect(setup.paired).toEqual([]);
+  });
+
+  it("keeps a failed save in a per-host recovery slot and never generates a second key", async () => {
+    const store = hosts();
+    store.setFailSaves(true);
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, autoRegister: true });
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.unsavedHosts.length : 0).toBe(1);
+    });
+    expect(pairingCalls(fake.calls)).toBe(1);
+
+    store.setFailSaves(false);
+    expect(await setup.model.retryUnsavedHost("h1")).toEqual({ ok: true, value: undefined });
+    expect(store.stored.map((entry) => entry.hostKey)).toEqual([keyA]);
+    expect(pairingCalls(fake.calls)).toBe(1);
+    expect((setup.model.state as Extract<typeof setup.model.state, { status: "signed-in" }>).unsavedHosts).toEqual([]);
+  });
+
+  it("drops an in-flight registration after sign-out", async () => {
+    const store = hosts();
+    let releaseConnect!: () => void;
+    const connect = vi.fn(
+      () => new Promise<void>((resolve) => {
+        releaseConnect = resolve;
+      }),
+    );
+    const fake = routeFetch(() => [row()]);
+    const setup = makeModel({ fake, store, connect, autoRegister: true });
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    expect(await setup.model.logout()).toEqual({ ok: true, value: undefined });
+    releaseConnect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.stored).toEqual([]);
+    expect(setup.model.state.status).toBe("signed-out");
   });
 });

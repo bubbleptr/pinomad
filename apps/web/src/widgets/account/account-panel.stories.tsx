@@ -34,7 +34,7 @@ export const NeedsRepair: Story = {
       signedIn({
         hosts: [ACCOUNT_HOSTS[0]!, { ...ACCOUNT_HOSTS[1]!, status: "key_changed", stored: { ...HOME_HOST, hostKey: "K".repeat(43) } }],
         rejectedHostKeys: [HOME_HOST.hostKey],
-        unsavedHost: HOME_HOST,
+        unsavedHosts: [HOME_HOST],
       }),
     ),
   ],
