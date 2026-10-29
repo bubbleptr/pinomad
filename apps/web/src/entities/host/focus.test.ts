@@ -3,7 +3,15 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
-import { FOCUS_KEY, LEGACY_ACTIVE_HOST_KEY, focusPairedHost, readFocus, writeFocus } from "./focus.ts";
+import {
+  FOCUS_KEY,
+  LEGACY_ACTIVE_HOST_KEY,
+  focusPairedHost,
+  readFocus,
+  rememberedHostFocus,
+  seedRememberedFocus,
+  writeFocus,
+} from "./focus.ts";
 
 const host = (): StoredHost => ({
   url: "wss://example/secure",
@@ -48,12 +56,19 @@ describe("focus storage", () => {
     expect(last.get("host-a")).toBe(1);
   });
 
-  it("keeps a host's conversation when the same host is paired again", () => {
-    const last = new Map<string, ConversationId>([["host-a", 1 as ConversationId]]);
-    expect(focusPairedHost(last, { hostKey: "host-a", conversationId: 1 as ConversationId }, "host-a")).toEqual({
-      hostKey: "host-a",
-    });
-    expect(last.get("host-a")).toBe(1);
+  it("keeps the persisted conversation when a refresh re-pairs the same host", () => {
+    // A reload starts the in-memory map empty; the persisted focus is the
+    // only record of A's conversation. Initialization seeds it, and pairing A
+    // again must not drop the conversation.
+    const last = new Map<string, ConversationId>();
+    const persisted = { hostKey: "host-a", conversationId: 5 as ConversationId };
+    seedRememberedFocus(last, persisted);
+    const afterRepair = focusPairedHost(last, persisted, "host-a");
+    expect(afterRepair).toEqual(persisted);
+
+    // Pairing B moves focus and snapshots A for the menu.
+    expect(focusPairedHost(last, afterRepair, "host-b")).toEqual({ hostKey: "host-b" });
+    expect(rememberedHostFocus(last, "host-a")).toEqual(persisted);
   });
 
   it("captures the live conversation before a new pairing moves focus", () => {

@@ -49,6 +49,8 @@ import { HostsContext, hostStore, useHostNameSync, useHosts, type HostsState } f
 import {
   focusPairedHost,
   readFocus,
+  rememberedHostFocus,
+  seedRememberedFocus,
   writeFocus,
   type ConversationRef,
   type HostFocus,
@@ -113,7 +115,7 @@ export function App() {
         }
         pendingPairings.current.clear();
         const focus = readFocus(localStorage, merged) ?? null;
-        if (focus?.conversationId !== undefined) lastByHost.current.set(focus.hostKey, focus.conversationId);
+        seedRememberedFocus(lastByHost.current, focus);
         setLoaded({
           hosts: merged,
           focus,
@@ -137,10 +139,10 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const rememberedFocus = useCallback((hostKey: string): HostFocus => {
-    const conversationId = lastByHost.current.get(hostKey);
-    return conversationId === undefined ? { hostKey } : { hostKey, conversationId };
-  }, []);
+  const rememberedFocus = useCallback(
+    (hostKey: string): HostFocus => rememberedHostFocus(lastByHost.current, hostKey),
+    [],
+  );
 
   const focusHost = useCallback(
     (hostKey: string): void => {
