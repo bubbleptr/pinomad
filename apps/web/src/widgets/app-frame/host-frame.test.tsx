@@ -340,7 +340,7 @@ describe("the app frame across hosts", () => {
     render(
       <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
     );
-    expect(await screen.findByText("Connecting")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connecting" })).toBeInTheDocument();
     expect(screen.getByRole("navigation")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hosts" })).toBeInTheDocument();

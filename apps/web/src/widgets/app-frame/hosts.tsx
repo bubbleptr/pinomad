@@ -164,7 +164,8 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
       hasChevron={false}
       placement="above"
       alignment="end"
-      menuWidth={240}
+      // As wide as the longest "name status" line; no fixed width to pad out.
+      menuWidth="max-content"
       button={{
         icon: <Computer aria-hidden="true" />,
         isIconOnly: true,
@@ -181,6 +182,11 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
           label={
             <>
               {paired.label(host)}
+              {/* Seen after the name; the hidden copy keeps the accessible
+                  name "<host> (<status>)" without reading it twice. */}
+              <span aria-hidden="true" className="ms-2 text-muted">
+                {hostStatusText(paired.info(host))}
+              </span>
               <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>
             </>
           }

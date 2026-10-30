@@ -311,7 +311,9 @@ export function DraftHome({
               </>
             }
             footer={
-              <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              // Ghost selectors carry their own hover padding; that alone
+              // spaces them, an extra gap reads as three loose controls.
+              <span className="flex w-full min-w-0 flex-wrap items-center gap-y-1">
                 {machine === undefined || machine.options.length < 2 ? null : (
                   <Selector
                     isLabelHidden
