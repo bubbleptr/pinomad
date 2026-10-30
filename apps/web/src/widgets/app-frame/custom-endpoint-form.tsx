@@ -115,11 +115,13 @@ export function CustomEndpointForm({
   // An answer is for the endpoint as it was asked about: dropped if the
   // format, URL or key changed meanwhile, or if a newer fetch went out. It
   // only adds options; it checks them all only if nothing is checked yet.
+  // Only a fetch the user started reports a failure or an empty list: the
+  // one on opening an endpoint without /models stays quiet.
   const current = useRef({ api, baseUrl, apiKey, checked });
   current.current = { api, baseUrl, apiKey, checked };
   const fetches = useRef(0);
 
-  const fetchModels = async (): Promise<void> => {
+  const fetchModels = async (startedByUser: boolean): Promise<void> => {
     setUrlTouched(true);
     if (urlProblem !== undefined) return;
     const mine = ++fetches.current;
@@ -139,13 +141,13 @@ export function CustomEndpointForm({
       });
       if (!stillAsked()) return;
       if (listed.length === 0) {
-        setFetchProblem("The endpoint listed no models. Add model IDs by hand.");
+        if (startedByUser) setFetchProblem("The endpoint listed no models. Add model IDs by hand.");
         return;
       }
       setOptions((was) => withNew(was, listed));
       if (current.current.checked.length === 0) setChecked(withNew([], listed));
     } catch (reason) {
-      if (stillAsked()) setFetchProblem(`${messageOf(reason)} Add model IDs by hand.`);
+      if (startedByUser && stillAsked()) setFetchProblem(`${messageOf(reason)} Add model IDs by hand.`);
     } finally {
       if (mine === fetches.current) setFetching(false);
     }
@@ -156,7 +158,7 @@ export function CustomEndpointForm({
   useEffect(() => {
     if (existing === undefined || !connected || listedOnOpen.current) return;
     listedOnOpen.current = true;
-    void fetchModels();
+    void fetchModels(false);
   }, [connected]);
 
   const addDraft = (): void => {
@@ -265,7 +267,7 @@ export function CustomEndpointForm({
             icon={<RefreshCw />}
             isLoading={fetching}
             isDisabled={!connected}
-            onClick={() => void fetchModels()}
+            onClick={() => void fetchModels(true)}
           />
           {modelsStatus === undefined ? null : (
             <div className="endpoint-models__status">

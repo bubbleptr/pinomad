@@ -39,8 +39,15 @@ const OLLAMA: ProviderInfo = {
 
 function setup(existing?: ProviderInfo) {
   let answer!: (models: string[]) => void;
+  let refuse!: (reason: Error) => void;
   const controller = {
-    listEndpointModels: vi.fn(() => new Promise<string[]>((resolve) => (answer = resolve))),
+    listEndpointModels: vi.fn(
+      () =>
+        new Promise<string[]>((resolve, reject) => {
+          answer = resolve;
+          refuse = reject;
+        }),
+    ),
     saveCustomProvider: vi.fn(async () => {}),
     removeCustomProvider: vi.fn(async () => {}),
   };
@@ -98,6 +105,7 @@ function setup(existing?: ProviderInfo) {
     save,
     savedModels,
     answer: (list: string[]) => act(async () => answer(list)),
+    refuse: (message: string) => act(async () => refuse(new Error(message))),
   };
 }
 
@@ -157,6 +165,32 @@ describe("CustomEndpointForm editing an endpoint", () => {
     const { all, checked } = await offered();
     expect([...all].sort()).toEqual(["devstral:24b", "gpt-oss:120b", "qwen3-coder:30b"]);
     expect([...checked].sort()).toEqual(["devstral:24b", "gpt-oss:120b"]);
+  });
+
+  it("stays quiet when the list fetched on open fails, but reports a refresh that fails", async () => {
+    const { user, refuse, offered } = setup(OLLAMA);
+    await refuse("404 Not Found.");
+
+    expect(screen.queryByText(/Add model IDs by hand/)).toBeNull();
+    expect((await offered()).checked).toEqual(["gpt-oss:120b", "devstral:24b"]);
+
+    await user.click(screen.getByRole("button", { name: "Fetch models" }));
+    await refuse("404 Not Found.");
+    expect(screen.getByText("404 Not Found. Add model IDs by hand.")).toBeInTheDocument();
+  });
+
+  it("keeps an unlisted saved model offered after it's unchecked", async () => {
+    const { user, answer, openModels, offered, save, savedModels } = setup(OLLAMA);
+    await answer(["gpt-oss:120b", "qwen3-coder:30b"]);
+
+    await user.click(within(await openModels()).getByRole("option", { name: /devstral:24b/, ...hidden }));
+    await user.keyboard("{Escape}");
+
+    const { all, checked } = await offered();
+    expect(all).toContain("devstral:24b");
+    expect(checked).not.toContain("devstral:24b");
+    await save();
+    expect(savedModels()).toEqual(["gpt-oss:120b"]);
   });
 
   it("saves only the checked models", async () => {
