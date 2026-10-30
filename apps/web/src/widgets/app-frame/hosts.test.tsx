@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { HOME_HOST, fakeHosts, fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
+import { HostComposerStore } from "../../entities/composer/composer-store.ts";
 import {
   createHostRuntimeRegistry,
   HostRuntimesContext,
@@ -40,7 +41,7 @@ function harness({
   };
   const registry = createHostRuntimeRegistry();
   if (withRuntime) {
-    const info: HostRuntimeInfo = { phase: "ready", remote, view, retry };
+    const info: HostRuntimeInfo = { phase: "ready", remote, view, retry, composer: new HostComposerStore() };
     registry.publish(HOME_HOST.hostKey, info);
   }
   render(

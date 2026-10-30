@@ -4,11 +4,16 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import type { ProtocolMismatchError, RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { HostComposerStore } from "../composer/composer-store.ts";
 
 export type ConnectionStatus = "connecting" | "connected" | "offline" | "terminal";
 export type TerminalReason = "protocol_mismatch" | "rejected" | "closed";
 
-export type HostRuntimeInfo =
+/** The live connection, plus the draft store that belongs to the same host. */
+export type HostRuntimeInfo = {
+  /** Every phase keeps the drafts already written on this host. */
+  readonly composer: HostComposerStore;
+} & (
   | {
       readonly phase: "connecting";
       readonly retry: () => void;
@@ -25,7 +30,8 @@ export type HostRuntimeInfo =
       readonly remote: RemoteDurable;
       readonly view: DurableView;
       readonly retry: () => void;
-    };
+    }
+);
 
 export function connectionStatus(info: HostRuntimeInfo | undefined): ConnectionStatus {
   if (info === undefined) return "connecting";

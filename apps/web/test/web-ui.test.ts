@@ -3075,6 +3075,9 @@ it("forgets a host from Settings → Hosts only after confirmation", async () =>
   // Confirming forgets B: focus falls back to A, the only host left.
   await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
   await settings.getByRole("button", { name: "Forget this host", exact: true }).click();
+  // The frame stays mounted across the focus switch, so close Settings
+  // explicitly before reaching for the footer's hosts menu.
+  await page.keyboard.press("Escape");
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
   await page.keyboard.press("Escape");
