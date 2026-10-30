@@ -108,7 +108,7 @@ private struct FailureView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Text("Change this host's connection mode under Settings → Paired Hosts (ⓘ), then try again.")
+                Text("Change this host's connection mode under Settings → Hosts (ⓘ), then try again.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

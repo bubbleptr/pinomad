@@ -3,9 +3,9 @@ import PinomadCore
 import SwiftUI
 import UIKit
 
-/// Settings in two groups: this device (its paired machines, pairing
-/// another, push, about) and one row per paired machine, leading to that
-/// machine's own settings. Pushed from the list; needs no connection.
+/// This device's settings: its paired hosts (and a way to add one), the
+/// connected host's own settings, the account, push and about. Pushed from
+/// the list; needs no connection.
 struct SettingsView: View {
     let model: AppModel
 
@@ -16,7 +16,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            Section {
+            Section("Hosts") {
                 ForEach(machines, id: \.hostKey) { host in
                     pairedRow(host)
                 }
@@ -24,18 +24,25 @@ struct SettingsView: View {
                     Text("No paired hosts yet.")
                         .foregroundStyle(.secondary)
                 }
-            } header: {
-                GroupHeader(title: "This Device", section: "Paired Hosts")
+                NavigationLink(value: Route.addHost) {
+                    Label("Add Host", image: .plus)
+                }
             }
-            // Rows are choices, not links — plain text, not tinted.
-            .tint(.primary)
 
-            Section("Pair a Host") {
-                // On the section's card: a list row clips the glass
-                // controls' shadow square, which reads as a smear on the
-                // bare grouped background but not inside the card.
-                PairingSources(model: model)
-                    .padding(.vertical, 6)
+            // Only the connected host's page opens; the others need a
+            // connection to read anything from.
+            if let live = machines.first(where: isLive) {
+                Section {
+                    NavigationLink(value: Route.machine(live.hostKey)) {
+                        LabeledContent {
+                            Text(label(live))
+                        } label: {
+                            Label("Host Settings", image: .settings)
+                        }
+                    }
+                } footer: {
+                    Text("Providers, paired devices and archived conversations on the connected host.")
+                }
             }
 
             // The failure and connecting pages reach the account only from
@@ -52,22 +59,14 @@ struct SettingsView: View {
             } header: {
                 Text("Account")
             } footer: {
-                Text("Sign in to pair the hosts on your account.")
+                if model.accountRecord == nil {
+                    Text("Sign in to pair the hosts on your account.")
+                }
             }
 
             pushSection
 
             aboutSection
-
-            if !machines.isEmpty {
-                Section {
-                    ForEach(machines, id: \.hostKey) { host in
-                        machineRow(host)
-                    }
-                } header: {
-                    GroupHeader(title: "Hosts", section: nil)
-                }
-            }
         }
         .navigationTitle("Settings")
         .navigationDestination(item: $detailHostKey) { hostKey in
@@ -148,32 +147,14 @@ struct SettingsView: View {
         }
         .swipeActions {
             Button("Forget", role: .destructive) { forgetting = host }
-                // The section's plain tint would turn it black.
+                // The row's plain tint would turn it black.
                 .tint(.red)
         }
         .contextMenu {
             Button("Forget", image: .trash2, role: .destructive) { forgetting = host }
         }
-    }
-
-    /// Only the connected machine's page opens; the others need a
-    /// connection to read anything from.
-    private func machineRow(_ host: HostRecord) -> some View {
-        let live = isLive(host)
-        return NavigationLink(value: Route.machine(host.hostKey)) {
-            HStack(spacing: 10) {
-                MachineDot(live: live)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label(host))
-                    if !live {
-                        Text("Connect to this host to view it")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .disabled(!live)
+        // Rows are choices, not links — plain text, not tinted.
+        .tint(.primary)
     }
 
     /// The app-level switch. Only the connected host can register or clear
@@ -504,27 +485,6 @@ private struct DeviceRow: View {
         case .account: return "\(at) via account"
         case nil: return "Paired \(at)"
         }
-    }
-}
-
-/// A group's name above its first section's own header, so the page reads
-/// as two groups rather than a run of equal sections.
-private struct GroupHeader: View {
-    let title: String
-    let section: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // `Color.primary`, not `.primary`: the header's own style is
-            // the secondary level, which `.primary` would resolve against.
-            Text(title)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(Color.primary)
-            if let section {
-                Text(section)
-            }
-        }
-        .textCase(nil)
     }
 }
 

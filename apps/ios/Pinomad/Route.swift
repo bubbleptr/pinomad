@@ -12,6 +12,8 @@ enum Route: Hashable {
     case addProject
     /// This device's settings and the paired machines.
     case settings
+    /// Scan or paste a pairing link, pushed from Settings.
+    case addHost
     /// One paired machine's settings, by host key.
     case machine(String)
     /// A paired host's connection settings and RTC status, by host key.
@@ -43,6 +45,7 @@ struct RouteDestination: View {
         case .newConversation: NewConversationView(model: model)
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
+        case .addHost: AddHostView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
         case .host(let hostKey): HostDetailView(model: model, hostKey: hostKey)
         case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
