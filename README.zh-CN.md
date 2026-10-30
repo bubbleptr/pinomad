@@ -26,6 +26,8 @@ pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链�
 
 模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
 
+想在任何地方用 Mac 和 iPhone 连上宿主、又不想自己架服务端，可以[用官方服务端](https://pinomad.si/zh/docs/official-server/) app.pinomad.si。
+
 ## 文档
 
 用户文档在 **[pinomad.si/zh/docs](https://pinomad.si/zh/docs/)**：[快速上手](https://pinomad.si/zh/docs/)（连上其他设备、常驻运行、客户端）、[agent 能做什么](https://pinomad.si/zh/docs/features/)、[使用说明](https://pinomad.si/zh/docs/usage/)、[远程访问](https://pinomad.si/zh/docs/remote-access/)、[常驻运行](https://pinomad.si/zh/docs/service/)。

@@ -1,0 +1,47 @@
+---
+title: 用官方服务端
+description: 登录 app.pinomad.si，把宿主加入账号，连上 Mac App 和 iPhone，打开推送通知。
+---
+
+官方服务端 `https://app.pinomad.si` 让你的设备在任何地方都能找到并连上宿主，不用自己架服务端。它替你的设备担保，设备直连不上宿主时转发密文；对话在设备和宿主之间端到端加密。
+
+你需要一个服务端上的账号。注册还没有开放（邀请码注册即将上线），目前只能用已有的账号登录。
+
+## 1. 登录
+
+- **Web**：打开 [app.pinomad.si](https://app.pinomad.si/)，填用户名和密码登录。
+- **Mac App**：点首页或侧栏底部用户栏里的 **Sign in**。**Server** 一栏已经填好 `https://app.pinomad.si`，只要填用户名和密码。
+
+Server 一栏可以改。自己架了服务端的话，填它的地址（见[远程访问](/zh/docs/remote-access/)）。
+
+## 2. 宿主加入账号
+
+宿主需要 Node 25+，支持 macOS 和 Linux。登录后点 **Add a host**，会给出一条一次性命令，在要跑 agent 的机器上运行：
+
+```sh
+npm i -g pinomad && pinomad join https://app.pinomad.si <token>
+```
+
+命令只能用一次，10 分钟后过期；过期了点 **New command** 重新生成。`pinomad join` 把宿主登记到你的账号、记下服务端地址，并把宿主装成当前用户的服务，开机自启。加上 `--name "Mac mini"` 可以设定设备上显示的名字。同一台机器重复运行没有问题。
+
+点 **Done**，宿主就出现在列表里。
+
+## 3. 连上宿主
+
+在宿主旁边点 **Pair**。服务端向宿主要一份一次性邀请，客户端用它完成配对，不需要扫码。配对过的宿主显示 **Connect**。
+
+然后在 Settings → Providers 里接入模型，和[快速上手](/zh/docs/)一样。
+
+## 4. iPhone
+
+在 iPhone App 的 Settings 里点 **Sign in**，用服务端 `https://app.pinomad.si` 和同一个用户名、密码登录。账号下的宿主会列出来，在想用手机连的宿主上点 **Pair**。iPhone App 目前只在内部 TestFlight 上。
+
+## 推送通知
+
+对话等你回答、完成或失败时，iPhone App 可以推送通知。推送需要：
+
+- 宿主已经用 `pinomad join` 加入账号；
+- iPhone 登录的是和宿主**同一个账号**；
+- App 里给这台宿主打开了推送（默认关闭，每台宿主单独设置）。
+
+推送只带对话标题和事件，不带问题或回复；标题会经过服务端和 Apple。细节见[使用说明](/zh/docs/usage/)。

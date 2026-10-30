@@ -26,6 +26,8 @@ pinomad link        # in another terminal: prints a browser link to the web clie
 
 Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
 
+To reach the host from your Mac and iPhone anywhere without running a server, [use the official server](https://pinomad.si/docs/official-server/) at app.pinomad.si.
+
 ## Documentation
 
 User docs live on **[pinomad.si/docs](https://pinomad.si/docs/)**: [getting started](https://pinomad.si/docs/) (connecting your other devices, keeping the host running, clients) and [what the agent can do](https://pinomad.si/docs/features/). Usage, remote access, and the service reference are in Chinese for now: [中文文档](https://pinomad.si/zh/docs/).
