@@ -211,6 +211,19 @@ export function AppFrame({
           />
         ) : null}
         {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
+        {/* Every notice a machine reports also lands as a toast — rejected
+            commands only surface as notices otherwise, and the panel that
+            lists them starts closed. */}
+        {machines.map((machine) =>
+          machine.view === undefined ? null : (
+            <NoticeToasts
+              key={machine.key}
+              machineKey={machine.key}
+              source={machines.length > 1 ? machine.label : undefined}
+              notices={machine.view.notices}
+            />
+          ),
+        )}
       </FrameChromeContext.Provider>
     </ToastViewport>
   );
@@ -332,7 +345,21 @@ export function FrameHeader({
   );
 }
 
-export function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
+/**
+ * One machine's notices as toasts. The frame mounts one per machine with a
+ * snapshot, so a warning from an action on a machine that is not focused —
+ * archiving from its sidebar group, say — still surfaces.
+ */
+function NoticeToasts({
+  machineKey,
+  source,
+  notices,
+}: {
+  machineKey: string;
+  /** Named in the toast when several machines could have sent it. */
+  source: string | undefined;
+  notices: readonly Notice[];
+}) {
   const toast = useToast();
   // Notices already present at mount are history the dock shows; only toast
   // what arrives after. The last seen id survives re-renders and switches.
@@ -346,12 +373,13 @@ export function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
     for (const notice of notices) {
       if (notice.id <= seenRef.current) continue;
       toast({
-        body: notice.message,
+        body: source === undefined ? notice.message : `${source}: ${notice.message}`,
         type: notice.level === "error" ? "error" : "info",
-        uniqueID: String(notice.id),
+        // Notice ids are per host; two machines can both send notice 3.
+        uniqueID: `${machineKey}:${notice.id}`,
       });
     }
     if (latest !== undefined) seenRef.current = latest;
-  }, [notices, toast]);
+  }, [machineKey, notices, source, toast]);
   return null;
 }

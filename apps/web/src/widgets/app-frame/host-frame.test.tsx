@@ -1,6 +1,6 @@
 // The frame lives above one host's runtime: focus and connection churn move
 // the main column, not the sidebar, and the global New chat picks a machine.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -281,6 +281,31 @@ describe("the app frame across hosts", () => {
 
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
     expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.saveCustomProvider).not.toHaveBeenCalled();
+  });
+
+  it("toasts a notice from a machine that is not focused, named by its machine", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connected}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    await screen.findByRole("group", { name: "omarchy" });
+    const devbox = registry.get(DEVBOX_HOST.hostKey)!;
+    if (devbox.phase !== "ready") throw new Error("devbox not ready");
+
+    act(() =>
+      registry.publish(DEVBOX_HOST.hostKey, {
+        ...devbox,
+        view: { ...devbox.view, notices: [{ id: 41, level: "info", message: "Kept worktree pinomad/9-dirty" }] },
+      }),
+    );
+
+    expect(await screen.findByText("omarchy: Kept worktree pinomad/9-dirty")).toBeInTheDocument();
   });
 
   it("keeps navigation reachable on a phone while the focused host is connecting", async () => {

@@ -20,7 +20,7 @@ import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ConversationComposer } from "../composer/conversation-composer.tsx";
 import { DraftHome } from "../draft-home/draft-home.tsx";
-import { AppFrame, FrameHeader, NoticeToasts } from "./app-frame.tsx";
+import { AppFrame, FrameHeader } from "./app-frame.tsx";
 
 /**
  * The main column App puts inside the frame: the transcript over its
@@ -113,7 +113,6 @@ function Body({
           <MainColumn view={view} remote={remote} narrow={narrow} loading={loading} />
         </div>
       </div>
-      <NoticeToasts notices={view.notices} />
     </div>
   );
 }

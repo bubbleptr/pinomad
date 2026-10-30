@@ -30,7 +30,7 @@ import { requestNotificationPermission } from "./entities/conversation/notificat
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { useConversationOpening, type Opening } from "./entities/conversation/use-conversation-opening.ts";
-import { AppFrame, FrameHeader, NoticeToasts } from "./widgets/app-frame/app-frame.tsx";
+import { AppFrame, FrameHeader } from "./widgets/app-frame/app-frame.tsx";
 import { HostFrame } from "./widgets/app-frame/host-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -1229,7 +1229,6 @@ export function Workbench({
           onOpenInMain={openInMain}
         />
       ) : null}
-      <NoticeToasts notices={view.notices} />
       {forkTarget === undefined ? null : (
         <ForkDialog
           entryId={forkTarget}
